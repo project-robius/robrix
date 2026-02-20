@@ -557,7 +557,7 @@ live_design! {
 
         // A jump to bottom button (with an unread message badge) that is shown
         // when the timeline is not at the bottom.
-        jump_to_bottom = <JumpToBottomButton> { }
+        jump_to_bottom_button = <JumpToBottomButton> { }
     }
 
 
@@ -862,7 +862,7 @@ impl Widget for RoomScreen {
             self.send_user_read_receipts_based_on_scroll_pos(cx, actions, &portal_list);
 
             // Handle the jump to bottom button: update its visibility, and handle clicks.
-            self.jump_to_bottom_button(ids!(jump_to_bottom)).update_from_actions(
+            self.jump_to_bottom_button(ids!(jump_to_bottom_button)).update_from_actions(
                 cx,
                 &portal_list,
                 actions,
@@ -1271,7 +1271,7 @@ impl RoomScreen {
     /// Redraws this RoomScreen view if any updates were applied.
     fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
         let top_space = self.view(ids!(top_space));
-        let jump_to_bottom = self.jump_to_bottom_button(ids!(jump_to_bottom));
+        let jump_to_bottom_button = self.jump_to_bottom_button(ids!(jump_to_bottom_button));
         let curr_first_id = portal_list.first_id();
         let ui = self.widget_uid();
         let Some(tl) = self.tl_state.as_mut() else { return };
@@ -1290,7 +1290,7 @@ impl RoomScreen {
                     // Set the portal list to the very bottom of the timeline.
                     portal_list.set_first_id_and_scroll(initial_items.len().saturating_sub(1), 0.0);
                     portal_list.set_tail_range(true);
-                    jump_to_bottom.update_visibility(cx, true);
+                    jump_to_bottom_button.update_visibility(cx, true);
 
                     tl.items = initial_items;
                     done_loading = true;
@@ -1337,7 +1337,7 @@ impl RoomScreen {
                         log!("process_timeline_updates(): jumping to bottom: curr_first_id {} is out of bounds for {} new items", curr_first_id, new_items.len());
                         portal_list.set_first_id_and_scroll(new_items.len().saturating_sub(1), 0.0);
                         portal_list.set_tail_range(true);
-                        jump_to_bottom.update_visibility(cx, true);
+                        jump_to_bottom_button.update_visibility(cx, true);
                     }
                     // If the prior items changed, we need to find the new index of an item that was visible
                     // in the timeline viewport so that we can maintain the scroll position of that item,
@@ -1367,11 +1367,15 @@ impl RoomScreen {
 
                     // If new items were appended to the end of the timeline, show an unread messages badge on the jump to bottom button.
                     if is_append && !portal_list.is_at_end() {
-                        // Immediately show the unread badge with no count while we fetch the actual count in the background.
-                        jump_to_bottom.show_unread_message_badge(cx, UnreadMessageCount::Unknown);
-                        submit_async_request(MatrixRequest::GetNumberUnreadMessages{
-                            timeline_kind: tl.kind.clone(),
-                        });
+                        // We only show unread message badges on the jump to bottom button for main room timelines,
+                        // because the matrix SDK doesn't currently support querying unread message counts for threads.
+                        if matches!(tl.kind, TimelineKind::MainRoom { .. }) {
+                            // Immediately show the unread badge with no count while we fetch the actual count in the background.
+                            jump_to_bottom_button.show_unread_message_badge(cx, UnreadMessageCount::Unknown);
+                            submit_async_request(MatrixRequest::GetNumberUnreadMessages{
+                                timeline_kind: tl.kind.clone(),
+                            });
+                        }
                     }
 
                     if prior_items_changed {
@@ -1410,7 +1414,11 @@ impl RoomScreen {
                     done_loading = true;
                 }
                 TimelineUpdate::NewUnreadMessagesCount(unread_messages_count) => {
-                    jump_to_bottom.show_unread_message_badge(cx, unread_messages_count);
+                    // We only show unread message badges on the jump to bottom button for main room timelines,
+                    // because the matrix SDK doesn't currently support querying unread message counts for threads.
+                    if matches!(tl.kind, TimelineKind::MainRoom { .. }) {
+                        jump_to_bottom_button.show_unread_message_badge(cx, unread_messages_count);
+                    }
                 }
                 TimelineUpdate::TargetEventFound { target_event_id, index } => {
                     // log!("Target event found in room {}: {target_event_id}, index: {index}", tl.kind.room_id());
