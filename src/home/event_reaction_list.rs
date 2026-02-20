@@ -1,6 +1,6 @@
 use crate::home::room_screen::RoomScreenTooltipActions;
 use crate::profile::user_profile_cache;
-use crate::sliding_sync::{current_user_id, submit_async_request, MatrixRequest};
+use crate::sliding_sync::{current_user_id, submit_async_request, MatrixRequest, TimelineKind};
 use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
@@ -114,21 +114,14 @@ pub struct ReactionData {
 
 #[derive(Live, LiveHook, Widget)]
 pub struct ReactionList {
-    #[redraw]
-    #[rust]
-    area: Area,
-    #[live]
-    item: Option<LivePtr>,
-    #[rust]
-    children: Vec<(ButtonRef, ReactionData)>,
-    #[layout]
-    layout: Layout,
-    #[walk]
-    walk: Walk,
-    #[rust]
-    room_id: Option<OwnedRoomId>,
-    #[rust]
-    timeline_event_id: Option<TimelineEventItemId>,
+    #[redraw] #[rust] area: Area,
+    #[live] item: Option<LivePtr>,
+    #[rust] children: Vec<(ButtonRef, ReactionData)>,
+    #[layout] layout: Layout,
+    #[walk] walk: Walk,
+
+    #[rust] timeline_kind: Option<TimelineKind>,
+    #[rust] timeline_event_id: Option<TimelineEventItemId>,
 }
 impl Widget for ReactionList {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -170,12 +163,12 @@ impl Widget for ReactionList {
                     }
                     // Otherwise, a primary click/press over the button should toggle the reaction.
                     else if fue.is_primary_hit() && fue.was_tap() {
-                        let Some(room_id) = &self.room_id else { return };
+                        let Some(kind) = &self.timeline_kind else { return };
                         let Some(timeline_event_id) = &self.timeline_event_id else {
                             return;
                         };
                         submit_async_request(MatrixRequest::ToggleReaction {
-                            room_id: room_id.clone(),
+                            timeline_kind: kind.clone(),
                             timeline_event_id: timeline_event_id.clone(),
                             reaction: reaction_data.reaction.clone(),
                         });
@@ -254,7 +247,7 @@ impl ReactionListRef {
         &mut self,
         cx: &mut Cx,
         event_tl_item_reactions: Option<&ReactionsByKeyBySender>,
-        room_id: OwnedRoomId,
+        timeline_kind: TimelineKind,
         timeline_event_item_id: TimelineEventItemId,
         _id: usize,
     ) {
@@ -279,24 +272,25 @@ impl ReactionListRef {
                     includes_user = true;
                 }
                 // Prefill each reactor's user profile into the cache so the tooltip will show their display name.
-                let _ = user_profile_cache::with_user_profile(cx, sender.clone(), Some(&room_id), true, |_, _| { });
+                let _ = user_profile_cache::with_user_profile(
+                    cx,
+                    sender.clone(),
+                    Some(timeline_kind.room_id()),
+                    true, |_, _| { },
+                );
             }
 
             let reaction_data = ReactionData {
                 reaction: reaction_text.to_string(),
                 includes_user,
                 reaction_senders: reaction_senders.clone(),
-                room_id: room_id.clone(),
+                room_id: timeline_kind.room_id().clone(),
             };
             let button = WidgetRef::new_from_ptr(cx, inner.item).as_button();
-            button.set_text(
-                cx,
-                &format!(
-                    "{}  {}",
-                    reaction_data.reaction,
-                    reaction_senders.len()
-                ),
-            );
+            button.set_text(cx, &format!("{}  {}",
+                reaction_data.reaction,
+                reaction_senders.len()
+            ));
             let (bg_color, border_color) = if reaction_data.includes_user {
                 (EMOJI_BG_COLOR_INCLUDE_SELF, EMOJI_BORDER_COLOR_INCLUDE_SELF)
             } else {
@@ -313,7 +307,7 @@ impl ReactionListRef {
             );
             inner.children.push((button, reaction_data));
         }
-        inner.room_id = Some(room_id);
+        inner.timeline_kind = Some(timeline_kind);
         inner.timeline_event_id = Some(timeline_event_item_id);
     }
 

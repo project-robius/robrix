@@ -105,7 +105,8 @@ live_design! {
             }
 
             user_name = <Label> {
-                width: Fit, height: Fit
+                width: Fill, height: Fit
+                align: {x: 0.5}
                 draw_text: {
                     wrap: Word,
                     color: #000,
@@ -115,7 +116,8 @@ live_design! {
             }
 
             user_id = <Label> {
-                width: Fit, height: Fit
+                width: Fill, height: Fit
+                align: {x: 0.5}
                 draw_text: {
                     wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
@@ -651,7 +653,7 @@ impl UserProfileSlidingPane {
             }
         }
         info.avatar_state.update_from_cache(cx);
-        
+
         // If TSP is enabled, populate the TSP verification info for this user.
         #[cfg(feature = "tsp")] {
             use crate::tsp::verify_user::TspVerifyUserWidgetExt;
