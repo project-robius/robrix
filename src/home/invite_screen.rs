@@ -172,7 +172,7 @@ live_design! {
                 align: {x: 0.5, y: 0.5}
                 padding: 15,
                 draw_icon: {
-                    svg_file: (ICON_CHECKMARK)
+                    svg_file: (ICON_JOIN_ROOM)
                     color: (COLOR_FG_ACCEPT_GREEN),
                 }
                 icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
@@ -184,6 +184,65 @@ live_design! {
                 text: "Join Room"
                 draw_text:{
                     color: (COLOR_FG_ACCEPT_GREEN),
+                }
+            }
+
+            loading_view = <RoundedView> {
+                visible: false
+                width: Fit, height: Fit
+                padding: 15
+                align: {x: 0.5, y: 0.5}
+                spacing: 10
+
+                show_bg: true
+                draw_bg: {
+                    color: (COLOR_BG_ACCEPT_GREEN)
+                    border_radius: 4.0
+                }
+
+                <LoadingSpinner> {
+                    width: 16, height: 16
+                    draw_bg: {
+                        color: (COLOR_FG_ACCEPT_GREEN)
+                    }
+                }
+
+                <Label> {
+                    draw_text: {
+                        text_style: <REGULAR_TEXT>{font_size: 10},
+                        color: (COLOR_FG_ACCEPT_GREEN)
+                    }
+                    text: "Joining..."
+                }
+            }
+
+            joined_view = <RoundedView> {
+                visible: false
+                width: Fit, height: Fit
+                padding: 15
+                align: {x: 0.5, y: 0.5}
+                spacing: 10
+
+                show_bg: true
+                draw_bg: {
+                    color: (COLOR_BG_ACCEPT_GREEN)
+                    border_radius: 4.0
+                }
+
+                <Icon> {
+                    width: 16, height: 16
+                    draw_icon: {
+                        svg_file: (ICON_CHECKMARK)
+                        color: (COLOR_FG_ACCEPT_GREEN)
+                    }
+                }
+
+                <Label> {
+                    draw_text: {
+                        text_style: <REGULAR_TEXT>{font_size: 10},
+                        color: (COLOR_FG_ACCEPT_GREEN)
+                    }
+                    text: "Joined!"
                 }
             }
         }
@@ -473,34 +532,53 @@ impl Widget for InviteScreen {
         // Third, set the buttons' text based on the invite state.
         let cancel_button = self.view.button(ids!(cancel_button));
         let accept_button = self.view.button(ids!(accept_button));
+        let loading_view = self.view.view(ids!(loading_view));
+        let joined_view = self.view.view(ids!(joined_view));
+
         match self.invite_state {
             InviteState::WaitingOnUserInput => {
                 cancel_button.set_enabled(cx, true);
                 accept_button.set_enabled(cx, true);
                 cancel_button.set_text(cx, "Reject Invite");
+
+                accept_button.set_visible(cx, true);
+                loading_view.set_visible(cx, false);
+                joined_view.set_visible(cx, false);
                 accept_button.set_text(cx, "Join Room");
             }
             InviteState::WaitingForJoinResult => {
                 cancel_button.set_enabled(cx, false);
                 accept_button.set_enabled(cx, false);
                 cancel_button.set_text(cx, "Reject Invite");
-                accept_button.set_text(cx, "Joining...");
+
+                accept_button.set_visible(cx, false);
+                loading_view.set_visible(cx, true);
+                joined_view.set_visible(cx, false);
             }
             InviteState::WaitingForLeaveResult => {
                 cancel_button.set_enabled(cx, false);
                 accept_button.set_enabled(cx, false);
                 cancel_button.set_text(cx, "Rejecting...");
                 accept_button.set_text(cx, "Join Room");
+
+                accept_button.set_visible(cx, true);
+                loading_view.set_visible(cx, false);
+                joined_view.set_visible(cx, false);
             }
             InviteState::WaitingForJoinedRoom => {
                 cancel_button.set_enabled(cx, false);
                 accept_button.set_enabled(cx, false);
                 cancel_button.set_text(cx, "Reject Invite");
-                accept_button.set_text(cx, "Joined!");
+
+                accept_button.set_visible(cx, false);
+                loading_view.set_visible(cx, false);
+                joined_view.set_visible(cx, true);
             }
             InviteState::RoomLeft => {
                 cancel_button.set_visible(cx, false);
                 accept_button.set_visible(cx, false);
+                loading_view.set_visible(cx, false);
+                joined_view.set_visible(cx, false);
                 self.view.label(ids!(completion_label)).set_text(
                     cx,
                     "Invite successfully rejected. You may close this invite.",
