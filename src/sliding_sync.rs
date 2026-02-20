@@ -2973,7 +2973,8 @@ async fn add_new_room(
         RoomState::Invited => {
             let invite_details = new_room.room.invite_details().await.ok();
             let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
-            let room_avatar = room_avatar(&new_room.room, &room_name_id).await;
+            // Start with a basic text avatar; the avatar image will be fetched asynchronously below.
+            let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar().as_deref());
             let inviter_info = if let Some(inviter) = invite_details.and_then(|d| d.inviter) {
                 Some(InviterInfo {
                     user_id: inviter.user_id().to_owned(),
@@ -3004,6 +3005,7 @@ async fn add_new_room(
                 room_name_id,
                 is_invite: true,
             });
+            spawn_fetch_room_avatar(new_room);
             return Ok(());
         }
         RoomState::Joined => { } // Fall through to adding the joined room below.
