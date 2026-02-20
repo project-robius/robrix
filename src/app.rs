@@ -11,7 +11,7 @@ use crate::{
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::{callout_tooltip::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, register::register_screen::RegisterAction, room::BasicRoomDetails, shared::{callout_tooltip::{
         CalloutTooltipWidgetRefExt,
         TooltipAction,
     }, confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
@@ -30,6 +30,7 @@ live_design! {
     use crate::verification_modal::VerificationModal;
     use crate::join_leave_room_modal::JoinLeaveRoomModal;
     use crate::login::login_screen::LoginScreen;
+    use crate::register::register_screen::RegisterScreen;
     use crate::logout::logout_confirm_modal::LogoutConfirmModal;
     use crate::shared::confirmation_modal::*;
     use crate::shared::popup_list::*;
@@ -94,7 +95,10 @@ live_design! {
                             visible: true
                             login_screen = <LoginScreen> {}
                         }
-
+                        register_screen_view = <View> {
+                            visible: false
+                            register_screen = <RegisterScreen> {}
+                        }
                         image_viewer_modal = <Modal> {
                             content: {
                                 width: Fill, height: Fill,
@@ -229,6 +233,7 @@ impl LiveRegister for App {
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
         crate::login::live_design(cx);
+        crate::register::live_design(cx);
         crate::logout::live_design(cx);
     }
 }
@@ -334,11 +339,59 @@ impl MatchEvent for App {
                 _ => {}
             }
 
-            if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
-                log!("Received LoginAction::LoginSuccess, hiding login view.");
-                self.app_state.logged_in = true;
-                self.update_login_visibility(cx);
-                self.ui.redraw(cx);
+            // Handle login-related actions
+            if let Some(login_action) = action.downcast_ref::<LoginAction>() {
+                match login_action {
+                    LoginAction::LoginSuccess => {
+                        log!("Received LoginAction::LoginSuccess, hiding login view.");
+                        self.app_state.logged_in = true;
+                        self.update_login_visibility(cx);
+                        self.ui.redraw(cx);
+                    }
+                    LoginAction::NavigateToRegister => {
+                        log!("Navigating from login to register screen");
+                        // Start from a clean register screen state
+                        if let Some(mut register_screen_ref) = self
+                            .ui
+                            .widget(ids!(register_screen_view.register_screen))
+                            .borrow_mut::<crate::register::register_screen::RegisterScreen>()
+                        {
+                            register_screen_ref.reset_screen_state(cx);
+                        }
+                        self.ui.view(ids!(login_screen_view)).set_visible(cx, false);
+                        self.ui.view(ids!(register_screen_view)).set_visible(cx, true);
+                        self.ui.redraw(cx);
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+
+            // Handle register-related actions
+            if let Some(register_action) = action.downcast_ref::<RegisterAction>() {
+                match register_action {
+                    RegisterAction::NavigateToLogin => {
+                        log!("Navigating from register to login screen");
+                        // Reset the register screen state before hiding it
+                        if let Some(mut register_screen_ref) = self.ui.widget(ids!(register_screen_view.register_screen)).borrow_mut::<crate::register::register_screen::RegisterScreen>() {
+                            register_screen_ref.reset_screen_state(cx);
+                        }
+                        self.ui.view(ids!(register_screen_view)).set_visible(cx, false);
+                        self.ui.view(ids!(login_screen_view)).set_visible(cx, true);
+                        self.ui.redraw(cx);
+                    }
+                    RegisterAction::RegistrationSuccess => {
+                        log!("Registration successful, transitioning to logged in state");
+                        // Clear register screen state after successful registration
+                        if let Some(mut register_screen_ref) = self.ui.widget(ids!(register_screen_view.register_screen)).borrow_mut::<crate::register::register_screen::RegisterScreen>() {
+                            register_screen_ref.reset_screen_state(cx);
+                        }
+                        self.app_state.logged_in = true;
+                        self.update_login_visibility(cx);
+                        self.ui.redraw(cx);
+                    }
+                    _ => {}
+                }
                 continue;
             }
 
@@ -730,6 +783,7 @@ impl App {
                 .close(cx);
         }
         self.ui.view(ids!(login_screen_view)).set_visible(cx, show_login);
+        self.ui.view(ids!(register_screen_view)).set_visible(cx, false);
         self.ui.view(ids!(home_screen_view)).set_visible(cx, !show_login);
     }
 

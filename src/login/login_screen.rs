@@ -296,8 +296,6 @@ live_design! {
     }
 }
 
-static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-for-im/#creating-a-matrix-account";
-
 #[derive(Live, LiveHook, Widget)]
 pub struct LoginScreen {
     #[deref] view: View,
@@ -331,8 +329,7 @@ impl MatchEvent for LoginScreen {
         let login_status_modal_inner = self.view.login_status_modal(ids!(login_status_modal_inner));
 
         if signup_button.clicked(actions) {
-            log!("Opening URL \"{}\"", MATRIX_SIGN_UP_URL);
-            let _ = robius_open::Uri::new(MATRIX_SIGN_UP_URL).open();
+            cx.action(LoginAction::NavigateToRegister);
         }
 
         if login_button.clicked(actions)
@@ -380,6 +377,7 @@ impl MatchEvent for LoginScreen {
             }
 
             // Handle login-related actions received from background async tasks.
+            // Skip processing if the login screen is not visible (e.g., user is on register screen)
             match action.downcast_ref() {
                 Some(LoginAction::CliAutoLogin { user_id, homeserver }) => {
                     user_id_input.set_text(cx, user_id);
@@ -464,7 +462,8 @@ impl MatchEvent for LoginScreen {
                 submit_async_request(MatrixRequest::SpawnSSOServer{
                     identity_provider_id: format!("oidc-{}",brand),
                     brand: brand.to_string(),
-                    homeserver_url: homeserver_input.text()
+                    homeserver_url: homeserver_input.text(),
+                    is_registration: false,
                 });
             }
         }
@@ -503,5 +502,7 @@ pub enum LoginAction {
     /// When an SSO-based login is pendng, pressing the cancel button will send
     /// an HTTP request to this SSO server URL to gracefully shut it down.
     SsoSetRedirectUrl(Url),
+    /// Navigate to the register screen.
+    NavigateToRegister,
     None,
 }
