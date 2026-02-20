@@ -570,6 +570,8 @@ impl RoomsList {
                 RoomsListUpdate::UpdateRoomAvatar { room_id, room_avatar } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         room.room_avatar = room_avatar;
+                    } else if let Some(room) = self.invited_rooms.borrow_mut().get_mut(&room_id) {
+                        room.room_avatar = room_avatar;
                     } else {
                         error!("Error: couldn't find room {room_id} to update avatar");
                     }
