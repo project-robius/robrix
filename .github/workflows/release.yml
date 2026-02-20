@@ -290,9 +290,16 @@ jobs:
 
       - name: Package (macos)
         uses: project-robius/makepad-packaging-action@v1
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         with:
           github_token: ${{ secrets.ROBRIX_RELEASE }}
           packager_formats: dmg
+          enable_macos_notarization: true
           releaseId: ${{ needs.create_release.outputs.release_id }}
 
   for_windows:
@@ -352,8 +359,7 @@ jobs:
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Package (iOS + TestFlight)
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.upload_testflight == 'true' }}
+      - name: Package (iOS)
         uses: project-robius/makepad-packaging-action@v1
         env:
           MAKEPAD_MOBILE_CARGO_EXTRA_ARGS: >-
@@ -370,34 +376,11 @@ jobs:
           APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
           APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
           APPLE_SIGNING_IDENTITY: Apple Development
-          MAKEPAD_IOS_UPLOAD_TESTFLIGHT: 'true'
           APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         with:
           github_token: ${{ secrets.ROBRIX_RELEASE }}
-          args: --target aarch64-apple-ios
-          releaseId: ${{ needs.create_release.outputs.release_id }}
-
-      - name: Package (iOS)
-        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.upload_testflight != 'true' }}
-        uses: project-robius/makepad-packaging-action@v1
-        env:
-          MAKEPAD_MOBILE_CARGO_EXTRA_ARGS: >-
-            --config profile.dev.opt-level=0
-            --config profile.dev.debug=false
-            --config profile.dev.lto=false
-            --config profile.dev.strip=true
-            --config profile.dev.debug-assertions=false
-          MAKEPAD_IOS_ORG: org.robius.robrix
-          MAKEPAD_IOS_APP: Robrix
-          MAKEPAD_IOS_CREATE_IPA: 'true'
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
-          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: Apple Development
-        with:
-          github_token: ${{ secrets.ROBRIX_RELEASE }}
+          upload_to_testflight: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.upload_testflight == 'true' }}
           args: --target aarch64-apple-ios
           releaseId: ${{ needs.create_release.outputs.release_id }}
