@@ -3326,7 +3326,6 @@ async fn fetch_thread_summary_details(
         && let Some(thread_summary) = thread_root_event.thread_summary.summary()
     {
         num_replies = thread_summary.num_replies;
-
         if let Some(latest_reply_event_id) = thread_summary.latest_reply.as_ref()
             && let Ok(latest_reply) = room.load_or_fetch_event(latest_reply_event_id, None).await
         {
@@ -3334,30 +3333,27 @@ async fn fetch_thread_summary_details(
         }
     }
 
-    // Parallelize the fetching of the latest reply event and the counting of thread replies.
-    // This significantly speeds up the time it takes to load thread details.
-    let (fetched_latest_reply, count_opt) = tokio::join!(
-        async {
-            if latest_reply_event.is_none() {
-                fetch_latest_thread_reply_event(room, thread_root_event_id).await
-            } else {
-                None
-            }
-        },
-        // Always compute the reply count directly from the fetched thread relations,
-        // for some reason we can't rely on the SDK-provided thread_summary to be accurate
-        // (it's almost always totally wrong or out-of-date...).
-        count_thread_replies(room, thread_root_event_id)
-    );
+    // Always compute the reply count directly from the fetched thread relations,
+    // for some reason we can't rely on the SDK-provided thread_summary to be accurate
+    // (it's almost always totally wrong or out-of-date...).
+    let count_replies_future = count_thread_replies(room, thread_root_event_id);
 
-    if let Some(event) = fetched_latest_reply {
+    // Fetch the latest reply event and count the thread replies in parallel.
+    let (fetched_latest_reply_opt, reply_count_opt) = if latest_reply_event.is_none() {
+        tokio::join!(
+            fetch_latest_thread_reply_event(room, thread_root_event_id),
+            count_replies_future,
+        )
+    } else {
+        (None, count_replies_future.await)
+    };
+
+    if let Some(event) = fetched_latest_reply_opt {
         latest_reply_event = Some(event);
     }
-
-    if let Some(count) = count_opt {
+    if let Some(count) = reply_count_opt {
         num_replies = count;
     }
-
     (num_replies, latest_reply_event)
 }
 
