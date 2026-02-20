@@ -38,7 +38,7 @@ use crate::{
         popup_list::{PopupKind, enqueue_popup_notification},
         room_filter_input_bar::RoomFilterAction,
     },
-    sliding_sync::{MatrixLinkAction, MatrixRequest, PaginationDirection, submit_async_request},
+    sliding_sync::{MatrixLinkAction, MatrixRequest, PaginationDirection, TimelineKind, submit_async_request},
     space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction}, utils::{RoomNameId, VecDiff},
 };
 
@@ -238,18 +238,21 @@ pub fn enqueue_rooms_list_update(update: RoomsListUpdate) {
     SignalToUI::set_ui_signal();
 }
 
-/// Actions emitted by the RoomsList widget.
+/// Actions related to a single room in the RoomsList widget.
 #[derive(Debug, Clone, DefaultNone)]
 pub enum RoomsListAction {
     /// A new room or space was selected.
     Selected(SelectedRoom),
     /// A new room was joined from an accepted invite,
     /// meaning that the existing `InviteScreen` should be converted
-    /// to a `RoomScreen` to display now-joined room.
+    /// to a `RoomScreen` to display the now-joined room.
     InviteAccepted {
         room_name_id: RoomNameId,
     },
-    /// Open the room context menu for the given room.
+    /// Instructs the top-level app to show the context menu for the given room.
+    ///
+    /// Emitted by the RoomsList when the user right-clicks or long-presses
+    /// on a room in the rooms list.
     OpenRoomContextMenu {
         details: RoomContextMenuDetails,
         pos: DVec2,
@@ -452,8 +455,8 @@ pub struct RoomsList {
     /// The latest status message that should be displayed in the bottom status label.
     #[rust] status: String,
 
-    /// The ID of the currently-selected room.
-    #[rust] current_active_room: Option<OwnedRoomId>,
+    /// The currently-selected room.
+    #[rust] current_active_room: Option<SelectedRoom>,
 
     /// The maximum number of rooms that will ever be loaded.
     ///
@@ -1125,6 +1128,27 @@ impl RoomsList {
                     None,
                 );
             }
+            SpaceRoomListAction::LeaveSpaceResult { space_name_id, result } => match result {
+                Ok(()) => {
+                    enqueue_popup_notification(
+                        format!("Successfully left space \"{}\".", space_name_id),
+                        PopupKind::Success,
+                        Some(4.0),
+                    );
+                    // If the space we left was the currently-selected one, go back to the main Home view.
+                    if self.selected_space.as_ref().is_some_and(|s| s.room_id() == space_name_id.room_id()) {
+                        cx.action(NavigationBarAction::GoToHome);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to leave space {space_name_id:?}: {e:?}");
+                    enqueue_popup_notification(
+                        format!("Failed to leave space \"{space_name_id}\".\n\nError: {e}"),
+                        PopupKind::Error,
+                        None,
+                    );
+                }
+            },
             // Details-related space actions are handled by SpaceLobbyScreen, not RoomsList.
             SpaceRoomListAction::DetailedChildren { .. }
             | SpaceRoomListAction::TopLevelSpaceDetails(_) => { }
@@ -1181,7 +1205,7 @@ impl Widget for RoomsList {
                     continue;
                 };
 
-                self.current_active_room = Some(room_id.clone());
+                self.current_active_room = Some(new_selected_room.clone());
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
@@ -1211,8 +1235,8 @@ impl Widget for RoomsList {
             // Handle the space lobby being clicked.
             else if let Some(SpaceLobbyAction::SpaceLobbyEntryClicked) = action.downcast_ref() {
                 let Some(space_name_id) = self.selected_space.clone() else { continue };
-                self.current_active_room = Some(space_name_id.room_id().clone());
                 let new_selected_space = SelectedRoom::Space { space_name_id };
+                self.current_active_room = Some(new_selected_space.clone());
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
@@ -1340,8 +1364,7 @@ impl Widget for RoomsList {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let app_state = scope.data.get_mut::<AppState>().unwrap();
         // Update the currently-selected room from the AppState data.
-        self.current_active_room = app_state.selected_room.as_ref()
-            .map(|sel_room| sel_room.room_id().clone());
+        self.current_active_room = app_state.selected_room.clone();
 
         // Based on the various displayed room lists and is_expanded state of each room header,
         // calculate the indexes in the PortalList where the headers and rooms should be drawn.
@@ -1403,8 +1426,8 @@ impl Widget for RoomsList {
                     let mut invited_rooms_mut = self.invited_rooms.borrow_mut();
                     if let Some(invited_room) = invited_rooms_mut.get_mut(invited_room_id) {
                         let item = list.item(cx, portal_list_index, id!(rooms_list_entry));
-                        invited_room.is_selected =
-                            self.current_active_room.as_deref() == Some(invited_room_id);
+                        invited_room.is_selected = self.current_active_room.as_ref()
+                            .is_some_and(|sel_room| sel_room.room_id() == invited_room_id);
                         // Pass the room info down to the RoomsListEntry widget via Scope.
                         scope = Scope::with_props(&*invited_room);
                         item.draw_all(cx, &mut scope);
@@ -1428,14 +1451,16 @@ impl Widget for RoomsList {
                 else if let Some(direct_room_id) = get_direct_room_id(portal_list_index) {
                     if let Some(direct_room) = self.all_joined_rooms.get_mut(direct_room_id) {
                         let item = list.item(cx, portal_list_index, id!(rooms_list_entry));
-                        direct_room.is_selected =
-                            self.current_active_room.as_ref() == Some(direct_room_id);
+                        direct_room.is_selected = self.current_active_room.as_ref()
+                            .is_some_and(|sel_room| sel_room.room_id() == direct_room_id);
 
                         // Paginate the room if it hasn't been paginated yet.
                         if PREPAGINATE_VISIBLE_ROOMS && !direct_room.has_been_paginated {
                             direct_room.has_been_paginated = true;
-                            submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                                room_id: direct_room.room_name_id.room_id().clone(),
+                            submit_async_request(MatrixRequest::PaginateTimeline {
+                                timeline_kind: TimelineKind::MainRoom {
+                                    room_id: direct_room.room_name_id.room_id().clone(),
+                                },
                                 num_events: 50,
                                 direction: PaginationDirection::Backwards,
                             });
@@ -1463,14 +1488,16 @@ impl Widget for RoomsList {
                 else if let Some(regular_room_id) = get_regular_room_id(portal_list_index) {
                     if let Some(regular_room) = self.all_joined_rooms.get_mut(regular_room_id) {
                         let item = list.item(cx, portal_list_index, id!(rooms_list_entry));
-                        regular_room.is_selected =
-                            self.current_active_room.as_ref() == Some(regular_room_id);
+                        regular_room.is_selected = self.current_active_room.as_ref()
+                            .is_some_and(|sel_room| sel_room.room_id() == regular_room_id);
 
                         // Paginate the room if it hasn't been paginated yet.
                         if PREPAGINATE_VISIBLE_ROOMS && !regular_room.has_been_paginated {
                             regular_room.has_been_paginated = true;
-                            submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                                room_id: regular_room.room_name_id.room_id().clone(),
+                            submit_async_request(MatrixRequest::PaginateTimeline {
+                                timeline_kind: TimelineKind::MainRoom {
+                                    room_id: regular_room.room_name_id.room_id().clone(),
+                                },
                                 num_events: 50,
                                 direction: PaginationDirection::Backwards,
                             });

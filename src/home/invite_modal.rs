@@ -159,7 +159,7 @@ live_design! {
 /// Actions emitted by other widgets to show or hide the `InviteModal`.
 #[derive(Clone, Debug)]
 pub enum InviteModalAction {
-    /// Open the modal to invite a user to the given room.
+    /// Open the modal to invite a user to the given room or space.
     Open(RoomNameId),
     /// Close the modal.
     Close,

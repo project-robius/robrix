@@ -11,10 +11,9 @@ use makepad_widgets::{
     rotated_image::RotatedImageWidgetExt,
     *,
 };
-use matrix_sdk::ruma::OwnedRoomId;
 use matrix_sdk_ui::timeline::EventTimelineItem;
 use thiserror::Error;
-use crate::shared::{avatar::AvatarWidgetExt, timestamp::TimestampWidgetRefExt};
+use crate::{shared::{avatar::AvatarWidgetExt, timestamp::TimestampWidgetRefExt}, sliding_sync::TimelineKind};
 
 /// The timeout for hiding the UI overlays after no user mouse/tap activity.
 const SHOW_UI_DURATION: f64 = 3.0;
@@ -1084,10 +1083,10 @@ impl ImageViewer {
                 .set_date_time(cx, timestamp);
         }
 
-        if let Some((room_id, event_timeline_item)) = &metadata.avatar_parameter {            
+        if let Some((timeline_kind, event_timeline_item)) = &metadata.avatar_parameter {
             let (sender, _) = self.view.avatar(ids!(user_profile_view.avatar)).set_avatar_and_get_username(
                 cx,
-                room_id,
+                timeline_kind,
                 event_timeline_item.sender(),
                 Some(event_timeline_item.sender_profile()),
                 event_timeline_item.event_id(),
@@ -1172,9 +1171,9 @@ pub enum LoadState {
 #[derive(Debug, Clone)]
 /// Metadata for an image.
 pub struct ImageViewerMetaData {
-    // Optional avatar parameter containing room ID and event timeline item
-    // to be used for the avatar.
-    pub avatar_parameter: Option<(OwnedRoomId, EventTimelineItem)>,
+    // Optional avatar parameter containing info about the timeline
+    // and the event to be used for the avatar.
+    pub avatar_parameter: Option<(TimelineKind, EventTimelineItem)>,
     pub timestamp: Option<DateTime<Local>>,
     pub image_name: String,
     // Image size in bytes

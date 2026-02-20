@@ -37,6 +37,12 @@ pub enum SpaceRequest {
     UnsubscribeFromSpaceRoomList {
         space_id: OwnedRoomId,
     },
+    /// Leave the given space and all joined rooms within it.
+    ///
+    /// Will emit a [`SpaceRoomListAction::LeaveSpaceResult`] action.
+    LeaveSpace {
+        space_name_id: RoomNameId,
+    },
     /// Paginate the given space's room list, i.e., fetch the next batch of rooms in the list.
     ///
     /// This will result in a [`SpaceRoomListAction::PaginationState`] action being emitted,
@@ -154,7 +160,44 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                 SpaceRequest::UnsubscribeFromSpaceRoomList { space_id } => {
                     if let Some((sender, join_handle)) = space_room_list_tasks.remove(&space_id) {
                         let _ = sender.send(SpaceRoomListRequest::Shutdown);
-                        let _ = join_handle.await;
+                        join_handle.abort();
+                    }
+                }
+                SpaceRequest::LeaveSpace { space_name_id } => {
+                    match space_service.leave_space(space_name_id.room_id()).await {
+                        Ok(leave_handle) => {
+                            match leave_handle.leave(|_| true).await {
+                                Ok(()) => {
+                                    if let Some((sender, join_handle)) = space_room_list_tasks.remove(space_name_id.room_id()) {
+                                        match sender.send(SpaceRoomListRequest::Shutdown) {
+                                            // If we successfully sent shutdown message, just let the space room list loop task
+                                            // end gracefully on its own in the background.
+                                            Ok(_) => { }
+                                            // If we failed to send the shutdown message, just abort the space room list loop task.
+                                            Err(_) => join_handle.abort(),
+                                        }
+                                    }
+                                    Cx::post_action(SpaceRoomListAction::LeaveSpaceResult {
+                                        space_name_id,
+                                        result: Ok(()),
+                                    });
+                                }
+                                Err(error) => {
+                                    error!("LeaveSpace: failed to leave all rooms in space {space_name_id}: {error:?}");
+                                    Cx::post_action(SpaceRoomListAction::LeaveSpaceResult {
+                                        space_name_id,
+                                        result: Err(error),
+                                    });
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            error!("Failed to leave space {space_name_id}: {error:?}");
+                            Cx::post_action(SpaceRoomListAction::LeaveSpaceResult {
+                                space_name_id,
+                                result: Err(error),
+                            });
+                        }
                     }
                 }
                 SpaceRequest::GetDetailedChildren { space_id, parent_chain } => {
@@ -755,6 +798,11 @@ pub enum SpaceRoomListAction {
     ///
     /// This is sent in response to a [`SpaceRequest::GetTopLevelSpaceDetails`] request.
     TopLevelSpaceDetails(SpaceRoom),
+    /// The result of a [`SpaceRequest::LeaveSpace`].
+    LeaveSpaceResult {
+        space_name_id: RoomNameId,
+        result: Result<(), matrix_sdk_ui::spaces::Error>,
+    },
 }
 impl std::fmt::Debug for SpaceRoomListAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -790,6 +838,12 @@ impl std::fmt::Debug for SpaceRoomListAction {
             SpaceRoomListAction::TopLevelSpaceDetails(space) => {
                 f.debug_tuple("SpaceRoomListAction::TopLevelSpaceDetails")
                     .field(space)
+                    .finish()
+            }
+            SpaceRoomListAction::LeaveSpaceResult { space_name_id, result } => {
+                f.debug_struct("SpaceRoomListAction::LeaveSpaceResult")
+                    .field("space_name_id", space_name_id)
+                    .field("result", result)
                     .finish()
             }
         }
