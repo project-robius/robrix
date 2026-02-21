@@ -4,27 +4,25 @@ use makepad_widgets::*;
 
 use crate::shared::{callout_tooltip::{CalloutTooltipOptions, TooltipAction}, styles::*};
 
-live_design! {
+script_mod! {
     link tsp_enabled
 
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
 
-    pub TspSignIndicator = {{TspSignIndicator}} {
+    mod.widgets.TspSignIndicator = #(TspSignIndicator::register_widget(vm)) {
         visible: false, // default to hidden
         width: Fit, height: Fit
         flow: Right,
         padding: 0,
-        margin: { top: 5 }
+        margin: Inset{ top: 5 }
 
         // TODO: re-enable this once we have implemented the ability
         // to click on the indicator to show the user's profile and TSP info.
         // cursor: Hand,
 
-        tsp_html = <Html> {
+        tsp_html := Html {
             width: Fit, height: Fit
             flow: Right, // do not wrap
             padding: 0,
@@ -61,7 +59,7 @@ pub enum TspSignState {
 ///   a red exclamation mark '❗' is shown (could also use a red X '❌').
 /// * If the message doesn't contain a TSP signature, nothing at all is shown.
 ///
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct TspSignIndicator {
     #[deref] view: View,
     #[rust] state: TspSignState,
@@ -81,7 +79,7 @@ impl Widget for TspSignIndicator {
             //     false
             // },
             Hit::FingerHoverOut(_) => {
-                cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
+                cx.widget_action(self.widget_uid(),  TooltipAction::HoverOut);
                 false
             }
             _ => false,
@@ -102,8 +100,7 @@ impl Widget for TspSignIndicator {
                 ),
             };
             cx.widget_action(
-                self.widget_uid(),
-                &scope.path,
+                self.widget_uid(), 
                 TooltipAction::HoverIn {
                     text: text.to_string(),
                     widget_rect: area.rect(cx),
@@ -124,7 +121,7 @@ impl Widget for TspSignIndicator {
 impl TspSignIndicator {
     /// Sets this indicator to show given state of this message's TSP signature.
     pub fn show_with_state(&mut self, cx: &mut Cx, state: TspSignState) {
-        let tsp_html_ref = self.view.html(ids!(tsp_html));
+        let tsp_html_ref = self.view.html(cx, ids!(tsp_html));
         if let Some(mut tsp_html) = tsp_html_ref.borrow_mut() {
             let (text, font_color) = match state {
                 TspSignState::Unknown => {
@@ -157,10 +154,11 @@ impl TspSignIndicatorRef {
 
 
 /// Actions emitted by an `TspSignIndicator` widget.
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Clone, Debug, Default)]
 pub enum TspSignIndicatorAction {
     /// The indicator was clicked, and thus we should open
     /// a modal/dialog showing the message's full edit history.
     ShowEditHistory,
+    #[default]
     None,
 }

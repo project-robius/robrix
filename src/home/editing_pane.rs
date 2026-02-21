@@ -16,123 +16,117 @@ use crate::{
     sliding_sync::{submit_async_request, MatrixRequest, TimelineKind},
 };
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::helpers::*;
-    use crate::shared::styles::*;
-    use crate::shared::avatar::*;
-    use crate::shared::icon_button::*;
-    use crate::shared::mentionable_text_input::MentionableTextInput;
 
-    EditingContent = <View> {
+    mod.widgets.EditingContent = View {
         width: Fill,
-        height: Fit { max: Rel { base: Full, factor: 0.625 } }
-        align: {x: 0.5, y: 1.0}, // centered horizontally, bottom-aligned
-        padding: { left: 20, right: 20, top: 10, bottom: 10 }
-        margin: {top: 2}
+        height: Fit
+        align: Align{x: 0.5, y: 1.0}, // centered horizontally, bottom-aligned
+        padding: Inset{ left: 20, right: 20, top: 10, bottom: 10 }
+        margin: Inset{top: 2}
         spacing: 10,
         flow: Down,
 
         show_bg: false // don't cover up the RoomInputBar
 
-        <View> {
+        View {
             width: Fill, height: Fit
             flow: Right
-            align: {y: 0.5}
-            padding: {left: 5, right: 5}
+            align: Align{y: 0.5}
+            padding: Inset{left: 5, right: 5}
 
-            <Label> {
+            Label {
                 width: Fill,
                 flow: Right, // do not wrap
-                margin: {top: 3}
-                draw_text: {
-                    text_style: <USERNAME_TEXT_STYLE> {},
+                margin: Inset{top: 3}
+                draw_text +: {
+                    text_style: USERNAME_TEXT_STYLE {},
                     color: #222,
                 }
                 text: "Editing:"
             }
 
-            cancel_button = <RobrixIconButton> {
+            cancel_button := RobrixIconButton {
                 width: Fit,
                 height: Fit,
                 padding: 13,
                 spacing: 0,
-                margin: {left: 5, right: 5},
+                margin: Inset{left: 5, right: 5},
 
-                draw_bg: {
+                draw_bg +: {
                     border_color: (COLOR_FG_DANGER_RED),
                     color: (COLOR_BG_DANGER_RED)
                     border_radius: 5
                 }
-                draw_icon: {
+                draw_icon +: {
                     svg_file: (ICON_CLOSE),
                     color: (COLOR_FG_DANGER_RED)
                 }
-                icon_walk: {width: 16, height: 16, margin: 0}
+                icon_walk: Walk{width: 16, height: 16, margin: 0}
             }
 
-            accept_button = <RobrixIconButton> {
+            accept_button := RobrixIconButton {
                 width: Fit,
                 height: Fit,
                 padding: 13,
                 spacing: 0,
-                margin: {left: 5},
+                margin: Inset{left: 5},
 
-                draw_bg: {
+                draw_bg +: {
                     border_color: (COLOR_FG_ACCEPT_GREEN),
                     color: (COLOR_BG_ACCEPT_GREEN)
                     border_radius: 5
                 }
-                draw_icon: {
+                draw_icon +: {
                     svg_file: (ICON_CHECKMARK)
                     color: (COLOR_FG_ACCEPT_GREEN),
                 }
-                icon_walk: {width: 16, height: 16, margin: 0}
+                icon_walk: Walk{width: 16, height: 16, margin: 0}
             }
         }
 
-        <LineH> { }
+        LineH { }
 
-        edit_text_input = <MentionableTextInput> {
+        edit_text_input := MentionableTextInput {
             width: Fill
-            height: Fit { max: Rel { base: Full, factor: 0.625 } }
-            margin: { bottom: 5, top: 5 }
+            height: Fit
+            margin: Inset{ bottom: 5, top: 5 }
         }
     }
 
 
-    pub EditingPane = {{EditingPane}} {
+    mod.widgets.EditingPane = #(EditingPane::register_widget(vm)) {
         visible: false,
         width: Fill,
-        height: Fit { max: Rel { base: Full, factor: 0.625 } }
-        align: {x: 0.5, y: 1.0}
+        height: Fit
+        align: Align{x: 0.5, y: 1.0}
         // TODO: FIXME: this is a hack to make the editing pane
         //              able to slide out of the bottom of the screen.
         //              (Waiting on a Makepad-level fix for this.)
-        margin: {top: 1000}
+        margin: Inset{top: 1000}
 
-        editing_content = <EditingContent> { }
+        editing_content := mod.widgets.EditingContent { }
 
-        animator: {
-            panel = {
-                default: hide,
-                show = {
+        animator: Animator{
+            panel: {
+                default: @hide
+                show: AnimatorState{
                     redraw: true,
                     from: {all: Forward {duration: 0.8}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
-                    apply: { margin: {top: 0} }
+                    apply: { margin: Inset{top: 0} }
                 }
-                hide = {
+                hide: AnimatorState{
                     redraw: true,
                     from: {all: Forward {duration: 0.8}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
                     // TODO: FIXME: this is a hack to make the editing pane
                     //              able to slide out of the bottom of the screen.
                     //              (Waiting on a Makepad-level fix for this.)
-                    apply: { margin: {top: 1000} }
+                    apply: { margin: Inset{top: 1000} }
                 }
             }
         }
@@ -140,11 +134,19 @@ live_design! {
 }
 
 /// Action emitted by the EditingPane widget.
-#[derive(Clone, DefaultNone, Debug)]
+#[derive(Clone, Default, Debug)]
 pub enum EditingPaneAction {
     /// The editing pane has been closed/hidden.
     Hidden,
+    #[default]
     None,
+}
+
+impl ActionDefaultRef for EditingPaneAction {
+    fn default_ref() -> &'static Self {
+        static DEFAULT: EditingPaneAction = EditingPaneAction::None;
+        &DEFAULT
+    }
 }
 
 /// The information maintained by the EditingPane widget.
@@ -154,8 +156,9 @@ struct EditingPaneInfo {
 }
 
 /// A view that slides in from the bottom of the screen to allow editing a message.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget, Animator)]
 pub struct EditingPane {
+    #[source] source: ScriptObjectRef,
     #[deref]
     view: View,
     #[animator]
@@ -180,11 +183,14 @@ impl Widget for EditingPane {
         // If the animator is in the `hide` state and has finished animating out,
         // that means it has fully animated off-screen and can be set to invisible.
         if self.animator_in_state(cx, ids!(panel.hide)) {
-            match (self.is_animating_out, animator_action.is_animating()) {
+            match (
+                self.is_animating_out,
+                matches!(animator_action, AnimatorAction::Animating { .. }),
+            ) {
                 (true, false) => {
                     self.visible = false;
                     self.info = None;
-                    cx.widget_action(self.widget_uid(), &scope.path, EditingPaneAction::Hidden);
+                    cx.widget_action(self.widget_uid(),  EditingPaneAction::Hidden);
                     cx.revert_key_focus();
                     self.redraw(cx);
                     return;
@@ -199,11 +205,13 @@ impl Widget for EditingPane {
 
         if let Event::Actions(actions) = event {
 
-            let edit_text_input = self.mentionable_text_input(ids!(editing_content.edit_text_input)).text_input_ref();
+            let edit_text_input = self
+                .mentionable_text_input(cx, ids!(editing_content.edit_text_input))
+                .text_input_ref(cx);
 
             // Hide the editing pane if the cancel button was clicked
             // or if the `Escape` key was pressed within the edit text input.
-            if self.button(ids!(cancel_button)).clicked(actions)
+            if self.button(cx, ids!(cancel_button)).clicked(actions)
                 || edit_text_input.escaped(actions)
             {
                 self.animator_play(cx, ids!(panel.hide));
@@ -213,7 +221,7 @@ impl Widget for EditingPane {
 
             let Some(info) = self.info.as_ref() else { return };
 
-            if self.button(ids!(accept_button)).clicked(actions)
+            if self.button(cx, ids!(accept_button)).clicked(actions)
                 || edit_text_input.returned(actions).is_some_and(|(_, m)| m.is_primary())
             {
                 let edited_text = edit_text_input.text().trim().to_string();
@@ -441,7 +449,7 @@ impl EditingPane {
             return;
         }
 
-        let edit_text_input = self.mentionable_text_input(ids!(editing_content.edit_text_input));
+        let edit_text_input = self.mentionable_text_input(cx, ids!(editing_content.edit_text_input));
 
         if let Some(message) = event_tl_item.content().as_message() {
             edit_text_input.set_text(cx, message.body());
@@ -463,13 +471,13 @@ impl EditingPane {
         });
 
         self.visible = true;
-        self.button(ids!(accept_button)).reset_hover(cx);
-        self.button(ids!(cancel_button)).reset_hover(cx);
+        self.button(cx, ids!(accept_button)).reset_hover(cx);
+        self.button(cx, ids!(cancel_button)).reset_hover(cx);
         self.animator_play(cx, ids!(panel.show));
 
         // Set the text input's cursor to the end and give it key focus.
-        let inner_text_input = edit_text_input.text_input_ref();
-        let text_len = edit_text_input.text().len();
+        let inner_text_input = edit_text_input.text_input_ref(cx);
+        let text_len = edit_text_input.text(cx).len();
         inner_text_input.set_cursor(
             cx,
             Cursor { index: text_len, prefer_next_row: false },
@@ -480,12 +488,12 @@ impl EditingPane {
     }
 
     /// Returns the state of this `EditingPane`, if any.
-    pub fn save_state(&self) -> Option<EditingPaneState> {
+    pub fn save_state(&self, cx: &mut Cx) -> Option<EditingPaneState> {
         self.info.as_ref().map(|info| EditingPaneState {
             event_tl_item: info.event_tl_item.clone(),
             text_input_state: self
-                .mentionable_text_input(ids!(editing_content.edit_text_input))
-                .text_input_ref()
+                .mentionable_text_input(cx, ids!(editing_content.edit_text_input))
+                .text_input_ref(cx)
                 .save_state(),
         })
     }
@@ -498,16 +506,16 @@ impl EditingPane {
         timeline_kind: TimelineKind,
     ) {
         let EditingPaneState { event_tl_item, text_input_state } = editing_pane_state;
-        self.mentionable_text_input(ids!(editing_content.edit_text_input))
-            .text_input_ref()
+        self.mentionable_text_input(cx, ids!(editing_content.edit_text_input))
+            .text_input_ref(cx)
             .restore_state(cx, text_input_state);
         self.info = Some(EditingPaneInfo {
             event_tl_item,
             timeline_kind,
         });
         self.visible = true;
-        self.button(ids!(accept_button)).reset_hover(cx);
-        self.button(ids!(cancel_button)).reset_hover(cx);
+        self.button(cx, ids!(accept_button)).reset_hover(cx);
+        self.button(cx, ids!(cancel_button)).reset_hover(cx);
         self.animator_play(cx, ids!(panel.show));
         self.redraw(cx);
 
@@ -561,8 +569,8 @@ impl EditingPaneRef {
     }
 
     /// See [`EditingPane::save_state()`].
-    pub fn save_state(&self) -> Option<EditingPaneState> {
-        self.borrow()?.save_state()
+    pub fn save_state(&self, cx: &mut Cx) -> Option<EditingPaneState> {
+        self.borrow()?.save_state(cx)
     }
 
     /// Restores the state of this `EditingPane` from the given `event_tl_item` and `text_input_state`.

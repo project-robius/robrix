@@ -13,195 +13,189 @@ use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room
 use super::rooms_list::{InviteState, InviterInfo};
 
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::helpers::*;
-    use crate::shared::styles::*;
-    use crate::shared::avatar::*;
-    use crate::shared::icon_button::*;
-    use crate::shared::restore_status_view::*;
 
-    pub InviteScreen = {{InviteScreen}}<ScrollXYView> {
+    mod.widgets.InviteScreen = #(InviteScreen::register_widget(vm)) {
         width: Fill,
         height: Fill,
         flow: Down,
-        align: {x: 0.5, y: 0}
-        padding: {left: 20, right: 20, top: 50}
+        align: Align{x: 0.5, y: 0}
+        padding: Inset{left: 20, right: 20, top: 50}
         spacing: 0,
 
         show_bg: true,
-        draw_bg: {
+        draw_bg +: {
             color: (COLOR_PRIMARY_DARKER),
         }
-        restore_status_view = <RestoreStatusView> {}
+        restore_status_view := RestoreStatusView {}
 
         // This view is only shown if `inviter` is Some.
-        inviter_view = <View> {
+        inviter_view := View {
             width: Fill, height: Fit
-            align: {x: 0.5, y: 0}
+            align: Align{x: 0.5, y: 0}
             spacing: 10,
             flow: Down,
 
 
-            inviter_avatar = <Avatar> {
+            inviter_avatar := Avatar {
                 width: 30,
                 height: 30,
-                text_view = { text = { draw_text: {
-                    text_style: <TITLE_TEXT>{ font_size: 10.0 }
+                text_view: { text := Label { draw_text +: {
+                    text_style: TITLE_TEXT { font_size: 10.0 }
                 }}}
             }
 
 
-            inviter_name = <Label> {
+            inviter_name := Label {
                 width: Fill, height: Fit,
-                align: {x: 0.5, y: 0},
-                margin: {top: 2}
+                align: Align{x: 0.5, y: 0},
+                margin: Inset{top: 2}
                 padding: 0,
-                flow: RightWrap,
+                flow: Flow.Right{wrap: true},
                 text: ""
-                draw_text: {
-                    text_style: <TITLE_TEXT>{
+                draw_text +: {
+                    text_style: TITLE_TEXT {
                         font_size: 15,
                     },
                     color: #000
-                    wrap: Word
+                    flow: Flow.Right{wrap: true}
                 }
             }
 
-            inviter_user_id = <Label> {
+            inviter_user_id := Label {
                 width: Fill, height: Fit,
-                align: {x: 0.5, y: 0},
-                margin: {top: -3},
-                flow: RightWrap,
+                align: Align{x: 0.5, y: 0},
+                margin: Inset{top: -3},
+                flow: Flow.Right{wrap: true},
                 text: ""
-                draw_text: {
-                    text_style: <TITLE_TEXT>{
+                draw_text +: {
+                    text_style: TITLE_TEXT {
                         font_size: 10,
                     },
                     color: #888
-                    wrap: Word,
+                    flow: Flow.Right{wrap: true},
                 }
             }
 
-            <LineH> {
+            LineH {
                 width: 240,
-                draw_bg: {
+                draw_bg +: {
                     color: (COLOR_DIVIDER),
                 }
             }
         }
 
-        invite_message = <Label> {
-            margin: {top: 15, bottom: 15},
+        invite_message := Label {
+            margin: Inset{top: 15, bottom: 15},
             width: Fill, height: Fit,
-            align: {x: 0.5, y: 0},
-            flow: RightWrap,
+            align: Align{x: 0.5, y: 0},
+            flow: Flow.Right{wrap: true},
             text: "",
-            draw_text: {
-                text_style: <REGULAR_TEXT>{
+            draw_text +: {
+                text_style: REGULAR_TEXT {
                     font_size: 15,
                 },
                 color: #000
-                wrap: Word
+                flow: Flow.Right{wrap: true}
             }
         }
 
-        room_view = <View> {
+        room_view := View {
             width: Fill, height: Fit
-            align: {x: 0.5, y: 0}
+            align: Align{x: 0.5, y: 0}
             spacing: 10,
             flow: Down,
 
-            room_avatar = <Avatar> {
+            room_avatar := Avatar {
                 width: 40,
                 height: 40,
 
-                text_view = { text = { draw_text: {
-                    text_style: <TITLE_TEXT>{ font_size: 13.0 }
+                text_view: { text := Label { draw_text +: {
+                    text_style: TITLE_TEXT { font_size: 13.0 }
                 }}}
             }
 
-            room_name = <Label> {
+            room_name := Label {
                 width: Fill, height: Fit,
-                align: {x: 0.5, y: 0},
+                align: Align{x: 0.5, y: 0},
                 text: ""
-                // margin: {top: 3}
-                flow: RightWrap,
-                draw_text: {
-                    text_style: <TITLE_TEXT>{
+                // margin: Inset{top: 3}
+                flow: Flow.Right{wrap: true},
+                draw_text +: {
+                    text_style: TITLE_TEXT {
                         font_size: 18,
                     },
                     color: #000
-                    wrap: Word,
+                    flow: Flow.Right{wrap: true},
                 }
             }
         }
 
-        buttons = <View> {
+        buttons := View {
             width: Fill, height: Fit
             // We'd like to use RightWrap, but it doesn't work with x-centered alignment
-            // flow: RightWrap,
+            // flow: Flow.Right{wrap: true},
             flow: Right,
-            align: {x: 0.5, y: 0.5}
-            margin: {top: 20}
+            align: Align{x: 0.5, y: 0.5}
+            margin: Inset{top: 20}
             spacing: 40
 
-            cancel_button = <RobrixIconButton> {
-                align: {x: 0.5, y: 0.5}
+            cancel_button := RobrixIconButton {
+                align: Align{x: 0.5, y: 0.5}
                 padding: 15,
-                draw_icon: {
+                draw_icon +: {
                     svg_file: (ICON_FORBIDDEN)
                     color: (COLOR_FG_DANGER_RED),
                 }
-                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
 
-                draw_bg: {
+                draw_bg +: {
                     border_color: (COLOR_FG_DANGER_RED),
                     color: (COLOR_BG_DANGER_RED)
                 }
                 text: "Reject Invite"
-                draw_text:{
+                draw_text +: {
                     color: (COLOR_FG_DANGER_RED),
                 }
             }
 
-            accept_button = <RobrixIconButton> {
-                align: {x: 0.5, y: 0.5}
+            accept_button := RobrixIconButton {
+                align: Align{x: 0.5, y: 0.5}
                 padding: 15,
-                draw_icon: {
+                draw_icon +: {
                     svg_file: (ICON_CHECKMARK)
                     color: (COLOR_FG_ACCEPT_GREEN),
                 }
-                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
 
-                draw_bg: {
+                draw_bg +: {
                     border_color: (COLOR_FG_ACCEPT_GREEN),
                     color: (COLOR_BG_ACCEPT_GREEN)
                 }
                 text: "Join Room"
-                draw_text:{
+                draw_text +: {
                     color: (COLOR_FG_ACCEPT_GREEN),
                 }
             }
         }
 
-        completion_label = <Label> {
+        completion_label := Label {
             width: Fill, height: Fit,
-            align: {x: 0.5, y: 0},
-            margin: {top: 10, bottom: 10},
-            flow: RightWrap,
-            draw_text: {
+            align: Align{x: 0.5, y: 0},
+            margin: Inset{top: 10, bottom: 10},
+            flow: Flow.Right{wrap: true},
+            draw_text +: {
                 color: (COLOR_FG_ACCEPT_GREEN),
-                text_style: <THEME_FONT_BOLD>{font_size: 12}
-                wrap: Word,
+                text_style: theme.font_bold {font_size: 12}
+                flow: Flow.Right{wrap: true},
             }
             text: ""
         }
 
-        <View> {
+        View {
             width: Fill, height: 30,
         }
     }
@@ -254,7 +248,7 @@ pub enum LeaveRoomResultAction {
 
 
 /// A view that shows information about a room that the user has been invited to.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct InviteScreen {
     #[deref] view: View,
 
@@ -306,7 +300,7 @@ impl Widget for InviteScreen {
             }
 
             let Some(info) = self.info.as_ref() else { return; };
-            if let Some(modifiers) = self.view.button(ids!(cancel_button)).clicked_modifiers(actions) {
+            if let Some(modifiers) = self.view.button(cx, ids!(cancel_button)).clicked_modifiers(actions) {
                 self.invite_state = InviteState::WaitingForLeaveResult;
                 if modifiers.shift {
                     submit_async_request(MatrixRequest::LeaveRoom {
@@ -321,7 +315,7 @@ impl Widget for InviteScreen {
                     self.has_shown_confirmation = true;
                 }
             }
-            if let Some(modifiers) = self.view.button(ids!(accept_button)).clicked_modifiers(actions) {
+            if let Some(modifiers) = self.view.button(cx, ids!(accept_button)).clicked_modifiers(actions) {
                 self.invite_state = InviteState::WaitingForJoinResult;
                 if modifiers.shift {
                     submit_async_request(MatrixRequest::JoinRoom {
@@ -394,7 +388,7 @@ impl Widget for InviteScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if !self.is_loaded {
-            let mut restore_status_view = self.view.restore_status_view(ids!(restore_status_view));
+            let mut restore_status_view = self.view.restore_status_view(cx, ids!(restore_status_view));
             if let Some(room_name) = &self.room_name_id {
                 restore_status_view.set_content(cx, self.all_rooms_loaded, room_name);
             }
@@ -406,9 +400,9 @@ impl Widget for InviteScreen {
         };
 
         // First, populate the inviter info, if we have it.
-        let inviter_view = self.view.view(ids!(inviter_view));
+        let inviter_view = self.view.view(cx, ids!(inviter_view));
         let (is_visible, invite_text) = if let Some(inviter) = info.inviter.as_ref() {
-            let inviter_avatar = inviter_view.avatar(ids!(inviter_avatar));
+            let inviter_avatar = inviter_view.avatar(cx, ids!(inviter_avatar));
             let mut drew_avatar = false;
             if let Some(avatar_bytes) = inviter.avatar.as_ref() {
                 drew_avatar = inviter_avatar.show_image(
@@ -425,8 +419,8 @@ impl Widget for InviteScreen {
                     inviter.display_name.as_deref().unwrap_or_else(|| inviter.user_id.as_str()),
                 );
             }
-            let inviter_name = inviter_view.label(ids!(inviter_name));
-            let inviter_user_id = inviter_view.label(ids!(inviter_user_id));
+            let inviter_name = inviter_view.label(cx, ids!(inviter_name));
+            let inviter_user_id = inviter_view.label(cx, ids!(inviter_user_id));
             if let Some(inviter_user_name) = inviter.display_name.as_deref() {
                 // If we have an inviter display name, show that *and* the user ID.
                 inviter_name.set_text(cx, inviter_user_name);
@@ -445,11 +439,11 @@ impl Widget for InviteScreen {
             (false, "You have been invited to join:")
         };
         inviter_view.set_visible(cx, is_visible);
-        self.view.label(ids!(invite_message)).set_text(cx, invite_text);
+        self.view.label(cx, ids!(invite_message)).set_text(cx, invite_text);
 
         // Second, populate the room info, if we have it.
-        let room_view = self.view.view(ids!(room_view));
-        let room_avatar = room_view.avatar(ids!(room_avatar));
+        let room_view = self.view.view(cx, ids!(room_view));
+        let room_avatar = room_view.avatar(cx, ids!(room_avatar));
         match &info.room_avatar() {
             FetchedRoomAvatar::Text(text) => {
                 room_avatar.show_text(
@@ -468,11 +462,11 @@ impl Widget for InviteScreen {
             }
         }
         let invite_room_label = info.room_name_id().to_string();
-        room_view.label(ids!(room_name)).set_text(cx, &invite_room_label);
+        room_view.label(cx, ids!(room_name)).set_text(cx, &invite_room_label);
 
         // Third, set the buttons' text based on the invite state.
-        let cancel_button = self.view.button(ids!(cancel_button));
-        let accept_button = self.view.button(ids!(accept_button));
+        let cancel_button = self.view.button(cx, ids!(cancel_button));
+        let accept_button = self.view.button(cx, ids!(accept_button));
         match self.invite_state {
             InviteState::WaitingOnUserInput => {
                 cancel_button.set_enabled(cx, true);
@@ -501,7 +495,7 @@ impl Widget for InviteScreen {
             InviteState::RoomLeft => {
                 cancel_button.set_visible(cx, false);
                 accept_button.set_visible(cx, false);
-                self.view.label(ids!(completion_label)).set_text(
+                self.view.label(cx, ids!(completion_label)).set_text(
                     cx,
                     "Invite successfully rejected. You may close this invite.",
                 );
@@ -534,7 +528,7 @@ impl InviteScreen {
             self.redraw(cx);
         }
 
-        let restore_status_view = self.view.restore_status_view(ids!(restore_status_view));
+        let restore_status_view = self.view.restore_status_view(cx, ids!(restore_status_view));
         if !self.is_loaded {
             restore_status_view.set_content(
                 cx,

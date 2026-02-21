@@ -12,99 +12,94 @@ use robius_location::Coordinates;
 
 use crate::location::{get_latest_location, request_location_update, LocationAction, LocationRequest, LocationUpdate};
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::helpers::*;
-    use crate::shared::styles::*;
-    use crate::shared::avatar::*;
-    use crate::shared::icon_button::*;
 
-    pub LocationPreview = {{LocationPreview}}<RoundedView> {
+    mod.widgets.LocationPreview = #(LocationPreview::register_widget(vm)) {
         visible: false
         width: Fill
         height: Fit
         flow: Down
         // to align this view just below the RoomInputBar's curved border
-        margin: {top: 1}
-        padding: {left: 12, top: 10, bottom: 10, right: 10}
+        margin: Inset{top: 1}
+        padding: Inset{left: 12, top: 10, bottom: 10, right: 10}
         spacing: 8
 
         show_bg: true,
-        draw_bg: {
+        draw_bg +: {
             color: (COLOR_BG_PREVIEW),
             border_radius: 5.0,
             border_size: 2.0
         }
 
-        <Label> {
+        Label {
             width: Fill,
             height: Fit,
-            draw_text: {
-                wrap: Word,
+            draw_text +: {
+                flow: Flow.Right{wrap: true},
                 color: (MESSAGE_TEXT_COLOR),
-                text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10.0 },
+                text_style: MESSAGE_TEXT_STYLE { font_size: 10.0 },
             }
             text: "Send your location to this room?"
         }
 
-        location_label = <Label> {
+        location_label := Label {
             width: Fill,
             height: Fit,
-            align: {x: 0.0, y: 0.5},
-            padding: {left: 10, bottom: 7}
-            draw_text: {
-                wrap: Word,
+            align: Align{x: 0.0, y: 0.5},
+            padding: Inset{left: 10, bottom: 7}
+            draw_text +: {
+                flow: Flow.Right{wrap: true},
                 color: (MESSAGE_TEXT_COLOR),
-                text_style: <MESSAGE_TEXT_STYLE>{},
+                text_style: MESSAGE_TEXT_STYLE {},
             }
             text: "➡ Fetching current location..."
         }
 
-        <View> {
+        View {
             width: Fill, height: Fit
-            flow: RightWrap,
-            align: {x: 0.0, y: 0.5}
+            flow: Flow.Right{wrap: true},
+            align: Align{x: 0.0, y: 0.5}
 
-            cancel_location_button = <RobrixIconButton> {
-                align: {x: 0.5, y: 0.5}
+            cancel_location_button := RobrixIconButton {
+                align: Align{x: 0.5, y: 0.5}
                 padding: 15,
-                margin: {right: 15}
-                draw_icon: {
+                margin: Inset{right: 15}
+                draw_icon +: {
                     svg_file: (ICON_FORBIDDEN)
                     color: (COLOR_FG_DANGER_RED),
                 }
-                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1, top: -1} }
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1, top: -1} }
 
-                draw_bg: {
+                draw_bg +: {
                     border_color: (COLOR_FG_DANGER_RED),
                     color: (COLOR_BG_DANGER_RED)
                 }
                 text: "Cancel"
-                draw_text:{
+                draw_text +: {
                     color: (COLOR_FG_DANGER_RED),
                 }
             }
 
-            send_location_button = <RobrixIconButton> {
+            send_location_button := RobrixIconButton {
                 // disabled by default; will be enabled upon receiving valid location update.
                 enabled: false,
-                align: {x: 0.5, y: 0.5}
+                align: Align{x: 0.5, y: 0.5}
                 padding: 15,
-                draw_icon: {
+                draw_icon +: {
                     svg_file: (ICON_SEND)
                     color: (COLOR_FG_ACCEPT_GREEN),
                 }
-                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
 
-                draw_bg: {
+                draw_bg +: {
                     border_color: (COLOR_FG_ACCEPT_GREEN),
                     color: (COLOR_BG_ACCEPT_GREEN)
                 }
                 text: "Yes"
-                draw_text:{
+                draw_text +: {
                     color: (COLOR_FG_ACCEPT_GREEN),
                 }
             }
@@ -113,7 +108,7 @@ live_design! {
 }
 
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 struct LocationPreview {
     #[deref] view: View,
     #[rust] coords: Option<Result<Coordinates, robius_location::Error>>,
@@ -129,13 +124,13 @@ impl Widget for LocationPreview {
                     Some(LocationAction::Update(LocationUpdate { coordinates, time })) => {
                         self.coords = Some(Ok(*coordinates));
                         self.timestamp = *time;
-                        self.button(ids!(send_location_button)).set_enabled(cx, true);
+                        self.button(cx, ids!(send_location_button)).set_enabled(cx, true);
                         needs_redraw = true;
                     }
                     Some(LocationAction::Error(e)) => {
                         self.coords = Some(Err(*e));
                         self.timestamp = None;
-                        self.button(ids!(send_location_button)).set_enabled(cx, false);
+                        self.button(cx, ids!(send_location_button)).set_enabled(cx, false);
                         needs_redraw = true;
                     }
                     _ => { }
@@ -146,7 +141,7 @@ impl Widget for LocationPreview {
             //       in the RoomScreen handle_event function.
 
             // Handle the cancel location button being clicked.
-            if self.button(ids!(cancel_location_button)).clicked(actions) {
+            if self.button(cx, ids!(cancel_location_button)).clicked(actions) {
                 self.clear();
                 needs_redraw = true;
             }
@@ -167,7 +162,7 @@ impl Widget for LocationPreview {
             Some(Err(e)) => format!("➡ Error getting location: {e:?}"),
             None => String::from("➡ Current location is not yet available."),
         };
-        self.label(ids!(location_label)).set_text(cx, &text);
+        self.label(cx, ids!(location_label)).set_text(cx, &text);
         self.view.draw_walk(cx, scope, walk)
     }
 }

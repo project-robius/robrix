@@ -2,6 +2,7 @@
 //! Can be used in any context where user mentions are needed (message input, editing)
 //!
 use crate::avatar_cache::*;
+use crate::shared::command_text_input::CommandTextInput;
 use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::shared::bouncing_dots::BouncingDotsWidgetRefExt;
 use crate::shared::styles::COLOR_UNKNOWN_ROOM_AVATAR;
@@ -9,6 +10,7 @@ use crate::utils;
 
 
 use makepad_widgets::{text::selection::Cursor, *};
+use crate::{LivePtr, widget_ref_from_live_ptr};
 use matrix_sdk::ruma::{events::{room::message::RoomMessageEventContent, Mentions}, OwnedRoomId, OwnedUserId};
 use matrix_sdk::room::RoomMember;
 use std::collections::{BTreeMap, BTreeSet};
@@ -18,36 +20,31 @@ use crate::home::room_screen::RoomScreenProps;
 // Constants for mention popup height calculations
 const DESKTOP_ITEM_HEIGHT: f64 = 32.0;
 const MOBILE_ITEM_HEIGHT: f64 = 64.0;
-const MOBILE_USERNAME_SPACING: f64 = 0.5;
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
-    use crate::shared::styles::*;
-    use crate::shared::avatar::Avatar;
-    use crate::shared::helpers::FillerX;
-    use crate::shared::bouncing_dots::BouncingDots;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    pub FOCUS_HOVER_COLOR = #C
-    pub KEYBOARD_FOCUS_OR_COLOR_HOVER = #1C274C
+    mod.widgets.FOCUS_HOVER_COLOR = #C
+
+    mod.widgets.KEYBOARD_FOCUS_OR_COLOR_HOVER = #1C274C
 
     // Template for user list items in the mention dropdown
-    UserListItem = <View> {
+    mod.widgets.UserListItem = View {
         width: Fill,
         height: Fit,
-        margin: {left: 4, right: 4}
-        padding: {left: 8, right: 8, top: 4, bottom: 4}
+        margin: Inset{left: 4, right: 4}
+        padding: Inset{left: 8, right: 8, top: 4, bottom: 4}
         show_bg: true
         cursor: Hand
-        draw_bg: {
+        draw_bg +: {
             color: (COLOR_PRIMARY),
-            uniform border_radius: 4.0,
-            instance hover: 0.0,
-            instance selected: 0.0,
+            border_radius: uniform(4.0),
+            hover: instance(0.0),
+            selected: instance(0.0),
 
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+            pixel: fn() -> vec4 {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                 // Draw rounded rectangle with configurable radius
                 sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
 
@@ -65,57 +62,57 @@ live_design! {
         flow: Down
         spacing: 2.0
 
-        user_info = <View> {
+        user_info := View {
             width: Fill,
             height: Fit,
             flow: Right,
             spacing: 8.0
-            align: {y: 0.5}
+            align: Align{y: 0.5}
 
-            avatar = <Avatar> {
+            avatar := Avatar {
                 width: 24,
                 height: 24,
-                text_view = { text = { draw_text: {
-                    text_style: { font_size: 12.0 }
+                text_view: { text := Label { draw_text +: {
+                    text_style: theme.font_regular { font_size: 12.0 }
                 }}}
             }
 
-            username = <Label> {
+            username := Label {
                 height: Fit,
-                draw_text: {
+                draw_text +: {
                     color: #000,
-                    text_style: {font_size: 14.0}
+                    text_style: theme.font_regular {font_size: 14.0}
                 }
             }
 
-            filler = <FillerX> {}
+            filler := FillerX {}
         }
 
-        user_id = <Label> {
+        user_id := Label {
             height: Fit,
-            draw_text: {
+            draw_text +: {
                 color: #666,
-                text_style: {font_size: 12.0}
+                text_style: theme.font_regular {font_size: 12.0}
             }
         }
     }
 
     // Template for the @room mention list item
-    RoomMentionListItem = <View> {
+    mod.widgets.RoomMentionListItem = View {
         width: Fill,
         height: Fit,
-        margin: {left: 4, right: 4}
-        padding: {left: 8, right: 8, top: 4, bottom: 4}
+        margin: Inset{left: 4, right: 4}
+        padding: Inset{left: 8, right: 8, top: 4, bottom: 4}
         show_bg: true
         cursor: Hand
-        draw_bg: {
+        draw_bg +: {
             color: (COLOR_PRIMARY),
-            uniform border_radius: 4.0,
-            instance hover: 0.0,
-            instance selected: 0.0,
+            border_radius: uniform(4.0),
+            hover: instance(0.0),
+            selected: instance(0.0),
 
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+            pixel: fn() -> vec4 {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                 sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
 
                 if self.selected > 0.0 {
@@ -130,72 +127,72 @@ live_design! {
         }
         flow: Down
         spacing: 2.0
-        align: {y: 0.5}
+        align: Align{y: 0.5}
 
-        user_info = <View> {
+        user_info := View {
             width: Fill,
             height: Fit,
             flow: Right,
             spacing: 8.0
-            align: {y: 0.5}
+            align: Align{y: 0.5}
 
-            room_avatar = <Avatar> {
+            room_avatar := Avatar {
                 width: 24,
                 height: 24,
-                text_view = { text = { draw_text: {
-                    text_style: { font_size: 12.0 }
+                text_view: { text := Label { draw_text +: {
+                    text_style: theme.font_regular { font_size: 12.0 }
                 }}}
             }
 
-            room_mention = <Label> {
+            room_mention := Label {
                 height: Fit,
-                draw_text: {
+                draw_text +: {
                     color: #000,
-                    text_style: {font_size: 14.0}
+                    text_style: theme.font_regular {font_size: 14.0}
                 }
                 text: "Notify the entire room"
             }
 
-            filler = <FillerX> {}
+            filler := FillerX {}
         }
 
-        room_user_id = <Label> {
+        room_user_id := Label {
             height: Fit,
-            align: {y: 0.5},
-            draw_text: {
+            align: Align{y: 0.5},
+            draw_text +: {
                 color: #666,
-                text_style: {font_size: 12.0}
+                text_style: theme.font_regular {font_size: 12.0}
             }
             text: "@room"
         }
     }
 
     // Template for loading indicator when members are being fetched
-    LoadingIndicator = <View> {
+    mod.widgets.LoadingIndicator = View {
         width: Fill,
         height: 48,
-        margin: {left: 4, right: 4}
-        padding: {left: 8, right: 8, top: 8, bottom: 8},
+        margin: Inset{left: 4, right: 4}
+        padding: Inset{left: 8, right: 8, top: 8, bottom: 8},
         flow: Right,
         spacing: 8.0,
-        align: {x: 0.0, y: 0.5}
-        draw_bg: {
+        align: Align{x: 0.0, y: 0.5}
+        draw_bg +: {
             color: (COLOR_PRIMARY),
         }
 
-        loading_text = <Label> {
+        loading_text := Label {
             height: Fit,
-            draw_text: {
+            draw_text +: {
                 color: #666,
-                text_style: {font_size: 14.0}
+                text_style: theme.font_regular {font_size: 14.0}
             }
             text: "Loading members"
         }
 
-        loading_animation = <BouncingDots> {
+        loading_animation := BouncingDots {
             width: 60,
             height: 24,
-            draw_bg: {
+            draw_bg +: {
                 color: (COLOR_ROBRIX_PURPLE),
                 dot_radius: 2.0,
             }
@@ -203,58 +200,59 @@ live_design! {
     }
 
     // Template for no matches indicator when no users match the search
-    NoMatchesIndicator = <View> {
+    mod.widgets.NoMatchesIndicator = View {
         width: Fill,
         height: 48,
-        margin: {left: 4, right: 4}
-        padding: {left: 8, right: 8, top: 8, bottom: 8},
+        margin: Inset{left: 4, right: 4}
+        padding: Inset{left: 8, right: 8, top: 8, bottom: 8},
         flow: Right,
         spacing: 8.0,
-        align: {x: 0.0, y: 0.5}
-        draw_bg: {
+        align: Align{x: 0.0, y: 0.5}
+        draw_bg +: {
             color: (COLOR_PRIMARY),
         }
 
-        no_matches_text = <Label> {
+        no_matches_text := Label {
             height: Fit,
-            draw_text: {
+            draw_text +: {
                 color: #666,
-                text_style: {font_size: 14.0}
+                text_style: theme.font_regular {font_size: 14.0}
             }
             text: "No matching users found"
         }
     }
 
-    pub MentionableTextInput = {{MentionableTextInput}}<CommandTextInput> {
+    mod.widgets.MentionableTextInput = #(MentionableTextInput::register_widget(vm)) {
+
         width: Fill,
         height: Fit
         trigger: "@"
         inline_search: true
 
-        color_focus: (FOCUS_HOVER_COLOR),
-        color_hover: (FOCUS_HOVER_COLOR),
+        color_focus: (mod.widgets.FOCUS_HOVER_COLOR),
+        color_hover: (mod.widgets.FOCUS_HOVER_COLOR),
 
-        popup = {
+        popup := RoundedView {
             spacing: 0.0
             padding: 0.0
 
-            draw_bg: {
+            draw_bg +: {
                 color: (COLOR_SECONDARY),
             }
-            header_view = {
-                margin: {left: 4, right: 4}
-                draw_bg: {
+            header_view := View {
+                margin: Inset{left: 4, right: 4}
+                draw_bg +: {
                     color: (COLOR_ROBRIX_PURPLE),
                 }
-                header_label = {
-                    draw_text: {
+                header_label := Label {
+                    draw_text +: {
                         color: (COLOR_PRIMARY_DARKER),
                     }
                     text: "Users in this Room"
                 }
             }
 
-            list = {
+            list := mod.widgets.CommandTextInputList {
                 height: Fit
                 clip_y: true
                 spacing: 0.0
@@ -262,21 +260,21 @@ live_design! {
             }
         }
 
-        persistent = {
-            top = { height: 0 }
-            bottom = { height: 0 }
-            center = {
-                text_input = <RobrixTextInput> {
+        persistent := RoundedView {
+            top := View { height: 0 }
+            bottom := View { height: 0 }
+            center := RoundedView {
+                text_input := RobrixTextInput {
                     empty_text: "Start typing..."
                 }
             }
         }
 
         // Template for user list items in the mention popup
-        user_list_item: <UserListItem> {}
-        room_mention_list_item: <RoomMentionListItem> {}
-        loading_indicator: <LoadingIndicator> {}
-        no_matches_indicator: <NoMatchesIndicator> {}
+        user_list_item: mod.widgets.UserListItem {}
+        room_mention_list_item: mod.widgets.RoomMentionListItem {}
+        loading_indicator: mod.widgets.LoadingIndicator {}
+        no_matches_indicator: mod.widgets.NoMatchesIndicator {}
     }
 }
 
@@ -297,7 +295,7 @@ pub enum MentionableTextInputAction {
 }
 
 /// Widget that extends CommandTextInput with @mention capabilities
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct MentionableTextInput {
     /// Base command text input
     #[deref] cmd_text_input: CommandTextInput,
@@ -342,7 +340,7 @@ impl Widget for MentionableTextInput {
             .clone();
 
         if let Event::Actions(actions) = event {
-            let text_input_ref = self.cmd_text_input.text_input_ref();
+            let text_input_ref = self.cmd_text_input.text_input_ref(cx);
             let text_input_uid = text_input_ref.widget_uid();
             let text_input_area = text_input_ref.area();
             let has_focus = cx.has_key_focus(text_input_area);
@@ -355,9 +353,9 @@ impl Widget for MentionableTextInput {
             // Handle build items request
             if self.cmd_text_input.should_build_items(actions) {
                 if has_focus {
-                    let search_text = self.cmd_text_input.search_text().to_lowercase();
+                    let search_text = self.cmd_text_input.search_text(cx).to_lowercase();
                     self.update_user_list(cx, &search_text, scope);
-                } else if self.cmd_text_input.view(ids!(popup)).visible() {
+                } else if self.cmd_text_input.view(cx, ids!(popup)).visible() {
                     self.close_mention_popup(cx);
                 }
             }
@@ -385,7 +383,7 @@ impl Widget for MentionableTextInput {
                     if self.can_notify_room != *can_notify_room {
                         self.can_notify_room = *can_notify_room;
                         if self.is_searching && has_focus {
-                            let search_text = self.cmd_text_input.search_text().to_lowercase();
+                            let search_text = self.cmd_text_input.search_text(cx).to_lowercase();
                             self.update_user_list(cx, &search_text, scope);
                         } else {
                             self.redraw(cx);
@@ -395,7 +393,7 @@ impl Widget for MentionableTextInput {
             }
 
             // Close popup if focus is lost
-            if !has_focus && self.cmd_text_input.view(ids!(popup)).visible() {
+            if !has_focus && self.cmd_text_input.view(cx, ids!(popup)).visible() {
                 self.close_mention_popup(cx);
             }
         }
@@ -411,12 +409,12 @@ impl Widget for MentionableTextInput {
                 if !room_members.is_empty() {
                     // Members are now available, update the list
                     self.members_loading = false;
-                    let text_input = self.cmd_text_input.text_input(ids!(text_input));
+                    let text_input = self.cmd_text_input.text_input(cx, ids!(text_input));
                     let text_input_area = text_input.area();
                     let is_focused = cx.has_key_focus(text_input_area);
 
                     if is_focused {
-                        let search_text = self.cmd_text_input.search_text().to_lowercase();
+                        let search_text = self.cmd_text_input.search_text(cx).to_lowercase();
                         self.update_user_list(cx, &search_text, scope);
                     }
                 }
@@ -457,8 +455,8 @@ impl MentionableTextInput {
             // Members have been loaded, stop loading state
             self.members_loading = false;
             // Reset popup height to ensure proper calculation for user list
-            let popup = self.cmd_text_input.view(ids!(popup));
-            popup.apply_over(cx, live! { height: Fit });
+            let mut popup = self.cmd_text_input.view(cx, ids!(popup));
+            script_apply_eval!(cx, popup, { height: Fit });
         } else if members_are_empty && self.members_loading {
             // Still loading and members are empty - keep showing loading indicator
             return true;
@@ -482,10 +480,10 @@ impl MentionableTextInput {
         }
 
         let Some(ptr) = self.room_mention_list_item else { return false };
-        let room_mention_item = WidgetRef::new_from_ptr(cx, Some(ptr));
+        let room_mention_item = widget_ref_from_live_ptr(cx, Some(ptr));
         let mut room_avatar_shown = false;
 
-        let avatar_ref = room_mention_item.avatar(ids!(user_info.room_avatar));
+        let avatar_ref = room_mention_item.avatar(cx, ids!(user_info.room_avatar));
 
         // Get room avatar fallback text from room name (with automatic ID fallback)
         let room_label = room_props.room_name_id.to_string();
@@ -526,19 +524,20 @@ impl MentionableTextInput {
 
         // Apply layout and height styling based on device type
         let new_height = if is_desktop { DESKTOP_ITEM_HEIGHT } else { MOBILE_ITEM_HEIGHT };
+        let mut room_mention_item = room_mention_item;
         if is_desktop {
-            room_mention_item.apply_over(cx, live! {
-                height: (new_height),
-                flow: Right,
+            script_apply_eval!(cx, room_mention_item, {
+                height: #(new_height),
+                flow: Flow.Right,
             });
         } else {
-            room_mention_item.apply_over(cx, live! {
-                height: (new_height),
-                flow: Down,
+            script_apply_eval!(cx, room_mention_item, {
+                height: #(new_height),
+                flow: Flow.Down,
             });
         }
 
-        self.cmd_text_input.add_item(room_mention_item);
+        self.cmd_text_input.add_item(cx, room_mention_item);
         true
     }
 
@@ -601,37 +600,33 @@ impl MentionableTextInput {
 
         for (index, (display_name, member)) in matched_members.into_iter().take(user_items_limit).enumerate() {
             let Some(user_list_item_ptr) = self.user_list_item else { continue };
-            let item = WidgetRef::new_from_ptr(cx, Some(user_list_item_ptr));
+            let item = widget_ref_from_live_ptr(cx, Some(user_list_item_ptr));
 
-            item.label(ids!(user_info.username)).set_text(cx, &display_name);
+            item.label(cx, ids!(user_info.username)).set_text(cx, &display_name);
 
             // Use the full user ID string
             let user_id_str = member.user_id().as_str();
-            item.label(ids!(user_id)).set_text(cx, user_id_str);
+            item.label(cx, ids!(user_id)).set_text(cx, user_id_str);
 
             if is_desktop {
-                item.apply_over(
-                    cx,
-                    live!(
-                        flow: Right,
-                        height: (DESKTOP_ITEM_HEIGHT),
-                        align: {y: 0.5}
-                    ),
-                );
-                item.view(ids!(user_info.filler)).set_visible(cx, true);
+                let mut item_ref = item.clone();
+                script_apply_eval!(cx, item_ref, {
+                    flow: Flow.Right,
+                    height: #(DESKTOP_ITEM_HEIGHT),
+                    align: Align{y: 0.5}
+                });
+                item.view(cx, ids!(user_info.filler)).set_visible(cx, true);
             } else {
-                item.apply_over(
-                    cx,
-                    live!(
-                        flow: Down,
-                        height: (MOBILE_ITEM_HEIGHT),
-                        spacing: (MOBILE_USERNAME_SPACING)
-                    ),
-                );
-                item.view(ids!(user_info.filler)).set_visible(cx, false);
+                let mut item_ref = item.clone();
+                script_apply_eval!(cx, item_ref, {
+                    flow: Flow.Down,
+                    height: #(MOBILE_ITEM_HEIGHT),
+                    spacing: MOBILE_USERNAME_SPACING
+                });
+                item.view(cx, ids!(user_info.filler)).set_visible(cx, false);
             }
 
-            let avatar = item.avatar(ids!(user_info.avatar));
+            let avatar = item.avatar(cx, ids!(user_info.avatar));
             if let Some(mxc_uri) = member.avatar_url() {
                 match get_or_fetch_avatar(cx, &mxc_uri.to_owned()) {
                     AvatarCacheEntry::Loaded(avatar_data) => {
@@ -647,7 +642,7 @@ impl MentionableTextInput {
                 avatar.show_text(cx, None, None, &display_name);
             }
 
-            self.cmd_text_input.add_item(item.clone());
+            self.cmd_text_input.add_item(cx, item.clone());
             items_added += 1;
 
             // Set keyboard focus to the first item
@@ -662,22 +657,23 @@ impl MentionableTextInput {
 
     /// Update popup visibility and layout
     fn update_popup_visibility(&mut self, cx: &mut Cx, has_items: bool) {
-        let popup = self.cmd_text_input.view(ids!(popup));
+        let popup = self.cmd_text_input.view(cx, ids!(popup));
 
         if has_items {
             popup.set_visible(cx, true);
             if self.is_searching {
-                self.cmd_text_input.text_input_ref().set_key_focus(cx);
+                self.cmd_text_input.text_input_ref(cx).set_key_focus(cx);
             }
         } else if self.is_searching {
             // If we're searching but have no items, show "no matches" message
             // Keep the popup open so users can correct their search
             self.show_no_matches_indicator(cx);
             popup.set_visible(cx, true);
-            self.cmd_text_input.text_input_ref().set_key_focus(cx);
+            self.cmd_text_input.text_input_ref(cx).set_key_focus(cx);
         } else {
             // Only hide popup if we're not actively searching
-            popup.apply_over(cx, live! { height: Fit });
+            let mut popup = popup;
+            script_apply_eval!(cx, popup, { height: Fit });
             popup.set_visible(cx, false);
         }
     }
@@ -688,16 +684,16 @@ impl MentionableTextInput {
         // This is good practice to maintain signature consistency with other methods
         // and allow for future scope-based enhancements
 
-        let text_input_ref = self.cmd_text_input.text_input_ref();
+        let text_input_ref = self.cmd_text_input.text_input_ref(cx);
         let current_text = text_input_ref.text();
         let head = text_input_ref.borrow().map_or(0, |p| p.cursor().index);
 
         if let Some(start_idx) = self.current_mention_start_index {
-            let room_mention_label = selected.label(ids!(user_info.room_mention));
+            let room_mention_label = selected.label(cx, ids!(user_info.room_mention));
             let room_mention_text = room_mention_label.text();
-            let room_user_id_text = selected.label(ids!(room_user_id)).text();
+            let room_user_id_text = selected.label(cx, ids!(room_user_id)).text();
 
-            let is_room_mention = { room_mention_text == "Notify the entire room" && room_user_id_text == "@room" };
+            let is_room_mention = room_mention_text == "Notify the entire room" && room_user_id_text == "@room";
 
             let mention_to_insert = if is_room_mention {
                 // Always set to true, don't reset previously selected @room mentions
@@ -705,8 +701,8 @@ impl MentionableTextInput {
                 "@room ".to_string()
             } else {
                 // User selected a specific user
-                let username = selected.label(ids!(user_info.username)).text();
-                let user_id_str = selected.label(ids!(user_id)).text();
+                let username = selected.label(cx, ids!(user_info.username)).text();
+                let user_id_str = selected.label(cx, ids!(user_id)).text();
                 let Ok(user_id): Result<OwnedUserId, _> = user_id_str.clone().try_into() else {
                     log!("Failed to parse user_id: {}", user_id_str);
                     return;
@@ -756,7 +752,7 @@ impl MentionableTextInput {
             return;
         }
 
-        let cursor_pos = self.cmd_text_input.text_input_ref().borrow().map_or(0, |p| p.cursor().index);
+        let cursor_pos = self.cmd_text_input.text_input_ref(cx).borrow().map_or(0, |p| p.cursor().index);
 
         // Check if we're currently searching and the @ symbol was deleted
         if self.is_searching {
@@ -782,8 +778,8 @@ impl MentionableTextInput {
             ).to_lowercase();
 
             // Ensure header view is visible to prevent header disappearing during consecutive @mentions
-            let popup = self.cmd_text_input.view(ids!(popup));
-            let header_view = self.cmd_text_input.view(ids!(popup.header_view));
+            let popup = self.cmd_text_input.view(cx, ids!(popup));
+            let header_view = self.cmd_text_input.view(cx, ids!(popup.header_view));
             header_view.set_visible(cx, true);
 
             self.update_user_list(cx, &search_text, scope);
@@ -808,14 +804,14 @@ impl MentionableTextInput {
         let room_members = room_props.room_members.as_ref().unwrap();
 
         // Clear old list items, prepare to populate new list
-        self.cmd_text_input.clear_items();
+        self.cmd_text_input.clear_items(cx);
 
         if !self.is_searching {
             return;
         }
 
         let is_desktop = cx.display_context.is_desktop();
-        let max_visible_items = if is_desktop { 10 } else { 5 };
+        let max_visible_items: usize = if is_desktop { 10 } else { 5 };
         let mut items_added = 0;
 
         // 4. Try to add @room mention item
@@ -1000,60 +996,61 @@ impl MentionableTextInput {
     /// Shows the loading indicator when members are being fetched
     fn show_loading_indicator(&mut self, cx: &mut Cx) {
         // Clear any existing items
-        self.cmd_text_input.clear_items();
+        self.cmd_text_input.clear_items(cx);
 
         // Create loading indicator widget
         let Some(ptr) = self.loading_indicator else { return };
-        let loading_item = WidgetRef::new_from_ptr(cx, Some(ptr));
+        let loading_item = widget_ref_from_live_ptr(cx, Some(ptr));
 
         // Start the loading animation
-        loading_item.bouncing_dots(ids!(loading_animation)).start_animation(cx);
+        loading_item.bouncing_dots(cx, ids!(loading_animation)).start_animation(cx);
 
         // Add the loading indicator to the popup
-        self.cmd_text_input.add_item(loading_item);
+        self.cmd_text_input.add_item(cx, loading_item);
 
         // Setup popup dimensions for loading state
-        let popup = self.cmd_text_input.view(ids!(popup));
-        let header_view = self.cmd_text_input.view(ids!(popup.header_view));
+        let popup = self.cmd_text_input.view(cx, ids!(popup));
+        let header_view = self.cmd_text_input.view(cx, ids!(popup.header_view));
 
         // Ensure header is visible
         header_view.set_visible(cx, true);
 
         // Don't manually set popup height for loading - let it auto-size based on content
-        // This avoids conflicts with list = { height: Fill }
+        // This avoids conflicts with list: { height: Fill }
         popup.set_visible(cx, true);
 
         // Maintain text input focus
         if self.is_searching {
-            self.cmd_text_input.text_input_ref().set_key_focus(cx);
+            self.cmd_text_input.text_input_ref(cx).set_key_focus(cx);
         }
     }
 
     /// Shows the no matches indicator when no users match the search
     fn show_no_matches_indicator(&mut self, cx: &mut Cx) {
         // Clear any existing items
-        self.cmd_text_input.clear_items();
+        self.cmd_text_input.clear_items(cx);
 
         // Create no matches indicator widget
         let Some(ptr) = self.no_matches_indicator else { return };
-        let no_matches_item = WidgetRef::new_from_ptr(cx, Some(ptr));
+        let no_matches_item = widget_ref_from_live_ptr(cx, Some(ptr));
 
         // Add the no matches indicator to the popup
-        self.cmd_text_input.add_item(no_matches_item);
+        self.cmd_text_input.add_item(cx, no_matches_item);
 
         // Setup popup dimensions for no matches state
-        let popup = self.cmd_text_input.view(ids!(popup));
-        let header_view = self.cmd_text_input.view(ids!(popup.header_view));
+        let popup = self.cmd_text_input.view(cx, ids!(popup));
+        let header_view = self.cmd_text_input.view(cx, ids!(popup.header_view));
 
         // Ensure header is visible
         header_view.set_visible(cx, true);
 
         // Let popup auto-size based on content
-        popup.apply_over(cx, live! { height: Fit });
+        let mut popup = popup;
+        script_apply_eval!(cx, popup, { height: Fit });
 
         // Maintain text input focus so user can continue typing
         if self.is_searching {
-            self.cmd_text_input.text_input_ref().set_key_focus(cx);
+            self.cmd_text_input.text_input_ref(cx).set_key_focus(cx);
         }
     }
 
@@ -1064,11 +1061,11 @@ impl MentionableTextInput {
         self.members_loading = false; // Reset loading state when closing popup
 
         // Clear list items to avoid keeping old content when popup is shown again
-        self.cmd_text_input.clear_items();
+        self.cmd_text_input.clear_items(cx);
 
         // Get popup and header view references
-        let popup = self.cmd_text_input.view(ids!(popup));
-        let header_view = self.cmd_text_input.view(ids!(popup.header_view));
+        let popup = self.cmd_text_input.view(cx, ids!(popup));
+        let header_view = self.cmd_text_input.view(cx, ids!(popup.header_view));
 
         // Force hide header view - necessary when handling deletion operations
         // When backspace-deleting mentions, we want to completely hide the header
@@ -1078,7 +1075,8 @@ impl MentionableTextInput {
         popup.set_visible(cx, false);
 
         // Reset popup height
-        popup.apply_over(cx, live! { height: Fit });
+        let mut popup = popup;
+        script_apply_eval!(cx, popup, { height: Fit });
 
         // Ensure header view is reset to visible next time it's triggered
         // This will happen before update_user_list is called in handle_text_change
@@ -1088,13 +1086,13 @@ impl MentionableTextInput {
     }
 
     /// Returns the current text content
-    pub fn text(&self) -> String {
-        self.cmd_text_input.text_input_ref().text()
+    pub fn text(&self, cx: &Cx) -> String {
+        self.cmd_text_input.text_input_ref(cx).text()
     }
 
     /// Sets the text content
     pub fn set_text(&mut self, cx: &mut Cx, text: &str) {
-        self.cmd_text_input.text_input_ref().set_text(cx, text);
+        self.cmd_text_input.text_input_ref(cx).set_text(cx, text);
         self.redraw(cx);
     }
 
@@ -1115,14 +1113,14 @@ impl MentionableTextInput {
 }
 
 impl MentionableTextInputRef {
-    pub fn text(&self) -> String {
-        self.borrow().map_or_else(String::new, |inner| inner.text())
+    pub fn text(&self, cx: &Cx) -> String {
+        self.borrow().map_or_else(String::new, |inner| inner.text(cx))
     }
 
     /// Returns a reference to the inner `TextInput` widget.
-    pub fn text_input_ref(&self) -> TextInputRef {
+    pub fn text_input_ref(&self, cx: &Cx) -> TextInputRef {
         self.borrow()
-            .map(|inner| inner.cmd_text_input.text_input_ref())
+            .map(|inner| inner.cmd_text_input.text_input_ref(cx))
             .unwrap_or_default()
     }
 

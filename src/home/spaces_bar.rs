@@ -16,43 +16,39 @@ use crate::{
     home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, room_filter_input_bar::RoomFilterAction}, utils::{self, RoomNameId}
 };
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::shared::helpers::*;
-    use crate::shared::avatar::*;
 
     // The duration of the animation when showing/hiding the SpacesBar (in Mobile view mode only).
-    pub SPACES_BAR_ANIMATION_DURATION_SECS = 0.25
+    mod.widgets.SPACES_BAR_ANIMATION_DURATION_SECS = 0.25
 
     // An entry in the list of all spaces, which shown the Space's avatar and name.
-    SpacesBarEntry = {{SpacesBarEntry}}<RoundedView> {
+    mod.widgets.SpacesBarEntry = #(SpacesBarEntry::register_widget(vm)) {
         width: (NAVIGATION_TAB_BAR_SIZE - 5),
         height: (NAVIGATION_TAB_BAR_SIZE - 5),
         flow: Down
         padding: 5,
         margin: 3,
-        align: {x: 0.5, y: 0.5}
-        cursor: Hand
+        align: Align{x: 0.5, y: 0.5}
+        cursor: draw.MouseCursor.Hand
 
         show_bg: true
-        draw_bg: {
-            instance hover: 0.0
-            instance active: 0.0
+        draw_bg +: {
+            hover: instance(0.0)
+            active: instance(0.0)
 
-            color: #0000
-            uniform color_hover: (COLOR_NAVIGATION_TAB_BG_HOVER)
-            uniform color_active: (COLOR_NAVIGATION_TAB_BG_ACTIVE)
+            color: uniform(#0000)
+            color_hover: uniform((COLOR_NAVIGATION_TAB_BG_HOVER))
+            color_active: uniform((COLOR_NAVIGATION_TAB_BG_ACTIVE))
 
-            border_size: 0.0
-            border_color: #0000
-            uniform inset: vec4(0.0, 0.0, 0.0, 0.0)
-            border_radius: 4.0
+            border_size: uniform(0.0)
+            border_color: uniform(#0000)
+            inset: uniform(vec4(0.0))
+            border_radius: uniform(4.0)
 
-            fn get_color(self) -> vec4 {
+            get_color: fn() -> vec4 {
                 return mix(
                     mix(
                         self.color,
@@ -64,12 +60,12 @@ live_design! {
                 )
             }
 
-            fn get_border_color(self) -> vec4 {
+            get_border_color: fn() -> vec4 {
                 return self.border_color
             }
 
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+            pixel: fn() -> vec4 {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.box(
                     self.inset.x + self.border_size,
                     self.inset.y + self.border_size,
@@ -85,41 +81,41 @@ live_design! {
             }
         }
 
-        avatar = <Avatar> {
+        avatar := Avatar {
             width: 45, height: 45
             // If no avatar picture, use white text on a dark background.
-            text_view = {
-                draw_bg: {
+            text_view := View {
+                draw_bg +: {
                     background_color: (COLOR_FG_DISABLED),
                 }
-                text = { draw_text: {
-                    text_style: { font_size: 16.0 },
+                text := Label { draw_text +: {
+                    text_style: theme.font_regular { font_size: 16.0 },
                     color: (COLOR_PRIMARY),
                 } }
             }
         }
 
-        space_name = <Label> {
+        space_name := Label {
             width: Fill,
             // height: Fit
             height: 0,
-            flow: RightWrap, // do not wrap
+            flow: Flow.Right{wrap: true}, // do not wrap
             padding: 0,
-            align: {x: 0.5}
-            draw_text: {
-                instance active: 0.0
-                instance hover: 0.0
-                instance down: 0.0
+            align: Align{x: 0.5}
+            draw_text +: {
+                active: instance(0.0)
+                hover: instance(0.0)
+                down: instance(0.0)
 
                 color: (COLOR_NAVIGATION_TAB_FG)
-                uniform color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
-                uniform color_active: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
+                color_hover: uniform((COLOR_NAVIGATION_TAB_FG_HOVER))
+                color_active: uniform((COLOR_NAVIGATION_TAB_FG_ACTIVE))
 
-                // text_style: <THEME_FONT_BOLD>{font_size: 9}
-                text_style: <REGULAR_TEXT>{font_size: 9}
-                wrap: Word,
+                // text_style: theme.font_bold {font_size: 9}
+                text_style: REGULAR_TEXT {font_size: 9}
+                flow: Flow.Right{wrap: true},
 
-                fn get_color(self) -> vec4 {
+                get_color: fn() -> vec4 {
                     return mix(
                         mix(
                             self.color,
@@ -133,56 +129,56 @@ live_design! {
             }
         }
 
-        animator: {
-            hover = {
-                default: off
-                off = {
+        animator: Animator{
+            hover: {
+                default: @off
+                off: AnimatorState{
                     from: {all: Forward {duration: 0.15}}
                     apply: {
                         draw_bg: {down: [{time: 0.0, value: 0.0}], hover: 0.0}
-                        space_name = { draw_text: {down: [{time: 0.0, value: 0.0}], hover: 0.0} }
+                        space_name: { draw_text: {down: [{time: 0.0, value: 0.0}], hover: 0.0} }
                     }
                 }
-                on = {
+                on: AnimatorState{
                     from: {all: Snap}
                     apply: {
                         draw_bg: {down: [{time: 0.0, value: 0.0}], hover: 1.0}
-                        space_name = { draw_text: {down: [{time: 0.0, value: 0.0}], hover: 1.0} }
+                        space_name: { draw_text: {down: [{time: 0.0, value: 0.0}], hover: 1.0} }
                     }
                 }
-                down = {
+                down: AnimatorState{
                     from: {all: Forward {duration: 0.2}}
                     apply: {
                         draw_bg: {down: [{time: 0.0, value: 1.0}], hover: 1.0,}
-                        space_name = { draw_text: {down: [{time: 0.0, value: 1.0}], hover: 1.0,} }
+                        space_name: { draw_text: {down: [{time: 0.0, value: 1.0}], hover: 1.0,} }
                     }
                 }
             }
         }
     }
 
-    StatusLabel = <View> {
+    mod.widgets.StatusLabel = View {
         width: (NAVIGATION_TAB_BAR_SIZE),
         height: (NAVIGATION_TAB_BAR_SIZE),
-        align: { x: 0.5, y: 0.5 }
-        margin: {top: 9, left: 2, bottom: 5}
+        align: Align{ x: 0.5, y: 0.5 }
+        margin: Inset{top: 9, left: 2, bottom: 5}
         // padding: 5.0,
 
-        label = <Label> {
+        label := Label {
             padding: 0
             margin: 0
             width: Fill,
             height: Fill
-            align: { x: 0.5, y: 0.5 }
-            draw_text: {
-                wrap: Word,
+            align: Align{ x: 0.5, y: 0.5 }
+            draw_text +: {
+                flow: Flow.Right{wrap: true},
                 color: (MESSAGE_TEXT_COLOR),
-                text_style: <REGULAR_TEXT>{font_size: 9}
+                text_style: REGULAR_TEXT {font_size: 9}
             }
         }
     }
 
-    SpacesList = <PortalList> {
+    mod.widgets.SpacesListDesktop = PortalList {
         height: Fill,
         width: Fill,
         flow: Down,
@@ -190,50 +186,63 @@ live_design! {
 
         auto_tail: false, 
         max_pull_down: 0.0,
-        scroll_bar: {  // hide the scroll bar
+        scroll_bar: ScrollBar {  // hide the scroll bar
             bar_size: 0.0,
             min_handle_size: 0.0
         }
 
-        SpacesBarEntry = <SpacesBarEntry> {}
-        StatusLabel = <StatusLabel> {}
-        BottomFiller = <View> {
+        SpacesBarEntry := mod.widgets.SpacesBarEntry {}
+        StatusLabel := mod.widgets.StatusLabel {}
+        BottomFiller := View {
             width: (NAVIGATION_TAB_BAR_SIZE)
             height: (NAVIGATION_TAB_BAR_SIZE)
         }
     }
 
-    pub SpacesBar = {{SpacesBar}}<AdaptiveView> {
-        Desktop = {
-            align: {x: 0.5, y: 0.5}
+    mod.widgets.SpacesListMobile = PortalList {
+        height: Fill,
+        width: Fill,
+        flow: Right,
+        spacing: 0.0
+
+        auto_tail: false,
+        max_pull_down: 0.0,
+        scroll_bar: ScrollBar {  // hide the scroll bar
+            bar_size: 0.0,
+            min_handle_size: 0.0
+        }
+
+        SpacesBarEntry := mod.widgets.SpacesBarEntry {}
+        StatusLabel := mod.widgets.StatusLabel {}
+        BottomFiller := View {
+            width: (NAVIGATION_TAB_BAR_SIZE)
+            height: (NAVIGATION_TAB_BAR_SIZE)
+        }
+    }
+
+    mod.widgets.SpacesBar = #(SpacesBar::register_widget(vm)) {
+        Desktop := View {
+            align: Align{x: 0.5, y: 0.5}
             padding: 0,
             width: (NAVIGATION_TAB_BAR_SIZE), 
             height: Fill
 
             show_bg: false
 
-            <CachedWidget> {
-                spaces_list = <SpacesList> {
-                    // Note: this doesn't work properly, so this is re-overwritten
-                    // in the `SpacesBar::draw_walk()` function.
-                    flow: Down,
-                }
+            CachedWidget {
+                spaces_list := mod.widgets.SpacesListDesktop {}
             }
         }
 
-        Mobile = {
-            align: {x: 0.5, y: 0.5}
+        Mobile := View {
+            align: Align{x: 0.5, y: 0.5}
             width: Fill,
             height: (NAVIGATION_TAB_BAR_SIZE)
 
             show_bg: false
 
-            <CachedWidget> {
-                spaces_list = <SpacesList> {
-                    // Note: this doesn't work properly, so this is re-overwritten
-                    // in the `SpacesBar::draw_walk()` function.
-                    flow: Right,
-                }
+            CachedWidget {
+                spaces_list := mod.widgets.SpacesListMobile {}
             }
         }
     }
@@ -241,18 +250,20 @@ live_design! {
 
 
 /// Actions emitted by and handled by the SpacesBar widget (and its children).
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Clone, Debug, Default)]
 pub enum SpacesBarAction {
     /// The user primary-clicked/tapped a space entry in the SpacesBar.
     ButtonClicked { space_name_id: RoomNameId },
     /// The user secondary-clicked/long-pressed a space entry in the SpacesBar.
     ButtonSecondaryClicked { space_name_id: RoomNameId },
+    #[default]
     None,
 }
 
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget, Animator)]
 pub struct SpacesBarEntry {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
     #[animator] animator: Animator,
 
@@ -260,7 +271,7 @@ pub struct SpacesBarEntry {
 }
 
 impl Widget for SpacesBarEntry {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
         }
@@ -269,8 +280,7 @@ impl Widget for SpacesBarEntry {
         let emit_hover_in_action = |this: &Self, cx: &mut Cx| {
             let is_desktop = cx.display_context.is_desktop();
             cx.widget_action(
-                this.widget_uid(),
-                &scope.path,
+                this.widget_uid(), 
                 TooltipAction::HoverIn {
                     widget_rect: area.rect(cx),
                     text: this.space_name_id.as_ref().map_or(
@@ -297,8 +307,7 @@ impl Widget for SpacesBarEntry {
             Hit::FingerHoverOut(_) => {
                 self.animator_play(cx, ids!(hover.off));
                 cx.widget_action(
-                    self.widget_uid(),
-                    &scope.path,
+                    self.widget_uid(), 
                     TooltipAction::HoverOut,
                 );
             }
@@ -307,8 +316,7 @@ impl Widget for SpacesBarEntry {
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                     if let Some(space_name_id) = self.space_name_id.clone() {
                         cx.widget_action(
-                            self.widget_uid(),
-                            &scope.path,
+                            self.widget_uid(), 
                             SpacesBarAction::ButtonSecondaryClicked { space_name_id },
                         );
                     }
@@ -319,8 +327,7 @@ impl Widget for SpacesBarEntry {
                 emit_hover_in_action(self, cx);
                 if let Some(space_name_id) = self.space_name_id.clone() {
                     cx.widget_action(
-                        self.widget_uid(),
-                        &scope.path,
+                        self.widget_uid(), 
                         SpacesBarAction::ButtonSecondaryClicked { space_name_id },
                     );
                 }
@@ -329,8 +336,7 @@ impl Widget for SpacesBarEntry {
                 self.animator_play(cx, ids!(hover.on));
                 if let Some(space_name_id) = self.space_name_id.clone() {
                     cx.widget_action(
-                        self.widget_uid(),
-                        &scope.path,
+                        self.widget_uid(), 
                         SpacesBarAction::ButtonClicked { space_name_id },
                     );
                 }
@@ -350,10 +356,9 @@ impl Widget for SpacesBarEntry {
 impl SpacesBarEntry {
     fn set_metadata(&mut self, cx: &mut Cx, space_name_id: RoomNameId, is_selected: bool) {
         self.space_name_id = Some(space_name_id);
-        let active_val = is_selected as u8 as f64;
-        self.apply_over(cx, live!{
-            draw_bg: { active: (active_val) },
-            space_name = { draw_text: { active: (active_val) } }
+        let active = if is_selected { 1.0 } else { 0.0 };
+        script_apply_eval!(cx, self, {
+            draw_bg +: { active: #(active) }
         });
     }
 }
@@ -467,7 +472,7 @@ pub fn enqueue_spaces_list_update(update: SpacesListUpdate) {
 ///
 /// * In the "desktop" (wide) layout, this is a vertical bar on the left.
 /// * In the "mobile" (narrow) layout, this is a horizontal bar on the bottom.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct SpacesBar {
     #[deref] view: AdaptiveView,
 
@@ -545,25 +550,13 @@ impl Widget for SpacesBar {
             let portal_list_ref = widget_to_draw.as_portal_list();
             let Some(mut list) = portal_list_ref.borrow_mut() else { continue };
 
-            // AdaptiveView + CachedWidget does not properly handle DSL-level style overrides,
-            // so we must manually apply the different style choices here when drawing it.
-            if cx.display_context.is_desktop() {
-                list.apply_over(cx, live! {
-                    flow: Down,
-                });
-            } else {
-                list.apply_over(cx, live! {
-                    flow: Right,
-                });
-            }
-
             let len = self.displayed_spaces.len();
             if len == 0 {
                 list.set_item_range(cx, 0, 1);
                 while let Some(portal_list_index) = list.next_visible_item(cx) {
                     let item = if portal_list_index == 0 {
                         let item = list.item(cx, portal_list_index, id!(StatusLabel));
-                        item.label(ids!(label)).set_text(
+                        item.label(cx, ids!(label)).set_text(
                             cx,
                             if self.is_filtered {
                                 "Found no\nmatching spaces."
@@ -588,8 +581,8 @@ impl Widget for SpacesBar {
                         let item = list.item(cx, portal_list_index, id!(SpacesBarEntry));
                         // Populate the space name and avatar (although this isn't visible by default).
                         let space_name = space.space_name_id.to_string();
-                        item.label(ids!(space_name)).set_text(cx, &space_name);
-                        let avatar_ref = item.avatar(ids!(avatar));
+                        item.label(cx, ids!(space_name)).set_text(cx, &space_name);
+                        let avatar_ref = item.avatar(cx, ids!(avatar));
                         match &space.space_avatar {
                             FetchedRoomAvatar::Text(text) => {
                                 avatar_ref.show_text(cx, None, None, text);
@@ -626,7 +619,7 @@ impl Widget for SpacesBar {
                             2..100 => format!("Found {len}\n{descriptor} spaces."),
                             100..  => format!("Found 99+\n{descriptor} spaces."),
                         };
-                        item.label(ids!(label)).set_text(cx, &text);
+                        item.label(cx, ids!(label)).set_text(cx, &text);
                         item
                     }
                     else {
@@ -780,7 +773,7 @@ impl SpacesBar {
 
                 SpacesListUpdate::ScrollToSpace(space_id) => {
                     if let Some(index) = self.displayed_spaces.iter().position(|s| s == &space_id) {
-                        let portal_list = self.view.portal_list(ids!(spaces_list));
+                        let portal_list = self.view.portal_list(cx, ids!(spaces_list));
                         let speed = 40.0;
                         // Scroll to just above the space to make it more visible.
                         portal_list.smooth_scroll_to(cx, index.saturating_sub(1), speed, Some(10));
@@ -796,7 +789,7 @@ impl SpacesBar {
 
     /// Updates the lists of displayed spaces based on the current search filter.
     fn update_displayed_spaces(&mut self, cx: &mut Cx, keywords: &str) {
-        let portal_list = self.view.portal_list(ids!(spaces_list));
+        let portal_list = self.view.portal_list(cx, ids!(spaces_list));
         if keywords.is_empty() {
             // Reset each of the displayed_* lists to show all rooms.
             self.is_filtered = false;

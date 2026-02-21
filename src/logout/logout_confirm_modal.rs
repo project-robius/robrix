@@ -1,97 +1,96 @@
 use std::sync::Arc;
 
 use makepad_widgets::*;
+use crate::ApplyOverCompat;
 use tokio::sync::Notify;
-use crate::{shared::styles::COLOR_FG_DANGER_RED, sliding_sync::{submit_async_request, MatrixRequest}};
+use crate::sliding_sync::{submit_async_request, MatrixRequest};
 use super::logout_state_machine::is_logout_past_point_of_no_return;
 
-live_design! {
-    use link::theme::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::shared::icon_button::RobrixIconButton;
 
     // A modal dialog that displays logout confirmation
-    pub LogoutConfirmModal = {{LogoutConfirmModal}} {
+    mod.widgets.LogoutConfirmModal = #(LogoutConfirmModal::register_widget(vm)) {
         width: Fit,
         height: Fit,
 
-        <RoundedView> {
+        RoundedView {
             width: 400,
             height: Fit,
             flow: Down,
-            align: {x: 0.5},
+            align: Align{x: 0.5},
             padding: 25,
             spacing: 10,
 
             show_bg: true,
-            draw_bg: {
+            draw_bg +: {
                 color: #FFFFFF
             }
             margin: 0
 
-            <View> {
+            View {
                 width: Fill,
                 height: Fit,
                 flow: Right,
-                padding: {top: 0, bottom: 10},
-                align: {x: 0.5, y: 0.0},
+                padding: Inset{top: 0, bottom: 10},
+                align: Align{x: 0.5, y: 0.0},
 
-                title = <Label> {
+                title := Label {
                     text: "Confirm Logout",
-                    draw_text: {
-                            text_style: <TITLE_TEXT>{font_size: 18},
+                    draw_text +: {
+                            text_style: TITLE_TEXT {font_size: 18},
                             color: #000000
                     }
                 }
             }
 
-            message = <Label> {
+            message := Label {
                 width: Fill,
-                margin: {top: 10, bottom: 20},
-                draw_text: {
-                    text_style: <REGULAR_TEXT>{
+                margin: Inset{top: 10, bottom: 20},
+                draw_text +: {
+                    text_style: REGULAR_TEXT {
                         font_size: 14,
                     },
                     color: #000000,
-                    wrap: Word
+                    flow: Flow.Right{wrap: true}
                 },
                 text: "Are you sure you want to logout?"
             }
 
-            <View> {
+            View {
                 width: Fill,
                 height: Fit,
                 flow: Right,
-                align: {x: 0.5, y: 0.5},
+                align: Align{x: 0.5, y: 0.5},
                 spacing: 10.0,
 
-                cancel_button = <RobrixIconButton> {
+                cancel_button := RobrixIconButton {
                     width: Fit, height: Fit,
                     padding: 10,
-                    draw_bg: {
+                    draw_bg +: {
                         color: (COLOR_SECONDARY)
                     },
                     text: "Cancel"
-                    draw_text: {
+                    draw_text +: {
                         color: (COLOR_TEXT)
-                        text_style: <REGULAR_TEXT> {font_size: 14}
+                        text_style: REGULAR_TEXT {font_size: 14}
                     },
                 }
 
-                confirm_button = <RobrixIconButton> {
+                confirm_button := RobrixIconButton {
                     width: Fit, height: Fit,
                     padding: 10,
-                    draw_bg: { color: (COLOR_BG_DANGER_RED) },
-                    draw_icon: {
+                    draw_bg +: { color: (COLOR_BG_DANGER_RED) },
+                    draw_icon +: {
                             svg_file: (ICON_LOGOUT)
                             color: (COLOR_FG_DANGER_RED),
                     },
                     text: "Logout Now"
-                    draw_text: {
+                    draw_text +: {
                         color: (COLOR_FG_DANGER_RED)
-                        text_style: <REGULAR_TEXT> {font_size: 14}
+                        text_style: REGULAR_TEXT {font_size: 14}
                     },
                 }
             }
@@ -100,7 +99,7 @@ live_design! {
 }
 
 /// A modal dialog that displays logout confirmation.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct LogoutConfirmModal {
     #[deref] view: View,
     /// Whether the modal is in a final state, meaning the user can only click "Okay" to close it.
@@ -112,7 +111,7 @@ pub struct LogoutConfirmModal {
 }
 
 /// Actions handled by the parent widget of the [`LogoutConfirmModal`].
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Clone, Debug, Default)]
 pub enum LogoutConfirmModalAction {
     /// The modal should be opened
     Open,
@@ -124,6 +123,7 @@ pub enum LogoutConfirmModalAction {
         /// Whether the modal was dismissed by the user clicking an internal button.
         was_internal: bool,
     },
+    #[default]
     None,
 }
 
@@ -172,12 +172,13 @@ impl std::fmt::Debug for LogoutAction {
 
 /// Indicates which critical component was cleared during a failed logout attempt
 /// that reached the point of no return, requiring application restart.
-#[derive(Clone, Copy, Debug, DefaultNone)]
+#[derive(Clone, Copy, Debug, Default)]
 pub enum ClearedComponentType {
     /// The Matrix client was cleared during logout
     Client,
     /// The sync service was cleared during logout
     SyncService,
+    #[default]
     None,
 }
 
@@ -194,8 +195,8 @@ impl Widget for LogoutConfirmModal {
 
 impl WidgetMatchEvent for LogoutConfirmModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let cancel_button = self.button(ids!(cancel_button));
-        let confirm_button = self.button(ids!(confirm_button));
+        let cancel_button = self.button(cx, ids!(cancel_button));
+        let confirm_button = self.button(cx, ids!(confirm_button));
 
         let modal_dismissed = actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
         let cancel_clicked = cancel_button.clicked(actions);
@@ -245,7 +246,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
 
                 Some(LogoutAction::LogoutFailure(error)) => {
                     if is_logout_past_point_of_no_return() {
-                        self.label(ids!(title)).set_text(cx, "Logout error, please restart Robrix.");
+                        self.label(cx, ids!(title)).set_text(cx, "Logout error, please restart Robrix.");
                         self.set_message(cx, "The logout process encountered an error when communicating with the homeserver. Since your login session has been partially invalidated, Robrix must restart in order to continue to properly function.");
 
                         confirm_button.set_text(cx, "Restart now");
@@ -270,7 +271,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                 }
 
                 Some(LogoutAction::ApplicationRequiresRestart { .. }) => {
-                    self.label(ids!(title)).set_text(cx, "Logout error, please restart Robrix.");
+                    self.label(cx, ids!(title)).set_text(cx, "Logout error, please restart Robrix.");
                     self.set_message(cx, "Application is in an inconsistent state and needs to be restarted to continue.");
 
                     confirm_button.set_text(cx, "Restart now");
@@ -310,12 +311,12 @@ impl WidgetMatchEvent for LogoutConfirmModal {
 impl LogoutConfirmModal {
     /// Sets the message text displayed in the body of the modal.
     pub fn set_message(&mut self, cx: &mut Cx, message: &str) {
-        self.label(ids!(message)).set_text(cx, message);
+        self.label(cx, ids!(message)).set_text(cx, message);
     }
 
     fn reset_state(&mut self, cx: &mut Cx) {
-        let cancel_button = self.button(ids!(cancel_button));
-        let confirm_button = self.button(ids!(confirm_button));
+        let cancel_button = self.button(cx, ids!(cancel_button));
+        let confirm_button = self.button(cx, ids!(confirm_button));
         self.final_success = None;
         self.set_message(cx, "Are you sure you want to logout?");
         confirm_button.set_enabled(cx, true);

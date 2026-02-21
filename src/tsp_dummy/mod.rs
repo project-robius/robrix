@@ -18,61 +18,56 @@
 
 use makepad_widgets::*;
 
-live_design! {
-    link tsp_disabled
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
 
-    use crate::shared::styles::*;
-    use crate::shared::helpers::*;
-
-    pub TspSettingsScreen = <View> {
+    mod.widgets.TspSettingsScreen = View {
         width: Fill, height: Fit
         flow: Down
-        align: {x: 0}
+        align: Align{x: 0}
 
-        <TitleLabel> {
+        TitleLabel {
             text: "TSP Wallet Settings"
         }
 
-        <Label> {
+        Label {
             width: Fill, height: Fit
-            flow: RightWrap,
-            align: {x: 0}
-            margin: {top: 10, bottom: 10}
-            draw_text: {
-                wrap: Word,
+            flow: Flow.Right{wrap: true},
+            align: Align{x: 0}
+            margin: Inset{top: 10, bottom: 10}
+            draw_text +: {
+                flow: Flow.Right{wrap: true},
                 color: (MESSAGE_TEXT_COLOR),
-                text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
             }
             text: "TSP features are not included in this build.\nTo use TSP, build Robrix with the 'tsp' feature enabled."
         }
     }
 
-    pub CreateWalletModal = <View> {
+    mod.widgets.CreateWalletModal = View {
         visible: false,
     }
 
-    pub CreateDidModal = <View> {
+    mod.widgets.CreateDidModal = View {
         visible: false,
     }
 
-    pub TspVerifyUser = <View> {
+    mod.widgets.TspVerifyUser = View {
         height: 50
         width: Fill,
     }
 
-    pub TspVerificationModal = <View> {
+    mod.widgets.TspVerificationModal = View {
         visible: false
     }
 
-    pub TspSignAnycastCheckbox = <View> {
+    mod.widgets.TspSignAnycastCheckbox = View {
         visible: false
     }
 
-    pub TspSignIndicator = <View> {
+    mod.widgets.TspSignIndicator = View {
         visible: false
     }
 }

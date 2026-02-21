@@ -10,79 +10,76 @@ use matrix_sdk_ui::sync_service::State;
 
 use crate::{home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, shared::{image_viewer::{ImageViewerAction, ImageViewerError, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}};
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::shared::helpers::*;
 
-    pub RoomsListHeader = {{RoomsListHeader}} {
+    mod.widgets.RoomsListHeader = #(RoomsListHeader::register_widget(vm)) {
         width: Fill,
         height: 30,
-        padding: {bottom: 4}
+        padding: Inset{bottom: 4}
         flow: Right,
         visible: true,
-        align: {x: 0, y: 0.5}
+        align: Align{x: 0, y: 0.5}
         spacing: 3,
 
-        header_title = <Label> {
+        header_title := Label {
             width: Fill,
             height: Fit,
             flow: Right, // do not wrap
             text: "All Rooms"
-            draw_text: {
+            draw_text +: {
                 color: #x0
-                text_style: <TITLE_TEXT>{}
-                wrap: Ellipsis
+                text_style: TITLE_TEXT {}
+                flow: Flow.Right{wrap: true}
             }
         },
 
-        <View> {
+        View {
             width: Fit, height: Fit,
-            align: {x: 0, y: 0.5},
-            margin: {right: 3}
+            align: Align{x: 0, y: 0.5},
+            margin: Inset{right: 3}
             flow: Overlay,
 
-            loading_spinner = <LoadingSpinner> {
+            loading_spinner := LoadingSpinner {
                 visible: false,
                 width: 20,
                 height: 20,
-                draw_bg: {
+                draw_bg +: {
                     color: (COLOR_ACTIVE_PRIMARY)
                     border_size: 3.0,
                 }
             }
 
-            offline_icon = <View> {
+            offline_icon := View {
                 visible: false,
                 width: Fit, height: Fit,
-                <Icon> {
-                    draw_icon: {
+                Icon {
+                    draw_icon +: {
                         svg_file: (ICON_CLOUD_OFFLINE),
                         color: (COLOR_FG_DANGER_RED),
                     }
-                    icon_walk: {width: 35, height: Fit, margin: {left: -5, bottom: 4}}
+                    icon_walk: Walk{width: 35, height: Fit, margin: Inset{left: -5, bottom: 4}}
                 }
             }
 
-            synced_icon = <View> {
+            synced_icon := View {
                 visible: true,
                 width: Fit, height: Fit,
-                <Icon> {
-                    draw_icon: {
+                Icon {
+                    draw_icon +: {
                         svg_file: (ICON_CLOUD_CHECKMARK),
                         color: (COLOR_FG_ACCEPT_GREEN),
                     }
-                    icon_walk: {width: 25, height: Fit, margin: {left: 1, bottom: 2}}
+                    icon_walk: Walk{width: 25, height: Fit, margin: Inset{left: 1, bottom: 2}}
                 }
             }
         }
     }
 }
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct RoomsListHeader {
     #[deref] view: View,
 
@@ -100,9 +97,9 @@ impl Widget for RoomsListHeader {
                         if matches!(self.sync_state, State::Offline) {
                             continue;
                         }
-                        self.view.view(ids!(loading_spinner)).set_visible(cx, *is_syncing);
-                        self.view.view(ids!(synced_icon)).set_visible(cx, !*is_syncing);
-                        self.view.view(ids!(offline_icon)).set_visible(cx, false);
+                        self.view.view(cx, ids!(loading_spinner)).set_visible(cx, *is_syncing);
+                        self.view.view(cx, ids!(synced_icon)).set_visible(cx, !*is_syncing);
+                        self.view.view(cx, ids!(offline_icon)).set_visible(cx, false);
                         self.redraw(cx);
                         continue;
                     }
@@ -111,9 +108,9 @@ impl Widget for RoomsListHeader {
                             continue;
                         }
                         if matches!(new_state, State::Offline) {
-                            self.view.view(ids!(loading_spinner)).set_visible(cx, false);
-                            self.view.view(ids!(synced_icon)).set_visible(cx, false);
-                            self.view.view(ids!(offline_icon)).set_visible(cx, true);
+                            self.view.view(cx, ids!(loading_spinner)).set_visible(cx, false);
+                            self.view.view(cx, ids!(synced_icon)).set_visible(cx, false);
+                            self.view.view(cx, ids!(offline_icon)).set_visible(cx, true);
                             enqueue_popup_notification(
                                 "Cannot reach the Matrix homeserver. Please check your connection.",
                                 PopupKind::Error,
@@ -130,7 +127,7 @@ impl Widget for RoomsListHeader {
                 }
 
                 if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
-                    let header_title = self.view.label(ids!(header_title));
+                    let header_title = self.view.label(cx, ids!(header_title));
                     match tab {
                         SelectedTab::Space { space_name_id } => {
                             header_title.set_text(cx, &space_name_id.to_string());

@@ -13,27 +13,22 @@ use super::room_screen::MessageAction;
 const BUTTON_HEIGHT: f64 = 35.0; // KEEP IN SYNC WITH BUTTON_HEIGHT BELOW
 const MENU_WIDTH: f64 = 215.0;   // KEEP IN SYNC WITH MENU_WIDTH BELOW
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::helpers::*;
-    use crate::shared::styles::*;
-    use crate::shared::avatar::*;
-    use crate::shared::icon_button::*;
 
-    BUTTON_HEIGHT = 35  // KEEP IN SYNC WITH BUTTON_HEIGHT ABOVE
-    MENU_WIDTH = 215    // KEEP IN SYNC WITH MENU_WIDTH ABOVE
+    mod.widgets.BUTTON_HEIGHT = 35  // KEEP IN SYNC WITH BUTTON_HEIGHT ABOVE
+    mod.widgets.MENU_WIDTH = 215    // KEEP IN SYNC WITH MENU_WIDTH ABOVE
 
-    ContextMenuButton = <RobrixIconButton> {
-        height: (BUTTON_HEIGHT)
+    mod.widgets.ContextMenuButton = RobrixIconButton {
+        height: (mod.widgets.BUTTON_HEIGHT)
         width: Fill,
         margin: 0,
-        icon_walk: {width: 16, height: 16, margin: {right: 3}}
+        icon_walk: Walk{width: 16, height: 16, margin: Inset{right: 3}}
     }
 
-    pub NewMessageContextMenu = {{NewMessageContextMenu}} {
+    mod.widgets.NewMessageContextMenu = #(NewMessageContextMenu::register_widget(vm)) {
         visible: false,
         flow: Overlay,
         width: Fill,
@@ -41,26 +36,26 @@ live_design! {
         cursor: Default,
         // Align to top-left such that our coordinate adjustment
         // when showing this menu pane will work correctly.
-        align: {x: 0, y: 0}
+        align: Align{x: 0, y: 0}
 
         // Show a slightly darkened translucent background to make the menu stand out.
         show_bg: true
-        draw_bg: {
-            fn pixel(self) -> vec4 {
+        draw_bg +: {
+            pixel: fn() -> vec4 {
                 return vec4(0., 0., 0., 0.3)
             }
         }
 
-        main_content = <RoundedView> {
+        main_content := RoundedView {
             flow: Down
-            width: (MENU_WIDTH),
+            width: (mod.widgets.MENU_WIDTH),
             height: Fit,
             padding: 10
             spacing: 0,
-            align: {x: 0, y: 0}
+            align: Align{x: 0, y: 0}
 
             show_bg: true
-            draw_bg: {
+            draw_bg +: {
                 color: #fff
                 border_radius: 5.0
                 border_size: 0.5
@@ -68,130 +63,130 @@ live_design! {
             }
 
             // Shows either the "Add Reaction" button or a reaction text input.
-            react_view = <View> {
+            react_view := View {
                 flow: Overlay
-                height: (BUTTON_HEIGHT)
-                align: {y: 0.5}
-                react_button = <ContextMenuButton> {
-                    draw_icon: { svg_file: (ICON_ADD_REACTION) }
+                height: (mod.widgets.BUTTON_HEIGHT)
+                align: Align{y: 0.5}
+                react_button := mod.widgets.ContextMenuButton {
+                    draw_icon +: { svg_file: (ICON_ADD_REACTION) }
                     text: "Add Reaction"
                 }
 
-                reaction_input_view = <View> {
-                    width: Fill,
-                    height: (BUTTON_HEIGHT)
-                    align: {y: 0.5}
+                    reaction_input_view := View {
+                        width: Fill,
+                        height: (mod.widgets.BUTTON_HEIGHT)
+                    align: Align{y: 0.5}
                     flow: Right,
                     visible: false, // will be shown once the react_button is clicked
 
-                    reaction_text_input = <RobrixTextInput> {
+                    reaction_text_input := RobrixTextInput {
                         width: Fill,
                         height: Fit,
-                        align: {x: 0, y: 0.5}
+                        align: Align{x: 0, y: 0.5}
                         empty_text: "Enter reaction..."
                         flow: Right, // do not wrap
-                        draw_text: {
+                        draw_text +: {
                             // TODO: we want the TextInput flow to show all text
                             // within the single-line box by scrolling horizontally
                             // when the text is too long, upon a user typing/pasting
                             // or navigating with the mouse or arrow keys.
                             // However, makepad doesn't yet support this feature,
                             // so Ellipsis is the closest we can get.
-                            wrap: Ellipsis,
+                            flow: Flow.Right{wrap: true},
                         }
                     }
-                    reaction_send_button = <RobrixIconButton> {
-                        height: (BUTTON_HEIGHT)
-                        align: {x: 0.5, y: 0.5}
-                        padding: {left: 10, right: 10, top: 8, bottom: 8}
+                    reaction_send_button := RobrixIconButton {
+                        height: (mod.widgets.BUTTON_HEIGHT)
+                        align: Align{x: 0.5, y: 0.5}
+                        padding: Inset{left: 10, right: 10, top: 8, bottom: 8}
                         spacing: 0,
-                        draw_icon: {
+                        draw_icon +: {
                             svg_file: (ICON_SEND)
                             color: (COLOR_FG_ACCEPT_GREEN),
                         }
-                        icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                        icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
 
-                        draw_bg: {
+                        draw_bg +: {
                             border_color: (COLOR_FG_ACCEPT_GREEN),
                             color: (COLOR_BG_ACCEPT_GREEN)
                         }
                         text: ""
-                        draw_text:{
+                        draw_text +: {
                             color: (COLOR_FG_ACCEPT_GREEN),
                         }
                     }
                 }
             }
 
-            reply_button = <ContextMenuButton> {
-                draw_icon: { svg_file: (ICON_REPLY) }
-                icon_walk: { margin: {top: 1, right: 3}}
+            reply_button := mod.widgets.ContextMenuButton {
+                draw_icon +: { svg_file: (ICON_REPLY) }
+                icon_walk: Walk{ margin: Inset{top: 1, right: 3}}
                 text: "Reply"
             }
 
-            divider_after_react_reply = <LineH> {
-                margin: {top: 3, bottom: 3}
+            divider_after_react_reply := LineH {
+                margin: Inset{top: 3, bottom: 3}
                 width: Fill,
             }
 
-            edit_message_button = <ContextMenuButton> {
-                draw_icon: { svg_file: (ICON_EDIT) }
-                icon_walk: { margin: {top: -3, right: 3} }
+            edit_message_button := mod.widgets.ContextMenuButton {
+                draw_icon +: { svg_file: (ICON_EDIT) }
+                icon_walk: Walk{ margin: Inset{top: -3, right: 3} }
                 text: "Edit Message"
             }
 
             // TODO: check if the current user is allowed to pin/unpin messages:
             //       <https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_base/struct.RoomMember.html#method.can_pin_or_unpin_event>
-            pin_button = <ContextMenuButton> {
-                draw_icon: { svg_file: (ICON_PIN) }
+            pin_button := mod.widgets.ContextMenuButton {
+                draw_icon +: { svg_file: (ICON_PIN) }
                 text: "" // set dynamically to "Pin Message" or "Unpin Message"
             }
 
-            copy_text_button = <ContextMenuButton> {
-                draw_icon: { svg_file: (ICON_COPY) }
+            copy_text_button := mod.widgets.ContextMenuButton {
+                draw_icon +: { svg_file: (ICON_COPY) }
                 text: "Copy Text"
             }
 
-            copy_html_button = <ContextMenuButton> {
-                draw_icon: { svg_file: (ICON_HTML_FILE) }
-                icon_walk: { margin: {left: 1.5, right: 1.5} }
+            copy_html_button := mod.widgets.ContextMenuButton {
+                draw_icon +: { svg_file: (ICON_HTML_FILE) }
+                icon_walk: Walk{ margin: Inset{left: 1.5, right: 1.5} }
                 text: "Copy Text as HTML"
             }
 
-            copy_link_to_message_button = <ContextMenuButton> {
-                draw_icon: { svg_file: (ICON_LINK) }
+            copy_link_to_message_button := mod.widgets.ContextMenuButton {
+                draw_icon +: { svg_file: (ICON_LINK) }
                 text: "Copy Link to Message"
             }
 
-            view_source_button = <ContextMenuButton> {
-                draw_icon: { svg_file: (ICON_VIEW_SOURCE) }
-                icon_walk: { margin: {top: 6, right: 3} }
+            view_source_button := mod.widgets.ContextMenuButton {
+                draw_icon +: { svg_file: (ICON_VIEW_SOURCE) }
+                icon_walk: Walk{ margin: Inset{top: 6, right: 3} }
                 text: "View Source"
             }
 
-            jump_to_related_button = <ContextMenuButton> {
-                draw_icon: { svg_file: (ICON_JUMP) }
+            jump_to_related_button := mod.widgets.ContextMenuButton {
+                draw_icon +: { svg_file: (ICON_JUMP) }
                 text: "Jump to Related Event"
             }
 
-            divider_before_report_delete = <LineH> {
-                margin: {top: 3, bottom: 3}
+            divider_before_report_delete := LineH {
+                margin: Inset{top: 3, bottom: 3}
                 width: Fill,
             }
 
-            // report_button = <ContextMenuButton> {
-            //     draw_icon: {
+            // report_button = ContextMenuButton {
+            //     draw_icon +: {
             //         svg_file: (ICON_TRASH) // TODO: ICON_REPORT/WARNING/FLAG
             //         color: (COLOR_FG_DANGER_RED),
             //     }
-            //     icon_walk: { margin: {left: -2, right: 3} }
+            //     icon_walk: Walk{ margin: Inset{left: -2, right: 3} }
             //
-            //     draw_bg: {
+            //     draw_bg +: {
             //         border_color: (COLOR_FG_DANGER_RED),
             //         color: (COLOR_BG_DANGER_RED)
             //     }
             //     text: "Report"
-            //     draw_text:{
+            //     draw_text +: {
             //         color: (COLOR_FG_DANGER_RED),
             //     }
             // }
@@ -201,17 +196,17 @@ live_design! {
             //       The caller needs to use `can_redact_own()` or `can_redact_other()`:
             //       https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_base/struct.RoomMember.html#method.can_redact_own
 
-            delete_button = <ContextMenuButton> {
-                draw_icon: {
+            delete_button := mod.widgets.ContextMenuButton {
+                draw_icon +: {
                     svg_file: (ICON_TRASH)
                     color: (COLOR_FG_DANGER_RED),
                 }
-                draw_bg: {
+                draw_bg +: {
                     border_color: (COLOR_FG_DANGER_RED),
                     color: (COLOR_BG_DANGER_RED)
                 }
                 text: "Delete"
-                draw_text:{
+                draw_text +: {
                     color: (COLOR_FG_DANGER_RED),
                 }
             }
@@ -304,7 +299,7 @@ impl MessageDetails {
     }
 }
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct NewMessageContextMenu {
     #[deref] view: View,
     #[rust] details: Option<MessageDetails>,
@@ -335,7 +330,7 @@ impl Widget for NewMessageContextMenu {
             || match event.hits_with_capture_overload(cx, area, true) {
                 Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
                 Hit::FingerDown(fde) => {
-                    let reaction_text_input = self.view.text_input(ids!(reaction_input_view.reaction_text_input));
+                    let reaction_text_input = self.view.text_input(cx, ids!(reaction_input_view.reaction_text_input));
                     if reaction_text_input.area().rect(cx).contains(fde.abs) {
                         reaction_text_input.set_key_focus(cx);
                     } else {
@@ -344,7 +339,7 @@ impl Widget for NewMessageContextMenu {
                     false
                 }
                 Hit::FingerUp(fue) if fue.is_over => {
-                    !self.view(ids!(main_content)).area().rect(cx).contains(fue.abs)
+                    !self.view(cx, ids!(main_content)).area().rect(cx).contains(fue.abs)
                 }
                 Hit::FingerScroll(_) => true,
                 _ => false,
@@ -360,18 +355,17 @@ impl Widget for NewMessageContextMenu {
 }
 
 impl WidgetMatchEvent for NewMessageContextMenu {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         let Some(details) = self.details.as_ref() else { return };
         let mut close_menu = false;
 
-        let reaction_text_input = self.view.text_input(ids!(reaction_input_view.reaction_text_input));
-        let reaction_send_button = self.view.button(ids!(reaction_input_view.reaction_send_button));
+        let reaction_text_input = self.view.text_input(cx, ids!(reaction_input_view.reaction_text_input));
+        let reaction_send_button = self.view.button(cx, ids!(reaction_input_view.reaction_send_button));
         if reaction_send_button.clicked(actions)
             || reaction_text_input.returned(actions).is_some()
         {
             cx.widget_action(
-                details.room_screen_widget_uid,
-                &scope.path,
+                details.room_screen_widget_uid, 
                 MessageAction::React {
                     details: details.clone(),
                     reaction: reaction_text_input.text(),
@@ -382,88 +376,79 @@ impl WidgetMatchEvent for NewMessageContextMenu {
         else if reaction_text_input.escaped(actions) {
             close_menu = true;
         }
-        else if self.button(ids!(react_button)).clicked(actions) {
+        else if self.button(cx, ids!(react_button)).clicked(actions) {
             // Show a box to allow the user to input the reaction.
             // In the future, we'll show an emoji chooser.
-            self.view.button(ids!(react_button)).set_visible(cx, false);
-            self.view.view(ids!(reaction_input_view)).set_visible(cx, true);
-            self.text_input(ids!(reaction_input_view.reaction_text_input)).set_key_focus(cx);
+            self.view.button(cx, ids!(react_button)).set_visible(cx, false);
+            self.view.view(cx, ids!(reaction_input_view)).set_visible(cx, true);
+            self.text_input(cx, ids!(reaction_input_view.reaction_text_input)).set_key_focus(cx);
             self.redraw(cx);
             close_menu = false;
         }
-        else if self.button(ids!(reply_button)).clicked(actions) {
+        else if self.button(cx, ids!(reply_button)).clicked(actions) {
             cx.widget_action(
-                details.room_screen_widget_uid,
-                &scope.path,
+                details.room_screen_widget_uid, 
                 MessageAction::Reply(details.clone()),
             );
             close_menu = true;
         }
-        else if self.button(ids!(edit_message_button)).clicked(actions) {
+        else if self.button(cx, ids!(edit_message_button)).clicked(actions) {
             cx.widget_action(
-                details.room_screen_widget_uid,
-                &scope.path,
+                details.room_screen_widget_uid, 
                 MessageAction::Edit(details.clone()),
             );
             close_menu = true;
         }
-        else if self.button(ids!(pin_button)).clicked(actions) {
+        else if self.button(cx, ids!(pin_button)).clicked(actions) {
             if details.abilities.contains(MessageAbilities::CanPin) {
                 cx.widget_action(
-                    details.room_screen_widget_uid,
-                    &scope.path,
+                    details.room_screen_widget_uid, 
                     MessageAction::Pin(details.clone()),
                 );
             } else if details.abilities.contains(MessageAbilities::CanUnpin) {
                 cx.widget_action(
-                    details.room_screen_widget_uid,
-                    &scope.path,
+                    details.room_screen_widget_uid, 
                     MessageAction::Unpin(details.clone()),
                 );
             }
             close_menu = true;
         }
-        else if self.button(ids!(copy_text_button)).clicked(actions) {
+        else if self.button(cx, ids!(copy_text_button)).clicked(actions) {
             cx.widget_action(
-                details.room_screen_widget_uid,
-                &scope.path,
+                details.room_screen_widget_uid, 
                 MessageAction::CopyText(details.clone()),
             );
             close_menu = true;
         }
-        else if self.button(ids!(copy_html_button)).clicked(actions) {
+        else if self.button(cx, ids!(copy_html_button)).clicked(actions) {
             cx.widget_action(
-                details.room_screen_widget_uid,
-                &scope.path,
+                details.room_screen_widget_uid, 
                 MessageAction::CopyHtml(details.clone()),
             );
             close_menu = true;
         }
-        else if self.button(ids!(copy_link_to_message_button)).clicked(actions) {
+        else if self.button(cx, ids!(copy_link_to_message_button)).clicked(actions) {
             cx.widget_action(
-                details.room_screen_widget_uid,
-                &scope.path,
+                details.room_screen_widget_uid, 
                 MessageAction::CopyLink(details.clone()),
             );
             close_menu = true;
         }
-        else if self.button(ids!(view_source_button)).clicked(actions) {
+        else if self.button(cx, ids!(view_source_button)).clicked(actions) {
             cx.widget_action(
-                details.room_screen_widget_uid,
-                &scope.path,
+                details.room_screen_widget_uid, 
                 MessageAction::ViewSource(details.clone()),
             );
             close_menu = true;
         }
-        else if self.button(ids!(jump_to_related_button)).clicked(actions) {
+        else if self.button(cx, ids!(jump_to_related_button)).clicked(actions) {
             cx.widget_action(
-                details.room_screen_widget_uid,
-                &scope.path,
+                details.room_screen_widget_uid, 
                 MessageAction::JumpToRelated(details.clone()),
             );
             close_menu = true;
         }
-        // else if self.button(ids!(report_button)).clicked(actions) {
+        // else if self.button(cx, ids!(report_button)).clicked(actions) {
         //     cx.widget_action(
         //         details.room_screen_widget_uid,
         //         &scope.path,
@@ -475,10 +460,9 @@ impl WidgetMatchEvent for NewMessageContextMenu {
         //     );
         //    close_menu = true;
         // }
-        else if self.button(ids!(delete_button)).clicked(actions) {
+        else if self.button(cx, ids!(delete_button)).clicked(actions) {
             cx.widget_action(
-                details.room_screen_widget_uid,
-                &scope.path,
+                details.room_screen_widget_uid, 
                 MessageAction::Redact {
                     details: details.clone(),
                     // TODO: show a Modal to confirm deletion, and get the reason.
@@ -521,17 +505,17 @@ impl NewMessageContextMenu {
     fn set_button_visibility(&mut self, cx: &mut Cx) -> f64 {
         let Some(details) = self.details.as_ref() else { return 0.0 };
 
-        let react_button = self.view.button(ids!(react_button));
-        let reply_button = self.view.button(ids!(reply_button));
-        let edit_button = self.view.button(ids!(edit_message_button));
-        let pin_button = self.view.button(ids!(pin_button));
-        let copy_text_button = self.view.button(ids!(copy_text_button));
-        let copy_html_button = self.view.button(ids!(copy_html_button));
-        let copy_link_button = self.view.button(ids!(copy_link_to_message_button));
-        let view_source_button = self.view.button(ids!(view_source_button));
-        let jump_to_related_button = self.view.button(ids!(jump_to_related_button));
-        // let report_button = self.view.button(ids!(report_button));
-        let delete_button = self.view.button(ids!(delete_button));
+        let react_button = self.view.button(cx, ids!(react_button));
+        let reply_button = self.view.button(cx, ids!(reply_button));
+        let edit_button = self.view.button(cx, ids!(edit_message_button));
+        let pin_button = self.view.button(cx, ids!(pin_button));
+        let copy_text_button = self.view.button(cx, ids!(copy_text_button));
+        let copy_html_button = self.view.button(cx, ids!(copy_html_button));
+        let copy_link_button = self.view.button(cx, ids!(copy_link_to_message_button));
+        let view_source_button = self.view.button(cx, ids!(view_source_button));
+        let jump_to_related_button = self.view.button(cx, ids!(jump_to_related_button));
+        // let report_button = self.view.button(cx, ids!(report_button));
+        let delete_button = self.view.button(cx, ids!(delete_button));
 
         // Determine which buttons should be shown.
         // Note that some buttons are always enabled:
@@ -551,10 +535,10 @@ impl NewMessageContextMenu {
         let show_divider_before_report_delete = show_delete; // || show_report;
 
         // Actually set the buttons' visibility.
-        self.view.view(ids!(react_view)).set_visible(cx, show_react);
+        self.view.view(cx, ids!(react_view)).set_visible(cx, show_react);
         react_button.set_visible(cx, show_react);
         reply_button.set_visible(cx, show_reply_to);
-        self.view.view(ids!(divider_after_react_reply)).set_visible(cx, show_divider_after_react_reply);
+        self.view.view(cx, ids!(divider_after_react_reply)).set_visible(cx, show_divider_after_react_reply);
         edit_button.set_visible(cx, show_edit);
         if details.abilities.contains(MessageAbilities::CanPin) {
             pin_button.set_text(cx, "Pin Message");
@@ -568,7 +552,7 @@ impl NewMessageContextMenu {
         pin_button.set_visible(cx, show_pin);
         copy_html_button.set_visible(cx, show_copy_html);
         jump_to_related_button.set_visible(cx, show_jump_to_related);
-        self.view.view(ids!(divider_before_report_delete)).set_visible(cx, show_divider_before_report_delete);
+        self.view.view(cx, ids!(divider_before_report_delete)).set_visible(cx, show_divider_before_report_delete);
         // report_button.set_visible(cx, show_report);
         delete_button.set_visible(cx, show_delete);
 
@@ -586,8 +570,8 @@ impl NewMessageContextMenu {
         delete_button.reset_hover(cx);
 
         // Reset reaction input view stuff.
-        self.view.view(ids!(reaction_input_view)).set_visible(cx, false); // hide until the react_button is clicked
-        self.text_input(ids!(reaction_input_view.reaction_text_input)).set_text(cx, "");
+        self.view.view(cx, ids!(reaction_input_view)).set_visible(cx, false); // hide until the react_button is clicked
+        self.text_input(cx, ids!(reaction_input_view.reaction_text_input)).set_text(cx, "");
 
         self.redraw(cx);
 

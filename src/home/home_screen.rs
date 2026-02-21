@@ -2,38 +2,27 @@ use makepad_widgets::*;
 
 use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, settings::settings_screen::SettingsScreenWidgetRefExt};
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::home::main_mobile_ui::MainMobileUI;
-    use crate::home::rooms_sidebar::RoomsSideBar;
-    use crate::home::navigation_tab_bar::NavigationTabBar;
-    use crate::home::search_messages::*;
-    use crate::home::spaces_bar::*;
-    use crate::home::add_room::*;
-    use crate::shared::styles::*;
-    use crate::shared::room_filter_input_bar::RoomFilterInputBar;
-    use crate::home::main_desktop_ui::MainDesktopUI;
-    use crate::settings::settings_screen::SettingsScreen;
 
     // Defines the total height of the StackNavigationView's header.
     // This has to be set in multiple places because of how StackNavigation
     // uses an Overlay view internally.
-    STACK_VIEW_HEADER_HEIGHT = 75
+    mod.widgets.STACK_VIEW_HEADER_HEIGHT = 75
 
-    StackNavigationWrapper = {{StackNavigationWrapper}} {
-        view_stack = <StackNavigation> {}
+    mod.widgets.StackNavigationWrapper = #(StackNavigationWrapper::register_widget(vm)) {
+        view_stack := StackNavigation {}
     }
 
     // A wrapper view around the SpacesBar that lets us show/hide it via animation.
-    SpacesBarWrapper = {{SpacesBarWrapper}}<RoundedShadowView> {
+    mod.widgets.SpacesBarWrapper = #(SpacesBarWrapper::register_widget(vm)) {
         width: Fill,
         height: (NAVIGATION_TAB_BAR_SIZE)
-        margin: {left: 4, right: 4}
+        margin: Inset{left: 4, right: 4}
         show_bg: true
-        draw_bg: {
+        draw_bg +: {
             color: (COLOR_PRIMARY_DARKER),
             border_radius: 4.0,
             border_size: 0.0
@@ -42,19 +31,19 @@ live_design! {
             shadow_offset: vec2(1.0, 0.0),
         }
 
-        <CachedWidget> {
-            root_spaces_bar = <SpacesBar> {}
+        CachedWidget {
+            root_spaces_bar := mod.widgets.SpacesBar {}
         }
 
-        animator: {
-            spaces_bar_animator = {
-                default: hide,
-                show = {
-                    from: { all: Forward { duration: (SPACES_BAR_ANIMATION_DURATION_SECS) } }
+        animator: Animator{
+            spaces_bar_animator: {
+                default: @hide
+                show: AnimatorState{
+                    from: { all: Forward { duration: (mod.widgets.SPACES_BAR_ANIMATION_DURATION_SECS) } }
                     apply: { height: (NAVIGATION_TAB_BAR_SIZE),  draw_bg: { shadow_color: #x00000055 } }
                 }
-                hide = {
-                    from: { all: Forward { duration: (SPACES_BAR_ANIMATION_DURATION_SECS) } }
+                hide: AnimatorState{
+                    from: { all: Forward { duration: (mod.widgets.SPACES_BAR_ANIMATION_DURATION_SECS) } }
                     apply: { height: 0,  draw_bg: { shadow_color: #x00000000 } }
                 }
             }
@@ -64,136 +53,136 @@ live_design! {
     // The home screen widget contains the main content:
     // rooms list, room screens, and the settings screen as an overlay.
     // It adapts to both desktop and mobile layouts.
-    pub HomeScreen = {{HomeScreen}} {
-        <AdaptiveView> {
+    mod.widgets.HomeScreen = #(HomeScreen::register_widget(vm)) {
+        AdaptiveView {
             // NOTE: within each of these sub views, we used `CachedWidget` wrappers
             //       to ensure that there is only a single global instance of each
             //       of those widgets, which means they maintain their state
             //       across transitions between the Desktop and Mobile variant.
-            Desktop = {
+            Desktop := View {
                 show_bg: true
-                draw_bg: {
+                draw_bg +: {
                     color: (COLOR_SECONDARY),
                 }
                 width: Fill, height: Fill
                 flow: Right
-                align: {x: 0.0, y: 0.0}
+                align: Align{x: 0.0, y: 0.0}
                 padding: 0,
                 margin: 0,
 
                 // On the left, show the navigation tab bar vertically.
-                <CachedWidget> {
-                    navigation_tab_bar = <NavigationTabBar> {}
+                CachedWidget {
+                    navigation_tab_bar := mod.widgets.NavigationTabBar {}
                 }
 
                 // To the right of that, we use the PageFlip widget to show either
                 // the main desktop UI or the settings screen.
-                home_screen_page_flip = <PageFlip> {
+                home_screen_page_flip := PageFlip {
                     width: Fill, height: Fill
 
                     lazy_init: true,
-                    active_page: home_page
+                    active_page: @home_page
 
-                    home_page = <View> {
+                    home_page := View {
                         width: Fill, height: Fill
                         flow: Down
 
-                        <View> {
+                        View {
                             width: Fill,
                             height: 39,
                             flow: Right
-                            padding: {top: 2, bottom: 2}
-                            margin: {right: 2}
+                            padding: Inset{top: 2, bottom: 2}
+                            margin: Inset{right: 2}
                             spacing: 2
-                            align: {y: 0.5}
+                            align: Align{y: 0.5}
 
-                            <CachedWidget> {
-                                room_filter_input_bar = <RoomFilterInputBar> {}
+                            CachedWidget {
+                                room_filter_input_bar := RoomFilterInputBar {}
                             }
 
-                            search_messages_button = <SearchMessagesButton> {
+                            search_messages_button := SearchMessagesButton {
                                 // make this button match/align with the RoomFilterInputBar
                                 height: 32.5,
-                                margin: {right: 2}
+                                margin: Inset{right: 2}
                             }
                         }
 
-                        <MainDesktopUI> {}
+                        mod.widgets.MainDesktopUI {}
                     }
 
-                    settings_page = <View> {
+                    settings_page := View {
                         width: Fill, height: Fill
                         show_bg: true,
-                        draw_bg: {
+                        draw_bg +: {
                             color: (COLOR_PRIMARY)
                         }
 
-                        <CachedWidget> {
-                            settings_screen = <SettingsScreen> {}
+                        CachedWidget {
+                            settings_screen := mod.widgets.SettingsScreen {}
                         }
                     }
 
-                    add_room_page = <View> {
+                    add_room_page := View {
                         width: Fill, height: Fill
                         show_bg: true,
-                        draw_bg: {
+                        draw_bg +: {
                             color: (COLOR_PRIMARY)
                         }
 
-                        <CachedWidget> {
-                            add_room_screen = <AddRoomScreen> {}
+                        CachedWidget {
+                            add_room_screen := mod.widgets.AddRoomScreen {}
                         }
                     }
                 }
             }
 
-            Mobile = {
+            Mobile := View {
                 width: Fill, height: Fill
                 flow: Down
 
                 show_bg: true
-                draw_bg: {
+                draw_bg +: {
                     color: (COLOR_PRIMARY)
                 }
 
-                <StackNavigationWrapper> {
-                    view_stack = <StackNavigation> {
-                        root_view = {
+                mod.widgets.StackNavigationWrapper {
+                    view_stack := StackNavigation {
+                        root_view: {
                             flow: Down
                             width: Fill, height: Fill
 
                             // At the top of the root view, we use the PageFlip widget to show either
                             // the main list of rooms or the settings screen.
-                            home_screen_page_flip = <PageFlip> {
+                            home_screen_page_flip := PageFlip {
                                 width: Fill, height: Fill
 
                                 lazy_init: true,
-                                active_page: home_page
+                                active_page: @home_page
 
-                                home_page = <View> {
+                                home_page := View {
                                     width: Fill, height: Fill
                                     // Note: while the other page views have top padding, we do NOT add that here
                                     // because it is added in the `RoomsSideBar`'s `RoundedShadowView` itself.
                                     flow: Down
 
-                                    <RoomsSideBar> {}
+                                    mod.widgets.RoomsSideBar {}
                                 }
 
-                                settings_page = <View> {
+                                settings_page := View {
                                     width: Fill, height: Fill
-                                    padding: {top: 20}
+                                    padding: Inset{top: 20}
 
-                                    <CachedWidget> {
-                                        settings_screen = <SettingsScreen> {}
+                                    CachedWidget {
+                                        settings_screen := mod.widgets.SettingsScreen {}
                                     }
                                 }
 
-                                add_room_page = <View> {
+                                add_room_page := View {
                                     width: Fill, height: Fill
-                                    padding: {top: 20}
+                                    padding: Inset{top: 20}
 
-                                    <CachedWidget> {
-                                        add_room_screen = <AddRoomScreen> {}
+                                    CachedWidget {
+                                        add_room_screen := mod.widgets.AddRoomScreen {}
                                     }
                                 }
                             }
@@ -204,145 +193,25 @@ live_design! {
                             // across AdaptiveView transitions between Mobile view mode and Desktop view mode.
                             // 
                             // ... Then we wrap *that* in a ... <https://www.youtube.com/watch?v=evUWersr7pc>
-                            <CachedWidget> {
-                                spaces_bar_wrapper = <SpacesBarWrapper> {}
+                            CachedWidget {
+                                spaces_bar_wrapper := mod.widgets.SpacesBarWrapper {}
                             }
 
                             // At the bottom of the root view, show the navigation tab bar horizontally.
-                            <CachedWidget> {
-                                navigation_tab_bar = <NavigationTabBar> {}
+                            CachedWidget {
+                                navigation_tab_bar := mod.widgets.NavigationTabBar {}
                             }
                         }
 
-                        main_content_view = <StackNavigationView> {
+                        main_content_view := StackNavigationView {
                             width: Fill, height: Fill
-                            header = {
-                                // The following shader stuff was copied from `RoundedShadowView`.
-                                // We can't directly use RoundedShadowView here for `header` because it is already
-                                // a special view, the `StackViewHeader`.
-                                clip_x:false,
-                                clip_y:false,
-                                                    
-                                show_bg: true,
-                                draw_bg: {
-                                    uniform color_dither: 1.0
-                                    uniform gradient_border_horizontal: 0.0; 
-                                    uniform gradient_fill_horizontal: 0.0; 
-
-                                    color: (COLOR_PRIMARY_DARKER)
-                                    uniform color_2: vec4(-1.0, -1.0, -1.0, -1.0)
-
-                                    uniform border_radius: 4.0
-                                    uniform border_size: 0.0
-                                    uniform border_color: #0000
-                                    uniform border_color_2: vec4(-1.0, -1.0, -1.0, -1.0)
-
-                                    uniform shadow_color: #0005
-                                    uniform shadow_radius: 9.0,
-                                    uniform shadow_offset: vec2(1.0, 0.0)
-                                                                    
-                                    varying rect_size2: vec2,
-                                    varying rect_size3: vec2,
-                                    varying rect_pos2: vec2,     
-                                    varying rect_shift: vec2,    
-                                    varying sdf_rect_pos: vec2,
-                                    varying sdf_rect_size: vec2,
-                                                                    
-                                    fn vertex(self) -> vec4 {
-                                        let min_offset = min(self.shadow_offset,vec2(0));
-                                        self.rect_size2 = self.rect_size + 2.0*vec2(self.shadow_radius);
-                                        self.rect_size3 = self.rect_size2 + abs(self.shadow_offset);
-                                        self.rect_pos2 = self.rect_pos - vec2(self.shadow_radius) + min_offset;
-                                        self.sdf_rect_size = self.rect_size2 - vec2(self.shadow_radius * 2.0 + self.border_size * 2.0)
-                                        self.sdf_rect_pos = -min_offset + vec2(self.border_size + self.shadow_radius);
-                                        self.rect_shift = -min_offset;
-                                                                                    
-                                        return self.clip_and_transform_vertex(self.rect_pos2, self.rect_size3)
-                                    }
-                                                                                
-                                    fn pixel(self) -> vec4 {                                                
-                                        let sdf = Sdf2d::viewport(self.pos * self.rect_size3)
-                                        let dither = Math::random_2d(self.pos.xy) * 0.04 * self.color_dither;
-
-                                        let color_2 = self.color;
-                                        if (self.color_2.x > -0.5) {
-                                            color_2 = self.color_2;
-                                        }
-
-                                        let border_color_2 = self.border_color;
-                                        if (self.border_color_2.x > -0.5) {
-                                            border_color_2 = self.border_color_2;
-                                        }
-
-                                        let gradient_border_dir = self.pos.y + dither;
-                                        if (self.gradient_border_horizontal > 0.5) {
-                                            gradient_border_dir = self.pos.x + dither;
-                                        }
-
-                                        let gradient_fill_dir = self.pos.y + dither;
-                                        if (self.gradient_fill_horizontal > 0.5) {
-                                            gradient_fill_dir = self.pos.x + dither;
-                                        }
-
-                                        sdf.box(
-                                            self.sdf_rect_pos.x,
-                                            self.sdf_rect_pos.y,
-                                            self.sdf_rect_size.x,
-                                            self.sdf_rect_size.y, 
-                                            max(1.0, self.border_radius)
-                                        )
-                                        if sdf.shape > -1.0{ // try to skip the expensive gauss shadow
-                                            let m = self.shadow_radius;
-                                            let o = self.shadow_offset + self.rect_shift;
-                                            let v = GaussShadow::rounded_box_shadow(vec2(m) + o, self.rect_size2+o, self.pos * (self.rect_size3+vec2(m)), self.shadow_radius*0.5, self.border_radius*2.0);
-                                            sdf.clear(self.shadow_color*v)
-                                        }
-                                                                                            
-                                        sdf.fill_keep(mix(self.color, color_2, gradient_fill_dir))
-
-                                        if self.border_size > 0.0 {
-                                            sdf.stroke(
-                                                mix(self.border_color, border_color_2, gradient_border_dir),
-                                                self.border_size)
-                                        }
-                                        return sdf.result
-                                    }
-                                }
-
-                                padding: {top: 30, bottom: 0}
-                                height: (STACK_VIEW_HEADER_HEIGHT),
-                                content = {
-                                    height: (STACK_VIEW_HEADER_HEIGHT)
-                                    button_container = {
-                                        padding: 0,
-                                        margin: 0
-                                        left_button = {
-                                            draw_bg: {
-                                                fn pixel(self) -> vec4 {
-                                                    return #FFFFFF00;
-                                                }
-                                            }
-                                            width: Fit, height: Fit,
-                                            padding: {left: 20, right: 23, top: 10, bottom: 10}
-                                            margin: {left: 8, right: 0, top: 0, bottom: 0}
-                                            icon_walk: {width: 13, height: Fit}
-                                            spacing: 0
-                                            text: ""
-                                        }
-                                    }
-                                    title_container = {
-                                        padding: {top: 8}
-                                        title = {
-                                            draw_text: {
-                                                color: (ROOM_NAME_TEXT_COLOR)
-                                            }
-                                        }
-                                    }
-                                }
+                            header := StackViewHeader {
+                                padding: Inset{top: 30, bottom: 0}
+                                height: (mod.widgets.STACK_VIEW_HEADER_HEIGHT),
                             }
-                            body = {
-                                margin: {top: (STACK_VIEW_HEADER_HEIGHT)}
-                                main_content = <MainMobileUI> {}
+                            body := View {
+                                margin: Inset{top: (mod.widgets.STACK_VIEW_HEADER_HEIGHT)}
+                                main_content := mod.widgets.MainMobileUI {}
                             }
                         }
                     }
@@ -354,8 +223,9 @@ live_design! {
 
 
 /// A simple wrapper around the SpacesBar that allows us to animate showing or hiding it.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget, Animator)]
 pub struct SpacesBarWrapper {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
     #[animator] animator: Animator,
 }
@@ -393,7 +263,7 @@ impl SpacesBarWrapperRef {
 }
 
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct HomeScreen {
     #[deref] view: View,
 
@@ -448,7 +318,7 @@ impl Widget for HomeScreen {
                             cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
                             if let Some(settings_page) = self.update_active_page_from_selection(cx, app_state) {
                                 settings_page
-                                    .settings_screen(ids!(settings_screen))
+                                    .settings_screen(cx, ids!(settings_screen))
                                     .populate(cx, None);
                                 self.view.redraw(cx);
                             } else {
@@ -466,7 +336,7 @@ impl Widget for HomeScreen {
                     }
                     Some(NavigationBarAction::ToggleSpacesBar) => {
                         self.is_spaces_bar_shown = !self.is_spaces_bar_shown;
-                        self.view.spaces_bar_wrapper(ids!(spaces_bar_wrapper))
+                        self.view.spaces_bar_wrapper(cx, ids!(spaces_bar_wrapper))
                             .show_or_hide(cx, self.is_spaces_bar_shown);
                     }
                     // We're the ones who emitted this action, so we don't need to handle it again.
@@ -498,7 +368,7 @@ impl HomeScreen {
         app_state: &mut AppState,
     ) -> Option<WidgetRef> {
         self.view
-            .page_flip(ids!(home_screen_page_flip))
+            .page_flip(cx, ids!(home_screen_page_flip))
             .set_active_page(
                 cx,
                 match app_state.selected_tab {
@@ -513,7 +383,7 @@ impl HomeScreen {
 
 /// A wrapper around the StackNavigation widget
 /// that simply forwards stack view actions to it.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct StackNavigationWrapper {
     #[deref] view: View,
 }
@@ -530,7 +400,7 @@ impl Widget for StackNavigationWrapper {
 
 impl MatchEvent for StackNavigationWrapper {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        self.stack_navigation(ids!(view_stack))
+        self.stack_navigation(cx, ids!(view_stack))
             .handle_stack_view_actions(cx, actions);
     }
 }

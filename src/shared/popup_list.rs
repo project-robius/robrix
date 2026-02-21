@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
+use crate::ApplyOverCompat;
+use crate::{LivePtr, view_from_live_ptr};
 
 use crate::shared::styles::*;
 
@@ -55,7 +57,7 @@ pub fn get_global_popup_list(cx: &mut Cx) -> &mut RobrixPopupNotificationRef {
 pub fn set_global_popup_list(cx: &mut Cx, parent_ref: &WidgetRef) {
     Cx::set_global(
         cx,
-        parent_ref.robrix_popup_notification(ids!(popup_notification)),
+        parent_ref.robrix_popup_notification(cx, ids!(popup_notification)),
     );
 }
 
@@ -88,71 +90,70 @@ pub struct PopupItem {
     pub kind: PopupKind,
 }
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::shared::icon_button::RobrixIconButton;
-    CheckIcon = <View> {
+    mod.widgets.CheckIcon = View {
+
         width: 28,
         height: 28,
         visible: false,
-        <Icon> {
-            draw_icon: {
+        Icon {
+            draw_icon +: {
                 svg_file: (ICON_CHECKMARK),
                 color: #ffffff,
             }
-            icon_walk: { width: 22, height: 22 }
+            icon_walk: Walk{ width: 22, height: 22 }
         }
     }
-    ForbiddenIcon = <CheckIcon> {
-        <Icon> {
-            draw_icon: {
+    mod.widgets.ForbiddenIcon = mod.widgets.CheckIcon {
+        Icon {
+            draw_icon +: {
                 svg_file: (ICON_FORBIDDEN),
                 color: #ffffff,
             }
-            icon_walk: { width: 22, height: 22 }
+            icon_walk: Walk{ width: 22, height: 22 }
         }
     }
-    InfoIcon = <CheckIcon> {
-        <Icon> {
-            draw_icon: {
+    mod.widgets.InfoIcon = mod.widgets.CheckIcon {
+        Icon {
+            draw_icon +: {
                 svg_file: (ICON_INFO),
                 color: #ffffff,
             }
-            icon_walk: { width: 22, height: 22 }
+            icon_walk: Walk{ width: 22, height: 22 }
         }
     }
-    WarningIcon = <CheckIcon> {
-        <Icon> {
-            draw_icon: {
+    mod.widgets.WarningIcon = mod.widgets.CheckIcon {
+        Icon {
+            draw_icon +: {
                 svg_file: (ICON_WARNING),
                 color: #ffffff,
             }
-            icon_walk: { width: 22, height: 22 }
+            icon_walk: Walk{ width: 22, height: 22 }
         }
     }
-    ProgressBar = <View> {
+    mod.widgets.ProgressBar = View {
         width: Fill,
         height: 10,
         show_bg: true,
-        margin: { bottom: 0 },
+        margin: Inset{ bottom: 0 },
         padding: 0,
-        draw_bg: {
-            uniform direction: 0.0, // Direction of the progress bar: 0.0 is right to left, 1.0 is top to bottom.
-            uniform border_radius: 4.,
-            uniform border_size: 1.0,
-            uniform progress_bar_color: #00000080, //Black with 50% opacity.
-            uniform display_progress_bar: 1.0 // Display progress bar when there is auto_dismissal_duration.
+        draw_bg +: {
+            direction: uniform(0.0), // Direction of the progress bar: 0.0 is right to left, 1.0 is top to bottom.
+            border_radius: uniform(4.),
+            border_size: uniform(1.0),
+            progress_bar_color: uniform(#00000080), //Black with 50% opacity.
+            // Display progress bar when there is auto_dismissal_duration.
+            display_progress_bar: uniform(1.0)
             // Display progress bar even when mode.slide is off.
             // 0.0 animate according to anim_time and anim_duration, 1.0 displays oscillating progress bar.
-            uniform debug_progress_bar: 0.0,
-            uniform anim_time: 0.0,
-            uniform anim_duration: 2.0,
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+            debug_progress_bar: uniform(0.0),
+            anim_time: uniform(0.0),
+            anim_duration: uniform(2.0),
+            pixel: fn() -> vec4 {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                 let rect_size = self.rect_size;
                 let time = self.anim_time / self.anim_duration;
                 if self.debug_progress_bar > 0.5 {
@@ -184,76 +185,75 @@ live_design! {
             }
         }
     }
-    MainContent = <View> {
+    mod.widgets.MainContent = View {
         width: Fill,
         height: Fit,
-        align: { x: 0.0, y: 0.5 }
-        padding: {left: 0, top: 0, bottom: 10, right: 5}
-        popup_label = <Label> {
+        align: Align{ x: 0.0, y: 0.5 }
+        padding: Inset{left: 0, top: 0, bottom: 10, right: 5}
+        popup_label := Label {
             width: Fill,
             height: Fit,
-            draw_text: {
+            draw_text +: {
                 color: (#000000),
-                text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10 },
-                wrap: Word
+                text_style: mod.widgets.MESSAGE_TEXT_STYLE { font_size: 10 },
             }
         }
     }
-    LeftSideView = <View> {
+    mod.widgets.LeftSideView = View {
         width: Fit,
         height: Fit,
-        success_icon = <CheckIcon> {}
-        error_icon = <ForbiddenIcon> {}
-        info_icon = <InfoIcon> {}
-        warning_icon = <WarningIcon> {}
+        success_icon := mod.widgets.CheckIcon {}
+        error_icon := mod.widgets.ForbiddenIcon {}
+        info_icon := mod.widgets.InfoIcon {}
+        warning_icon := mod.widgets.WarningIcon {}
     }
-    CloseButtonView = <View> {
+    mod.widgets.CloseButtonView = View {
         width: Fill,
         height: Fit,
         flow: Down,
-        padding: { top: 3 }
-        align: { x: 0.98 }
+        padding: Inset{ top: 3 }
+        align: Align{ x: 0.98 }
         
-        <RoundedView> {
+        RoundedView {
             width: Fit, height: Fit
             show_bg: true,
-            draw_bg: {
+            draw_bg +: {
                 color: (COLOR_BG_DISABLED)
             }
-            align: { x: 0.5, y: 0.5 }
+            align: Align{ x: 0.5, y: 0.5 }
             // The "X" close button on the top right
-            close_button = <RobrixIconButton> {
+            close_button := RobrixIconButton {
                 width: Fit, height: Fit,
-                padding: { top: 5, bottom: 5, left: 8, right: 8 },
+                padding: Inset{ top: 5, bottom: 5, left: 8, right: 8 },
                 spacing: 0,
-                align: { x: 0.5, y: 0.5 }
-                draw_bg: {
+                align: Align{ x: 0.5, y: 0.5 }
+                draw_bg +: {
                     color: (COLOR_BG_DISABLED)
                 }
-                draw_icon: {
+                draw_icon +: {
                     svg_file: (ICON_CLOSE),
                     color: (COLOR_DIVIDER_DARK),
                 }
-                icon_walk: {width: 15, height: 15}
+                icon_walk: Walk{width: 15, height: 15}
             }
         }
     }
     // Other possible color themes that is not too glaring.
     // COLOR_POPUP_GREEN = #43bb9e;
     // COLOR_POPUP_RED = #e74c3c;
-    PopupDialogRightToLeftProgress = <RoundedView> {
+    mod.widgets.PopupDialogRightToLeftProgress = RoundedView {
         width: 275
         height: Fit
         padding: 0,
         flow: Overlay
         show_bg: true,
-        draw_bg: {
-            uniform border_radius: 4.0
-            uniform border_color: #000000
-            uniform border_size: 2.0
-            instance background_color: #ffffff
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+        draw_bg +: {
+            border_radius: uniform(4.0)
+            border_color: uniform(#000000)
+            border_size: uniform(2.0)
+            background_color: instance(#ffffff)
+            pixel: fn() -> vec4 {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                 sdf.box(
                     1.,
                     1.,
@@ -274,152 +274,144 @@ live_design! {
             }
         }
 
-        popup_content = <View> {
+        popup_content := View {
             width: Fill, height: Fit,
             flow: Down
             //Right side view with close button
-            close_button_view = <CloseButtonView> {}
-            padding: { right: 2, top: 2}
-            inner = <View> {
+            close_button_view := mod.widgets.CloseButtonView {}
+            padding: Inset{ right: 2, top: 2}
+            inner := View {
                 width: Fill, height: Fit,
-                padding: { top: 0, right: 5, bottom: 0, left: 10 }
+                padding: Inset{ top: 0, right: 5, bottom: 0, left: 10 }
                 flow: Right,
-                align: {
+                align: Align{
                     y: 0,
                 }
                 // Left side with icon for popup kind.
-                <LeftSideView> {}
+                mod.widgets.LeftSideView {}
                 // Main content area
-                main_content = <MainContent> {}
+                main_content := mod.widgets.MainContent {}
             }
-            progress_bar = <ProgressBar> {}
+            progress_bar := mod.widgets.ProgressBar {}
             // Add a small gap between the progress bar and the end of the popup 
             // to ensure the progress bar is within the popup.
-            <View> {
+            View {
                 height: 0.2
             }
         }
 
-        animator: {
-            mode = {
-                default: close_slider,
-                close_slider = {
-                    redraw: true,
+        animator: Animator{
+            mode: {
+                default: @close_slider
+                close_slider: AnimatorState{
+                    redraw: true
                     from: {all: Forward {duration: 0.0}}
                     apply: {
-                        popup_content = {
-                            progress_bar = {
+                        popup_content: {
+                            progress_bar: {
                                 draw_bg: {anim_time: 0.0}
                             }
                         }
                     }
                 }
-                slide = {
-                    redraw: true,
+                slide: AnimatorState{
+                    redraw: true
                     // Maximum auto dismissal duration is 3 minutes.
                     from: {all: Forward {duration: 180.0}}
                     apply: {
-                        popup_content = {
-                            progress_bar = {
+                        popup_content: {
+                            progress_bar: {
                                 draw_bg: {anim_time: 180.0}
                             }
                         }
                     }
                 }
             }
-            hover = {
-                default: off
-                off = {
-                    apply: { }
-                }
-                on = {
-                    apply: { }
-                }
+            hover: {
+                default: @off
+                off: AnimatorState{ apply: { } }
+                on: AnimatorState{ apply: { } }
             }
-            down = {
-                default: off
-                off = {
-                    apply: { }
-                }
-                on = {
-                    apply: { }
-                }
+            down: {
+                default: @off
+                off: AnimatorState{ apply: { } }
+                on: AnimatorState{ apply: { } }
             }
         }
     }
-    PopupDialogTopToBottomProgress = <PopupDialogRightToLeftProgress> {
-        popup_content = <View> {
+    mod.widgets.PopupDialogTopToBottomProgress = mod.widgets.PopupDialogRightToLeftProgress {
+        popup_content := View {
             width: Fill,
             height: Fit,
             flow: Right,
             spacing: 0,
-            align: { x: 0.0, y: 0.5 }
+            align: Align{ x: 0.0, y: 0.5 }
             // Left side with for popup kind.
-            <LeftSideView> {
+            mod.widgets.LeftSideView {
                 height: Fit,
-                margin: {left: 10 }
+                margin: Inset{left: 10 }
                 spacing: 0,
             }
-            inner = <View> {
+            inner := View {
                 width: 230,
                 height: Fit,
                 padding: 0,
                 flow: Down,
-                close_button_view = <CloseButtonView> {}
+                close_button_view := mod.widgets.CloseButtonView {}
                 // Main content area
-                main_content = <MainContent> {
-                    padding: {left: 0}
+                main_content := mod.widgets.MainContent {
+                    padding: Inset{left: 0}
                 }
             }
-            progress_bar = <ProgressBar> {
+            progress_bar := mod.widgets.ProgressBar {
                 width: 10,
                 height: Fill,
-                draw_bg: {
-                    uniform direction: 1.0,
-                    uniform anim_time: 1.0,
-                    uniform border_radius: 2.,
+                draw_bg +: {
+                    direction: uniform(1.0),
+                    anim_time: uniform(1.0),
+                    border_radius: uniform(2.),
                 }
             }
         }
     }
-    pub RobrixPopupNotificationRightToLeftProgress = {{RobrixPopupNotification}} {
+    mod.widgets.RobrixPopupNotificationRightToLeftProgress = #(RobrixPopupNotification::register_widget(vm)) {
         width: 275
         height: Fit
         flow: Down
-        draw_bg: {
-            fn pixel(self) -> vec4 {
+        draw_bg +: {
+            pixel: fn() -> vec4 {
                 return vec4(0., 0., 0., 0.0)
             }
         }
-        content: <PopupDialogRightToLeftProgress> {}
+        content: mod.widgets.PopupDialogRightToLeftProgress {}
     }
-    pub RobrixPopupNotificationTopToBottomProgress = <RobrixPopupNotificationRightToLeftProgress> {
-        content: <PopupDialogTopToBottomProgress> {}
+    mod.widgets.RobrixPopupNotificationTopToBottomProgress = mod.widgets.RobrixPopupNotificationRightToLeftProgress {
+        content: mod.widgets.PopupDialogTopToBottomProgress {}
     }
     // A widget that displays a vertical list of popups at the top right corner of the screen.
     // The progress bar slides from right to left.
-    pub PopupList = <View> {
+    mod.widgets.PopupList = View {
         width: Fill,
         height: Fill,
-        margin: { top: 10 }
-        align: {x: 0.99, }
-        popup_notification = <RobrixPopupNotificationRightToLeftProgress>{}
+        margin: Inset{ top: 10 }
+        align: Align{x: 0.99, }
+        popup_notification := mod.widgets.RobrixPopupNotificationRightToLeftProgress {}
     }
     // A widget that displays a vertical list of popups at the top right corner of the screen.
     // The progress bar slides from top to bottom.
-    pub PopupListTopToBottomProgress = <PopupList> {
-        popup_notification = <RobrixPopupNotificationTopToBottomProgress>{}
+    mod.widgets.PopupListTopToBottomProgress = mod.widgets.PopupList {
+        popup_notification := mod.widgets.RobrixPopupNotificationTopToBottomProgress {}
     }
 }
 
 /// A widget that displays a vertical list of popups.
-#[derive(Live, Widget)]
+#[derive(Script, Widget)]
 pub struct RobrixPopupNotification {
     #[live]
     pub content: Option<LivePtr>,
 
-    #[rust(DrawList2d::new(cx))]
-    draw_list: DrawList2d,
+    #[rust]
+    draw_list: Option<DrawList2d>,
 
     #[redraw]
     #[live]
@@ -433,24 +425,23 @@ pub struct RobrixPopupNotification {
     pub popups: Vec<(View, PopupItem, Timer)>,
 }
 
-impl LiveHook for RobrixPopupNotification {
-    fn after_apply(&mut self, cx: &mut Cx, apply: &mut Apply, index: usize, nodes: &[LiveNode]) {
-        for (view, popup_item, _) in self.popups.iter_mut() {
-            if let Some(index) = nodes.child_by_name(index, id!(content).as_field()) {
-                view.apply(cx, apply, index, nodes);
-                view.label(ids!(popup_label))
-                    .set_text(cx, &popup_item.message);
-                for (view, (popup_kind, _color)) in view.view_set(ICON_SET).iter().zip(POPUP_KINDS)
-                {
-                    if popup_item.kind == popup_kind {
-                        view.set_visible(cx, true);
-                    } else {
-                        view.set_visible(cx, false);
-                    }
-                }
+impl ScriptHook for RobrixPopupNotification {
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        self.draw_list = Some(DrawList2d::script_new(vm));
+    }
+
+    fn on_after_apply(
+        &mut self,
+        vm: &mut ScriptVm,
+        _apply: &Apply,
+        _scope: &mut Scope,
+        _value: ScriptValue,
+    ) {
+        vm.with_cx_mut(|cx| {
+            if let Some(draw_list) = &self.draw_list {
+                draw_list.redraw(cx);
             }
-        }
-        self.draw_list.redraw(cx);
+        });
     }
 }
 
@@ -477,7 +468,8 @@ impl Widget for RobrixPopupNotification {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.draw_list.begin_overlay_reuse(cx);
+        let draw_list = self.draw_list.as_mut().unwrap();
+        draw_list.begin_overlay_reuse(cx);
         self.draw_bg.begin(cx, walk, self.layout);
         if !self.popups.is_empty() {
             cx.begin_turtle(walk, self.layout);
@@ -488,7 +480,7 @@ impl Widget for RobrixPopupNotification {
             cx.end_turtle();
         }
         self.draw_bg.end(cx);
-        self.draw_list.end(cx);
+        draw_list.end(cx);
         DrawStep::done()
     }
 }
@@ -499,11 +491,11 @@ impl RobrixPopupNotification {
     /// The popup's content is a string given by the `PopupItem` parameter.
     /// New popup will be displayed below the previous ones.
     pub fn push(&mut self, cx: &mut Cx, popup_item: PopupItem) {
-        let mut view = View::new_from_ptr(cx, self.content);
+        let mut view = view_from_live_ptr(cx, self.content);
         let mut background_color = None;
-        view.label(ids!(popup_label))
+        view.label(cx, ids!(popup_label))
             .set_text(cx, &popup_item.message);
-        for (view, (popup_kind, color)) in view.view_set(ICON_SET).iter().zip(POPUP_KINDS) {
+        for (view, (popup_kind, color)) in view.view_set(cx, ICON_SET).iter().zip(POPUP_KINDS) {
             if popup_item.kind == popup_kind {
                 view.set_visible(cx, true);
                 background_color = Some(color);
@@ -512,28 +504,28 @@ impl RobrixPopupNotification {
             }
         }
         // Apply popup item kind-specific styling
-        if let Some(background_color) = background_color {
-            let text_color = if popup_item.kind == PopupKind::Warning {
+        if let Some(_background_color) = background_color {
+            let _text_color = if popup_item.kind == PopupKind::Warning {
                 vec4(0.0, 0.0, 0.0, 1.0) // Black text for Warning
             } else {
                 COLOR_WHITE // White text for all other kinds
             };
             
-            view.apply_over(
+            (&mut view).apply_over(
                 cx,
                 live! {
-                    popup_content = {
-                        inner = {
-                            main_content = {
-                                popup_label = {
+                    popup_content: {
+                        inner: {
+                            main_content: {
+                                popup_label: {
                                     draw_text: {
                                         color: (text_color),
                                     }
                                 }
                             }
                             // For top to bottom progress bar.
-                            close_button_view = {
-                                close_button = {
+                            close_button_view: {
+                                close_button: {
                                     draw_icon: {
                                         color: (text_color),
                                     }
@@ -541,8 +533,8 @@ impl RobrixPopupNotification {
                             }
                         }
                         // For Right to left progress bar.
-                        close_button_view = {
-                            close_button = {
+                        close_button_view: {
+                            close_button: {
                                 draw_icon: {
                                     color: (text_color),
                                 }
@@ -556,11 +548,11 @@ impl RobrixPopupNotification {
             );
         }
         let close_timer = if let Some(duration) = popup_item.auto_dismissal_duration {
-            view.apply_over(
+            (&mut view).apply_over(
                 cx,
                 live! {
-                    popup_content = {
-                        progress_bar = {
+                    popup_content: {
+                        progress_bar: {
                             draw_bg: { anim_duration: (duration) }
                         }
                     }
@@ -569,11 +561,11 @@ impl RobrixPopupNotification {
             view.animator_play(cx, ids!(mode.slide));
             cx.start_timeout(duration)
         } else {
-            view.apply_over(
+            (&mut view).apply_over(
                 cx,
                 live! {
-                    popup_content = {
-                        progress_bar = {
+                    popup_content: {
+                        progress_bar: {
                             draw_bg: { display_progress_bar: 0.0 }
                         }
                     }
@@ -611,7 +603,7 @@ impl RobrixPopupNotification {
     ///     message: Cow::Borrowed("Welcome!"),
     ///     auto_dismissal_duration: Some(4.0),
     /// };
-    ///  view.label(ids!(popup_label))
+    ///  view.label(cx, ids!(popup_label))
     ///     .set_text(cx, &popup_item.message);
     ///  let close_timer = if let Some(duration) = popup_item.auto_dismissal_duration {
     ///     cx.start_timeout(duration)
@@ -643,7 +635,7 @@ impl RobrixPopupNotification {
 impl WidgetMatchEvent for RobrixPopupNotification {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         for (i, (view, _popup_item, close_timer)) in self.popups.iter_mut().enumerate() {
-            if view.button(ids!(close_button)).clicked(actions) {
+            if view.button(cx, ids!(close_button)).clicked(actions) {
                 cx.stop_timer(*close_timer);
                 view.animator_cut(cx, ids!(mode.close_slider));
                 self.popups.remove(i);

@@ -1,162 +1,189 @@
 use makepad_widgets::*;
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
 
-    pub ICON_ADD             = dep("crate://self/resources/icons/add.svg")
-    pub ICON_ADD_REACTION    = dep("crate://self/resources/icons/add_reaction.svg")
-    pub ICON_ADD_USER        = dep("crate://self/resources/icons/add_user.svg") // TODO: FIX
-    pub ICON_ADD_WALLET      = dep("crate://self/resources/icons/add_wallet.svg")
-    pub ICON_FORBIDDEN       = dep("crate://self/resources/icons/forbidden.svg")
-    pub ICON_CHECKMARK       = dep("crate://self/resources/icons/checkmark.svg")
-    pub ICON_CLOSE           = dep("crate://self/resources/icons/close.svg")
-    pub ICON_CLOUD_CHECKMARK = dep("crate://self/resources/icons/cloud_checkmark.svg")
-    pub ICON_CLOUD_OFFLINE   = dep("crate://self/resources/icons/cloud_offline.svg")
-    pub ICON_ROTATE_CW       = dep("crate://self/resources/icons/rotate_right_fa.svg")
-    pub ICON_ROTATE_CCW      = dep("crate://self/resources/icons/rotate_left_fa.svg")
-    pub ICON_COPY            = dep("crate://self/resources/icons/copy.svg")
-    pub ICON_EDIT            = dep("crate://self/resources/icons/edit.svg")
-    pub ICON_EXTERNAL_LINK   = dep("crate://self/resources/icons/external_link.svg")
-    pub ICON_IMPORT          = dep("crate://self/resources/icons/import.svg") // TODO: FIX
-    pub ICON_HIERARCHY       = dep("crate://self/resources/icons/hierarchy.svg")
-    pub ICON_HOME            = dep("crate://self/resources/icons/home.svg")
-    pub ICON_HTML_FILE       = dep("crate://self/resources/icons/html_file.svg")
-    pub ICON_INFO            = dep("crate://self/resources/icons/info.svg")
-    pub ICON_INVITE          = dep("crate://self/resources/icons/invite.svg")
-    pub ICON_JOIN_ROOM       = dep("crate://self/resources/icons/join_room.svg")
-    pub ICON_JUMP            = dep("crate://self/resources/icons/go_back.svg")
-    pub ICON_LOGOUT          = dep("crate://self/resources/icons/logout.svg")
-    pub ICON_LINK            = dep("crate://self/resources/icons/link.svg")
-    pub ICON_PIN             = dep("crate://self/resources/icons/pin.svg")
-    pub ICON_REPLY           = dep("crate://self/resources/icons/reply.svg")
-    pub ICON_SEARCH          = dep("crate://self/resources/icons/search.svg")
-    pub ICON_SEND            = dep("crate://self/resources/icon_send.svg")
-    pub ICON_SETTINGS        = dep("crate://self/resources/icons/settings.svg")
-    pub ICON_SQUARES         = dep("crate://self/resources/icons/squares_filled.svg")
-    pub ICON_TOMBSTONE       = dep("crate://self/resources/icons/tombstone.svg")
-    pub ICON_TRASH           = dep("crate://self/resources/icons/trash.svg")
-    pub ICON_UPLOAD          = dep("crate://self/resources/icons/upload.svg")
-    pub ICON_VIEW_SOURCE     = dep("crate://self/resources/icons/view_source.svg")
-    pub ICON_WARNING         = dep("crate://self/resources/icons/warning.svg")
-    pub ICON_ZOOM_IN         = dep("crate://self/resources/icons/zoom_in.svg")
-    pub ICON_ZOOM_OUT        = dep("crate://self/resources/icons/zoom_out.svg")
+    use mod.prelude.widgets.*
+    use mod.widgets.*
+    mod.widgets.ICON_ADD = crate_resource("self:resources/icons/add.svg")
+    mod.widgets.ICON_ADD_REACTION = crate_resource("self:resources/icons/add_reaction.svg")
+    mod.widgets.ICON_ADD_USER = crate_resource("self:resources/icons/add_user.svg") // TODO: FIX
+    mod.widgets.ICON_ADD_WALLET = crate_resource("self:resources/icons/add_wallet.svg")
+    mod.widgets.ICON_FORBIDDEN = crate_resource("self:resources/icons/forbidden.svg")
+    mod.widgets.ICON_CHECKMARK = crate_resource("self:resources/icons/checkmark.svg")
+    mod.widgets.ICON_CLOSE = crate_resource("self:resources/icons/close.svg")
+    mod.widgets.ICON_CLOUD_CHECKMARK = crate_resource("self:resources/icons/cloud_checkmark.svg")
+    mod.widgets.ICON_CLOUD_OFFLINE = crate_resource("self:resources/icons/cloud_offline.svg")
+    mod.widgets.ICON_ROTATE_CW = crate_resource("self:resources/icons/rotate_right_fa.svg")
+    mod.widgets.ICON_ROTATE_CCW = crate_resource("self:resources/icons/rotate_left_fa.svg")
+    mod.widgets.ICON_COPY = crate_resource("self:resources/icons/copy.svg")
+    mod.widgets.ICON_EDIT = crate_resource("self:resources/icons/edit.svg")
+    mod.widgets.ICON_EXTERNAL_LINK = crate_resource("self:resources/icons/external_link.svg")
+    mod.widgets.ICON_IMPORT = crate_resource("self:resources/icons/import.svg") // TODO: FIX
+    mod.widgets.ICON_HIERARCHY = crate_resource("self:resources/icons/hierarchy.svg")
+    mod.widgets.ICON_HOME = crate_resource("self:resources/icons/home.svg")
+    mod.widgets.ICON_HTML_FILE = crate_resource("self:resources/icons/html_file.svg")
+    mod.widgets.ICON_INFO = crate_resource("self:resources/icons/info.svg")
+    mod.widgets.ICON_INVITE = crate_resource("self:resources/icons/invite.svg")
+    mod.widgets.ICON_JOIN_ROOM = crate_resource("self:resources/icons/join_room.svg")
+    mod.widgets.ICON_JUMP = crate_resource("self:resources/icons/go_back.svg")
+    mod.widgets.ICON_LOGOUT = crate_resource("self:resources/icons/logout.svg")
+    mod.widgets.ICON_LINK = crate_resource("self:resources/icons/link.svg")
+    mod.widgets.ICON_PIN = crate_resource("self:resources/icons/pin.svg")
+    mod.widgets.ICON_REPLY = crate_resource("self:resources/icons/reply.svg")
+    mod.widgets.ICON_SEARCH = crate_resource("self:resources/icons/search.svg")
+    mod.widgets.ICON_SEND = crate_resource("self:resources/icon_send.svg")
+    mod.widgets.ICON_SETTINGS = crate_resource("self:resources/icons/settings.svg")
+    mod.widgets.ICON_SQUARES = crate_resource("self:resources/icons/squares_filled.svg")
+    mod.widgets.ICON_TOMBSTONE = crate_resource("self:resources/icons/tombstone.svg")
+    mod.widgets.ICON_TRASH = crate_resource("self:resources/icons/trash.svg")
+    mod.widgets.ICON_UPLOAD = crate_resource("self:resources/icons/upload.svg")
+    mod.widgets.ICON_VIEW_SOURCE = crate_resource("self:resources/icons/view_source.svg")
+    mod.widgets.ICON_WARNING = crate_resource("self:resources/icons/warning.svg")
+    mod.widgets.ICON_ZOOM_IN = crate_resource("self:resources/icons/zoom_in.svg")
+    mod.widgets.ICON_ZOOM_OUT = crate_resource("self:resources/icons/zoom_out.svg")
 
-    pub TITLE_TEXT = <THEME_FONT_REGULAR>{
+    mod.widgets.TITLE_TEXT = theme.font_regular {
+
         font_size: (13),
     }
 
-    pub REGULAR_TEXT = <THEME_FONT_REGULAR>{
+    mod.widgets.REGULAR_TEXT = theme.font_regular {
+
         font_size: (10),
     }
 
-    pub TEXT_SUB = <THEME_FONT_REGULAR>{
+    mod.widgets.TEXT_SUB = theme.font_regular {
+
         font_size: (10),
     }
 
-    pub USERNAME_FONT_SIZE = 11
-    pub USERNAME_TEXT_COLOR = #x2
-    pub USERNAME_TEXT_STYLE = <THEME_FONT_BOLD>{
-        font_size: (USERNAME_FONT_SIZE),
+    mod.widgets.USERNAME_FONT_SIZE = 11
+
+    mod.widgets.USERNAME_TEXT_COLOR = #x2
+    mod.widgets.USERNAME_TEXT_STYLE = theme.font_bold {
+        font_size: (mod.widgets.USERNAME_FONT_SIZE),
     }
 
-    pub COLOR_ROBRIX_PURPLE = #572DCC; // the purple color from the Robrix logo
-    pub COLOR_ROBRIX_CYAN = #05CDC7; // the cyan color from the Robrix logo
+    mod.widgets.COLOR_ROBRIX_PURPLE = #572DCC; // the purple color from the Robrix logo
 
-    pub TYPING_NOTICE_TEXT_COLOR = #121570
+    mod.widgets.COLOR_ROBRIX_CYAN = #05CDC7; // the cyan color from the Robrix logo
 
-    pub MESSAGE_FONT_SIZE = 11
-    pub MESSAGE_TEXT_COLOR = #x333
+    mod.widgets.TYPING_NOTICE_TEXT_COLOR = #121570
+
+
+    mod.widgets.MESSAGE_FONT_SIZE = 11
+
+    mod.widgets.MESSAGE_TEXT_COLOR = #x333
     // notices (automated messages from bots) use a lighter color
-    pub COLOR_MESSAGE_NOTICE_TEXT = #x888
-    pub MESSAGE_TEXT_LINE_SPACING = 1.3
+    mod.widgets.COLOR_MESSAGE_NOTICE_TEXT = #x888
+    mod.widgets.MESSAGE_TEXT_LINE_SPACING = 1.3
     // This font should only be used for plaintext labels. Don't use this for Html content,
     // as the Html widget sets different fonts for different text styles (e.g., bold, italic).
-    pub MESSAGE_TEXT_STYLE = <THEME_FONT_REGULAR>{
-        font_size: (MESSAGE_FONT_SIZE),
-        line_spacing: (MESSAGE_TEXT_LINE_SPACING),
+    mod.widgets.MESSAGE_TEXT_STYLE = theme.font_regular {
+        font_size: (mod.widgets.MESSAGE_FONT_SIZE),
+        line_spacing: (mod.widgets.MESSAGE_TEXT_LINE_SPACING),
     }
 
-    pub MESSAGE_REPLY_PREVIEW_FONT_SIZE = 9.5
+    mod.widgets.MESSAGE_REPLY_PREVIEW_FONT_SIZE = 9.5
 
 
-    pub SMALL_STATE_FONT_SIZE = 9.0
-    pub SMALL_STATE_TEXT_COLOR = #x888
-    pub SMALL_STATE_TEXT_STYLE = <THEME_FONT_REGULAR>{
-        font_size: (SMALL_STATE_FONT_SIZE),
+
+    mod.widgets.SMALL_STATE_FONT_SIZE = 9.0
+
+
+    mod.widgets.SMALL_STATE_TEXT_COLOR = #x888
+    mod.widgets.SMALL_STATE_TEXT_STYLE = theme.font_regular {
+        font_size: (mod.widgets.SMALL_STATE_FONT_SIZE),
     }
 
-    pub TIMESTAMP_FONT_SIZE = 8.5
-    pub TIMESTAMP_TEXT_COLOR = #x999
-    pub TIMESTAMP_TEXT_STYLE = <THEME_FONT_REGULAR>{
-        font_size: (TIMESTAMP_FONT_SIZE),
+    mod.widgets.TIMESTAMP_FONT_SIZE = 8.5
+
+    mod.widgets.TIMESTAMP_TEXT_COLOR = #x999
+    mod.widgets.TIMESTAMP_TEXT_STYLE = theme.font_regular {
+        font_size: (mod.widgets.TIMESTAMP_FONT_SIZE),
     }
 
-    pub ROOM_NAME_TEXT_COLOR = #x0
-    pub COLOR_META = #xccc
+    mod.widgets.ROOM_NAME_TEXT_COLOR = #x0
 
-    pub COLOR_DIVIDER = #00000018
-    pub COLOR_DIVIDER_DARK = #00000044
+    mod.widgets.COLOR_META = #xccc
 
-    pub COLOR_FG_ACCEPT_GREEN = #138808
-    pub COLOR_BG_ACCEPT_GREEN = #F0FFF0
-    pub COLOR_FG_DANGER_RED = #DC0005
-    pub COLOR_BG_DANGER_RED = #FFF0F0
-    pub COLOR_FG_DISABLED = #B3B3B3
-    pub COLOR_BG_DISABLED = #E0E0E0
-    pub COLOR_WARNING_NOT_FOUND = #953800
+    mod.widgets.COLOR_DIVIDER = #00000018
 
-    pub COLOR_SELECT_TEXT = #A6CDFE
+    mod.widgets.COLOR_DIVIDER_DARK = #00000044
 
-    pub COLOR_PRIMARY = #ffffff
-    pub COLOR_PRIMARY_DARKER = #fefefe
-    pub COLOR_SECONDARY = #E3E3E3
-    pub COLOR_SECONDARY_DARKER = #C8C8C8
+    mod.widgets.COLOR_FG_ACCEPT_GREEN = #138808
 
-    pub COLOR_ACTIVE_PRIMARY = #0f88fe
-    pub COLOR_ACTIVE_PRIMARY_DARKER = #106fcc
+    mod.widgets.COLOR_BG_ACCEPT_GREEN = #F0FFF0
+    mod.widgets.COLOR_FG_DANGER_RED = #DC0005
+    mod.widgets.COLOR_BG_DANGER_RED = #FFF0F0
+    mod.widgets.COLOR_FG_DISABLED = #B3B3B3
+    mod.widgets.COLOR_BG_DISABLED = #E0E0E0
+    mod.widgets.COLOR_WARNING_NOT_FOUND = #953800
 
-    pub COLOR_BG_PREVIEW = #F0F5FF
-    pub COLOR_BG_PREVIEW_HOVER = #CDEDDF
-
-    pub COLOR_AVATAR_BG = #52b2ac
-    pub COLOR_AVATAR_BG_IDLE = #d8d8d8
+    mod.widgets.COLOR_SELECT_TEXT = #A6CDFE
 
 
-    pub COLOR_UNREAD_BADGE_MENTIONS = #FF0000;
-    pub COLOR_UNREAD_BADGE_MARKED   = (COLOR_ROBRIX_CYAN);
-    pub COLOR_UNREAD_BADGE_MESSAGES = #AAAAAA
+    mod.widgets.COLOR_PRIMARY = #ffffff
+
+    mod.widgets.COLOR_PRIMARY_DARKER = #fefefe
+    mod.widgets.COLOR_SECONDARY = #E3E3E3
+    mod.widgets.COLOR_SECONDARY_DARKER = #C8C8C8
+
+    mod.widgets.COLOR_ACTIVE_PRIMARY = #0f88fe
+
+    mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER = #106fcc
+
+    mod.widgets.COLOR_BG_PREVIEW = #F0F5FF
+
+    mod.widgets.COLOR_BG_PREVIEW_HOVER = #CDEDDF
+
+    mod.widgets.COLOR_AVATAR_BG = #52b2ac
+
+    mod.widgets.COLOR_AVATAR_BG_IDLE = #d8d8d8
 
 
-    pub COLOR_TEXT_IDLE = #d8d8d8
-    pub COLOR_TEXT = #1C274C
-    pub COLOR_TEXT_INPUT_IDLE = #d8d8d8
-
-    pub COLOR_TRANSPARENT = #00000000
-    pub COLOR_WARNING = #fcdb03
-
-    pub COLOR_LINK_HOVER = #21B070
+    mod.widgets.COLOR_UNREAD_BADGE_MENTIONS = #FF0000;
 
 
-    pub NAVIGATION_TAB_BAR_SIZE = 68
-    pub COLOR_NAVIGATION_TAB_FG        = (COLOR_TEXT)
-    pub COLOR_NAVIGATION_TAB_FG_HOVER  = (COLOR_TEXT)
-    pub COLOR_NAVIGATION_TAB_FG_ACTIVE = (COLOR_TEXT)
-    pub COLOR_NAVIGATION_TAB_BG        = (COLOR_SECONDARY)
-    pub COLOR_NAVIGATION_TAB_BG_HOVER  = (COLOR_SECONDARY * 0.85)
-    pub COLOR_NAVIGATION_TAB_BG_ACTIVE = #9
+    mod.widgets.COLOR_UNREAD_BADGE_MARKED = (mod.widgets.COLOR_ROBRIX_CYAN);
+    mod.widgets.COLOR_UNREAD_BADGE_MESSAGES = #AAAAAA
 
-    pub COLOR_IMAGE_VIEWER_BACKGROUND = #333333CC // 80% Opacity
-    pub COLOR_IMAGE_VIEWER_META_BACKGROUND = #E8E8E8
+
+    mod.widgets.COLOR_TEXT_IDLE = #d8d8d8
+
+
+    mod.widgets.COLOR_TEXT = #1C274C
+    mod.widgets.COLOR_TEXT_INPUT_IDLE = #d8d8d8
+
+    mod.widgets.COLOR_TRANSPARENT = #00000000
+
+    mod.widgets.COLOR_WARNING = #fcdb03
+
+    mod.widgets.COLOR_LINK_HOVER = #21B070
+
+
+
+    mod.widgets.NAVIGATION_TAB_BAR_SIZE = 68
+
+
+    mod.widgets.COLOR_NAVIGATION_TAB_FG = (mod.widgets.COLOR_TEXT)
+    mod.widgets.COLOR_NAVIGATION_TAB_FG_HOVER = (mod.widgets.COLOR_TEXT)
+    mod.widgets.COLOR_NAVIGATION_TAB_FG_ACTIVE = (mod.widgets.COLOR_TEXT)
+    mod.widgets.COLOR_NAVIGATION_TAB_BG = (mod.widgets.COLOR_SECONDARY)
+    mod.widgets.COLOR_NAVIGATION_TAB_BG_HOVER = (mod.widgets.COLOR_SECONDARY * 0.85)
+    mod.widgets.COLOR_NAVIGATION_TAB_BG_ACTIVE = #9
+
+    mod.widgets.COLOR_IMAGE_VIEWER_BACKGROUND = #333333CC // 80% Opacity
+
+    mod.widgets.COLOR_IMAGE_VIEWER_META_BACKGROUND = #E8E8E8
 
     // An icon that can be rotated at a custom angle.
-    pub IconRotated = <Icon> {
-        draw_icon: {
-            instance rotation_angle: 0.0,
+    mod.widgets.IconRotated = Icon {
+        draw_icon +: {
+            rotation_angle: instance(0.0),
 
             // Support rotation of the icon
-            fn clip_and_transform_vertex(self, rect_pos: vec2, rect_size: vec2) -> vec4 {
+            clip_and_transform_vertex: fn(rect_pos: vec2, rect_size: vec2) -> vec4 {
                 let clipped: vec2 = clamp(
                     self.geom_pos * rect_size + rect_pos,
                     self.draw_clip.xy,
@@ -189,52 +216,52 @@ live_design! {
     }
 
     // A text input widget styled for Robrix.
-    pub RobrixTextInput = <TextInput> {
+    mod.widgets.RobrixTextInput = TextInput {
         width: Fill, height: Fit,
         margin: 0,
-        align: {y: 0.5}
+        align: Align{y: 0.5}
 
-        draw_bg: {
-            color: (COLOR_PRIMARY)
+        draw_bg +: {
+            color: (mod.widgets.COLOR_PRIMARY)
             border_radius: 2.0
             border_size: 0.0
 
-            color_hover: (COLOR_PRIMARY)
-            color_focus: (COLOR_PRIMARY)
-            color_down: (COLOR_PRIMARY)
-            color_empty: (COLOR_PRIMARY)
-            color_disabled: (COLOR_BG_DISABLED)
+            color_hover: (mod.widgets.COLOR_PRIMARY)
+            color_focus: (mod.widgets.COLOR_PRIMARY)
+            color_down: (mod.widgets.COLOR_PRIMARY)
+            color_empty: (mod.widgets.COLOR_PRIMARY)
+            color_disabled: (mod.widgets.COLOR_BG_DISABLED)
 
-            border_color: (COLOR_PRIMARY)
+            border_color: (mod.widgets.COLOR_PRIMARY)
         }
 
-        draw_selection: {
-            color: (COLOR_SELECT_TEXT)
+        draw_selection +: {
+            color: (mod.widgets.COLOR_SELECT_TEXT)
             // TODO: determine these other colors below
-            color_hover:  (COLOR_SELECT_TEXT)
-            color_focus:  (COLOR_SELECT_TEXT)
-            color_down:  (COLOR_SELECT_TEXT)
-            color_empty:  (COLOR_SELECT_TEXT)
-            color_disabled: (COLOR_SELECT_TEXT)
+            color_hover:  (mod.widgets.COLOR_SELECT_TEXT)
+            color_focus:  (mod.widgets.COLOR_SELECT_TEXT)
+            color_down:  (mod.widgets.COLOR_SELECT_TEXT)
+            color_empty:  (mod.widgets.COLOR_SELECT_TEXT)
+            color_disabled: (mod.widgets.COLOR_SELECT_TEXT)
         }
 
-        draw_cursor: {
-            color: (MESSAGE_TEXT_COLOR)
+        draw_cursor +: {
+            color: (mod.widgets.MESSAGE_TEXT_COLOR)
         }
 
-        draw_text: {
-            text_style: <MESSAGE_TEXT_STYLE>{},
-            color: (MESSAGE_TEXT_COLOR),
+        draw_text +: {
+            text_style: mod.widgets.MESSAGE_TEXT_STYLE {},
+            color: (mod.widgets.MESSAGE_TEXT_COLOR),
             // TODO: determine these colors
-            uniform color_hover: (MESSAGE_TEXT_COLOR),
-            uniform color_focus: (MESSAGE_TEXT_COLOR),
-            uniform color_down: (MESSAGE_TEXT_COLOR),
-            uniform color_disabled: (COLOR_FG_DISABLED),
-            uniform color_empty: #B,
-            uniform color_empty_hover: #B,
-            uniform color_empty_focus: #B,
+            color_hover: uniform((mod.widgets.MESSAGE_TEXT_COLOR)),
+            color_focus: uniform((mod.widgets.MESSAGE_TEXT_COLOR)),
+            color_down: uniform((mod.widgets.MESSAGE_TEXT_COLOR)),
+            color_disabled: uniform((mod.widgets.COLOR_FG_DISABLED)),
+            color_empty: uniform(#B),
+            color_empty_hover: uniform(#B),
+            color_empty_focus: uniform(#B),
 
-            fn get_color(self) -> vec4 {
+            get_color: fn() -> vec4 {
                 return mix(
                     mix(
                         mix(
@@ -260,38 +287,39 @@ live_design! {
         }
     }
 
-    pub SimpleTextInput = <RobrixTextInput> {
+    mod.widgets.SimpleTextInput = mod.widgets.RobrixTextInput {
+
         padding: 10,
         width: Fill, height: Fit
-        flow: RightWrap,
-        draw_bg: {
-            color: (COLOR_SECONDARY_DARKER)
+        flow: Flow.Right{wrap: true},
+        draw_bg +: {
+            color: (mod.widgets.COLOR_SECONDARY_DARKER)
             border_radius: 2.0
             border_size: 1.0
 
-            color: (COLOR_PRIMARY)
-            color_hover: (COLOR_PRIMARY)
-            color_focus: (COLOR_PRIMARY)
-            color_down: (COLOR_PRIMARY)
-            color_empty: (COLOR_PRIMARY)
-            color_disabled: (COLOR_BG_DISABLED)
+            color: (mod.widgets.COLOR_PRIMARY)
+            color_hover: (mod.widgets.COLOR_PRIMARY)
+            color_focus: (mod.widgets.COLOR_PRIMARY)
+            color_down: (mod.widgets.COLOR_PRIMARY)
+            color_empty: (mod.widgets.COLOR_PRIMARY)
+            color_disabled: (mod.widgets.COLOR_BG_DISABLED)
 
-            border_color: (COLOR_SECONDARY_DARKER)
-            border_color_hover: (COLOR_ACTIVE_PRIMARY)
-            border_color_focus: (COLOR_ACTIVE_PRIMARY_DARKER)
-            border_color_down: (COLOR_ACTIVE_PRIMARY_DARKER)
-            border_color_empty: (COLOR_SECONDARY_DARKER)
-            border_color_disabled: (COLOR_FG_DISABLED)
+            border_color: (mod.widgets.COLOR_SECONDARY_DARKER)
+            border_color_hover: (mod.widgets.COLOR_ACTIVE_PRIMARY)
+            border_color_focus: (mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER)
+            border_color_down: (mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER)
+            border_color_empty: (mod.widgets.COLOR_SECONDARY_DARKER)
+            border_color_disabled: (mod.widgets.COLOR_FG_DISABLED)
 
-            border_color_2: (COLOR_SECONDARY_DARKER)
-            border_color_2_hover: (COLOR_ACTIVE_PRIMARY)
-            border_color_2_focus: (COLOR_ACTIVE_PRIMARY_DARKER)
-            border_color_2_down: (COLOR_ACTIVE_PRIMARY_DARKER)
-            border_color_2_empty: (COLOR_SECONDARY_DARKER)
-            border_color_2_disabled: (COLOR_FG_DISABLED)
+            border_color_2: (mod.widgets.COLOR_SECONDARY_DARKER)
+            border_color_2_hover: (mod.widgets.COLOR_ACTIVE_PRIMARY)
+            border_color_2_focus: (mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER)
+            border_color_2_down: (mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER)
+            border_color_2_empty: (mod.widgets.COLOR_SECONDARY_DARKER)
+            border_color_2_disabled: (mod.widgets.COLOR_FG_DISABLED)
         }
-        draw_text: {
-            wrap: Word,
+        draw_text +: {
+            flow: Flow.Right{wrap: true},
         }
         empty_text: "Add a display name..."
     }

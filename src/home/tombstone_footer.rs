@@ -14,75 +14,69 @@ use crate::{app::AppStateAction, room::{BasicRoomDetails, FetchedRoomAvatar, Fet
 const DEFAULT_TOMBSTONE_REASON: &str = "This room has been replaced and is no longer active.";
 const DEFAULT_JOIN_BUTTON_TEXT: &str = "Go to the replacement room";
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::helpers::*;
-    use crate::shared::styles::*;
-    use crate::shared::avatar::*;
-    use crate::shared::icon_button::*;
-    use crate::home::invite_screen::*;
 
-    pub TombstoneFooter = {{TombstoneFooter}}<ScrollYView> {
+    mod.widgets.TombstoneFooter = #(TombstoneFooter::register_widget(vm)) {
         visible: false,
         width: Fill,
-        height: Fit { max: Rel { base: Full, factor: 0.625 } }
+        height: Fit
         flow: Down,
-        align: {x: 0.5}
+        align: Align{x: 0.5}
         padding: 20,
         spacing: 8
 
         show_bg: true
-        draw_bg: {
+        draw_bg +: {
             color: (COLOR_SECONDARY)
         }
 
-        replacement_reason = <Label> {
+        replacement_reason := Label {
             width: Fill, height: Fit,
-            flow: RightWrap,
-            align: {x: 0.5}
-            draw_text: {
+            flow: Flow.Right{wrap: true},
+            align: Align{x: 0.5}
+            draw_text +: {
                 color: (TYPING_NOTICE_TEXT_COLOR),
-                text_style: <REGULAR_TEXT>{font_size: 11}
-                wrap: Word,
+                text_style: REGULAR_TEXT {font_size: 11}
+                flow: Flow.Right{wrap: true},
             }
         }
 
-        join_successor_button = <RobrixIconButton> {
+        join_successor_button := RobrixIconButton {
             padding: 15,
-            draw_icon: {
+            draw_icon +: {
                 svg_file: (ICON_JOIN_ROOM),
                 color: (COLOR_FG_ACCEPT_GREEN),
             }
-            icon_walk: {width: 17, height: 17, margin: {left: -2, right: -1} }
+            icon_walk: Walk{width: 17, height: 17, margin: Inset{left: -2, right: -1} }
 
-            draw_bg: {
+            draw_bg +: {
                 border_color: (COLOR_FG_ACCEPT_GREEN),
                 color: #f0fff0 // light green
             }
-            draw_text: {
+            draw_text +: {
                 color: (COLOR_FG_ACCEPT_GREEN),
             }
         }
 
-        successor_room_avatar = <Avatar> {
+        successor_room_avatar := Avatar {
             width: 30, height: 30,
             cursor: Default,
-            text_view = { text = { draw_text: {
-                text_style: <TITLE_TEXT>{ font_size: 13.0 }
+            text_view: { text := Label { draw_text +: {
+                text_style: TITLE_TEXT { font_size: 13.0 }
             }}}
         }
 
-        successor_room_name = <Label> {
+        successor_room_name := Label {
             width: Fill, height: Fit,
-            flow: RightWrap,
-            align: {x: 0.5}
-            draw_text: {
-                text_style: <TITLE_TEXT>{ font_size: 12 }
+            flow: Flow.Right{wrap: true},
+            align: Align{x: 0.5}
+            draw_text +: {
+                text_style: TITLE_TEXT { font_size: 12 }
                 color: (COLOR_TEXT)
-                wrap: Word,
+                flow: Flow.Right{wrap: true},
             }
         }
     }
@@ -107,7 +101,7 @@ pub enum SuccessorRoomDetails {
 
 
 /// A view that shows information about a tombstoned room and its successor.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct TombstoneFooter {
     #[deref] view: View,
     /// The ID of the current tombstoned room.
@@ -119,7 +113,7 @@ pub struct TombstoneFooter {
 impl Widget for TombstoneFooter {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
-            if self.view.button(ids!(join_successor_button)).clicked(actions) {
+            if self.view.button(cx, ids!(join_successor_button)).clicked(actions) {
                 let Some(destination_room) = self.successor_info.clone() else {
                     error!("BUG: cannot navigate to replacement room: no successor room information.");
                     return;
@@ -146,10 +140,10 @@ impl TombstoneFooter {
         tombstoned_room_id: &OwnedRoomId,
         successor_room_details: &SuccessorRoomDetails,
     ) {
-        let replacement_reason = self.view.label(ids!(replacement_reason));
-        let join_successor_button = self.view.button(ids!(join_successor_button));
-        let successor_room_avatar = self.view.avatar(ids!(successor_room_avatar));
-        let successor_room_name = self.view.label(ids!(successor_room_name));
+        let replacement_reason = self.view.label(cx, ids!(replacement_reason));
+        let join_successor_button = self.view.button(cx, ids!(join_successor_button));
+        let successor_room_avatar = self.view.avatar(cx, ids!(successor_room_avatar));
+        let successor_room_name = self.view.label(cx, ids!(successor_room_name));
 
         log!("Showing TombstoneFooter for room {tombstoned_room_id}, Successor: {successor_room_details:?}");
         match successor_room_details {

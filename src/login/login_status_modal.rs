@@ -1,79 +1,77 @@
 use makepad_widgets::*;
 
-live_design! {
-    use link::theme::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::shared::icon_button::RobrixIconButton;
 
     // A modal dialog that displays the status of a login attempt.
-    pub LoginStatusModal = {{LoginStatusModal}} {
+    mod.widgets.LoginStatusModal = #(LoginStatusModal::register_widget(vm)) {
         width: Fit,
         height: Fit
-        align: {x: 0.5}
+        align: Align{x: 0.5}
 
-        <RoundedView> {
+        RoundedView {
             // Halfway between the login screen background (320 px wide)
             // and the login screen's buttons/content (250 px wide).
             width: ((320+250)/2),
             height: Fit,
             flow: Down,
-            align: {x: 0.5}
+            align: Align{x: 0.5}
             padding: 25,
             spacing: 10,
 
             show_bg: true
-            draw_bg: {
+            draw_bg +: {
                 color: #CCC
                 border_radius: 3.0
             }
 
-            <View> {
+            View {
                 width: Fill,
                 height: Fit,
                 flow: Right
-                padding: {top: 0, bottom: 10}
-                align: {x: 0.5, y: 0.0}
+                padding: Inset{top: 0, bottom: 10}
+                align: Align{x: 0.5, y: 0.0}
 
-                title = <Label> {
+                title := Label {
                     text: "Login Status"
-                    draw_text: {
-                        text_style: <TITLE_TEXT>{font_size: 13},
+                    draw_text +: {
+                        text_style: TITLE_TEXT {font_size: 13},
                         color: #000
                     }
                 }
             }
 
-            status = <Label> {
+            status := Label {
                 width: Fill
-                margin: {top: 5, bottom: 5}
-                draw_text: {
-                    text_style: <REGULAR_TEXT>{
+                margin: Inset{top: 5, bottom: 5}
+                draw_text +: {
+                    text_style: REGULAR_TEXT {
                         font_size: 11.5,
                     },
                     color: #000
-                    wrap: Word
+                    flow: Flow.Right{wrap: true}
                 }
             }
 
-            <View> {
+            View {
                 width: Fill,
                 height: Fit,
                 flow: Right
-                align: {x: 1.0}
-                margin: {top: 10}
+                align: Align{x: 1.0}
+                margin: Inset{top: 10}
 
-                button = <RobrixIconButton> {
-                    align: {x: 0.5, y: 0.5}
+                button := RobrixIconButton {
+                    align: Align{x: 0.5, y: 0.5}
                     width: Fit, height: Fit
                     padding: 12
-                    draw_bg: {
+                    draw_bg +: {
                         color: (COLOR_ACTIVE_PRIMARY)
                     }
-                    draw_text: {
+                    draw_text +: {
                         color: (COLOR_PRIMARY)
-                        text_style: <REGULAR_TEXT> {}
+                        text_style: REGULAR_TEXT {}
                     }
                     text: "Cancel"
                 }
@@ -83,13 +81,14 @@ live_design! {
 }
 
 /// A modal dialog that displays the status of a login attempt.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct LoginStatusModal {
     #[deref] view: View,
 }
 
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Clone, Debug, Default)]
 pub enum LoginStatusModalAction {
+    #[default]
     None,
     Close,
 }
@@ -106,9 +105,9 @@ impl Widget for LoginStatusModal {
 }
 
 impl WidgetMatchEvent for LoginStatusModal {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         let widget_uid = self.widget_uid();
-        let button = self.button(ids!(button));
+        let button = self.button(cx, ids!(button));
 
         let modal_dismissed = actions
             .iter()
@@ -122,7 +121,7 @@ impl WidgetMatchEvent for LoginStatusModal {
             // a `LoginStatusModalAction::Close` action, as that would cause
             // an infinite action feedback loop.
             if !modal_dismissed {
-                cx.widget_action(widget_uid, &scope.path, LoginStatusModalAction::Close);
+                cx.widget_action(widget_uid,  LoginStatusModalAction::Close);
             }
         }
     }
@@ -131,17 +130,17 @@ impl WidgetMatchEvent for LoginStatusModal {
 impl LoginStatusModal {
     /// Sets the title text displayed in the modal.
     fn set_title(&mut self, cx: &mut Cx, title: &str) {
-        self.label(ids!(title)).set_text(cx, title);
+        self.label(cx, ids!(title)).set_text(cx, title);
     }
 
     /// Sets the status text displayed in the body of the modal.
     fn set_status(&mut self, cx: &mut Cx, status: &str) {
-        self.label(ids!(status)).set_text(cx, status);
+        self.label(cx, ids!(status)).set_text(cx, status);
     }
 
     /// Returns a reference to the modal's button, enabling you to set its properties.
-    fn button_ref(&self) -> ButtonRef {
-        self.button(ids!(button))
+    fn button_ref(&self, cx: &mut Cx) -> ButtonRef {
+        self.button(cx, ids!(button))
     }
 }
 
@@ -161,9 +160,9 @@ impl LoginStatusModalRef {
     }
 
     /// See [`LoginStatusModal::button_ref()`].
-    pub fn button_ref(&self) -> ButtonRef {
+    pub fn button_ref(&self, cx: &mut Cx) -> ButtonRef {
         self.borrow()
-            .map(|inner| inner.button_ref())
+            .map(|inner| inner.button_ref(cx))
             .unwrap_or_default()
     }
 }

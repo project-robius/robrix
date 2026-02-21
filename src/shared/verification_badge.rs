@@ -9,79 +9,82 @@ use crate::{
 
 
 // First, define the verification icons component layout
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
-    use crate::shared::styles::*;
-    use crate::shared::my_tooltip::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    VERIFICATION_YES = dep("crate://self/resources/icons/verification_yes.svg")
-    VERIFICATION_NO = dep("crate://self/resources/icons/verification_no.svg")
-    VERIFICATION_UNK = dep("crate://self/resources/icons/verification_unk.svg")
+    mod.widgets.VERIFICATION_YES = crate_resource("self:resources/icons/verification_yes.svg")
 
-    VerificationIcon = <Icon> {
-        icon_walk: { width: 19, margin: 0}
-        margin: {left: 0, right: 3, top: 2, bottom: 0}
+    mod.widgets.VERIFICATION_NO = crate_resource("self:resources/icons/verification_no.svg")
+    mod.widgets.VERIFICATION_UNK = crate_resource("self:resources/icons/verification_unk.svg")
+
+    mod.widgets.VerificationIcon = Icon {
+
+        icon_walk: Walk{ width: 19, margin: 0}
+        margin: Inset{left: 0, right: 3, top: 2, bottom: 0}
     }
 
-    pub IconYes = <View> {
+    mod.widgets.IconYes = View {
+
         visible: false
         width: Fit, height: Fit
-        <VerificationIcon> {
-            draw_icon: {
-                svg_file: (VERIFICATION_YES),
-                fn get_color(self) -> vec4 {
+        mod.widgets.VerificationIcon {
+            draw_icon +: {
+                svg_file: (mod.widgets.VERIFICATION_YES),
+                get_color: fn() -> vec4 {
                     return (COLOR_FG_ACCEPT_GREEN);
                 }
             }
         }
     }
 
-    pub IconNo = <View> {
+    mod.widgets.IconNo = View {
+
         visible: false
         width: Fit, height: Fit
-        <VerificationIcon> {
-            draw_icon: {
-                svg_file: (VERIFICATION_NO),
-                fn get_color(self) -> vec4 {
+        mod.widgets.VerificationIcon {
+            draw_icon +: {
+                svg_file: (mod.widgets.VERIFICATION_NO),
+                get_color: fn() -> vec4 {
                     return (COLOR_FG_DANGER_RED);
                 }
             }
         }
     }
 
-    pub IconUnk = <View> {
+    mod.widgets.IconUnk = View {
+
         visible: false
         width: Fit, height: Fit
-        <VerificationIcon> {
-            draw_icon: {
-                svg_file: (VERIFICATION_UNK),
-                fn get_color(self) -> vec4 {
+        mod.widgets.VerificationIcon {
+            draw_icon +: {
+                svg_file: (mod.widgets.VERIFICATION_UNK),
+                get_color: fn() -> vec4 {
                     return #x888888;
                 }
             }
         }
     }
 
-    pub VerificationBadge = {{VerificationBadge}} {
+    mod.widgets.VerificationBadge = #(VerificationBadge::register_widget(vm)) {
+
         width: Fit, height: Fit
         flow: Overlay
-        align: { x: 1.0, y: 0 }
+        align: Align{ x: 1.0, y: 0 }
 
-        verification_icons = <View> {
+        verification_icons := View {
             flow: Overlay
-            align: { x: 1.0, y: 0 }
+            align: Align{ x: 1.0, y: 0 }
             width: Fit, height: Fit
 
-            icon_yes = <IconYes> {}
-            icon_no = <IconNo> {}
-            icon_unk = <IconUnk> {}
+            icon_yes := mod.widgets.IconYes {}
+            icon_no := mod.widgets.IconNo {}
+            icon_unk := mod.widgets.IconUnk {}
         }
     }
 }
 
-#[derive(Live, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct VerificationBadge {
     #[deref]
     view: View,
@@ -89,17 +92,15 @@ pub struct VerificationBadge {
     verification_state: VerificationState,
 }
 
-impl LiveHook for VerificationBadge {
-    fn after_apply_from_doc(&mut self, cx: &mut Cx) {
-        if let Some(client) = get_client() {
-            self.verification_state = client.encryption().verification_state().get();
-            self.update_icon_visibility(cx);
-        }
-    }
-}
-
 impl Widget for VerificationBadge {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if self.verification_state == VerificationState::Unknown {
+            if let Some(client) = get_client() {
+                self.verification_state = client.encryption().verification_state().get();
+                self.update_icon_visibility(cx);
+            }
+        }
+
         self.view.handle_event(cx, event, scope);
 
         if let Event::Actions(actions) = event {
@@ -125,9 +126,9 @@ impl VerificationBadge {
             VerificationState::Verified => (true, false, false),
         };
 
-        self.view(ids!(icon_yes)).set_visible(cx, yes);
-        self.view(ids!(icon_no)).set_visible(cx, no);
-        self.view(ids!(icon_unk)).set_visible(cx, unk);
+        self.view(cx, ids!(icon_yes)).set_visible(cx, yes);
+        self.view(cx, ids!(icon_no)).set_visible(cx, no);
+        self.view(cx, ids!(icon_unk)).set_visible(cx, unk);
         self.redraw(cx);
     }
 }

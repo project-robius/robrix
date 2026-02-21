@@ -5,6 +5,7 @@ use crate::sliding_sync::TimelineKind;
 use crate::utils::human_readable_list;
 use indexmap::IndexMap;
 use makepad_widgets::*;
+use crate::{LivePtr, widget_ref_from_live_ptr};
 use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, OwnedRoomId};
 use matrix_sdk_ui::timeline::EventTimelineItem;
 
@@ -15,43 +16,40 @@ use std::cmp;
 /// and its accompanying tooltip.
 pub const MAX_VISIBLE_AVATARS_IN_READ_RECEIPT: usize = 3;
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::avatar::*;
-    use crate::shared::styles::*;
 
-    pub AvatarRow = {{AvatarRow}} {
-        align: {y: 0.5},
-        avatar_template: <Avatar> {
+    mod.widgets.AvatarRow = #(AvatarRow::register_widget(vm)) {
+        align: Align{y: 0.5},
+        avatar_template: Avatar {
             width: 15.0,
             height: 15.0,
-            text_view = {
-                text = {
-                    draw_text: {
-                        text_style: { font_size: 6.0 }
+            text_view: {
+                text := Label {
+                    draw_text +: {
+                        text_style: theme.font_regular { font_size: 6.0 }
                     }
                 }
             }
         }
-        margin: {top: 5, right: 0},
+        margin: Inset{top: 5, right: 0},
         width: Fit,
         height: 15.0,
-        plus_template: <Label> {
+        plus_template: Label {
             padding: 0,
             flow: Right, // do not wrap
-            draw_text: {
+            draw_text +: {
                 color: #x0,
-                text_style: <TITLE_TEXT>{ font_size: 10}
+                text_style: TITLE_TEXT { font_size: 10}
             }
             text: ""
         }
     }
 }
 /// The widget that displays a list of read receipts.
-#[derive(Live, Widget, LiveHook)]
+#[derive(Script, Widget, ScriptHook)]
 pub struct AvatarRow {
     #[redraw]
     #[live]
@@ -87,7 +85,7 @@ pub struct AvatarRow {
 }
 
 impl Widget for AvatarRow {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
         let Some(read_receipts) = &self.read_receipts else {
             return;
         };
@@ -102,7 +100,7 @@ impl Widget for AvatarRow {
             | Hit::FingerHoverIn(..) => true,
             Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => true,
             Hit::FingerHoverOut(_) => {
-                cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
+                cx.widget_action(uid,  RoomScreenTooltipActions::HoverOut);
                 false
             }
             _ => false,
@@ -110,8 +108,7 @@ impl Widget for AvatarRow {
         if should_hover_in {
             if let Some(read_receipts) = &self.read_receipts {
                 cx.widget_action(
-                    uid,
-                    &scope.path,
+                    uid, 
                     RoomScreenTooltipActions::HoverInReadReceipt {
                         widget_rect,
                         read_receipts: read_receipts.clone(),
@@ -168,11 +165,11 @@ impl AvatarRow {
             self.buttons.clear();
             for _ in 0..cmp::min(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT, receipts_map.len()) {
                 self.buttons.push((
-                    WidgetRef::new_from_ptr(cx, self.avatar_template).as_avatar(),
+                    widget_ref_from_live_ptr(cx, self.avatar_template).as_avatar(),
                     false,
                 ));
             }
-            self.label = Some(WidgetRef::new_from_ptr(cx, self.plus_template).as_label());
+            self.label = Some(widget_ref_from_live_ptr(cx, self.plus_template).as_label());
             self.read_receipts = Some(receipts_map.clone());
         }
         for ((avatar_ref, drawn), (user_id, _)) in
@@ -235,7 +232,7 @@ pub fn populate_read_receipts(
     timeline_kind: &TimelineKind,
     event_tl_item: &EventTimelineItem,
 ) {
-    item.avatar_row(ids!(avatar_row)).set_avatar_row(
+    item.avatar_row(cx, ids!(avatar_row)).set_avatar_row(
         cx,
         timeline_kind,
         event_tl_item.event_id(),

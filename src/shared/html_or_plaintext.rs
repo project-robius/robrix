@@ -1,48 +1,47 @@
 //! A `HtmlOrPlaintext` view can display either plaintext or rich HTML content.
 
-use makepad_widgets::{makepad_html::HtmlDoc, *};
+use makepad_widgets::*;
 use matrix_sdk::{ruma::{matrix_uri::MatrixId, OwnedMxcUri}, OwnedServerName};
 
-use crate::{avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, sliding_sync::{current_user_id, submit_async_request, MatrixRequest}, utils};
+use crate::{ApplyOverCompat, avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, sliding_sync::{current_user_id, submit_async_request, MatrixRequest}, utils};
 
 use super::avatar::AvatarWidgetExt;
 
 /// The color of the text used to print the spoiler reason before the hidden text.
 const COLOR_SPOILER_REASON: Vec4 = vec4(0.6, 0.6, 0.6, 1.0);
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::shared::avatar::Avatar;
 
-    BaseLinkPill = <RoundedView> {
+    mod.widgets.BaseLinkPill = RoundedView {
+
+
         width: Fit, height: Fit,
         flow: Right,
-        align: { y: 0.5 }
-        padding: { left: 7, right: 7, bottom: 5, top: 5 }
+        align: Align{ y: 0.5 }
+        padding: Inset{ left: 7, right: 7, bottom: 5, top: 5 }
         spacing: 5.0,
 
         show_bg: true,
-        draw_bg: {
+        draw_bg +: {
             color: #000,
             border_radius: 7.0,
         }
 
-        avatar = <Avatar> {
+        avatar := Avatar {
             height: 18.0, width: 18.0,
-            text_view = { text = { draw_text: {
-                text_style: <TITLE_TEXT>{ font_size: 10.0 }
+            text_view: { text := Label { draw_text +: {
+                text_style: TITLE_TEXT { font_size: 10.0 }
             }}}
         }
 
-        title = <Label> {
+        title := Label {
             flow: Right, // do not wrap
-            draw_text: {
+            draw_text +: {
                 color: #f,
-                text_style: <MESSAGE_TEXT_STYLE> { font_size: 10.0 },
+                text_style: MESSAGE_TEXT_STYLE { font_size: 10.0 },
             }
             text: "Unknown",
         }
@@ -50,59 +49,75 @@ live_design! {
 
     // A pill-shaped widget that displays a Matrix link,
     // either a link to a user, a room, or a message in a room.
-    MatrixLinkPill = {{MatrixLinkPill}}<BaseLinkPill> { }
+    mod.widgets.MatrixLinkPill = #(MatrixLinkPill::register_widget(vm)) { }
 
     // A RobrixHtmlLink is either a regular Html link (default) or a Matrix link.
     // The Matrix link is a pill-shaped widget with an avatar and a title.
-    pub RobrixHtmlLink = {{RobrixHtmlLink}} {
+    mod.widgets.RobrixHtmlLink = #(RobrixHtmlLink::register_widget(vm)) {
         width: Fit, height: Fit,
-        flow: RightWrap, // ensure the link text can wrap
-        align: { y: 0.5 },
+        flow: Flow.Right{wrap: true}, // ensure the link text can wrap
+        align: Align{ y: 0.5 },
         cursor: Hand,
 
-        html_link_view = <View> {
+        html_link_view := View {
             visible: true,
             width: Fit, height: Fit,
-            flow: RightWrap,
+            flow: Flow.Right{wrap: true},
 
-            html_link = <HtmlLink> {
+            html_link := HtmlLink {
                 hover_color: (COLOR_LINK_HOVER)
                 grab_key_focus: false,
-                padding: {left: 1.0, right: 1.5},
+                padding: Inset{left: 1.0, right: 1.5},
             }
         }
 
-        matrix_link_view = <View> {
-            visible: false
-            width: Fit, height: Fit,
+            matrix_link_view := View {
+                visible: false
+                width: Fit, height: Fit,
 
-            matrix_link = <MatrixLinkPill> { }
+            matrix_link := mod.widgets.MatrixLinkPill { }
         }
     }
 
     // This is an HTML subwidget used to handle `<font>` and `<span>` tags,
     // specifically: foreground text color, background color, and spoilers.
-    pub MatrixHtmlSpan = {{MatrixHtmlSpan}} {
+    mod.widgets.MatrixHtmlSpan = #(MatrixHtmlSpan::register_widget(vm)) {
         width: Fit, height: Fit,
-        align: {x: 0., y: 0.}
+        align: Align{x: 0., y: 0.}
     }
 
 
     // A centralized widget where we define styles and custom elements for HTML
     // message content. This is a wrapper around Makepad's built-in `Html` widget.
-    pub MessageHtml = <Html> {
+    mod.widgets.MessageHtml = Html {
         padding: 0.0,
         width: Fill, height: Fit, // see comment in `HtmlOrPlaintext`
-        flow: RightWrap,
-        align: { y: 0.5 }
+        flow: Flow.Right{wrap: true},
+        align: Align{ y: 0.5 }
         font_size: (MESSAGE_FONT_SIZE),
         font_color: (MESSAGE_TEXT_COLOR),
-        draw_normal:      { color: (MESSAGE_TEXT_COLOR), text_style: { line_spacing: (MESSAGE_TEXT_LINE_SPACING) } }
-        draw_italic:      { color: (MESSAGE_TEXT_COLOR), text_style: { line_spacing: (MESSAGE_TEXT_LINE_SPACING) } }
-        draw_bold:        { color: (MESSAGE_TEXT_COLOR), text_style: { line_spacing: (MESSAGE_TEXT_LINE_SPACING) } }
-        draw_bold_italic: { color: (MESSAGE_TEXT_COLOR), text_style: { line_spacing: (MESSAGE_TEXT_LINE_SPACING) } }
-        draw_fixed:       { color: (MESSAGE_TEXT_COLOR), text_style: { line_spacing: (MESSAGE_TEXT_LINE_SPACING) } }
-        draw_block: {
+        draw_text +: { color: (MESSAGE_TEXT_COLOR) }
+        text_style_normal: mod.widgets.MESSAGE_TEXT_STYLE {
+            font_size: (MESSAGE_FONT_SIZE)
+            line_spacing: (MESSAGE_TEXT_LINE_SPACING)
+        }
+        text_style_italic: theme.font_italic {
+            font_size: (MESSAGE_FONT_SIZE)
+            line_spacing: (MESSAGE_TEXT_LINE_SPACING)
+        }
+        text_style_bold: theme.font_bold {
+            font_size: (MESSAGE_FONT_SIZE)
+            line_spacing: (MESSAGE_TEXT_LINE_SPACING)
+        }
+        text_style_bold_italic: theme.font_bold_italic {
+            font_size: (MESSAGE_FONT_SIZE)
+            line_spacing: (MESSAGE_TEXT_LINE_SPACING)
+        }
+        text_style_fixed: theme.font_code {
+            font_size: (MESSAGE_FONT_SIZE)
+            line_spacing: (MESSAGE_TEXT_LINE_SPACING)
+        }
+        draw_block +: {
             line_color: (MESSAGE_TEXT_COLOR)
             sep_color: (MESSAGE_TEXT_COLOR)
             code_color: (#EDEDED)
@@ -110,25 +125,25 @@ live_design! {
             quote_fg_color: (MESSAGE_TEXT_COLOR)
         }
 
-        quote_layout: { spacing: 0, padding: {left: 15, top: 10.0, bottom: 10.0}, }
-        quote_walk: { margin: { top: 5, bottom: 5, left: 0 } }
+        quote_layout: Layout{ spacing: 0, padding: Inset{left: 15, top: 10.0, bottom: 10.0}, }
+        quote_walk: Walk{ margin: Inset{ top: 5, bottom: 5, left: 0 } }
 
-        sep_walk: { margin: { top: 10, bottom: 10 } }
+        sep_walk: Walk{ margin: Inset{ top: 10, bottom: 10 } }
 
-        list_item_layout: { padding: {left: 5.0, top: 1.0, bottom: 1.0}, }
-        list_item_walk: { margin: { left: 0, right: 0, top: 3, bottom: 3 } }
-        code_layout: { padding: {top: 15.0, bottom: 15.0, left: 15, right: 5 } }
-        code_walk: { margin: { top: 10, bottom: 10, left: 0, right: 0 } }
+        list_item_layout: Layout{ padding: Inset{left: 5.0, top: 1.0, bottom: 1.0}, }
+        list_item_walk: Walk{ margin: Inset{ left: 0, right: 0, top: 3, bottom: 3 } }
+        code_layout: Layout{ padding: Inset{top: 15.0, bottom: 15.0, left: 15, right: 5 } }
+        code_walk: Walk{ margin: Inset{ top: 10, bottom: 10, left: 0, right: 0 } }
 
-        heading_margin: { top: 1.0, bottom: 0.1 }
-        paragraph_margin: { top: 0.33, bottom: 0.33 }
+        heading_margin: Inset{ top: 1.0, bottom: 0.1 }
+        paragraph_margin: Inset{ top: 0.33, bottom: 0.33 }
 
-        inline_code_padding: {top: 3, bottom: 3, left: 4, right: 4 }
-        inline_code_margin: { left: 3, right: 3, bottom: 2, top: 2 }
+        inline_code_padding: Inset{top: 3, bottom: 3, left: 4, right: 4 }
+        inline_code_margin: Inset{ left: 3, right: 3, bottom: 2, top: 2 }
 
-        font = <MatrixHtmlSpan> { }
-        span = <MatrixHtmlSpan> { }
-        a = <RobrixHtmlLink> { }
+        font := mod.widgets.MatrixHtmlSpan { }
+        span := mod.widgets.MatrixHtmlSpan { }
+        a := mod.widgets.RobrixHtmlLink { }
 
         body: "[<i>HTML message placeholder</i>]",
     }
@@ -143,34 +158,33 @@ live_design! {
     // * They also need their height to be Fit along with all of their parent views,
     //   otherwise their total height will be zero (when a Fit is inside of a Fill),
     //   resulting in nothing being displayed.
-    pub HtmlOrPlaintext = {{HtmlOrPlaintext}} {
+    mod.widgets.HtmlOrPlaintext = #(HtmlOrPlaintext::register_widget(vm)) {
         width: Fill, height: Fit, // see above comment
         flow: Overlay
 
-        plaintext_view = <View> {
+        plaintext_view := View {
             visible: true,
             width: Fill, height: Fit, // see above comment
-            pt_label = <Label> {
+            pt_label := Label {
                 width: Fill, height: Fit, // see above comment
-                flow: RightWrap,
+                flow: Flow.Right{wrap: true},
                 padding: 0,
-                draw_text: {
-                    wrap: Word,
+                draw_text +: {
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: <MESSAGE_TEXT_STYLE> { font_size: (MESSAGE_FONT_SIZE) },
+                    text_style: mod.widgets.MESSAGE_TEXT_STYLE { font_size: (MESSAGE_FONT_SIZE) },
                 }
             }
         }
 
-        html_view = <View> {
+        html_view := View {
             visible: false,
             width: Fill, height: Fit, // see above comment
-            html = <MessageHtml> {}
+            html := mod.widgets.MessageHtml {}
         }
     }
 }
 
-#[derive(Debug, Clone, DefaultNone)]
+#[derive(Debug, Clone, Default)]
 pub enum RobrixHtmlLinkAction{
     ClickedMatrixLink {
         /// The URL of the link, which is only temporarily needed here
@@ -180,13 +194,14 @@ pub enum RobrixHtmlLinkAction{
         via: Vec<OwnedServerName>,
         key_modifiers: KeyModifiers,
     },
+    #[default]
     None,
 }
 
 /// A RobrixHtmlLink is either a regular `HtmlLink` (default) or a Matrix link.
 ///
 /// Matrix links are displayed using the [`MatrixLinkPill`] widget.
-#[derive(Live, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 struct RobrixHtmlLink {
     #[deref] view: View,
 
@@ -197,19 +212,6 @@ struct RobrixHtmlLink {
     /// The URL of the link.
     /// This is set by the `after_apply()` logic below.
     #[live] pub url: String,
-}
-
-impl LiveHook for RobrixHtmlLink {
-    fn after_apply(&mut self, _cx: &mut Cx, apply: &mut Apply, _index: usize, _nodes: &[LiveNode]) {
-        if let ApplyFrom::NewFromDoc { .. } = apply.from {
-            let scope = apply.scope.as_ref().unwrap();
-            let doc = scope.props.get::<HtmlDoc>().unwrap();
-            let mut walker = doc.new_walker_with_index(scope.index + 1);
-            if let Some((id!(href), attr)) = walker.while_attr_lc() {
-                self.url = attr.into();
-            }
-        }
-    }
 }
 
 impl Widget for RobrixHtmlLink {
@@ -247,24 +249,24 @@ impl Widget for RobrixHtmlLink {
 impl RobrixHtmlLink {
     #[allow(unused)]
     fn draw_matrix_pill(&mut self, cx: &mut Cx, matrix_id: &MatrixId, via: &[OwnedServerName]) {
-        if let Some(mut pill) = self.matrix_link_pill(ids!(matrix_link)).borrow_mut() {
+        if let Some(mut pill) = self.matrix_link_pill(cx, ids!(matrix_link)).borrow_mut() {
             pill.populate_pill(cx, self.url.clone(), matrix_id, via);
         }
-        self.view(ids!(matrix_link_view)).set_visible(cx, true);
-        self.view(ids!(html_link_view)).set_visible(cx, false);
+        self.view(cx, ids!(matrix_link_view)).set_visible(cx, true);
+        self.view(cx, ids!(html_link_view)).set_visible(cx, false);
     }
 
     /// Shows the inner plain HTML link and hides the Matrix link pill view.
     fn draw_html_link(&mut self, cx: &mut Cx) {
-        self.view(ids!(html_link_view)).set_visible(cx, true);
-        self.view(ids!(matrix_link_view)).set_visible(cx, false);
-        let mut html_link = self.html_link(ids!(html_link));
+        self.view(cx, ids!(html_link_view)).set_visible(cx, true);
+        self.view(cx, ids!(matrix_link_view)).set_visible(cx, false);
+        let mut html_link = self.html_link(cx, ids!(html_link));
         html_link.set_url(&self.url);
         html_link.set_text(cx, self.text.as_ref());
     }
 }
 
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Clone, Debug, Default)]
 pub enum MatrixLinkPillState {
     Requested,
     Loaded {
@@ -272,13 +274,14 @@ pub enum MatrixLinkPillState {
         name: String,
         avatar_url: Option<OwnedMxcUri>,
     },
+    #[default]
     None,
 }
 
 /// A pill-shaped widget that shows a Matrix link as an avatar and a title.
 ///
 /// This can be a link to a user, a room, or a message in a room.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 struct MatrixLinkPill {
     #[deref] view: View,
 
@@ -289,7 +292,7 @@ struct MatrixLinkPill {
 }
 
 impl Widget for MatrixLinkPill {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
         if let Event::Actions(actions) = event {
             for action in actions {
                 if let Some(loaded @ MatrixLinkPillState::Loaded { matrix_id, .. }) = action.downcast_ref() {
@@ -310,8 +313,7 @@ impl Widget for MatrixLinkPill {
             if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
                 if let Some(matrix_id) = self.matrix_id.clone() {
                     cx.widget_action(
-                        self.widget_uid(),
-                        &scope.path,
+                        self.widget_uid(), 
                         RobrixHtmlLinkAction::ClickedMatrixLink {
                             matrix_id,
                             via: self.via.clone(),
@@ -329,11 +331,14 @@ impl Widget for MatrixLinkPill {
     }
 
     fn text(&self) -> String {
-        self.label(ids!(title)).text()
+        match &self.state {
+            MatrixLinkPillState::Loaded { name, .. } => name.clone(),
+            _ => String::new(),
+        }
     }
 
     fn set_text(&mut self, cx: &mut Cx, v: &str) {
-        self.label(ids!(title)).set_text(cx, v);
+        self.label(cx, ids!(title)).set_text(cx, v);
     }
 }
 
@@ -348,7 +353,7 @@ impl MatrixLinkPill {
         if let MatrixId::User(user_id) = matrix_id {
             // Apply red background for current user
             if current_user_id().is_some_and(|u| &u == user_id) {
-                self.apply_over(cx, live! {
+                self.view.apply_over(cx, live!{
                     draw_bg: { color: #d91b38 }
                 });
             }
@@ -375,7 +380,7 @@ impl MatrixLinkPill {
         // Handle room ID or alias
         match &self.state {
             MatrixLinkPillState::Loaded { name, avatar_url, .. } => {
-                self.label(ids!(title)).set_text(cx, name);
+                self.label(cx, ids!(title)).set_text(cx, name);
                 self.populate_avatar(cx, avatar_url.as_ref());
                 return;
             }
@@ -399,7 +404,7 @@ impl MatrixLinkPill {
     }
 
     fn populate_avatar(&self, cx: &mut Cx, avatar_url: Option<&OwnedMxcUri>) {
-        let avatar_ref = self.avatar(ids!(avatar));
+        let avatar_ref = self.avatar(cx, ids!(avatar));
         if let Some(avatar_url) = avatar_url {
             if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, avatar_url) {
                 let res = avatar_ref.show_image(
@@ -429,7 +434,7 @@ impl MatrixLinkPillRef {
 }
 
 /// A widget used to display a single HTML `<span>` tag or a `<font>` tag.
-#[derive(Live, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 struct MatrixHtmlSpan {
     // TODO: this is unused; just here to invalidly satisfy the area provider.
     //       I'm not sure how to implement `fn area()` given that it has multiple area rects.
@@ -488,36 +493,6 @@ impl SpoilerDisplay {
     /// Returns `true` if this spoiler is not `None`, i.e., if it's `Hidden` or `Revealed`.
     fn is_some(&self) -> bool {
         !matches!(self, SpoilerDisplay::None)
-    }
-}
-
-impl LiveHook for MatrixHtmlSpan {
-    // After an MatrixHtmlSpan instance has been instantiated ("applied"),
-    // populate its struct fields from the `<span>` or `<font>` tag's attributes.
-    fn after_apply(&mut self, _cx: &mut Cx, apply: &mut Apply, _index: usize, _nodes: &[LiveNode]) {
-        // The attributes we care about (we allow all attributes in both tags):
-        // * in `<font>` tags: `color`
-        // * in `<span>` tags: `data-mx-color`, `data-mx-bg-color`, `data-mx-spoiler`
-
-        if let ApplyFrom::NewFromDoc {..} = apply.from {
-            if let Some(scope) = apply.scope.as_ref() {
-                if let Some(doc) = scope.props.get::<HtmlDoc>() {
-                    let mut walker = doc.new_walker_with_index(scope.index + 1);
-                    while let Some((lc, attr)) = walker.while_attr_lc() {
-                        let attr = attr.trim_matches(['"', '\'']);
-                        match lc {
-                            id!(color)
-                            | id!(data-mx-color) => self.fg_color = Vec4::from_hex_str(attr).ok(),
-                            id!(data-mx-bg-color) => self.bg_color = Vec4::from_hex_str(attr).ok(),
-                            id!(data-mx-spoiler) => self.spoiler = SpoilerDisplay::Hidden { reason: attr.into() },
-                            _ => ()
-                        }
-                    }
-                }
-            } else {
-                error!("BUG: MatrixHtmlSpan::after_apply(): scope not found, cannot set attributes.");
-            }
-        }
     }
 }
 
@@ -643,7 +618,7 @@ impl Widget for MatrixHtmlSpan {
 }
 
 
-#[derive(LiveHook, Live, Widget)]
+#[derive(ScriptHook, Script, Widget)]
 pub struct HtmlOrPlaintext {
     #[deref] view: View,
 }
@@ -661,16 +636,16 @@ impl Widget for HtmlOrPlaintext {
 impl HtmlOrPlaintext {
     /// Sets the plaintext content and makes it visible, hiding the rich HTML content.
     pub fn show_plaintext<T: AsRef<str>>(&mut self, cx: &mut Cx, text: T) {
-        self.view(ids!(html_view)).set_visible(cx, false);
-        self.view(ids!(plaintext_view)).set_visible(cx, true);
-        self.label(ids!(plaintext_view.pt_label)).set_text(cx, text.as_ref());
+        self.view(cx, ids!(html_view)).set_visible(cx, false);
+        self.view(cx, ids!(plaintext_view)).set_visible(cx, true);
+        self.label(cx, ids!(plaintext_view.pt_label)).set_text(cx, text.as_ref());
     }
 
     /// Sets the HTML content, making the HTML visible and the plaintext invisible.
     pub fn show_html<T: AsRef<str>>(&mut self, cx: &mut Cx, html_body: T) {
-        self.html(ids!(html_view.html)).set_text(cx, html_body.as_ref());
-        self.view(ids!(html_view)).set_visible(cx, true);
-        self.view(ids!(plaintext_view)).set_visible(cx, false);
+        self.html(cx, ids!(html_view.html)).set_text(cx, html_body.as_ref());
+        self.view(cx, ids!(html_view)).set_visible(cx, true);
+        self.view(cx, ids!(plaintext_view)).set_visible(cx, false);
     }
 }
 

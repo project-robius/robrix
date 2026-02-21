@@ -60,194 +60,188 @@ impl DerefMut for UserProfileAndRoomId {
     }
 }
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::helpers::*;
-    use crate::shared::styles::*;
-    use crate::shared::avatar::*;
-    use crate::shared::icon_button::*;
 
-    use link::tsp_link::TspVerifyUser;
 
-    ICON_DOUBLE_CHAT = dep("crate://self/resources/icons/double_chat.svg")
+    mod.widgets.ICON_DOUBLE_CHAT = crate_resource("self:resources/icons/double_chat.svg")
 
-    UserProfileView = <ScrollXYView> {
+    mod.widgets.UserProfileView = ScrollXYView {
         width: Fill,
         height: Fill,
-        align: {x: 0.5, y: 0},
-        padding: {left: 15, right: 15, top: 15, bottom: 50}
+        align: Align{x: 0.5, y: 0},
+        padding: Inset{left: 15, right: 15, top: 15, bottom: 50}
         spacing: 20,
         flow: Down,
         cursor: Default,
 
         show_bg: true,
-        draw_bg: {
+        draw_bg +: {
             color: (COLOR_PRIMARY)
         }
 
-        personal_info = <View> {
+        personal_info := View {
             width: Fill, height: Fit
-            align: {x: 0.5, y: 0.0}
-            padding: {left: 10, right: 10}
+            align: Align{x: 0.5, y: 0.0}
+            padding: Inset{left: 10, right: 10}
             spacing: 3
             flow: Down
 
-            avatar = <Avatar> {
+            avatar := Avatar {
                 width: 150,
                 height: 150,
                 margin: 10.0,
-                text_view = { text = { draw_text: {
-                    text_style: { font_size: 40.0 }
+                text_view: { text := Label { draw_text +: {
+                    text_style: theme.font_regular { font_size: 40.0 }
                 }}}
             }
 
-            user_name = <Label> {
+            user_name := Label {
                 width: Fill, height: Fit
-                align: {x: 0.5}
-                draw_text: {
-                    wrap: Word,
+                align: Align{x: 0.5}
+                draw_text +: {
+                    flow: Flow.Right{wrap: true},
                     color: #000,
-                    text_style: <USERNAME_TEXT_STYLE>{ font_size: 12 },
+                    text_style: USERNAME_TEXT_STYLE { font_size: 12 },
                 }
                 text: "User Name"
             }
 
-            user_id = <Label> {
+            user_id := Label {
                 width: Fill, height: Fit
-                align: {x: 0.5}
-                draw_text: {
+                align: Align{x: 0.5}
+                draw_text +: {
                     wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
                 text: "User ID"
             }
         }
 
-        <LineH> { padding: 15 }
+        LineH { padding: 15 }
         
-        membership = <View> {
+        membership := View {
             width: Fill,
             height: Fit,
             flow: Down,
             spacing: 3,
-            align: {x: 0.0, y: 0.0}
-            padding: {left: 10, right: 10}
+            align: Align{x: 0.0, y: 0.0}
+            padding: Inset{left: 10, right: 10}
 
-            membership_title_label = <Label> {
+            membership_title_label := Label {
                 width: Fill, height: Fit
-                draw_text: {
-                    wrap: Word,
-                    text_style: <USERNAME_TEXT_STYLE>{ font_size: 11.5 },
+                draw_text +: {
+                    flow: Flow.Right{wrap: true},
+                    text_style: USERNAME_TEXT_STYLE { font_size: 11.5 },
                     color: #000
                 }
                 text: "Membership in this room"
             }
 
-            membership_status_label = <Label> {
-                margin: { left: 7 }
+            membership_status_label := Label {
+                margin: Inset{ left: 7 }
                 width: Fill, height: Fit
-                draw_text: {
+                draw_text +: {
                     wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
                 text: "Unknown"
             }
 
-            role_info_label = <Label> {
-                margin: { left: 7 }
+            role_info_label := Label {
+                margin: Inset{ left: 7 }
                 width: Fill, height: Fit
-                draw_text: {
+                draw_text +: {
                     wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
                 text: "Unknown"
             }
         }
 
-        <LineH> { padding: 15 }
+        LineH { padding: 15 }
 
-        action_buttons = <View> {
+        action_buttons := View {
             width: Fill, height: Fit
             flow: Down,
             spacing: 10,
-            padding: {left: 10., right: 10, bottom: 10}
+            padding: Inset{left: 10., right: 10, bottom: 10}
 
-            <Label> {
+            Label {
                 width: Fill, height: Fit
-                draw_text: {
+                draw_text +: {
                     wrap: Line,
-                    text_style: <USERNAME_TEXT_STYLE>{ font_size: 11.5 },
+                    text_style: USERNAME_TEXT_STYLE { font_size: 11.5 },
                     color: #000
                 }
                 text: "Actions"
             }
 
-            direct_message_button = <RobrixIconButton> {
+            direct_message_button := RobrixIconButton {
                 margin: 0,
-                padding: {top: 10, bottom: 10, left: 12, right: 15}
-                draw_bg: {
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                draw_bg +: {
                     color: (COLOR_ACTIVE_PRIMARY)
                 }
-                draw_icon: {
-                    svg_file: (ICON_DOUBLE_CHAT)
+                draw_icon +: {
+                    svg_file: (mod.widgets.ICON_DOUBLE_CHAT)
                     color: (COLOR_PRIMARY)
                 }
-                draw_text: {
+                draw_text +: {
                     color: (COLOR_PRIMARY)
-                    text_style: <REGULAR_TEXT> {}
+                    text_style: REGULAR_TEXT {}
                 }
-                icon_walk: {width: 22, height: 16, margin: {left: -5, right: -3, top: 1, bottom: -1} }
+                icon_walk: Walk{width: 22, height: 16, margin: Inset{left: -5, right: -3, top: 1, bottom: -1} }
                 text: "Direct Message"
             }
 
-            copy_link_to_user_button = <RobrixIconButton> {
-                padding: {top: 10, bottom: 10, left: 12, right: 15}
+            copy_link_to_user_button := RobrixIconButton {
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
-                draw_bg: {
+                draw_bg +: {
                     color: (COLOR_SECONDARY)
                 }
-                draw_icon: {
+                draw_icon +: {
                     svg_file: (ICON_COPY)
                 }
-                icon_walk: {width: 16, height: 16, margin: {left: -1, right: -1} }
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -1, right: -1} }
                 text: "Copy Link to User"
             }
 
-            jump_to_read_receipt_button = <RobrixIconButton> {
+            jump_to_read_receipt_button := RobrixIconButton {
                 enabled: false, // TODO: support this button
-                padding: {top: 10, bottom: 10, left: 12, right: 15}
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
-                draw_bg: {
+                draw_bg +: {
                     color: (COLOR_SECONDARY)
                 }
-                draw_icon: {
+                draw_icon +: {
                     svg_file: (ICON_JUMP)
                 }
-                icon_walk: {width: 14, height: 16, margin: {left: -1, right: 1.5}}
+                icon_walk: Walk{width: 14, height: 16, margin: Inset{left: -1, right: 1.5}}
                 text: "Jump to Read Receipt"
             }
 
-            ignore_user_button = <RobrixIconButton> {
-                padding: {top: 10, bottom: 10, left: 12, right: 15}
+            ignore_user_button := RobrixIconButton {
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
-                draw_icon: {
+                draw_icon +: {
                     svg_file: (ICON_FORBIDDEN)
                     color: (COLOR_FG_DANGER_RED),
                 }
-                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -0.5} }
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -0.5} }
 
-                draw_bg: {
+                draw_bg +: {
                     border_color: (COLOR_FG_DANGER_RED),
                     color: (COLOR_BG_DANGER_RED)
                 }
                 text: "Ignore (Block) User"
-                draw_text:{
+                draw_text +: {
                     color: (COLOR_FG_DANGER_RED),
                 }
             }
@@ -255,80 +249,80 @@ live_design! {
 
         // A view that allows the user to verify a new DID and associate it
         // with a particular Matrix User ID.
-        tsp_verify_user = <TspVerifyUser> { }
+        tsp_verify_user := TspVerifyUser { }
     }
 
 
-    pub UserProfileSlidingPane = {{UserProfileSlidingPane}} {
+    mod.widgets.UserProfileSlidingPane = #(UserProfileSlidingPane::register_widget(vm)) {
         visible: false,
         flow: Overlay,
         width: Fill,
         height: Fill,
-        align: {x: 1.0, y: 0}
+        align: Align{x: 1.0, y: 0}
 
-        bg_view = <View> {
+        bg_view := View {
             width: Fill
             height: Fill
             visible: false,
             show_bg: true
-            draw_bg: {
-                uniform bg_color: #000000BB
-                fn pixel(self) -> vec4 {
+            draw_bg +: {
+                bg_color: uniform(#000000BB)
+                pixel: fn() -> vec4 {
                     return self.bg_color;
                 }
             }
         }
 
-        main_content = <FadeView> {
+        main_content := FadeView {
             width: 300,
             height: Fill
             flow: Overlay,
-            align: {x: 1.0}
+            align: Align{x: 1.0}
 
-            user_profile_view = <UserProfileView> { }
+            user_profile_view := mod.widgets.UserProfileView { }
 
             // The "X" close button on the top right
-            close_button = <RobrixIconButton> {
+            close_button := RobrixIconButton {
                 width: Fit,
                 height: Fit,
                 spacing: 0,
                 margin: 7,
                 padding: 15,
 
-                draw_bg: {
+                draw_bg +: {
                     color: (COLOR_SECONDARY)
                 }
-                draw_icon: {
+                draw_icon +: {
                     svg_file: (ICON_CLOSE),
-                    fn get_color(self) -> vec4 {
+                    get_color: fn() -> vec4 {
                         return #x0;
                     }
                 }
-                icon_walk: {width: 14, height: 14}
+                icon_walk: Walk{width: 14, height: 14}
             }
         }
 
-        animator: {
-            panel = {
-                default: hide,
-                show = {
+        animator: Animator{
+            panel: {
+                default: @hide
+                show: AnimatorState{
                     redraw: true,
                     from: {all: Forward {duration: 0.4}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
                     apply: {
-                        main_content = { margin: {right: 0} },
-                        bg_view = {
+                        main_content: { margin: Inset{right: 0} },
+                        bg_view: {
                             draw_bg: { bg_color: #000000BB }
                         }
                     }
                 }
-                hide = {
+                hide: AnimatorState{
                     redraw: true,
                     from: {all: Forward {duration: 0.5}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
                     apply: {
-                        main_content = { margin: {right: -300} },
-                        bg_view = {
+                        main_content: { margin: Inset{right: -300} },
+                        bg_view: {
                             draw_bg: { bg_color: #x00000000 }
                         }
                     }
@@ -339,9 +333,10 @@ live_design! {
 }
 
 
-#[derive(Clone, DefaultNone, Debug)]
+#[derive(Clone, Default, Debug)]
 pub enum ShowUserProfileAction {
     ShowUserProfile(UserProfileAndRoomId),
+    #[default]
     None,
 }
 
@@ -399,8 +394,9 @@ impl UserProfilePaneInfo {
     }
 }
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget, Animator)]
 pub struct UserProfileSlidingPane {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
     #[animator] animator: Animator,
 
@@ -421,11 +417,14 @@ impl Widget for UserProfileSlidingPane {
         // If the animator is in the `hide` state and has finished animating out,
         // that means it has fully animated off-screen and can be set to invisible.
         if self.animator_in_state(cx, ids!(panel.hide)) {
-            match (self.is_animating_out, animator_action.is_animating()) {
+            match (
+                self.is_animating_out,
+                matches!(animator_action, AnimatorAction::Animating { .. }),
+            ) {
                 (true, false) => {
                     self.visible = false;
                     cx.revert_key_focus();
-                    self.view(ids!(bg_view)).set_visible(cx, false);
+                    self.view(cx, ids!(bg_view)).set_visible(cx, false);
                     self.redraw(cx);
                     return;
                 }
@@ -447,7 +446,7 @@ impl Widget for UserProfileSlidingPane {
         let close_pane = {
             matches!(
                 event,
-                Event::Actions(actions) if self.button(ids!(close_button)).clicked(actions)
+                Event::Actions(actions) if self.button(cx, ids!(close_button)).clicked(actions)
             )
             || event.back_pressed()
             || match event.hits_with_capture_overload(cx, area, true) {
@@ -458,7 +457,7 @@ impl Widget for UserProfileSlidingPane {
                 }
                 Hit::FingerUp(fue) if fue.is_over => {
                     fue.mouse_button().is_some_and(|b| b.is_back())
-                    || !self.view(ids!(main_content)).area().rect(cx).contains(fue.abs)
+                    || !self.view(cx, ids!(main_content)).area().rect(cx).contains(fue.abs)
                 }
                 _ => false,
             }
@@ -517,7 +516,7 @@ impl Widget for UserProfileSlidingPane {
         let Some(info) = self.info.as_ref() else { return };
 
         if let Event::Actions(actions) = event {
-            if self.button(ids!(direct_message_button)).clicked(actions) {
+            if self.button(cx, ids!(direct_message_button)).clicked(actions) {
                 submit_async_request(MatrixRequest::OpenOrCreateDirectMessage {
                     user_profile: info.user_profile.clone(),
                     // Don't just create a new DM room; we want to first get confirmation from the user.
@@ -525,7 +524,7 @@ impl Widget for UserProfileSlidingPane {
                 });
             }
 
-            if self.button(ids!(copy_link_to_user_button)).clicked(actions) {
+            if self.button(cx, ids!(copy_link_to_user_button)).clicked(actions) {
                 let matrix_to_uri = info.user_id.matrix_to_uri().to_string();
                 cx.copy_to_clipboard(&matrix_to_uri);
                 enqueue_popup_notification(
@@ -541,7 +540,7 @@ impl Widget for UserProfileSlidingPane {
 
             // The `ignore_user_button` require room membership info.
             if let Some(room_member) = info.room_member.as_ref() {
-                if self.button(ids!(ignore_user_button)).clicked(actions) {
+                if self.button(cx, ids!(ignore_user_button)).clicked(actions) {
                     submit_async_request(MatrixRequest::IgnoreUser {
                         ignore: !room_member.is_ignored(),
                         room_id: info.room_id.clone(),
@@ -564,20 +563,20 @@ impl Widget for UserProfileSlidingPane {
         };
 
         // Set the user name, using the user ID as a fallback.
-        self.label(ids!(user_name)).set_text(cx, info.displayable_name());
-        self.label(ids!(user_id)).set_text(cx, info.user_id.as_str());
+        self.label(cx, ids!(user_name)).set_text(cx, info.displayable_name());
+        self.label(cx, ids!(user_id)).set_text(cx, info.user_id.as_str());
 
         // Set the avatar image, using the user name as a fallback.
-        let avatar_ref = self.avatar(ids!(avatar));
+        let avatar_ref = self.avatar(cx, ids!(avatar));
         info.avatar_state
             .data()
             .and_then(|data| avatar_ref.show_image(cx, None, |cx, img| utils::load_png_or_jpg(&img, cx, data)).ok())
             .unwrap_or_else(|| avatar_ref.show_text(cx, None, None, info.displayable_name()));
 
         // Set the membership status and role in the room.
-        self.label(ids!(membership_title_label)).set_text(cx, &info.membership_title());
-        self.label(ids!(membership_status_label)).set_text(cx, info.membership_status());
-        self.label(ids!(role_info_label)).set_text(cx, info.role_in_room().as_ref());
+        self.label(cx, ids!(membership_title_label)).set_text(cx, &info.membership_title());
+        self.label(cx, ids!(membership_status_label)).set_text(cx, info.membership_status());
+        self.label(cx, ids!(role_info_label)).set_text(cx, info.role_in_room().as_ref());
 
         // Draw and show/hide the buttons according to user and room membership info:
         // * `direct_message_button` is hidden if the user is the same as the account user,
@@ -591,9 +590,9 @@ impl Widget for UserProfileSlidingPane {
             .map(|rm| rm.is_account_user())
             .unwrap_or_else(|| current_user_id().is_some_and(|uid| uid == info.user_id));
 
-        self.button(ids!(direct_message_button)).set_visible(cx, !is_pane_showing_current_account);
+        self.button(cx, ids!(direct_message_button)).set_visible(cx, !is_pane_showing_current_account);
 
-        let ignore_user_button = self.button(ids!(ignore_user_button));
+        let ignore_user_button = self.button(cx, ids!(ignore_user_button));
         ignore_user_button.set_visible(cx, !is_pane_showing_current_account && info.room_member.is_some());
         // Unfortunately the Matrix SDK's RoomMember type does not properly track
         // the `ignored` state of a user, so we have to maintain it separately.
@@ -657,7 +656,7 @@ impl UserProfileSlidingPane {
         // If TSP is enabled, populate the TSP verification info for this user.
         #[cfg(feature = "tsp")] {
             use crate::tsp::verify_user::TspVerifyUserWidgetExt;
-            self.view.tsp_verify_user(ids!(tsp_verify_user))
+            self.view.tsp_verify_user(cx, ids!(tsp_verify_user))
                 .show(cx, info.user_id.clone());
         }
 
@@ -668,13 +667,13 @@ impl UserProfileSlidingPane {
         self.visible = true;
         cx.set_key_focus(self.view.area());
         self.animator_play(cx, ids!(panel.show));
-        self.view(ids!(bg_view)).set_visible(cx, true);
+        self.view(cx, ids!(bg_view)).set_visible(cx, true);
 
-        self.view.button(ids!(close_button)).reset_hover(cx);
-        self.view.button(ids!(direct_message_button)).reset_hover(cx);
-        self.view.button(ids!(copy_link_to_user_button)).reset_hover(cx);
-        self.view.button(ids!(jump_to_read_receipt_button)).reset_hover(cx);
-        self.view.button(ids!(ignore_user_button)).reset_hover(cx);
+        self.view.button(cx, ids!(close_button)).reset_hover(cx);
+        self.view.button(cx, ids!(direct_message_button)).reset_hover(cx);
+        self.view.button(cx, ids!(copy_link_to_user_button)).reset_hover(cx);
+        self.view.button(cx, ids!(jump_to_read_receipt_button)).reset_hover(cx);
+        self.view.button(cx, ids!(ignore_user_button)).reset_hover(cx);
         self.redraw(cx);
     }
 }
@@ -687,9 +686,9 @@ impl UserProfileSlidingPaneRef {
     }
 
     /// See [`UserProfileSlidingPane::set_info()`]
-    pub fn set_info(&self, _cx: &mut Cx, info: UserProfilePaneInfo) {
+    pub fn set_info(&self, cx: &mut Cx, info: UserProfilePaneInfo) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_info(_cx, info);
+        inner.set_info(cx, info);
     }
 
     /// See [`UserProfileSlidingPane::show()`]

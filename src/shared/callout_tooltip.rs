@@ -3,45 +3,44 @@
 //! By default, the tooltip has a black background color.
 
 use makepad_widgets::*;
+use crate::ApplyOverCompat;
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
-    use crate::shared::styles::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
     // A tooltip that appears when hovering over target's area
-    pub CalloutTooltipInner = <Tooltip> {
-        content: <View> {
+    mod.widgets.CalloutTooltipInner = Tooltip {
+        content := View {
             flow: Overlay,
             width: Fit,
             height: Fit,
 
-            rounded_view = <RoundedView> {
+            rounded_view := RoundedView {
                 width: Fit,
                 height: Fit,
                 padding: 15,
 
-                draw_bg: {
+                draw_bg +: {
                     color: #fff,
                     border_color: #D0D5DD,
                     border_radius: 2.,
-                    instance background_color: #3b444b,
+                    background_color: instance(#3b444b),
                     // Absolute position of top left corner of the tooltip
-                    instance tooltip_pos: vec2(0.0, 0.0),
+                    tooltip_pos: instance(vec2(0.0), 0.0),
                     // Absolute position of the moused over widget
-                    instance target_pos: vec2(0.0, 0.0),
+                    target_pos: instance(vec2(0.0), 0.0),
                     // Size of the moused over widget
-                    instance target_size: vec2(0.0, 0.0),
+                    target_size: instance(vec2(0.0), 0.0),
                     // Expected Width of the the tooltip 
-                    instance expected_dimension_x: 0.0,
+                    expected_dimension_x: instance(0.0),
                     // Determine height of the triangle in the callout pointer
-                    instance triangle_height: 7.5,
+                    triangle_height: instance(7.5),
                     // Determine angle of the triangle in the callout pointer in degrees
-                    instance callout_position: 180.0,
+                    callout_position: instance(180.0),
 
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                    pixel: fn() -> vec4 {
+                        let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                         let rect_size = self.rect_size;
                         let triangle_height = self.triangle_height;
                         // If there is no expected_dimension_x, it means the tooltip size is not calculated yet, do not draw anything
@@ -103,11 +102,11 @@ live_design! {
                     }
                 }
 
-                tooltip_label = <Label> {
+                tooltip_label := Label {
                     width: Fit,
                     height: Fit,
-                    draw_text: {
-                        text_style: <THEME_FONT_REGULAR>{font_size: 9},
+                    draw_text +: {
+                        text_style: theme.font_regular {font_size: 9},
                         text_wrap: Line,
                         color: (COLOR_PRIMARY),
                     }
@@ -116,8 +115,9 @@ live_design! {
         }
     }
 
-    pub CalloutTooltip = {{CalloutTooltip}} {
-        tooltip = <CalloutTooltipInner> { }
+    mod.widgets.CalloutTooltip = #(CalloutTooltip::register_widget(vm)) {
+
+        tooltip := mod.widgets.CalloutTooltipInner { }
     }
 }
 
@@ -160,7 +160,7 @@ pub enum TooltipPosition {
 }
 
 /// A tooltip widget that a callout pointing towards the referenced widget.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct CalloutTooltip {
     #[deref] view: View,
 
@@ -317,22 +317,26 @@ impl CalloutTooltip {
         tooltip: &mut TooltipRef,
         cx: &mut Cx,
         position_calc: &PositionCalculation,
-        target: Vec2,
-        target_size: Vec2,
-        expected_dimension: DVec2,
-        triangle_height: f64,
-        text_color: Vec4,
-        bg_color: Vec4,
+        _target: Vec2,
+        _target_size: Vec2,
+        _expected_dimension: DVec2,
+        _triangle_height: f64,
+        _text_color: Vec4,
+        _bg_color: Vec4,
     ) {
-        let tooltip_pos = vec2(position_calc.tooltip_pos.x as f32, position_calc.tooltip_pos.y as f32);
+        let _ = (
+            position_calc.callout_position,
+            position_calc.width_to_be_fixed,
+        );
+        let _tooltip_pos = vec2(position_calc.tooltip_pos.x as f32, position_calc.tooltip_pos.y as f32);
         
         if position_calc.fixed_width {
             tooltip.apply_over(
                 cx,
                 live!(
-                content: {
+                content := View {
                     margin: { left: (tooltip_pos.x), top: (tooltip_pos.y) },
-                    rounded_view = {
+                    rounded_view: {
                         height: Fit,
                         draw_bg: {
                             triangle_height: (triangle_height),
@@ -343,7 +347,7 @@ impl CalloutTooltip {
                             expected_dimension_x: (expected_dimension.x),
                             callout_position: (position_calc.callout_position)
                         }
-                        tooltip_label = {
+                        tooltip_label: {
                             width: (position_calc.width_to_be_fixed - 15.0 * 2.0),
                             draw_text: { color: (text_color) }
                         }
@@ -352,9 +356,9 @@ impl CalloutTooltip {
             );
         } else {
             tooltip.apply_over(cx, live!(
-                content: {
+                content := View {
                     margin: { left: (tooltip_pos.x), top: (tooltip_pos.y) },
-                    rounded_view = {
+                    rounded_view: {
                         height: Fit,
                         draw_bg: {
                             triangle_height: (triangle_height),
@@ -365,7 +369,7 @@ impl CalloutTooltip {
                             expected_dimension_x: (expected_dimension.x),
                             callout_position: (position_calc.callout_position)
                         }
-                        tooltip_label = {
+                        tooltip_label: {
                             width: Fit,
                             draw_text: { color: (text_color) }
                         }
@@ -399,10 +403,10 @@ impl CalloutTooltip {
             ));
         }
 
-        let mut tooltip = self.view.tooltip(ids!(tooltip));
+        let mut tooltip = self.view.tooltip(cx, ids!(tooltip));
         tooltip.set_text(cx, &pad_last_line(text));
 
-        let expected_dimension = tooltip.view(ids!(rounded_view)).area().rect(cx).size;
+        let expected_dimension = tooltip.view(cx, ids!(rounded_view)).area().rect(cx).size;
         let screen_size = tooltip.area().rect(cx).size;
         let position_calc = Self::calculate_position(
             &options,
@@ -442,7 +446,7 @@ impl CalloutTooltip {
             cx.stop_timer(self.timer_redraw);
             self.timer_redraw = cx.start_timeout(0.05); // 50ms
         }
-        self.view.tooltip(ids!(tooltip)).show(cx);
+        self.view.tooltip(cx, ids!(tooltip)).show(cx);
     }
 
     /// Hide the tooltip.
@@ -450,7 +454,7 @@ impl CalloutTooltip {
         self.latest_options = None;
         cx.stop_timer(self.timer_redraw);
         self.timer_redraw = Timer::empty();
-        self.view.tooltip(ids!(tooltip)).hide(cx);
+        self.view.tooltip(cx, ids!(tooltip)).hide(cx);
     }
 }
 
@@ -477,7 +481,7 @@ impl CalloutTooltipRef {
 }
 
 /// Actions that can be emitted from anywhere to show or hide the `tooltip`.
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Clone, Debug, Default)]
 pub enum TooltipAction {
     /// Show the tooltip with the given text and options.
     HoverIn {
@@ -488,6 +492,7 @@ pub enum TooltipAction {
     },
     /// Hide the tooltip.
     HoverOut,
+    #[default]
     None,
 }
 
