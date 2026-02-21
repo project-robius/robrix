@@ -1,4 +1,4 @@
-use makepad_widgets::Cx;
+use makepad_widgets::ScriptVm;
 
 pub mod add_room;
 pub mod edited_indicator;
@@ -30,33 +30,33 @@ pub mod room_context_menu;
 pub mod link_preview;
 pub mod room_image_viewer;
 
-pub fn live_design(cx: &mut Cx) {
-    search_messages::live_design(cx);
-    home_screen::live_design(cx);
-    loading_pane::live_design(cx);
-    location_preview::live_design(cx);
-    add_room::live_design(cx);
-    space_lobby::live_design(cx);
-    rooms_list_entry::live_design(cx);
-    rooms_list_header::live_design(cx);
-    rooms_list::live_design(cx);
-    edited_indicator::live_design(cx);
-    editing_pane::live_design(cx);
-    new_message_context_menu::live_design(cx);
-    event_source_modal::live_design(cx);
-    room_context_menu::live_design(cx);
-    invite_modal::live_design(cx);
-    invite_screen::live_design(cx);
-    tombstone_footer::live_design(cx);
-    room_screen::live_design(cx);
-    room_read_receipt::live_design(cx);
-    rooms_sidebar::live_design(cx);
-    main_mobile_ui::live_design(cx);
-    main_desktop_ui::live_design(cx);
-    spaces_bar::live_design(cx);
-    navigation_tab_bar::live_design(cx);
-    welcome_screen::live_design(cx);
-    light_themed_dock::live_design(cx);
-    event_reaction_list::live_design(cx);
-    link_preview::live_design(cx);
+pub fn script_mod(vm: &mut ScriptVm) {
+    search_messages::script_mod(vm);
+    loading_pane::script_mod(vm);
+    location_preview::script_mod(vm);
+    add_room::script_mod(vm);
+    space_lobby::script_mod(vm);
+    link_preview::script_mod(vm);
+    event_reaction_list::script_mod(vm);
+    room_read_receipt::script_mod(vm);
+    rooms_list_entry::script_mod(vm);
+    rooms_list_header::script_mod(vm);
+    rooms_list::script_mod(vm);
+    edited_indicator::script_mod(vm);
+    editing_pane::script_mod(vm);
+    new_message_context_menu::script_mod(vm);
+    event_source_modal::script_mod(vm);
+    room_context_menu::script_mod(vm);
+    invite_modal::script_mod(vm);
+    invite_screen::script_mod(vm);
+    tombstone_footer::script_mod(vm);
+    room_screen::script_mod(vm);
+    rooms_sidebar::script_mod(vm);
+    welcome_screen::script_mod(vm);
+    main_mobile_ui::script_mod(vm);
+    main_desktop_ui::script_mod(vm);
+    spaces_bar::script_mod(vm);
+    navigation_tab_bar::script_mod(vm);
+    // Keep HomeScreen last, it references many widgets registered above.
+    home_screen::script_mod(vm);
 }

@@ -1,108 +1,107 @@
 
 use makepad_widgets::*;
+use crate::ApplyOverCompat;
 use tsp_sdk::AsyncSecureStore;
 
 use crate::{shared::styles::*, sliding_sync::current_user_id, tsp::{submit_tsp_request, TspRequest, TspVerificationDetails}};
 
-live_design! {
+script_mod! {
     link tsp_enabled
 
-    use link::theme::*;
-    use link::widgets::*;
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::shared::icon_button::RobrixIconButton;
 
-    pub TspVerificationModal = {{TspVerificationModal}} {
+    mod.widgets.TspVerificationModal = #(TspVerificationModal::register_widget(vm)) {
         width: Fit
         height: Fit
 
-        <RoundedView> {
+        RoundedView {
             flow: Down
             width: 400
             height: Fit
-            padding: {top: 25, right: 30 bottom: 30 left: 45}
+            padding: Inset{top: 25, right: 30 bottom: 30 left: 45}
             spacing: 10
 
             show_bg: true
-            draw_bg: {
+            draw_bg +: {
                 color: #fff
                 border_radius: 3.0
             }
 
-            title = <View> {
+            title := View {
                 width: Fill,
                 height: Fit,
                 flow: Right
-                padding: {top: 0, bottom: 40}
-                align: {x: 0.5, y: 0.0}
+                padding: Inset{top: 0, bottom: 40}
+                align: Align{x: 0.5, y: 0.0}
 
-                <Label> {
+                Label {
                     text: "TSP Verification Request"
-                    draw_text: {
-                        text_style: <TITLE_TEXT>{font_size: 13},
+                    draw_text +: {
+                        text_style: TITLE_TEXT {font_size: 13},
                         color: #000
                     }
                 }
             }
 
-            body = <View> {
+            body := View {
                 width: Fill,
                 height: Fit,
                 flow: Down,
                 spacing: 40,
 
-                prompt = <Label> {
+                prompt := Label {
                     width: Fill
-                    draw_text: {
-                        text_style: <REGULAR_TEXT>{
+                    draw_text +: {
+                        text_style: REGULAR_TEXT {
                             font_size: 11.5,
                         },
                         color: #000
-                        wrap: Word
+                        flow: Flow.Right{wrap: true}
                     }
                 }
 
-                <View> {
+                View {
                     width: Fill, height: Fit
                     flow: Right,
-                    align: {x: 1.0, y: 0.5}
+                    align: Align{x: 1.0, y: 0.5}
                     spacing: 20
 
-                    cancel_button = <RobrixIconButton> {
-                        align: {x: 0.5, y: 0.5}
+                    cancel_button := RobrixIconButton {
+                        align: Align{x: 0.5, y: 0.5}
                         padding: 15,
-                        draw_icon: {
+                        draw_icon +: {
                             svg_file: (ICON_FORBIDDEN)
                             color: (COLOR_FG_DANGER_RED),
                         }
-                        icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                        icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
         
-                        draw_bg: {
+                        draw_bg +: {
                             border_color: (COLOR_FG_DANGER_RED),
                             color: (COLOR_BG_DANGER_RED)
                         }
                         text: "Ignore Request"
-                        draw_text:{
+                        draw_text +: {
                             color: (COLOR_FG_DANGER_RED),
                         }
                     }
 
-                    accept_button = <RobrixIconButton> {
-                        align: {x: 0.5, y: 0.5}
+                    accept_button := RobrixIconButton {
+                        align: Align{x: 0.5, y: 0.5}
                         padding: 15,
-                        draw_icon: {
+                        draw_icon +: {
                             svg_file: (ICON_CHECKMARK)
                             color: (COLOR_FG_ACCEPT_GREEN),
                         }
-                        icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                        icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
         
-                        draw_bg: {
+                        draw_bg +: {
                             border_color: (COLOR_FG_ACCEPT_GREEN),
                             color: (COLOR_BG_ACCEPT_GREEN)
                         }
                         text: "Accept Request"
-                        draw_text:{
+                        draw_text +: {
                             color: (COLOR_FG_ACCEPT_GREEN),
                         }
                     }
@@ -112,7 +111,7 @@ live_design! {
     }
 }
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct TspVerificationModal {
     #[deref] view: View,
     #[rust] state: TspVerificationModalState,
@@ -169,8 +168,8 @@ impl Widget for TspVerificationModal {
 
 impl WidgetMatchEvent for TspVerificationModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let accept_button = self.button(ids!(accept_button));
-        let cancel_button = self.button(ids!(cancel_button));
+        let accept_button = self.button(cx, ids!(accept_button));
+        let cancel_button = self.button(cx, ids!(cancel_button));
 
         let cancel_button_clicked = cancel_button.clicked(actions);
         let modal_dismissed = actions
@@ -199,7 +198,7 @@ impl WidgetMatchEvent for TspVerificationModal {
             return;
         }
 
-        let prompt_label = self.view.label(ids!(prompt));
+        let prompt_label = self.view.label(cx, ids!(prompt));
         if accept_button.clicked(actions) {
             let current_state = std::mem::take(&mut self.state);
             let new_state: TspVerificationModalState;
@@ -292,11 +291,11 @@ impl WidgetMatchEvent for TspVerificationModal {
                 {
                     match result {
                         Ok(()) => {
-                            self.label(ids!(prompt)).set_text(cx, "The TSP verification process has completed successfully.\n\nYou may now close this.");
+                            self.label(cx, ids!(prompt)).set_text(cx, "The TSP verification process has completed successfully.\n\nYou may now close this.");
                             self.state = TspVerificationModalState::RequestVerified;
                         }
                         Err(e) => {
-                            self.label(ids!(prompt)).set_text(cx, &format!("Error: failed to complete the TSP verification process:\n\n{e}"));
+                            self.label(cx, ids!(prompt)).set_text(cx, &format!("Error: failed to complete the TSP verification process:\n\n{e}"));
                             self.state = TspVerificationModalState::RequestDeclined;
                         }
                     }
@@ -339,10 +338,10 @@ impl TspVerificationModal {
             details.responding_vid,
             details.responding_user_id,
         );
-        self.label(ids!(prompt)).set_text(cx, &prompt_text);
+        self.label(cx, ids!(prompt)).set_text(cx, &prompt_text);
 
-        let accept_button = self.button(ids!(accept_button));
-        let cancel_button = self.button(ids!(cancel_button));
+        let accept_button = self.button(cx, ids!(accept_button));
+        let cancel_button = self.button(cx, ids!(cancel_button));
         accept_button.set_text(cx, "Accept Request");
         accept_button.set_enabled(cx, true);
         accept_button.set_visible(cx, true);

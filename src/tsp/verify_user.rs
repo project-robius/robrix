@@ -4,124 +4,119 @@ use matrix_sdk::ruma::OwnedUserId;
 
 use crate::{shared::popup_list::{enqueue_popup_notification, PopupKind}, tsp::{submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest}};
 
-live_design! {
+script_mod! {
     link tsp_enabled
 
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::helpers::*;
-    use crate::shared::styles::*;
-    use crate::shared::avatar::*;
-    use crate::shared::icon_button::*;
 
     // A view that allows the user to verify a new DID and associate it
     // with a particular Matrix User ID.
     // This is currently shown as part of the UserProfileSlidingPane.
-    pub TspVerifyUser = {{TspVerifyUser}} {
+    mod.widgets.TspVerifyUser = #(TspVerifyUser::register_widget(vm)) {
         width: Fill, height: Fit
         flow: Down
         spacing: 20,
 
-        <LineH> { padding: 15 }
+        LineH { padding: 15 }
 
-        <View> {
+        View {
             width: Fill, height: Fit
             flow: Down
             spacing: 10
-            padding: { left: 10, right: 10, bottom: 10}
+            padding: Inset{ left: 10, right: 10, bottom: 10}
 
-            <Label> {
+            Label {
                 width: Fill, height: Fit
-                draw_text: {
-                    wrap: Word,
-                    text_style: <USERNAME_TEXT_STYLE>{ font_size: 11.5 },
+                draw_text +: {
+                    flow: Flow.Right{wrap: true},
+                    text_style: USERNAME_TEXT_STYLE { font_size: 11.5 },
                     color: #000
                 }
                 text: "TSP User Verification"
             }
 
             // Content shown when this user has been verified via TSP.
-            verified_tsp = <View> {
+            verified_tsp := View {
                 visible: false,
                 width: Fill, height: Fit
                 flow: Down,
                 spacing: 10,
-                // margin: { left: 7 }
+                // margin: Inset{ left: 7 }
 
-                <Label> {
+                Label {
                     width: Fill, height: Fit
-                    draw_text: {
+                    draw_text +: {
                         wrap: Line,
                         color: (COLOR_FG_ACCEPT_GREEN),
-                        text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                        text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                     }
                     text: "✅ Verified via TSP"
                 }
 
-                tsp_did_read_only_input = <SimpleTextInput> {
+                tsp_did_read_only_input := SimpleTextInput {
                     is_read_only: true
                 }
 
-                remove_tsp_association_button = <RobrixIconButton> {
-                    padding: {top: 10, bottom: 10, left: 12, right: 15}
-                    draw_bg: {
+                remove_tsp_association_button := RobrixIconButton {
+                    padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                    draw_bg +: {
                         border_color: (COLOR_FG_DANGER_RED),
                         color: (COLOR_BG_DANGER_RED)
                     }
-                    draw_icon: {
+                    draw_icon +: {
                         svg_file: (ICON_CLOSE)
                         color: (COLOR_FG_DANGER_RED),
                     }
-                    draw_text: {
+                    draw_text +: {
                         color: (COLOR_FG_DANGER_RED),
-                        text_style: <REGULAR_TEXT> {}
+                        text_style: REGULAR_TEXT {}
                     }
-                    icon_walk: {width: 22, height: 16, margin: {left: -5, right: -3, top: 1, bottom: -1} }
+                    icon_walk: Walk{width: 22, height: 16, margin: Inset{left: -5, right: -3, top: 1, bottom: -1} }
                     text: "Remove TSP Association"
                 }
             }
 
 
             // Content shown when this user has NOT been verified via TSP.
-            unverified_tsp = <View> {
+            unverified_tsp := View {
                 visible: true,
                 width: Fill, height: Fit
                 flow: Down,
                 spacing: 10,
-                // margin: { left: 7 }
+                // margin: Inset{ left: 7 }
 
-                <Label> {
+                Label {
                     width: Fill, height: Fit
-                    flow: RightWrap,
-                    draw_text: {
-                        wrap: Word,
+                    flow: Flow.Right{wrap: true},
+                    draw_text +: {
+                        flow: Flow.Right{wrap: true},
                         color: (MESSAGE_TEXT_COLOR),
-                        text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                        text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                     }
                     text: "Interactively verify this user by associating their TSP identity (DID) with their Matrix User ID:"
                 }
 
-                tsp_did_input = <SimpleTextInput> {
+                tsp_did_input := SimpleTextInput {
                     empty_text: "Enter their TSP DID..."
                 }
 
-                verify_user_button = <RobrixIconButton> {
-                    padding: {top: 10, bottom: 10, left: 12, right: 15}
-                    draw_bg: {
+                verify_user_button := RobrixIconButton {
+                    padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                    draw_bg +: {
                         border_color: (COLOR_FG_ACCEPT_GREEN),
                         color: (COLOR_BG_ACCEPT_GREEN)
                     }
-                    draw_icon: {
+                    draw_icon +: {
                         svg_file: (ICON_CHECKMARK)
                         color: (COLOR_FG_ACCEPT_GREEN),
                     }
-                    draw_text: {
+                    draw_text +: {
                         color: (COLOR_FG_ACCEPT_GREEN)
-                        text_style: <REGULAR_TEXT> {}
+                        text_style: REGULAR_TEXT {}
                     }
-                    icon_walk: {width: 22, height: 16, margin: {left: -5, right: -3, top: 1, bottom: -1} }
+                    icon_walk: Walk{width: 22, height: 16, margin: Inset{left: -5, right: -3, top: 1, bottom: -1} }
                     text: "Verify this user via TSP"
                 }
             }
@@ -139,7 +134,7 @@ pub enum TspVerifiedInfo {
     },
 }
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct TspVerifyUser {
     #[deref] view: View,
     /// The Matrix User ID of the other user that we want to verify.
@@ -160,7 +155,7 @@ impl Widget for TspVerifyUser {
 }
 impl MatchEvent for TspVerifyUser {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        if self.view.button(ids!(remove_tsp_association_button)).clicked(actions) {
+        if self.view.button(cx, ids!(remove_tsp_association_button)).clicked(actions) {
             enqueue_popup_notification(
                 "Removing a TSP association is not yet implemented",
                 PopupKind::Warning,
@@ -168,9 +163,9 @@ impl MatchEvent for TspVerifyUser {
             );
         }
 
-        let verify_user_button = self.view.button(ids!(verify_user_button));
+        let verify_user_button = self.view.button(cx, ids!(verify_user_button));
         if verify_user_button.clicked(actions) {
-            let did_input = self.view.view(ids!(tsp_did_input));
+            let did_input = self.view.view(cx, ids!(tsp_did_input));
             let did = did_input.text().trim().to_string();
             log!("verify_user_button was clicked. DID: {}", did);
             if did.is_empty() {
@@ -239,19 +234,19 @@ impl MatchEvent for TspVerifyUser {
 impl TspVerifyUser {
     /// Repopulates this widget's UI content from its inner verified info.
     fn refresh_from_verified_info(&mut self, cx: &mut Cx) {
-        let verified_tsp_view = self.view.view(ids!(verified_tsp));
-        let unverified_tsp_view = self.view.view(ids!(unverified_tsp));
+        let verified_tsp_view = self.view.view(cx, ids!(verified_tsp));
+        let unverified_tsp_view = self.view.view(cx, ids!(unverified_tsp));
         match &self.verified_info {
             TspVerifiedInfo::Verified { did } => {
                 verified_tsp_view.set_visible(cx, true);
                 unverified_tsp_view.set_visible(cx, false);
-                verified_tsp_view.text_input(ids!(tsp_did_read_only_input)).set_text(cx, did);
+                verified_tsp_view.text_input(cx, ids!(tsp_did_read_only_input)).set_text(cx, did);
             }
             TspVerifiedInfo::Unverified => {
                 verified_tsp_view.set_visible(cx, false);
                 unverified_tsp_view.set_visible(cx, true);
-                unverified_tsp_view.text_input(ids!(tsp_did_input)).set_text(cx, "");
-                let verify_user_button = unverified_tsp_view.button(ids!(verify_user_button));
+                unverified_tsp_view.text_input(cx, ids!(tsp_did_input)).set_text(cx, "");
+                let verify_user_button = unverified_tsp_view.button(cx, ids!(verify_user_button));
                 verify_user_button.set_enabled(cx, true);
                 verify_user_button.set_text(cx, "Verify this user via TSP");
             }

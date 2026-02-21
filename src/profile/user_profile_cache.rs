@@ -240,12 +240,12 @@ where
 /// which isn't used, but acts as a guarantee that this function
 /// must only be called by the main UI thread.
 pub fn get_user_display_name_for_room(
-    _cx: &mut Cx,
+    cx: &mut Cx,
     user_id: OwnedUserId,
     room_id: Option<&OwnedRoomId>,
     fetch_if_missing: bool,
 ) -> CachedName {
-    let opt = with_user_profile(_cx, user_id, room_id, fetch_if_missing, |profile, rooms| {
+    let opt = with_user_profile(cx, user_id, room_id, fetch_if_missing, |profile, rooms| {
         room_id.and_then(|id| rooms.get(id)).map_or_else(
             || CachedName::FoundInProfile(profile.username.clone()),
             |rm| CachedName::FoundInRoom(rm.display_name().map(|n| n.to_owned())),

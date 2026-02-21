@@ -20,37 +20,37 @@ use crate::{
     utils,
 };
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
 
-    IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
+    mod.widgets.IMG_DEFAULT_AVATAR = crate_resource("self:resources/img/default_avatar.png")
+
+
 
     // An avatar view holds either an image thumbnail or a single character of text.
     // By default, the text label is visible, but can be replaced by an image
     // once it is available.
     //
     // The Avatar view (either text or image) is masked by a circle.
-    pub Avatar = {{Avatar}} {
+    mod.widgets.Avatar = #(Avatar::register_widget(vm)) {
         width: 36.0,
         height: 36.0,
         // centered horizontally and vertically.
-        align: { x: 0.5, y: 0.5 }
+        align: Align{ x: 0.5, y: 0.5 }
         // the text_view and img_view are overlaid on top of each other.
         flow: Overlay,
 
-        text_view = <View> {
+        text_view := View {
             visible: true,
-            align: { x: 0.5, y: 0.5 }
+            align: Align{ x: 0.5, y: 0.5 }
             show_bg: true,
-            draw_bg: {
-                uniform background_color: (COLOR_AVATAR_BG)
+            draw_bg +: {
+                background_color: uniform((COLOR_AVATAR_BG))
 
-                fn pixel(self) -> vec4 {
-                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                pixel: fn() -> vec4 {
+                    let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                     let c = self.rect_size * 0.5;
                     sdf.circle(c.x, c.x, c.x)
                     sdf.fill_keep(self.background_color);
@@ -58,29 +58,29 @@ live_design! {
                 }
             }
 
-            text = <Label> {
+            text := Label {
                 padding: 0,
                 width: Fit, height: Fit,
                 flow: Right, // do not wrap
-                draw_text: {
-                    text_style: <TITLE_TEXT>{ font_size: 15. }
+                draw_text +: {
+                    text_style: TITLE_TEXT { font_size: 15. }
                     color: #f,
                 }
                 text: "?"
             }
         }
 
-        img_view = <View> {
+        img_view := View {
             visible: false,
-            align: { x: 0.5, y: 0.5 }
-            img = <Image> {
-                fit: Stretch,
+            align: Align{ x: 0.5, y: 0.5 }
+            img := Image {
+                fit: ImageFit.Stretch,
                 width: Fill, height: Fill,
-                source: (IMG_DEFAULT_AVATAR),
-                draw_bg: {
-                    fn pixel(self) -> vec4 {
+                src: (mod.widgets.IMG_DEFAULT_AVATAR),
+                draw_bg +: {
+                    pixel: fn() -> vec4 {
                         let maxed = max(self.rect_size.x, self.rect_size.y);
-                        let sdf = Sdf2d::viewport(self.pos * vec2(maxed, maxed));
+                        let sdf = Sdf2d.viewport(self.pos * vec2(maxed, maxed));
                         let r = maxed * 0.5;
                         sdf.circle(r, r, r);
                         sdf.fill_keep(self.get_color());
@@ -93,7 +93,7 @@ live_design! {
 }
 
 
-#[derive(LiveHook, Live, Widget)]
+#[derive(ScriptHook, Script, Widget)]
 pub struct Avatar {
     #[deref] view: View,
 
@@ -115,8 +115,7 @@ impl Widget for Avatar {
             }
             Hit::FingerUp(fue) => if fue.is_over && fue.is_primary_hit() && fue.was_tap() {
                 cx.widget_action(
-                    widget_uid,
-                    &scope.path,
+                    widget_uid, 
                     ShowUserProfileAction::ShowUserProfile(info),
                 );
             }
@@ -131,9 +130,9 @@ impl Widget for Avatar {
     fn set_text(&mut self, cx: &mut Cx, v: &str) {
         let f = utils::user_name_first_letter(v)
             .unwrap_or("?").to_uppercase();
-        self.label(ids!(text_view.text)).set_text(cx, &f);
-        self.view(ids!(img_view)).set_visible(cx, false);
-        self.view(ids!(text_view)).set_visible(cx, true);
+        self.label(cx, ids!(text_view.text)).set_text(cx, &f);
+        self.view(cx, ids!(img_view)).set_visible(cx, false);
+        self.view(cx, ids!(text_view)).set_visible(cx, true);
     }
 }
 
@@ -164,17 +163,17 @@ impl Avatar {
                 },
                 room_id,
             });
-            self.view.apply_over(cx, live!{ cursor: Hand });
         } else {
-            self.view.apply_over(cx, live!{ cursor: Default });
+            self.info = None;
         }
         self.set_text(cx, username.as_ref());
 
         // Apply background color if provided
         if let Some(color) = bg_color {
-            self.view(ids!(text_view)).apply_over(cx, live! {
-                draw_bg: {
-                    background_color: (color)
+            let mut text_view = self.view(cx, ids!(text_view));
+            script_apply_eval!(cx, text_view, {
+                draw_bg +: {
+                    background_color: #(color)
                 }
             });
         }
@@ -200,11 +199,11 @@ impl Avatar {
     ) -> Result<(), E>
         where F: FnOnce(&mut Cx, ImageRef) -> Result<(), E>
     {
-        let img_ref = self.image(ids!(img_view.img));
+        let img_ref = self.image(cx, ids!(img_view.img));
         let res = image_set_function(cx, img_ref);
         if res.is_ok() {
-            self.view(ids!(img_view)).set_visible(cx, true);
-            self.view(ids!(text_view)).set_visible(cx, false);
+            self.view(cx, ids!(img_view)).set_visible(cx, true);
+            self.view(cx, ids!(text_view)).set_visible(cx, false);
 
             if let Some(AvatarImageInfo { user_id, username, room_id, img_data }) = info {
                 self.info = Some(UserProfileAndRoomId {
@@ -215,17 +214,16 @@ impl Avatar {
                     },
                     room_id,
                 });
-                self.view.apply_over(cx, live!{ cursor: Hand });
             } else {
-                self.view.apply_over(cx, live!{ cursor: Default });
+                self.info = None;
             }
         }
         res
     }
 
     /// Returns whether this avatar is currently displaying an image or text.
-    pub fn status(&mut self) -> AvatarDisplayStatus {
-        if self.view(ids!(img_view)).visible() {
+    pub fn status(&mut self, cx: &mut Cx) -> AvatarDisplayStatus {
+        if self.view(cx, ids!(img_view)).visible() {
             AvatarDisplayStatus::Image
         } else {
             AvatarDisplayStatus::Text
@@ -389,9 +387,9 @@ impl AvatarRef {
     }
 
     /// See [`Avatar::status()`].
-    pub fn status(&self) -> AvatarDisplayStatus {
+    pub fn status(&self, cx: &mut Cx) -> AvatarDisplayStatus {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.status()
+            inner.status(cx)
         } else {
             AvatarDisplayStatus::Text
         }

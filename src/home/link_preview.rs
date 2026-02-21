@@ -7,6 +7,7 @@ use std::{
 };
 
 use makepad_widgets::*;
+use crate::{ApplyOverCompat, LivePtr, widget_ref_from_live_ptr};
 use matrix_sdk::ruma::{events::room::{ImageInfo, MediaSource}, OwnedMxcUri, UInt};
 use serde::Deserialize;
 use url::Url;
@@ -14,10 +15,7 @@ use url::Url;
 use crate::{
     home::room_screen::TimelineUpdate,
     media_cache::MediaCache,
-    shared::{
-        styles::{COLOR_BG_PREVIEW, COLOR_BG_PREVIEW_HOVER},
-        text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
-    },
+    shared::text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
     sliding_sync::{submit_async_request, MatrixRequest, UrlPreviewError},
 };
 
@@ -56,35 +54,32 @@ pub enum LinkPreviewCacheEntry {
     Failed(LinkPreviewError),
 }
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
-    use crate::shared::styles::*;
-    use crate::shared::text_or_image::TextOrImage;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    pub MESSAGE_TEXT_STYLE = <THEME_FONT_REGULAR>{
+    mod.widgets.MESSAGE_TEXT_STYLE = theme.font_regular {
         font_size: (16),
         line_spacing: (1.2),
     }
 
-    DEFAULT_IMAGE = dep("crate://self/resources/img/default_image.png")
+    mod.widgets.DEFAULT_IMAGE = crate_resource("self:resources/img/default_image.png")
 
-    pub LinkPreview = {{LinkPreview}} {
+    mod.widgets.LinkPreview = #(LinkPreview::register_widget(vm)) {
         width: Fill, height: Fit,
         flow: Down,
 
-        collapsible_button = <View> {
+        collapsible_button := View {
             width: Fill, height: Fit,
             flow: Right,
-            align: {x: 0.5, y: 0.5},
-            padding: {top: 4},
+            align: Align{x: 0.5, y: 0.5},
+            padding: Inset{top: 4},
             visible: false,
-            expand_collapse_button = <Button> {
+            expand_collapse_button := Button {
                 width: Fit, height: Fit,
-                padding: {top: 2, bottom: 2, left: 8, right: 8},
-                draw_text: {
-                    text_style: <MESSAGE_TEXT_STYLE> {
+                padding: Inset{top: 2, bottom: 2, left: 8, right: 8},
+                draw_text +: {
+                    text_style: MESSAGE_TEXT_STYLE {
                         font_size: 10.0,
                     },
                     color: #666666,
@@ -93,75 +88,75 @@ live_design! {
             }
         }
 
-        item_template: <RoundedView> {
+        item_template: RoundedView {
             cursor: Hand,
             flow: Right,
             spacing: 4.0,
             width: Fill, height: Fit,
-            margin: { top: 7 }
-            padding: { top: 8, bottom: 8, left: 12, right: 12 },
+            margin: Inset{ top: 7 }
+            padding: Inset{ top: 8, bottom: 8, left: 12, right: 12 },
             spacing: 10
             show_bg: true,
-            draw_bg: {
+            draw_bg +: {
                 color: (COLOR_BG_PREVIEW),
                 border_radius: 4.0
             }
-            align: { y: 0.5 }
+            align: Align{ y: 0.5 }
 
-            image_view = <View> {
+            image_view := View {
                 visible: true,
                 width: Fit, height: 80,
                 flow: Down
-                image = <TextOrImage> {
+                image := TextOrImage {
                     width: 120, height: Fill,
-                    align: { y: 0.5 }
+                    align: Align{ y: 0.5 }
                 }
             }
 
-            content_view = <View> {
+            content_view := View {
                 width: Fill, height: Fill,
                 flow: Down,
 
-                <View> {
+                View {
                     width: Fit, height: Fit,
-                    flow: RightWrap,
+                    flow: Flow.Right{wrap: true},
 
-                    title_label = <LinkLabel> {
+                    title_label := LinkLabel {
                         width: Fit, height: Fit,
-                        draw_text: {
-                            text_style: <MESSAGE_TEXT_STYLE> {
+                        draw_text +: {
+                            text_style: MESSAGE_TEXT_STYLE {
                                 font_size: 12.0,
                             },
                             color: #x0000EE,
-                            wrap: Word,
-                            uniform color_hover: (COLOR_LINK_HOVER),
+                            flow: Flow.Right{wrap: true},
+                            color_hover: uniform((COLOR_LINK_HOVER)),
                         }
                     }
 
-                    site_name_label = <Label> {
+                    site_name_label := Label {
                         width: Fit, height: Fit,
-                        draw_text: {
-                            text_style: <MESSAGE_TEXT_STYLE> {
+                        draw_text +: {
+                            text_style: MESSAGE_TEXT_STYLE {
                                 font_size: 12.0,
                             },
                             color: #666666,
-                            wrap: Word,
+                            flow: Flow.Right{wrap: true},
                         }
                     }
                 }
 
-                <View> {
+                View {
                     width: Fill, height: Fit,
 
-                    description_label = <Label> {
+                    description_label := Label {
                         width: Fill, height: Fit,
-                        padding: { left: 0.0 }
-                        draw_text: {
-                            text_style: <MESSAGE_TEXT_STYLE> {
+                        padding: Inset{ left: 0.0 }
+                        draw_text +: {
+                            text_style: MESSAGE_TEXT_STYLE {
                                 font_size: 11.0,
                             },
                             color: #666666,
-                            wrap: Word,
+                            flow: Flow.Right{wrap: true},
                         }
                     }
                 }
@@ -170,7 +165,7 @@ live_design! {
     }
 }
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct LinkPreview {
     #[deref]
     view: View,
@@ -192,7 +187,7 @@ impl Widget for LinkPreview {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // Handle collapsible button clicks
         if let Event::Actions(actions) = event {
-            let expand_button = self.view.button(ids!(collapsible_button.expand_collapse_button));
+            let expand_button = self.view.button(cx, ids!(collapsible_button.expand_collapse_button));
             if expand_button.clicked(actions) {
                 self.is_expanded = !self.is_expanded;
                 self.update_button_and_visibility(cx);
@@ -218,11 +213,10 @@ impl Widget for LinkPreview {
                         draw_bg: { color: (COLOR_BG_PREVIEW) }
                     });
                     if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
-                        if let Some(html_link) = view.link_label(ids!(content_view.title_label)).borrow() {
+                        if let Some(html_link) = view.link_label(cx, ids!(content_view.title_label)).borrow() {
                             if !html_link.url.is_empty() {
                                 cx.widget_action(
-                                    html_link.widget_uid(),
-                                    &scope.path,
+                                    html_link.widget_uid(), 
                                     HtmlLinkAction::Clicked {
                                         url: html_link.url.clone(),
                                         key_modifiers: fe.modifiers,
@@ -260,15 +254,15 @@ impl LinkPreview {
 
     fn update_button_and_visibility(&mut self, cx: &mut Cx) {
         if self.show_collapsible_button {
-            self.view.view(ids!(collapsible_button)).set_visible(cx, true);
-            let button_ref = self.view.button(ids!(collapsible_button.expand_collapse_button));
+            self.view.view(cx, ids!(collapsible_button)).set_visible(cx, true);
+            let button_ref = self.view.button(cx, ids!(collapsible_button.expand_collapse_button));
             if self.is_expanded {
                 button_ref.set_text(cx, "▲ Show fewer links");
             } else {
                 button_ref.set_text(cx, &format!("▼ Show {} more links", self.hidden_links_count));
             }
         } else {
-            self.view.view(ids!(collapsible_button)).set_visible(cx, false);
+            self.view.view(cx, ids!(collapsible_button)).set_visible(cx, false);
         }
     }
 }
@@ -302,9 +296,9 @@ impl LinkPreviewRef {
          if let Some(mut inner) = self.borrow_mut() {
             inner.show_collapsible_button = true;
             inner.hidden_links_count = hidden_count;
-            let button_ref = inner.view.button(ids!(collapsible_button.expand_collapse_button));
+            let button_ref = inner.view.button(cx, ids!(collapsible_button.expand_collapse_button));
             button_ref.set_text(cx, &format!("▼ Show {} more links", inner.hidden_links_count));
-            inner.view.view(ids!(collapsible_button)).set_visible(cx, true);
+            inner.view.view(cx, ids!(collapsible_button)).set_visible(cx, true);
         }
     }
 
@@ -321,15 +315,15 @@ impl LinkPreviewRef {
     where
         F: FnOnce(&mut Cx, &TextOrImageRef, Option<Box<ImageInfo>>, MediaSource, &str, &mut MediaCache) -> bool,
     {
-        let view_ref = WidgetRef::new_from_ptr(cx, self.item_template()).as_view();
+        let view_ref = widget_ref_from_live_ptr(cx, self.item_template()).as_view();
         let mut fully_drawn = true;
         // Set title and URL
-        let title_link = view_ref.link_label(ids!(content_view.title_label));
+        let title_link = view_ref.link_label(cx, ids!(content_view.title_label));
         title_link.set_text(cx, link.as_str());
         if let Some(mut title_link) = title_link.borrow_mut() {
             title_link.url = link.to_string();
         }
-        let text_or_image_ref = view_ref.text_or_image(ids!(image));
+        let text_or_image_ref = view_ref.text_or_image(cx, ids!(image));
         text_or_image_ref.show_default_image(cx);
         let link_preview_data = match link_preview_cache_entry {
             LinkPreviewCacheEntry::LoadedLinkPreview(link_preview_data) => link_preview_data,
@@ -348,8 +342,8 @@ impl LinkPreviewRef {
         // Set site name
         if let Some(site_name) = &link_preview_data.site_name {
             view_ref
-                .view(ids!(content_view))
-                .label(ids!(site_name_label))
+                .view(cx, ids!(content_view))
+                .label(cx, ids!(site_name_label))
                 .set_text(cx, site_name);
         }
 
@@ -363,8 +357,8 @@ impl LinkPreviewRef {
                 description
             };
             view_ref
-                .view(ids!(content_view))
-                .label(ids!(description_label))
+                .view(cx, ids!(content_view))
+                .label(cx, ids!(description_label))
                 .set_text(cx, &truncated_description);
         }
 
@@ -375,7 +369,7 @@ impl LinkPreviewRef {
             image_info.size = link_preview_data.image_size;
             let image_info_source = Some(Box::new(image_info));
             let owned_mxc_uri = OwnedMxcUri::from(image.clone());
-            let text_or_image_ref = view_ref.text_or_image(ids!(image));
+            let text_or_image_ref = view_ref.text_or_image(cx, ids!(image));
             let original_source = MediaSource::Plain(owned_mxc_uri);
             // Calls the closure with the image populate function
             fully_drawn = image_populate_fn(
@@ -651,4 +645,3 @@ fn insert_into_cache(
     }
     SignalToUI::set_ui_signal();
 }
-

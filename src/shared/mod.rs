@@ -1,4 +1,4 @@
-use makepad_widgets::Cx;
+use makepad_widgets::ScriptVm;
 
 pub mod avatar;
 pub mod callout_tooltip;
@@ -15,31 +15,33 @@ pub mod styles;
 pub mod text_or_image;
 pub mod timestamp;
 pub mod bouncing_dots;
+pub mod command_text_input;
 pub mod unread_badge;
 pub mod verification_badge;
 pub mod restore_status_view;
 pub mod image_viewer;
 
 
-pub fn live_design(cx: &mut Cx) {
+pub fn script_mod(vm: &mut ScriptVm) {
     // Order matters here, as some widget definitions depend on others.
-    styles::live_design(cx);
-    helpers::live_design(cx);
-    icon_button::live_design(cx);
-    unread_badge::live_design(cx);
-    collapsible_header::live_design(cx);
-    timestamp::live_design(cx);
-    room_filter_input_bar::live_design(cx);
-    avatar::live_design(cx);
-    text_or_image::live_design(cx);
-    html_or_plaintext::live_design(cx);
-    bouncing_dots::live_design(cx);
-    jump_to_bottom_button::live_design(cx);
-    popup_list::live_design(cx);
-    verification_badge::live_design(cx);
-    callout_tooltip::live_design(cx);
-    mentionable_text_input::live_design(cx);
-    restore_status_view::live_design(cx);
-    confirmation_modal::live_design(cx);
-    image_viewer::live_design(cx);
+    styles::script_mod(vm);
+    helpers::script_mod(vm);
+    icon_button::script_mod(vm);
+    unread_badge::script_mod(vm);
+    collapsible_header::script_mod(vm);
+    timestamp::script_mod(vm);
+    room_filter_input_bar::script_mod(vm);
+    avatar::script_mod(vm);
+    text_or_image::script_mod(vm);
+    html_or_plaintext::script_mod(vm);
+    bouncing_dots::script_mod(vm);
+    jump_to_bottom_button::script_mod(vm);
+    popup_list::script_mod(vm);
+    verification_badge::script_mod(vm);
+    callout_tooltip::script_mod(vm);
+    command_text_input::script_mod(vm);
+    mentionable_text_input::script_mod(vm);
+    restore_status_view::script_mod(vm);
+    confirmation_modal::script_mod(vm);
+    image_viewer::script_mod(vm);
 }

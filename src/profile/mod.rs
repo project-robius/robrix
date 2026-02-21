@@ -1,8 +1,8 @@
-use makepad_widgets::Cx;
+use makepad_widgets::ScriptVm;
 
 pub mod user_profile;
 pub mod user_profile_cache;
 
-pub fn live_design(cx: &mut Cx) {
-    user_profile::live_design(cx);
+pub fn script_mod(vm: &mut ScriptVm) {
+    user_profile::script_mod(vm);
 }

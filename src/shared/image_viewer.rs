@@ -8,12 +8,15 @@ use chrono::{DateTime, Local};
 use makepad_widgets::{
     event::TouchUpdateEvent,
     image_cache::{ImageBuffer, ImageError},
-    rotated_image::RotatedImageWidgetExt,
     *,
 };
 use matrix_sdk_ui::timeline::EventTimelineItem;
 use thiserror::Error;
-use crate::{shared::{avatar::AvatarWidgetExt, timestamp::TimestampWidgetRefExt}, sliding_sync::TimelineKind};
+use crate::{
+    ApplyOverCompat,
+    shared::{avatar::AvatarWidgetExt, timestamp::TimestampWidgetRefExt},
+    sliding_sync::TimelineKind,
+};
 
 /// The timeout for hiding the UI overlays after no user mouse/tap activity.
 const SHOW_UI_DURATION: f64 = 3.0;
@@ -102,164 +105,160 @@ impl Default for DragState {
     }
 }
 
-live_design! {
-    use link::theme::*;
-    use link::widgets::*;
-    use crate::shared::styles::*;
-    use crate::shared::icon_button::RobrixIconButton;
-    use crate::shared::avatar::Avatar;
-    use crate::shared::timestamp::Timestamp;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    UI_ANIMATION_DURATION_SECS = 0.5
-    ROTATION_ANIMATION_DURATION_SECS = 0.2
+    mod.widgets.UI_ANIMATION_DURATION_SECS = 0.5
 
-    ImageViewerButton = <RobrixIconButton> {
+    mod.widgets.ROTATION_ANIMATION_DURATION_SECS = 0.2
+
+    mod.widgets.ImageViewerButton = RobrixIconButton {
+
         width: 44, height: 44
-        align: {x: 0.5, y: 0.5},
+        align: Align{x: 0.5, y: 0.5},
         spacing: 0, 
         padding: 0,
-        draw_bg: {
+        draw_bg +: {
             color: (COLOR_SECONDARY * 0.925)
         }
-        draw_icon: {
+        draw_icon +: {
             svg_file: (ICON_ZOOM_OUT),
-            fn get_color(self) -> vec4 {
+            get_color: fn() -> vec4 {
                 return #x0;
             }
         }
-        icon_walk: {width: 27, height: 27}
+        icon_walk: Walk{width: 27, height: 27}
     }
 
-    pub ImageViewer = {{ImageViewer}} {
+    mod.widgets.ImageViewer = #(ImageViewer::register_widget(vm)) {
+
         width: Fill, height: Fill,
         flow: Overlay
         show_bg: true
-        draw_bg: {
+        draw_bg +: {
             color: (COLOR_IMAGE_VIEWER_BACKGROUND)
         }
 
-        image_layer = <View> {
+        image_layer := View {
             width: Fill, height: Fill,
-            align: {x: 0.5, y: 0.5}
+            align: Align{x: 0.5, y: 0.5}
             flow: Down
 
-            rotated_image_container = <View> {
+            rotated_image_container := View {
                 width: Fill, height: Fill,
                 flow: Down
-                align: {x: 0.5, y: 0.5}
-                rotated_image = <RotatedImage> {
+                align: Align{x: 0.5, y: 0.5}
+                rotated_image := Image {
                     width: Fill, height: Fill,
-                    draw_bg: {
-                        rotation: 0.0
-                        opacity: 1.0
-                    }
+                    fit: ImageFit.Smallest
                 }
             }
 
-            footer = <View> {
+            footer := View {
                 width: Fill, height: 50,
                 flow: Right
                 padding: 10
-                align: {x: 0.5, y: 0.8}
+                align: Align{x: 0.5, y: 0.8}
                 spacing: 10
 
-                image_viewer_loading_spinner_view = <View> {
+                image_viewer_loading_spinner_view := View {
                     width: Fit, height: Fit
 
-                    loading_spinner = <LoadingSpinner> {
+                    loading_spinner := LoadingSpinner {
                         width: 40, height: 40,
-                        draw_bg: {
+                        draw_bg +: {
                             color: (COLOR_TEXT)
                             border_size: 3.0,
                         }
                     }
                 }
 
-                image_viewer_forbidden_view = <View> {
+                image_viewer_forbidden_view := View {
                     width: Fit, height: Fit
                     visible: false
-                    <Icon> {
-                        draw_icon: {
+                    Icon {
+                        draw_icon +: {
                             svg_file: (ICON_FORBIDDEN),
                             color: (COLOR_TEXT),
                         }
-                        icon_walk: { width: 30, height: 30 }
+                        icon_walk: Walk{ width: 30, height: 30 }
                     }
                 }
 
-                image_viewer_status_label = <Label> {
+                image_viewer_status_label := Label {
                     width: Fit, height: 30,
                     text: "Loading image...",
-                    draw_text: {
-                        text_style: <REGULAR_TEXT>{font_size: 14},
+                    draw_text +: {
+                        text_style: REGULAR_TEXT {font_size: 14},
                         color: (COLOR_TEXT)
                     }
                 }
             }
         }
 
-        metadata_view = <View> {
+        metadata_view := View {
             width: Fill, height: Fill,
             margin: 20,
-            align: {x: 0.0, y: 1.0},
-            metadata_rounded_view = <RoundedView> {
+            align: Align{x: 0.0, y: 1.0},
+            metadata_rounded_view := RoundedView {
                 width: Fill, height: Fit
                 flow: Right
-                align: {y: 0.5, x: 0.0}
+                align: Align{y: 0.5, x: 0.0}
                 padding: 13
                 spacing: 8,
 
                 show_bg: true
-                draw_bg: {
+                draw_bg +: {
                     border_radius: 4.0
                     color: (COLOR_IMAGE_VIEWER_META_BACKGROUND)
                 }
 
                 // Display user profile view below the button group when the width is not enough.
-                user_profile_view = <View> {
-                    width: Fit { max: 200 }
+                user_profile_view := View {
+                    width: 200
                     height: Fit,
                     flow: Right,
                     spacing: 13,
-                    align: { y: 0.5 }
+                    align: Align{ y: 0.5 }
                     
-                    avatar = <Avatar> {
+                    avatar := Avatar {
                         width: 45, height: 45,
-                        text_view = { text = { draw_text: {
-                            text_style: <TITLE_TEXT>{ font_size: 15.0 }
+                        text_view: { text := Label { draw_text +: {
+                            text_style: TITLE_TEXT { font_size: 15.0 }
                         }}}
                     }
 
-                    content = <View> {
+                    content := View {
                         width: Fit
                         height: Fit,
-                        align: { y: 0.5 }
+                        align: Align{ y: 0.5 }
                         spacing: 3
                         flow: Down,
 
-                        username = <Label> {
+                        username := Label {
                             width: Fit
                             height: Fit,
                             padding: 0
                             margin: 0
                             flow: Right
-                            draw_text: {
-                                text_style: <REGULAR_TEXT>{font_size: 12},
+                            draw_text +: {
+                                text_style: REGULAR_TEXT {font_size: 12},
                                 color: (COLOR_TEXT)
-                                wrap: Ellipsis
+                                flow: Flow.Right{wrap: true}
                             }
                         }
 
-                        timestamp_view = <View> {
+                        timestamp_view := View {
                             width: Fit
                             height: Fit
 
-                            timestamp = <Timestamp> {
+                            timestamp := Timestamp {
                                 width: Fit,
                                 height: Fit,
-                                ts_label = {
-                                    draw_text: {
-                                        text_style: {font_size: 9.5},
+                                ts_label := Label {
+                                    draw_text +: {
+                                        text_style: theme.font_regular {font_size: 9.5},
                                         color: (COLOR_TEXT)
                                     }
                                 }
@@ -269,185 +268,137 @@ live_design! {
                 }
 
                 // Display image name and size below the user_profile_view if the width is not enough.
-                image_name_and_size_view = <View> {
+                image_name_and_size_view := View {
                     width: Fill
                     height: Fit,
-                    align: {x: 0.5, y: 0.5}
+                    align: Align{x: 0.5, y: 0.5}
                     flow: Right
-                    image_name_and_size = <Label> {
+                    image_name_and_size := Label {
                         width: Fill,
                         height: Fit,
-                        align: {x: 0.5, y: 0.5}
-                        draw_text: {
-                            text_style: <REGULAR_TEXT>{font_size: 13},
+                        align: Align{x: 0.5, y: 0.5}
+                        draw_text +: {
+                            text_style: REGULAR_TEXT {font_size: 13},
                             color: (COLOR_TEXT),
-                            wrap: Word
+                            flow: Flow.Right{wrap: true}
                         }
                     }
                 }
             }
         }
 
-        button_group_view = <View> {
+        button_group_view := View {
             width: Fill, height: Fit
             flow: Right
-            margin: {top: 20, right: 20}
-            align: {x: 1.0, y: 0.5},
+            margin: Inset{top: 20, right: 20}
+            align: Align{x: 1.0, y: 0.5},
 
-            button_group_rounded_view = <RoundedView> {
+            button_group_rounded_view := RoundedView {
                 width: Fit, height: Fit
                 spacing: 10
                 show_bg: true
-                draw_bg: {
+                draw_bg +: {
                     color: (COLOR_IMAGE_VIEWER_META_BACKGROUND),
                     border_radius: 4.0
                 }
-                padding: { left: 7, top: 4, bottom: 4, right: 7}
+                padding: Inset{ left: 7, top: 4, bottom: 4, right: 7}
 
-                zoom_out_button = <ImageViewerButton> {
-                    draw_icon: { svg_file: (ICON_ZOOM_OUT) }
-                    icon_walk: {width: 27, height: 27, margin: {left: 2}}
+                zoom_out_button := mod.widgets.ImageViewerButton {
+                    draw_icon +: { svg_file: (ICON_ZOOM_OUT) }
+                    icon_walk: Walk{width: 27, height: 27, margin: Inset{left: 2}}
                 }
 
-                zoom_in_button = <ImageViewerButton> {
-                    draw_icon: { svg_file: (ICON_ZOOM_IN) }
-                    icon_walk: {width: 27, height: 27, margin: {left: 2}}
+                zoom_in_button := mod.widgets.ImageViewerButton {
+                    draw_icon +: { svg_file: (ICON_ZOOM_IN) }
+                    icon_walk: Walk{width: 27, height: 27, margin: Inset{left: 2}}
                 }
 
-                rotate_ccw_button = <ImageViewerButton> {
-                    draw_icon: { svg_file: (ICON_ROTATE_CCW) }
+                rotate_ccw_button := mod.widgets.ImageViewerButton {
+                    draw_icon +: { svg_file: (ICON_ROTATE_CCW) }
                 }
 
-                rotate_cw_button = <ImageViewerButton> {
-                    draw_icon: { svg_file: (ICON_ROTATE_CW) }
+                rotate_cw_button := mod.widgets.ImageViewerButton {
+                    draw_icon +: { svg_file: (ICON_ROTATE_CW) }
                 }
 
-                reset_button = <ImageViewerButton> {
-                    draw_icon: { svg_file: (ICON_JUMP) }
-                    icon_walk: {width: 25, height: 25, margin: {bottom: 2}}
+                reset_button := mod.widgets.ImageViewerButton {
+                    draw_icon +: { svg_file: (ICON_JUMP) }
+                    icon_walk: Walk{width: 25, height: 25, margin: Inset{bottom: 2}}
                 }
 
-                close_button = <ImageViewerButton> {
-                    draw_icon: { svg_file: (ICON_CLOSE) }
-                    icon_walk: {width: 21, height: 21 }
+                close_button := mod.widgets.ImageViewerButton {
+                    draw_icon +: { svg_file: (ICON_CLOSE) }
+                    icon_walk: Walk{width: 21, height: 21 }
                 }
             }
         }
 
-        animator: {
-            mode = {
-                default: upright,
-                degree_neg90 = {
+        animator: Animator{
+            mode: {
+                default: @upright
+                degree_neg90: AnimatorState{
                     redraw: false,
-                    from: {all: Forward {duration: (ROTATION_ANIMATION_DURATION_SECS)}}
-                    apply: {
-                        image_layer = {
-                            rotated_image_container = {
-                                rotated_image = {
-                                    draw_bg: {rotation: -1.5708}
-                                }
-                            }
-                        }
-                    }
+                    from: {all: Forward {duration: (mod.widgets.ROTATION_ANIMATION_DURATION_SECS)}}
+                    apply: {}
                 }
-                upright = {
+                upright: AnimatorState{
                     redraw: false,
-                    from: {all: Forward {duration: (ROTATION_ANIMATION_DURATION_SECS)}}
-                    apply: {
-                        image_layer = {
-                            rotated_image_container = {
-                                rotated_image = {
-                                    draw_bg: {rotation: 0.0}
-                                }
-                            }
-                        }
-                    }
+                    from: {all: Forward {duration: (mod.widgets.ROTATION_ANIMATION_DURATION_SECS)}}
+                    apply: {}
                 }
-                degree_90 = {
+                degree_90: AnimatorState{
                     redraw: false,
-                    from: {all: Forward {duration: (ROTATION_ANIMATION_DURATION_SECS)}}
-                    apply: {
-                        image_layer = {
-                            rotated_image_container = {
-                                rotated_image = {
-                                    draw_bg: {rotation: 1.5708}
-                                }
-                            }
-                        }
-                    }
+                    from: {all: Forward {duration: (mod.widgets.ROTATION_ANIMATION_DURATION_SECS)}}
+                    apply: {}
                 }
-                degree_180 = {
+                degree_180: AnimatorState{
                     redraw: false,
-                    from: {all: Forward {duration: (ROTATION_ANIMATION_DURATION_SECS)}}
-                    apply: {
-                        image_layer = {
-                            rotated_image_container = {
-                                rotated_image = {
-                                    draw_bg: {rotation: 3.14159}
-                                }
-                            }
-                        }
-                    }
+                    from: {all: Forward {duration: (mod.widgets.ROTATION_ANIMATION_DURATION_SECS)}}
+                    apply: {}
                 }
-                degree_270 = {
+                degree_270: AnimatorState{
                     redraw: false,
-                    from: {all: Forward {duration: (ROTATION_ANIMATION_DURATION_SECS)}}
-                    apply: {
-                        image_layer = {
-                            rotated_image_container = {
-                                rotated_image = {
-                                    draw_bg: {rotation: 4.71239}
-                                }
-                            }
-                        }
-                    }
+                    from: {all: Forward {duration: (mod.widgets.ROTATION_ANIMATION_DURATION_SECS)}}
+                    apply: {}
                 }
-                degree_360 = {
+                degree_360: AnimatorState{
                     redraw: false,
                     from: {all: Forward {duration: 0.0}}
-                    apply: {
-                        image_layer = {
-                            rotated_image_container = {
-                                rotated_image = {
-                                    draw_bg: {rotation: 6.28318}
-                                }
-                            }
-                        }
-                    }
+                    apply: {}
                 }
             }
-            hover = {
-                default: off
-                off = {
+            hover: {
+                default: @off
+                off: AnimatorState{
                     apply: { }
                 }
-                on = {
+                on: AnimatorState{
                     apply: { }
                 }
             }
-            ui_animator = {
-                default: hide,
-                show = {
+            ui_animator: {
+                default: @hide
+                show: AnimatorState{
                     redraw: false,
-                    from: { all: Forward { duration: (UI_ANIMATION_DURATION_SECS) } }
+                    from: { all: Forward { duration: (mod.widgets.UI_ANIMATION_DURATION_SECS) } }
                     apply: {
-                        button_group_view = {
-                            margin: { top: 20 }
+                        button_group_view: {
+                            margin: Inset{ top: 20 }
                         }
-                        metadata_view = {
-                            margin: { bottom: 20 }
+                        metadata_view: {
+                            margin: Inset{ bottom: 20 }
                         }
                     }
                 }
-                hide = {
+                hide: AnimatorState{
                     redraw: false,
-                    from: { all: Forward { duration: (UI_ANIMATION_DURATION_SECS) } }
+                    from: { all: Forward { duration: (mod.widgets.UI_ANIMATION_DURATION_SECS) } }
                     apply: {
-                        button_group_view = {
-                            margin: { top: -200 }
+                        button_group_view: {
+                            margin: Inset{ top: -200 }
                         }
-                        metadata_view = {
-                            margin: { bottom: -300 }
+                        metadata_view: {
+                            margin: Inset{ bottom: -300 }
                         }
                     }
                 }
@@ -458,9 +409,10 @@ live_design! {
 
 /// Actions emitted by the `ImageViewer` widget.
 #[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Clone, Debug, Default)]
 pub enum ImageViewerAction {
     /// No action.
+    #[default]
     None,
     /// Display the ImageViewer widget based on the LoadState.
     Show(LoadState),
@@ -468,8 +420,9 @@ pub enum ImageViewerAction {
     Hide,
 }
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget, Animator)]
 struct ImageViewer {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
     #[rust] drag_state: DragState,
     /// The current rotation angle of the image. Max of 4, each step represents 90 degrees
@@ -528,11 +481,11 @@ impl Widget for ImageViewer {
 
             // Reapply zoom and pan if they differ from defaults
             if saved_zoom_level != 1.0 || saved_pan_offset.is_some() {
-                let rotated_image = self.view.rotated_image(ids!(rotated_image));
-                let width = self.capped_dimension.x * saved_zoom_level;
-                let height = self.capped_dimension.y * saved_zoom_level;
+                let rotated_image = self.view.image(cx, ids!(rotated_image));
+                let _width = self.capped_dimension.x * saved_zoom_level;
+                let _height = self.capped_dimension.y * saved_zoom_level;
 
-                if let Some(offset) = saved_pan_offset {
+                if let Some(_offset) = saved_pan_offset {
                     rotated_image.apply_over(
                         cx,
                         live! {
@@ -555,8 +508,8 @@ impl Widget for ImageViewer {
 
         // Handle hover events for UI elements without consuming the main image events
         // We'll track hover state in the FingerMove event within the image handling
-        let rotated_image = self.view.rotated_image(ids!(rotated_image));
-        let button_group_rounded_view = self.view.view(ids!(button_group_rounded_view));
+        let rotated_image = self.view.image(cx, ids!(rotated_image));
+        let button_group_rounded_view = self.view.view(cx, ids!(button_group_rounded_view));
         match event.hits(cx, button_group_rounded_view.area()) {
             Hit::FingerHoverIn(_) if !self.ui_visible_toggle => {
                 cx.stop_timer(self.hide_ui_timer);
@@ -573,7 +526,7 @@ impl Widget for ImageViewer {
             }
             _ => {}
         }
-        match event.hits(cx, self.view.view(ids!(metadata_rounded_view)).area()) {
+        match event.hits(cx, self.view.view(cx, ids!(metadata_rounded_view)).area()) {
             Hit::FingerHoverIn(_) if !self.ui_visible_toggle => {
                 cx.stop_timer(self.hide_ui_timer);
                 self.animator_cut(cx, ids!(ui_animator.show));
@@ -598,7 +551,7 @@ impl Widget for ImageViewer {
                 // Only reset pan_offset on double-tap, not single tap
                 if fe.tap_count == 2 {
                     self.drag_state.pan_offset = Some(DVec2::default());
-                    let rotated_image_container = self.view.rotated_image(ids!(rotated_image));
+                    let rotated_image_container = self.view.image(cx, ids!(rotated_image));
                     rotated_image_container.apply_over(
                         cx,
                         live! {
@@ -623,8 +576,8 @@ impl Widget for ImageViewer {
                 if let Some(current_offset) = self.drag_state.pan_offset {
                     let drag_delta = fe.abs - self.drag_state.drag_start;
                     let new_offset = current_offset + drag_delta * self.config.pan_sensitivity;
-                    let rotated_image_container = self.view.rotated_image(ids!(rotated_image));
-                    let size = rotated_image_container.area().rect(cx).size;
+                    let rotated_image_container = self.view.image(cx, ids!(rotated_image));
+                    let _size = rotated_image_container.area().rect(cx).size;
                     rotated_image_container.apply_over(
                         cx,
                         live! {
@@ -645,7 +598,7 @@ impl Widget for ImageViewer {
             }
             Hit::FingerHoverOver(_) => {
                 if !self.ui_visible_toggle
-                    && !self.animator.animator_in_state(cx, ids!(ui_animator.show))
+                    && !self.animator.in_state(cx, ids!(ui_animator.show))
                 {
                     self.animator_cut(cx, ids!(ui_animator.hide));
                     self.animator_play(cx, ids!(ui_animator.show));
@@ -691,7 +644,7 @@ impl Widget for ImageViewer {
             let mut remove_receiver = false;
             match receiver.try_recv() {
                 Ok(Ok(image_buffer)) => {
-                    let rotated_image = self.view.rotated_image(ids!(rotated_image));
+                    let rotated_image = self.view.image(cx, ids!(rotated_image));
                     let texture = image_buffer.into_new_texture(cx);
                     rotated_image.set_texture(cx, Some(texture));
                     remove_receiver = true;
@@ -730,8 +683,8 @@ impl Widget for ImageViewer {
                 3 => ids!(mode.degree_270), // 270°
                 _ => ids!(mode.upright),
             };
-            if self.animator.animator_in_state(cx, animation_id) {
-                self.is_animating_rotation = animator_action.is_animating();
+            if self.animator.in_state(cx, animation_id) {
+                self.is_animating_rotation = matches!(animator_action, AnimatorAction::Animating { .. });
             }
         }
 
@@ -759,16 +712,16 @@ impl Widget for ImageViewer {
 
 impl MatchEvent for ImageViewer {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        if self.view.button(ids!(close_button)).clicked(actions) {
+        if self.view.button(cx, ids!(close_button)).clicked(actions) {
             self.reset(cx);
             cx.action(ImageViewerAction::Hide);
         }
-        if self.view.button(ids!(reset_button)).clicked(actions) {
+        if self.view.button(cx, ids!(reset_button)).clicked(actions) {
             self.reset(cx);
         }
         if self
             .view
-            .button(ids!(zoom_out_button))
+            .button(cx, ids!(zoom_out_button))
             .clicked(actions)
         {
             self.adjust_zoom(cx, 1.0 / self.config.zoom_scale_factor);
@@ -776,7 +729,7 @@ impl MatchEvent for ImageViewer {
 
         if self
             .view
-            .button(ids!(zoom_in_button))
+            .button(cx, ids!(zoom_in_button))
             .clicked(actions)
         {
             self.adjust_zoom(cx, self.config.zoom_scale_factor);
@@ -784,7 +737,7 @@ impl MatchEvent for ImageViewer {
 
         if self
             .view
-            .button(ids!(rotate_cw_button))
+            .button(cx, ids!(rotate_cw_button))
             .clicked(actions)
         {
             if !self.is_animating_rotation {
@@ -799,7 +752,7 @@ impl MatchEvent for ImageViewer {
 
         if self
             .view
-            .button(ids!(rotate_ccw_button))
+            .button(cx, ids!(rotate_ccw_button))
             .clicked(actions)
         {
             if !self.is_animating_rotation {
@@ -858,10 +811,7 @@ impl ImageViewer {
         self.animator_cut(cx, ids!(mode.upright));
         let rotated_image_ref = self
             .view
-            .rotated_image(ids!(rotated_image_container.rotated_image));
-        rotated_image_ref.apply_over(cx, live! {
-            draw_bg: { scale: 1.0 }
-        });
+            .image(cx, ids!(rotated_image_container.rotated_image));
         rotated_image_ref.set_texture(cx, None);
     }
 
@@ -886,12 +836,11 @@ impl ImageViewer {
         self.drag_state = DragState::default();
 
         // Reset image position and scale
-        let rotated_image_container = self.view.rotated_image(ids!(rotated_image));
+        let rotated_image_container = self.view.image(cx, ids!(rotated_image));
         rotated_image_container.apply_over(
             cx,
             live! {
-                margin: { top: 0.0, left: 0.0 },
-                draw_bg: { scale: 1.0 }
+                margin: { top: 0.0, left: 0.0 }
             },
         );
         rotated_image_container.redraw(cx);
@@ -928,7 +877,7 @@ impl ImageViewer {
             return;
         }
         let texture = self.texture.clone();
-        let rotated_image = self.rotated_image(ids!(rotated_image));
+        let rotated_image = self.image(cx, ids!(rotated_image));
         let (texture_width, texture_height) = texture
             .as_ref()
             .and_then(|texture| texture.get_format(cx).vec_width_height())
@@ -960,11 +909,11 @@ impl ImageViewer {
 
     /// Adjust the zoom level of the image viewer based on the provided zoom factor.
     fn adjust_zoom(&mut self, cx: &mut Cx, zoom_factor: f64) {
-        let rotated_image = self.view.rotated_image(ids!(rotated_image));
+        let rotated_image = self.view.image(cx, ids!(rotated_image));
         let size = rotated_image.area().rect(cx).size;
         let capped_dimension = self.capped_dimension;
         let target_zoom = self.drag_state.zoom_level * zoom_factor;
-        let (width, height) = if target_zoom < self.config.min_zoom {
+        let (_width, _height) = if target_zoom < self.config.min_zoom {
             (capped_dimension.x * self.config.min_zoom, capped_dimension.y * self.config.min_zoom)
         } else {
             let actual_zoom_factor = target_zoom / self.drag_state.zoom_level;
@@ -1017,15 +966,15 @@ impl ImageViewer {
     /// The loading spinner is shown, the error icon is hidden, and the
     /// status label is set to "Loading...".
     pub fn show_loading(&mut self, cx: &mut Cx) {
-        let footer = self.view.view(ids!(image_layer.footer));
+        let footer = self.view.view(cx, ids!(image_layer.footer));
         footer
-            .view(ids!(image_viewer_loading_spinner_view))
+            .view(cx, ids!(image_viewer_loading_spinner_view))
             .set_visible(cx, true);
         footer
-            .label(ids!(image_viewer_status_label))
+            .label(cx, ids!(image_viewer_status_label))
             .set_text(cx, "Loading...");
         footer
-            .view(ids!(image_viewer_forbidden_view))
+            .view(cx, ids!(image_viewer_forbidden_view))
             .set_visible(cx, false);
         footer.set_visible(cx, true);
         self.ui_visible_toggle = true;
@@ -1041,22 +990,22 @@ impl ImageViewer {
         if self.is_loaded {
             return;
         }
-        let footer = self.view.view(ids!(image_layer.footer));
+        let footer = self.view.view(cx, ids!(image_layer.footer));
         footer
-            .view(ids!(image_viewer_loading_spinner_view))
+            .view(cx, ids!(image_viewer_loading_spinner_view))
             .set_visible(cx, false);
         footer
-            .view(ids!(image_viewer_forbidden_view))
+            .view(cx, ids!(image_viewer_forbidden_view))
             .set_visible(cx, true);
         footer
-            .label(ids!(image_viewer_status_label))
+            .label(cx, ids!(image_viewer_status_label))
             .set_text(cx, &error.to_string());
         footer.set_visible(cx, true);
     }
 
     /// Hides the footer of the image viewer.
     pub fn hide_footer(&mut self, cx: &mut Cx) {
-        let footer = self.view.view(ids!(image_layer.footer));
+        let footer = self.view.view(cx, ids!(image_layer.footer));
         footer.set_visible(cx, false);
     }
 
@@ -1067,24 +1016,24 @@ impl ImageViewer {
     /// The image name is truncated to 24 characters and appended with "..." if it exceeds the limit.
     /// The human-readable size is calculated based on the image size in bytes.
     pub fn set_metadata(&mut self, cx: &mut Cx, metadata: &ImageViewerMetaData) {
-        let meta_view = self.view.view(ids!(metadata_view));
+        let meta_view = self.view.view(cx, ids!(metadata_view));
         let truncated_name = truncate_image_name(&metadata.image_name);
         let human_readable_size = format_file_size(metadata.image_file_size);
         let display_text = format!("{} ({})", truncated_name, human_readable_size);
         meta_view
-            .label(ids!(image_name_and_size))
+            .label(cx, ids!(image_name_and_size))
             .set_text(cx, &display_text);
         if let Some(timestamp) = metadata.timestamp {
             meta_view
-                .view(ids!(user_profile_view.content.timestamp_view))
+                .view(cx, ids!(user_profile_view.content.timestamp_view))
                 .set_visible(cx, true);
             meta_view
-                .timestamp(ids!(user_profile_view.content.timestamp_view.timestamp))
+                .timestamp(cx, ids!(user_profile_view.content.timestamp_view.timestamp))
                 .set_date_time(cx, timestamp);
         }
 
         if let Some((timeline_kind, event_timeline_item)) = &metadata.avatar_parameter {
-            let (sender, _) = self.view.avatar(ids!(user_profile_view.avatar)).set_avatar_and_get_username(
+            let (sender, _) = self.view.avatar(cx, ids!(user_profile_view.avatar)).set_avatar_and_get_username(
                 cx,
                 timeline_kind,
                 event_timeline_item.sender(),
@@ -1094,11 +1043,11 @@ impl ImageViewer {
             );
             if sender.len() > MAX_USERNAME_LENGTH {
                 meta_view
-                    .label(ids!(user_profile_view.content.username))
+                    .label(cx, ids!(user_profile_view.content.username))
                     .set_text(cx, &format!("{}...", &sender[..MAX_USERNAME_LENGTH - 3]));
             } else {
                 meta_view
-                    .label(ids!(user_profile_view.content.username))
+                    .label(cx, ids!(user_profile_view.content.username))
                     .set_text(cx, &sender);
             };
         }

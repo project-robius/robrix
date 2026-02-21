@@ -4,6 +4,7 @@
 
 use std::{cell::RefCell, collections::HashMap};
 use makepad_widgets::*;
+use crate::ApplyOverCompat;
 use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, RoomId}};
 use serde::{Deserialize, Serialize};
 use crate::{
@@ -20,162 +21,122 @@ use crate::{
     }
 };
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::home::home_screen::HomeScreen;
-    use crate::verification_modal::VerificationModal;
-    use crate::join_leave_room_modal::JoinLeaveRoomModal;
-    use crate::login::login_screen::LoginScreen;
-    use crate::logout::logout_confirm_modal::LogoutConfirmModal;
-    use crate::shared::confirmation_modal::*;
-    use crate::shared::popup_list::*;
-    use crate::home::new_message_context_menu::*;
-    use crate::home::room_context_menu::*;
-    use crate::home::invite_modal::InviteModal;
-    use crate::home::event_source_modal::EventSourceModal;
-    use crate::shared::callout_tooltip::CalloutTooltip;
-    use crate::shared::image_viewer::ImageViewer;
-    use link::tsp_link::TspVerificationModal;
-
-
-    App = {{App}} {
-        ui: <Root>{
-            main_window = <Window> {
-                window: {inner_size: vec2(1280, 800), title: "Robrix"},
-                pass: {clear_color: #FFFFFF00}
-                caption_bar = {
-                    caption_label = {
-                        label = {
-                            margin: {left: 65},
-                            align: {x: 0.5},
-                            text: "Robrix",
-                            draw_text: {color: (COLOR_TEXT)}
+    load_all_resources() do #(App::script_component(vm)) {
+        ui: Root {
+            main_window := Window {
+                window.inner_size: vec2(1280, 800)
+                window.title: "Robrix"
+                pass.clear_color: #FFFFFF00
+                caption_bar: {
+                    caption_label: {
+                        label: {
+                            margin: Inset{left: 65},
+                            align: Align{x: 0.5},
+                            text: "Robrix"
                         }
                     }
-                    windows_buttons = {
-                        // Note: these are the background colors of the buttons used in Windows:
-                        // * idle: Clear, for all three buttons.
-                        // * hover: #E9E9E9 for minimize and maximize, #E81123 for close.
-                        // * down: either darker (on light mode) or lighter (on dark mode).
-                        //
-                        // However, the DesktopButton widget doesn't support drawing a background color yet,
-                        // so these colors are the colors of the icon itself, not the background highlight.
-                        // When it supports that, we will keep the icon color always black,
-                        // and change the background color instead based on the above colors.
-                        min   = { draw_bg: {color: #0, color_hover: #9, color_down: #3} }
-                        max   = { draw_bg: {color: #0, color_hover: #9, color_down: #3} }
-                        close = { draw_bg: {color: #0, color_hover: #E81123, color_down: #FF0015} }
-                    }
-                    draw_bg: {color: #F3F3F3},
                 }
             
 
-                body = {
+                body +: {
                     padding: 0,
 
-                    <View> {
+                    View {
                         width: Fill, height: Fill,
                         flow: Overlay,
 
-                        home_screen_view = <View> {
+                        home_screen_view := View {
                             visible: false
-                            home_screen = <HomeScreen> {}
+                            home_screen := HomeScreen {}
                         }
-                        join_leave_modal = <Modal> {
+                        join_leave_modal := Modal {
                             content: {
-                                join_leave_modal_inner = <JoinLeaveRoomModal> {}
+                                join_leave_modal_inner := JoinLeaveRoomModal {}
                             }
                         }
-                        login_screen_view = <View> {
+                        login_screen_view := View {
                             visible: true
-                            login_screen = <LoginScreen> {}
+                            login_screen := LoginScreen {}
                         }
 
-                        image_viewer_modal = <Modal> {
+                        image_viewer_modal := Modal {
                             content: {
                                 width: Fill, height: Fill,
-                                image_viewer_modal_inner = <ImageViewer> {}
+                                image_viewer_modal_inner := ImageViewer {}
                             }
                         }
                         
                         // Context menus should be shown in front of other UI elements,
                         // but behind verification modals.
-                        new_message_context_menu = <NewMessageContextMenu> { }
-                        room_context_menu = <RoomContextMenu> { }
+                        new_message_context_menu := NewMessageContextMenu { }
+                        room_context_menu := RoomContextMenu { }
 
                         // A modal to confirm sending out an invite to a room.
-                        invite_confirmation_modal = <Modal> {
+                        invite_confirmation_modal := Modal {
                             content: {
-                                invite_confirmation_modal_inner = <PositiveConfirmationModal> {
-                                    wrapper = { buttons_view = { accept_button = {
-                                        draw_icon: {
-                                            svg_file: (ICON_INVITE),
-                                        }
-                                        icon_walk: {width: 28, height: Fit, margin: {left: -10} }
-                                    } } }
-                                }
+                                invite_confirmation_modal_inner := PositiveConfirmationModal {}
                             }
                         }
 
                         // A modal to invite a user to a room.
-                        invite_modal = <Modal> {
+                        invite_modal := Modal {
                             content: {
-                                invite_modal_inner = <InviteModal> {}
+                                invite_modal_inner := InviteModal {}
                             }
                         }
 
                         // Show the logout confirmation modal.
-                        logout_confirm_modal = <Modal> {
+                        logout_confirm_modal := Modal {
                             content: {
-                                logout_confirm_modal_inner = <LogoutConfirmModal> {}
+                                logout_confirm_modal_inner := LogoutConfirmModal {}
                             }
                         }
 
                         // Show the event source modal (View Source for messages).
-                        event_source_modal = <Modal> {
+                        event_source_modal := Modal {
                             content: {
                                 height: Fill,
                                 width: Fill,
-                                align: {x: 0.5, y: 0.5},
-                                event_source_modal_inner = <EventSourceModal> {}
+                                align: Align{x: 0.5, y: 0.5},
+                                event_source_modal_inner := EventSourceModal {}
                             }
                         }
 
                         // Show incoming verification requests in front of the aforementioned UI elements.
-                        verification_modal = <Modal> {
+                        verification_modal := Modal {
                             content: {
-                                verification_modal_inner = <VerificationModal> {}
+                                verification_modal_inner := VerificationModal {}
                             }
                         }
-                        tsp_verification_modal = <Modal> {
+                        tsp_verification_modal := Modal {
                             content: {
-                                tsp_verification_modal_inner = <TspVerificationModal> {}
+                                tsp_verification_modal_inner := TspVerificationModal {}
                             }
                         }
 
                         // A generic modal to confirm any positive action.
-                        positive_confirmation_modal = <Modal> {
+                        positive_confirmation_modal := Modal {
                             content: {
-                                positive_confirmation_modal_inner = <PositiveConfirmationModal> { }
+                                positive_confirmation_modal_inner := PositiveConfirmationModal { }
                             }
                         }
 
                         // A modal to confirm any deletion/removal action.
-                        delete_confirmation_modal = <Modal> {
+                        delete_confirmation_modal := Modal {
                             content: {
-                                delete_confirmation_modal_inner = <NegativeConfirmationModal> { }
+                                delete_confirmation_modal_inner := NegativeConfirmationModal { }
                             }
                         }
 
-                        <PopupList> {}
+                        PopupList {}
 
                         // Tooltips must be shown in front of all other UI elements,
                         // since they can be shown as a hover atop any other widget.
-                        app_tooltip = <CalloutTooltip> {}
+                        app_tooltip := CalloutTooltip {}
                     }
                 } // end of body
             }
@@ -185,7 +146,7 @@ live_design! {
 
 app_main!(App);
 
-#[derive(Live)]
+#[derive(Script, ScriptHook)]
 pub struct App {
     #[live] ui: WidgetRef,
     /// The top-level app state, shared across various parts of the app.
@@ -196,52 +157,32 @@ pub struct App {
     #[rust] waiting_to_navigate_to_room: Option<(BasicRoomDetails, Option<OwnedRoomId>)>,
 }
 
-impl LiveRegister for App {
-    fn live_register(cx: &mut Cx) {
-        // Order matters here, as some widget definitions depend on others.
-        // The main `makepad_widgets` crate must be registered first,
-        // then other first-party makepad crates (like `makepad_code_editor`),
-        // then `shared`` widgets (in which styles are defined),
-        // then other modules widgets.
-        makepad_widgets::live_design(cx);
-        makepad_code_editor::live_design(cx);
-        // Override Makepad's default desktop dark theme with the desktop light theme.
-        cx.link(id!(theme), id!(theme_desktop_light));
-        crate::shared::live_design(cx);
+impl App {
+    fn run(vm: &mut ScriptVm) -> Self {
+        // Order matters: base widgets first, then app widgets, then app UI.
+        makepad_widgets::script_mod(vm);
+        makepad_code_editor::script_mod(vm);
+        crate::shared::script_mod(vm);
 
-        // If the `tsp` cargo feature is enabled, we create a new "tsp_link" DSL namespace
-        // and link it to the real `tsp_enabled` DSL namespace, which contains real TSP widgets.
-        // If the `tsp` feature is not enabled, link the "tsp_link" DSL namespace
-        // to the `tsp_disabled` DSL namespace instead, which defines dummy placeholder widgets.
-        #[cfg(feature = "tsp")] {
-            crate::tsp::live_design(cx);
-            cx.link(id!(tsp_link), id!(tsp_enabled));
-        }
-        #[cfg(not(feature = "tsp"))] {
-            crate::tsp_dummy::live_design(cx);
-            cx.link(id!(tsp_link), id!(tsp_disabled));
-        }
+        #[cfg(feature = "tsp")]
+        crate::tsp::script_mod(vm);
+        #[cfg(not(feature = "tsp"))]
+        crate::tsp_dummy::script_mod(vm);
 
-        crate::settings::live_design(cx);
-        crate::room::live_design(cx);
-        crate::join_leave_room_modal::live_design(cx);
-        crate::verification_modal::live_design(cx);
-        crate::home::live_design(cx);
-        crate::profile::live_design(cx);
-        crate::login::live_design(cx);
-        crate::logout::live_design(cx);
-    }
-}
+        crate::settings::script_mod(vm);
+        // RoomInputBar depends on these Home widgets; preload them before room::script_mod.
+        crate::home::location_preview::script_mod(vm);
+        crate::home::tombstone_footer::script_mod(vm);
+        crate::home::editing_pane::script_mod(vm);
+        crate::room::script_mod(vm);
+        crate::join_leave_room_modal::script_mod(vm);
+        crate::verification_modal::script_mod(vm);
+        crate::profile::script_mod(vm);
+        crate::home::script_mod(vm);
+        crate::login::script_mod(vm);
+        crate::logout::script_mod(vm);
 
-impl LiveHook for App {
-    fn after_update_from_doc(&mut self, cx: &mut Cx) {
-        self.update_login_visibility(cx);
-    }
-
-    fn after_new_from_doc(&mut self, cx: &mut Cx) {
-        // Here we set the global singleton for the PopupList widget,
-        // which is used to access PopupList Widget from anywhere in the app.
-        crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
+        App::from_script_mod(vm, self::script_mod)
     }
 }
 
@@ -268,7 +209,10 @@ impl MatchEvent for App {
         let _app_data_dir = crate::app_data_dir();
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
 
-        if let Err(e) = persistence::load_window_state(self.ui.window(ids!(main_window)), cx) {
+        // Set the global singleton for PopupList so other modules can enqueue toasts.
+        crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
+
+        if let Err(e) = persistence::load_window_state(self.ui.window(cx, ids!(main_window)), cx) {
             error!("Failed to load window state: {}", e);
         }
 
@@ -284,31 +228,31 @@ impl MatchEvent for App {
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        let invite_confirmation_modal_inner = self.ui.confirmation_modal(ids!(invite_confirmation_modal_inner));
+        let invite_confirmation_modal_inner = self.ui.confirmation_modal(cx, ids!(invite_confirmation_modal_inner));
         if let Some(_accepted) = invite_confirmation_modal_inner.closed(actions) {
-            self.ui.modal(ids!(invite_confirmation_modal)).close(cx);
+            self.ui.modal(cx, ids!(invite_confirmation_modal)).close(cx);
         }
 
-        let delete_confirmation_modal_inner = self.ui.confirmation_modal(ids!(delete_confirmation_modal_inner));
+        let delete_confirmation_modal_inner = self.ui.confirmation_modal(cx, ids!(delete_confirmation_modal_inner));
         if let Some(_accepted) = delete_confirmation_modal_inner.closed(actions) {
-            self.ui.modal(ids!(delete_confirmation_modal)).close(cx);
+            self.ui.modal(cx, ids!(delete_confirmation_modal)).close(cx);
         }
 
-        let positive_confirmation_modal_inner = self.ui.confirmation_modal(ids!(positive_confirmation_modal_inner));
+        let positive_confirmation_modal_inner = self.ui.confirmation_modal(cx, ids!(positive_confirmation_modal_inner));
         if let Some(_accepted) = positive_confirmation_modal_inner.closed(actions) {
-            self.ui.modal(ids!(positive_confirmation_modal)).close(cx);
+            self.ui.modal(cx, ids!(positive_confirmation_modal)).close(cx);
         }
 
         for action in actions {
             match action.downcast_ref() {
                 Some(LogoutConfirmModalAction::Open) => {
-                    self.ui.logout_confirm_modal(ids!(logout_confirm_modal_inner)).reset_state(cx);
-                    self.ui.modal(ids!(logout_confirm_modal)).open(cx);
+                    self.ui.logout_confirm_modal(cx, ids!(logout_confirm_modal_inner)).reset_state(cx);
+                    self.ui.modal(cx, ids!(logout_confirm_modal)).open(cx);
                     continue;
                 },
                 Some(LogoutConfirmModalAction::Close { was_internal, .. }) => {
                     if *was_internal {
-                        self.ui.modal(ids!(logout_confirm_modal)).close(cx);
+                        self.ui.modal(cx, ids!(logout_confirm_modal)).close(cx);
                     }
                     continue;
                 },
@@ -318,7 +262,7 @@ impl MatchEvent for App {
             match action.downcast_ref() {
                 Some(LogoutAction::LogoutSuccess) => {
                     self.app_state.logged_in = false;
-                    self.ui.modal(ids!(logout_confirm_modal)).close(cx);
+                    self.ui.modal(cx, ids!(logout_confirm_modal)).close(cx);
                     self.update_login_visibility(cx);
                     self.ui.redraw(cx);
                     continue;
@@ -344,15 +288,15 @@ impl MatchEvent for App {
 
             // Handle an action requesting to open the new message context menu.
             if let MessageAction::OpenMessageContextMenu { details, abs_pos } = action.as_widget_action().cast() {
-                self.ui.callout_tooltip(ids!(app_tooltip)).hide(cx);
-                let new_message_context_menu = self.ui.new_message_context_menu(ids!(new_message_context_menu));
+                self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
+                let new_message_context_menu = self.ui.new_message_context_menu(cx, ids!(new_message_context_menu));
                 let expected_dimensions = new_message_context_menu.show(cx, details);
                 // Ensure the context menu does not spill over the window's bounds.
-                let rect = self.ui.window(ids!(main_window)).area().rect(cx);
-                let pos_x = min(abs_pos.x, rect.size.x - expected_dimensions.x);
-                let pos_y = min(abs_pos.y, rect.size.y - expected_dimensions.y);
+                let rect = self.ui.window(cx, ids!(main_window)).area().rect(cx);
+                let _pos_x = min(abs_pos.x, rect.size.x - expected_dimensions.x);
+                let _pos_y = min(abs_pos.y, rect.size.y - expected_dimensions.y);
                 new_message_context_menu.apply_over(cx, live! {
-                    main_content = { margin: { left: (pos_x), top: (pos_y) } }
+                    main_content: { margin: { left: (pos_x), top: (pos_y) } }
                 });
                 self.ui.redraw(cx);
                 continue;
@@ -360,15 +304,15 @@ impl MatchEvent for App {
 
             // Handle an action requesting to open the room context menu.
             if let RoomsListAction::OpenRoomContextMenu { details, pos } = action.as_widget_action().cast() {
-                self.ui.callout_tooltip(ids!(app_tooltip)).hide(cx);
-                let room_context_menu = self.ui.room_context_menu(ids!(room_context_menu));
+                self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
+                let room_context_menu = self.ui.room_context_menu(cx, ids!(room_context_menu));
                 let expected_dimensions = room_context_menu.show(cx, details);
                 // Ensure the context menu does not spill over the window's bounds.
-                let rect = self.ui.window(ids!(main_window)).area().rect(cx);
-                let pos_x = min(pos.x, rect.size.x - expected_dimensions.x);
-                let pos_y = min(pos.y, rect.size.y - expected_dimensions.y);
+                let rect = self.ui.window(cx, ids!(main_window)).area().rect(cx);
+                let _pos_x = min(pos.x, rect.size.x - expected_dimensions.x);
+                let _pos_y = min(pos.y, rect.size.y - expected_dimensions.y);
                 room_context_menu.apply_over(cx, live! {
-                    main_content = { margin: { left: (pos_x), top: (pos_y) } }
+                    main_content: { margin: { left: (pos_x), top: (pos_y) } }
                 });
                 self.ui.redraw(cx);
                 continue;
@@ -378,15 +322,14 @@ impl MatchEvent for App {
             if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
                 // Set the Stack Navigation header to show the name of the newly-selected room.
                 self.ui
-                    .label(ids!(main_content_view.header.content.title_container.title))
+                    .label(cx, ids!(main_content_view.header.content.title_container.title))
                     .set_text(cx, &selected_room.display_name());
 
                 self.app_state.selected_room = Some(selected_room);
 
                 // Navigate to the main content view
                 cx.widget_action(
-                    self.ui.widget_uid(),
-                    &HeapLiveIdPath::default(),
+                    self.ui.widget_uid(), 
                     StackNavigationAction::Push(id!(main_content_view))
                 );
                 self.ui.redraw(cx);
@@ -445,11 +388,11 @@ impl MatchEvent for App {
             match action.as_widget_action().cast() {
                 TooltipAction::HoverIn { text, widget_rect, options } => {
                     // Don't show any tooltips if the message context menu is currently shown.
-                    if self.ui.new_message_context_menu(ids!(new_message_context_menu)).is_currently_shown(cx) {
-                        self.ui.callout_tooltip(ids!(app_tooltip)).hide(cx);
+                    if self.ui.new_message_context_menu(cx, ids!(new_message_context_menu)).is_currently_shown(cx) {
+                        self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
                     }
                     else {
-                        self.ui.callout_tooltip(ids!(app_tooltip)).show_with_options(
+                        self.ui.callout_tooltip(cx, ids!(app_tooltip)).show_with_options(
                             cx,
                             &text,
                             widget_rect,
@@ -459,7 +402,7 @@ impl MatchEvent for App {
                     continue;
                 }
                 TooltipAction::HoverOut => {
-                    self.ui.callout_tooltip(ids!(app_tooltip)).hide(cx);
+                    self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
                     continue;
                 }
                 _ => {}
@@ -469,14 +412,14 @@ impl MatchEvent for App {
             match action.downcast_ref() {
                 Some(JoinLeaveRoomModalAction::Open { kind, show_tip }) => {
                     self.ui
-                        .join_leave_room_modal(ids!(join_leave_modal_inner))
+                        .join_leave_room_modal(cx, ids!(join_leave_modal_inner))
                         .set_kind(cx, kind.clone(), *show_tip);
-                    self.ui.modal(ids!(join_leave_modal)).open(cx);
+                    self.ui.modal(cx, ids!(join_leave_modal)).open(cx);
                     continue;
                 }
                 Some(JoinLeaveRoomModalAction::Close { was_internal, .. }) => {
                     if *was_internal {
-                        self.ui.modal(ids!(join_leave_modal)).close(cx);
+                        self.ui.modal(cx, ids!(join_leave_modal)).close(cx);
                     }
                     continue;
                 }
@@ -488,22 +431,22 @@ impl MatchEvent for App {
             //
             // Note: other verification actions are handled by the verification modal itself.
             if let Some(VerificationAction::RequestReceived(state)) = action.downcast_ref() {
-                self.ui.verification_modal(ids!(verification_modal_inner))
+                self.ui.verification_modal(cx, ids!(verification_modal_inner))
                     .initialize_with_data(cx, state.clone());
-                self.ui.modal(ids!(verification_modal)).open(cx);
+                self.ui.modal(cx, ids!(verification_modal)).open(cx);
                 continue;
             }
             if let Some(VerificationModalAction::Close) = action.downcast_ref() {
-                self.ui.modal(ids!(verification_modal)).close(cx);
+                self.ui.modal(cx, ids!(verification_modal)).close(cx);
                 continue;
             }
             match action.downcast_ref() {
                 Some(ImageViewerAction::Show(LoadState::Loading(_, _))) => {
-                    self.ui.modal(ids!(image_viewer_modal)).open(cx);
+                    self.ui.modal(cx, ids!(image_viewer_modal)).open(cx);
                     continue;
                 }
                 Some(ImageViewerAction::Hide) => {
-                    self.ui.modal(ids!(image_viewer_modal)).close(cx);
+                    self.ui.modal(cx, ids!(image_viewer_modal)).close(cx);
                     continue;
                 }
                 _ => {}
@@ -514,13 +457,13 @@ impl MatchEvent for App {
                 use crate::tsp::{tsp_verification_modal::{TspVerificationModalAction, TspVerificationModalWidgetRefExt}, TspIdentityAction};
 
                 if let Some(TspIdentityAction::ReceivedDidAssociationRequest { details, wallet_db }) = action.downcast_ref() {
-                    self.ui.tsp_verification_modal(ids!(tsp_verification_modal_inner))
+                    self.ui.tsp_verification_modal(cx, ids!(tsp_verification_modal_inner))
                         .initialize_with_details(cx, details.clone(), wallet_db.deref().clone());
-                    self.ui.modal(ids!(tsp_verification_modal)).open(cx);
+                    self.ui.modal(cx, ids!(tsp_verification_modal)).open(cx);
                     continue;
                 }
                 if let Some(TspVerificationModalAction::Close) = action.downcast_ref() {
-                    self.ui.modal(ids!(tsp_verification_modal)).close(cx);
+                    self.ui.modal(cx, ids!(tsp_verification_modal)).close(cx);
                     continue;
                 }
             }
@@ -529,7 +472,7 @@ impl MatchEvent for App {
             if let Some(InviteAction::ShowInviteConfirmationModal(content_opt)) = action.downcast_ref() {
                 if let Some(content) = content_opt.borrow_mut().take() {
                     invite_confirmation_modal_inner.show(cx, content);
-                    self.ui.modal(ids!(invite_confirmation_modal)).open(cx);
+                    self.ui.modal(cx, ids!(invite_confirmation_modal)).open(cx);
                 }
                 continue;
             }
@@ -538,7 +481,7 @@ impl MatchEvent for App {
             if let Some(PositiveConfirmationModalAction::Show(content_opt)) = action.downcast_ref() {
                 if let Some(content) = content_opt.borrow_mut().take() {
                     positive_confirmation_modal_inner.show(cx, content);
-                    self.ui.modal(ids!(positive_confirmation_modal)).open(cx);
+                    self.ui.modal(cx, ids!(positive_confirmation_modal)).open(cx);
                 }
                 continue;
             }
@@ -546,8 +489,8 @@ impl MatchEvent for App {
             // Handle a request to show the delete confirmation modal.
             if let Some(ConfirmDeleteAction::Show(content_opt)) = action.downcast_ref() {
                 if let Some(content) = content_opt.borrow_mut().take() {
-                    self.ui.confirmation_modal(ids!(delete_confirmation_modal_inner)).show(cx, content);
-                    self.ui.modal(ids!(delete_confirmation_modal)).open(cx);
+                    self.ui.confirmation_modal(cx, ids!(delete_confirmation_modal_inner)).show(cx, content);
+                    self.ui.modal(cx, ids!(delete_confirmation_modal)).open(cx);
                 }
                 continue;
             }
@@ -555,12 +498,12 @@ impl MatchEvent for App {
             // Handle InviteModalAction to open/close the invite modal.
             match action.downcast_ref() {
                 Some(InviteModalAction::Open(room_name_id)) => {
-                    self.ui.invite_modal(ids!(invite_modal_inner)).show(cx, room_name_id.clone());
-                    self.ui.modal(ids!(invite_modal)).open(cx); 
+                    self.ui.invite_modal(cx, ids!(invite_modal_inner)).show(cx, room_name_id.clone());
+                    self.ui.modal(cx, ids!(invite_modal)).open(cx); 
                     continue;
                 }
                 Some(InviteModalAction::Close) => {
-                    self.ui.modal(ids!(invite_modal)).close(cx);
+                    self.ui.modal(cx, ids!(invite_modal)).close(cx);
                     continue;
                 }
                 _ => {}
@@ -569,13 +512,13 @@ impl MatchEvent for App {
             // Handle EventSourceModalAction to open/close the event source modal.
             match action.downcast_ref() {
                 Some(EventSourceModalAction::Open { room_id, event_id, original_json }) => {
-                    self.ui.event_source_modal(ids!(event_source_modal_inner))
+                    self.ui.event_source_modal(cx, ids!(event_source_modal_inner))
                         .show(cx, room_id.clone(), event_id.clone(), original_json.clone());
-                    self.ui.modal(ids!(event_source_modal)).open(cx);
+                    self.ui.modal(cx, ids!(event_source_modal)).open(cx);
                     continue;
                 }
                 Some(EventSourceModalAction::Close) => {
-                    self.ui.modal(ids!(event_source_modal)).close(cx);
+                    self.ui.modal(cx, ids!(event_source_modal)).close(cx);
                     continue;
                 }
                 _ => {}
@@ -621,7 +564,7 @@ impl MatchEvent for App {
                             ..Default::default()
                         },
                     );
-                    self.ui.modal(ids!(positive_confirmation_modal)).open(cx);
+                    self.ui.modal(cx, ids!(positive_confirmation_modal)).open(cx);
                 }
                 Some(DirectMessageRoomAction::FailedToCreate { user_profile, error }) => {
                     enqueue_popup_notification(
@@ -651,7 +594,7 @@ fn clear_all_app_state(cx: &mut Cx) {
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         if let Event::Shutdown = event {
-            let window_ref = self.ui.window(ids!(main_window));
+            let window_ref = self.ui.window(cx, ids!(main_window));
             if let Err(e) = persistence::save_window_state(window_ref, cx) {
                 error!("Failed to save window state. Error: {e}");
             }
@@ -701,7 +644,7 @@ impl AppMain for App {
         // We check which overlay views are visible in the order of those views' z-ordering,
         // such that the top-most views get a chance to handle the event first.
 
-        let new_message_context_menu = self.ui.new_message_context_menu(ids!(new_message_context_menu));
+        let new_message_context_menu = self.ui.new_message_context_menu(cx, ids!(new_message_context_menu));
         let is_interactive_hit = utils::is_interactive_hit_event(event);
         let is_pane_shown: bool;
         if new_message_context_menu.is_currently_shown(cx) {
@@ -726,11 +669,11 @@ impl App {
         let show_login = !self.app_state.logged_in;
         if !show_login {
             self.ui
-                .modal(ids!(login_screen_view.login_screen.login_status_modal))
+                .modal(cx, ids!(login_screen_view.login_screen.login_status_modal))
                 .close(cx);
         }
-        self.ui.view(ids!(login_screen_view)).set_visible(cx, show_login);
-        self.ui.view(ids!(home_screen_view)).set_visible(cx, !show_login);
+        self.ui.view(cx, ids!(login_screen_view)).set_visible(cx, show_login);
+        self.ui.view(cx, ids!(home_screen_view)).set_visible(cx, !show_login);
     }
 
     /// Navigates to the given `destination_room`, optionally closing the `room_to_close`.
@@ -746,8 +689,7 @@ impl App {
             let widget_uid = self.ui.widget_uid();
             move |cx: &mut Cx| {
                 cx.widget_action(
-                    widget_uid,
-                    &HeapLiveIdPath::default(),
+                    widget_uid, 
                     DockAction::TabCloseWasPressed(tab_id),
                 );
                 enqueue_rooms_list_update(RoomsListUpdate::HideRoom { room_id: to_close.clone() });
@@ -755,7 +697,15 @@ impl App {
         });
 
         let destination_room_id = destination_room.room_id();
-        let new_selected_room = match cx.get_global::<RoomsListRef>().get_room_state(destination_room_id) {
+        if !cx.has_global::<RoomsListRef>() {
+            error!(
+                "navigate_to_room: missing RoomsListRef global for room {}",
+                destination_room_id
+            );
+            return;
+        }
+        let room_state = cx.get_global::<RoomsListRef>().get_room_state(destination_room_id);
+        let new_selected_room = match room_state {
             Some(RoomState::Joined) => SelectedRoom::JoinedRoom {
                 room_name_id: destination_room.room_name_id().clone(),
             },
@@ -792,8 +742,7 @@ impl App {
             cx.action(NavigationBarAction::GoToHome);
         }
         cx.widget_action(
-            self.ui.widget_uid(),
-            &HeapLiveIdPath::default(),
+            self.ui.widget_uid(), 
             RoomsListAction::Selected(new_selected_room),
         );
         // Select and scroll to the destination room in the rooms list.
@@ -835,8 +784,10 @@ pub struct AppState {
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct SavedDockState {
     /// All items contained in the dock, keyed by their room or space ID.
+    #[serde(skip, default)]
     pub dock_items: HashMap<LiveId, DockItem>,
     /// The rooms that are currently open, keyed by their room or space ID.
+    #[serde(skip, default)]
     pub open_rooms: HashMap<LiveId, SelectedRoom>,
     /// The order in which the rooms were opened, in chronological order
     /// from first opened (at the beginning) to last opened (at the end).

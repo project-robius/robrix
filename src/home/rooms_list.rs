@@ -76,69 +76,61 @@ pub fn clear_all_invited_rooms(_cx: &mut Cx) {
 }
 
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::shared::helpers::*;
-    use crate::shared::avatar::Avatar;
-    use crate::shared::html_or_plaintext::HtmlOrPlaintext;
-    use crate::shared::collapsible_header::*;
-    use crate::home::rooms_list_entry::*;
-    use crate::home::space_lobby::*;
 
-    StatusLabel = <View> {
+    mod.widgets.StatusLabel = View {
         width: Fill, height: Fit,
         flow: Right,
-        align: { x: 0.5, y: 0.5 }
+        align: Align{ x: 0.5, y: 0.5 }
         padding: 15.0,
 
-        loading_spinner = <LoadingSpinner> {
+        loading_spinner := LoadingSpinner {
             visible: false,
             width: 20,
             height: 20,
-            draw_bg: {
+            draw_bg +: {
                 color: (COLOR_ACTIVE_PRIMARY)
                 border_size: 3.0,
             }
         }
 
-        label = <Label> {
+        label := Label {
             padding: 0
             width: Fill,
-            flow: RightWrap,
-            align: { x: 0.5, y: 0.5 }
-            draw_text: {
-                wrap: Word,
+            flow: Flow.Right{wrap: true},
+            align: Align{ x: 0.5, y: 0.5 }
+            draw_text +: {
+                flow: Flow.Right{wrap: true},
                 color: (MESSAGE_TEXT_COLOR),
-                text_style: <REGULAR_TEXT>{}
+                text_style: REGULAR_TEXT {}
             }
             text: "Loading rooms..."
         }
     }
 
-    pub RoomsList = {{RoomsList}} {
+    mod.widgets.RoomsList = #(RoomsList::register_widget(vm)) {
         width: Fill, height: Fill
         flow: Down
         cursor: Default,
 
-        space_lobby_entry = <SpaceLobbyEntry> {}
+        space_lobby_entry := SpaceLobbyEntry {}
 
-        list = <PortalList> {
+        list := PortalList {
             keep_invisible: false,
             auto_tail: false,
             width: Fill, height: Fill
             flow: Down,
-            padding: {top: 5}
+            padding: Inset{top: 5}
             spacing: 0.0
 
-            collapsible_header = <CollapsibleHeader> {}
-            rooms_list_entry = <RoomsListEntry> {}
-            empty = <View> {}
-            status_label = <StatusLabel> {}
-            bottom_filler = <View> {
+            collapsible_header := CollapsibleHeader {}
+            rooms_list_entry := RoomsListEntry {}
+            empty := View {}
+            status_label := StatusLabel {}
+            bottom_filler := View {
                 width: Fill,
                 height: 100.0,
             }
@@ -239,7 +231,7 @@ pub fn enqueue_rooms_list_update(update: RoomsListUpdate) {
 }
 
 /// Actions related to a single room in the RoomsList widget.
-#[derive(Debug, Clone, DefaultNone)]
+#[derive(Debug, Clone, Default)]
 pub enum RoomsListAction {
     /// A new room or space was selected.
     Selected(SelectedRoom),
@@ -257,7 +249,15 @@ pub enum RoomsListAction {
         details: RoomContextMenuDetails,
         pos: DVec2,
     },
+    #[default]
     None,
+}
+
+impl ActionDefaultRef for RoomsListAction {
+    fn default_ref() -> &'static Self {
+        static DEFAULT: RoomsListAction = RoomsListAction::None;
+        &DEFAULT
+    }
 }
 
 
@@ -389,7 +389,7 @@ struct SpaceMapValue {
     parent_chain: ParentChain,
 }
 
-#[derive(Live, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct RoomsList {
     #[deref] view: View,
 
@@ -468,12 +468,6 @@ pub struct RoomsList {
     // #[rust] all_rooms_loaded: bool,
 }
 
-impl LiveHook for RoomsList {
-    fn after_new_from_doc(&mut self, _: &mut Cx) {
-        self.invited_rooms = ALL_INVITED_ROOMS.with(Rc::clone);
-    }
-}
-
 /// A macro that returns whether a given Room should be displayed in the RoomsList.
 /// This is only intended for usage within RoomsList methods.
 ///
@@ -514,7 +508,7 @@ impl RoomsList {
     }
 
     /// Handle all pending updates to the list of all rooms.
-    fn handle_rooms_list_updates(&mut self, cx: &mut Cx, _event: &Event, scope: &mut Scope) {
+    fn handle_rooms_list_updates(&mut self, cx: &mut Cx, _event: &Event, _scope: &mut Scope) {
         let mut num_updates: usize = 0;
         let mut needs_sort = false;
         while let Some(update) = PENDING_ROOM_UPDATES.pop() {
@@ -556,8 +550,7 @@ impl RoomsList {
                             .map(|index| self.displayed_invited_rooms.remove(index));
                         if let Some(room) = self.all_joined_rooms.get(&room_id) {
                             cx.widget_action(
-                                self.widget_uid(),
-                                &scope.path,
+                                self.widget_uid(), 
                                 RoomsListAction::InviteAccepted {
                                     room_name_id: room.room_name_id.clone(),
                                 }
@@ -782,7 +775,7 @@ impl RoomsList {
                 RoomsListUpdate::ScrollToRoom(room_id) => {
                     // Ensure indexes are fresh in case rooms were added/removed in this batch of updates.
                     self.recalculate_indexes();
-                    let portal_list = self.view.portal_list(ids!(list));
+                    let portal_list = self.view.portal_list(cx, ids!(list));
                     let speed = 50.0;
                     let portal_list_index = if let Some(regular_index) = self.displayed_regular_rooms.iter().position(|r| r == &room_id) {
                         self.regular_rooms_indexes.first_room_index + regular_index
@@ -921,7 +914,7 @@ impl RoomsList {
 
         self.update_status();
 
-        let portal_list = self.view.portal_list(ids!(list));
+        let portal_list = self.view.portal_list(cx, ids!(list));
         if reset_scroll {
             portal_list.set_first_id_and_scroll(0, 0.0);
         }
@@ -1177,6 +1170,11 @@ impl RoomsList {
 
 impl Widget for RoomsList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let global_invited_rooms = ALL_INVITED_ROOMS.with(Rc::clone);
+        if !Rc::ptr_eq(&self.invited_rooms, &global_invited_rooms) {
+            self.invited_rooms = global_invited_rooms;
+        }
+
         // Process all pending updates to the list of all rooms, and then redraw it.
         if matches!(event, Event::Signal) {
             self.handle_rooms_list_updates(cx, event, scope);
@@ -1186,7 +1184,7 @@ impl Widget for RoomsList {
         // e.g., the user clicking on a RoomsListEntry to select a room.
         // We use Scope `props` to pass down the current scrolling state of the PortalList.
         let props = RoomsListScopeProps {
-            was_scrolling: self.view.portal_list(ids!(list)).was_scrolling(),
+            was_scrolling: self.view.portal_list(cx, ids!(list)).was_scrolling(),
         };
         let rooms_list_actions = cx.capture_actions(
             |cx| self.view.handle_event(cx, event, &mut Scope::with_props(&props))
@@ -1209,8 +1207,7 @@ impl Widget for RoomsList {
 
                 self.current_active_room = Some(new_selected_room.clone());
                 cx.widget_action(
-                    self.widget_uid(),
-                    &scope.path,
+                    self.widget_uid(), 
                     RoomsListAction::Selected(new_selected_room),
                 );
                 self.redraw(cx);
@@ -1229,8 +1226,7 @@ impl Widget for RoomsList {
                     is_marked_unread: jr.is_marked_unread,
                 };
                 cx.widget_action(
-                    self.widget_uid(),
-                    &scope.path,
+                    self.widget_uid(), 
                     RoomsListAction::OpenRoomContextMenu { details, pos },
                 );
             }
@@ -1240,8 +1236,7 @@ impl Widget for RoomsList {
                 let new_selected_space = SelectedRoom::Space { space_name_id };
                 self.current_active_room = Some(new_selected_space.clone());
                 cx.widget_action(
-                    self.widget_uid(),
-                    &scope.path,
+                    self.widget_uid(), 
                     RoomsListAction::Selected(new_selected_space),
                 );
                 self.redraw(cx);
@@ -1283,7 +1278,7 @@ impl Widget for RoomsList {
                             }
 
                             self.selected_space = Some(space_name_id.clone());
-                            self.view.space_lobby_entry(ids!(space_lobby_entry)).set_visible(cx, true);
+                            self.view.space_lobby_entry(cx, ids!(space_lobby_entry)).set_visible(cx, true);
 
                             // If we don't have the full list of children in this newly-selected space, then fetch it.
                             let (is_fully_paginated, parent_chain) = self.space_map
@@ -1318,7 +1313,7 @@ impl Widget for RoomsList {
                         }
                         _ => {
                             self.selected_space = None;
-                            self.view.space_lobby_entry(ids!(space_lobby_entry)).set_visible(cx, false);
+                            self.view.space_lobby_entry(cx, ids!(space_lobby_entry)).set_visible(cx, false);
                         }
                     }
 
@@ -1514,10 +1509,7 @@ impl Widget for RoomsList {
                 // Draw the status label as the bottom entry.
                 else if portal_list_index == status_label_id {
                     let item = list.item(cx, portal_list_index, id!(status_label));
-                    item.as_view().apply_over(cx, live!{
-                        height: Fit,
-                        label = { text: (&self.status) }
-                    });
+                    item.label(cx, ids!(label)).set_text(cx, &self.status);
                     item.draw_all(cx, &mut scope);
                 }
                 // Draw a filler entry to take up space at the bottom of the portal list.

@@ -7,52 +7,46 @@ use ruma::{IdParseError, MatrixToUri, MatrixUri, OwnedRoomOrAliasId, OwnedServer
 
 use crate::{app::AppStateAction, home::invite_screen::JoinRoomResultAction, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{avatar::AvatarWidgetRefExt, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, submit_async_request}, utils};
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::shared::helpers::*;
-    use crate::shared::avatar::*;
-    use crate::shared::icon_button::*;
-    use crate::shared::html_or_plaintext::*;
 
 
     // The main view that allows the user to add (join) or explore new rooms/spaces.
-    pub AddRoomScreen = {{AddRoomScreen}}<ScrollXYView> {
+    mod.widgets.AddRoomScreen = #(AddRoomScreen::register_widget(vm)) {
         width: Fill, height: Fill,
         flow: Down,
-        padding: {top: 5, left: 15, right: 15, bottom: 0},
+        padding: Inset{top: 5, left: 15, right: 15, bottom: 0},
 
         // show_bg: true
-        // draw_bg: {
+        // draw_bg +: {
         //     color: (COLOR_PRIMARY)
         // }
 
-        title = <TitleLabel> {
-            flow: RightWrap,
-            draw_text: {
-                text_style: <TITLE_TEXT>{font_size: 13},
+        title := TitleLabel {
+            flow: Flow.Right{wrap: true},
+            draw_text +: {
+                text_style: TITLE_TEXT {font_size: 13},
                 color: #000
-                wrap: Word
+                flow: Flow.Right{wrap: true}
             }
             text: "Add/Explore Rooms and Spaces"
-            draw_text: {
-                text_style: {font_size: 18},
+            draw_text +: {
+                text_style: theme.font_regular {font_size: 18},
             }
         }
         
-        <LineH> { padding: 10, margin: {top: 10, right: 2} }
+        LineH { padding: 10, margin: Inset{top: 10, right: 2} }
 
-        <SubsectionLabel> {
+        SubsectionLabel {
             text: "Join an existing room or space:"
         }
 
         // TODO: support showing/hiding this help with a collapsible widget wrapper
         //       (Accordion widget, once it's added to Makepad upstream)
 
-        help_info = <MessageHtml> {
+        help_info := MessageHtml {
             padding: 7
             width: Fill, height: Fit
             font_size: 10.
@@ -66,92 +60,92 @@ live_design! {
             "
         }
 
-        join_room_view = <View> {
+        join_room_view := View {
             width: Fill,
             height: Fit,
-            margin: { top: 3 }
-            align: {y: 0.5}
+            margin: Inset{ top: 3 }
+            align: Align{y: 0.5}
             spacing: 5
             flow: Right
 
-            room_alias_id_input = <SimpleTextInput> {
-                margin: {top: 0, left: 5, right: 5, bottom: 0},
+            room_alias_id_input := SimpleTextInput {
+                margin: Inset{top: 0, left: 5, right: 5, bottom: 0},
                 width: Fill { max: 400 } // same width as the above `help_info`
                 height: Fit
                 empty_text: "Enter alias, ID, or Matrix link..."
             }
 
-            search_for_room_button = <RobrixIconButton> {
-                padding: {top: 10, bottom: 10, left: 12, right: 14}
+            search_for_room_button := RobrixIconButton {
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 14}
                 height: Fit
-                margin: { bottom: 4 },
-                draw_bg: {
+                margin: Inset{ bottom: 4 },
+                draw_bg +: {
                     color: (COLOR_ACTIVE_PRIMARY)
                 }
-                draw_icon: {
+                draw_icon +: {
                     svg_file: (ICON_SEARCH)
                     color: (COLOR_PRIMARY)
                 }
-                draw_text: {
+                draw_text +: {
                     color: (COLOR_PRIMARY)
-                    text_style: <REGULAR_TEXT> {}
+                    text_style: REGULAR_TEXT {}
                 }
-                icon_walk: {width: 16, height: 16}
+                icon_walk: Walk{width: 16, height: 16}
                 text: "Go"
             }
         }
 
-        loading_room_view = <View> {
+        loading_room_view := View {
             visible: false
             spacing: 5,
             padding: 10,
             width: Fill
             height: Fit
-            align: {y: 0.5}
+            align: Align{y: 0.5}
             flow: Right
 
-            loading_spinner = <LoadingSpinner> {
+            loading_spinner := LoadingSpinner {
                 width: 25,
                 height: 25,
-                draw_bg: {
+                draw_bg +: {
                     color: (COLOR_ACTIVE_PRIMARY)
                     border_size: 3.0,
                 }
             }
 
-            loading_text = <Label> {
+            loading_text := Label {
                 width: Fill, height: Fit
-                flow: RightWrap,
-                draw_text: {
+                flow: Flow.Right{wrap: true},
+                draw_text +: {
                     wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
             }
         }
 
-        error_view = <View> {
+        error_view := View {
             padding: 10
-            error_text = <Label> {
+            error_text := Label {
                 width: Fill, height: Fit
-                flow: RightWrap,
-                draw_text: {
+                flow: Flow.Right{wrap: true},
+                draw_text +: {
                     wrap: Line,
                     color: (COLOR_FG_DANGER_RED),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
             }
         }
 
-        fetched_room_summary = <RoundedView> {
+        fetched_room_summary := RoundedView {
             visible: false
             padding: 15
-            margin: {top: 10, bottom: 5, left: 5, right: 5}
+            margin: Inset{top: 10, bottom: 5, left: 5, right: 5}
             flow: Down
             width: Fill, height: Fit
 
             show_bg: true
-            draw_bg: {
+            draw_bg +: {
                 color: (COLOR_PRIMARY)
                 border_radius: 4.0,
                 border_size: 1.0
@@ -161,130 +155,130 @@ live_design! {
                 // shadow_offset: vec2(1.0, 0.0), //5.0,5.0)
             }
 
-            room_name_avatar_view = <View> {
+            room_name_avatar_view := View {
                 width: Fill, height: Fit
                 spacing: 10
-                align: {y: 0.5}
+                align: Align{y: 0.5}
                 flow: Right,
 
-                room_avatar = <Avatar> {
+                room_avatar := Avatar {
                     width: 45, height: 45,
                     cursor: Default,
-                    text_view = { text = { draw_text: {
-                        text_style: <TITLE_TEXT>{ font_size: 16.0 }
+                    text_view: { text := Label { draw_text +: {
+                        text_style: TITLE_TEXT { font_size: 16.0 }
                     }}}
                 }
 
-                room_name = <Label> {
+                room_name := Label {
                     width: Fill, height: Fit,
-                    margin: {top: 3} // align it with the above room_avatar
-                    flow: RightWrap,
-                    draw_text: {
-                        text_style: <TITLE_TEXT>{ font_size: 16 }
+                    margin: Inset{top: 3} // align it with the above room_avatar
+                    flow: Flow.Right{wrap: true},
+                    draw_text +: {
+                        text_style: TITLE_TEXT { font_size: 16 }
                         color: (COLOR_TEXT)
-                        wrap: Word,
+                        flow: Flow.Right{wrap: true},
                     }
                 }
             }
 
             // Something like "This is a [regular|direct] [room|space] with N members."
-            room_summary = <Label> {
+            room_summary := Label {
                 width: Fill, height: Fit
-                flow: RightWrap,
-                margin: {top: 10}
-                draw_text: {
+                flow: Flow.Right{wrap: true},
+                margin: Inset{top: 10}
+                draw_text +: {
                     wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
             }
 
-            subsection_alias_id = <SubsectionLabel> {
-                draw_text: { text_style: { font_size: 12 } }
+            subsection_alias_id := SubsectionLabel {
+                draw_text +: { text_style: theme.font_regular { font_size: 12 } }
             }
 
-            room_alias_and_id_view = <View> {
-                padding: {left: 15}
+            room_alias_and_id_view := View {
+                padding: Inset{left: 15}
                 width: Fill, height: Fit
                 spacing: 8.4 // to line up the colons if the ID wraps to the next line
-                align: {y: 0.5}
-                flow: RightWrap,
+                align: Align{y: 0.5}
+                flow: Flow.Right{wrap: true},
 
-                room_alias = <Label> {
+                room_alias := Label {
                     width: Fit, height: Fit
-                    flow: RightWrap,
-                    draw_text: {
+                    flow: Flow.Right{wrap: true},
+                    draw_text +: {
                         wrap: Line,
                         color: (MESSAGE_TEXT_COLOR),
-                        text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                        text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                     }
                 }
 
-                room_id = <Label> {
+                room_id := Label {
                     width: Fit, height: Fit
-                    flow: RightWrap,
-                    draw_text: {
+                    flow: Flow.Right{wrap: true},
+                    draw_text +: {
                         wrap: Line,
                         color: (SMALL_STATE_TEXT_COLOR),
-                        text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                        text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                     }
                 }
             }
 
-            subsection_topic = <SubsectionLabel> {
-                draw_text: { text_style: { font_size: 12 } }
+            subsection_topic := SubsectionLabel {
+                draw_text +: { text_style: theme.font_regular { font_size: 12 } }
             }
 
-            room_topic = <MessageHtml> {
-                padding: {left: 20, top: 5, right: 10, bottom: 10}
+            room_topic := MessageHtml {
+                padding: Inset{left: 20, top: 5, right: 10, bottom: 10}
                 width: Fill,
-                height: Fit { max: 200 }
+                height: Fit
                 font_size: 11
                 font_color: (MESSAGE_TEXT_COLOR)
             }
 
-            buttons_view = <View> {
+            buttons_view := View {
                 width: Fill
                 height: Fit,
-                flow: RightWrap,
-                align: {y: 0.5}
+                flow: Flow.Right{wrap: true},
+                align: Align{y: 0.5}
                 spacing: 15
-                margin: {top: 15}
+                margin: Inset{top: 15}
 
                 // This button's text is based on the room state (e.g., joined, left, invited)
                 // the room's join rules (e.g., public, can knock, invite-only (in which we disable it)).
-                join_room_button = <RobrixIconButton> {
+                join_room_button := RobrixIconButton {
                     padding: 15,
-                    draw_icon: {
+                    draw_icon +: {
                         svg_file: (ICON_JOIN_ROOM),
                         color: (COLOR_FG_ACCEPT_GREEN),
                     }
-                    icon_walk: {width: 17, height: 17, margin: {left: -2, right: -1} }
+                    icon_walk: Walk{width: 17, height: 17, margin: Inset{left: -2, right: -1} }
 
-                    draw_bg: {
+                    draw_bg +: {
                         border_color: (COLOR_FG_ACCEPT_GREEN),
                         color: #f0fff0 // light green
                     }
-                    draw_text: {
+                    draw_text +: {
                         color: (COLOR_FG_ACCEPT_GREEN),
                     }
                 }
 
-                cancel_button = <RobrixIconButton> {
-                    align: {x: 0.5, y: 0.5}
+                cancel_button := RobrixIconButton {
+                    align: Align{x: 0.5, y: 0.5}
                     padding: 15
-                    draw_icon: {
+                    draw_icon +: {
                         svg_file: (ICON_FORBIDDEN)
                         color: (COLOR_FG_DANGER_RED),
                     }
-                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
 
-                    draw_bg: {
+                    draw_bg +: {
                         border_color: (COLOR_FG_DANGER_RED),
                         color: (COLOR_BG_DANGER_RED)
                     }
                     text: "Cancel"
-                    draw_text:{
+                    draw_text +: {
                         color: (COLOR_FG_DANGER_RED),
                     }
                 }
@@ -294,7 +288,7 @@ live_design! {
     }
 }
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct AddRoomScreen {
     #[deref] view: View,
     #[rust] state: AddRoomState,
@@ -392,10 +386,10 @@ impl Widget for AddRoomScreen {
         self.view.handle_event(cx, event, scope);
         
         if let Event::Actions(actions) = event {
-            let room_alias_id_input = self.view.text_input(ids!(room_alias_id_input));
-            let search_for_room_button = self.view.button(ids!(search_for_room_button));
-            let cancel_button = self.view.button(ids!(fetched_room_summary.buttons_view.cancel_button));
-            let join_room_button = self.view.button(ids!(fetched_room_summary.buttons_view.join_room_button));
+            let room_alias_id_input = self.view.text_input(cx, ids!(room_alias_id_input));
+            let search_for_room_button = self.view.button(cx, ids!(search_for_room_button));
+            let cancel_button = self.view.button(cx, ids!(fetched_room_summary.buttons_view.cancel_button));
+            let join_room_button = self.view.button(cx, ids!(fetched_room_summary.buttons_view.join_room_button));
 
             // Enable or disable the button based on if the text input is empty.
             if let Some(text) = room_alias_id_input.changed(actions) {
@@ -579,9 +573,9 @@ impl Widget for AddRoomScreen {
 
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let loading_room_view = self.view.view(ids!(loading_room_view));
-        let fetched_room_summary = self.view.view(ids!(fetched_room_summary));
-        let error_view = self.view.view(ids!(error_view));
+        let loading_room_view = self.view.view(cx, ids!(loading_room_view));
+        let fetched_room_summary = self.view.view(cx, ids!(fetched_room_summary));
+        let error_view = self.view.view(cx, ids!(error_view));
 
         match &self.state {
             AddRoomState::WaitingOnUserInput => {
@@ -593,11 +587,11 @@ impl Widget for AddRoomScreen {
                 loading_room_view.set_visible(cx, false);
                 fetched_room_summary.set_visible(cx, false); 
                 error_view.set_visible(cx, true);
-                error_view.label(ids!(error_text)).set_text(cx, err_str);
+                error_view.label(cx, ids!(error_text)).set_text(cx, err_str);
             }
             AddRoomState::Parsed { room_or_alias_id, .. } => {
                 loading_room_view.set_visible(cx, true);
-                loading_room_view.label(ids!(loading_text)).set_text(
+                loading_room_view.label(cx, ids!(loading_text)).set_text(
                     cx,
                     &format!("Fetching {room_or_alias_id}..."),
                 );
@@ -613,7 +607,7 @@ impl Widget for AddRoomScreen {
                 error_view.set_visible(cx, false);
 
                 // Populate the content of the fetched room preview.
-                let room_avatar = fetched_room_summary.avatar(ids!(room_avatar));
+                let room_avatar = fetched_room_summary.avatar(cx, ids!(room_avatar));
                 match &frp.room_avatar {
                     FetchedRoomAvatar::Text(text) => {
                         room_avatar.show_text(cx, None, None, text);
@@ -639,35 +633,35 @@ impl Widget for AddRoomScreen {
                     Some(RoomType::Space) => ("space", "Space"),
                     _ => ("room", "Room"),
                 };
-                let room_name = fetched_room_summary.label(ids!(room_name));
+                let room_name = fetched_room_summary.label(cx, ids!(room_name));
                 match frp.room_name_id.name_for_avatar().as_deref() {
                     Some(n) => room_name.set_text(cx, n),
                     _ => room_name.set_text(cx, &format!("Unnamed {room_or_space_uc}, ID: {}", frp.room_name_id.room_id())),
                 }
 
-                fetched_room_summary.label(ids!(subsection_alias_id)).set_text(
+                fetched_room_summary.label(cx, ids!(subsection_alias_id)).set_text(
                     cx,
                     &format!("Main {room_or_space_uc} Alias and ID"),
                 );
-                fetched_room_summary.label(ids!(room_alias)).set_text(
+                fetched_room_summary.label(cx, ids!(room_alias)).set_text(
                     cx,
                     &format!("Alias: {}", frp.canonical_alias.as_ref().map_or("not set", |a| a.as_str())),
                 );
-                fetched_room_summary.label(ids!(room_id)).set_text(
+                fetched_room_summary.label(cx, ids!(room_id)).set_text(
                     cx,
                     &format!("ID: {}", frp.room_name_id.room_id().as_str()),
                 );
-                fetched_room_summary.label(ids!(subsection_topic)).set_text(
+                fetched_room_summary.label(cx, ids!(subsection_topic)).set_text(
                     cx,
                     &format!("{room_or_space_uc} Topic"),
                 );
-                fetched_room_summary.html(ids!(room_topic)).set_text(
+                fetched_room_summary.html(cx, ids!(room_topic)).set_text(
                     cx,
                     frp.topic.as_deref().unwrap_or("<i>No topic set</i>"),
                 );
 
-                let room_summary = fetched_room_summary.label(ids!(room_summary));
-                let join_room_button = fetched_room_summary.button(ids!(join_room_button));
+                let room_summary = fetched_room_summary.label(cx, ids!(room_summary));
+                let join_room_button = fetched_room_summary.button(cx, ids!(join_room_button));
                 let join_function = match (&frp.state, &frp.join_rule) {
                     (Some(RoomState::Joined), _) => {
                         room_summary.set_text(cx, &format!("You have already joined this {room_or_space_lc}."));
@@ -762,7 +756,7 @@ impl Widget for AddRoomScreen {
                         join_room_button.set_enabled(cx, !matches!(join_function, JoinButtonFunction::None));
                         self.join_function = join_function;
                         join_room_button.reset_hover(cx);
-                        fetched_room_summary.button(ids!(cancel_button)).reset_hover(cx);
+                        fetched_room_summary.button(cx, ids!(cancel_button)).reset_hover(cx);
                     }
                     AddRoomState::Knocked { .. } => {
                         room_summary.set_text(cx, &format!("You have knocked on this {room_or_space_lc} and must now wait for someone to invite you in."));

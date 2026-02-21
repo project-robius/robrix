@@ -1,118 +1,113 @@
 
 use makepad_widgets::*;
+use crate::ApplyOverCompat;
 
 use crate::{shared::{popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
 
 const REPUBLISH_IDENTITY_BUTTON_TEXT: &str = "Republish Current Identity to DID Server";
 
-live_design! {
+script_mod! {
     link tsp_enabled
 
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::helpers::*;
-    use crate::shared::styles::*;
-    use crate::shared::avatar::*;
-    use crate::shared::icon_button::*;
-    use crate::tsp::wallet_entry::*;
 
-    REPUBLISH_IDENTITY_BUTTON_TEXT = "Republish Current Identity to DID Server"
+    mod.widgets.REPUBLISH_IDENTITY_BUTTON_TEXT = "Republish Current Identity to DID Server"
 
     // The view containing all TSP-related settings.
-    pub TspSettingsScreen = {{TspSettingsScreen}} {
+    mod.widgets.TspSettingsScreen = #(TspSettingsScreen::register_widget(vm)) {
         width: Fill, height: Fit
         flow: Down
 
-        <TitleLabel> {
+        TitleLabel {
             text: "TSP Wallet Settings"
         }
 
-        <SubsectionLabel> {
+        SubsectionLabel {
             text: "Your active identity:"
         }
 
-        <View> {
+        View {
             width: Fill, height: Fit
             flow: Right,
             spacing: 10
 
-            copy_identity_button = <RobrixIconButton> {
-                margin: {left: 5}
+            copy_identity_button := RobrixIconButton {
+                margin: Inset{left: 5}
                 padding: 12,
                 spacing: 0,
-                draw_bg: {
+                draw_bg +: {
                     color: (COLOR_SECONDARY)
                 }
-                draw_icon: {
+                draw_icon +: {
                     svg_file: (ICON_COPY)
                 }
-                icon_walk: {width: 16, height: 16, margin: {right: -2} }
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{right: -2} }
             }
 
-            current_identity_label = <Label> {
+            current_identity_label := Label {
                 width: Fill, height: Fit
-                flow: RightWrap,
-                margin: {top: 10}
-                draw_text: {
+                flow: Flow.Right{wrap: true},
+                margin: Inset{top: 10}
+                draw_text +: {
                     wrap: Line,
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
             }
         }
 
-        republish_identity_button = <RobrixIconButton> {
+        republish_identity_button := RobrixIconButton {
             width: Fit, height: Fit,
             padding: 10,
-            margin: {top: 8, bottom: 10, left: 5},
+            margin: Inset{top: 8, bottom: 10, left: 5},
 
-            draw_bg: {
+            draw_bg +: {
                 color: (COLOR_ACTIVE_PRIMARY),
                 border_radius: 5
             }
-            draw_icon: {
+            draw_icon +: {
                 svg_file: (ICON_UPLOAD)
                 color: (COLOR_PRIMARY),
             }
-            icon_walk: {width: 16, height: 16}
-            draw_text: {
+            icon_walk: Walk{width: 16, height: 16}
+            draw_text +: {
                 color: (COLOR_PRIMARY),
             }
             text: (REPUBLISH_IDENTITY_BUTTON_TEXT)
         }
 
 
-        <SubsectionLabel> {
+        SubsectionLabel {
             text: "Your Wallets:"
         }
 
-        no_wallets_label = <View> {
+        no_wallets_label := View {
             width: Fill, height: Fit
-            <Label> {
+            Label {
                 width: Fill, height: Fit
-                margin: {top: 10, bottom: 8, left: 13, right: 10},
-                flow: RightWrap,
-                draw_text: {
+                margin: Inset{top: 10, bottom: 8, left: 13, right: 10},
+                flow: Flow.Right{wrap: true},
+                draw_text +: {
                     wrap: Line,
                     color: (COLOR_WARNING_NOT_FOUND),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
                 text: "No wallets found. Create or import a wallet."
             }
         }
 
-        <RoundedView> {
+        RoundedView {
             width: Fill, height: Fit
             margin: 5,
 
             show_bg: true,
-            draw_bg: {
+            draw_bg +: {
                 color: #F6F8F9,
                 border_radius: 4.0,
             }
 
-            wallet_list = <FlatList> {
+            wallet_list := FlatList {
                 width: Fill,
                 height: Fit,
                 spacing: 0.0
@@ -122,77 +117,77 @@ live_design! {
                 drag_scrolling: true,
                 scroll_bars: { show_scroll_x: false, show_scroll_y: false },
 
-                wallet_entry = <WalletEntry> { }
+                wallet_entry := WalletEntry { }
             }
         }
 
-        <View> {
-            margin: {top: 5},
+        View {
+            margin: Inset{top: 5},
             width: Fill, height: Fit
-            flow: RightWrap,
-            align: {y: 0.5},
+            flow: Flow.Right{wrap: true},
+            align: Align{y: 0.5},
             spacing: 10
 
-            create_did_button = <RobrixIconButton> {
+            create_did_button := RobrixIconButton {
                 width: Fit, height: Fit,
                 padding: 10,
-                margin: {left: 5},
+                margin: Inset{left: 5},
 
-                draw_bg: {
+                draw_bg +: {
                     border_color: (COLOR_FG_ACCEPT_GREEN),
                     color: (COLOR_BG_ACCEPT_GREEN),
                     border_radius: 5
                 }
-                draw_icon: {
+                draw_icon +: {
                     svg_file: (ICON_ADD_USER)
                     color: (COLOR_FG_ACCEPT_GREEN),
                 }
-                icon_walk: {width: 21, height: Fit, margin: 0}
-                draw_text: {
+                icon_walk: Walk{width: 21, height: Fit, margin: 0}
+                draw_text +: {
                     color: (COLOR_FG_ACCEPT_GREEN),
                 }
                 text: "Create New Identity (DID)"
             }
 
-            create_wallet_button = <RobrixIconButton> {
+            create_wallet_button := RobrixIconButton {
                 width: Fit, height: Fit,
                 padding: 10,
-                margin: {left: 5},
+                margin: Inset{left: 5},
 
-                draw_bg: {
+                draw_bg +: {
                     border_color: (COLOR_FG_ACCEPT_GREEN),
                     color: (COLOR_BG_ACCEPT_GREEN),
                     border_radius: 5
                 }
-                draw_icon: {
+                draw_icon +: {
                     svg_file: (ICON_ADD_WALLET)
                     color: (COLOR_FG_ACCEPT_GREEN),
                 }
-                icon_walk: {width: 21, height: Fit, margin: 0}
-                draw_text: {
+                icon_walk: Walk{width: 21, height: Fit, margin: 0}
+                draw_text +: {
                     color: (COLOR_FG_ACCEPT_GREEN),
                 }
                 text: "Create New Wallet"
             }
 
-            import_wallet_button = <RobrixIconButton> {
-                padding: {top: 10, bottom: 10, left: 12, right: 15}
-                margin: {left: 5}
-                draw_bg: {
+            import_wallet_button := RobrixIconButton {
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                margin: Inset{left: 5}
+                draw_bg +: {
                     color: (COLOR_ACTIVE_PRIMARY)
                 }
-                draw_text: {
+                draw_text +: {
                     color: (COLOR_PRIMARY)
-                    text_style: <REGULAR_TEXT> {}
+                    text_style: REGULAR_TEXT {}
                 }
                 text: "Import Existing Wallet"
                 // TODO: fix this icon, or pick a different SVG
-                // draw_icon: {
+                // draw_icon +: {
                 //     svg_file: (ICON_IMPORT)
                 //     color: (COLOR_PRIMARY)
                 // }
-                // icon_walk: {width: 16, height: 16}
-                icon_walk: {width: 0, height: 0}
+                // icon_walk: Walk{width: 16, height: 16}
+                icon_walk: Walk{width: 0, height: 0}
             }
         }
     }
@@ -248,7 +243,7 @@ impl WalletStatusAndDefault {
 }
 
 /// The view containing all TSP-related settings.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct TspSettingsScreen {
     #[deref] view: View,
 
@@ -285,16 +280,16 @@ impl Widget for TspSettingsScreen {
             Some(current_did) => (current_did, COLOR_FG_ACCEPT_GREEN, true),
             None => ("No default identity has been set.", COLOR_WARNING_NOT_FOUND, false),
         };
-        self.view.label(ids!(current_identity_label)).apply_over(cx, live!(
+        self.view.label(cx, ids!(current_identity_label)).apply_over(cx, live!(
             text: (current_did_text),
             draw_text: { color: (current_did_text_color) },
         ));
-        self.view.button(ids!(republish_identity_button)).set_visible(cx, show_republish_button);
+        self.view.button(cx, ids!(republish_identity_button)).set_visible(cx, show_republish_button);
 
 
         // If we don't have any wallets, show the "no wallets" label.
         let is_wallets_empty = self.wallets.as_ref().is_none_or(|w| w.is_empty());
-        self.view.view(ids!(no_wallets_label)).set_visible(cx, is_wallets_empty);
+        self.view.view(cx, ids!(no_wallets_label)).set_visible(cx, is_wallets_empty);
 
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // Here, we only need to handle drawing the wallet list.
@@ -322,7 +317,7 @@ impl Widget for TspSettingsScreen {
 
 impl MatchEvent for TspSettingsScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        let republish_identity_button = self.view.button(ids!(republish_identity_button));
+        let republish_identity_button = self.view.button(cx, ids!(republish_identity_button));
 
         for action in actions {
             match action.downcast_ref() {
@@ -462,7 +457,7 @@ impl MatchEvent for TspSettingsScreen {
         }
 
 
-        if self.view.button(ids!(copy_identity_button)).clicked(actions) { 
+        if self.view.button(cx, ids!(copy_identity_button)).clicked(actions) { 
             if let Some(did) = self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref()) {
                 cx.copy_to_clipboard(did);
                 enqueue_popup_notification(
@@ -482,7 +477,7 @@ impl MatchEvent for TspSettingsScreen {
         // Allow the user to republish their identity to the DID server.
         // This is primarily needed because some DID servers (e.g., the test servers)
         // frequently wipe their identity storage after a certain period of time.
-        if self.view.button(ids!(republish_identity_button)).clicked(actions) {
+        if self.view.button(cx, ids!(republish_identity_button)).clicked(actions) {
             if self.has_default_wallet() {
                 if let Some(our_did) = self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref()) {
                     republish_identity_button.apply_over(cx, live!(
@@ -501,17 +496,17 @@ impl MatchEvent for TspSettingsScreen {
             }
         }
 
-        if self.view.button(ids!(create_wallet_button)).clicked(actions) {
+        if self.view.button(cx, ids!(create_wallet_button)).clicked(actions) {
             cx.action(CreateWalletModalAction::Open);
         }
 
-        if self.view.button(ids!(create_did_button)).clicked(actions) {
+        if self.view.button(cx, ids!(create_did_button)).clicked(actions) {
             if self.has_default_wallet() {
                 cx.action(CreateDidModalAction::Open);
             }
         }
 
-        if self.view.button(ids!(import_wallet_button)).clicked(actions) {
+        if self.view.button(cx, ids!(import_wallet_button)).clicked(actions) {
             // TODO: support importing an existing wallet.
             enqueue_popup_notification(
                 "Importing an existing wallet is not yet implemented.",

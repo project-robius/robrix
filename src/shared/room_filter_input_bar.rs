@@ -7,66 +7,65 @@
 
 use makepad_widgets::*;
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::shared::icon_button::RobrixIconButton;
 
-    pub RoomFilterInputBar = {{RoomFilterInputBar}}<RoundedView> {
+    mod.widgets.RoomFilterInputBar = #(RoomFilterInputBar::register_widget(vm)) {
+
+
         width: Fill,
         height: 35,
 
         show_bg: true,
-        draw_bg: {
+        draw_bg +: {
             color: (COLOR_PRIMARY),
             border_radius: 4.0,
             border_color: (COLOR_SECONDARY),
             border_size: 1.0,
         }
 
-        padding: {top: 3, bottom: 3, left: 10, right: 4.5}
+        padding: Inset{top: 3, bottom: 3, left: 10, right: 4.5}
         margin: 0
         spacing: 4,
-        align: {x: 0.0, y: 0.5},
+        align: Align{x: 0.0, y: 0.5},
 
-        <Icon> {
-            draw_icon: {
+        Icon {
+            draw_icon +: {
                 svg_file: (ICON_SEARCH),
-                fn get_color(self) -> vec4 {
+                get_color: fn() -> vec4 {
                     return (COLOR_TEXT_INPUT_IDLE);
                 }
             }
-            icon_walk: {width: 14, height: Fit}
+            icon_walk: Walk{width: 14, height: Fit}
         }
 
-        input = <RobrixTextInput> {
+        input := RobrixTextInput {
             width: Fill,
             height: Fit,
             flow: Right, // do not wrap
 
             empty_text: "Filter rooms & spaces..."
 
-            draw_text: {
-                text_style: { font_size: 10 },
+            draw_text +: {
+                text_style: theme.font_regular { font_size: 10 },
             }
         }
 
-        clear_button = <RobrixIconButton> {
+        clear_button := RobrixIconButton {
             visible: false,
-            padding: {top: 5, bottom: 5, left: 9, right: 9},
+            padding: Inset{top: 5, bottom: 5, left: 9, right: 9},
             spacing: 0,
-            align: {x: 0.5, y: 0.5}
-            draw_bg: {
+            align: Align{x: 0.5, y: 0.5}
+            draw_bg +: {
                 color: (COLOR_SECONDARY)
             }
-            draw_icon: {
+            draw_icon +: {
                 svg_file: (ICON_CLOSE),
                 color: (COLOR_TEXT)
             }
-            icon_walk: {width: Fit, height: 10, margin: 0}
+            icon_walk: Walk{width: Fit, height: 10, margin: 0}
         }
     }
 }
@@ -74,17 +73,25 @@ live_design! {
 /// A text input (with a search icon and cancel button) used to filter the rooms list.
 ///
 /// See the module-level docs for more detail.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct RoomFilterInputBar {
     #[deref] view: View,
 }
 
 /// Actions emitted by the `RoomFilterInputBar` based on user interaction with it.
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Clone, Debug, Default)]
 pub enum RoomFilterAction {
     /// The user has changed the text entered into the filter bar.
     Changed(String),
+    #[default]
     None,
+}
+
+impl ActionDefaultRef for RoomFilterAction {
+    fn default_ref() -> &'static Self {
+        static DEFAULT: RoomFilterAction = RoomFilterAction::None;
+        &DEFAULT
+    }
 }
 
 impl Widget for RoomFilterInputBar {
@@ -99,9 +106,9 @@ impl Widget for RoomFilterInputBar {
 }
 
 impl WidgetMatchEvent for RoomFilterInputBar {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
-        let input = self.text_input(ids!(input));
-        let clear_button = self.button(ids!(clear_button));
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
+        let input = self.text_input(cx, ids!(input));
+        let clear_button = self.button(cx, ids!(clear_button));
 
         // Handle user changing the input text
         if let Some(keywords) = input.changed(actions) {
@@ -115,8 +122,7 @@ impl WidgetMatchEvent for RoomFilterInputBar {
             clear_button.set_visible(cx, !keywords.is_empty());
             clear_button.reset_hover(cx);
             cx.widget_action(
-                self.widget_uid(),
-                &scope.path,
+                self.widget_uid(), 
                 RoomFilterAction::Changed(keywords)
             );
         }
@@ -126,8 +132,7 @@ impl WidgetMatchEvent for RoomFilterInputBar {
             clear_button.set_visible(cx, false);
             input.set_key_focus(cx);
             cx.widget_action(
-                self.widget_uid(),
-                &scope.path,
+                self.widget_uid(), 
                 RoomFilterAction::Changed(String::new())
             );
         }

@@ -1,55 +1,58 @@
 use makepad_widgets::*;
 
-live_design! {
-    use link::theme::*;
-    use link::widgets::*;
-    use link::shaders::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
 
-    pub TitleLabel = <Label> {
+    mod.widgets.TitleLabel = Label {
+
+
         width: Fill, height: Fit
-        margin: {top: 5},
-        flow: RightWrap,
-        draw_text: {
-            text_style: <TITLE_TEXT>{font_size: 15},
+        margin: Inset{top: 5},
+        flow: Flow.Right{wrap: true},
+        draw_text +: {
+            text_style: TITLE_TEXT {font_size: 15},
             color: #000
-            wrap: Word
+            flow: Flow.Right{wrap: true}
         }
     }
 
-    pub SubsectionLabel = <Label> {
+    mod.widgets.SubsectionLabel = Label {
+
         width: Fill, height: Fit
-        margin: {top: 5},
+        margin: Inset{top: 5},
         flow: Right,
-        draw_text: {
+        draw_text +: {
             color: (COLOR_TEXT),
-            text_style: <THEME_FONT_BOLD>{ font_size: 13 },
+            text_style: theme.font_bold { font_size: 13 },
         }
     }
 
     // Copied from Moly
-    pub FadeView = <CachedView> {
-        draw_bg: {
-            instance opacity: 1.0
+    mod.widgets.FadeView = CachedView {
+        draw_bg +: {
+            opacity: instance(1.0)
 
-            fn pixel(self) -> vec4 {
-                let color = sample2d_rt(self.image, self.pos * self.scale + self.shift);
-                return Pal::premul(vec4(color.xyz, color.w * self.opacity))
+            pixel: fn() -> vec4 {
+                let color = sample2d_rt(self.image self.pos * self.scale + self.shift);
+                return Pal.premul(vec4(color.xyz, color.w * self.opacity))
             }
         }
     }
 
-    pub LineH = <RoundedView> {
+    mod.widgets.LineH = RoundedView {
+
         width: Fill,
         height: 2.0,
         margin: 0.0,
         padding: 0.0, spacing: 0.0
         show_bg: true
-        draw_bg: {color: (COLOR_DIVIDER_DARK)}
+        draw_bg +: {color: (COLOR_DIVIDER_DARK)}
     }
 
-    pub Filler  = <View> { width: Fill, height: Fill }
-    pub FillerX = <View> { width: Fill, height: Fit }
-    pub FillerY = <View> { width: Fit,  height: Fill }
+    mod.widgets.Filler = View { width: Fill, height: Fill }
+
+    mod.widgets.FillerX = View { width: Fill, height: Fit }
+    mod.widgets.FillerY = View { width: Fit,  height: Fill }
 }

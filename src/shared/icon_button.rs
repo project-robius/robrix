@@ -1,52 +1,53 @@
 use makepad_widgets::*;
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
 
-    COLOR_BRAND = #x5
-    COLOR_BRAND_HOVER = #x3
-    COLOR_META_TEXT = #xaaa
+    mod.widgets.COLOR_BRAND = #x5
+    mod.widgets.COLOR_BRAND_HOVER = #x3
+    mod.widgets.COLOR_META_TEXT = #xaaa
 
-    pub IconButton = <Button> {
-        draw_text: {
-            instance hover: 0.0
-            instance down: 0.0
-            text_style: {
+    mod.widgets.IconButton = Button {
+
+        draw_text +: {
+            hover: instance(0.0)
+            down: instance(0.0)
+            text_style: theme.font_regular {
                 font_size: 11.0
             }
-            fn get_color(self) -> vec4 {
+            get_color: fn() -> vec4 {
                 return mix(
                     mix(
-                        (COLOR_META_TEXT),
-                        (COLOR_BRAND),
+                        (mod.widgets.COLOR_META_TEXT),
+                        (mod.widgets.COLOR_BRAND),
                         self.hover
                     ),
-                    (COLOR_BRAND_HOVER),
+                    (mod.widgets.COLOR_BRAND_HOVER),
                     self.down
                 )
             }
         }
-        draw_icon: {
-            fn get_color(self) -> vec4 {
+        draw_icon +: {
+            hover: instance(0.0)
+            down: instance(0.0)
+            get_color: fn() -> vec4 {
                 return mix(
                     mix(
-                        (COLOR_META),
-                        (COLOR_BRAND),
+                        (mod.widgets.COLOR_META),
+                        (mod.widgets.COLOR_BRAND),
                         self.hover
                     ),
-                    (COLOR_BRAND_HOVER),
+                    (mod.widgets.COLOR_BRAND_HOVER),
                     self.down
                 )
             }
         }
-        icon_walk: {width: 7.5, height: Fit, margin: {left: 5.0}}
-        draw_bg: {
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+        icon_walk: Walk{width: 7.5, height: Fit, margin: Inset{left: 5.0}}
+        draw_bg +: {
+            pixel: fn() -> vec4 {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                 return sdf.result
             }
         }
@@ -57,28 +58,28 @@ live_design! {
 
     // Customized button widget, based on the RoundedView shaders with some modifications
     // which is a better fit with our application UI design
-    pub RobrixIconButton = <Button> {
+    mod.widgets.RobrixIconButton = Button {
         width: Fit,
         height: Fit,
         spacing: 10,
         padding: 10,
-        align: {x: 0, y: 0.5}
+        align: Align{x: 0, y: 0.5}
 
-        draw_bg: {
-            instance color: (COLOR_PRIMARY)
+        draw_bg +: {
+            color: instance((mod.widgets.COLOR_PRIMARY))
             // We set a mid-gray hover color, which gets mixed with the bg color itself
             // in order to create a "lightening" effect upon hover.
-            instance color_hover: #A
-            instance border_size: 0.0
-            instance border_color: #D0D5DD
-            instance border_radius: 4.0
+            color_hover: instance(#A)
+            border_size: instance(0.0)
+            border_color: instance(#D0D5DD)
+            border_radius: instance(4.0)
 
-            fn get_color(self) -> vec4 {
+            get_color: fn() -> vec4 {
                 return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
             }
 
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+            pixel: fn() -> vec4 {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.box(
                     self.border_size,
                     self.border_size,
@@ -94,19 +95,22 @@ live_design! {
             }
         }
 
-        draw_icon: {
-            instance color: #000
-            instance color_hover: #000
-            fn get_color(self) -> vec4 {
+        draw_icon +: {
+            hover: instance(0.0)
+            color: #000
+            color_hover: uniform(#000)
+            get_color: fn() -> vec4 {
                 return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
             }
         }
-        icon_walk: {width: 16, height: 16}
+        icon_walk: Walk{width: 16, height: 16}
 
-        draw_text: {
-            text_style: <REGULAR_TEXT>{font_size: 10},
+        draw_text +: {
+            hover: instance(0.0)
+            text_style: mod.widgets.REGULAR_TEXT {font_size: 10},
             color: #000
-            fn get_color(self) -> vec4 {
+            color_hover: uniform(#000)
+            get_color: fn() -> vec4 {
                 return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
             }
         }

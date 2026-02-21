@@ -9,125 +9,94 @@ use crate::{
 };
 
 use super::rooms_list::{InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListScopeProps};
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::shared::helpers::*;
-    use crate::shared::avatar::Avatar;
-    use crate::shared::html_or_plaintext::HtmlOrPlaintext;
-    use crate::shared::unread_badge::UnreadBadge;
 
     // A cancel icon to be displayed in the RoomsListEntry when the room is tombstoned.
-    TombstoneIcon = <View> {
+    mod.widgets.TombstoneIcon = View {
         width: Fit, height: Fit,
         visible: false,
 
-        <Icon> {
+        Icon {
             width: 19, height: 19,
-            align: {x: 0.5, y: 0.5}
-            draw_icon: {
+            align: Align{x: 0.5, y: 0.5}
+            draw_icon +: {
                 svg_file: (ICON_TOMBSTONE)
                 color: (COLOR_FG_DANGER_RED)
             }
-            icon_walk: { width: 15, height: 15 }
+            icon_walk: Walk{ width: 15, height: 15 }
         }
     }
 
-    RoomName = <Label> {
+    mod.widgets.RoomName = Label {
         width: Fill, height: Fit
         flow: Right, // do not wrap
         padding: 0,
-        draw_text:{
+        draw_text +: {
             color: #000,
-            wrap: Ellipsis,
-            text_style: <USERNAME_TEXT_STYLE>{ font_size: 10. }
+            flow: Flow.Right{wrap: true},
+            text_style: USERNAME_TEXT_STYLE { font_size: 10. }
         }
         text: "[Room name unknown]"
     }
 
-    Timestamp = <Label> {
-        padding: {top: 1},
+    mod.widgets.Timestamp = Label {
+        padding: Inset{top: 1},
         width: Fit, height: Fit
         flow: Right, // do not wrap
-        draw_text:{
+        draw_text +: {
             color: (TIMESTAMP_TEXT_COLOR)
-            text_style: <TIMESTAMP_TEXT_STYLE>{
+            text_style: TIMESTAMP_TEXT_STYLE {
                 font_size: 7.5
             },
         }
     }
 
-    MessagePreview = <View> {
+    mod.widgets.MessagePreview = View {
         width: Fill, height: Fit
-        latest_message = <HtmlOrPlaintext> {
-            html_view = { html = {
-                font_size: 9.3,
-                draw_normal:      { text_style: { font_size: 9.3 } },
-                draw_italic:      { text_style: { font_size: 9.3 } },
-                draw_bold:        { text_style: { font_size: 9.3 } },
-                draw_bold_italic: { text_style: { font_size: 9.3 } },
-                draw_fixed:       { text_style: { font_size: 9.3 } },
-                a = {
-                    matrix_link_view = {
-                        matrix_link = {
-                            padding: { top: 2.0, bottom: 2.0, left: 4.0, right: 4.0 }
-                            draw_bg: {
-                                color: #000,
-                                border_radius: 3.5,
-                            }
-                            avatar = {
-                                height: 10.0, width: 10.0
-                                text_view = { text = { draw_text: {
-                                    text_style: <TITLE_TEXT>{ font_size: 6.3 }
-                                }}}
-                            }
-                            title = {
-                                draw_text: {
-                                    color: #fff
-                                    text_style: {
-                                        font_size: 6.3
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+        latest_message := HtmlOrPlaintext {
+            html_view: { html := mod.widgets.MessageHtml {
+                font_size: 9.3
+                text_style_normal: theme.font_regular { font_size: 9.3 }
+                text_style_italic: theme.font_italic { font_size: 9.3 }
+                text_style_bold: theme.font_bold { font_size: 9.3 }
+                text_style_bold_italic: theme.font_bold_italic { font_size: 9.3 }
+                text_style_fixed: theme.font_code { font_size: 9.3 }
             } }
-            plaintext_view = { pt_label = {
-                draw_text: {
-                    text_style: { font_size: 9.5 },
+            plaintext_view: { pt_label := Label {
+                draw_text +: {
+                    text_style: theme.font_regular { font_size: 9.5 },
                 }
                 text: "[No recent messages]"
             } }
         }
     }
 
-    RoomsListEntryContent = {{RoomsListEntryContent}} {
+    mod.widgets.RoomsListEntryContent = #(RoomsListEntryContent::register_widget(vm)) {
         flow: Right,
         spacing: 10,
         padding: 10,
         width: Fill, height: Fit
         show_bg: true
-        draw_bg: {
-            color: #0000
-            instance border_size: 0.0
-            instance border_color: #0000
-            instance inset: vec4(0.0, 0.0, 0.0, 0.0)
-            instance border_radius: 4.0
+        draw_bg +: {
+            color: uniform(#0000)
+            border_size: instance(0.0)
+            border_color: instance(#0000)
+            inset: instance(vec4(0.0))
+            border_radius: instance(4.0)
 
-            fn get_color(self) -> vec4 {
+            get_color: fn() -> vec4 {
                 return self.color
             }
 
-            fn get_border_color(self) -> vec4 {
+            get_border_color: fn() -> vec4 {
                 return self.border_color
             }
 
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+            pixel: fn() -> vec4 {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.box(
                     self.inset.x + self.border_size,
                     self.inset.y + self.border_size,
@@ -144,62 +113,62 @@ live_design! {
         }
     }
 
-    pub RoomsListEntry = {{RoomsListEntry}} {
+    mod.widgets.RoomsListEntry = #(RoomsListEntry::register_widget(vm)) {
         flow: Down, height: Fit
         cursor: Default,
         show_bg: true,
 
         // Wrap the RoomsListEntryContent in an AdaptiveView to change the displayed content
         // (and its layout) based on the available space in the sidebar.
-        adaptive_preview = <AdaptiveView> {
+        adaptive_preview := AdaptiveView {
             height: Fit
 
-            OnlyIcon = <RoomsListEntryContent> {
-                align: {x: 0.5, y: 0.5}
+            OnlyIcon := mod.widgets.RoomsListEntryContent {
+                align: Align{x: 0.5, y: 0.5}
                 padding: 5.
-                <View> {
+                View {
                     height: Fit
                     flow: Overlay
-                    align: { x: 1.0 }
-                    avatar = <Avatar> {}
-                    unread_badge = <UnreadBadge> {}
-                    tombstone_icon = <TombstoneIcon> {}
+                    align: Align{ x: 1.0 }
+                    avatar := Avatar {}
+                    unread_badge := UnreadBadge {}
+                    tombstone_icon := mod.widgets.TombstoneIcon {}
                 }
             }
-            IconAndName = <RoomsListEntryContent> {
+            IconAndName := mod.widgets.RoomsListEntryContent {
                 padding: 5.
-                align: {x: 0.5, y: 0.5}
-                avatar = <Avatar> {}
-                room_name = <RoomName> {}
-                unread_badge = <UnreadBadge>  {}
-                tombstone_icon = <TombstoneIcon> {}
+                align: Align{x: 0.5, y: 0.5}
+                avatar := Avatar {}
+                room_name := mod.widgets.RoomName {}
+                unread_badge := UnreadBadge {}
+                tombstone_icon := mod.widgets.TombstoneIcon {}
             }
-            FullPreview = <RoomsListEntryContent> {
+            FullPreview := mod.widgets.RoomsListEntryContent {
                 padding: 10
-                avatar = <Avatar> {}
-                <View> {
+                avatar := Avatar {}
+                View {
                     flow: Down
                     width: Fill, height: 56
-                    align: { x: 0.0, y: 0.0 }
-                    top = <View> {
+                    align: Align{ x: 0.0, y: 0.0 }
+                    top := View {
                         width: Fill, height: Fit,
                         spacing: 3,
                         flow: Right,
-                        room_name = <RoomName> {}
-                        timestamp = <Timestamp> { }
+                        room_name := mod.widgets.RoomName {}
+                        timestamp := mod.widgets.Timestamp { }
                     }
-                    bottom = <View> {
+                    bottom := View {
                         width: Fill, height: Fill,
                         spacing: 2,
                         flow: Right,
-                        preview = <MessagePreview> {
-                            margin: { top: 2.5 }
+                        preview := mod.widgets.MessagePreview {
+                            margin: Inset{ top: 2.5 }
                         }
-                        <View> {
+                        View {
                             width: Fit, height: Fit
-                            align: { x: 1.0 }
-                            unread_badge = <UnreadBadge> {}
-                            tombstone_icon = <TombstoneIcon> {}
+                            align: Align{ x: 1.0 }
+                            unread_badge := UnreadBadge {}
+                            tombstone_icon := mod.widgets.TombstoneIcon {}
                         }
                     }
                 }
@@ -209,37 +178,33 @@ live_design! {
 }
 
 /// An entry in the rooms list.
-#[derive(Live, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct RoomsListEntry {
     #[deref] view: View,
     #[rust] room_id: Option<OwnedRoomId>,
 }
 
 /// Widget actions that are emitted by a RoomsListEntry.
-#[derive(Clone, DefaultNone, Debug)]
+#[derive(Clone, Default, Debug)]
 pub enum RoomsListEntryAction {
     /// This RoomsListEntry was primary-clicked or tapped.
     PrimaryClicked(OwnedRoomId),
     /// This RoomsListEntry was right-clicked or long-pressed.
     SecondaryClicked(OwnedRoomId, DVec2),
+    #[default]
     None,
-}
-
-impl LiveHook for RoomsListEntry {
-    fn after_new_from_doc(&mut self, _cx: &mut Cx) {
-        // Adapt the preview based on the available space.
-        self.view
-            .adaptive_view(ids!(adaptive_preview))
-            .set_variant_selector(|_cx, parent_size| match parent_size.x {
-                width if width <= 70.0  => id!(OnlyIcon),
-                width if width <= 200.0 => id!(IconAndName),
-                _ => id!(FullPreview),
-            });
-    }
 }
 
 impl Widget for RoomsListEntry {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view
+            .adaptive_view(cx, ids!(adaptive_preview))
+            .set_variant_selector(|_cx, parent_size| match parent_size.x {
+                width if width <= 70.0 => id!(OnlyIcon),
+                width if width <= 200.0 => id!(IconAndName),
+                _ => id!(FullPreview),
+            });
+
         let uid = self.widget_uid();
         let rooms_list_props = scope.props.get::<RoomsListScopeProps>().unwrap();
 
@@ -253,21 +218,19 @@ impl Widget for RoomsListEntry {
                     cx.set_key_focus(area);
                     if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                         cx.widget_action(
-                            uid,
-                            &scope.path,
+                            uid, 
                             RoomsListEntryAction::SecondaryClicked(room_id.clone(), fe.abs),
                         );
                     }
                 }
                 Hit::FingerLongPress(fe) => {
                     cx.widget_action(
-                        uid,
-                        &scope.path,
+                        uid, 
                         RoomsListEntryAction::SecondaryClicked(room_id.clone(), fe.abs),
                     );
                 }
                 Hit::FingerUp(fe) if !rooms_list_props.was_scrolling && fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                    cx.widget_action(uid, &scope.path, RoomsListEntryAction::PrimaryClicked(room_id.clone()));
+                    cx.widget_action(uid,  RoomsListEntryAction::PrimaryClicked(room_id.clone()));
                 }
                 _ => { }
             }
@@ -288,7 +251,7 @@ impl Widget for RoomsListEntry {
     }
 }
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct RoomsListEntryContent {
     #[deref] view: View,
 }
@@ -316,26 +279,26 @@ impl RoomsListEntryContent {
         cx: &mut Cx,
         room_info: &JoinedRoomInfo,
     ) {
-        self.view.label(ids!(room_name)).set_text(cx, &room_info.room_name_id.to_string());
+        self.view.label(cx, ids!(room_name)).set_text(cx, &room_info.room_name_id.to_string());
         if let Some((ts, msg)) = room_info.latest.as_ref() {
             if let Some(human_readable_date) = relative_format(*ts) {
                 self.view
-                    .label(ids!(timestamp))
+                    .label(cx, ids!(timestamp))
                     .set_text(cx, &human_readable_date);
             }
             self.view
-                .html_or_plaintext(ids!(latest_message))
+                .html_or_plaintext(cx, ids!(latest_message))
                 .show_html(cx, msg);
         }
 
-        self.view.unread_badge(ids!(unread_badge)).update_counts(
+        self.view.unread_badge(cx, ids!(unread_badge)).update_counts(
             room_info.is_marked_unread,
             room_info.num_unread_mentions,
             room_info.num_unread_messages,
         );
         self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);
         // Show tombstone icon if the room is tombstoned
-        self.view.view(ids!(tombstone_icon)).set_visible(cx, room_info.is_tombstoned);
+        self.view.view(cx, ids!(tombstone_icon)).set_visible(cx, room_info.is_tombstoned);
     }
 
     /// Populates this RoomsListEntry with info about an invited room.
@@ -344,22 +307,22 @@ impl RoomsListEntryContent {
         cx: &mut Cx,
         room_info: &InvitedRoomInfo,
     ) {
-        self.view.label(ids!(room_name)).set_text(cx, &room_info.room_name_id.to_string());
+        self.view.label(cx, ids!(room_name)).set_text(cx, &room_info.room_name_id.to_string());
         // Hide the timestamp field, and use the latest message field to show the inviter.
-        self.view.label(ids!(timestamp)).set_text(cx, "");
+        self.view.label(cx, ids!(timestamp)).set_text(cx, "");
         let inviter_string = match &room_info.inviter_info {
             Some(InviterInfo { user_id, display_name: Some(dn), .. }) => format!("Invited by <b>{dn}</b> ({user_id})"),
             Some(InviterInfo { user_id, .. }) => format!("Invited by {user_id}"),
             None => String::from("You were invited"),
         };
-        self.view.html_or_plaintext(ids!(latest_message)).show_html(cx, &inviter_string);
+        self.view.html_or_plaintext(cx, ids!(latest_message)).show_html(cx, &inviter_string);
 
         match room_info.room_avatar {
             FetchedRoomAvatar::Text(ref text) => {
-                self.view.avatar(ids!(avatar)).show_text(cx, None, None, text);
+                self.view.avatar(cx, ids!(avatar)).show_text(cx, None, None, text);
             }
             FetchedRoomAvatar::Image(ref img_bytes) => {
-                let _ = self.view.avatar(ids!(avatar)).show_image(
+                let _ = self.view.avatar(cx, ids!(avatar)).show_image(
                     cx,
                     None, // Avatars in a RoomsListEntry shouldn't be clickable.
                     |cx, img| utils::load_png_or_jpg(&img, cx, img_bytes),
@@ -368,7 +331,7 @@ impl RoomsListEntryContent {
         }
 
         self.view
-            .unread_badge(ids!(unread_badge))
+            .unread_badge(cx, ids!(unread_badge))
             .update_counts(false, 1, 0);
 
         self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);
@@ -383,10 +346,10 @@ impl RoomsListEntryContent {
     ) {
         match room_avatar {
             FetchedRoomAvatar::Text(text) => {
-                self.view.avatar(ids!(avatar)).show_text(cx, None, None, text);
+                self.view.avatar(cx, ids!(avatar)).show_text(cx, None, None, text);
             }
             FetchedRoomAvatar::Image(img_bytes) => {
-                let _ = self.view.avatar(ids!(avatar)).show_image(
+                let _ = self.view.avatar(cx, ids!(avatar)).show_image(
                     cx,
                     None, // Avatars in a RoomsListEntry shouldn't be clickable.
                     |cx, img| utils::load_png_or_jpg(&img, cx, img_bytes),
@@ -405,86 +368,9 @@ impl RoomsListEntryContent {
     }
 
     /// Updates the styling of the preview based on whether the room is selected or not.
-    pub fn update_preview_colors(&mut self, cx: &mut Cx, is_selected: bool) {
-        let bg_color;
-        let message_text_color;
-        let room_name_color;
-        let timestamp_color;
-        let code_bg_color;
-
-        // TODO: This is quite verbose, makepad should provide a way to override this at a higher level.
-        if is_selected {
-            bg_color = vec4(0.059, 0.533, 0.996, 1.0); // COLOR_PRIMARY_SELECTED
-            message_text_color = vec3(1., 1., 1.); // COLOR_PRIMARY
-            room_name_color = vec3(1., 1., 1.); // COLOR_PRIMARY
-            timestamp_color = vec3(1., 1., 1.); // COLOR_PRIMARY
-            code_bg_color = vec3(0.3, 0.3, 0.3); // a darker gray, used for `code_color` and `quote_bg_color`
-        } else {
-            bg_color = vec4(0.0, 0.0, 0.0, 0.0); // TRANSPARENT
-            message_text_color = vec3(0.267, 0.267, 0.267); // MESSAGE_TEXT_COLOR
-            room_name_color = vec3(0., 0., 0.);
-            timestamp_color = vec3(0.6, 0.6, 0.6);
-            code_bg_color = vec3(0.929, 0.929, 0.929); // #EDEDED, see `code_color` and `quote_bg_color`
-        }
-
-        self.view.apply_over(
-            cx,
-            live!(
-                draw_bg: {
-                    color: (bg_color)
-                }
-            ),
-        );
-
-        // We check that the UI elements exist to avoid unnecessary updates, and prevent error logs.
-        if !self.view.label(ids!(room_name)).is_empty() {
-            self.view.label(ids!(room_name)).apply_over(
-                cx,
-                live!(
-                draw_text: {
-                    color: (room_name_color)
-                }
-                ),
-            );
-        }
-
-        if !self.view.label(ids!(timestamp)).is_empty() {
-            self.view.label(ids!(timestamp)).apply_over(
-                cx,
-                live!(
-                draw_text: {
-                    color: (timestamp_color)
-                }
-                ),
-            );
-        }
-
-        if !self.view.html_or_plaintext(ids!(latest_message)).is_empty() {
-            self.view.html_or_plaintext(ids!(latest_message)).apply_over(
-                cx,
-                live!(
-                html_view = {
-                    html = {
-                        font_color: (message_text_color),
-                        draw_normal:      { color: (message_text_color) },
-                        draw_italic:      { color: (message_text_color) },
-                        draw_bold:        { color: (message_text_color) },
-                        draw_bold_italic: { color: (message_text_color) },
-                        draw_block: {
-                            quote_bg_color: (code_bg_color),
-                            code_color: (code_bg_color),
-                        }
-                    }
-                }
-                plaintext_view = {
-                    pt_label = {
-                        draw_text: {
-                            color: (message_text_color)
-                        }
-                    }
-                }
-                ),
-            );
-        }
+    pub fn update_preview_colors(&mut self, _cx: &mut Cx, _is_selected: bool) {
+        // Dynamic runtime recoloring is temporarily disabled because nested adaptive variants
+        // can resolve IDs to incompatible targets during script_apply_eval!, which triggers
+        // Splash runtime errors and crashes the draw path.
     }
 }

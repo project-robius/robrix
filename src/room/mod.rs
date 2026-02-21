@@ -1,7 +1,7 @@
 //! Widgets, types, and functions related to a Matrix room.
 
 use std::sync::Arc;
-use makepad_widgets::Cx;
+use makepad_widgets::ScriptVm;
 use matrix_sdk::{RoomDisplayName, RoomHero, RoomState, SuccessorRoom, room_preview::RoomPreview};
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::{JoinRuleSummary, RoomType}};
 
@@ -12,10 +12,10 @@ pub mod room_input_bar;
 pub mod room_display_filter;
 pub mod typing_notice;
 
-pub fn live_design(cx: &mut Cx) {
-    reply_preview::live_design(cx);
-    room_input_bar::live_design(cx);
-    typing_notice::live_design(cx);
+pub fn script_mod(vm: &mut ScriptVm) {
+    reply_preview::script_mod(vm);
+    room_input_bar::script_mod(vm);
+    typing_notice::script_mod(vm);
 }
 
 /// Info about a room, either partially or completely known.
