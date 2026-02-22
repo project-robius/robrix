@@ -19,7 +19,7 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.ICON_COLLAPSE = crate_resource("self:resources/icons/triangle_fill.svg")
+    mod.widgets.ICON_COLLAPSE = crate_resource("self://resources/icons/triangle_fill.svg")
 
 
 

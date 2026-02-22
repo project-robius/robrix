@@ -13,10 +13,10 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    mod.widgets.VERIFICATION_YES = crate_resource("self:resources/icons/verification_yes.svg")
+    mod.widgets.VERIFICATION_YES = crate_resource("self://resources/icons/verification_yes.svg")
 
-    mod.widgets.VERIFICATION_NO = crate_resource("self:resources/icons/verification_no.svg")
-    mod.widgets.VERIFICATION_UNK = crate_resource("self:resources/icons/verification_unk.svg")
+    mod.widgets.VERIFICATION_NO = crate_resource("self://resources/icons/verification_no.svg")
+    mod.widgets.VERIFICATION_UNK = crate_resource("self://resources/icons/verification_unk.svg")
 
     mod.widgets.VerificationIcon = Icon {
 

@@ -43,9 +43,13 @@ script_mod! {
             inviter_avatar := Avatar {
                 width: 30,
                 height: 30,
-                text_view: { text := Label { draw_text +: {
-                    text_style: TITLE_TEXT { font_size: 10.0 }
-                }}}
+                text_view +: {
+                    text +: {
+                        draw_text +: {
+                            text_style: TITLE_TEXT { font_size: 10.0 }
+                        }
+                    }
+                }
             }
 
 
@@ -113,9 +117,13 @@ script_mod! {
                 width: 40,
                 height: 40,
 
-                text_view: { text := Label { draw_text +: {
-                    text_style: TITLE_TEXT { font_size: 13.0 }
-                }}}
+                text_view +: {
+                    text +: {
+                        draw_text +: {
+                            text_style: TITLE_TEXT { font_size: 13.0 }
+                        }
+                    }
+                }
             }
 
             room_name := Label {

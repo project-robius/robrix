@@ -27,9 +27,13 @@ script_mod! {
             reply_preview_avatar := Avatar {
                 width: 19.,
                 height: 19.,
-                text_view: { text := Label { draw_text +: {
-                    text_style: theme.font_regular { font_size: 6.0 }
-                }}}
+                text_view +: {
+                    text +: {
+                        draw_text +: {
+                            text_style: theme.font_regular { font_size: 6.0 }
+                        }
+                    }
+                }
             }
 
             reply_preview_username := Label {
@@ -47,19 +51,23 @@ script_mod! {
 
         reply_preview_body := HtmlOrPlaintext {
             margin: Inset{left: 1.5}
-            html_view: { html := mod.widgets.MessageHtml {
-                font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE)
-                text_style_normal: theme.font_regular { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
-                text_style_italic: theme.font_italic { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
-                text_style_bold: theme.font_bold { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
-                text_style_bold_italic: theme.font_bold_italic { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
-                text_style_fixed: theme.font_code { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
-            } }
-            plaintext_view: { pt_label := Label {
-                draw_text +: {
-                    text_style: MESSAGE_TEXT_STYLE { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) },
+            html_view +: {
+                html +: {
+                    font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE)
+                    text_style_normal: theme.font_regular { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
+                    text_style_italic: theme.font_italic { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
+                    text_style_bold: theme.font_bold { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
+                    text_style_bold_italic: theme.font_bold_italic { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
+                    text_style_fixed: theme.font_code { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
                 }
-            } }
+            }
+            plaintext_view +: {
+                pt_label +: {
+                    draw_text +: {
+                        text_style: MESSAGE_TEXT_STYLE { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) },
+                    }
+                }
+            }
         }
     }
 

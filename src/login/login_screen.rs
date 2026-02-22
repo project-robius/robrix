@@ -12,8 +12,7 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.IMG_APP_LOGO = crate_resource("self:resources/robrix_logo_alpha.png")
-    mod.widgets.ICON_SEARCH = crate_resource("self:resources/icons/search.svg")
+    mod.widgets.IMG_APP_LOGO = crate_resource("self://resources/robrix_logo_alpha.png")
 
     mod.widgets.SsoButton = RoundedView {
         width: Fit,
@@ -202,32 +201,32 @@ script_mod! {
                         flow: Flow.Right{wrap: true},
                         apple_button := mod.widgets.SsoButton {
                             image := mod.widgets.SsoImage {
-                                src: crate_resource("self:resources/img/apple.png")
+                                src: crate_resource("self://resources/img/apple.png")
                             }
                         }
                         facebook_button := mod.widgets.SsoButton {
                             image := mod.widgets.SsoImage {
-                                src: crate_resource("self:resources/img/facebook.png")
+                                src: crate_resource("self://resources/img/facebook.png")
                             }
                         }
                         github_button := mod.widgets.SsoButton {
                             image := mod.widgets.SsoImage {
-                                src: crate_resource("self:resources/img/github.png")
+                                src: crate_resource("self://resources/img/github.png")
                             }
                         }
                         gitlab_button := mod.widgets.SsoButton {
                             image := mod.widgets.SsoImage {
-                                src: crate_resource("self:resources/img/gitlab.png")
+                                src: crate_resource("self://resources/img/gitlab.png")
                             }
                         }
                         google_button := mod.widgets.SsoButton {
                             image := mod.widgets.SsoImage {
-                                src: crate_resource("self:resources/img/google.png")
+                                src: crate_resource("self://resources/img/google.png")
                             }
                         }
                         twitter_button := mod.widgets.SsoButton {
                             image := mod.widgets.SsoImage {
-                                src: crate_resource("self:resources/img/x.png")
+                                src: crate_resource("self://resources/img/x.png")
                             }
                         }
                     }

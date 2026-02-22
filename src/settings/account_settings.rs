@@ -34,9 +34,13 @@ script_mod! {
                 width: 100,
                 height: 100,
                 margin: 10,
-                text_view: { text := Label { draw_text +: {
-                    text_style: theme.font_regular { font_size: 35.0 }
-                }}}
+                text_view +: {
+                    text +: {
+                        draw_text +: {
+                            text_style: theme.font_regular { font_size: 35.0 }
+                        }
+                    }
+                }
             }
 
             View {

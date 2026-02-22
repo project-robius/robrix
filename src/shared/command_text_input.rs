@@ -748,7 +748,10 @@ impl CommandTextInput {
 
         for (idx, item) in self.selectable_widgets.iter().enumerate() {
             let mut item = item.clone();
-            script_apply_eval!(cx, item, { show_bg: true, cursor: Hand });
+            script_apply_eval!(cx, item, {
+                show_bg: true,
+                cursor: MouseCursor.Hand
+            });
 
             // If there is a keyboard focus, prioritize it over mouse hover
             // If there is no keyboard focus, show mouse hover
@@ -756,7 +759,7 @@ impl CommandTextInput {
                 // Keyboard-selected item is highlighted in blue
                 let color = self.color_focus;
                 script_apply_eval!(cx, item, {
-                    draw_bg : {
+                    draw_bg +: {
                         color: #(color)
                     }
                 });
@@ -764,14 +767,14 @@ impl CommandTextInput {
                 // Mouse-hovered item is highlighted in gray, but only when there is no keyboard focus
                 let color = self.color_hover;
                 script_apply_eval!(cx, item, {
-                    draw_bg : {
+                    draw_bg +: {
                         color: #(color)
                     }
                 });
             } else {
                 // Default state
                 script_apply_eval!(cx, item, {
-                    draw_bg : {
+                    draw_bg +: {
                         color: #(Vec4f::all(0.))
                     }
                 });

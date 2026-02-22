@@ -37,7 +37,7 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.ICON_COLLAPSE = crate_resource("self:resources/icons/triangle_fill.svg")
+    mod.widgets.SPACE_LOBBY_ICON_COLLAPSE = crate_resource("self://resources/icons/triangle_fill.svg")
 
     // An entry in the RoomsList that will show the SpaceLobby when clicked.
     mod.widgets.SpaceLobbyEntry = #(SpaceLobbyEntry::register_widget(vm)) {
@@ -276,7 +276,7 @@ script_mod! {
             height: 16,
             margin: Inset{ top: 7, left: -8, right: 2 }
             draw_icon +: {
-                svg_file: (ICON_COLLAPSE)
+                svg_file: (mod.widgets.SPACE_LOBBY_ICON_COLLAPSE)
                 rotation_angle: 90.0
                 color: #888
             }
@@ -386,7 +386,7 @@ script_mod! {
         }
     }
 
-    mod.widgets.StatusLabel = View {
+    mod.widgets.SpaceLobbyStatusLabel = View {
         width: Fill, height: Fit,
         flow: Right,
         align: Align{ x: 0.5, y: 0.5 }
@@ -541,7 +541,7 @@ script_mod! {
             subspace_entry := mod.widgets.SubspaceEntry {}
             room_entry := mod.widgets.RoomEntry {}
             subspace_loading := mod.widgets.SubspaceLoadingEntry {}
-            status_label := mod.widgets.StatusLabel {}
+            status_label := mod.widgets.SpaceLobbyStatusLabel {}
             bottom_filler := View {
                 width: Fill,
                 height: 80.0,

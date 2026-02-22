@@ -32,9 +32,13 @@ script_mod! {
 
         avatar := Avatar {
             height: 18.0, width: 18.0,
-            text_view: { text := Label { draw_text +: {
-                text_style: TITLE_TEXT { font_size: 10.0 }
-            }}}
+            text_view +: {
+                text +: {
+                    draw_text +: {
+                        text_style: TITLE_TEXT { font_size: 10.0 }
+                    }
+                }
+            }
         }
 
         title := Label {

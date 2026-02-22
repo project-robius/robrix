@@ -18,11 +18,11 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.BUTTON_HEIGHT = 35  // KEEP IN SYNC WITH BUTTON_HEIGHT ABOVE
-    mod.widgets.MENU_WIDTH = 215    // KEEP IN SYNC WITH MENU_WIDTH ABOVE
+    mod.widgets.NEW_MESSAGE_CONTEXT_MENU_BUTTON_HEIGHT = 35  // KEEP IN SYNC WITH BUTTON_HEIGHT ABOVE
+    mod.widgets.NEW_MESSAGE_CONTEXT_MENU_WIDTH = 215    // KEEP IN SYNC WITH MENU_WIDTH ABOVE
 
-    mod.widgets.ContextMenuButton = RobrixIconButton {
-        height: (mod.widgets.BUTTON_HEIGHT)
+    mod.widgets.NewMessageContextMenuButton = RobrixIconButton {
+        height: (mod.widgets.NEW_MESSAGE_CONTEXT_MENU_BUTTON_HEIGHT)
         width: Fill,
         margin: 0,
         icon_walk: Walk{width: 16, height: 16, margin: Inset{right: 3}}
@@ -48,7 +48,7 @@ script_mod! {
 
         main_content := RoundedView {
             flow: Down
-            width: (mod.widgets.MENU_WIDTH),
+            width: (mod.widgets.NEW_MESSAGE_CONTEXT_MENU_WIDTH),
             height: Fit,
             padding: 10
             spacing: 0,
@@ -65,16 +65,16 @@ script_mod! {
             // Shows either the "Add Reaction" button or a reaction text input.
             react_view := View {
                 flow: Overlay
-                height: (mod.widgets.BUTTON_HEIGHT)
+                height: (mod.widgets.NEW_MESSAGE_CONTEXT_MENU_BUTTON_HEIGHT)
                 align: Align{y: 0.5}
-                react_button := mod.widgets.ContextMenuButton {
+                react_button := mod.widgets.NewMessageContextMenuButton {
                     draw_icon +: { svg_file: (ICON_ADD_REACTION) }
                     text: "Add Reaction"
                 }
 
                     reaction_input_view := View {
                         width: Fill,
-                        height: (mod.widgets.BUTTON_HEIGHT)
+                        height: (mod.widgets.NEW_MESSAGE_CONTEXT_MENU_BUTTON_HEIGHT)
                     align: Align{y: 0.5}
                     flow: Right,
                     visible: false, // will be shown once the react_button is clicked
@@ -96,7 +96,7 @@ script_mod! {
                         }
                     }
                     reaction_send_button := RobrixIconButton {
-                        height: (mod.widgets.BUTTON_HEIGHT)
+                        height: (mod.widgets.NEW_MESSAGE_CONTEXT_MENU_BUTTON_HEIGHT)
                         align: Align{x: 0.5, y: 0.5}
                         padding: Inset{left: 10, right: 10, top: 8, bottom: 8}
                         spacing: 0,
@@ -118,7 +118,7 @@ script_mod! {
                 }
             }
 
-            reply_button := mod.widgets.ContextMenuButton {
+            reply_button := mod.widgets.NewMessageContextMenuButton {
                 draw_icon +: { svg_file: (ICON_REPLY) }
                 icon_walk: Walk{ margin: Inset{top: 1, right: 3}}
                 text: "Reply"
@@ -129,7 +129,7 @@ script_mod! {
                 width: Fill,
             }
 
-            edit_message_button := mod.widgets.ContextMenuButton {
+            edit_message_button := mod.widgets.NewMessageContextMenuButton {
                 draw_icon +: { svg_file: (ICON_EDIT) }
                 icon_walk: Walk{ margin: Inset{top: -3, right: 3} }
                 text: "Edit Message"
@@ -137,34 +137,34 @@ script_mod! {
 
             // TODO: check if the current user is allowed to pin/unpin messages:
             //       <https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_base/struct.RoomMember.html#method.can_pin_or_unpin_event>
-            pin_button := mod.widgets.ContextMenuButton {
+            pin_button := mod.widgets.NewMessageContextMenuButton {
                 draw_icon +: { svg_file: (ICON_PIN) }
                 text: "" // set dynamically to "Pin Message" or "Unpin Message"
             }
 
-            copy_text_button := mod.widgets.ContextMenuButton {
+            copy_text_button := mod.widgets.NewMessageContextMenuButton {
                 draw_icon +: { svg_file: (ICON_COPY) }
                 text: "Copy Text"
             }
 
-            copy_html_button := mod.widgets.ContextMenuButton {
+            copy_html_button := mod.widgets.NewMessageContextMenuButton {
                 draw_icon +: { svg_file: (ICON_HTML_FILE) }
                 icon_walk: Walk{ margin: Inset{left: 1.5, right: 1.5} }
                 text: "Copy Text as HTML"
             }
 
-            copy_link_to_message_button := mod.widgets.ContextMenuButton {
+            copy_link_to_message_button := mod.widgets.NewMessageContextMenuButton {
                 draw_icon +: { svg_file: (ICON_LINK) }
                 text: "Copy Link to Message"
             }
 
-            view_source_button := mod.widgets.ContextMenuButton {
+            view_source_button := mod.widgets.NewMessageContextMenuButton {
                 draw_icon +: { svg_file: (ICON_VIEW_SOURCE) }
                 icon_walk: Walk{ margin: Inset{top: 6, right: 3} }
                 text: "View Source"
             }
 
-            jump_to_related_button := mod.widgets.ContextMenuButton {
+            jump_to_related_button := mod.widgets.NewMessageContextMenuButton {
                 draw_icon +: { svg_file: (ICON_JUMP) }
                 text: "Jump to Related Event"
             }
@@ -196,7 +196,7 @@ script_mod! {
             //       The caller needs to use `can_redact_own()` or `can_redact_other()`:
             //       https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_base/struct.RoomMember.html#method.can_redact_own
 
-            delete_button := mod.widgets.ContextMenuButton {
+            delete_button := mod.widgets.NewMessageContextMenuButton {
                 draw_icon +: {
                     svg_file: (ICON_TRASH)
                     color: (COLOR_FG_DANGER_RED),

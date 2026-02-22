@@ -64,9 +64,13 @@ script_mod! {
         successor_room_avatar := Avatar {
             width: 30, height: 30,
             cursor: Default,
-            text_view: { text := Label { draw_text +: {
-                text_style: TITLE_TEXT { font_size: 13.0 }
-            }}}
+            text_view +: {
+                text +: {
+                    draw_text +: {
+                        text_style: TITLE_TEXT { font_size: 13.0 }
+                    }
+                }
+            }
         }
 
         successor_room_name := Label {

@@ -52,7 +52,11 @@ script_mod! {
         align: Align{x: 0.5, y: 0.5}
         flow: Down,
         
-        icon_walk: Walk{margin: 0, width: (NAVIGATION_TAB_BAR_SIZE/2.2), height: Fit}
+        icon_walk: Walk{
+            margin: 0,
+            width: (NAVIGATION_TAB_BAR_SIZE / 2.2),
+            height: (NAVIGATION_TAB_BAR_SIZE / 2.2)
+        }
         // Fully hide the text with zero size, zero margin, and zero spacing
         label_walk: Walk{margin: 0, width: 0, height: 0}
         spacing: 0,
@@ -66,7 +70,7 @@ script_mod! {
 
             border_size: 0.0
             border_color: #0000
-            inset: uniform(vec4(0.0), 0.0, 0.0, 0.0)
+            inset: uniform(vec4(0.0))
             border_radius: 4.0
 
             get_color: fn() -> vec4 {
@@ -154,14 +158,16 @@ script_mod! {
         our_own_avatar := Avatar {
             width: 45, height: 45
             // If no avatar picture, use white text on a dark background.
-            text_view := View {
+            text_view +: {
                 draw_bg +: {
                     background_color: (COLOR_FG_DISABLED),
                 }
-                text := Label { draw_text +: {
-                    text_style: theme.font_regular { font_size: 16.0 },
-                    color: (COLOR_PRIMARY),
-                } }
+                text +: {
+                    draw_text +: {
+                        text_style: theme.font_regular { font_size: 16.0 },
+                        color: (COLOR_PRIMARY),
+                    }
+                }
             }
         }
 
@@ -174,6 +180,7 @@ script_mod! {
 
     mod.widgets.HomeButton = mod.widgets.NavigationTabButton {
         draw_icon +: { svg_file: (ICON_HOME) }
+        animator +: { active: { default: @on } }
     }
 
     mod.widgets.ToggleSpacesBarButton = RobrixIconButton {
@@ -188,7 +195,11 @@ script_mod! {
             svg_file: (ICON_SQUARES)
             color: (COLOR_NAVIGATION_TAB_FG)
         }
-        icon_walk: Walk{width: (NAVIGATION_TAB_BAR_SIZE/2.2), height: Fit, margin: 0 }
+        icon_walk: Walk{
+            width: (NAVIGATION_TAB_BAR_SIZE / 2.2),
+            height: (NAVIGATION_TAB_BAR_SIZE / 2.2),
+            margin: 0
+        }
     }
 
     mod.widgets.SettingsButton = mod.widgets.NavigationTabButton {

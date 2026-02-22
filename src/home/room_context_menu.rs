@@ -13,11 +13,11 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.BUTTON_HEIGHT = 35
-    mod.widgets.MENU_WIDTH = 215
+    mod.widgets.ROOM_CONTEXT_MENU_BUTTON_HEIGHT = 35
+    mod.widgets.ROOM_CONTEXT_MENU_WIDTH = 215
 
-    mod.widgets.ContextMenuButton = RobrixIconButton {
-        height: (BUTTON_HEIGHT)
+    mod.widgets.RoomContextMenuButton = RobrixIconButton {
+        height: (mod.widgets.ROOM_CONTEXT_MENU_BUTTON_HEIGHT)
         width: Fill,
         margin: 0,
         icon_walk: Walk{width: 16, height: 16, margin: Inset{right: 3}}
@@ -40,7 +40,7 @@ script_mod! {
 
         main_content := RoundedView {
             flow: Down
-            width: (MENU_WIDTH),
+            width: (mod.widgets.ROOM_CONTEXT_MENU_WIDTH),
             height: Fit,
             padding: 5
             spacing: 0,
@@ -54,22 +54,22 @@ script_mod! {
                 border_color: #888
             }
 
-            mark_unread_button := ContextMenuButton {
+            mark_unread_button := mod.widgets.RoomContextMenuButton {
                 draw_icon +: { svg_file: (ICON_CHECKMARK) }
                 text: "Mark as Unread"
             }
 
-            favorite_button := ContextMenuButton {
+            favorite_button := mod.widgets.RoomContextMenuButton {
                 draw_icon +: { svg_file: (ICON_PIN) }
                 text: "Favorite"
             }
 
-            priority_button := ContextMenuButton {
+            priority_button := mod.widgets.RoomContextMenuButton {
                 draw_icon +: { svg_file: (ICON_TOMBSTONE) } 
                 text: "Set Low Priority"
             }
 
-            copy_link_button := ContextMenuButton {
+            copy_link_button := mod.widgets.RoomContextMenuButton {
                 draw_icon +: { svg_file: (ICON_LINK) }
                 text: "Copy Link to Room"
             }
@@ -79,18 +79,18 @@ script_mod! {
                 width: Fill,
             }
 
-            room_settings_button := ContextMenuButton {
+            room_settings_button := mod.widgets.RoomContextMenuButton {
                 draw_icon +: { svg_file: (ICON_SETTINGS) }
                 text: "Settings"
             }
 
-            notifications_button := ContextMenuButton {
+            notifications_button := mod.widgets.RoomContextMenuButton {
                 // TODO: use a proper bell icon
                 draw_icon +: { svg_file: (ICON_INFO) }
                 text: "Notifications"
             }
 
-            invite_button := ContextMenuButton {
+            invite_button := mod.widgets.RoomContextMenuButton {
                 draw_icon +: { svg_file: (ICON_ADD_USER) }
                 text: "Invite"
             }
@@ -100,7 +100,7 @@ script_mod! {
                 width: Fill,
             }
 
-            leave_button := ContextMenuButton {
+            leave_button := mod.widgets.RoomContextMenuButton {
                 draw_icon +: {
                     svg_file: (ICON_LOGOUT)
                     color: (COLOR_FG_DANGER_RED),

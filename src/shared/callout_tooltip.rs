@@ -3,7 +3,6 @@
 //! By default, the tooltip has a black background color.
 
 use makepad_widgets::*;
-use crate::ApplyOverCompat;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -27,11 +26,11 @@ script_mod! {
                     border_radius: 2.,
                     background_color: instance(#3b444b),
                     // Absolute position of top left corner of the tooltip
-                    tooltip_pos: instance(vec2(0.0), 0.0),
+                    tooltip_pos: instance(vec2(0.0, 0.0)),
                     // Absolute position of the moused over widget
-                    target_pos: instance(vec2(0.0), 0.0),
+                    target_pos: instance(vec2(0.0, 0.0)),
                     // Size of the moused over widget
-                    target_size: instance(vec2(0.0), 0.0),
+                    target_size: instance(vec2(0.0, 0.0)),
                     // Expected Width of the the tooltip 
                     expected_dimension_x: instance(0.0),
                     // Determine height of the triangle in the callout pointer
@@ -317,65 +316,51 @@ impl CalloutTooltip {
         tooltip: &mut TooltipRef,
         cx: &mut Cx,
         position_calc: &PositionCalculation,
-        _target: Vec2,
-        _target_size: Vec2,
-        _expected_dimension: DVec2,
-        _triangle_height: f64,
-        _text_color: Vec4,
-        _bg_color: Vec4,
+        target: Vec2,
+        target_size: Vec2,
+        expected_dimension: DVec2,
+        triangle_height: f64,
+        text_color: Vec4,
+        bg_color: Vec4,
     ) {
-        let _ = (
-            position_calc.callout_position,
-            position_calc.width_to_be_fixed,
-        );
-        let _tooltip_pos = vec2(position_calc.tooltip_pos.x as f32, position_calc.tooltip_pos.y as f32);
-        
+        let tooltip_pos = vec2(position_calc.tooltip_pos.x as f32, position_calc.tooltip_pos.y as f32);
+
+        let mut content = tooltip.view(cx, ids!(content));
+        script_apply_eval!(cx, content, {
+            margin: Inset{
+                left: #(tooltip_pos.x),
+                top: #(tooltip_pos.y),
+                right: 0.0,
+                bottom: 0.0
+            }
+        });
+
+        let mut rounded_view = tooltip.view(cx, ids!(content.rounded_view));
+        script_apply_eval!(cx, rounded_view, {
+            height: Size.Fit,
+            draw_bg +: {
+                triangle_height: #(triangle_height as f32),
+                background_color: #(bg_color),
+                tooltip_pos: #(tooltip_pos),
+                target_pos: #(target),
+                target_size: #(target_size),
+                expected_dimension_x: #(expected_dimension.x as f32),
+                callout_position: #(position_calc.callout_position as f32),
+            }
+        });
+
+        let mut tooltip_label = tooltip.label(cx, ids!(content.rounded_view.tooltip_label));
         if position_calc.fixed_width {
-            tooltip.apply_over(
-                cx,
-                live!(
-                content := View {
-                    margin: { left: (tooltip_pos.x), top: (tooltip_pos.y) },
-                    rounded_view: {
-                        height: Fit,
-                        draw_bg: {
-                            triangle_height: (triangle_height),
-                            background_color: (bg_color),
-                            tooltip_pos: (tooltip_pos),
-                            target_pos: (target),
-                            target_size: (target_size),
-                            expected_dimension_x: (expected_dimension.x),
-                            callout_position: (position_calc.callout_position)
-                        }
-                        tooltip_label: {
-                            width: (position_calc.width_to_be_fixed - 15.0 * 2.0),
-                            draw_text: { color: (text_color) }
-                        }
-                    }
-                }),
-            );
+            let fixed_width = (position_calc.width_to_be_fixed - 15.0 * 2.0).max(0.0);
+            script_apply_eval!(cx, tooltip_label, {
+                width: #(fixed_width),
+                draw_text +: { color: #(text_color) }
+            });
         } else {
-            tooltip.apply_over(cx, live!(
-                content := View {
-                    margin: { left: (tooltip_pos.x), top: (tooltip_pos.y) },
-                    rounded_view: {
-                        height: Fit,
-                        draw_bg: {
-                            triangle_height: (triangle_height),
-                            background_color: (bg_color),
-                            tooltip_pos: (tooltip_pos),
-                            target_pos: (target),
-                            target_size: (target_size),
-                            expected_dimension_x: (expected_dimension.x),
-                            callout_position: (position_calc.callout_position)
-                        }
-                        tooltip_label: {
-                            width: Fit,
-                            draw_text: { color: (text_color) }
-                        }
-                    }
-                }
-            ));
+            script_apply_eval!(cx, tooltip_label, {
+                width: Size.Fit,
+                draw_text +: { color: #(text_color) }
+            });
         }
     }
 
@@ -406,7 +391,11 @@ impl CalloutTooltip {
         let mut tooltip = self.view.tooltip(cx, ids!(tooltip));
         tooltip.set_text(cx, &pad_last_line(text));
 
-        let expected_dimension = tooltip.view(cx, ids!(rounded_view)).area().rect(cx).size;
+        let expected_dimension = tooltip
+            .view(cx, ids!(content.rounded_view))
+            .area()
+            .rect(cx)
+            .size;
         let screen_size = tooltip.area().rect(cx).size;
         let position_calc = Self::calculate_position(
             &options,

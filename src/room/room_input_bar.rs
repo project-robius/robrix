@@ -27,7 +27,7 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.ICO_LOCATION_PERSON = crate_resource("self:resources/icons/location-person.svg")
+    mod.widgets.ICO_LOCATION_PERSON = crate_resource("self://resources/icons/location-person.svg")
 
 
     mod.widgets.RoomInputBar = #(RoomInputBar::register_widget(vm)) {
@@ -503,11 +503,11 @@ impl RoomInputBar {
         };
         script_apply_eval!(cx, send_message_button, {
             enabled: #(enable),
-            draw_icon: {
+            draw_icon +: {
                 color: #(fg_color),
                 // color_hover: (fg_color),
             }
-            draw_bg: {
+            draw_bg +: {
                 color: #(bg_color),
             }
         });

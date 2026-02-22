@@ -26,8 +26,8 @@ script_mod! {
         avatar_template: Avatar {
             width: 15.0,
             height: 15.0,
-            text_view: {
-                text := Label {
+            text_view +: {
+                text +: {
                     draw_text +: {
                         text_style: theme.font_regular { font_size: 6.0 }
                     }

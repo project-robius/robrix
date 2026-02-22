@@ -25,7 +25,7 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.IMG_DEFAULT_AVATAR = crate_resource("self:resources/img/default_avatar.png")
+    mod.widgets.IMG_DEFAULT_AVATAR = crate_resource("self://resources/img/default_avatar.png")
 
 
 

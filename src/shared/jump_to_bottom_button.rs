@@ -8,7 +8,7 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.ICO_JUMP_TO_BOTTOM = crate_resource("self:resources/icon_jump_to_bottom.svg")
+    mod.widgets.ICO_JUMP_TO_BOTTOM = crate_resource("self://resources/icon_jump_to_bottom.svg")
 
 
 

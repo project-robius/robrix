@@ -164,9 +164,13 @@ script_mod! {
                 room_avatar := Avatar {
                     width: 45, height: 45,
                     cursor: Default,
-                    text_view: { text := Label { draw_text +: {
-                        text_style: TITLE_TEXT { font_size: 16.0 }
-                    }}}
+                    text_view +: {
+                        text +: {
+                            draw_text +: {
+                                text_style: TITLE_TEXT { font_size: 16.0 }
+                            }
+                        }
+                    }
                 }
 
                 room_name := Label {

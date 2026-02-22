@@ -42,7 +42,7 @@ script_mod! {
         text: "[Room name unknown]"
     }
 
-    mod.widgets.Timestamp = Label {
+    mod.widgets.RoomsListEntryTimestamp = Label {
         padding: Inset{top: 1},
         width: Fit, height: Fit
         flow: Right, // do not wrap
@@ -57,20 +57,24 @@ script_mod! {
     mod.widgets.MessagePreview = View {
         width: Fill, height: Fit
         latest_message := HtmlOrPlaintext {
-            html_view: { html := mod.widgets.MessageHtml {
-                font_size: 9.3
-                text_style_normal: theme.font_regular { font_size: 9.3 }
-                text_style_italic: theme.font_italic { font_size: 9.3 }
-                text_style_bold: theme.font_bold { font_size: 9.3 }
-                text_style_bold_italic: theme.font_bold_italic { font_size: 9.3 }
-                text_style_fixed: theme.font_code { font_size: 9.3 }
-            } }
-            plaintext_view: { pt_label := Label {
-                draw_text +: {
-                    text_style: theme.font_regular { font_size: 9.5 },
+            html_view +: {
+                html +: {
+                    font_size: 9.3
+                    text_style_normal: theme.font_regular { font_size: 9.3 }
+                    text_style_italic: theme.font_italic { font_size: 9.3 }
+                    text_style_bold: theme.font_bold { font_size: 9.3 }
+                    text_style_bold_italic: theme.font_bold_italic { font_size: 9.3 }
+                    text_style_fixed: theme.font_code { font_size: 9.3 }
                 }
-                text: "[No recent messages]"
-            } }
+            }
+            plaintext_view +: {
+                pt_label +: {
+                    draw_text +: {
+                        text_style: theme.font_regular { font_size: 9.5 },
+                    }
+                    text: "[No recent messages]"
+                }
+            }
         }
     }
 
@@ -81,14 +85,16 @@ script_mod! {
         width: Fill, height: Fit
         show_bg: true
         draw_bg +: {
+            active: instance(0.0)
             color: uniform(#0000)
+            color_selected: uniform(vec4(0.059, 0.533, 0.996, 1.0))
             border_size: instance(0.0)
             border_color: instance(#0000)
             inset: instance(vec4(0.0))
             border_radius: instance(4.0)
 
             get_color: fn() -> vec4 {
-                return self.color
+                return mix(self.color, self.color_selected, self.active)
             }
 
             get_border_color: fn() -> vec4 {
@@ -109,6 +115,23 @@ script_mod! {
                     sdf.stroke(self.get_border_color(), self.border_size)
                 }
                 return sdf.result;
+            }
+        }
+        animator: Animator{
+            selected: {
+                default: @off
+                off: AnimatorState{
+                    from: {all: Snap}
+                    apply: {
+                        draw_bg: {active: 0.0}
+                    }
+                }
+                on: AnimatorState{
+                    from: {all: Snap}
+                    apply: {
+                        draw_bg: {active: 1.0}
+                    }
+                }
             }
         }
     }
@@ -155,7 +178,7 @@ script_mod! {
                         spacing: 3,
                         flow: Right,
                         room_name := mod.widgets.RoomName {}
-                        timestamp := mod.widgets.Timestamp { }
+                        timestamp := mod.widgets.RoomsListEntryTimestamp { }
                     }
                     bottom := View {
                         width: Fill, height: Fill,
@@ -251,13 +274,18 @@ impl Widget for RoomsListEntry {
     }
 }
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, ScriptHook, Widget, Animator)]
 pub struct RoomsListEntryContent {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
+    #[animator] animator: Animator,
 }
 
 impl Widget for RoomsListEntryContent {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if self.animator_handle_event(cx, event).must_redraw() {
+            self.redraw(cx);
+        }
         self.view.handle_event(cx, event, scope);
     }
 
@@ -368,9 +396,7 @@ impl RoomsListEntryContent {
     }
 
     /// Updates the styling of the preview based on whether the room is selected or not.
-    pub fn update_preview_colors(&mut self, _cx: &mut Cx, _is_selected: bool) {
-        // Dynamic runtime recoloring is temporarily disabled because nested adaptive variants
-        // can resolve IDs to incompatible targets during script_apply_eval!, which triggers
-        // Splash runtime errors and crashes the draw path.
+    pub fn update_preview_colors(&mut self, cx: &mut Cx, is_selected: bool) {
+        self.animator_toggle(cx, is_selected, Animate::No, ids!(selected.on), ids!(selected.off));
     }
 }

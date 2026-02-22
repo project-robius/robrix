@@ -66,7 +66,7 @@ script_mod! {
 
 
 
-    mod.widgets.ICON_DOUBLE_CHAT = crate_resource("self:resources/icons/double_chat.svg")
+    mod.widgets.ICON_DOUBLE_CHAT = crate_resource("self://resources/icons/double_chat.svg")
 
     mod.widgets.UserProfileView = ScrollXYView {
         width: Fill,
@@ -93,9 +93,13 @@ script_mod! {
                 width: 150,
                 height: 150,
                 margin: 10.0,
-                text_view: { text := Label { draw_text +: {
-                    text_style: theme.font_regular { font_size: 40.0 }
-                }}}
+                text_view +: {
+                    text +: {
+                        draw_text +: {
+                            text_style: theme.font_regular { font_size: 40.0 }
+                        }
+                    }
+                }
             }
 
             user_name := Label {

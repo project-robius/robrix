@@ -81,7 +81,7 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.StatusLabel = View {
+    mod.widgets.RoomsListStatusLabel = View {
         width: Fill, height: Fit,
         flow: Right,
         align: Align{ x: 0.5, y: 0.5 }
@@ -129,7 +129,7 @@ script_mod! {
             collapsible_header := CollapsibleHeader {}
             rooms_list_entry := RoomsListEntry {}
             empty := View {}
-            status_label := StatusLabel {}
+            status_label := mod.widgets.RoomsListStatusLabel {}
             bottom_filler := View {
                 width: Fill,
                 height: 100.0,

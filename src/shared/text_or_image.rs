@@ -9,7 +9,7 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    mod.widgets.DEFAULT_IMAGE = crate_resource("self:resources/img/default_image.png")
+    mod.widgets.DEFAULT_IMAGE = crate_resource("self://resources/img/default_image.png")
 
 
     mod.widgets.TextOrImage = #(TextOrImage::register_widget(vm)) {

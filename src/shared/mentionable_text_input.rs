@@ -72,9 +72,13 @@ script_mod! {
             avatar := Avatar {
                 width: 24,
                 height: 24,
-                text_view: { text := Label { draw_text +: {
-                    text_style: theme.font_regular { font_size: 12.0 }
-                }}}
+                text_view +: {
+                    text +: {
+                        draw_text +: {
+                            text_style: theme.font_regular { font_size: 12.0 }
+                        }
+                    }
+                }
             }
 
             username := Label {
@@ -139,9 +143,13 @@ script_mod! {
             room_avatar := Avatar {
                 width: 24,
                 height: 24,
-                text_view: { text := Label { draw_text +: {
-                    text_style: theme.font_regular { font_size: 12.0 }
-                }}}
+                text_view +: {
+                    text +: {
+                        draw_text +: {
+                            text_style: theme.font_regular { font_size: 12.0 }
+                        }
+                    }
+                }
             }
 
             room_mention := Label {
@@ -456,7 +464,7 @@ impl MentionableTextInput {
             self.members_loading = false;
             // Reset popup height to ensure proper calculation for user list
             let mut popup = self.cmd_text_input.view(cx, ids!(popup));
-            script_apply_eval!(cx, popup, { height: Fit });
+            script_apply_eval!(cx, popup, { height: Size.Fit });
         } else if members_are_empty && self.members_loading {
             // Still loading and members are empty - keep showing loading indicator
             return true;
@@ -673,7 +681,7 @@ impl MentionableTextInput {
         } else {
             // Only hide popup if we're not actively searching
             let mut popup = popup;
-            script_apply_eval!(cx, popup, { height: Fit });
+            script_apply_eval!(cx, popup, { height: Size.Fit });
             popup.set_visible(cx, false);
         }
     }
@@ -1046,7 +1054,7 @@ impl MentionableTextInput {
 
         // Let popup auto-size based on content
         let mut popup = popup;
-        script_apply_eval!(cx, popup, { height: Fit });
+        script_apply_eval!(cx, popup, { height: Size.Fit });
 
         // Maintain text input focus so user can continue typing
         if self.is_searching {
@@ -1076,7 +1084,7 @@ impl MentionableTextInput {
 
         // Reset popup height
         let mut popup = popup;
-        script_apply_eval!(cx, popup, { height: Fit });
+        script_apply_eval!(cx, popup, { height: Size.Fit });
 
         // Ensure header view is reset to visible next time it's triggered
         // This will happen before update_user_list is called in handle_text_change

@@ -84,14 +84,16 @@ script_mod! {
         avatar := Avatar {
             width: 45, height: 45
             // If no avatar picture, use white text on a dark background.
-            text_view := View {
+            text_view +: {
                 draw_bg +: {
                     background_color: (COLOR_FG_DISABLED),
                 }
-                text := Label { draw_text +: {
-                    text_style: theme.font_regular { font_size: 16.0 },
-                    color: (COLOR_PRIMARY),
-                } }
+                text +: {
+                    draw_text +: {
+                        text_style: theme.font_regular { font_size: 16.0 },
+                        color: (COLOR_PRIMARY),
+                    }
+                }
             }
         }
 
@@ -154,10 +156,27 @@ script_mod! {
                     }
                 }
             }
+            active: {
+                default: @off
+                off: AnimatorState{
+                    from: {all: Snap}
+                    apply: {
+                        draw_bg: {active: 0.0}
+                        space_name: { draw_text: {active: 0.0} }
+                    }
+                }
+                on: AnimatorState{
+                    from: {all: Snap}
+                    apply: {
+                        draw_bg: {active: 1.0}
+                        space_name: { draw_text: {active: 1.0} }
+                    }
+                }
+            }
         }
     }
 
-    mod.widgets.StatusLabel = View {
+    mod.widgets.SpacesStatusLabel = View {
         width: (NAVIGATION_TAB_BAR_SIZE),
         height: (NAVIGATION_TAB_BAR_SIZE),
         align: Align{ x: 0.5, y: 0.5 }
@@ -192,7 +211,7 @@ script_mod! {
         }
 
         SpacesBarEntry := mod.widgets.SpacesBarEntry {}
-        StatusLabel := mod.widgets.StatusLabel {}
+        StatusLabel := mod.widgets.SpacesStatusLabel {}
         BottomFiller := View {
             width: (NAVIGATION_TAB_BAR_SIZE)
             height: (NAVIGATION_TAB_BAR_SIZE)
@@ -213,7 +232,7 @@ script_mod! {
         }
 
         SpacesBarEntry := mod.widgets.SpacesBarEntry {}
-        StatusLabel := mod.widgets.StatusLabel {}
+        StatusLabel := mod.widgets.SpacesStatusLabel {}
         BottomFiller := View {
             width: (NAVIGATION_TAB_BAR_SIZE)
             height: (NAVIGATION_TAB_BAR_SIZE)
@@ -356,10 +375,7 @@ impl Widget for SpacesBarEntry {
 impl SpacesBarEntry {
     fn set_metadata(&mut self, cx: &mut Cx, space_name_id: RoomNameId, is_selected: bool) {
         self.space_name_id = Some(space_name_id);
-        let active = if is_selected { 1.0 } else { 0.0 };
-        script_apply_eval!(cx, self, {
-            draw_bg +: { active: #(active) }
-        });
+        self.animator_toggle(cx, is_selected, Animate::No, ids!(active.on), ids!(active.off));
     }
 }
 impl SpacesBarEntryRef {

@@ -26,7 +26,6 @@ use matrix_sdk_ui::timeline::{
 use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}, owned_room_id};
 
 use crate::{
-    ApplyOverCompat,
     app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::{RoomsListAction, RoomsListRef}, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
@@ -116,7 +115,7 @@ script_mod! {
             width: Fit, height: Fit,
             align: Align{x: 0.5, y: 0.5}
             draw_icon +: {
-                svg_file: crate_resource("self:resources/icons/double_chat.svg")
+                svg_file: crate_resource("self://resources/icons/double_chat.svg")
                 color: (mod.widgets.COLOR_THREAD_SUMMARY_REPLY_COUNT)
             }
             icon_walk: Walk{ width: 25, height: 25, margin: Inset{top: 7, right: 7} }
@@ -393,9 +392,13 @@ script_mod! {
                 height: 19.,
                 margin: 0
 
-                text_view: { text := Label { draw_text +: {
-                    text_style: TITLE_TEXT { font_size: 7.0 }
-                }}}
+                text_view +: {
+                    text +: {
+                        draw_text +: {
+                            text_style: TITLE_TEXT { font_size: 7.0 }
+                        }
+                    }
+                }
             }
 
             // Show an invite button only for a `Knocked` room membership change.
@@ -3047,16 +3050,19 @@ fn populate_message_view(
                         (item, true)
                     } else {
                         let html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
-                        html_or_plaintext_ref.clone().apply_over(cx, live!{
-                            html_view = {
-                                html = {
-                                    font_color: (COLOR_MESSAGE_NOTICE_TEXT),
-                                    draw_normal:      { color: (COLOR_MESSAGE_NOTICE_TEXT), }
-                                    draw_italic:      { color: (COLOR_MESSAGE_NOTICE_TEXT), }
-                                    draw_bold:        { color: (COLOR_MESSAGE_NOTICE_TEXT), }
-                                    draw_bold_italic: { color: (COLOR_MESSAGE_NOTICE_TEXT), }
-                                }
+                        let mut html_ref = item.html(cx, ids!(content.message.html_view.html));
+                        script_apply_eval!(cx, html_ref, {
+                            font_color: #(COLOR_MESSAGE_NOTICE_TEXT),
+                            draw_text +: { color: #(COLOR_MESSAGE_NOTICE_TEXT) },
+                            draw_block +: {
+                                line_color: #(COLOR_MESSAGE_NOTICE_TEXT),
+                                sep_color: #(COLOR_MESSAGE_NOTICE_TEXT),
+                                quote_fg_color: #(COLOR_MESSAGE_NOTICE_TEXT)
                             }
+                        });
+                        let mut pt_label_ref = item.label(cx, ids!(content.message.plaintext_view.pt_label));
+                        script_apply_eval!(cx, pt_label_ref, {
+                            draw_text +: { color: #(COLOR_MESSAGE_NOTICE_TEXT) }
                         });
                         let mut link_preview_ref =
                             item.link_preview(cx, ids!(content.link_preview_view));
@@ -3080,16 +3086,19 @@ fn populate_message_view(
                         (item, true)
                     } else {
                         let html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
-                        html_or_plaintext_ref.clone().apply_over(cx, live!{
-                            html_view = {
-                                html = {
-                                    font_color: (COLOR_FG_DANGER_RED),
-                                    draw_normal:      { color: (COLOR_FG_DANGER_RED), }
-                                    draw_italic:      { color: (COLOR_FG_DANGER_RED), }
-                                    draw_bold:        { color: (COLOR_FG_DANGER_RED), }
-                                    draw_bold_italic: { color: (COLOR_FG_DANGER_RED), }
-                                }
+                        let mut html_ref = item.html(cx, ids!(content.message.html_view.html));
+                        script_apply_eval!(cx, html_ref, {
+                            font_color: #(COLOR_FG_DANGER_RED),
+                            draw_text +: { color: #(COLOR_FG_DANGER_RED) },
+                            draw_block +: {
+                                line_color: #(COLOR_FG_DANGER_RED),
+                                sep_color: #(COLOR_FG_DANGER_RED),
+                                quote_fg_color: #(COLOR_FG_DANGER_RED)
                             }
+                        });
+                        let mut pt_label_ref = item.label(cx, ids!(content.message.plaintext_view.pt_label));
+                        script_apply_eval!(cx, pt_label_ref, {
+                            draw_text +: { color: #(COLOR_FG_DANGER_RED) }
                         });
                         let formatted = format!(
                             "<b>Server notice:</b> {}\n\n<i>Notice type:</i>: {}{}{}",
@@ -3382,12 +3391,9 @@ fn populate_message_view(
                 (item, true)
             } else {
                 let html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
-                html_or_plaintext_ref.clone().apply_over(cx, live!{
-                    html_view = {
-                        html = {
-                            font_size: (REDACTED_MESSAGE_FONT_SIZE),
-                        }
-                    }
+                let mut html_ref = item.html(cx, ids!(content.message.html_view.html));
+                script_apply_eval!(cx, html_ref, {
+                    font_size: #(REDACTED_MESSAGE_FONT_SIZE),
                 });
                 new_drawn_status.content_drawn = populate_redacted_message_content(
                     cx,
@@ -3498,9 +3504,10 @@ fn populate_message_view(
                 )
             );
             if is_notice {
-                username_label.clone().apply_over(cx, live!{
-                    draw_text: {
-                        color: (COLOR_MESSAGE_NOTICE_TEXT),
+                let mut username_label_ref = username_label.clone();
+                script_apply_eval!(cx, username_label_ref, {
+                    draw_text +: {
+                        color: #(COLOR_MESSAGE_NOTICE_TEXT)
                     }
                 });
             }
@@ -3512,9 +3519,10 @@ fn populate_message_view(
             let avatar = item.avatar(cx, ids!(profile.avatar));
             avatar.show_text(cx, Some(COLOR_FG_DANGER_RED), None, "⚠");
             username_label.set_text(cx, "Server notice");
-            username_label.clone().apply_over(cx, live!{
-                draw_text: {
-                    color: (COLOR_FG_DANGER_RED),
+            let mut username_label_ref = username_label.clone();
+            script_apply_eval!(cx, username_label_ref, {
+                draw_text +: {
+                    color: #(COLOR_FG_DANGER_RED)
                 }
             });
             new_drawn_status.profile_drawn = true;

@@ -58,12 +58,10 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    mod.widgets.MESSAGE_TEXT_STYLE = theme.font_regular {
+    mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE = theme.font_regular {
         font_size: (16),
         line_spacing: (1.2),
     }
-
-    mod.widgets.DEFAULT_IMAGE = crate_resource("self:resources/img/default_image.png")
 
     mod.widgets.LinkPreview = #(LinkPreview::register_widget(vm)) {
         width: Fill, height: Fit,
@@ -75,15 +73,15 @@ script_mod! {
             align: Align{x: 0.5, y: 0.5},
             padding: Inset{top: 4},
             visible: false,
-            expand_collapse_button := Button {
-                width: Fit, height: Fit,
-                padding: Inset{top: 2, bottom: 2, left: 8, right: 8},
-                draw_text +: {
-                    text_style: MESSAGE_TEXT_STYLE {
-                        font_size: 10.0,
-                    },
-                    color: #666666,
-                }
+                expand_collapse_button := Button {
+                    width: Fit, height: Fit,
+                    padding: Inset{top: 2, bottom: 2, left: 8, right: 8},
+                    draw_text +: {
+                        text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
+                            font_size: 10.0,
+                        },
+                        color: #666666,
+                    }
                 text: "▼ Show more links"
             }
         }
@@ -124,7 +122,7 @@ script_mod! {
                     title_label := LinkLabel {
                         width: Fit, height: Fit,
                         draw_text +: {
-                            text_style: MESSAGE_TEXT_STYLE {
+                            text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
                                 font_size: 12.0,
                             },
                             color: #x0000EE,
@@ -136,7 +134,7 @@ script_mod! {
                     site_name_label := Label {
                         width: Fit, height: Fit,
                         draw_text +: {
-                            text_style: MESSAGE_TEXT_STYLE {
+                            text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
                                 font_size: 12.0,
                             },
                             color: #666666,
@@ -152,7 +150,7 @@ script_mod! {
                         width: Fill, height: Fit,
                         padding: Inset{ left: 0.0 }
                         draw_text +: {
-                            text_style: MESSAGE_TEXT_STYLE {
+                            text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
                                 font_size: 11.0,
                             },
                             color: #666666,
