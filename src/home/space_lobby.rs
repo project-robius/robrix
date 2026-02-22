@@ -103,7 +103,7 @@ script_mod! {
             margin: Inset{left: 5, right: 3}
             align: Align{x: 0.5, y: 0.5}
             draw_icon +: {
-                svg_file: (ICON_HIERARCHY)
+                svg: (ICON_HIERARCHY)
 
                 active: instance(0.0)
                 hover: instance(0.0)
@@ -276,7 +276,7 @@ script_mod! {
             height: 16,
             margin: Inset{ top: 7, left: -8, right: 2 }
             draw_icon +: {
-                svg_file: (mod.widgets.SPACE_LOBBY_ICON_COLLAPSE)
+                svg: (mod.widgets.SPACE_LOBBY_ICON_COLLAPSE)
                 rotation_angle: 90.0
                 color: #888
             }
@@ -511,7 +511,7 @@ script_mod! {
                     margin: Inset{left: 6}
                     padding: 12,
                     draw_icon +: {
-                        svg_file: (ICON_ADD_USER)
+                        svg: (ICON_ADD_USER)
                         color: (COLOR_FG_ACCEPT_GREEN),
                     }
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }

@@ -57,7 +57,7 @@ script_mod! {
                 width: Fit, height: Fit,
                 Icon {
                     draw_icon +: {
-                        svg_file: (ICON_CLOUD_OFFLINE),
+                        svg: (ICON_CLOUD_OFFLINE),
                         color: (COLOR_FG_DANGER_RED),
                     }
                     icon_walk: Walk{width: 35, height: Fit, margin: Inset{left: -5, bottom: 4}}
@@ -69,7 +69,7 @@ script_mod! {
                 width: Fit, height: Fit,
                 Icon {
                     draw_icon +: {
-                        svg_file: (ICON_CLOUD_CHECKMARK),
+                        svg: (ICON_CLOUD_CHECKMARK),
                         color: (COLOR_FG_ACCEPT_GREEN),
                     }
                     icon_walk: Walk{width: 25, height: Fit, margin: Inset{left: 1, bottom: 2}}

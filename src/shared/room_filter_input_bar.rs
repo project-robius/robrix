@@ -33,7 +33,7 @@ script_mod! {
 
         Icon {
             draw_icon +: {
-                svg_file: (ICON_SEARCH),
+                svg: (ICON_SEARCH),
                 get_color: fn() -> vec4 {
                     return (COLOR_TEXT_INPUT_IDLE);
                 }
@@ -62,7 +62,7 @@ script_mod! {
                 color: (COLOR_SECONDARY)
             }
             draw_icon +: {
-                svg_file: (ICON_CLOSE),
+                svg: (ICON_CLOSE),
                 color: (COLOR_TEXT)
             }
             icon_walk: Walk{width: Fit, height: 10, margin: 0}

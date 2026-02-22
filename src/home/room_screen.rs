@@ -115,7 +115,7 @@ script_mod! {
             width: Fit, height: Fit,
             align: Align{x: 0.5, y: 0.5}
             draw_icon +: {
-                svg_file: crate_resource("self://resources/icons/double_chat.svg")
+                svg: crate_resource("self://resources/icons/double_chat.svg")
                 color: (mod.widgets.COLOR_THREAD_SUMMARY_REPLY_COUNT)
             }
             icon_walk: Walk{ width: 25, height: 25, margin: Inset{top: 7, right: 7} }
@@ -413,7 +413,7 @@ script_mod! {
                     border_color: (COLOR_FG_ACCEPT_GREEN)
                 }
                 draw_icon +: {
-                    svg_file: (ICON_ADD_USER)
+                    svg: (ICON_ADD_USER)
                     color: (COLOR_FG_ACCEPT_GREEN)
                 }
                 draw_text +: {
@@ -3049,20 +3049,24 @@ fn populate_message_view(
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
-                        let html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
-                        let mut html_ref = item.html(cx, ids!(content.message.html_view.html));
-                        script_apply_eval!(cx, html_ref, {
-                            font_color: #(COLOR_MESSAGE_NOTICE_TEXT),
-                            draw_text +: { color: #(COLOR_MESSAGE_NOTICE_TEXT) },
-                            draw_block +: {
-                                line_color: #(COLOR_MESSAGE_NOTICE_TEXT),
-                                sep_color: #(COLOR_MESSAGE_NOTICE_TEXT),
-                                quote_fg_color: #(COLOR_MESSAGE_NOTICE_TEXT)
+                        let mut html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
+                        script_apply_eval!(cx, html_or_plaintext_ref, {
+                            html_view: {
+                                html: {
+                                    font_color: #(COLOR_MESSAGE_NOTICE_TEXT),
+                                    draw_text +: { color: #(COLOR_MESSAGE_NOTICE_TEXT) },
+                                    draw_block +: {
+                                        line_color: #(COLOR_MESSAGE_NOTICE_TEXT),
+                                        sep_color: #(COLOR_MESSAGE_NOTICE_TEXT),
+                                        quote_fg_color: #(COLOR_MESSAGE_NOTICE_TEXT)
+                                    }
+                                }
                             }
-                        });
-                        let mut pt_label_ref = item.label(cx, ids!(content.message.plaintext_view.pt_label));
-                        script_apply_eval!(cx, pt_label_ref, {
-                            draw_text +: { color: #(COLOR_MESSAGE_NOTICE_TEXT) }
+                            plaintext_view: {
+                                pt_label: {
+                                    draw_text +: { color: #(COLOR_MESSAGE_NOTICE_TEXT) }
+                                }
+                            }
                         });
                         let mut link_preview_ref =
                             item.link_preview(cx, ids!(content.link_preview_view));
@@ -3085,20 +3089,24 @@ fn populate_message_view(
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
-                        let html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
-                        let mut html_ref = item.html(cx, ids!(content.message.html_view.html));
-                        script_apply_eval!(cx, html_ref, {
-                            font_color: #(COLOR_FG_DANGER_RED),
-                            draw_text +: { color: #(COLOR_FG_DANGER_RED) },
-                            draw_block +: {
-                                line_color: #(COLOR_FG_DANGER_RED),
-                                sep_color: #(COLOR_FG_DANGER_RED),
-                                quote_fg_color: #(COLOR_FG_DANGER_RED)
+                        let mut html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
+                        script_apply_eval!(cx, html_or_plaintext_ref, {
+                            html_view: {
+                                html: {
+                                    font_color: #(COLOR_FG_DANGER_RED),
+                                    draw_text +: { color: #(COLOR_FG_DANGER_RED) },
+                                    draw_block +: {
+                                        line_color: #(COLOR_FG_DANGER_RED),
+                                        sep_color: #(COLOR_FG_DANGER_RED),
+                                        quote_fg_color: #(COLOR_FG_DANGER_RED)
+                                    }
+                                }
                             }
-                        });
-                        let mut pt_label_ref = item.label(cx, ids!(content.message.plaintext_view.pt_label));
-                        script_apply_eval!(cx, pt_label_ref, {
-                            draw_text +: { color: #(COLOR_FG_DANGER_RED) }
+                            plaintext_view: {
+                                pt_label: {
+                                    draw_text +: { color: #(COLOR_FG_DANGER_RED) }
+                                }
+                            }
                         });
                         let formatted = format!(
                             "<b>Server notice:</b> {}\n\n<i>Notice type:</i>: {}{}{}",
@@ -3391,10 +3399,6 @@ fn populate_message_view(
                 (item, true)
             } else {
                 let html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
-                let mut html_ref = item.html(cx, ids!(content.message.html_view.html));
-                script_apply_eval!(cx, html_ref, {
-                    font_size: #(REDACTED_MESSAGE_FONT_SIZE),
-                });
                 new_drawn_status.content_drawn = populate_redacted_message_content(
                     cx,
                     &html_or_plaintext_ref,

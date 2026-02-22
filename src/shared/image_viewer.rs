@@ -123,7 +123,7 @@ script_mod! {
             color: (COLOR_SECONDARY * 0.925)
         }
         draw_icon +: {
-            svg_file: (ICON_ZOOM_OUT),
+            svg: (ICON_ZOOM_OUT),
             get_color: fn() -> vec4 {
                 return #x0;
             }
@@ -179,7 +179,7 @@ script_mod! {
                     visible: false
                     Icon {
                         draw_icon +: {
-                            svg_file: (ICON_FORBIDDEN),
+                            svg: (ICON_FORBIDDEN),
                             color: (COLOR_TEXT),
                         }
                         icon_walk: Walk{ width: 30, height: 30 }
@@ -308,30 +308,30 @@ script_mod! {
                 padding: Inset{ left: 7, top: 4, bottom: 4, right: 7}
 
                 zoom_out_button := mod.widgets.ImageViewerButton {
-                    draw_icon +: { svg_file: (ICON_ZOOM_OUT) }
+                    draw_icon +: { svg: (ICON_ZOOM_OUT) }
                     icon_walk: Walk{width: 27, height: 27, margin: Inset{left: 2}}
                 }
 
                 zoom_in_button := mod.widgets.ImageViewerButton {
-                    draw_icon +: { svg_file: (ICON_ZOOM_IN) }
+                    draw_icon +: { svg: (ICON_ZOOM_IN) }
                     icon_walk: Walk{width: 27, height: 27, margin: Inset{left: 2}}
                 }
 
                 rotate_ccw_button := mod.widgets.ImageViewerButton {
-                    draw_icon +: { svg_file: (ICON_ROTATE_CCW) }
+                    draw_icon +: { svg: (ICON_ROTATE_CCW) }
                 }
 
                 rotate_cw_button := mod.widgets.ImageViewerButton {
-                    draw_icon +: { svg_file: (ICON_ROTATE_CW) }
+                    draw_icon +: { svg: (ICON_ROTATE_CW) }
                 }
 
                 reset_button := mod.widgets.ImageViewerButton {
-                    draw_icon +: { svg_file: (ICON_JUMP) }
+                    draw_icon +: { svg: (ICON_JUMP) }
                     icon_walk: Walk{width: 25, height: 25, margin: Inset{bottom: 2}}
                 }
 
                 close_button := mod.widgets.ImageViewerButton {
-                    draw_icon +: { svg_file: (ICON_CLOSE) }
+                    draw_icon +: { svg: (ICON_CLOSE) }
                     icon_walk: Walk{width: 21, height: 21 }
                 }
             }

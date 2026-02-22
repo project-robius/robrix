@@ -462,9 +462,6 @@ impl MentionableTextInput {
         } else if !members_are_empty && self.members_loading {
             // Members have been loaded, stop loading state
             self.members_loading = false;
-            // Reset popup height to ensure proper calculation for user list
-            let mut popup = self.cmd_text_input.view(cx, ids!(popup));
-            script_apply_eval!(cx, popup, { height: Size.Fit });
         } else if members_are_empty && self.members_loading {
             // Still loading and members are empty - keep showing loading indicator
             return true;
@@ -629,7 +626,7 @@ impl MentionableTextInput {
                 script_apply_eval!(cx, item_ref, {
                     flow: Flow.Down,
                     height: #(MOBILE_ITEM_HEIGHT),
-                    spacing: MOBILE_USERNAME_SPACING
+                    spacing: 2.0
                 });
                 item.view(cx, ids!(user_info.filler)).set_visible(cx, false);
             }
@@ -680,8 +677,6 @@ impl MentionableTextInput {
             self.cmd_text_input.text_input_ref(cx).set_key_focus(cx);
         } else {
             // Only hide popup if we're not actively searching
-            let mut popup = popup;
-            script_apply_eval!(cx, popup, { height: Size.Fit });
             popup.set_visible(cx, false);
         }
     }
@@ -1051,10 +1046,7 @@ impl MentionableTextInput {
 
         // Ensure header is visible
         header_view.set_visible(cx, true);
-
-        // Let popup auto-size based on content
-        let mut popup = popup;
-        script_apply_eval!(cx, popup, { height: Size.Fit });
+        let _ = popup;
 
         // Maintain text input focus so user can continue typing
         if self.is_searching {
@@ -1081,10 +1073,7 @@ impl MentionableTextInput {
 
         // Hide the entire popup
         popup.set_visible(cx, false);
-
-        // Reset popup height
-        let mut popup = popup;
-        script_apply_eval!(cx, popup, { height: Size.Fit });
+        let _ = popup;
 
         // Ensure header view is reset to visible next time it's triggered
         // This will happen before update_user_list is called in handle_text_change

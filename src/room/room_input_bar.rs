@@ -82,13 +82,13 @@ script_mod! {
                     margin: Inset{left: 4}
                     spacing: 0,
                     draw_icon +: {
-                        svg_file: (mod.widgets.ICO_LOCATION_PERSON)
+                        svg: (mod.widgets.ICO_LOCATION_PERSON)
                         color: (COLOR_ACTIVE_PRIMARY_DARKER)
                     },
                     draw_bg +: {
                         color: (COLOR_BG_PREVIEW),
                     }
-                    icon_walk: Walk{width: Fit, height: 23, margin: Inset{bottom: -1}}
+                    icon_walk: Walk{width: 23, height: 23, margin: Inset{bottom: -1}}
                     text: "",
                 }
 
@@ -118,10 +118,10 @@ script_mod! {
                     spacing: 0,
                     margin: Inset{right: 4}
                     draw_icon +: {
-                        svg_file: (ICON_SEND),
+                        svg: (ICON_SEND),
                         color: (COLOR_FG_DISABLED),
                     }
-                    icon_walk: Walk{width: Fit, height: 21},
+                    icon_walk: Walk{width: 21, height: 21},
                     draw_bg +: {
                         color: (COLOR_BG_DISABLED),
                     }
@@ -503,13 +503,8 @@ impl RoomInputBar {
         };
         script_apply_eval!(cx, send_message_button, {
             enabled: #(enable),
-            draw_icon +: {
-                color: #(fg_color),
-                // color_hover: (fg_color),
-            }
-            draw_bg +: {
-                color: #(bg_color),
-            }
+            draw_icon.color: #(fg_color),
+            draw_bg.color: #(bg_color),
         });
     }
 

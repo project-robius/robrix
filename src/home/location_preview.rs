@@ -68,7 +68,7 @@ script_mod! {
                 padding: 15,
                 margin: Inset{right: 15}
                 draw_icon +: {
-                    svg_file: (ICON_FORBIDDEN)
+                    svg: (ICON_FORBIDDEN)
                     color: (COLOR_FG_DANGER_RED),
                 }
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1, top: -1} }
@@ -89,7 +89,7 @@ script_mod! {
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
                 draw_icon +: {
-                    svg_file: (ICON_SEND)
+                    svg: (ICON_SEND)
                     color: (COLOR_FG_ACCEPT_GREEN),
                 }
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }

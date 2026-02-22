@@ -68,7 +68,7 @@ script_mod! {
                 height: (mod.widgets.NEW_MESSAGE_CONTEXT_MENU_BUTTON_HEIGHT)
                 align: Align{y: 0.5}
                 react_button := mod.widgets.NewMessageContextMenuButton {
-                    draw_icon +: { svg_file: (ICON_ADD_REACTION) }
+                    draw_icon +: { svg: (ICON_ADD_REACTION) }
                     text: "Add Reaction"
                 }
 
@@ -101,7 +101,7 @@ script_mod! {
                         padding: Inset{left: 10, right: 10, top: 8, bottom: 8}
                         spacing: 0,
                         draw_icon +: {
-                            svg_file: (ICON_SEND)
+                            svg: (ICON_SEND)
                             color: (COLOR_FG_ACCEPT_GREEN),
                         }
                         icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
@@ -119,7 +119,7 @@ script_mod! {
             }
 
             reply_button := mod.widgets.NewMessageContextMenuButton {
-                draw_icon +: { svg_file: (ICON_REPLY) }
+                draw_icon +: { svg: (ICON_REPLY) }
                 icon_walk: Walk{ margin: Inset{top: 1, right: 3}}
                 text: "Reply"
             }
@@ -130,7 +130,7 @@ script_mod! {
             }
 
             edit_message_button := mod.widgets.NewMessageContextMenuButton {
-                draw_icon +: { svg_file: (ICON_EDIT) }
+                draw_icon +: { svg: (ICON_EDIT) }
                 icon_walk: Walk{ margin: Inset{top: -3, right: 3} }
                 text: "Edit Message"
             }
@@ -138,34 +138,34 @@ script_mod! {
             // TODO: check if the current user is allowed to pin/unpin messages:
             //       <https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_base/struct.RoomMember.html#method.can_pin_or_unpin_event>
             pin_button := mod.widgets.NewMessageContextMenuButton {
-                draw_icon +: { svg_file: (ICON_PIN) }
+                draw_icon +: { svg: (ICON_PIN) }
                 text: "" // set dynamically to "Pin Message" or "Unpin Message"
             }
 
             copy_text_button := mod.widgets.NewMessageContextMenuButton {
-                draw_icon +: { svg_file: (ICON_COPY) }
+                draw_icon +: { svg: (ICON_COPY) }
                 text: "Copy Text"
             }
 
             copy_html_button := mod.widgets.NewMessageContextMenuButton {
-                draw_icon +: { svg_file: (ICON_HTML_FILE) }
+                draw_icon +: { svg: (ICON_HTML_FILE) }
                 icon_walk: Walk{ margin: Inset{left: 1.5, right: 1.5} }
                 text: "Copy Text as HTML"
             }
 
             copy_link_to_message_button := mod.widgets.NewMessageContextMenuButton {
-                draw_icon +: { svg_file: (ICON_LINK) }
+                draw_icon +: { svg: (ICON_LINK) }
                 text: "Copy Link to Message"
             }
 
             view_source_button := mod.widgets.NewMessageContextMenuButton {
-                draw_icon +: { svg_file: (ICON_VIEW_SOURCE) }
+                draw_icon +: { svg: (ICON_VIEW_SOURCE) }
                 icon_walk: Walk{ margin: Inset{top: 6, right: 3} }
                 text: "View Source"
             }
 
             jump_to_related_button := mod.widgets.NewMessageContextMenuButton {
-                draw_icon +: { svg_file: (ICON_JUMP) }
+                draw_icon +: { svg: (ICON_JUMP) }
                 text: "Jump to Related Event"
             }
 
@@ -176,7 +176,7 @@ script_mod! {
 
             // report_button = ContextMenuButton {
             //     draw_icon +: {
-            //         svg_file: (ICON_TRASH) // TODO: ICON_REPORT/WARNING/FLAG
+            //         svg: (ICON_TRASH) // TODO: ICON_REPORT/WARNING/FLAG
             //         color: (COLOR_FG_DANGER_RED),
             //     }
             //     icon_walk: Walk{ margin: Inset{left: -2, right: 3} }
@@ -198,7 +198,7 @@ script_mod! {
 
             delete_button := mod.widgets.NewMessageContextMenuButton {
                 draw_icon +: {
-                    svg_file: (ICON_TRASH)
+                    svg: (ICON_TRASH)
                     color: (COLOR_FG_DANGER_RED),
                 }
                 draw_bg +: {

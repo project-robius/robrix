@@ -101,7 +101,7 @@ script_mod! {
         visible: false,
         Icon {
             draw_icon +: {
-                svg_file: (ICON_CHECKMARK),
+                svg: (ICON_CHECKMARK),
                 color: #ffffff,
             }
             icon_walk: Walk{ width: 22, height: 22 }
@@ -110,7 +110,7 @@ script_mod! {
     mod.widgets.ForbiddenIcon = mod.widgets.CheckIcon {
         Icon {
             draw_icon +: {
-                svg_file: (ICON_FORBIDDEN),
+                svg: (ICON_FORBIDDEN),
                 color: #ffffff,
             }
             icon_walk: Walk{ width: 22, height: 22 }
@@ -119,7 +119,7 @@ script_mod! {
     mod.widgets.InfoIcon = mod.widgets.CheckIcon {
         Icon {
             draw_icon +: {
-                svg_file: (ICON_INFO),
+                svg: (ICON_INFO),
                 color: #ffffff,
             }
             icon_walk: Walk{ width: 22, height: 22 }
@@ -128,7 +128,7 @@ script_mod! {
     mod.widgets.WarningIcon = mod.widgets.CheckIcon {
         Icon {
             draw_icon +: {
-                svg_file: (ICON_WARNING),
+                svg: (ICON_WARNING),
                 color: #ffffff,
             }
             icon_walk: Walk{ width: 22, height: 22 }
@@ -231,7 +231,7 @@ script_mod! {
                     color: (COLOR_BG_DISABLED)
                 }
                 draw_icon +: {
-                    svg_file: (ICON_CLOSE),
+                    svg: (ICON_CLOSE),
                     color: (COLOR_DIVIDER_DARK),
                 }
                 icon_walk: Walk{width: 15, height: 15}

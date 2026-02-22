@@ -20,7 +20,7 @@ script_mod! {
             // color_hover: (COLOR_PRIMARY_DARKER) // make it whiter (this value is mixed in with `color`)
         }
         draw_icon +: {
-            svg_file: (ICON_SEARCH)
+            svg: (ICON_SEARCH)
             color: (COLOR_FG_DISABLED)
             // color: (COLOR_PRIMARY),
             // color_hover: (COLOR_PRIMARY),

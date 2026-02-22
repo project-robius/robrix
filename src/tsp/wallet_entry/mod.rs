@@ -85,7 +85,7 @@ script_mod! {
                     color: (COLOR_ACTIVE_PRIMARY)
                 }
                 draw_icon +: {
-                    svg_file: (ICON_CHECKMARK)
+                    svg: (ICON_CHECKMARK)
                     color: (COLOR_PRIMARY)
                 }
                 draw_text +: {
@@ -104,7 +104,7 @@ script_mod! {
                     border_color: (COLOR_FG_DANGER_RED)
                 }
                 draw_icon +: {
-                    svg_file: (ICON_CLOSE),
+                    svg: (ICON_CLOSE),
                     color: (COLOR_FG_DANGER_RED),
                 }
                 draw_text +: {
@@ -122,7 +122,7 @@ script_mod! {
                     border_color: (COLOR_FG_DANGER_RED)
                 }
                 draw_icon +: {
-                    svg_file: (ICON_TRASH),
+                    svg: (ICON_TRASH),
                     color: (COLOR_FG_DANGER_RED),
                 }
                 draw_text +: {

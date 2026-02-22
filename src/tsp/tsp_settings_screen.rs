@@ -41,7 +41,7 @@ script_mod! {
                     color: (COLOR_SECONDARY)
                 }
                 draw_icon +: {
-                    svg_file: (ICON_COPY)
+                    svg: (ICON_COPY)
                 }
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{right: -2} }
             }
@@ -67,7 +67,7 @@ script_mod! {
                 border_radius: 5
             }
             draw_icon +: {
-                svg_file: (ICON_UPLOAD)
+                svg: (ICON_UPLOAD)
                 color: (COLOR_PRIMARY),
             }
             icon_walk: Walk{width: 16, height: 16}
@@ -139,7 +139,7 @@ script_mod! {
                     border_radius: 5
                 }
                 draw_icon +: {
-                    svg_file: (ICON_ADD_USER)
+                    svg: (ICON_ADD_USER)
                     color: (COLOR_FG_ACCEPT_GREEN),
                 }
                 icon_walk: Walk{width: 21, height: Fit, margin: 0}
@@ -160,7 +160,7 @@ script_mod! {
                     border_radius: 5
                 }
                 draw_icon +: {
-                    svg_file: (ICON_ADD_WALLET)
+                    svg: (ICON_ADD_WALLET)
                     color: (COLOR_FG_ACCEPT_GREEN),
                 }
                 icon_walk: Walk{width: 21, height: Fit, margin: 0}
@@ -183,7 +183,7 @@ script_mod! {
                 text: "Import Existing Wallet"
                 // TODO: fix this icon, or pick a different SVG
                 // draw_icon +: {
-                //     svg_file: (ICON_IMPORT)
+                //     svg: (ICON_IMPORT)
                 //     color: (COLOR_PRIMARY)
                 // }
                 // icon_walk: Walk{width: 16, height: 16}

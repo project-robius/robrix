@@ -44,14 +44,16 @@ script_mod! {
 
 
     // A RadioButton styled to fit within our NavigationTabBar.
-    mod.widgets.NavigationTabButton = RadioButton {
+    // Use RadioButtonTab as the base to stay aligned with current widgets/studio behavior.
+    mod.widgets.NavigationTabButton = RadioButtonTab {
         width: Fill,
         height: (NAVIGATION_TAB_BAR_SIZE - 5),
         padding: 5,
-        margin: 3, 
+        margin: 3,
         align: Align{x: 0.5, y: 0.5}
         flow: Down,
-        
+        text: "",
+
         icon_walk: Walk{
             margin: 0,
             width: (NAVIGATION_TAB_BAR_SIZE / 2.2),
@@ -62,89 +64,37 @@ script_mod! {
         spacing: 0,
 
         draw_bg +: {
-            radio_type: Tab,
-
             color: uniform((COLOR_NAVIGATION_TAB_BG))
             color_hover: uniform((COLOR_NAVIGATION_TAB_BG_HOVER))
+            color_down: uniform((COLOR_NAVIGATION_TAB_BG_HOVER))
             color_active: uniform((COLOR_NAVIGATION_TAB_BG_ACTIVE))
+            color_focus: uniform((COLOR_NAVIGATION_TAB_BG_ACTIVE))
 
-            border_size: 0.0
-            border_color: #0000
-            inset: uniform(vec4(0.0))
-            border_radius: 4.0
-
-            get_color: fn() -> vec4 {
-                return mix(
-                    mix(
-                        self.color,
-                        self.color_hover,
-                        self.hover
-                    ),
-                    self.color_active,
-                    self.active
-                )
-            }
-
-            get_border_color: fn() -> vec4 {
-                return self.border_color
-            }
-
-            pixel: fn() -> vec4 {
-                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
-                sdf.box(
-                    self.inset.x + self.border_size,
-                    self.inset.y + self.border_size,
-                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
-                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
-                    max(1.0, self.border_radius)
-                )
-                sdf.fill_keep(self.get_color())
-                if self.border_size > 0.0 {
-                    sdf.stroke(self.get_border_color(), self.border_size)
-                }
-                return sdf.result;
-            }
+            border_size: uniform(0.0)
+            border_radius: uniform(4.0)
+            border_color: uniform(#0000)
+            border_color_hover: uniform(#0000)
+            border_color_down: uniform(#0000)
+            border_color_active: uniform(#0000)
+            border_color_focus: uniform(#0000)
         }
 
         draw_text +: {
-            hover: instance(0.0)
-            active: instance(0.0)
             color: (COLOR_NAVIGATION_TAB_FG)
             color_hover: uniform((COLOR_NAVIGATION_TAB_FG_HOVER))
+            color_down: uniform((COLOR_NAVIGATION_TAB_FG_HOVER))
             color_active: uniform((COLOR_NAVIGATION_TAB_FG_ACTIVE))
+            color_focus: uniform((COLOR_NAVIGATION_TAB_FG_ACTIVE))
 
             text_style: theme.font_bold {font_size: 9}
-
-            get_color: fn() -> vec4 {
-                return mix(
-                    mix(
-                        self.color,
-                        self.color_hover,
-                        self.hover
-                    ),
-                    self.color_active,
-                    self.active
-                )
-            }
         }
 
         draw_icon +: {
-            hover: instance(0.0)
-            active: instance(0.0)
             color: (COLOR_NAVIGATION_TAB_FG)
             color_hover: uniform((COLOR_NAVIGATION_TAB_FG_HOVER))
+            color_down: uniform((COLOR_NAVIGATION_TAB_FG_HOVER))
             color_active: uniform((COLOR_NAVIGATION_TAB_FG_ACTIVE))
-            get_color: fn() -> vec4 {
-                return mix(
-                    mix(
-                        self.color,
-                        self.color_hover,
-                        self.hover
-                    ),
-                    self.color_active,
-                    self.active
-                )
-            }
+            color_focus: uniform((COLOR_NAVIGATION_TAB_FG_ACTIVE))
         }
     }
 
@@ -153,8 +103,6 @@ script_mod! {
         height: (NAVIGATION_TAB_BAR_SIZE - 8)
         flow: Overlay
         align: Align{ x: 0.5, y: 0.5 }
-        cursor: Default,
-
         our_own_avatar := Avatar {
             width: 45, height: 45
             // If no avatar picture, use white text on a dark background.
@@ -179,7 +127,7 @@ script_mod! {
     }
 
     mod.widgets.HomeButton = mod.widgets.NavigationTabButton {
-        draw_icon +: { svg_file: (ICON_HOME) }
+        draw_icon +: { svg: (ICON_HOME) }
         animator +: { active: { default: @on } }
     }
 
@@ -192,7 +140,7 @@ script_mod! {
             color: (COLOR_SECONDARY)
         }
         draw_icon +: {
-            svg_file: (ICON_SQUARES)
+            svg: (ICON_SQUARES)
             color: (COLOR_NAVIGATION_TAB_FG)
         }
         icon_walk: Walk{
@@ -203,11 +151,11 @@ script_mod! {
     }
 
     mod.widgets.SettingsButton = mod.widgets.NavigationTabButton {
-        draw_icon +: { svg_file: (ICON_SETTINGS) }
+        draw_icon +: { svg: (ICON_SETTINGS) }
     }
 
     mod.widgets.AddRoomButton = mod.widgets.NavigationTabButton {
-        draw_icon +: { svg_file: (ICON_ADD) }
+        draw_icon +: { svg: (ICON_ADD) }
     }
 
     mod.widgets.Separator = LineH { margin: 8 }
@@ -225,29 +173,17 @@ script_mod! {
                 color: (COLOR_SECONDARY)
             }
 
-            CachedWidget {
-                profile_icon := mod.widgets.ProfileIcon {}
-            }
-
-            CachedWidget {
-                home_button := mod.widgets.HomeButton {}
-            }
-
-            CachedWidget {
-                add_room_button := mod.widgets.AddRoomButton {}
-            }
+            profile_icon := mod.widgets.ProfileIcon {}
+            home_button := mod.widgets.HomeButton {}
+            add_room_button := mod.widgets.AddRoomButton {}
 
             mod.widgets.Separator {}
 
-            CachedWidget {
-                root_spaces_bar := mod.widgets.SpacesBar {}
-            }
+            root_spaces_bar := mod.widgets.SpacesBar {}
 
             mod.widgets.Separator {}
-            
-            CachedWidget {
-                settings_button := mod.widgets.SettingsButton {}
-            }
+
+            settings_button := mod.widgets.SettingsButton {}
         }
 
         Mobile := RoundedView {
@@ -262,23 +198,13 @@ script_mod! {
                 border_radius: 4.0
             }
 
-            CachedWidget {
-                home_button := mod.widgets.HomeButton {}
-            }
-
-            CachedWidget {
-                add_room_button := mod.widgets.AddRoomButton {}
-            }
+            home_button := mod.widgets.HomeButton {}
+            add_room_button := mod.widgets.AddRoomButton {}
 
             toggle_spaces_bar_button := mod.widgets.ToggleSpacesBarButton {}
 
-            CachedWidget {
-                settings_button := mod.widgets.SettingsButton {}
-            }
-
-            CachedWidget {
-                profile_icon := mod.widgets.ProfileIcon {}
-            }
+            settings_button := mod.widgets.SettingsButton {}
+            profile_icon := mod.widgets.ProfileIcon {}
         }
     }
 }

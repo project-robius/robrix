@@ -47,7 +47,7 @@ script_mod! {
         collapse_icon := IconRotated {
             margin: Inset{left: 5, right: 8, top: 0, bottom: 0},
             draw_icon +: {
-                svg_file: (mod.widgets.ICON_COLLAPSE),
+                svg: (mod.widgets.ICON_COLLAPSE),
                 rotation_angle: 180.0, // start in the "expanded" state
                 color: (mod.widgets.COLOR_HEADER_FG),
             }

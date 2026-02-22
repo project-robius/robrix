@@ -29,17 +29,9 @@ script_mod! {
         }
     }
 
-    // Copied from Moly, with shader syntax aligned to new script_mod conventions.
-    mod.widgets.FadeView = CachedView {
-        draw_bg +: {
-            opacity: instance(1.0)
-
-            pixel: fn() {
-                let color = sample2d_rt(self.image self.pos * self.scale + self.shift)
-                return Pal.premul(vec4(color.xyz, color.w * self.opacity))
-            }
-        }
-    }
+    // Keep FadeView as a simple View to avoid custom cached-shader compile failures.
+    // This preserves layout/behavior while we stay compatible with current script runtime.
+    mod.widgets.FadeView = View {}
 
     mod.widgets.LineH = RoundedView {
 

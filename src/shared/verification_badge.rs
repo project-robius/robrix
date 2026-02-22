@@ -30,7 +30,7 @@ script_mod! {
         width: Fit, height: Fit
         mod.widgets.VerificationIcon {
             draw_icon +: {
-                svg_file: (mod.widgets.VERIFICATION_YES),
+                svg: (mod.widgets.VERIFICATION_YES),
                 get_color: fn() -> vec4 {
                     return (COLOR_FG_ACCEPT_GREEN);
                 }
@@ -44,7 +44,7 @@ script_mod! {
         width: Fit, height: Fit
         mod.widgets.VerificationIcon {
             draw_icon +: {
-                svg_file: (mod.widgets.VERIFICATION_NO),
+                svg: (mod.widgets.VERIFICATION_NO),
                 get_color: fn() -> vec4 {
                     return (COLOR_FG_DANGER_RED);
                 }
@@ -58,7 +58,7 @@ script_mod! {
         width: Fit, height: Fit
         mod.widgets.VerificationIcon {
             draw_icon +: {
-                svg_file: (mod.widgets.VERIFICATION_UNK),
+                svg: (mod.widgets.VERIFICATION_UNK),
                 get_color: fn() -> vec4 {
                     return #x888888;
                 }

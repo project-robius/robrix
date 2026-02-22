@@ -84,7 +84,7 @@ script_mod! {
                     padding: 10,
                     draw_bg +: { color: (COLOR_BG_DANGER_RED) },
                     draw_icon +: {
-                            svg_file: (ICON_LOGOUT)
+                            svg: (ICON_LOGOUT)
                             color: (COLOR_FG_DANGER_RED),
                     },
                     text: "Logout Now"

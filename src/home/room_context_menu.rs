@@ -55,22 +55,22 @@ script_mod! {
             }
 
             mark_unread_button := mod.widgets.RoomContextMenuButton {
-                draw_icon +: { svg_file: (ICON_CHECKMARK) }
+                draw_icon +: { svg: (ICON_CHECKMARK) }
                 text: "Mark as Unread"
             }
 
             favorite_button := mod.widgets.RoomContextMenuButton {
-                draw_icon +: { svg_file: (ICON_PIN) }
+                draw_icon +: { svg: (ICON_PIN) }
                 text: "Favorite"
             }
 
             priority_button := mod.widgets.RoomContextMenuButton {
-                draw_icon +: { svg_file: (ICON_TOMBSTONE) } 
+                draw_icon +: { svg: (ICON_TOMBSTONE) } 
                 text: "Set Low Priority"
             }
 
             copy_link_button := mod.widgets.RoomContextMenuButton {
-                draw_icon +: { svg_file: (ICON_LINK) }
+                draw_icon +: { svg: (ICON_LINK) }
                 text: "Copy Link to Room"
             }
             
@@ -80,18 +80,18 @@ script_mod! {
             }
 
             room_settings_button := mod.widgets.RoomContextMenuButton {
-                draw_icon +: { svg_file: (ICON_SETTINGS) }
+                draw_icon +: { svg: (ICON_SETTINGS) }
                 text: "Settings"
             }
 
             notifications_button := mod.widgets.RoomContextMenuButton {
                 // TODO: use a proper bell icon
-                draw_icon +: { svg_file: (ICON_INFO) }
+                draw_icon +: { svg: (ICON_INFO) }
                 text: "Notifications"
             }
 
             invite_button := mod.widgets.RoomContextMenuButton {
-                draw_icon +: { svg_file: (ICON_ADD_USER) }
+                draw_icon +: { svg: (ICON_ADD_USER) }
                 text: "Invite"
             }
 
@@ -102,7 +102,7 @@ script_mod! {
 
             leave_button := mod.widgets.RoomContextMenuButton {
                 draw_icon +: {
-                    svg_file: (ICON_LOGOUT)
+                    svg: (ICON_LOGOUT)
                     color: (COLOR_FG_DANGER_RED),
                 }
                 draw_bg +: {

@@ -116,7 +116,7 @@ script_mod! {
                     border_radius: 5
                 }
                 draw_icon +: {
-                    svg_file: (ICON_CLOSE),
+                    svg: (ICON_CLOSE),
                     color: (COLOR_FG_DANGER_RED)
                 }
                 icon_walk: Walk{width: 16, height: 16, margin: 0}

@@ -31,9 +31,7 @@ script_mod! {
             shadow_offset: vec2(1.0, 0.0),
         }
 
-        CachedWidget {
-            root_spaces_bar := mod.widgets.SpacesBar {}
-        }
+        root_spaces_bar := mod.widgets.SpacesBar {}
 
         animator: Animator{
             spaces_bar_animator: {
@@ -71,9 +69,7 @@ script_mod! {
                 margin: 0,
 
                 // On the left, show the navigation tab bar vertically.
-                CachedWidget {
-                    navigation_tab_bar := mod.widgets.NavigationTabBar {}
-                }
+                navigation_tab_bar := mod.widgets.NavigationTabBar {}
 
                 // To the right of that, we use the PageFlip widget to show either
                 // the main desktop UI or the settings screen.
@@ -193,14 +189,10 @@ script_mod! {
                             // across AdaptiveView transitions between Mobile view mode and Desktop view mode.
                             // 
                             // ... Then we wrap *that* in a ... <https://www.youtube.com/watch?v=evUWersr7pc>
-                            CachedWidget {
-                                spaces_bar_wrapper := mod.widgets.SpacesBarWrapper {}
-                            }
+                            spaces_bar_wrapper := mod.widgets.SpacesBarWrapper {}
 
                             // At the bottom of the root view, show the navigation tab bar horizontally.
-                            CachedWidget {
-                                navigation_tab_bar := mod.widgets.NavigationTabBar {}
-                            }
+                            navigation_tab_bar := mod.widgets.NavigationTabBar {}
                         }
 
                         main_content_view := StackNavigationView {

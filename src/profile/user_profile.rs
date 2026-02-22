@@ -193,7 +193,7 @@ script_mod! {
                     color: (COLOR_ACTIVE_PRIMARY)
                 }
                 draw_icon +: {
-                    svg_file: (mod.widgets.ICON_DOUBLE_CHAT)
+                    svg: (mod.widgets.ICON_DOUBLE_CHAT)
                     color: (COLOR_PRIMARY)
                 }
                 draw_text +: {
@@ -211,7 +211,7 @@ script_mod! {
                     color: (COLOR_SECONDARY)
                 }
                 draw_icon +: {
-                    svg_file: (ICON_COPY)
+                    svg: (ICON_COPY)
                 }
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -1, right: -1} }
                 text: "Copy Link to User"
@@ -225,7 +225,7 @@ script_mod! {
                     color: (COLOR_SECONDARY)
                 }
                 draw_icon +: {
-                    svg_file: (ICON_JUMP)
+                    svg: (ICON_JUMP)
                 }
                 icon_walk: Walk{width: 14, height: 16, margin: Inset{left: -1, right: 1.5}}
                 text: "Jump to Read Receipt"
@@ -235,7 +235,7 @@ script_mod! {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
                 draw_icon +: {
-                    svg_file: (ICON_FORBIDDEN)
+                    svg: (ICON_FORBIDDEN)
                     color: (COLOR_FG_DANGER_RED),
                 }
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -0.5} }
@@ -297,7 +297,7 @@ script_mod! {
                     color: (COLOR_SECONDARY)
                 }
                 draw_icon +: {
-                    svg_file: (ICON_CLOSE),
+                    svg: (ICON_CLOSE),
                     get_color: fn() -> vec4 {
                         return #x0;
                     }

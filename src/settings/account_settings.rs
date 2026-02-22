@@ -64,7 +64,7 @@ script_mod! {
                             color: (COLOR_ACTIVE_PRIMARY)
                         }
                         draw_icon +: {
-                            svg_file: (ICON_UPLOAD)
+                            svg: (ICON_UPLOAD)
                             color: (COLOR_PRIMARY)
                         }
                         draw_text +: {
@@ -99,7 +99,7 @@ script_mod! {
                             border_color: (COLOR_FG_DANGER_RED)
                         }
                         draw_icon +: {
-                            svg_file: (ICON_TRASH),
+                            svg: (ICON_TRASH),
                             color: (COLOR_FG_DANGER_RED),
                         }
                         draw_text +: {
@@ -148,7 +148,7 @@ script_mod! {
                     color: (COLOR_BG_DISABLED)
                 }
                 draw_icon +: {
-                    svg_file: (ICON_FORBIDDEN),
+                    svg: (ICON_FORBIDDEN),
                     color: (COLOR_FG_DISABLED)
                 }
                 icon_walk: Walk{width: 16, height: 16, margin: 0}
@@ -170,7 +170,7 @@ script_mod! {
                     border_radius: 5
                 }
                 draw_icon +: {
-                    svg_file: (ICON_CHECKMARK)
+                    svg: (ICON_CHECKMARK)
                     color: (COLOR_FG_DISABLED),
                 }
                 icon_walk: Walk{width: 16, height: 16, margin: 0}
@@ -208,7 +208,7 @@ script_mod! {
                     color: (COLOR_SECONDARY)
                 }
                 draw_icon +: {
-                    svg_file: (ICON_COPY)
+                    svg: (ICON_COPY)
                 }
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{right: -2} }
             }
@@ -245,7 +245,7 @@ script_mod! {
                     color: (COLOR_ACTIVE_PRIMARY)
                 }
                 draw_icon +: {
-                    svg_file: (ICON_EXTERNAL_LINK)
+                    svg: (ICON_EXTERNAL_LINK)
                     color: (COLOR_PRIMARY)
                 }
                 draw_text +: {
@@ -264,7 +264,7 @@ script_mod! {
                     border_color: (COLOR_FG_DANGER_RED)
                 }
                 draw_icon +: {
-                    svg_file: (ICON_LOGOUT),
+                    svg: (ICON_LOGOUT),
                     color: (COLOR_FG_DANGER_RED),
                 }
                 draw_text +: {

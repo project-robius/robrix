@@ -80,7 +80,7 @@ script_mod! {
                         align: Align{x: 0.5, y: 0.5}
                         padding: 15
                         // draw_icon +: {
-                        //     svg_file: (ICON_FORBIDDEN)
+                        //     svg: (ICON_FORBIDDEN)
                         //     color: (COLOR_FG_DANGER_RED),
                         // }
                         icon_walk: Walk{width: 0, height: 0 }

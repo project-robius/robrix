@@ -23,7 +23,7 @@ script_mod! {
         align: Align{x: 0.5, y: 0.5}
         icon_walk: Walk{width: 14, height: 14, margin: 0}
         draw_icon +: {
-            svg_file: (ICON_COPY),
+            svg: (ICON_COPY),
             color: #666
         }
         draw_bg +: {
@@ -105,7 +105,7 @@ script_mod! {
                 align: Align{x: 0.5, y: 0.5}
                 icon_walk: Walk{width: 18, height: 18, margin: 0}
                 draw_icon +: {
-                    svg_file: (ICON_CLOSE),
+                    svg: (ICON_CLOSE),
                     color: #666
                 }
                 draw_bg +: {

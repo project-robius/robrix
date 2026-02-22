@@ -248,9 +248,7 @@ script_mod! {
 
             show_bg: false
 
-            CachedWidget {
-                spaces_list := mod.widgets.SpacesListDesktop {}
-            }
+            spaces_list := mod.widgets.SpacesListDesktop {}
         }
 
         Mobile := View {
@@ -260,9 +258,7 @@ script_mod! {
 
             show_bg: false
 
-            CachedWidget {
-                spaces_list := mod.widgets.SpacesListMobile {}
-            }
+            spaces_list := mod.widgets.SpacesListMobile {}
         }
     }
 }

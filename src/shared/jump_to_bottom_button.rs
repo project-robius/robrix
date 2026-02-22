@@ -27,7 +27,7 @@ script_mod! {
                 spacing: 0,
                 width: 50, height: 50,
                 margin: Inset{bottom: 8},
-                draw_icon +: {svg_file: (mod.widgets.ICO_JUMP_TO_BOTTOM)},
+                draw_icon +: {svg: (mod.widgets.ICO_JUMP_TO_BOTTOM)},
                 icon_walk: Walk{width: 20, height: 20, margin: Inset{top: 10, right: 4.5} }
                 // draw a circular background for the button
                 draw_bg +: {

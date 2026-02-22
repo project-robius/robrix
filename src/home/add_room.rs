@@ -83,7 +83,7 @@ script_mod! {
                     color: (COLOR_ACTIVE_PRIMARY)
                 }
                 draw_icon +: {
-                    svg_file: (ICON_SEARCH)
+                    svg: (ICON_SEARCH)
                     color: (COLOR_PRIMARY)
                 }
                 draw_text +: {
@@ -254,7 +254,7 @@ script_mod! {
                 join_room_button := RobrixIconButton {
                     padding: 15,
                     draw_icon +: {
-                        svg_file: (ICON_JOIN_ROOM),
+                        svg: (ICON_JOIN_ROOM),
                         color: (COLOR_FG_ACCEPT_GREEN),
                     }
                     icon_walk: Walk{width: 17, height: 17, margin: Inset{left: -2, right: -1} }
@@ -272,7 +272,7 @@ script_mod! {
                     align: Align{x: 0.5, y: 0.5}
                     padding: 15
                     draw_icon +: {
-                        svg_file: (ICON_FORBIDDEN)
+                        svg: (ICON_FORBIDDEN)
                         color: (COLOR_FG_DANGER_RED),
                     }
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }

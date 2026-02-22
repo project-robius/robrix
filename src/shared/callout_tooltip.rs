@@ -324,28 +324,30 @@ impl CalloutTooltip {
         bg_color: Vec4,
     ) {
         let tooltip_pos = vec2(position_calc.tooltip_pos.x as f32, position_calc.tooltip_pos.y as f32);
+        let triangle_height = triangle_height as f32;
+        let expected_dimension_x = expected_dimension.x as f32;
+        let callout_position = position_calc.callout_position as f32;
+        let margin = Inset {
+            left: tooltip_pos.x as f64,
+            top: tooltip_pos.y as f64,
+            right: 0.0,
+            bottom: 0.0,
+        };
 
-        let mut content = tooltip.view(cx, ids!(content));
-        script_apply_eval!(cx, content, {
-            margin: Inset{
-                left: #(tooltip_pos.x),
-                top: #(tooltip_pos.y),
-                right: 0.0,
-                bottom: 0.0
-            }
-        });
-
-        let mut rounded_view = tooltip.view(cx, ids!(content.rounded_view));
-        script_apply_eval!(cx, rounded_view, {
-            height: Size.Fit,
-            draw_bg +: {
-                triangle_height: #(triangle_height as f32),
-                background_color: #(bg_color),
-                tooltip_pos: #(tooltip_pos),
-                target_pos: #(target),
-                target_size: #(target_size),
-                expected_dimension_x: #(expected_dimension.x as f32),
-                callout_position: #(position_calc.callout_position as f32),
+        script_apply_eval!(cx, tooltip, {
+            content: {
+                margin: #(margin)
+                rounded_view: {
+                    draw_bg +: {
+                        triangle_height: #(triangle_height)
+                        background_color: #(bg_color)
+                        tooltip_pos: #(tooltip_pos)
+                        target_pos: #(target)
+                        target_size: #(target_size)
+                        expected_dimension_x: #(expected_dimension_x)
+                        callout_position: #(callout_position)
+                    }
+                }
             }
         });
 
@@ -353,12 +355,11 @@ impl CalloutTooltip {
         if position_calc.fixed_width {
             let fixed_width = (position_calc.width_to_be_fixed - 15.0 * 2.0).max(0.0);
             script_apply_eval!(cx, tooltip_label, {
-                width: #(fixed_width),
+                width: #(fixed_width)
                 draw_text +: { color: #(text_color) }
             });
         } else {
             script_apply_eval!(cx, tooltip_label, {
-                width: Size.Fit,
                 draw_text +: { color: #(text_color) }
             });
         }

@@ -47,7 +47,7 @@ script_mod! {
         join_successor_button := RobrixIconButton {
             padding: 15,
             draw_icon +: {
-                svg_file: (ICON_JOIN_ROOM),
+                svg: (ICON_JOIN_ROOM),
                 color: (COLOR_FG_ACCEPT_GREEN),
             }
             icon_walk: Walk{width: 17, height: 17, margin: Inset{left: -2, right: -1} }

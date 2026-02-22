@@ -23,7 +23,7 @@ script_mod! {
             width: 19, height: 19,
             align: Align{x: 0.5, y: 0.5}
             draw_icon +: {
-                svg_file: (ICON_TOMBSTONE)
+                svg: (ICON_TOMBSTONE)
                 color: (COLOR_FG_DANGER_RED)
             }
             icon_walk: Walk{ width: 15, height: 15 }

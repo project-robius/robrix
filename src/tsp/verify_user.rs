@@ -66,7 +66,7 @@ script_mod! {
                         color: (COLOR_BG_DANGER_RED)
                     }
                     draw_icon +: {
-                        svg_file: (ICON_CLOSE)
+                        svg: (ICON_CLOSE)
                         color: (COLOR_FG_DANGER_RED),
                     }
                     draw_text +: {
@@ -109,7 +109,7 @@ script_mod! {
                         color: (COLOR_BG_ACCEPT_GREEN)
                     }
                     draw_icon +: {
-                        svg_file: (ICON_CHECKMARK)
+                        svg: (ICON_CHECKMARK)
                         color: (COLOR_FG_ACCEPT_GREEN),
                     }
                     draw_text +: {

@@ -46,7 +46,7 @@ script_mod! {
                         color: (COLOR_SECONDARY)
                     }
                     draw_icon +: {
-                        svg_file: (ICON_CLOSE),
+                        svg: (ICON_CLOSE),
                         get_color: fn() -> vec4 {
                             return #x0;
                         }
