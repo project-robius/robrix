@@ -2,10 +2,13 @@
 //!
 //! Also used as a confirmation dialog for accepting or rejecting room invites.
 
+use std::borrow::Cow;
+
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
+use tokio::sync::mpsc::UnboundedSender;
 
-use crate::{home::invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, room::BasicRoomDetails, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
+use crate::{home::invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, room::BasicRoomDetails, shared::popup_list::{PopupKind, enqueue_popup_notification}, sliding_sync::{MatrixRequest, submit_async_request}, space_service_sync::{SpaceRequest, SpaceRoomListAction}, utils::{self, RoomNameId}};
 use crate::shared::styles::{COLOR_ACTIVE_PRIMARY, COLOR_PRIMARY, COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN};
 
 live_design! {
@@ -158,18 +161,30 @@ pub enum JoinLeaveModalKind {
     /// The user wants to reject an invite to a room.
     RejectInvite(InviteDetails),
     /// The user wants to join a room that they have not joined yet.
-    JoinRoom(BasicRoomDetails),
+    JoinRoom {
+        details: BasicRoomDetails,
+        is_space: bool,
+    },
     /// The user wants to leave an already-joined room.
-    #[allow(unused)]
     LeaveRoom(BasicRoomDetails),
+    /// The user wants to leave an already-joined space.
+    /// This is its own variant because it's a much more complex procedure
+    /// than leaving a room. Eventually this should be moved to its own modal,
+    /// e.g., in order to allow the user to select which joine rooms in the space
+    /// that they also want to leave, but for now we reuse this modal for convenience.
+    LeaveSpace {
+        details: BasicRoomDetails,
+        space_request_sender: UnboundedSender<SpaceRequest>,
+    },
 }
 impl JoinLeaveModalKind {
     pub fn room_id(&self) -> &OwnedRoomId {
         match self {
             JoinLeaveModalKind::AcceptInvite(invite)
             | JoinLeaveModalKind::RejectInvite(invite) => invite.room_id(),
-            JoinLeaveModalKind::JoinRoom(details)
-            |JoinLeaveModalKind::LeaveRoom(details) => details.room_id(),
+            JoinLeaveModalKind::JoinRoom { details, .. }
+            | JoinLeaveModalKind::LeaveRoom(details)
+            | JoinLeaveModalKind::LeaveSpace { details, .. } => details.room_id(),
         }
     }
 
@@ -177,8 +192,9 @@ impl JoinLeaveModalKind {
         match self {
             JoinLeaveModalKind::AcceptInvite(invite)
             | JoinLeaveModalKind::RejectInvite(invite) => invite.room_name_id(),
-            JoinLeaveModalKind::JoinRoom(details)
-            | JoinLeaveModalKind::LeaveRoom(details)   => details.room_name_id(),
+            JoinLeaveModalKind::JoinRoom { details, .. }
+            | JoinLeaveModalKind::LeaveRoom(details)
+            | JoinLeaveModalKind::LeaveSpace { details, .. } => details.room_name_id(),
         }
     }
 
@@ -187,8 +203,9 @@ impl JoinLeaveModalKind {
         match self {
             JoinLeaveModalKind::AcceptInvite(invite)
             | JoinLeaveModalKind::RejectInvite(invite) => &invite.room_info,
-            JoinLeaveModalKind::JoinRoom(details)
-            | JoinLeaveModalKind::LeaveRoom(details) => details,
+            JoinLeaveModalKind::JoinRoom { details, .. }
+            | JoinLeaveModalKind::LeaveRoom(details)
+            | JoinLeaveModalKind::LeaveSpace { details, .. } => details,
         }
     }
 }
@@ -251,12 +268,12 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                 return;
             }
             else {
-                let title: &str;
+                let title: Cow<str>;
                 let description: String;
                 let accept_button_text: &str;
                 match kind {
                     JoinLeaveModalKind::AcceptInvite(invite) => {
-                        title = "Accepting this invite...";
+                        title = "Accepting this invite...".into();
                         description = format!(
                             "Accepting an invitation to join \"{}\".\n\n\
                             Waiting for confirmation from the homeserver...",
@@ -268,7 +285,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         });
                     }
                     JoinLeaveModalKind::RejectInvite(invite) => {
-                        title = "Rejecting this invite...";
+                        title = "Rejecting this invite...".into();
                         description = format!(
                             "Rejecting an invitation to join \"{}\".\n\n\
                             Waiting for confirmation from the homeserver...",
@@ -279,20 +296,20 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                             room_id: invite.room_id().clone(),
                         });
                     }
-                    JoinLeaveModalKind::JoinRoom(room) => {
-                        title = "Joining this room...";
+                    JoinLeaveModalKind::JoinRoom { details, is_space } => {
+                        title = format!("Joining this {}...", if *is_space { "space" } else { "room" }).into();
                         description = format!(
                             "Joining \"{}\".\n\n\
                             Waiting for confirmation from the homeserver...",
-                            room.room_name_id(),
+                            details.room_name_id(),
                         );
                         accept_button_text = "Joining...";
                         submit_async_request(MatrixRequest::JoinRoom {
-                            room_id: room.room_id().clone(),
+                            room_id: details.room_id().clone(),
                         });
                     }
                     JoinLeaveModalKind::LeaveRoom(room) => {
-                        title = "Leaving this room...";
+                        title = "Leaving this room...".into();
                         description = format!(
                             "Leaving \"{}\".\n\n\
                             Waiting for confirmation from the homeserver...",
@@ -303,9 +320,27 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                             room_id: room.room_id().clone(),
                         });
                     }
+                    JoinLeaveModalKind::LeaveSpace { details, space_request_sender } => {
+                        title = "Leaving this space...".into();
+                        description = format!(
+                            "Leaving \"{}\".\n\n\
+                            Waiting for confirmation from the homeserver...",
+                            details.room_name_id(),
+                        );
+                        accept_button_text = "Leaving...";
+                        if space_request_sender.send(
+                            SpaceRequest::LeaveSpace { space_name_id: details.room_name_id().clone() }
+                        ).is_err() {
+                            enqueue_popup_notification(
+                                "Failed to send leave space request.\n\nPlease restart Robrix.",
+                                PopupKind::Error,
+                                None,
+                            );
+                        }
+                    }
                 }
 
-                self.view.label(ids!(title)).set_text(cx, title);
+                self.view.label(ids!(title)).set_text(cx, &title);
                 self.view.label(ids!(description)).set_text(cx, &description);
                 self.view.view(ids!(tip_view)).set_visible(cx, false);
                 accept_button.set_text(cx, accept_button_text);
@@ -318,11 +353,11 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
         for action in actions {
             match action.downcast_ref() {
                 Some(JoinRoomResultAction::Joined { room_id }) if room_id == kind.room_id() => {
-                    enqueue_popup_notification(PopupItem {
-                        message: "Successfully joined room.".into(),
-                        kind: PopupKind::Success,
-                        auto_dismissal_duration: Some(3.0),
-                    });
+                    enqueue_popup_notification(
+                        "Successfully joined room.",
+                        PopupKind::Success,
+                        Some(3.0),
+                    );
                     self.view.label(ids!(title)).set_text(cx, "Joined room!");
                     self.view.label(ids!(description)).set_text(cx, &format!(
                         "Successfully joined \"{}\".",
@@ -335,66 +370,82 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     let was_invite = matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_));
                     let msg = utils::stringify_join_leave_error(error, kind.room_name(), true, was_invite);
                     self.view.label(ids!(description)).set_text(cx, &msg);
-                    enqueue_popup_notification(PopupItem {
-                        message: msg,
-                        kind: PopupKind::Error,
-                        auto_dismissal_duration: None
-                    });
+                    enqueue_popup_notification(
+                        msg,
+                        PopupKind::Error,
+                        None,
+                    );
                     new_final_success = Some(false);
                 }
                 _ => {}
             }
+
             match action.downcast_ref() {
                 Some(LeaveRoomResultAction::Left { room_id }) if room_id == kind.room_id() => {
                     let title: &str;
                     let description: String;
-                    let popup_msg: String;
-                    match kind {
-                        JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_) => {
-                            title = "Rejected invite!";
-                            description = format!(
-                                "Successfully rejected invite to \"{}\".",
-                                kind.room_name(),
-                            );
-                            popup_msg = "Successfully rejected invite.".into();
-                        }
-                        JoinLeaveModalKind::JoinRoom(_) | JoinLeaveModalKind::LeaveRoom(_) => {
-                            title = "Left room!";
-                            description = format!(
-                                "Successfully left \"{}\".",
-                                kind.room_name(),
-                            );
-                            popup_msg = "Successfully left room.".into();
-                        }
+                    let popup_msg: Cow<'static, str>;
+                    if matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_)) {
+                        title = "Rejected invite!";
+                        description = format!(
+                            "Successfully rejected invite to \"{}\".",
+                            kind.room_name(),
+                        );
+                        popup_msg = "Successfully rejected invite.".into();
+                    } else {
+                        title = "Left room!";
+                        description = format!(
+                            "Successfully left \"{}\".",
+                            kind.room_name(),
+                        );
+                        popup_msg = "Successfully left room.".into();
                     }
                     self.view.label(ids!(title)).set_text(cx, title);
                     self.view.label(ids!(description)).set_text(cx, &description);
-                    enqueue_popup_notification(PopupItem { message: popup_msg, kind: PopupKind::Success, auto_dismissal_duration: Some(5.0) });
+                    enqueue_popup_notification(popup_msg, PopupKind::Success, Some(5.0));
                     new_final_success = Some(true);
                 }
                 Some(LeaveRoomResultAction::Failed { room_id, error }) if room_id == kind.room_id() => {
                     let title: &str;
                     let description: String;
-                    let popup_msg: String;
-                    match kind {
-                        JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_) => {
-                            title = "Error rejecting invite!";
-                            description = utils::stringify_join_leave_error(error, kind.room_name(), false, true);
-                            popup_msg = "Failed to reject invite.".into();
-                        }
-                        JoinLeaveModalKind::JoinRoom(_) | JoinLeaveModalKind::LeaveRoom(_) => {
-                            title = "Error leaving room!";
-                            description = utils::stringify_join_leave_error(error, kind.room_name(), false, false);
-                            popup_msg = "Failed to leave room.".into();
-                        }
+                    let popup_msg: Cow<'static, str>;
+                    if matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_)) {
+                        title = "Error rejecting invite!";
+                        description = utils::stringify_join_leave_error(error, kind.room_name(), false, true);
+                        popup_msg = "Failed to reject invite.".into();
+                    } else {
+                        title = "Error leaving room!";
+                        description = utils::stringify_join_leave_error(error, kind.room_name(), false, false);
+                        popup_msg = "Failed to leave room.".into();
                     }
 
                     self.view.label(ids!(title)).set_text(cx, title);
                     self.view.label(ids!(description)).set_text(cx, &description);
-                    enqueue_popup_notification(PopupItem { message: popup_msg, kind: PopupKind::Error, auto_dismissal_duration: None });
+                    enqueue_popup_notification(popup_msg, PopupKind::Error, None);
                     new_final_success = Some(false);
                 }
                 _ => {}
+            }
+
+            if let Some(SpaceRoomListAction::LeaveSpaceResult { space_name_id, result }) = action.downcast_ref() {
+                if space_name_id.room_id() == kind.room_id() {
+                    let title: &str;
+                    let description: String;
+                    match result {
+                        Ok(()) => {
+                            title = "Left space!";
+                            description = format!("Successfully left \"{space_name_id}\".");
+                            new_final_success = Some(true);
+                        }
+                        Err(e) => {
+                            title = "Error leaving space!";
+                            description = format!("Failed to leave space \"{space_name_id}\".\n\nError: {e}");
+                            new_final_success = Some(false);
+                        }
+                    }
+                    self.view.label(ids!(title)).set_text(cx, title);
+                    self.view.label(ids!(description)).set_text(cx, &description);
+                }
             }
         }
 
@@ -462,11 +513,15 @@ impl JoinLeaveRoomModal {
                 );
                 tip_button = "Reject";
             }
-            JoinLeaveModalKind::JoinRoom(room) => {
-                title = "Join this room?";
+            JoinLeaveModalKind::JoinRoom { details, is_space } => {
+                title = if *is_space {
+                    "Join this space?"
+                } else {
+                    "Join this room?"
+                };
                 description = format!(
                     "Are you sure you want to join \"{}\"?",
-                    room.room_name_id()
+                    details.room_name_id()
                 );
                 tip_button = "Join";
             }
@@ -477,6 +532,17 @@ impl JoinLeaveRoomModal {
                     If this is a private room, you won't be able to join this room \
                     without being re-invited to it.",
                     room.room_name_id()
+                );
+                tip_button = "Leave";
+            }
+            JoinLeaveModalKind::LeaveSpace { details, .. } => {
+                title = "Leave this space?";
+                description = format!(
+                    "Are you sure you want to leave \"{}\"?\n\n\
+                    If you leave this space, you will also leave any joined rooms within this space.\n\n\
+                    If this is a private space, you won't be able to join this space \
+                    without being re-invited to it.",
+                    details.room_name_id()
                 );
                 tip_button = "Leave";
             }

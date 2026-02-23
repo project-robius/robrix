@@ -15,14 +15,12 @@
 //! * A "cannot-send-message" notice, which is shown if the user cannot send messages to the room.
 //!
 
-use std::sync::Arc;
 
 use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
-use ruma::{OwnedRoomId, events::room::message::{LocationMessageEventContent, MessageType, RoomMessageEventContent}};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetExt}, image_utils::generate_thumbnail_if_image, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{FileLoadReceiver, FilePreviewerMetaData}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, UserPowerLevels, submit_async_request}, utils};
-use crate::shared::file_upload_modal::FilePreviewerAction;
+use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedRoomId};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetExt}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{FileLoadReceiver, FilePreviewerAction}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 
 live_design! {
     use link::theme::*;
@@ -224,11 +222,11 @@ impl Widget for RoomInputBar {
                         MessageAction::JumpToEvent(event_id),
                     );
                 } else {
-                    enqueue_popup_notification(PopupItem {
-                        message: String::from("BUG: couldn't find the message you're replying to."),
-                        kind: PopupKind::Error,
-                        auto_dismissal_duration: None
-                    });
+                    enqueue_popup_notification(
+                        "BUG: couldn't find the message you're replying to.",
+                        PopupKind::Error,
+                        None,
+                    );
                 }
             }
             _ => {}
@@ -293,11 +291,11 @@ impl RoomInputBar {
             log!("Add location button clicked; requesting current location...");
             if let Err(_e) = init_location_subscriber(cx) {
                 error!("Failed to initialize location subscriber");
-                enqueue_popup_notification(PopupItem {
-                    message: String::from("Failed to initialize location services."),
-                    kind: PopupKind::Error,
-                    auto_dismissal_duration: None
-                });
+                enqueue_popup_notification(
+                    "Failed to initialize location services.",
+                    PopupKind::Error,
+                    None,
+                );
             }
             self.view.location_preview(ids!(location_preview)).show();
             self.redraw(cx);
@@ -312,22 +310,14 @@ impl RoomInputBar {
                     Ok(metadata) => metadata.len(),
                     Err(e) => {
                         error!("Failed to read file metadata for {:?}: {}", selected_file_path, e);
-                        enqueue_popup_notification(PopupItem {
-                            message: format!("Unable to access file: {}", e),
-                            auto_dismissal_duration: None,
-                            kind: PopupKind::Error
-                        });
+                        enqueue_popup_notification( format!("Unable to access file: {}", e), PopupKind::Error, None);
                         return;
                     }
                 };
 
                 // Check for empty files
                 if file_size == 0 {
-                    enqueue_popup_notification(PopupItem {
-                        message: String::from("Cannot upload empty file"),
-                        auto_dismissal_duration: None,
-                        kind: PopupKind::Error
-                    });
+                    enqueue_popup_notification(String::from("Cannot upload empty file"), PopupKind::Error, None);
                     return;
                 }
 
@@ -353,8 +343,14 @@ impl RoomInputBar {
                 
                 // Read file in background thread to avoid blocking the UI
                 cx.spawn_thread(move || {
+                    use crate::image_utils::generate_thumbnail_if_image;
+
                     match generate_thumbnail_if_image(&selected_file_path, &mime) {
                         Ok(file_data) => {
+                            use std::sync::Arc;
+
+                            use crate::shared::file_upload_modal::FilePreviewerMetaData;
+
                             let metadata = FilePreviewerMetaData {
                                 filename,
                                 mime,
@@ -368,11 +364,7 @@ impl RoomInputBar {
                         }
                         Err(read_error) => {
                             error!("Failed to read file {:?}: {}", selected_file_path, read_error);
-                            enqueue_popup_notification(PopupItem {
-                                message: format!("Unable to read the file: {}", read_error),
-                                auto_dismissal_duration: None,
-                                kind: PopupKind::Error
-                            });
+                            enqueue_popup_notification(format!("Unable to read the file: {}", read_error), PopupKind::Error, None);
                             if sender.send(None).is_err() {
                                 error!("Failed to send file data to UI: receiver dropped");
                             }
@@ -402,17 +394,30 @@ impl RoomInputBar {
                         LocationMessageEventContent::new(geo_uri.clone(), geo_uri)
                     )
                 );
+                let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
+                    event_tl_item.event_id().map(|event_id| {
+                        let enforce_thread = if room_screen_props.timeline_kind.thread_root_event_id().is_some() {
+                            EnforceThread::Threaded(ReplyWithinThread::Yes)
+                        } else {
+                            EnforceThread::MaybeThreaded
+                        };
+                        Reply {
+                            event_id: event_id.to_owned(),
+                            enforce_thread,
+                        }
+                    })
+                ).or_else(||
+                    room_screen_props.timeline_kind.thread_root_event_id().map(|thread_root_event_id|
+                        Reply {
+                            event_id: thread_root_event_id.clone(),
+                            enforce_thread: EnforceThread::Threaded(ReplyWithinThread::No),
+                        }
+                    )
+                );
                 submit_async_request(MatrixRequest::SendMessage {
-                    room_id: room_screen_props.room_name_id.room_id().clone(),
+                    timeline_kind: room_screen_props.timeline_kind.clone(),
                     message,
-                    replied_to: self.replying_to.take().and_then(|(event_tl_item, _emb)|
-                        event_tl_item.event_id().map(|event_id|
-                            Reply {
-                                event_id: event_id.to_owned(),
-                                enforce_thread: EnforceThread::MaybeThreaded,
-                            }
-                        )
-                    ),
+                    replied_to,
                     #[cfg(feature = "tsp")]
                     sign_with_tsp: self.is_tsp_signing_enabled(cx),
                 });
@@ -430,17 +435,30 @@ impl RoomInputBar {
             let entered_text = mentionable_text_input.text().trim().to_string();
             if !entered_text.is_empty() {
                 let message = mentionable_text_input.create_message_with_mentions(&entered_text);
+                let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
+                    event_tl_item.event_id().map(|event_id| {
+                        let enforce_thread = if room_screen_props.timeline_kind.thread_root_event_id().is_some() {
+                            EnforceThread::Threaded(ReplyWithinThread::Yes)
+                        } else {
+                            EnforceThread::MaybeThreaded
+                        };
+                        Reply {
+                            event_id: event_id.to_owned(),
+                            enforce_thread,
+                        }
+                    })
+                ).or_else(||
+                    room_screen_props.timeline_kind.thread_root_event_id().map(|thread_root_event_id|
+                        Reply {
+                            event_id: thread_root_event_id.clone(),
+                            enforce_thread: EnforceThread::Threaded(ReplyWithinThread::No),
+                        }
+                    )
+                );
                 submit_async_request(MatrixRequest::SendMessage {
-                    room_id: room_screen_props.room_name_id.room_id().clone(),
+                    timeline_kind: room_screen_props.timeline_kind.clone(),
                     message,
-                    replied_to: self.replying_to.take().and_then(|(event_tl_item, _emb)|
-                        event_tl_item.event_id().map(|event_id|
-                            Reply {
-                                event_id: event_id.to_owned(),
-                                enforce_thread: EnforceThread::MaybeThreaded,
-                            }
-                        )
-                    ),
+                    replied_to,
                     #[cfg(feature = "tsp")]
                     sign_with_tsp: self.is_tsp_signing_enabled(cx),
                 });
@@ -456,7 +474,7 @@ impl RoomInputBar {
         let is_text_input_empty = if let Some(new_text) = text_input.changed(actions) {
             let is_empty = new_text.is_empty();
             submit_async_request(MatrixRequest::SendTypingNotice {
-                room_id: room_screen_props.room_name_id.room_id().clone(),
+                room_id: room_screen_props.timeline_kind.room_id().clone(),
                 typing: !is_empty,
             });
             is_empty
@@ -529,7 +547,7 @@ impl RoomInputBar {
         &mut self,
         cx: &mut Cx,
         replying_to: (EventTimelineItem, EmbeddedEvent),
-        room_id: &OwnedRoomId,
+        timeline_kind: &TimelineKind,
         grab_key_focus: bool,
     ) {
         // When the user clicks the reply button next to a message, we need to:
@@ -539,7 +557,7 @@ impl RoomInputBar {
             .avatar(ids!(reply_preview_content.reply_preview_avatar))
             .set_avatar_and_get_username(
                 cx,
-                room_id,
+                timeline_kind,
                 replying_to.0.sender(),
                 Some(replying_to.0.sender_profile()),
                 replying_to.0.event_id(),
@@ -586,7 +604,7 @@ impl RoomInputBar {
         &mut self,
         cx: &mut Cx,
         behavior: ShowEditingPaneBehavior,
-        room_id: OwnedRoomId,
+        timeline_kind: TimelineKind,
     ) {
         // We must hide the input_bar while the editing pane is shown,
         // otherwise a very-tall inputted message might show up underneath a shorter editing pane.
@@ -603,10 +621,10 @@ impl RoomInputBar {
         let editing_pane = self.view.editing_pane(ids!(editing_pane));
         match behavior {
             ShowEditingPaneBehavior::ShowNew { event_tl_item } => {
-                editing_pane.show(cx, event_tl_item, room_id);
+                editing_pane.show(cx, event_tl_item, timeline_kind);
             }
             ShowEditingPaneBehavior::RestoreExisting { editing_pane_state } => {
-                editing_pane.restore_state(cx, editing_pane_state, room_id);
+                editing_pane.restore_state(cx, editing_pane_state, timeline_kind);
             }
         };
 
@@ -700,10 +718,10 @@ impl RoomInputBarRef {
         &self,
         cx: &mut Cx,
         replying_to: (EventTimelineItem, EmbeddedEvent),
-        room_id: &OwnedRoomId,
+        timeline_kind: &TimelineKind,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.show_replying_to(cx, replying_to, room_id, true);
+        inner.show_replying_to(cx, replying_to, timeline_kind, true);
     }
 
     /// Shows the editing pane to allow the user to edit the given event.
@@ -711,13 +729,13 @@ impl RoomInputBarRef {
         &self,
         cx: &mut Cx,
         event_tl_item: EventTimelineItem,
-        room_id: OwnedRoomId,
+        timeline_kind: TimelineKind,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.show_editing_pane(
             cx,
             ShowEditingPaneBehavior::ShowNew { event_tl_item },
-            room_id,
+            timeline_kind,
         );
     }
 
@@ -775,7 +793,7 @@ impl RoomInputBarRef {
     pub fn restore_state(
         &self,
         cx: &mut Cx,
-        room_id: &OwnedRoomId,
+        timeline_kind: TimelineKind,
         saved_state: RoomInputBarState,
         user_power_levels: UserPowerLevels,
         tombstone_info: Option<&SuccessorRoomDetails>,
@@ -801,7 +819,7 @@ impl RoomInputBarRef {
 
         // 2. Restore the state of the replying-to preview.
         if let Some(replying_to) = replying_to {
-            inner.show_replying_to(cx, replying_to, room_id, false);
+            inner.show_replying_to(cx, replying_to, &timeline_kind, false);
         } else {
             inner.clear_replying_to(cx);
         }
@@ -812,7 +830,7 @@ impl RoomInputBarRef {
             inner.show_editing_pane(
                 cx,
                 ShowEditingPaneBehavior::RestoreExisting { editing_pane_state },
-                room_id.clone(),
+                timeline_kind.clone(),
             );
         } else {
             inner.editing_pane(ids!(editing_pane)).force_reset_hide(cx);
@@ -821,7 +839,7 @@ impl RoomInputBarRef {
 
         // 4. Restore the state of the tombstone footer.
         //    This depends on the `EditingPane` state, so it must be done after Step 3.
-        inner.update_tombstone_footer(cx, room_id, tombstone_info);
+        inner.update_tombstone_footer(cx, timeline_kind.room_id(), tombstone_info);
     }
 }
 

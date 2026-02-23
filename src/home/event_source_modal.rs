@@ -4,7 +4,7 @@ use makepad_code_editor::code_view::CodeViewWidgetExt;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId};
 
-use crate::shared::popup_list::{PopupItem, PopupKind, enqueue_popup_notification};
+use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
 
 
 live_design! {
@@ -292,33 +292,33 @@ impl WidgetMatchEvent for EventSourceModal {
         if self.view.button(ids!(room_id_row.copy_button)).clicked(actions) {
             if let Some(room_id) = &self.room_id {
                 cx.copy_to_clipboard(room_id.as_str());
-                enqueue_popup_notification(PopupItem {
-                    message: "Copied Room ID to clipboard.".to_string(),
-                    auto_dismissal_duration: Some(3.0),
-                    kind: PopupKind::Success,
-                });
+                enqueue_popup_notification(
+                    "Copied Room ID to clipboard.",
+                    PopupKind::Success,
+                    Some(3.0),
+                );
             }
         }
 
         if self.view.button(ids!(event_id_row.copy_button)).clicked(actions) {
             if let Some(event_id) = &self.event_id {
                 cx.copy_to_clipboard(event_id.as_str());
-                enqueue_popup_notification(PopupItem {
-                    message: "Copied Event ID to clipboard.".to_string(),
-                    auto_dismissal_duration: Some(3.0),
-                    kind: PopupKind::Success,
-                });
+                enqueue_popup_notification(
+                    "Copied Event ID to clipboard.",
+                    PopupKind::Success,
+                    Some(3.0),
+                );
             }
         }
 
         if self.view.button(ids!(copy_source_button)).clicked(actions) {
             if let Some(json) = &self.original_json {
                 cx.copy_to_clipboard(json);
-                enqueue_popup_notification(PopupItem {
-                    message: "Copied event source to clipboard.".to_string(),
-                    auto_dismissal_duration: Some(3.0),
-                    kind: PopupKind::Success,
-                });
+                enqueue_popup_notification(
+                    "Copied event source to clipboard.",
+                    PopupKind::Success,
+                    Some(3.0),
+                );
             }
         }
     }

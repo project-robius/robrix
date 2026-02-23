@@ -4,7 +4,7 @@ use std::{borrow::Cow, ops::{Deref, DerefMut}};
 use makepad_widgets::*;
 use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId}};
 use crate::{
-    avatar_cache, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, current_user_id, is_user_ignored, submit_async_request}, utils
+    avatar_cache, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, current_user_id, is_user_ignored, submit_async_request}, utils
 };
 use super::user_profile_cache;
 
@@ -105,7 +105,8 @@ live_design! {
             }
 
             user_name = <Label> {
-                width: Fit, height: Fit
+                width: Fill, height: Fit
+                align: {x: 0.5}
                 draw_text: {
                     wrap: Word,
                     color: #000,
@@ -115,7 +116,8 @@ live_design! {
             }
 
             user_id = <Label> {
-                width: Fit, height: Fit
+                width: Fill, height: Fit
+                align: {x: 0.5}
                 draw_text: {
                     wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
@@ -515,21 +517,22 @@ impl Widget for UserProfileSlidingPane {
         let Some(info) = self.info.as_ref() else { return };
 
         if let Event::Actions(actions) = event {
-
             if self.button(ids!(direct_message_button)).clicked(actions) {
-                submit_async_request(MatrixRequest::CreateOrOpenDirectMessage {
-                    user_id: info.user_id.clone(),
+                submit_async_request(MatrixRequest::OpenOrCreateDirectMessage {
+                    user_profile: info.user_profile.clone(),
+                    // Don't just create a new DM room; we want to first get confirmation from the user.
+                    allow_create: false,
                 });
             }
 
             if self.button(ids!(copy_link_to_user_button)).clicked(actions) {
                 let matrix_to_uri = info.user_id.matrix_to_uri().to_string();
                 cx.copy_to_clipboard(&matrix_to_uri);
-                enqueue_popup_notification(PopupItem {
-                    message: String::from("Copied User ID to the clipboard."),
-                    auto_dismissal_duration: Some(3.0),
-                    kind: PopupKind::Success
-                });
+                enqueue_popup_notification(
+                    "Copied User ID to the clipboard.",
+                    PopupKind::Success,
+                    Some(3.0),
+                );
             }
 
             // TODO: implement the third button: `jump_to_read_receipt_button`,
@@ -576,22 +579,22 @@ impl Widget for UserProfileSlidingPane {
         self.label(ids!(membership_status_label)).set_text(cx, info.membership_status());
         self.label(ids!(role_info_label)).set_text(cx, info.role_in_room().as_ref());
 
-        // Draw and enable/disable the buttons according to user and room membership info:
-        // * `direct_message_button` is disabled if the user is the same as the account user,
+        // Draw and show/hide the buttons according to user and room membership info:
+        // * `direct_message_button` is hidden if the user is the same as the account user,
         //    since you cannot direct message yourself.
         // * `copy_link_to_user_button` is always enabled with the same text.
         // * `jump_to_read_receipt_button` is always enabled with the same text.
-        // * `ignore_user_button` is disabled if the user is not a member of the room,
+        // * `ignore_user_button` is hidden if the user is not a member of the room,
         //    or if the user is the same as the account user, since you cannot ignore yourself.
         //    * The button text changes to "Unignore" if the user is already ignored.
         let is_pane_showing_current_account = info.room_member.as_ref()
             .map(|rm| rm.is_account_user())
             .unwrap_or_else(|| current_user_id().is_some_and(|uid| uid == info.user_id));
 
-        self.button(ids!(direct_message_button)).set_enabled(cx, !is_pane_showing_current_account);
+        self.button(ids!(direct_message_button)).set_visible(cx, !is_pane_showing_current_account);
 
         let ignore_user_button = self.button(ids!(ignore_user_button));
-        ignore_user_button.set_enabled(cx, !is_pane_showing_current_account && info.room_member.is_some());
+        ignore_user_button.set_visible(cx, !is_pane_showing_current_account && info.room_member.is_some());
         // Unfortunately the Matrix SDK's RoomMember type does not properly track
         // the `ignored` state of a user, so we have to maintain it separately.
         let is_ignored = info.room_member.as_ref()
@@ -650,7 +653,7 @@ impl UserProfileSlidingPane {
             }
         }
         info.avatar_state.update_from_cache(cx);
-        
+
         // If TSP is enabled, populate the TSP verification info for this user.
         #[cfg(feature = "tsp")] {
             use crate::tsp::verify_user::TspVerifyUserWidgetExt;

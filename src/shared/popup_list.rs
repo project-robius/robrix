@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 
@@ -18,7 +19,16 @@ const ICON_SET: &[&[LiveId]] = ids_array!(error_icon, info_icon, success_icon, w
 /// Popup notifications will be shown in the order they were enqueued,
 /// and can be removed when manually closed by the user or automatically.
 /// Maximum auto dismissal duration is 3 minutes.
-pub fn enqueue_popup_notification(mut popup_item: PopupItem) {
+pub fn enqueue_popup_notification(
+    message: impl Into<Cow<'static, str>>,
+    kind: PopupKind,
+    auto_dismissal_duration: Option<f64>,
+) {
+    let mut popup_item = PopupItem {
+        message: message.into(),
+        kind,
+        auto_dismissal_duration,
+    };
     // Limit auto dismiss duration to 180 seconds
     popup_item.auto_dismissal_duration = popup_item
         .auto_dismissal_duration
@@ -69,7 +79,7 @@ pub enum PopupKind {
 #[derive(Default, Debug, Clone)]
 pub struct PopupItem {
     /// Text to be displayed in the popup.
-    pub message: String,
+    pub message: Cow<'static, str>,
     /// Duration in seconds after which the popup will be automatically closed.
     /// Maximum duration is 3 minutes.
     /// If none, the popup will not automatically close.
@@ -598,7 +608,7 @@ impl RobrixPopupNotification {
     /// let view = View::new_from_ptr(cx, content);
     /// let popup_item = PopupItem {
     ///     kind: PopupKind::Info,
-    ///     message: "Welcome!".to_string(),
+    ///     message: Cow::Borrowed("Welcome!"),
     ///     auto_dismissal_duration: Some(4.0),
     /// };
     ///  view.label(ids!(popup_label))

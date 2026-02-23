@@ -1,10 +1,11 @@
 //! A top-level view for adding (joining) or exploring new rooms and spaces.
 
+
 use makepad_widgets::*;
 use matrix_sdk::RoomState;
 use ruma::{IdParseError, MatrixToUri, MatrixUri, OwnedRoomOrAliasId, OwnedServerName, matrix_uri::MatrixId, room::{JoinRuleSummary, RoomType}};
 
-use crate::{app::AppStateAction, home::invite_screen::JoinRoomResultAction, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{avatar::AvatarWidgetRefExt, popup_list::{PopupItem, PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, submit_async_request}, utils};
+use crate::{app::AppStateAction, home::invite_screen::JoinRoomResultAction, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{avatar::AvatarWidgetRefExt, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, submit_async_request}, utils};
 
 live_design! {
     use link::theme::*;
@@ -452,11 +453,11 @@ impl Widget for AddRoomScreen {
                     }
                     Err(e) => {
                         let err_str = format!("Could not parse the text as a valid room address.\nError: {e}.");
-                        enqueue_popup_notification(PopupItem {
-                            message: err_str.clone(),
-                            auto_dismissal_duration: None,
-                            kind: PopupKind::Error,
-                        });
+                        enqueue_popup_notification(
+                            err_str.clone(),
+                            PopupKind::Error,
+                            None,
+                        );
                         self.state = AddRoomState::ParseError(err_str);
                     }
                 }
@@ -481,11 +482,11 @@ impl Widget for AddRoomScreen {
                         }
                         Some(RoomPreviewAction::Fetched(Err(e))) => {
                             let err_str = format!("Failed to fetch room info.\n\nError: {e}.");
-                            enqueue_popup_notification(PopupItem {
-                                message: err_str.clone(),
-                                auto_dismissal_duration: None,
-                                kind: PopupKind::Error,
-                            });
+                            enqueue_popup_notification(
+                                err_str.clone(),
+                                PopupKind::Error,
+                                None,
+                            );
                             self.state = AddRoomState::FetchError(err_str);
                             self.redraw(cx);
                             break;
@@ -508,20 +509,20 @@ impl Widget for AddRoomScreen {
                                 Some(RoomType::Space) => "space",
                                 _ => "room",
                             };
-                            enqueue_popup_notification(PopupItem {
-                                message: format!("Successfully knocked on {room_type} {}.", frp.room_name_id),
-                                auto_dismissal_duration: Some(4.0),
-                                kind: PopupKind::Success,
-                            });
+                            enqueue_popup_notification(
+                                format!("Successfully knocked on {room_type} {}.", frp.room_name_id),
+                                PopupKind::Success,
+                                Some(4.0),
+                            );
                             transition_to_knocked = true;
                             break;
                         }
                         Some(KnockResultAction::Failed { error, room_or_alias_id: roai }) if room_or_alias_id == roai => {
-                            enqueue_popup_notification(PopupItem {
-                                message: format!("Failed to knock on room.\n\nError: {error}."),
-                                auto_dismissal_duration: None,
-                                kind: PopupKind::Error,
-                            });
+                            enqueue_popup_notification(
+                                format!("Failed to knock on room.\n\nError: {error}."),
+                                PopupKind::Error,
+                                None,
+                            );
                             break;
                         }
                         _ => { }
@@ -533,20 +534,20 @@ impl Widget for AddRoomScreen {
                                 Some(RoomType::Space) => "space",
                                 _ => "room",
                             };
-                            enqueue_popup_notification(PopupItem {
-                                message: format!("Successfully joined {room_type} {}.", frp.room_name_id),
-                                auto_dismissal_duration: Some(4.0),
-                                kind: PopupKind::Success,
-                            });
+                            enqueue_popup_notification(
+                                format!("Successfully joined {room_type} {}.", frp.room_name_id),
+                                PopupKind::Success,
+                                Some(4.0),
+                            );
                             transition_to_joined = true;
                             break;
                         }
                         Some(JoinRoomResultAction::Failed { room_id, error }) if room_id == frp.room_name_id.room_id() => {
-                            enqueue_popup_notification(PopupItem {
-                                message: format!("Failed to join room.\n\nError: {error}."),
-                                auto_dismissal_duration: None,
-                                kind: PopupKind::Error,
-                            });
+                            enqueue_popup_notification(
+                                format!("Failed to join room.\n\nError: {error}."),
+                                PopupKind::Error,
+                                None,
+                            );
                             break;
                         }
                         _ => {}

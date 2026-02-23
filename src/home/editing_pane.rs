@@ -2,7 +2,6 @@ use makepad_widgets::{text::selection::Cursor, *};
 use matrix_sdk::{
     room::edit::EditedContent,
     ruma::{
-        OwnedRoomId,
         events::{
             poll::unstable_start::{UnstablePollAnswer, UnstablePollStartContentBlock},
             room::message::{FormattedBody, MessageType, RoomMessageEventContentWithoutRelation},
@@ -13,7 +12,8 @@ use matrix_sdk_ui::timeline::{EventTimelineItem, MsgLikeKind, TimelineEventItemI
 
 use crate::shared::mentionable_text_input::MentionableTextInputWidgetExt;
 use crate::{
-    shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, sliding_sync::{submit_async_request, MatrixRequest}
+    shared::popup_list::{enqueue_popup_notification, PopupKind},
+    sliding_sync::{submit_async_request, MatrixRequest, TimelineKind},
 };
 
 live_design! {
@@ -150,7 +150,7 @@ pub enum EditingPaneAction {
 /// The information maintained by the EditingPane widget.
 struct EditingPaneInfo {
     event_tl_item: EventTimelineItem,
-    room_id: OwnedRoomId,
+    timeline_kind: TimelineKind,
 }
 
 /// A view that slides in from the bottom of the screen to allow editing a message.
@@ -289,7 +289,11 @@ impl Widget for EditingPane {
                                         )
                                     },
                                     _non_editable => {
-                                        enqueue_popup_notification(PopupItem { message: "That message type cannot be edited.".into(), kind: PopupKind::Error, auto_dismissal_duration: None });
+                                        enqueue_popup_notification(
+                                            "That message type cannot be edited.",
+                                            PopupKind::Error,
+                                            None,
+                                        );
                                         self.animator_play(cx, ids!(panel.hide));
                                         self.redraw(cx);
                                         return;
@@ -323,10 +327,10 @@ impl Widget for EditingPane {
                                     .try_into()
                                 else {
                                     enqueue_popup_notification(
-                                        PopupItem { message: "Failed to obtain existing poll answers while editing poll.".into(),
-                                        kind: PopupKind::Error,
-                                        auto_dismissal_duration: None
-                                    });
+                                        "Failed to obtain existing poll answers while editing poll.",
+                                        PopupKind::Error,
+                                        None,
+                                    );
                                     return;
                                 };
                                 let mut new_content_block = UnstablePollStartContentBlock::new(
@@ -345,19 +349,27 @@ impl Widget for EditingPane {
 
                             }
                             _ => {
-                                enqueue_popup_notification(PopupItem { message: "That event type cannot be edited.".into(), kind: PopupKind::Error, auto_dismissal_duration: None });
+                                enqueue_popup_notification(
+                                    "That event type cannot be edited.",
+                                    PopupKind::Error,
+                                    None,
+                                );
                                 return;
                             }
                         }
                     }
                     _ => {
-                        enqueue_popup_notification(PopupItem { message: "That event type cannot be edited.".into(), kind: PopupKind::Error, auto_dismissal_duration: None });
+                        enqueue_popup_notification(
+                            "That event type cannot be edited.",
+                            PopupKind::Error,
+                            None,
+                        );
                         return;
                     },
                 };
 
                 submit_async_request(MatrixRequest::EditMessage {
-                    room_id: info.room_id.clone(),
+                    timeline_kind: info.timeline_kind.clone(),
                     timeline_event_item_id: info.event_tl_item.identifier(),
                     edited_content,
                 });
@@ -404,15 +416,28 @@ impl EditingPane {
                 self.animator_play(cx, ids!(panel.hide));
             },
             Err(e) => {
-                enqueue_popup_notification(PopupItem { message: format!("Failed to edit message: {}", e), kind: PopupKind::Error, auto_dismissal_duration: None });
+                enqueue_popup_notification(
+                    format!("Failed to edit message: {}", e),
+                    PopupKind::Error,
+                    None,
+                );
             },
         }
     }
 
     /// Shows the editing pane and sets it up to edit the given `event`'s content.
-    pub fn show(&mut self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId) {
+    pub fn show(
+        &mut self,
+        cx: &mut Cx,
+        event_tl_item: EventTimelineItem,
+        timeline_kind: TimelineKind,
+    ) {
         if !event_tl_item.is_editable() {
-            enqueue_popup_notification(PopupItem {message: "That message cannot be edited.".into(), kind: PopupKind::Error, auto_dismissal_duration: None });
+            enqueue_popup_notification(
+                "That message cannot be edited.",
+                PopupKind::Error,
+                None,
+            );
             return;
         }
 
@@ -423,12 +448,19 @@ impl EditingPane {
         } else if let Some(poll) = event_tl_item.content().as_poll() {
             edit_text_input.set_text(cx, &poll.results().question);
         } else {
-            enqueue_popup_notification(PopupItem { message: "That message cannot be edited.".into(), kind: PopupKind::Error, auto_dismissal_duration: None });
+            enqueue_popup_notification(
+                "That message cannot be edited.",
+                PopupKind::Error,
+                None,
+            );
             return;
         }
 
 
-        self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
+        self.info = Some(EditingPaneInfo {
+            event_tl_item,
+            timeline_kind,
+        });
 
         self.visible = true;
         self.button(ids!(accept_button)).reset_hover(cx);
@@ -463,13 +495,16 @@ impl EditingPane {
         &mut self,
         cx: &mut Cx,
         editing_pane_state: EditingPaneState,
-        room_id: OwnedRoomId,
+        timeline_kind: TimelineKind,
     ) {
         let EditingPaneState { event_tl_item, text_input_state } = editing_pane_state;
         self.mentionable_text_input(ids!(editing_content.edit_text_input))
             .text_input_ref()
             .restore_state(cx, text_input_state);
-        self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
+        self.info = Some(EditingPaneInfo {
+            event_tl_item,
+            timeline_kind,
+        });
         self.visible = true;
         self.button(ids!(accept_button)).reset_hover(cx);
         self.button(ids!(cancel_button)).reset_hover(cx);
@@ -513,11 +548,16 @@ impl EditingPaneRef {
     }
 
     /// See [`EditingPane::show()`].
-    pub fn show(&self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId) {
+    pub fn show(
+        &self,
+        cx: &mut Cx,
+        event_tl_item: EventTimelineItem,
+        timeline_kind: TimelineKind,
+    ) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
-        inner.show(cx, event_tl_item, room_id);
+        inner.show(cx, event_tl_item, timeline_kind);
     }
 
     /// See [`EditingPane::save_state()`].
@@ -532,10 +572,10 @@ impl EditingPaneRef {
         &self,
         cx: &mut Cx,
         editing_pane_state: EditingPaneState,
-        room_id: OwnedRoomId,
+        timeline_kind: TimelineKind,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.restore_state(cx, editing_pane_state, room_id);
+        inner.restore_state(cx, editing_pane_state, timeline_kind);
     }
 
     /// Hides the editing pane immediately and clears its state without animating it out.

@@ -389,8 +389,7 @@ impl Widget for ProfileIcon {
 
         let area = self.view.area();
         match event.hits(cx, area) {
-            Hit::FingerLongPress(_)
-            | Hit::FingerHoverIn(_) => {
+            Hit::FingerLongPress(_) | Hit::FingerHoverIn(_) => {
                 let (verification_str, bg_color) = self.view
                     .verification_badge(ids!(verification_badge))
                     .tooltip_content();

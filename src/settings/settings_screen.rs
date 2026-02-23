@@ -11,7 +11,6 @@ live_design! {
     use crate::shared::helpers::*;
     use crate::shared::styles::*;
     use crate::shared::icon_button::*;
-    use crate::shared::confirmation_modal::*;
     use crate::settings::account_settings::AccountSettings;
     use link::tsp_link::TspSettingsScreen;
     use link::tsp_link::CreateWalletModal;
@@ -99,12 +98,6 @@ live_design! {
                 create_did_modal_inner = <CreateDidModal> {}
             }
         }
-
-        remove_delete_wallet_modal = <Modal> {
-            content: {
-                remove_delete_wallet_modal_inner = <NegativeConfirmationModal> { }
-            }
-        }
     }
 }
 
@@ -146,11 +139,9 @@ impl Widget for SettingsScreen {
 
         #[cfg(feature = "tsp")]
         if let Event::Actions(actions) = event {
-            use crate::shared::confirmation_modal::ConfirmationModalWidgetExt;
             use crate::tsp::{
                 create_did_modal::CreateDidModalAction,
                 create_wallet_modal::CreateWalletModalAction,
-                wallet_entry::TspWalletEntryAction,
             };
 
             for action in actions {
@@ -179,18 +170,6 @@ impl Widget for SettingsScreen {
                     }
                     None => { }
                 }
-
-                // Handle a request to show a TSP wallet confirmation modal.
-                if let Some(TspWalletEntryAction::ShowConfirmationModal(content_opt)) = action.downcast_ref() {
-                    if let Some(content) = content_opt.borrow_mut().take() {
-                        self.view.confirmation_modal(ids!(remove_delete_wallet_modal_inner)).show(cx, content);
-                        self.view.modal(ids!(remove_delete_wallet_modal)).open(cx);
-                    }
-                }
-            }
-
-            if let Some(_accepted) = self.view.confirmation_modal(ids!(remove_delete_wallet_modal_inner)).closed(actions) {
-                self.view.modal(ids!(remove_delete_wallet_modal)).close(cx);
             }
         }
     }

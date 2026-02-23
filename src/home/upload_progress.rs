@@ -2,7 +2,7 @@
 
 use makepad_widgets::*;
 
-use crate::shared::popup_list::{PopupItem, PopupKind, enqueue_popup_notification};
+use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
 use crate::shared::progress_bar::ProgressBarAction;
 
 /// Actions emitted by the UploadProgressView widget.
@@ -108,11 +108,7 @@ impl WidgetMatchEvent for UploadProgressView {
             // Hide the progress bar immediately
             self.hide(cx);
             self.upload_abort_receiver = None;
-            enqueue_popup_notification(PopupItem {
-                message: String::from("Upload cancelled"),
-                kind: PopupKind::Info,
-                auto_dismissal_duration: Some(3.0)
-            });
+            enqueue_popup_notification(format!("Upload cancelled"), PopupKind::Info, Some(3.0));
 
             cx.widget_action(
                 self.widget_uid(),
