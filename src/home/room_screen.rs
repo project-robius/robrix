@@ -2981,7 +2981,6 @@ fn populate_message_view(
     let mut new_drawn_status = item_drawn_status;
     let ts_millis = event_tl_item.timestamp();
 
-    let mut is_notice = false; // whether this message is a Notice
     let mut is_server_notice = false; // whether this message is a Server Notice
 
     // Determine whether we can use a more compact UI view that hides the user's profile info
@@ -3038,7 +3037,6 @@ fn populate_message_view(
                 // A notice message is just a message sent by an automated bot,
                 // so we treat it just like a message but use a different font color.
                 MessageType::Notice(NoticeMessageEventContent{body, formatted, ..}) => {
-                    is_notice = true;
                     has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
                     let template = if use_compact_view {
                         id!(CondensedMessage)
@@ -3049,25 +3047,7 @@ fn populate_message_view(
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
-                        let mut html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
-                        script_apply_eval!(cx, html_or_plaintext_ref, {
-                            html_view: {
-                                html: {
-                                    font_color: #(COLOR_MESSAGE_NOTICE_TEXT),
-                                    draw_text +: { color: #(COLOR_MESSAGE_NOTICE_TEXT) },
-                                    draw_block +: {
-                                        line_color: #(COLOR_MESSAGE_NOTICE_TEXT),
-                                        sep_color: #(COLOR_MESSAGE_NOTICE_TEXT),
-                                        quote_fg_color: #(COLOR_MESSAGE_NOTICE_TEXT)
-                                    }
-                                }
-                            }
-                            plaintext_view: {
-                                pt_label: {
-                                    draw_text +: { color: #(COLOR_MESSAGE_NOTICE_TEXT) }
-                                }
-                            }
-                        });
+                        let html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
                         let mut link_preview_ref =
                             item.link_preview(cx, ids!(content.link_preview_view));
                         new_drawn_status.content_drawn = populate_text_message_content(
@@ -3089,25 +3069,7 @@ fn populate_message_view(
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
-                        let mut html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
-                        script_apply_eval!(cx, html_or_plaintext_ref, {
-                            html_view: {
-                                html: {
-                                    font_color: #(COLOR_FG_DANGER_RED),
-                                    draw_text +: { color: #(COLOR_FG_DANGER_RED) },
-                                    draw_block +: {
-                                        line_color: #(COLOR_FG_DANGER_RED),
-                                        sep_color: #(COLOR_FG_DANGER_RED),
-                                        quote_fg_color: #(COLOR_FG_DANGER_RED)
-                                    }
-                                }
-                            }
-                            plaintext_view: {
-                                pt_label: {
-                                    draw_text +: { color: #(COLOR_FG_DANGER_RED) }
-                                }
-                            }
-                        });
+                        let html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
                         let formatted = format!(
                             "<b>Server notice:</b> {}\n\n<i>Notice type:</i>: {}{}{}",
                             sn.body,
@@ -3507,14 +3469,6 @@ fn populate_message_view(
                     true,
                 )
             );
-            if is_notice {
-                let mut username_label_ref = username_label.clone();
-                script_apply_eval!(cx, username_label_ref, {
-                    draw_text +: {
-                        color: #(COLOR_MESSAGE_NOTICE_TEXT)
-                    }
-                });
-            }
             username_label.set_text(cx, &username);
             new_drawn_status.profile_drawn = profile_drawn;
         }
@@ -3523,12 +3477,6 @@ fn populate_message_view(
             let avatar = item.avatar(cx, ids!(profile.avatar));
             avatar.show_text(cx, Some(COLOR_FG_DANGER_RED), None, "⚠");
             username_label.set_text(cx, "Server notice");
-            let mut username_label_ref = username_label.clone();
-            script_apply_eval!(cx, username_label_ref, {
-                draw_text +: {
-                    color: #(COLOR_FG_DANGER_RED)
-                }
-            });
             new_drawn_status.profile_drawn = true;
         }
     }

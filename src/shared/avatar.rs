@@ -95,6 +95,7 @@ script_mod! {
 
 #[derive(ScriptHook, Script, Widget)]
 pub struct Avatar {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
 
     /// Information about the user profile being shown in this Avatar.

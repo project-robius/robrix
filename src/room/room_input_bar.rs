@@ -159,6 +159,7 @@ script_mod! {
 /// Main component for message input with @mention support
 #[derive(Script, ScriptHook, Widget)]
 pub struct RoomInputBar {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
 
     /// Whether the `ReplyingPreview` was visible when the `EditingPane` was shown.
@@ -503,8 +504,8 @@ impl RoomInputBar {
         };
         script_apply_eval!(cx, send_message_button, {
             enabled: #(enable),
-            draw_icon.color: #(fg_color),
-            draw_bg.color: #(bg_color),
+            draw_icon +: { color: #(fg_color) },
+            draw_bg +: { color: #(bg_color) },
         });
     }
 

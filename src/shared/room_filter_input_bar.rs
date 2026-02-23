@@ -1,9 +1,8 @@
 //! A text input used to filter the rooms list
 //! with a search icon and a button to clear the input.
 //!
-//! This is a dedicated widget instead of a general "SearchBar"
-//! in order for us to be able to place it inside of a `CachedWidget`
-//! and have a single instance be shared across the Mobile and Desktop app views.
+//! This is a dedicated widget instead of a general "SearchBar" so it can be
+//! reused consistently across both Desktop and Mobile layouts.
 
 use makepad_widgets::*;
 
@@ -38,7 +37,7 @@ script_mod! {
                     return (COLOR_TEXT_INPUT_IDLE);
                 }
             }
-            icon_walk: Walk{width: 14, height: Fit}
+            icon_walk: Walk{width: 14, height: 14}
         }
 
         input := RobrixTextInput {

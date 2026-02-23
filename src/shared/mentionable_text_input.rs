@@ -305,6 +305,7 @@ pub enum MentionableTextInputAction {
 /// Widget that extends CommandTextInput with @mention capabilities
 #[derive(Script, ScriptHook, Widget)]
 pub struct MentionableTextInput {
+    #[source] source: ScriptObjectRef,
     /// Base command text input
     #[deref] cmd_text_input: CommandTextInput,
     /// Template for user list items

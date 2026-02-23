@@ -146,6 +146,8 @@ enum InternalAction {
 /// Limitation: Selectable items are expected to be `View`s.
 #[derive(Script, ScriptHook, Widget)]
 pub struct CommandTextInput {
+    #[source]
+    source: ScriptObjectRef,
     #[deref]
     deref: View,
 

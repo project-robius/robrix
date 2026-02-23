@@ -624,6 +624,7 @@ impl Widget for MatrixHtmlSpan {
 
 #[derive(ScriptHook, Script, Widget)]
 pub struct HtmlOrPlaintext {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
 }
 

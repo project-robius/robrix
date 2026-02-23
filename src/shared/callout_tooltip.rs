@@ -161,6 +161,7 @@ pub enum TooltipPosition {
 /// A tooltip widget that a callout pointing towards the referenced widget.
 #[derive(Script, ScriptHook, Widget)]
 pub struct CalloutTooltip {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
 
     // The below items are a hack to re-populate this tooltip automatically
@@ -320,7 +321,7 @@ impl CalloutTooltip {
         target_size: Vec2,
         expected_dimension: DVec2,
         triangle_height: f64,
-        text_color: Vec4,
+        _text_color: Vec4,
         bg_color: Vec4,
     ) {
         let tooltip_pos = vec2(position_calc.tooltip_pos.x as f32, position_calc.tooltip_pos.y as f32);
@@ -334,35 +335,30 @@ impl CalloutTooltip {
             bottom: 0.0,
         };
 
-        script_apply_eval!(cx, tooltip, {
-            content: {
-                margin: #(margin)
-                rounded_view: {
-                    draw_bg +: {
-                        triangle_height: #(triangle_height)
-                        background_color: #(bg_color)
-                        tooltip_pos: #(tooltip_pos)
-                        target_pos: #(target)
-                        target_size: #(target_size)
-                        expected_dimension_x: #(expected_dimension_x)
-                        callout_position: #(callout_position)
-                    }
-                }
+        let mut content_view = tooltip.view(cx, ids!(content));
+        script_apply_eval!(cx, content_view, {
+            margin: #(margin)
+        });
+        if position_calc.fixed_width {
+            let fixed_width = position_calc.width_to_be_fixed.max(24.0);
+            script_apply_eval!(cx, content_view, {
+                width: #(fixed_width)
+            });
+        }
+
+        let mut rounded_view = tooltip.view(cx, ids!(content.rounded_view));
+        script_apply_eval!(cx, rounded_view, {
+            draw_bg +: {
+                triangle_height: #(triangle_height)
+                background_color: #(bg_color)
+                tooltip_pos: #(tooltip_pos)
+                target_pos: #(target)
+                target_size: #(target_size)
+                expected_dimension_x: #(expected_dimension_x)
+                callout_position: #(callout_position)
             }
         });
 
-        let mut tooltip_label = tooltip.label(cx, ids!(content.rounded_view.tooltip_label));
-        if position_calc.fixed_width {
-            let fixed_width = (position_calc.width_to_be_fixed - 15.0 * 2.0).max(0.0);
-            script_apply_eval!(cx, tooltip_label, {
-                width: #(fixed_width)
-                draw_text +: { color: #(text_color) }
-            });
-        } else {
-            script_apply_eval!(cx, tooltip_label, {
-                draw_text +: { color: #(text_color) }
-            });
-        }
     }
 
     /// Shows a tooltip with the given text and options.
@@ -415,11 +411,6 @@ impl CalloutTooltip {
             widget_rect.size.y as f32,
         );
 
-        let mut text_color = options.text_color;
-        if expected_dimension.x == 0.0 {
-            text_color.w = 0.0;
-        }
-
         Self::apply_tooltip_config(
             &mut tooltip,
             cx,
@@ -428,7 +419,7 @@ impl CalloutTooltip {
             target_size,
             expected_dimension,
             options.triangle_height,
-            text_color,
+            options.text_color,
             options.bg_color,
         );
 

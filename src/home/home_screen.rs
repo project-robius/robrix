@@ -53,10 +53,6 @@ script_mod! {
     // It adapts to both desktop and mobile layouts.
     mod.widgets.HomeScreen = #(HomeScreen::register_widget(vm)) {
         AdaptiveView {
-            // NOTE: within each of these sub views, we used `CachedWidget` wrappers
-            //       to ensure that there is only a single global instance of each
-            //       of those widgets, which means they maintain their state
-            //       across transitions between the Desktop and Mobile variant.
             Desktop := View {
                 show_bg: true
                 draw_bg +: {
@@ -92,9 +88,7 @@ script_mod! {
                             spacing: 2
                             align: Align{y: 0.5}
 
-                            CachedWidget {
-                                room_filter_input_bar := RoomFilterInputBar {}
-                            }
+                            room_filter_input_bar := RoomFilterInputBar {}
 
                             search_messages_button := SearchMessagesButton {
                                 // make this button match/align with the RoomFilterInputBar
@@ -113,9 +107,7 @@ script_mod! {
                             color: (COLOR_PRIMARY)
                         }
 
-                        CachedWidget {
-                            settings_screen := mod.widgets.SettingsScreen {}
-                        }
+                        settings_screen := mod.widgets.SettingsScreen {}
                     }
 
                     add_room_page := View {
@@ -125,9 +117,7 @@ script_mod! {
                             color: (COLOR_PRIMARY)
                         }
 
-                        CachedWidget {
-                            add_room_screen := mod.widgets.AddRoomScreen {}
-                        }
+                        add_room_screen := mod.widgets.AddRoomScreen {}
                     }
                 }
             }
@@ -168,27 +158,19 @@ script_mod! {
                                     width: Fill, height: Fill
                                     padding: Inset{top: 20}
 
-                                    CachedWidget {
-                                        settings_screen := mod.widgets.SettingsScreen {}
-                                    }
+                                    settings_screen := mod.widgets.SettingsScreen {}
                                 }
 
                                 add_room_page := View {
                                     width: Fill, height: Fill
                                     padding: Inset{top: 20}
 
-                                    CachedWidget {
-                                        add_room_screen := mod.widgets.AddRoomScreen {}
-                                    }
+                                    add_room_screen := mod.widgets.AddRoomScreen {}
                                 }
                             }
 
                             // Show the SpacesBar right above the navigation tab bar.
-                            // We wrap it in the SpacesBarWrapper in order to animate it in or out,
-                            // and wrap *that* in a CachedWidget in order to maintain its shown/hidden state
-                            // across AdaptiveView transitions between Mobile view mode and Desktop view mode.
-                            // 
-                            // ... Then we wrap *that* in a ... <https://www.youtube.com/watch?v=evUWersr7pc>
+                            // We wrap it in SpacesBarWrapper in order to animate it in or out.
                             spaces_bar_wrapper := mod.widgets.SpacesBarWrapper {}
 
                             // At the bottom of the root view, show the navigation tab bar horizontally.

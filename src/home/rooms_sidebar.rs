@@ -38,12 +38,8 @@ script_mod! {
                 }
             }
 
-            CachedWidget {
-                rooms_list_header := RoomsListHeader {}
-            }
-            CachedWidget {
-                rooms_list := RoomsList {}
-            }
+            rooms_list_header := RoomsListHeader {}
+            rooms_list := RoomsList {}
         },
 
         Mobile := View {
@@ -67,9 +63,7 @@ script_mod! {
 
                 View { height: 20 }
 
-                CachedWidget {
-                    rooms_list_header := RoomsListHeader {}
-                }
+                rooms_list_header := RoomsListHeader {}
 
                 View {
                     width: Fill,
@@ -79,9 +73,7 @@ script_mod! {
                     spacing: 5 
                     align: Align{y: 0.5}
 
-                    CachedWidget {
-                        room_filter_input_bar := RoomFilterInputBar {}
-                    }
+                    room_filter_input_bar := RoomFilterInputBar {}
 
                     search_messages_button := SearchMessagesButton { }
                 }
@@ -90,9 +82,7 @@ script_mod! {
             View {
                 padding: Inset{left: 15, right: 15}
 
-                CachedWidget {
-                    rooms_list := RoomsList {}
-                }
+                rooms_list := RoomsList {}
             }
         }
     }

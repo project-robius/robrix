@@ -55,6 +55,7 @@ script_mod! {
 
 #[derive(Script, ScriptHook, Widget)]
 pub struct UnreadBadge {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
     #[live] is_marked_unread: bool,
     #[live] unread_mentions: u64,

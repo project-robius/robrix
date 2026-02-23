@@ -294,6 +294,7 @@ static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-fo
 
 #[derive(Script, ScriptHook, Widget)]
 pub struct LoginScreen {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
     /// Boolean to indicate if the SSO login process is still in flight
     #[rust] sso_pending: bool,

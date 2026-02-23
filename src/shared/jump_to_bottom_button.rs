@@ -95,6 +95,7 @@ script_mod! {
 
 #[derive(ScriptHook, Script, Widget)]
 pub struct JumpToBottomButton {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
 }
 
