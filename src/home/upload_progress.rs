@@ -142,6 +142,11 @@ impl UploadProgressView {
             self.hide(cx);
             return;
         }
+        // Upload complete, hide the progress view
+        if current >= total && total > 0 {
+            self.hide(cx);
+            return;
+        }
         let progress_percentage = if total > 0 {
             ((current as f64 / total as f64) * 100.0).min(100.0)
         } else {
