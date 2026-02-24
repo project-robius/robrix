@@ -8,7 +8,7 @@ use matrix_sdk::{attachment::Thumbnail, ruma::UInt};
 use mime_guess::mime;
 
 /// Maximum dimensions for image thumbnails
-const THUMBNAIL_MAX_WIDTH: u32 = 600;
+const THUMBNAIL_MAX_WIDTH: u32 = 800;
 const THUMBNAIL_MAX_HEIGHT: u32 = 600;
 
 /// Generates a thumbnail for an image file.
