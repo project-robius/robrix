@@ -20,7 +20,7 @@ use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, TimelineKind, UserPowerLevels}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, TimelineKind, UserPowerLevels}, utils};
 
 live_design! {
     use link::theme::*;
@@ -206,6 +206,68 @@ impl Widget for RoomInputBar {
                 }
             }
             _ => {}
+        }
+
+        // Handle tooltips for location and send buttons, only if the input bar is visible.
+        if self.view.view(ids!(input_bar)).visible() {
+            let location_button_area = self.button(ids!(location_button)).area();
+            match event.hits(cx, location_button_area) {
+                Hit::FingerHoverIn(_) => {
+                    cx.widget_action(
+                        room_screen_props.room_screen_widget_uid,
+                        &scope.path,
+                        TooltipAction::HoverIn {
+                            text: "Share current location".to_string(),
+                            widget_rect: location_button_area.rect(cx),
+                            options: CalloutTooltipOptions {
+                                position: TooltipPosition::Top,
+                                ..Default::default()
+                            },
+                        },
+                    );
+                }
+                Hit::FingerHoverOut(_) => {
+                    cx.widget_action(
+                        room_screen_props.room_screen_widget_uid,
+                        &scope.path,
+                        TooltipAction::HoverOut,
+                    );
+                }
+                _ => {}
+            }
+
+            let send_button_area = self.button(ids!(send_message_button)).area();
+            match event.hits(cx, send_button_area) {
+                Hit::FingerHoverIn(_) => {
+                    let text = self.mentionable_text_input(ids!(mentionable_text_input)).text();
+                    let tooltip_text = if text.trim().is_empty() {
+                        "Message is empty"
+                    } else {
+                        "Send message"
+                    };
+
+                    cx.widget_action(
+                        room_screen_props.room_screen_widget_uid,
+                        &scope.path,
+                        TooltipAction::HoverIn {
+                            text: tooltip_text.to_string(),
+                            widget_rect: send_button_area.rect(cx),
+                            options: CalloutTooltipOptions {
+                                position: TooltipPosition::Top,
+                                ..Default::default()
+                            },
+                        },
+                    );
+                }
+                Hit::FingerHoverOut(_) => {
+                    cx.widget_action(
+                        room_screen_props.room_screen_widget_uid,
+                        &scope.path,
+                        TooltipAction::HoverOut,
+                    );
+                }
+                _ => {}
+            }
         }
 
         if let Event::Actions(actions) = event {
