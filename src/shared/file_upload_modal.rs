@@ -1,14 +1,16 @@
 //! A file previewer modal widget that displays file metadata and previews.
 //!
 //! This widget handles FilePreviewerAction to show and hide the previewer modal.
-//! It also emits FilePreviewerAction::Upload action to upload the selected file.
+//! When the user confirms the upload, it sends a `TimelineUpdate::FileUploadConfirmed`
+//! through the timeline-specific channel to ensure the upload is associated with
+//! the correct room/timeline.
 //! ```
-
-use std::sync::Arc;
 
 use makepad_widgets::*;
 use makepad_widgets::image_cache::{ImageBuffer, ImageError};
 use matrix_sdk::attachment::Thumbnail;
+
+use crate::home::room_screen::TimelineUpdate;
 
 /// Decodes image data into an `ImageBuffer` for rendering.
 ///
@@ -67,22 +69,6 @@ live_design! {
                     color: #000
                 }
                 text: "Upload File"
-            }
-
-            close_button = <RobrixIconButton> {
-                width: Fit, height: Fit,
-                padding: 12,
-                spacing: 0
-                align: {x: 0.5, y: 0.5}
-                icon_walk: {width: 18, height: 18, margin: 0}
-                draw_icon: {
-                    svg_file: (ICON_CLOSE),
-                    color: #666
-                }
-                draw_bg: {
-                    border_size: 0,
-                    color: #0000
-                }
             }
         }
 
@@ -178,23 +164,96 @@ live_design! {
 }
 
 /// Actions emitted by the `FileUploadModal` widget.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, DefaultNone)]
 pub enum FilePreviewerAction {
     /// Display the FileUploadModal widget with the given file data.
+    /// The file data includes the timeline update sender for sending confirmation.
     Show(FileData),
-    /// Upload the file with the given data.
-    Upload(FileData),
     /// Hide the FileUploadModal widget.
     Hide,
     /// No action.
     None,
 }
 
-/// Type alias for file data message sent through the channel.
-pub type FileData = Arc<(FilePreviewerMetaData, Option<Thumbnail>)>;
+/// Data for a file to be uploaded, including metadata, optional thumbnail,
+/// and the timeline update sender to associate the upload with a specific timeline.
+pub struct FileData {
+    /// Metadata about the file (path, size, MIME type).
+    pub metadata: FilePreviewerMetaData,
+    /// Optional thumbnail for image files.
+    pub thumbnail: Option<Thumbnail>,
+    /// The sender to notify the timeline when upload is confirmed.
+    pub timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
+}
 
-/// Type alias for the receiver that gets file data.
-pub type FileLoadReceiver = std::sync::mpsc::Receiver<Option<FileData>>;
+impl Clone for FileData {
+    fn clone(&self) -> Self {
+        Self {
+            metadata: self.metadata.clone(),
+            thumbnail: self.thumbnail.as_ref().map(|t| Thumbnail {
+                data: t.data.clone(),
+                content_type: t.content_type.clone(),
+                height: t.height,
+                width: t.width,
+                size: t.size,
+            }),
+            timeline_update_sender: self.timeline_update_sender.clone(),
+        }
+    }
+}
+
+impl std::fmt::Debug for FileData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FileData")
+            .field("metadata", &self.metadata)
+            .field("thumbnail", &self.thumbnail.as_ref().map(|_| "..."))
+            .field("timeline_update_sender", &"<channel>")
+            .finish()
+    }
+}
+
+impl FileData {
+    /// Creates a new FileData by combining loaded file info with a timeline sender.
+    pub fn new(
+        loaded: FileLoadedData,
+        timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
+    ) -> Self {
+        Self {
+            metadata: loaded.metadata,
+            thumbnail: loaded.thumbnail,
+            timeline_update_sender,
+        }
+    }
+}
+
+/// Data loaded from a file by a background thread.
+/// This is sent through a channel and combined with a timeline sender to create `FileData`.
+#[derive(Debug)]
+pub struct FileLoadedData {
+    /// Metadata about the file (path, size, MIME type).
+    pub metadata: FilePreviewerMetaData,
+    /// Optional thumbnail for image files.
+    pub thumbnail: Option<Thumbnail>,
+}
+
+impl Clone for FileLoadedData {
+    fn clone(&self) -> Self {
+        Self {
+            metadata: self.metadata.clone(),
+            thumbnail: self.thumbnail.as_ref().map(|t| Thumbnail {
+                data: t.data.clone(),
+                content_type: t.content_type.clone(),
+                height: t.height,
+                width: t.width,
+                size: t.size,
+            }),
+        }
+    }
+}
+
+/// Type alias for the receiver that gets loaded file data from a background thread.
+pub type FileLoadReceiver = std::sync::mpsc::Receiver<Option<FileLoadedData>>;
 
 /// A widget that previews files by displaying metadata and content based on file type.
 #[derive(Live, Widget, LiveHook)]
@@ -207,10 +266,10 @@ pub struct FileUploadModal {
 impl FileUploadModal {
     /// Sets the file content to preview, including metadata and image/document display.
     /// For images, attempts to decode and display the preview. Falls back to document view on error.
-    fn set_content(&mut self, cx: &mut Cx, file_load_message: FileData) {
-        self.file_data = Some(file_load_message.clone());
-        self.set_metadata(cx, &file_load_message.clone());
-        if let Some(thumbnail) = &file_load_message.1 {
+    fn set_content(&mut self, cx: &mut Cx, file_data: FileData) {
+        self.file_data = Some(file_data.clone());
+        self.set_metadata(cx, &file_data);
+        if let Some(thumbnail) = &file_data.thumbnail {
             if let Ok(image_buffer) = load_image_from_bytes(&thumbnail.data) {
                 let image_ref = self.view.image(ids!(image_view.preview_image));
                 let texture = image_buffer.into_new_texture(cx);
@@ -243,19 +302,17 @@ impl Widget for FileUploadModal {
 
 impl MatchEvent for FileUploadModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        let close_button = self.view.button(ids!(close_button));
         let cancel_button = self.view.button(ids!(buttons_view.cancel_button));
 
         // Handle closing the modal via close button or cancel button
-        let close_clicked = close_button.clicked(actions);
         let cancel_clicked = cancel_button.clicked(actions);
-        if close_clicked || cancel_clicked ||
+        if  cancel_clicked ||
             actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
         {
             // If the modal was dismissed by clicking outside of it, we MUST NOT emit
             // a FilePreviewerAction::Hide action, as that would cause
             // an infinite action feedback loop.
-            if close_clicked || cancel_clicked {
+            if cancel_clicked {
                 cx.action(FilePreviewerAction::Hide);
             }
             self.file_data = None;
@@ -264,15 +321,18 @@ impl MatchEvent for FileUploadModal {
 
         if self.view.button(ids!(buttons_view.upload_button)).clicked(actions) {
             if let Some(file_data) = self.file_data.take() {
-                cx.action(FilePreviewerAction::Upload(file_data));
+                // Send the file upload confirmation through the timeline-specific channel
+                // included in the file data.
+                let _ = file_data.timeline_update_sender.send(TimelineUpdate::FileUploadConfirmed { file_data: file_data.clone() });
+                SignalToUI::set_ui_signal();
             }
+            cx.action(FilePreviewerAction::Hide);
             return;
         }
 
         for action in actions {
             if let Some(FilePreviewerAction::Show(file_data)) = action.downcast_ref() {
                 self.set_content(cx, file_data.clone());
-                self.file_data = Some(file_data.clone());
                 continue;
             }
         }
@@ -282,8 +342,11 @@ impl MatchEvent for FileUploadModal {
 impl FileUploadModal {
     /// Sets the displayed file metadata (filename and formatted size).
     pub fn set_metadata(&mut self, cx: &mut Cx, file_data: &FileData) {
-        let formatted_size = format_file_size(file_data.0.file_size);
-        let display_text = format!("{} - ({})", file_data.0.filename, formatted_size);
+        let formatted_size = crate::utils::format_file_size(file_data.metadata.file_size);
+        let filename = file_data.metadata.file_path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown");
+        let display_text = format!("{} - ({})", filename, formatted_size);
         self.view.label(ids!(metadata_view.filename_text)).set_text(cx, &display_text);
     }
 
@@ -367,37 +430,10 @@ pub enum FileType {
     Image,
 }
 
-/// Converts bytes to a human-readable file size string (e.g., "1.5 MB", "512 KB").
-///
-/// Uses binary units (1024 bytes = 1 KB) for conversion.
-/// For sizes less than 1 KB, displays the exact byte count without decimal places.
-pub fn format_file_size(bytes: u64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-
-    if bytes == 0 {
-        return "0 B".to_string();
-    }
-
-    let mut size = bytes as f64;
-    let mut unit_index = 0;
-
-    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_index += 1;
-    }
-
-    if unit_index == 0 {
-        // Show exact bytes without decimal for values < 1 KB
-        format!("{} B", bytes)
-    } else {
-        format!("{:.1} {}", size, UNITS[unit_index])
-    }
-}
-
 /// Metadata for a file to be previewed.
 #[derive(Debug, Clone)]
 pub struct FilePreviewerMetaData {
-    pub filename: String,
+    /// MIME type of the file
     pub mime: mime_guess::Mime,
     /// File size in bytes
     pub file_size: u64,

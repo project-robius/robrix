@@ -20,7 +20,7 @@ use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetExt}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{FileLoadReceiver, FilePreviewerAction}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetExt}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{FileData, FileLoadReceiver, FileLoadedData, FilePreviewerAction, FilePreviewerMetaData}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 
 live_design! {
     use link::theme::*;
@@ -122,7 +122,7 @@ live_design! {
                     draw_bg: {
                         color: (COLOR_PRIMARY),
                     }
-                    icon_walk: {width: 20, height: 23, margin: {bottom: -1, left: 5}}
+                    icon_walk: {width: 20, height: 23, margin: {top: 5, left: 5}}
                     text: "",
                 }
 
@@ -199,8 +199,11 @@ pub struct RoomInputBar {
     #[rust] was_replying_preview_visible: bool,
     /// Info about the message event that the user is currently replying to, if any.
     #[rust] replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
-    #[rust] background_task_id: u32,
-    #[rust] receiver: Option<(u32, FileLoadReceiver)>,
+    /// Counter for generating unique IDs for file load tasks.
+    #[rust] file_load_task_id_counter: u32,
+    /// The pending file load operation, if any. Contains the task ID and receiver
+    /// channel for receiving the loaded file data from a background thread.
+    #[rust] pending_file_load: Option<(u32, FileLoadReceiver)>,
 }
 
 impl Widget for RoomInputBar {
@@ -235,11 +238,23 @@ impl Widget for RoomInputBar {
         if let Event::Actions(actions) = event {
             self.handle_actions(cx, actions, room_screen_props);
         }
-        if let (Event::Signal, Some((_background_task_id, receiver))) = (event, &mut self.receiver) {
+        if let (Event::Signal, Some((_task_id, receiver))) = (event, &mut self.pending_file_load) {
             let mut remove_receiver = false;
             match receiver.try_recv() {
-                Ok(Some(file)) => {
-                    cx.action(FilePreviewerAction::Show(file));
+                Ok(Some(loaded_data)) => {
+                    // Use the timeline update sender from props so the file upload modal
+                    // can send confirmation back to this specific timeline.
+                    if let Some(timeline_update_sender) = &room_screen_props.timeline_update_sender {
+                        let file_data = FileData::new(loaded_data, timeline_update_sender.clone());
+                        cx.action(FilePreviewerAction::Show(file_data));
+                    } else {
+                        error!("Timeline update sender not available for file upload");
+                        enqueue_popup_notification(
+                            "Failed to prepare file upload",
+                            PopupKind::Error,
+                            None,
+                        );
+                    }
                     remove_receiver = true;
                 }
                 Ok(None) => {
@@ -252,7 +267,7 @@ impl Widget for RoomInputBar {
                 }
             }
             if remove_receiver {
-                self.receiver = None;
+                self.pending_file_load = None;
                 cx.set_cursor(MouseCursor::Default);
                 // Hide loading spinner when file loading is complete
                 self.view.view(ids!(thumbnail_loading_view)).set_visible(cx, false);
@@ -321,12 +336,6 @@ impl RoomInputBar {
                     return;
                 }
 
-                let filename = selected_file_path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-
                 // Detect the MIME type from the file extension
                 let mime_str = mime_guess::from_path(&selected_file_path)
                     .first_or_octet_stream()
@@ -334,8 +343,8 @@ impl RoomInputBar {
                 use mime_guess::mime;
                 let mime: mime::Mime = mime_str.parse().unwrap_or(mime::APPLICATION_OCTET_STREAM);
                 let (sender, receiver) = std::sync::mpsc::channel();
-                self.background_task_id = self.background_task_id.wrapping_add(1);
-                self.receiver = Some((self.background_task_id, receiver));
+                self.file_load_task_id_counter = self.file_load_task_id_counter.wrapping_add(1);
+                self.pending_file_load = Some((self.file_load_task_id_counter, receiver));
 
                 // Show loading spinner while generating thumbnail
                 self.view.view(ids!(thumbnail_loading_view)).set_visible(cx, true);
@@ -346,21 +355,18 @@ impl RoomInputBar {
                     use crate::image_utils::generate_thumbnail_if_image;
 
                     match generate_thumbnail_if_image(&selected_file_path, &mime) {
-                        Ok(file_data) => {
-                            use std::sync::Arc;
-
-                            use crate::shared::file_upload_modal::FilePreviewerMetaData;
-
-                            let metadata = FilePreviewerMetaData {
-                                filename,
-                                mime,
-                                file_size,
-                                file_path: selected_file_path.clone(),
+                        Ok(thumbnail) => {
+                            let loaded_data = FileLoadedData {
+                                metadata: FilePreviewerMetaData {
+                                    mime,
+                                    file_size,
+                                    file_path: selected_file_path.clone(),
+                                },
+                                thumbnail,
                             };
-                            if sender.send(Some(Arc::new((metadata, file_data)))).is_err() {
+                            if sender.send(Some(loaded_data)).is_err() {
                                 error!("Failed to send file data to UI: receiver dropped");
                             }
-
                         }
                         Err(read_error) => {
                             error!("Failed to read file {:?}: {}", selected_file_path, read_error);
@@ -502,38 +508,6 @@ impl RoomInputBar {
         // If the EditingPane has been hidden, handle that.
         if self.view.editing_pane(ids!(editing_pane)).was_hidden(actions) {
             self.on_editing_pane_hidden(cx);
-        }
-
-        // Handle file upload confirmation from the file previewer
-        for action in actions {
-            if let Some(FilePreviewerAction::Upload(file_data)) = action.downcast_ref() {
-                // If replying to a message, construct the reply metadata
-                let replied_to = self.replying_to.take().and_then(|(event_tl_item, _embedded_event)|
-                    event_tl_item.event_id().map(|event_id|
-                        Reply {
-                            event_id: event_id.to_owned(),
-                            enforce_thread: EnforceThread::MaybeThreaded,
-                        }
-                    )
-                );
-
-                // Set up progress tracking for the upload
-                // Create a channel to receive the upload task's AbortHandle for cancellation support
-                let (abort_sender, abort_receiver) = crossbeam_channel::bounded(1);
-                let upload_progress_view = self.upload_progress_view(ids!(upload_progress_view));
-                upload_progress_view.set_abort_receiver(abort_receiver);
-                upload_progress_view.set_visible(cx, true);
-                submit_async_request(MatrixRequest::SendAttachment {
-                    room_id: room_screen_props.room_name_id.room_id().clone(),
-                    file_data: file_data.clone(),
-                    replied_to,
-                    #[cfg(feature = "tsp")]
-                    sign_with_tsp: self.is_tsp_signing_enabled(cx),
-                    abort_handle_sender: Some(abort_sender),
-                });
-
-                self.clear_replying_to(cx);
-            }
         }
 
     }
@@ -702,6 +676,18 @@ impl RoomInputBar {
         self.view.view(ids!(can_not_send_message_notice)).set_visible(cx, !can_send);
     }
 
+    /// Sets the value of the upload progress bar and makes it visible.
+    /// 
+    /// `current` is the number of bytes uploaded so far, and `total` is the total number of bytes to upload.
+    pub fn set_progress_value(&mut self, cx: &mut Cx, current: u64, total: u64) {
+        self.view.upload_progress_view(ids!(upload_progress_view)).set_value(cx, current, total);
+    }
+
+    /// Sets the abort handle for the upload progress view, which allows the user to cancel an ongoing upload.
+    pub fn set_abort_handle(&mut self, handle: tokio::task::AbortHandle) {
+        self.view.upload_progress_view(ids!(upload_progress_view)).set_abort_handle(handle);
+    }
+
     /// Returns true if the TSP signing checkbox is checked, false otherwise.
     ///
     /// If TSP is not enabled, this will always return false.
@@ -775,6 +761,45 @@ impl RoomInputBarRef {
             .handle_edit_result(cx, timeline_event_item_id, edit_result);
     }
 
+    /// Handles a confirmed file upload from the file upload modal.
+    ///
+    /// This method:
+    /// - Shows the upload progress view
+    /// - Gets the progress sender for tracking upload progress
+    /// - Gets and clears any "replying to" state
+    /// - Returns the reply metadata and progress sender needed to submit the upload request
+    pub fn handle_file_upload_confirmed(
+        &self,
+        cx: &mut Cx,
+    ) -> Option<Option<Reply>> {
+        let mut inner = self.borrow_mut()?;
+
+        // Get the reply metadata if replying to a message
+        let replied_to = inner.replying_to.take().and_then(|(event_tl_item, _embedded_event)|
+            event_tl_item.event_id().map(|event_id|
+                Reply {
+                    event_id: event_id.to_owned(),
+                    enforce_thread: EnforceThread::MaybeThreaded,
+                }
+            )
+        );
+
+        // Show the upload progress view
+        inner.upload_progress_view(ids!(upload_progress_view)).set_visible(cx, true);
+
+        // Clear the replying-to state
+        inner.clear_replying_to(cx);
+
+        Some(replied_to)
+    }
+
+    /// Returns whether TSP signing is enabled for this input bar.
+    #[cfg(feature = "tsp")]
+    pub fn is_tsp_signing_enabled(&self, cx: &mut Cx) -> bool {
+        let Some(inner) = self.borrow() else { return false };
+        inner.view.check_box(ids!(tsp_sign_checkbox)).active(cx)
+    }
+
     /// Save a snapshot of the UI state of this `RoomInputBar`.
     pub fn save_state(&self) -> RoomInputBarState {
         let Some(inner) = self.borrow() else { return Default::default() };
@@ -840,6 +865,18 @@ impl RoomInputBarRef {
         // 4. Restore the state of the tombstone footer.
         //    This depends on the `EditingPane` state, so it must be done after Step 3.
         inner.update_tombstone_footer(cx, timeline_kind.room_id(), tombstone_info);
+    }
+
+    /// See [`RoomInputBar::set_progress_value()`].
+    pub fn set_progress_value(&self, cx: &mut Cx, current: u64, total: u64) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_progress_value(cx, current, total);
+    }
+
+    /// See [`RoomInputBar::set_abort_handle()`].
+    pub fn set_abort_handle(&self, handle: tokio::task::AbortHandle) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_abort_handle(handle);
     }
 }
 

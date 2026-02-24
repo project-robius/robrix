@@ -972,6 +972,33 @@ pub fn avatar_from_room_name(room_name: Option<&str>) -> FetchedRoomAvatar {
     FetchedRoomAvatar::Text(first)
 }
 
+/// Converts bytes to a human-readable file size string (e.g., "1.5 MB", "512 KB").
+///
+/// Uses binary units (1024 bytes = 1 KB) for conversion.
+/// For sizes less than 1 KB, displays the exact byte count without decimal places.
+pub fn format_file_size(bytes: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+
+    if bytes == 0 {
+        return "0 B".to_string();
+    }
+
+    let mut size = bytes;
+    let mut unit_index = 0;
+
+    while size >= 1024 && unit_index < UNITS.len() - 1 {
+        size /= 1024;
+        unit_index += 1;
+    }
+
+    if unit_index == 0 {
+        // Show exact bytes without decimal for values < 1 KB
+        format!("{} B", bytes)
+    } else {
+        format!("{:.1} {}", size, UNITS[unit_index])
+    }
+}
+
 
 #[cfg(test)]
 mod tests_room_name {

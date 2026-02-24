@@ -36,7 +36,7 @@ use crate::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
-        avatar::AvatarState, file_upload_modal::FileData, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}, progress_bar::ProgressBarAction
+        avatar::AvatarState, file_upload_modal::FileData, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}, progress_bar::ProgressBarUpdate
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, VecDiff, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -554,15 +554,13 @@ pub enum MatrixRequest {
         #[cfg(feature = "tsp")]
         sign_with_tsp: bool,
     },
-    /// Request to send an attachment to the given room.
+    /// Request to send an attachment to the given room's timeline.
     SendAttachment {
-        room_id: OwnedRoomId,
+        timeline_kind: TimelineKind,
         file_data: FileData,
         replied_to: Option<Reply>,
         #[cfg(feature = "tsp")]
         sign_with_tsp: bool,
-        /// Optional sender to receive the task's AbortHandle for cancellation support
-        abort_handle_sender: Option<crossbeam_channel::Sender<tokio::task::AbortHandle>>,
     },
     /// Sends a notice to the given room that the current user is or is not typing.
     ///
@@ -1684,31 +1682,24 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::SendAttachment {
-                room_id,
+                timeline_kind,
                 file_data,
                 replied_to,
                 #[cfg(feature = "tsp")]
                 sign_with_tsp: _,
-                abort_handle_sender,
             } => {
-                let timeline = {
-                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
-                        log!("BUG: room info not found for uploading file to room {room_id}");
-                        continue;
-                    };
-                    room_info.main_timeline.timeline.clone()
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+                    log!("BUG: {timeline_kind} not found for send attachment request");
+                    continue;
                 };
-                let file_meta = file_data.0.clone();
-                let thumbnail= file_data.1.as_ref().map(|t| {
-                  Thumbnail { data: t.data.clone(), content_type: t.content_type.clone(), height: t.height, width: t.width, size: t.size }
+                let file_meta = file_data.metadata.clone();
+                let thumbnail = file_data.thumbnail.as_ref().map(|t| {
+                    Thumbnail { data: t.data.clone(), content_type: t.content_type.clone(), height: t.height, width: t.width, size: t.size }
                 });
-                let upload_progress_handler = Arc::new(Mutex::new(None));
-                let upload_progress_handler_clone = upload_progress_handler.clone();
-                let room_id_clone = room_id.clone();
+                let sender_clone = sender.clone();
                 // Spawn a new async task that will upload the file.
                 let upload_task = Handle::current().spawn(async move {
-                    log!("Uploading file to room {room_id}: {file_meta:?}...");
+                    log!("Uploading file to {timeline_kind}: {file_meta:?}...");
                     let mime_type  = file_meta.mime.clone();
                     let attachment_config = matrix_sdk_ui::timeline::AttachmentConfig {
                         txn_id: None,
@@ -1718,47 +1709,48 @@ async fn matrix_worker_task(
                         mentions: None,
                         in_reply_to: replied_to.map(|in_reply_to| in_reply_to.event_id),
                     };
-                    // Note: Matrix SDK doesn't currently support progress tracking via observable
-                    Cx::post_action(ProgressBarAction::Update { current: 0, total: file_meta.file_size as usize});
                     let source = AttachmentSource::File(file_meta.file_path.clone());
-                    
+
                     let send_attachment = timeline.send_attachment(
                         source,
                         mime_type,
                         attachment_config
                     );
-                    let mut subscriber = send_attachment.subscribe_to_send_progress();                    
-                    let upload_task_progress = Handle::current().spawn(async move {
+                    let mut subscriber = send_attachment.subscribe_to_send_progress();
+                    let timeline_update_sender = sender.clone();
+                    Handle::current().spawn(async move {
                         while let Some(progress) = subscriber.next().await {
-                            Cx::post_action(ProgressBarAction::Update { current: progress.current, total: file_meta.file_size as usize});
+                            sender.send(TimelineUpdate::FileUploadUpdate(ProgressBarUpdate::new(progress.current as u64, file_meta.file_size))).unwrap_or_else(|e| {
+                                error!("Failed to send progress update to UI: {e:?}");
+                            });
+                            SignalToUI::set_ui_signal();
                         }
                     });
-                    if let Ok(mut progress_sender) = upload_progress_handler_clone.clone().lock() {
-                        *progress_sender = Some(upload_task_progress);
-                    }
-                    
+                    timeline_update_sender.send(TimelineUpdate::FileUploadUpdate(ProgressBarUpdate::new(0, file_meta.file_size))).unwrap_or_else(|e| {
+                        error!("Failed to send initial progress update to UI: {e:?}");
+                    });
                     match send_attachment.await {
                         Ok(_) => {
-                            log!("Successfully uploaded and sent file to room {room_id}");
-                            Cx::post_action(ProgressBarAction::Update { current: file_meta.file_size as usize, total: file_meta.file_size as usize });
+                            log!("Successfully uploaded and sent file to {timeline_kind}");
+                            timeline_update_sender.send(TimelineUpdate::FileUploadUpdate(ProgressBarUpdate::new(file_meta.file_size, file_meta.file_size))).unwrap_or_else(|e| {
+                                error!("Failed to send progress update to UI: {e:?}");
+                            });
+                            SignalToUI::set_ui_signal();
                         }
                         Err(e) => {
-                            error!("Failed to upload file to room {room_id}: {e:?}");
+                            error!("Failed to upload file to {timeline_kind}: {e:?}");
                             // Set progress to completion state (0/0) to hide the progress bar
-                            Cx::post_action(ProgressBarAction::Update { current: 0, total: 0 });
+                            timeline_update_sender.send(TimelineUpdate::FileUploadUpdate(ProgressBarUpdate::new(0, 0))).unwrap_or_else(|e| {
+                                error!("Failed to send progress update to UI: {e:?}");
+                            });
+                            SignalToUI::set_ui_signal();
                             enqueue_popup_notification(format!("Failed to upload file: {e}"), PopupKind::Error, None);
                         }
                     }
                 });
-                // Send the AbortHandle back to the UI for cancellation support
-                if let Some(sender) = abort_handle_sender {
-                    let _ = sender.send(upload_task.abort_handle());
-                    if let Ok(progress_sender) = upload_progress_handler.clone().lock() {
-                        log!("Successfully aborting uploading file to room {room_id_clone}");
-                        if let Some(progress_sender) = &(*progress_sender) {
-                            let _ = sender.send(progress_sender.abort_handle());
-                        }
-                    }
+                match sender_clone.send(TimelineUpdate::FileUploadAbortHandle(upload_task.abort_handle())) {
+                    Ok(_) => SignalToUI::set_ui_signal(),
+                    Err(e) => log!("Failed to send file upload abort handle to UI: {e:?}"),
                 }
             },
 

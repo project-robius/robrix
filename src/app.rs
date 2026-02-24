@@ -517,11 +517,11 @@ impl MatchEvent for App {
                 _ => {}
             }
             match action.downcast_ref() {
-                Some(FilePreviewerAction::Show { .. }) => {
+                Some(FilePreviewerAction::Show(_)) => {
                     self.ui.modal(ids!(file_upload_modal)).open(cx);
                     continue;
                 }
-                Some(FilePreviewerAction::Hide) | Some(FilePreviewerAction::Upload(_))=> {
+                Some(FilePreviewerAction::Hide) => {
                     self.ui.modal(ids!(file_upload_modal)).close(cx);
                     continue;
                 }
