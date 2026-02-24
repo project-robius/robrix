@@ -509,7 +509,6 @@ impl RoomInputBar {
         if self.view.editing_pane(ids!(editing_pane)).was_hidden(actions) {
             self.on_editing_pane_hidden(cx);
         }
-
     }
 
     /// Shows a preview of the given event that the user is currently replying to
