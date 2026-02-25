@@ -26,8 +26,9 @@ script_mod! {
 
     // An entry in the list of all spaces, which shown the Space's avatar and name.
     mod.widgets.SpacesBarEntry = #(SpacesBarEntry::register_widget(vm)) {
-        width: (NAVIGATION_TAB_BAR_SIZE - 5),
-        height: (NAVIGATION_TAB_BAR_SIZE - 5),
+        // TODO: replace all `68`s with `NAVIGATION_TAB_BAR_SIZE`
+        width: (68 - 5),
+        height: (68 - 5),
         flow: Down
         padding: 5,
         margin: 3,
@@ -40,8 +41,10 @@ script_mod! {
             active: instance(0.0)
 
             color: uniform(#0000)
-            color_hover: uniform((COLOR_NAVIGATION_TAB_BG_HOVER))
-            color_active: uniform((COLOR_NAVIGATION_TAB_BG_ACTIVE))
+            // color_hover: uniform((COLOR_NAVIGATION_TAB_BG_HOVER))
+            color_hover: uniform(#f00)
+            // color_active: uniform((COLOR_NAVIGATION_TAB_BG_ACTIVE))
+            color_active: uniform(#0f0)
 
             border_size: uniform(0.0)
             border_color: uniform(#0000)
@@ -81,7 +84,7 @@ script_mod! {
             }
         }
 
-        avatar = Avatar {
+        avatar := Avatar {
             width: 45, height: 45
             // If no avatar picture, use white text on a dark background.
             text_view +: {
@@ -97,7 +100,7 @@ script_mod! {
             }
         }
 
-        space_name = Label {
+        space_name := Label {
             width: Fill,
             // height: Fit
             height: 0,
@@ -177,8 +180,8 @@ script_mod! {
     }
 
     mod.widgets.SpacesStatusLabel = View {
-        width: (NAVIGATION_TAB_BAR_SIZE),
-        height: (NAVIGATION_TAB_BAR_SIZE),
+        width: (68),
+        height: (68),
         align: Align{ x: 0.5, y: 0.5 }
         margin: Inset{top: 9, left: 2, bottom: 5}
         // padding: 5.0,
@@ -197,10 +200,9 @@ script_mod! {
         }
     }
 
-    mod.widgets.SpacesListDesktop = PortalList {
+    mod.widgets.SpacesList = PortalList {
         height: Fill,
         width: Fill,
-        flow: Down,
         spacing: 0.0
 
         auto_tail: false, 
@@ -210,32 +212,11 @@ script_mod! {
             min_handle_size: 0.0
         }
 
-        SpacesBarEntry := mod.widgets.SpacesBarEntry {}
+        spaces_bar_entry := mod.widgets.SpacesBarEntry {}
         StatusLabel := mod.widgets.SpacesStatusLabel {}
         BottomFiller := View {
-            width: (NAVIGATION_TAB_BAR_SIZE)
-            height: (NAVIGATION_TAB_BAR_SIZE)
-        }
-    }
-
-    mod.widgets.SpacesListMobile = PortalList {
-        height: Fill,
-        width: Fill,
-        flow: Right,
-        spacing: 0.0
-
-        auto_tail: false,
-        max_pull_down: 0.0,
-        scroll_bar: ScrollBar {  // hide the scroll bar
-            bar_size: 0.0,
-            min_handle_size: 0.0
-        }
-
-        SpacesBarEntry := mod.widgets.SpacesBarEntry {}
-        StatusLabel := mod.widgets.SpacesStatusLabel {}
-        BottomFiller := View {
-            width: (NAVIGATION_TAB_BAR_SIZE)
-            height: (NAVIGATION_TAB_BAR_SIZE)
+            width: (68)
+            height: (68)
         }
     }
 
@@ -243,22 +224,27 @@ script_mod! {
         Desktop := View {
             align: Align{x: 0.5, y: 0.5}
             padding: 0,
-            width: (NAVIGATION_TAB_BAR_SIZE), 
+            width: (68), 
             height: Fill
 
             show_bg: false
 
-            spaces_list := mod.widgets.SpacesListDesktop {}
+            CachedWidget {
+                spaces_list := mod.widgets.SpacesList { }
+            }
         }
 
         Mobile := View {
             align: Align{x: 0.5, y: 0.5}
+            padding: 0,
             width: Fill,
-            height: (NAVIGATION_TAB_BAR_SIZE)
+            height: (68)
 
             show_bg: false
 
-            spaces_list := mod.widgets.SpacesListMobile {}
+            CachedWidget {
+                spaces_list := mod.widgets.SpacesList { }
+            }
         }
     }
 }
@@ -562,6 +548,18 @@ impl Widget for SpacesBar {
             let portal_list_ref = widget_to_draw.as_portal_list();
             let Some(mut list) = portal_list_ref.borrow_mut() else { continue };
 
+            // AdaptiveView + CachedWidget does not properly handle DSL-level style overrides,
+            // so we must manually apply the different style choices here when drawing it.
+            if cx.display_context.is_desktop() {
+                script_apply_eval!(cx, list, {
+                    flow: #(Flow::Down),
+                });
+            } else {
+                script_apply_eval!(cx, list, {
+                    flow: #(Flow::right()),
+                });
+            }
+
             let len = self.displayed_spaces.len();
             if len == 0 {
                 list.set_item_range(cx, 0, 1);
@@ -590,7 +588,7 @@ impl Widget for SpacesBar {
                         .get(portal_list_index)
                         .and_then(|space_id| self.all_joined_spaces.get(space_id))
                     {
-                        let item = list.item(cx, portal_list_index, id!(SpacesBarEntry));
+                        let item = list.item(cx, portal_list_index, id!(spaces_bar_entry));
                         // Populate the space name and avatar (although this isn't visible by default).
                         let space_name = space.space_name_id.to_string();
                         item.label(cx, ids!(space_name)).set_text(cx, &space_name);
