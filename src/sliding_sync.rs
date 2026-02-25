@@ -41,7 +41,7 @@ use crate::{
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, VecDiff, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
-#[derive(Parser, Debug, Default)]
+#[derive(Parser, Default)]
 struct Cli {
     /// The user ID to login with.
     #[clap(value_parser)]
@@ -67,6 +67,20 @@ struct Cli {
     #[clap(short, long, action)]
     verbose: bool,
 }
+
+impl std::fmt::Debug for Cli {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Cli")
+            .field("user_id", &self.user_id)
+            .field("password", &"<REDACTED>")
+            .field("homeserver", &self.homeserver)
+            .field("proxy", &self.proxy)
+            .field("login_screen", &self.login_screen)
+            .field("verbose", &self.verbose)
+            .finish()
+    }
+}
+
 impl From<LoginByPassword> for Cli {
     fn from(login: LoginByPassword) -> Self {
         Self {
