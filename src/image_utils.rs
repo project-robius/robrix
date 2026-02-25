@@ -8,7 +8,7 @@ use matrix_sdk::{attachment::Thumbnail, ruma::UInt};
 use mime_guess::mime;
 
 /// Maximum dimensions for image thumbnails
-const THUMBNAIL_MAX_WIDTH: u32 = 600;
+const THUMBNAIL_MAX_WIDTH: u32 = 800;
 const THUMBNAIL_MAX_HEIGHT: u32 = 600;
 
 /// Generates a thumbnail for an image file.
@@ -57,7 +57,13 @@ pub fn generate_thumbnail_if_image(
 
         final_img.write_to(&mut std::io::Cursor::new(&mut bytes), ImageEncodingFormat::Jpeg)?;
         let bytes_size = bytes.len() as u32;
-        Ok(Some(Thumbnail { data: bytes, content_type: mime::IMAGE_JPEG, height: UInt::from(thumb_height), width: UInt::from(thumb_width), size: UInt::from(bytes_size) }))
+        Ok(Some(Thumbnail {
+            data: bytes,
+            content_type: mime::IMAGE_JPEG,
+            height: UInt::from(thumb_height),
+            width: UInt::from(thumb_width),
+            size: UInt::from(bytes_size),
+        }))
     } else {
         Ok(None)
     }
