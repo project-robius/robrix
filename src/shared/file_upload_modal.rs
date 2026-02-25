@@ -323,7 +323,7 @@ impl MatchEvent for FileUploadModal {
             if let Some(file_data) = self.file_data.take() {
                 // Send the file upload confirmation through the timeline-specific channel
                 // included in the file data.
-                let _ = file_data.timeline_update_sender.send(TimelineUpdate::FileUploadConfirmed { file_data: file_data.clone() });
+                let _ = file_data.timeline_update_sender.send(TimelineUpdate::FileUploadConfirmed(file_data.clone()));
                 SignalToUI::set_ui_signal();
             }
             cx.action(FilePreviewerAction::Hide);

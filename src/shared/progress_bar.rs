@@ -4,36 +4,6 @@
 
 use makepad_widgets::*;
 
-/// Update message for a progress bar with current/total values.
-#[derive(Clone, Debug, Default)]
-pub struct ProgressBarUpdate {
-    /// Current progress value (e.g., bytes uploaded).
-    pub current: u64,
-    /// Total value to reach (e.g., total file size in bytes).
-    pub total: u64,
-}
-
-impl ProgressBarUpdate {
-    /// Creates a new progress update with the given current and total values.
-    pub fn new(current: u64, total: u64) -> Self {
-        Self { current, total }
-    }
-
-    /// Returns true if the progress is complete (current >= total).
-    pub fn is_complete(&self) -> bool {
-        self.current >= self.total
-    }
-
-    /// Returns the progress as a percentage (0.0-100.0).
-    pub fn percentage(&self) -> f64 {
-        if self.total > 0 {
-            (self.current as f64 / self.total as f64) * 100.0
-        } else {
-            0.0
-        }
-    }
-}
-
 live_design! {
     use link::theme::*;
     use link::shaders::*;

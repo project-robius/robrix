@@ -36,7 +36,7 @@ use crate::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
-        avatar::AvatarState, file_upload_modal::FileData, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}, progress_bar::ProgressBarUpdate
+        avatar::AvatarState, file_upload_modal::FileData, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, VecDiff, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -1720,19 +1720,19 @@ async fn matrix_worker_task(
                     let timeline_update_sender = sender.clone();
                     Handle::current().spawn(async move {
                         while let Some(progress) = subscriber.next().await {
-                            sender.send(TimelineUpdate::FileUploadUpdate(ProgressBarUpdate::new(progress.current as u64, file_meta.file_size))).unwrap_or_else(|e| {
+                            sender.send(TimelineUpdate::FileUploadUpdate { current: progress.current as u64, total: file_meta.file_size }).unwrap_or_else(|e| {
                                 error!("Failed to send progress update to UI: {e:?}");
                             });
                             SignalToUI::set_ui_signal();
                         }
                     });
-                    timeline_update_sender.send(TimelineUpdate::FileUploadUpdate(ProgressBarUpdate::new(0, file_meta.file_size))).unwrap_or_else(|e| {
+                    timeline_update_sender.send(TimelineUpdate::FileUploadUpdate { current: 0, total: file_meta.file_size }).unwrap_or_else(|e| {
                         error!("Failed to send initial progress update to UI: {e:?}");
                     });
                     match send_attachment.await {
                         Ok(_) => {
                             log!("Successfully uploaded and sent file to {timeline_kind}");
-                            timeline_update_sender.send(TimelineUpdate::FileUploadUpdate(ProgressBarUpdate::new(file_meta.file_size, file_meta.file_size))).unwrap_or_else(|e| {
+                            timeline_update_sender.send(TimelineUpdate::FileUploadUpdate { current: file_meta.file_size, total: file_meta.file_size }).unwrap_or_else(|e| {
                                 error!("Failed to send progress update to UI: {e:?}");
                             });
                             SignalToUI::set_ui_signal();
@@ -1740,7 +1740,7 @@ async fn matrix_worker_task(
                         Err(e) => {
                             error!("Failed to upload file to {timeline_kind}: {e:?}");
                             // Set progress to completion state (0/0) to hide the progress bar
-                            timeline_update_sender.send(TimelineUpdate::FileUploadUpdate(ProgressBarUpdate::new(0, 0))).unwrap_or_else(|e| {
+                            timeline_update_sender.send(TimelineUpdate::FileUploadUpdate { current: 0, total: 0 }).unwrap_or_else(|e| {
                                 error!("Failed to send progress update to UI: {e:?}");
                             });
                             SignalToUI::set_ui_signal();

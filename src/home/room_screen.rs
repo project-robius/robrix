@@ -32,7 +32,7 @@ use crate::{
     },
     room::{BasicRoomDetails, room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::{AvatarState, AvatarWidgetRefExt}, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, confirmation_modal::ConfirmationModalContent, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, progress_bar, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::{AvatarState, AvatarWidgetRefExt}, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, confirmation_modal::ConfirmationModalContent, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -1620,7 +1620,7 @@ impl RoomScreen {
                     tl.tombstone_info = Some(successor_room_details);
                 }
                 TimelineUpdate::LinkPreviewFetched => {}
-                TimelineUpdate::FileUploadConfirmed { file_data } => {
+                TimelineUpdate::FileUploadConfirmed(file_data) => {
                     // Handle file upload confirmation from the file upload modal.
                     // This ensures the upload is associated with the correct timeline.
                     let room_input_bar = self.view.room_input_bar(ids!(room_input_bar));
@@ -1634,7 +1634,7 @@ impl RoomScreen {
                         });
                     }
                 }
-                TimelineUpdate::FileUploadUpdate(progress_bar::ProgressBarUpdate { current, total }) => {
+                TimelineUpdate::FileUploadUpdate { current, total } => {
                     let room_input_bar = self.view.room_input_bar(ids!(room_input_bar));
                     room_input_bar.set_progress_value(cx, current, total);
                 }
@@ -2790,11 +2790,14 @@ pub enum TimelineUpdate {
     /// A notice that link preview data for a URL has been fetched and is now available.
     LinkPreviewFetched,
     /// A file upload was confirmed from the file upload modal.
-    FileUploadConfirmed {
-        file_data: crate::shared::file_upload_modal::FileData,
-    },
+    FileUploadConfirmed(crate::shared::file_upload_modal::FileData),
     /// An update on the progress of a file upload that is currently in-flight.
-    FileUploadUpdate(progress_bar::ProgressBarUpdate),
+    FileUploadUpdate {
+        /// Current progress value (e.g., bytes uploaded).
+        current: u64,
+        /// Total value to reach (e.g., total file size in bytes).
+        total: u64,
+    },
     /// A notice that a file upload in this timeline was aborted.
     FileUploadAbortHandle(tokio::task::AbortHandle),
 }
