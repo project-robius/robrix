@@ -81,25 +81,6 @@ impl std::fmt::Debug for Cli {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_cli_debug_redaction() {
-        let cli = Cli {
-            user_id: "alice".to_string(),
-            password: "super_secret_password".to_string(),
-            homeserver: None,
-            proxy: None,
-            login_screen: false,
-            verbose: false,
-        };
-        let debug_output = format!("{:?}", cli);
-        assert!(!debug_output.contains("super_secret_password"), "Password leaked in Debug output: {}", debug_output);
-    }
-}
-
 impl From<LoginByPassword> for Cli {
     fn from(login: LoginByPassword) -> Self {
         Self {

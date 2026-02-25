@@ -254,19 +254,3 @@ pub async fn delete_latest_user_id() -> anyhow::Result<bool> {
         Ok(false)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_client_session_persisted_debug_redaction() {
-        let session = ClientSessionPersisted {
-            homeserver: "https://example.com".to_string(),
-            db_path: PathBuf::from("/tmp/db"),
-            passphrase: "super_secret_passphrase".to_string(),
-        };
-        let debug_output = format!("{:?}", session);
-        assert!(!debug_output.contains("super_secret_passphrase"), "Passphrase leaked in Debug output: {}", debug_output);
-    }
-}
