@@ -17,7 +17,7 @@ use crate::{
 };
 
 /// The data needed to re-build a client.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ClientSessionPersisted {
     /// The URL of the homeserver of the user.
     pub homeserver: String,
@@ -27,6 +27,16 @@ pub struct ClientSessionPersisted {
 
     /// The passphrase of the database.
     pub passphrase: String,
+}
+
+impl std::fmt::Debug for ClientSessionPersisted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClientSessionPersisted")
+            .field("homeserver", &self.homeserver)
+            .field("db_path", &self.db_path)
+            .field("passphrase", &"<REDACTED>")
+            .finish()
+    }
 }
 
 /// The full session to persist.
@@ -242,5 +252,21 @@ pub async fn delete_latest_user_id() -> anyhow::Result<bool> {
             .map(|_| true)
     } else {
         Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_client_session_persisted_debug_redaction() {
+        let session = ClientSessionPersisted {
+            homeserver: "https://example.com".to_string(),
+            db_path: PathBuf::from("/tmp/db"),
+            passphrase: "super_secret_passphrase".to_string(),
+        };
+        let debug_output = format!("{:?}", session);
+        assert!(!debug_output.contains("super_secret_passphrase"), "Passphrase leaked in Debug output: {}", debug_output);
     }
 }
