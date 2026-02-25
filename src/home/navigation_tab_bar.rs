@@ -173,17 +173,27 @@ script_mod! {
                 color: (COLOR_SECONDARY)
             }
 
-            profile_icon := mod.widgets.ProfileIcon {}
-            home_button := mod.widgets.HomeButton {}
-            add_room_button := mod.widgets.AddRoomButton {}
+            CachedWidget {
+                profile_icon := mod.widgets.ProfileIcon {}
+            }
+            CachedWidget {
+                home_button := mod.widgets.HomeButton {}
+            }
+            CachedWidget {
+                add_room_button := mod.widgets.AddRoomButton {}
+            }
 
             mod.widgets.Separator {}
 
-            root_spaces_bar := mod.widgets.SpacesBar {}
+            CachedWidget {
+                root_spaces_bar := mod.widgets.SpacesBar {}
+            }
 
             mod.widgets.Separator {}
 
-            settings_button := mod.widgets.SettingsButton {}
+            CachedWidget {
+                settings_button := mod.widgets.SettingsButton {}
+            }
         }
 
         Mobile := RoundedView {
@@ -198,13 +208,21 @@ script_mod! {
                 border_radius: 4.0
             }
 
-            home_button := mod.widgets.HomeButton {}
-            add_room_button := mod.widgets.AddRoomButton {}
+            CachedWidget {
+                home_button := mod.widgets.HomeButton {}
+            }
+            CachedWidget {
+                add_room_button := mod.widgets.AddRoomButton {}
+            }
 
             toggle_spaces_bar_button := mod.widgets.ToggleSpacesBarButton {}
 
-            settings_button := mod.widgets.SettingsButton {}
-            profile_icon := mod.widgets.ProfileIcon {}
+            CachedWidget {
+                settings_button := mod.widgets.SettingsButton {}
+            }
+            CachedWidget {
+                profile_icon := mod.widgets.ProfileIcon {}
+            }
         }
     }
 }

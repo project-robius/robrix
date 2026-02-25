@@ -31,7 +31,9 @@ script_mod! {
             shadow_offset: vec2(1.0, 0.0),
         }
 
-        root_spaces_bar := mod.widgets.SpacesBar {}
+        CachedWidget {
+            root_spaces_bar := mod.widgets.SpacesBar {}
+        }
 
         animator: Animator{
             spaces_bar_animator: {
@@ -53,6 +55,10 @@ script_mod! {
     // It adapts to both desktop and mobile layouts.
     mod.widgets.HomeScreen = #(HomeScreen::register_widget(vm)) {
         AdaptiveView {
+            // NOTE: within each of these sub views, we used `CachedWidget` wrappers
+            //       to ensure that there is only a single global instance of each
+            //       of those widgets, which means they maintain their state
+            //       across transitions between the Desktop and Mobile variant.
             Desktop := View {
                 show_bg: true
                 draw_bg +: {
@@ -65,7 +71,9 @@ script_mod! {
                 margin: 0,
 
                 // On the left, show the navigation tab bar vertically.
-                navigation_tab_bar := mod.widgets.NavigationTabBar {}
+                CachedWidget {
+                    navigation_tab_bar := mod.widgets.NavigationTabBar {}
+                }
 
                 // To the right of that, we use the PageFlip widget to show either
                 // the main desktop UI or the settings screen.
@@ -88,7 +96,9 @@ script_mod! {
                             spacing: 2
                             align: Align{y: 0.5}
 
-                            room_filter_input_bar := RoomFilterInputBar {}
+                            CachedWidget {
+                                room_filter_input_bar := RoomFilterInputBar {}
+                            }
 
                             search_messages_button := SearchMessagesButton {
                                 // make this button match/align with the RoomFilterInputBar
@@ -107,7 +117,9 @@ script_mod! {
                             color: (COLOR_PRIMARY)
                         }
 
-                        settings_screen := mod.widgets.SettingsScreen {}
+                        CachedWidget {
+                            settings_screen := mod.widgets.SettingsScreen {}
+                        }
                     }
 
                     add_room_page := View {
@@ -117,7 +129,9 @@ script_mod! {
                             color: (COLOR_PRIMARY)
                         }
 
-                        add_room_screen := mod.widgets.AddRoomScreen {}
+                        CachedWidget {
+                            add_room_screen := mod.widgets.AddRoomScreen {}
+                        }
                     }
                 }
             }
@@ -158,23 +172,35 @@ script_mod! {
                                     width: Fill, height: Fill
                                     padding: Inset{top: 20}
 
-                                    settings_screen := mod.widgets.SettingsScreen {}
+                                    CachedWidget {
+                                        settings_screen := mod.widgets.SettingsScreen {}
+                                    }
                                 }
 
                                 add_room_page := View {
                                     width: Fill, height: Fill
                                     padding: Inset{top: 20}
 
-                                    add_room_screen := mod.widgets.AddRoomScreen {}
+                                    CachedWidget {
+                                        add_room_screen := mod.widgets.AddRoomScreen {}
+                                    }
                                 }
                             }
 
                             // Show the SpacesBar right above the navigation tab bar.
-                            // We wrap it in SpacesBarWrapper in order to animate it in or out.
-                            spaces_bar_wrapper := mod.widgets.SpacesBarWrapper {}
+                            // We wrap it in the SpacesBarWrapper in order to animate it in or out,
+                            // and wrap *that* in a CachedWidget in order to maintain its shown/hidden state
+                            // across AdaptiveView transitions between Mobile view mode and Desktop view mode.
+                            // 
+                            // ... Then we wrap *that* in a ... <https://www.youtube.com/watch?v=evUWersr7pc>
+                            CachedWidget {
+                                spaces_bar_wrapper := mod.widgets.SpacesBarWrapper {}
+                            }
 
                             // At the bottom of the root view, show the navigation tab bar horizontally.
-                            navigation_tab_bar := mod.widgets.NavigationTabBar {}
+                            CachedWidget {
+                                navigation_tab_bar := mod.widgets.NavigationTabBar {}
+                            }
                         }
 
                         main_content_view := StackNavigationView {

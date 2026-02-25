@@ -81,7 +81,7 @@ script_mod! {
             }
         }
 
-        avatar := Avatar {
+        avatar = Avatar {
             width: 45, height: 45
             // If no avatar picture, use white text on a dark background.
             text_view +: {
@@ -97,7 +97,7 @@ script_mod! {
             }
         }
 
-        space_name := Label {
+        space_name = Label {
             width: Fill,
             // height: Fit
             height: 0,
