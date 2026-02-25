@@ -4,56 +4,54 @@ script_mod! {
 
     use mod.prelude.widgets.*
     use mod.widgets.*
-    mod.widgets.ICON_ADD = crate_resource("self://resources/icons/add.svg")
-    mod.widgets.ICON_ADD_REACTION = crate_resource("self://resources/icons/add_reaction.svg")
-    mod.widgets.ICON_ADD_USER = crate_resource("self://resources/icons/add_user.svg") // TODO: FIX
-    mod.widgets.ICON_ADD_WALLET = crate_resource("self://resources/icons/add_wallet.svg")
-    mod.widgets.ICON_FORBIDDEN = crate_resource("self://resources/icons/forbidden.svg")
-    mod.widgets.ICON_CHECKMARK = crate_resource("self://resources/icons/checkmark.svg")
-    mod.widgets.ICON_CLOSE = crate_resource("self://resources/icons/close.svg")
-    mod.widgets.ICON_CLOUD_CHECKMARK = crate_resource("self://resources/icons/cloud_checkmark.svg")
-    mod.widgets.ICON_CLOUD_OFFLINE = crate_resource("self://resources/icons/cloud_offline.svg")
-    mod.widgets.ICON_ROTATE_CW = crate_resource("self://resources/icons/rotate_right_fa.svg")
-    mod.widgets.ICON_ROTATE_CCW = crate_resource("self://resources/icons/rotate_left_fa.svg")
-    mod.widgets.ICON_COPY = crate_resource("self://resources/icons/copy.svg")
-    mod.widgets.ICON_EDIT = crate_resource("self://resources/icons/edit.svg")
-    mod.widgets.ICON_EXTERNAL_LINK = crate_resource("self://resources/icons/external_link.svg")
-    mod.widgets.ICON_IMPORT = crate_resource("self://resources/icons/import.svg") // TODO: FIX
-    mod.widgets.ICON_HIERARCHY = crate_resource("self://resources/icons/hierarchy.svg")
-    mod.widgets.ICON_HOME = crate_resource("self://resources/icons/home.svg")
-    mod.widgets.ICON_HTML_FILE = crate_resource("self://resources/icons/html_file.svg")
-    mod.widgets.ICON_INFO = crate_resource("self://resources/icons/info.svg")
-    mod.widgets.ICON_INVITE = crate_resource("self://resources/icons/invite.svg")
-    mod.widgets.ICON_JOIN_ROOM = crate_resource("self://resources/icons/join_room.svg")
-    mod.widgets.ICON_JUMP = crate_resource("self://resources/icons/go_back.svg")
-    mod.widgets.ICON_LOGOUT = crate_resource("self://resources/icons/logout.svg")
-    mod.widgets.ICON_LINK = crate_resource("self://resources/icons/link.svg")
-    mod.widgets.ICON_PIN = crate_resource("self://resources/icons/pin.svg")
-    mod.widgets.ICON_REPLY = crate_resource("self://resources/icons/reply.svg")
-    mod.widgets.ICON_SEARCH = crate_resource("self://resources/icons/search.svg")
-    mod.widgets.ICON_SEND = crate_resource("self://resources/icon_send.svg")
-    mod.widgets.ICON_SETTINGS = crate_resource("self://resources/icons/settings.svg")
-    mod.widgets.ICON_SQUARES = crate_resource("self://resources/icons/squares_filled.svg")
-    mod.widgets.ICON_TOMBSTONE = crate_resource("self://resources/icons/tombstone.svg")
-    mod.widgets.ICON_TRASH = crate_resource("self://resources/icons/trash.svg")
-    mod.widgets.ICON_UPLOAD = crate_resource("self://resources/icons/upload.svg")
-    mod.widgets.ICON_VIEW_SOURCE = crate_resource("self://resources/icons/view_source.svg")
-    mod.widgets.ICON_WARNING = crate_resource("self://resources/icons/warning.svg")
-    mod.widgets.ICON_ZOOM_IN = crate_resource("self://resources/icons/zoom_in.svg")
-    mod.widgets.ICON_ZOOM_OUT = crate_resource("self://resources/icons/zoom_out.svg")
+
+    mod.widgets.ICON_ADD              = crate_resource("self://resources/icons/add.svg")
+    mod.widgets.ICON_ADD_REACTION     = crate_resource("self://resources/icons/add_reaction.svg")
+    mod.widgets.ICON_ADD_USER         = crate_resource("self://resources/icons/add_user.svg") // TODO: FIX
+    mod.widgets.ICON_ADD_WALLET       = crate_resource("self://resources/icons/add_wallet.svg")
+    mod.widgets.ICON_FORBIDDEN        = crate_resource("self://resources/icons/forbidden.svg")
+    mod.widgets.ICON_CHECKMARK        = crate_resource("self://resources/icons/checkmark.svg")
+    mod.widgets.ICON_CLOSE            = crate_resource("self://resources/icons/close.svg")
+    mod.widgets.ICON_CLOUD_CHECKMARK  = crate_resource("self://resources/icons/cloud_checkmark.svg")
+    mod.widgets.ICON_CLOUD_OFFLINE    = crate_resource("self://resources/icons/cloud_offline.svg")
+    mod.widgets.ICON_ROTATE_CW        = crate_resource("self://resources/icons/rotate_right_fa.svg")
+    mod.widgets.ICON_ROTATE_CCW       = crate_resource("self://resources/icons/rotate_left_fa.svg")
+    mod.widgets.ICON_COPY             = crate_resource("self://resources/icons/copy.svg")
+    mod.widgets.ICON_EDIT             = crate_resource("self://resources/icons/edit.svg")
+    mod.widgets.ICON_EXTERNAL_LINK    = crate_resource("self://resources/icons/external_link.svg")
+    mod.widgets.ICON_IMPORT           = crate_resource("self://resources/icons/import.svg") // TODO: FIX
+    mod.widgets.ICON_HIERARCHY        = crate_resource("self://resources/icons/hierarchy.svg")
+    mod.widgets.ICON_HOME             = crate_resource("self://resources/icons/home.svg")
+    mod.widgets.ICON_HTML_FILE        = crate_resource("self://resources/icons/html_file.svg")
+    mod.widgets.ICON_INFO             = crate_resource("self://resources/icons/info.svg")
+    mod.widgets.ICON_INVITE           = crate_resource("self://resources/icons/invite.svg")
+    mod.widgets.ICON_JOIN_ROOM        = crate_resource("self://resources/icons/join_room.svg")
+    mod.widgets.ICON_JUMP             = crate_resource("self://resources/icons/go_back.svg")
+    mod.widgets.ICON_LOGOUT           = crate_resource("self://resources/icons/logout.svg")
+    mod.widgets.ICON_LINK             = crate_resource("self://resources/icons/link.svg")
+    mod.widgets.ICON_PIN              = crate_resource("self://resources/icons/pin.svg")
+    mod.widgets.ICON_REPLY            = crate_resource("self://resources/icons/reply.svg")
+    mod.widgets.ICON_SEARCH           = crate_resource("self://resources/icons/search.svg")
+    mod.widgets.ICON_SEND             = crate_resource("self://resources/icon_send.svg")
+    mod.widgets.ICON_SETTINGS         = crate_resource("self://resources/icons/settings.svg")
+    mod.widgets.ICON_SQUARES          = crate_resource("self://resources/icons/squares_filled.svg")
+    mod.widgets.ICON_TOMBSTONE        = crate_resource("self://resources/icons/tombstone.svg")
+    mod.widgets.ICON_TRASH            = crate_resource("self://resources/icons/trash.svg")
+    mod.widgets.ICON_UPLOAD           = crate_resource("self://resources/icons/upload.svg")
+    mod.widgets.ICON_VIEW_SOURCE      = crate_resource("self://resources/icons/view_source.svg")
+    mod.widgets.ICON_WARNING          = crate_resource("self://resources/icons/warning.svg")
+    mod.widgets.ICON_ZOOM_IN          = crate_resource("self://resources/icons/zoom_in.svg")
+    mod.widgets.ICON_ZOOM_OUT         = crate_resource("self://resources/icons/zoom_out.svg")
 
     mod.widgets.TITLE_TEXT = theme.font_regular {
-
         font_size: (13),
     }
 
     mod.widgets.REGULAR_TEXT = theme.font_regular {
-
         font_size: (10),
     }
 
     mod.widgets.TEXT_SUB = theme.font_regular {
-
         font_size: (10),
     }
 
@@ -176,44 +174,6 @@ script_mod! {
     mod.widgets.COLOR_IMAGE_VIEWER_BACKGROUND = #333333CC // 80% Opacity
 
     mod.widgets.COLOR_IMAGE_VIEWER_META_BACKGROUND = #E8E8E8
-
-    // An icon that can be rotated at a custom angle.
-    mod.widgets.IconRotated = Icon {
-        draw_icon +: {
-            rotation_angle: instance(0.0),
-
-            // Support rotation of the icon
-            clip_and_transform_vertex: fn(rect_pos: vec2, rect_size: vec2) -> vec4 {
-                let clipped: vec2 = clamp(
-                    self.geom_pos * rect_size + rect_pos,
-                    self.draw_clip.xy,
-                    self.draw_clip.zw
-                )
-                self.pos = (clipped - rect_pos) / rect_size
-
-                // Calculate the texture coordinates based on the rotation angle
-                let angle_rad = self.rotation_angle * 3.14159265359 / 180.0;
-                let cos_angle = cos(angle_rad);
-                let sin_angle = sin(angle_rad);
-                let rot_matrix = mat2(
-                    cos_angle, -sin_angle,
-                    sin_angle, cos_angle
-                );
-                self.tex_coord1 = mix(
-                    self.icon_t1.xy,
-                    self.icon_t2.xy,
-                    (rot_matrix * (self.pos.xy - vec2(0.5))) + vec2(0.5)
-                );
-
-                return self.camera_projection * (self.camera_view * (self.view_transform * vec4(
-                    clipped.x,
-                    clipped.y,
-                    self.draw_depth + self.draw_zbias,
-                    1.
-                )))
-            }
-        }
-    }
 
     // A text input widget styled for Robrix.
     mod.widgets.RobrixTextInput = TextInput {

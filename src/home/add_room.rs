@@ -163,7 +163,7 @@ script_mod! {
 
                 room_avatar := Avatar {
                     width: 45, height: 45,
-                    cursor: Default,
+                    cursor: MouseCursor.Default,
                     text_view +: {
                         text +: {
                             draw_text +: {

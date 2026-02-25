@@ -23,7 +23,7 @@ script_mod! {
                 border_radius: instance(4.0)
                 // Adjust this border_size to larger value to make oval smaller 
                 border_size: instance(2.0)
-                pixel: fn() -> vec4 {
+                pixel: fn() {
                     let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                     sdf.box(
                         self.border_size,

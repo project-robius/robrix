@@ -18,7 +18,7 @@ script_mod! {
             down: instance(0.0)
             hover: instance(0.0)
 
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                 sdf.clear(COLOR_SECONDARY);
 
@@ -105,7 +105,7 @@ script_mod! {
             hover: instance(float;)
             active: instance(float;)
 
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                 let mid = self.rect_size / 2.0;
                 let size = (self.hover * 0.25 + 0.5) * 0.25 * length(self.rect_size);
@@ -134,7 +134,7 @@ script_mod! {
                 }
 
                 on: {
-                    cursor: Hand,
+                    cursor: MouseCursor.Hand,
                     from: {all: Snap}
                     apply: {
                         draw_button +: {hover: 1.0}
@@ -148,7 +148,7 @@ script_mod! {
         width: Fit, height: Fill, //Fixed((THEME_TAB_HEIGHT)),
 
         align: Align{x: 0.0, y: 0.5}
-        padding: THEME_MSPACE_3 { }
+        padding: 9
 
         close_button: TabCloseButton {}
         draw_text +: {
@@ -172,7 +172,7 @@ script_mod! {
             hover: instance(float)
             active: instance(float)
 
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                 sdf.box(
                     -1.,
@@ -204,7 +204,7 @@ script_mod! {
                 }
 
                 on: {
-                    cursor: Hand,
+                    cursor: MouseCursor.Hand,
                     from: {all: Forward {duration: 0.1}}
                     apply: {
                         draw_bg +: {hover: [{time: 0.0, value: 1.0}]}
@@ -266,7 +266,7 @@ script_mod! {
 
         round_corner: {
             border_radius: 20.
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 let pos = vec2(
                     mix(self.pos.x, 1.0 - self.pos.x, self.flip.x),
                     mix(self.pos.y, 1.0 - self.pos.y, self.flip.y)

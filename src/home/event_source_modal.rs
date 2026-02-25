@@ -182,7 +182,7 @@ script_mod! {
                     border_size: uniform(1.25)
                     border_color: uniform((COLOR_SECONDARY))
 
-                    pixel: fn() -> vec4 {
+                    pixel: fn() {
                         let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                         
                         // Draw rounded box - but only the stroke, no fill

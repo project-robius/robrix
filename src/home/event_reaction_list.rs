@@ -72,7 +72,7 @@ script_mod! {
                     return mix(self.reaction_bg_color, mix(self.reaction_bg_color, self.color_hover, 0.2), self.hover)
                 }
 
-                pixel: fn() -> vec4 {
+                pixel: fn() {
                     let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                     sdf.box(
                         self.border_size,

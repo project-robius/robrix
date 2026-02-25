@@ -49,7 +49,7 @@ script_mod! {
             draw_bg +: {
                 background_color: uniform((COLOR_AVATAR_BG))
 
-                pixel: fn() -> vec4 {
+                pixel: fn() {
                     let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                     let c = self.rect_size * 0.5;
                     sdf.circle(c.x, c.x, c.x)
@@ -78,7 +78,7 @@ script_mod! {
                 width: Fill, height: Fill,
                 src: (mod.widgets.IMG_DEFAULT_AVATAR),
                 draw_bg +: {
-                    pixel: fn() -> vec4 {
+                    pixel: fn() {
                         let maxed = max(self.rect_size.x, self.rect_size.y);
                         let sdf = Sdf2d.viewport(self.pos * vec2(maxed, maxed));
                         let r = maxed * 0.5;

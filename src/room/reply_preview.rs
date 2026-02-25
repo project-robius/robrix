@@ -15,7 +15,7 @@ script_mod! {
         height: Fit
         flow: Down
         padding: Inset{left: 16.0, bottom: 5.0, top: 2.0, right: 11.0}
-        cursor: Hand,
+        cursor: MouseCursor.Hand,
 
         View {
             width: Fill
@@ -154,7 +154,7 @@ script_mod! {
                     return self.color;
                 }
 
-                pixel: fn() -> vec4 {
+                pixel: fn() {
                     let sdf = Sdf2d.viewport(self.pos * self.rect_size);
 
                     sdf.box(

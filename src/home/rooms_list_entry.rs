@@ -101,7 +101,7 @@ script_mod! {
                 return self.border_color
             }
 
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.box(
                     self.inset.x + self.border_size,
@@ -138,7 +138,7 @@ script_mod! {
 
     mod.widgets.RoomsListEntry = #(RoomsListEntry::register_widget(vm)) {
         flow: Down, height: Fit
-        cursor: Default,
+        cursor: MouseCursor.Default,
         show_bg: true,
 
         // Wrap the RoomsListEntryContent in an AdaptiveView to change the displayed content

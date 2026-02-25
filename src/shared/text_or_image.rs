@@ -35,7 +35,7 @@ script_mod! {
         }
         image_view := View {
             visible: false,
-            cursor: Default, // Use `Hand` once we support clicking on the image
+            cursor: MouseCursor.Default, // Use `Hand` once we support clicking on the image
             width: Fill, height: Fit,
             image := Image {
                 width: Fill, height: Fit,
@@ -44,7 +44,7 @@ script_mod! {
         }
         default_image_view := View {
             visible: false,
-            cursor: Default, // Use `Hand` once we support clicking on the image
+            cursor: MouseCursor.Default, // Use `Hand` once we support clicking on the image
             width: Fill, height: Fit,
             image := Image {
                 width: Fill, height: Fit,

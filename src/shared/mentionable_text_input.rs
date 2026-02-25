@@ -36,14 +36,14 @@ script_mod! {
         margin: Inset{left: 4, right: 4}
         padding: Inset{left: 8, right: 8, top: 4, bottom: 4}
         show_bg: true
-        cursor: Hand
+        cursor: MouseCursor.Hand
         draw_bg +: {
             color: (COLOR_PRIMARY),
             border_radius: uniform(4.0),
             hover: instance(0.0),
             selected: instance(0.0),
 
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                 // Draw rounded rectangle with configurable radius
                 sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
@@ -108,14 +108,14 @@ script_mod! {
         margin: Inset{left: 4, right: 4}
         padding: Inset{left: 8, right: 8, top: 4, bottom: 4}
         show_bg: true
-        cursor: Hand
+        cursor: MouseCursor.Hand
         draw_bg +: {
             color: (COLOR_PRIMARY),
             border_radius: uniform(4.0),
             hover: instance(0.0),
             selected: instance(0.0),
 
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                 sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
 

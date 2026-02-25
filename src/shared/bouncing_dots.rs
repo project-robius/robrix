@@ -17,7 +17,7 @@ script_mod! {
             freq: uniform(0.9),  // Animation frequency
             phase_offset: uniform(5.0), // Phase difference
             dot_radius: uniform(1.5), // Dot radius
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                 let amplitude = self.rect_size.y * 0.21;
                 let center_y = self.rect_size.y * 0.5;

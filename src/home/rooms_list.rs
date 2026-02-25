@@ -114,7 +114,7 @@ script_mod! {
     mod.widgets.RoomsList = #(RoomsList::register_widget(vm)) {
         width: Fill, height: Fill
         flow: Down
-        cursor: Default,
+        cursor: MouseCursor.Default,
 
         space_lobby_entry := SpaceLobbyEntry {}
 

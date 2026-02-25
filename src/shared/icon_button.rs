@@ -46,7 +46,7 @@ script_mod! {
         }
         icon_walk: Walk{width: 7.5, height: Fit, margin: Inset{left: 5.0}}
         draw_bg +: {
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                 return sdf.result
             }
@@ -78,7 +78,7 @@ script_mod! {
                 return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
             }
 
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.box(
                     self.border_size,

@@ -61,7 +61,7 @@ script_mod! {
         width: Fit, height: Fit,
         flow: Flow.Right{wrap: true}, // ensure the link text can wrap
         align: Align{ y: 0.5 },
-        cursor: Hand,
+        cursor: MouseCursor.Hand,
 
         html_link_view := View {
             visible: true,

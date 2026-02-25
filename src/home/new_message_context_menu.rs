@@ -33,7 +33,7 @@ script_mod! {
         flow: Overlay,
         width: Fill,
         height: Fill,
-        cursor: Default,
+        cursor: MouseCursor.Default,
         // Align to top-left such that our coordinate adjustment
         // when showing this menu pane will work correctly.
         align: Align{x: 0, y: 0}
@@ -41,7 +41,7 @@ script_mod! {
         // Show a slightly darkened translucent background to make the menu stand out.
         show_bg: true
         draw_bg +: {
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 return vec4(0., 0., 0., 0.3)
             }
         }

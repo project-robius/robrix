@@ -18,7 +18,7 @@ script_mod! {
 
         show_bg: true
         draw_bg +: {
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 return vec4(0., 0., 0., 0.7)
             }
         }

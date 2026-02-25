@@ -75,7 +75,7 @@ script_mod! {
         padding: Inset{left: 15, right: 15, top: 15, bottom: 50}
         spacing: 20,
         flow: Down,
-        cursor: Default,
+        cursor: MouseCursor.Default,
 
         show_bg: true,
         draw_bg +: {
@@ -271,7 +271,7 @@ script_mod! {
             show_bg: true
             draw_bg +: {
                 bg_color: uniform(#000000BB)
-                pixel: fn() -> vec4 {
+                pixel: fn() {
                     return self.bg_color;
                 }
             }

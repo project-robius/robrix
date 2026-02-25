@@ -13,7 +13,7 @@ use matrix_sdk::{RoomDisplayName, RoomState};
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 
 use crate::{
-    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, room_filter_input_bar::RoomFilterAction}, utils::{self, RoomNameId}
+    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, room_filter_input_bar::RoomFilterAction}, utils::{self, RoomNameId}
 };
 
 script_mod! {
@@ -32,7 +32,7 @@ script_mod! {
         padding: 5,
         margin: 3,
         align: Align{x: 0.5, y: 0.5}
-        cursor: draw.MouseCursor.Hand
+        cursor: MouseCursor.Hand
 
         show_bg: true
         draw_bg +: {
@@ -64,7 +64,7 @@ script_mod! {
                 return self.border_color
             }
 
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.box(
                     self.inset.x + self.border_size,

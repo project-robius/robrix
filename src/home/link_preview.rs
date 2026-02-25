@@ -87,7 +87,7 @@ script_mod! {
         }
 
         item_template: RoundedView {
-            cursor: Hand,
+            cursor: MouseCursor.Hand,
             flow: Right,
             spacing: 4.0,
             width: Fill, height: Fit,

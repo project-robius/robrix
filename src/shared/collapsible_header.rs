@@ -38,7 +38,7 @@ script_mod! {
         padding: 5
         flow: Right,
 
-        cursor: Hand,
+        cursor: MouseCursor.Hand,
         draw_bg +: {
             border_radius: 4.0,
             color: (mod.widgets.COLOR_HEADER_BG)

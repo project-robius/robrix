@@ -28,12 +28,12 @@ script_mod! {
         flow: Overlay,
         width: Fill,
         height: Fill,
-        cursor: Default,
+        cursor: MouseCursor.Default,
         align: Align{x: 0, y: 0}
 
         show_bg: true
         draw_bg +: {
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 return vec4(0., 0., 0., 0.3)
             }
         }

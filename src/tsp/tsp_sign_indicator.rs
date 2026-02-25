@@ -2,7 +2,7 @@
 
 use makepad_widgets::*;
 
-use crate::shared::{callout_tooltip::{CalloutTooltipOptions, TooltipAction}, styles::*};
+use crate::shared::styles::*;
 
 script_mod! {
     link tsp_enabled
@@ -20,7 +20,7 @@ script_mod! {
 
         // TODO: re-enable this once we have implemented the ability
         // to click on the indicator to show the user's profile and TSP info.
-        // cursor: Hand,
+        // cursor: MouseCursor.Hand,
 
         tsp_html := Html {
             width: Fit, height: Fit

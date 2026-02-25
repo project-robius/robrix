@@ -1,7 +1,6 @@
 use makepad_widgets::ScriptVm;
 
 pub mod avatar;
-pub mod callout_tooltip;
 pub mod collapsible_header;
 pub mod confirmation_modal;
 pub mod helpers;
@@ -38,7 +37,6 @@ pub fn script_mod(vm: &mut ScriptVm) {
     jump_to_bottom_button::script_mod(vm);
     popup_list::script_mod(vm);
     verification_badge::script_mod(vm);
-    callout_tooltip::script_mod(vm);
     command_text_input::script_mod(vm);
     mentionable_text_input::script_mod(vm);
     restore_status_view::script_mod(vm);

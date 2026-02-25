@@ -17,7 +17,7 @@ script_mod! {
     mod.widgets.SsoButton = RoundedView {
         width: Fit,
         height: Fit,
-        cursor: draw.MouseCursor.Hand,
+        cursor: MouseCursor.Hand,
         visible: true,
         padding: 10,
         margin: Inset{ left: 16.6, right: 16.6, top: 10, bottom: 10}
@@ -32,7 +32,7 @@ script_mod! {
         width: 30, height: 30,
         draw_bg +: {
             mask: uniform(0.0)
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 let color = self.get_color();
                 let gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
                 let grayed = mix(color, vec4(gray, gray, gray, color.a), self.mask);

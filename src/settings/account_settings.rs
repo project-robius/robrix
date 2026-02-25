@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use makepad_widgets::{text::selection::Cursor, *};
 use crate::ApplyOverCompat;
 
-use crate::{app::ConfirmDeleteAction, avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::{AvatarState, AvatarWidgetExt}, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, confirmation_modal::ConfirmationModalContent, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, MatrixRequest, submit_async_request}, utils};
+use crate::{app::ConfirmDeleteAction, avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, MatrixRequest, submit_async_request}, utils};
 
 script_mod! {
     use mod.prelude.widgets.*

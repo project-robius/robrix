@@ -152,7 +152,7 @@ script_mod! {
             debug_progress_bar: uniform(0.0),
             anim_time: uniform(0.0),
             anim_duration: uniform(2.0),
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                 let rect_size = self.rect_size;
                 let time = self.anim_time / self.anim_duration;
@@ -252,7 +252,7 @@ script_mod! {
             border_color: uniform(#000000)
             border_size: uniform(2.0)
             background_color: instance(#ffffff)
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                 sdf.box(
                     1.,
@@ -379,7 +379,7 @@ script_mod! {
         height: Fit
         flow: Down
         draw_bg +: {
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 return vec4(0., 0., 0., 0.0)
             }
         }

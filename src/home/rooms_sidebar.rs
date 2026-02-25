@@ -29,7 +29,7 @@ script_mod! {
                 border_size: instance(0.003)
 
                 // Draws a right-side border
-                pixel: fn() -> vec4 {
+                pixel: fn() {
                     if self.pos.x > 1.0 - self.border_size {
                         return self.border_color;
                     } else {

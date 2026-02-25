@@ -4,9 +4,6 @@
 use chrono::{DateTime, Local};
 use makepad_widgets::*;
 
-use crate::shared::callout_tooltip::{CalloutTooltipOptions, TooltipPosition};
-
-use super::callout_tooltip::TooltipAction;
 
 script_mod! {
     use mod.prelude.widgets.*

@@ -63,7 +63,7 @@ script_mod! {
 
         successor_room_avatar := Avatar {
             width: 30, height: 30,
-            cursor: Default,
+            cursor: MouseCursor.Default,
             text_view +: {
                 text +: {
                     draw_text +: {

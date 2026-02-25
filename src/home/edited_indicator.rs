@@ -11,7 +11,7 @@ use chrono::{DateTime, Local};
 use makepad_widgets::*;
 use matrix_sdk_ui::timeline::EventTimelineItem;
 
-use crate::{shared::callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, utils::unix_time_millis_to_datetime};
+use crate::utils::unix_time_millis_to_datetime;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -29,7 +29,7 @@ script_mod! {
         margin: Inset{ top: 5 }
 
         // TODO: re-enable this once we have implemented the edit history modal
-        // cursor: Hand,
+        // cursor: MouseCursor.Hand,
 
         edit_html := Html {
             width: Fit, height: Fit

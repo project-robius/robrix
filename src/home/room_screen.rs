@@ -32,7 +32,7 @@ use crate::{
     },
     room::{BasicRoomDetails, room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::{AvatarState, AvatarWidgetRefExt}, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, confirmation_modal::ConfirmationModalContent, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -92,7 +92,7 @@ script_mod! {
         spacing: 5.0
         margin: Inset{ top: 5.0 }
         padding: 12,
-        cursor: Hand
+        cursor: MouseCursor.Hand
 
         show_bg: true
         draw_bg +: {
@@ -132,7 +132,7 @@ script_mod! {
         height: Fit,
         margin: 0.0
         flow: Down,
-        cursor: Default,
+        cursor: MouseCursor.Default,
         padding: 0.0,
         spacing: 0.0
 
@@ -145,7 +145,7 @@ script_mod! {
             mentions_bar_color: instance(#ffffff)
             mentions_bar_width: instance(4.0)
 
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 let base_color = mix(
                     self.color,
                     #fafafa,
@@ -368,7 +368,7 @@ script_mod! {
         margin: Inset{ top: 4.0, bottom: 4.0}
         padding: Inset{ top: 1.0, bottom: 1.0, right: 10.0 }
         spacing: 0.0
-        cursor: Default
+        cursor: MouseCursor.Default
 
         body := View {
             width: Fill,
@@ -546,7 +546,7 @@ script_mod! {
 
     mod.widgets.RoomScreen = #(RoomScreen::register_widget(vm)) {
         width: Fill, height: Fill,
-        cursor: Default,
+        cursor: MouseCursor.Default,
         flow: Down,
         spacing: 0.0
 

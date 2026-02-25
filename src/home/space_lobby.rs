@@ -48,7 +48,7 @@ script_mod! {
         align: Align{y: 0.5}
         padding: 5,
         margin: Inset{top: 10, bottom: 0}
-        cursor: Hand
+        cursor: MouseCursor.Hand
 
         show_bg: true
         draw_bg +: {
@@ -80,7 +80,7 @@ script_mod! {
                 return self.border_color
             }
 
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.box(
                     self.inset.x + self.border_size,
@@ -192,19 +192,19 @@ script_mod! {
     }
 
     // A view that draws the hierarchical tree structure lines.
-    mod.widgets.DrawTreeLine = set_type_default() do #(DrawTreeLine::script_shader(vm)){
+    let DrawTreeLine = set_type_default() do #(DrawTreeLine::script_shader(vm)){
         ..mod.draw.DrawQuad
     }
 
-    mod.widgets.TreeLines = #(TreeLines::register_widget(vm)) {
+    let TreeLines = #(TreeLines::register_widget(vm)) {
         width: 0, height: Fill
-        draw_bg: mod.widgets.DrawTreeLine {
+        draw_bg: DrawTreeLine {
             indent_width: 44.0
             level: 0.0
             is_last: 0.0
             parent_mask: 0.0
 
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 let pos = self.pos * self.rect_size;
                 let indent = self.indent_width;
                 // Yes, this should be 0.5, but 0.6 makes it line up nicely
@@ -213,33 +213,36 @@ script_mod! {
                 let line_width = 1.0;
                 let half_line = 0.5;
 
-                let c = vec4(0.0);
+                let mut c = vec4(0.0);
 
                 // Dumb approach, but it works.
                 for i in 0..20 {
-                    if float(i) > self.level { break; }
+                    if f32(i) > self.level { break; }
                     
-                    if float(i) < self.level {
+                    if f32(i) < self.level {
                         // Check mask for parent levels
-                        let mask_bit = modf(floor(self.parent_mask / pow(2.0, float(i))), 2.0);
+                        let mask_bit = modf(floor(self.parent_mask / pow(2.0, f32(i))), 2.0);
                         if mask_bit > 0.5 {
-                             // Draw full vertical line
-                             if abs(pos.x - (float(i) * indent + half_indent)) < half_line && pos.y < self.rect_size.y {
-                                  return vec4(0.8, 0.8, 0.8, 1.0);
-                             }
+                            // Draw full vertical line
+                            if abs(pos.x - (f32(i) * indent + half_indent)) < half_line && pos.y < self.rect_size.y {
+                                c = vec4(0.8, 0.8, 0.8, 1.0);
+                                break;
+                            }
                         }
                     } else {
                         // Current level: connection to self
                         
                         // Horizontal line to content
                         let hy = self.rect_size.y * 0.5;
-                        if abs(pos.y - hy) < half_line && pos.x > (float(i) * indent + half_indent) {
-                             return vec4(0.8, 0.8, 0.8, 1.0);
+                        if abs(pos.y - hy) < half_line && pos.x > (f32(i) * indent + half_indent) {
+                            c = vec4(0.8, 0.8, 0.8, 1.0);
+                            break;
                         }
                         
                         // Vertical line (L shape)
-                        if abs(pos.x - (float(i) * indent + half_indent)) < half_line && pos.y < (self.rect_size.y * (1.0 - 0.5 * self.is_last)) {
-                              return vec4(0.8, 0.8, 0.8, 1.0);
+                        if abs(pos.x - (f32(i) * indent + half_indent)) < half_line && pos.y < (self.rect_size.y * (1.0 - 0.5 * self.is_last)) {
+                            c = vec4(0.8, 0.8, 0.8, 1.0);
+                            break;
                         }
                     }
                 }
@@ -249,26 +252,26 @@ script_mod! {
     }
 
     // Entry for a child subspace (can be expanded)
-    mod.widgets.SubspaceEntry = #(SubspaceEntry::register_widget(vm)) {
+    let SubspaceEntry = #(SubspaceEntry::register_widget(vm)) {
         width: Fill,
         height: 44,
         flow: Right,
         align: Align{y: 0.5}
         padding: Inset{left: 8, right: 12}
-        cursor: Hand
+        cursor: MouseCursor.Hand
 
         show_bg: true
         draw_bg +: {
             hover: instance(0.0)
-            color: #fff
+            color: uniform(#fff)
             color_hover: uniform(#f5f5f5)
-            pixel: fn() -> vec4 {
+            pixel: fn() {
                 return mix(self.color, self.color_hover, self.hover);
             }
         }
 
         // The connecting hierarchical lines on the left.
-        tree_lines := mod.widgets.TreeLines {}
+        tree_lines := TreeLines {}
 
         // Expand/collapse icon
         expand_icon := IconRotated {
@@ -377,8 +380,8 @@ script_mod! {
     }
 
     // Entry for a child room within a space, which cannot be expanded.
-    mod.widgets.RoomEntry = mod.widgets.SubspaceEntry {
-        cursor: Default
+    let RoomEntry = SubspaceEntry {
+        cursor: MouseCursor.Default
 
         expand_icon := View {
             width: 10
@@ -423,7 +426,7 @@ script_mod! {
         padding: Inset{left: 8, right: 12}
 
         // Tree lines replace the spacer
-        tree_lines := mod.widgets.TreeLines {}
+        tree_lines := TreeLines {}
 
         loading_spinner := LoadingSpinner {
             width: 14,
@@ -538,8 +541,8 @@ script_mod! {
             flow: Down,
             spacing: 0.0
 
-            subspace_entry := mod.widgets.SubspaceEntry {}
-            room_entry := mod.widgets.RoomEntry {}
+            subspace_entry := SubspaceEntry {}
+            room_entry := RoomEntry {}
             subspace_loading := mod.widgets.SubspaceLoadingEntry {}
             status_label := mod.widgets.SpaceLobbyStatusLabel {}
             bottom_filler := View {
