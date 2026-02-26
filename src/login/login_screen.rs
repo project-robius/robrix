@@ -22,9 +22,9 @@ script_mod! {
         padding: 10,
         margin: Inset{ left: 16.6, right: 16.6, top: 10, bottom: 10}
         draw_bg +: {
-            border_size: 0.5,
-            border_color: instance((#6c6c6c)),
-            color: instance((COLOR_PRIMARY))
+            border_size: 0.5
+            border_color: #6c6c6c
+            color: (COLOR_PRIMARY)
         }
     }
 
@@ -48,17 +48,17 @@ script_mod! {
         width: Fill, height: Fill,
         align: Align{x: 0.5, y: 0.5}
         show_bg: true,
-        draw_bg.color: #FFF
+        draw_bg.color: (COLOR_SECONDARY)
+        // draw_bg.color: (COLOR_PRIMARY) // TODO: once Makepad supports `Fill {max: 375}`, change this back to COLOR_PRIMARY
 
         ScrollYView {
             width: Fill, height: Fill,
             // Note: *do NOT* vertically center this, it will break scrolling.
             align: Align{x: 0.5}
             show_bg: true,
-            draw_bg +: {
-                color: instance((COLOR_SECONDARY))
-                // color: (COLOR_PRIMARY) // TODO: once Makepad supports `Fill {max: 375}`, change this back to COLOR_PRIMARY
-            }
+            draw_bg.color: (COLOR_SECONDARY)
+            // draw_bg.color: (COLOR_PRIMARY) // TODO: once Makepad supports `Fill {max: 375}`, change this back to COLOR_PRIMARY
+   
             // allow the view to be scrollable but hide the actual scroll bar
             scroll_bars: {
                 scroll_bar_y: {
@@ -76,7 +76,7 @@ script_mod! {
 
                 show_bg: true,
                 draw_bg +: {
-                    color: instance((COLOR_SECONDARY))
+                    color: (COLOR_SECONDARY)
                     border_radius: 6.0
                 }
 
@@ -144,7 +144,7 @@ script_mod! {
                             align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
 
                             left_line := LineH {
-                                draw_bg +: { color: instance(#C8C8C8)}
+                                draw_bg.color: #C8C8C8
                             }
 
                             Label {
@@ -158,7 +158,7 @@ script_mod! {
                             }
 
                             right_line := LineH {
-                                draw_bg +: { color: instance(#C8C8C8)}
+                                draw_bg.color: #C8C8C8
                             }
                         }
                     }
@@ -170,9 +170,7 @@ script_mod! {
                         padding: 10
                         margin: Inset{top: 5, bottom: 10}
                         align: Align{x: 0.5, y: 0.5}
-                        draw_bg +: {
-                            color: instance((COLOR_ACTIVE_PRIMARY))
-                        }
+                        draw_bg.color: (COLOR_ACTIVE_PRIMARY)
                         draw_text +: {
                             color: (COLOR_PRIMARY)
                             text_style: REGULAR_TEXT {}
@@ -183,7 +181,7 @@ script_mod! {
                     left_line := LineH {
                         width: 275
                         margin: Inset{bottom: -5}
-                        draw_bg +: { color: instance(#C8C8C8)}
+                        draw_bg.color: #C8C8C8
                     }
                     Label {
                         width: Fit, height: Fit
@@ -240,7 +238,7 @@ script_mod! {
                         align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
 
                         left_line := LineH {
-                            draw_bg +: { color: instance(#C8C8C8)}
+                            draw_bg.color: #C8C8C8
                         }
 
                         Label {
@@ -254,7 +252,7 @@ script_mod! {
                         }
 
                         right_line := LineH {
-                            draw_bg +: { color: instance(#C8C8C8)}
+                            draw_bg.color: #C8C8C8
                         }
                     }
                     
@@ -263,9 +261,7 @@ script_mod! {
                         padding: Inset{left: 15, right: 15, top: 10, bottom: 10}
                         margin: Inset{bottom: 5}
                         align: Align{x: 0.5, y: 0.5}
-                        draw_bg +: {
-                            color: instance((COLOR_ACTIVE_PRIMARY))
-                        }
+                        draw_bg.color: (COLOR_ACTIVE_PRIMARY)
                         draw_text +: {
                             color: (COLOR_PRIMARY)
                             text_style: REGULAR_TEXT {}

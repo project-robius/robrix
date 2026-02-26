@@ -66,13 +66,13 @@ script_mod! {
         align: Align{x: 0, y: 0.5}
 
         draw_bg +: {
-            color: instance((mod.widgets.COLOR_PRIMARY))
+            color: (mod.widgets.COLOR_PRIMARY)
             // We set a mid-gray hover color, which gets mixed with the bg color itself
             // in order to create a "lightening" effect upon hover.
-            color_hover: instance(#A)
-            border_size: instance(0.0)
-            border_color: instance(#D0D5DD)
-            border_radius: instance(4.0)
+            color_hover: #A
+            border_size: 0.0
+            border_color: #D0D5DD
+            border_radius: 4.0
 
             get_color: fn() -> vec4 {
                 return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
@@ -106,13 +106,12 @@ script_mod! {
         icon_walk: Walk{width: 16, height: 16}
 
         draw_text +: {
-            hover: instance(0.0)
-            text_style: mod.widgets.REGULAR_TEXT {font_size: 10},
             color: #000
-            color_hover: uniform(#000)
+            color_hover: #000
             get_color: fn() -> vec4 {
                 return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
             }
+            text_style: mod.widgets.REGULAR_TEXT {font_size: 10},
         }
         text: ""
     }
