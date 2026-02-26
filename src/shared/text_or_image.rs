@@ -17,7 +17,7 @@ script_mod! {
         width: Fill, height: Fit,
         flow: Overlay,
 
-        text_view := View {
+        text_view := SolidView {
             visible: true,
             show_bg: true,
             draw_bg +: {

@@ -30,7 +30,7 @@ script_mod! {
     mod.widgets.KEYBOARD_FOCUS_OR_COLOR_HOVER = #1C274C
 
     // Template for user list items in the mention dropdown
-    mod.widgets.UserListItem = View {
+    mod.widgets.UserListItem = SolidView {
         width: Fill,
         height: Fit,
         margin: Inset{left: 4, right: 4}
@@ -102,7 +102,7 @@ script_mod! {
     }
 
     // Template for the @room mention list item
-    mod.widgets.RoomMentionListItem = View {
+    mod.widgets.RoomMentionListItem = RoundedView {
         width: Fill,
         height: Fit,
         margin: Inset{left: 4, right: 4}
@@ -176,7 +176,7 @@ script_mod! {
     }
 
     // Template for loading indicator when members are being fetched
-    mod.widgets.LoadingIndicator = View {
+    mod.widgets.LoadingIndicator = SolidView {
         width: Fill,
         height: 48,
         margin: Inset{left: 4, right: 4}
@@ -208,7 +208,7 @@ script_mod! {
     }
 
     // Template for no matches indicator when no users match the search
-    mod.widgets.NoMatchesIndicator = View {
+    mod.widgets.NoMatchesIndicator = SolidView {
         width: Fill,
         height: 48,
         margin: Inset{left: 4, right: 4}
@@ -247,7 +247,7 @@ script_mod! {
             draw_bg +: {
                 color: (COLOR_SECONDARY),
             }
-            header_view := View {
+            header_view := SolidView {
                 margin: Inset{left: 4, right: 4}
                 draw_bg +: {
                     color: (COLOR_ROBRIX_PURPLE),

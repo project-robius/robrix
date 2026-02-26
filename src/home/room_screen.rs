@@ -488,7 +488,7 @@ script_mod! {
 
 
     // The top space is used to display a loading message while the room is being paginated.
-    mod.widgets.TopSpace = View {
+    mod.widgets.TopSpace = SolidView {
         visible: false,
         width: Fill,
         height: Fit,
@@ -550,7 +550,7 @@ script_mod! {
         flow: Down,
         spacing: 0.0
 
-        room_screen_wrapper := View {
+        room_screen_wrapper := SolidView {
             width: Fill, height: Fill,
             flow: Overlay,
             show_bg: true

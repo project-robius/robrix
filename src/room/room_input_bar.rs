@@ -128,7 +128,7 @@ script_mod! {
                 }
             }
 
-            can_not_send_message_notice := View {
+            can_not_send_message_notice := SolidView {
                 visible: false
                 show_bg: true
                 draw_bg +: {

@@ -173,7 +173,7 @@ script_mod! {
 
             // Border overlay frame (drawn on top of content)
             // Only draws the stroke, fill is transparent
-            border_frame := View {
+            border_frame := SolidView {
                 width: Fill,
                 height: Fill,
                 show_bg: true

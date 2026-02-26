@@ -59,7 +59,7 @@ script_mod! {
             //       to ensure that there is only a single global instance of each
             //       of those widgets, which means they maintain their state
             //       across transitions between the Desktop and Mobile variant.
-            Desktop := View {
+            Desktop := SolidView {
                 show_bg: true
                 draw_bg +: {
                     color: (COLOR_SECONDARY),
@@ -110,7 +110,7 @@ script_mod! {
                         mod.widgets.MainDesktopUI {}
                     }
 
-                    settings_page := View {
+                    settings_page := SolidView {
                         width: Fill, height: Fill
                         show_bg: true,
                         draw_bg +: {
@@ -122,7 +122,7 @@ script_mod! {
                         }
                     }
 
-                    add_room_page := View {
+                    add_room_page := SolidView {
                         width: Fill, height: Fill
                         show_bg: true,
                         draw_bg +: {
@@ -136,7 +136,7 @@ script_mod! {
                 }
             }
 
-            Mobile := View {
+            Mobile := SolidView {
                 width: Fill, height: Fill
                 flow: Down
 

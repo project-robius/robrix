@@ -264,7 +264,7 @@ script_mod! {
         height: Fill,
         align: Align{x: 1.0, y: 0}
 
-        bg_view := View {
+        bg_view := SolidView {
             width: Fill
             height: Fill
             visible: false,

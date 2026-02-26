@@ -460,7 +460,7 @@ script_mod! {
         }
 
         // Header with parent space info
-        header := View {
+        header := SolidView {
             width: Fill,
             height: Fit,
             flow: Down,

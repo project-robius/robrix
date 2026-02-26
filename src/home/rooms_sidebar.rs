@@ -17,7 +17,7 @@ script_mod! {
 
 
     mod.widgets.RoomsSideBar = #(RoomsSideBar::register_widget(vm)) {
-        Desktop := View {
+        Desktop := SolidView {
             padding: Inset{top: 20, left: 10, right: 10}
             flow: Down, spacing: 5
             width: Fill, height: Fill

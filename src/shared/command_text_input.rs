@@ -63,7 +63,7 @@ script_mod! {
                 }
             }
 
-            header_view := View{
+            header_view := SolidView{
                 width: Fill
                 height: Fit
                 padding: Inset{left: 12., right: 12., top: 12., bottom: 12.}

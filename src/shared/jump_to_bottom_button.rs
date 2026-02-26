@@ -42,6 +42,8 @@ script_mod! {
                 enable_long_press: true,
             }
 
+            // TODO: replace the below with the UnreadBadge widget
+
             // A badge overlay on the jump to bottom button showing unread messages
             unread_message_badge := View {
                 width: 25, height: 20,
@@ -51,7 +53,7 @@ script_mod! {
                 }
                 visible: false,
                 flow: Overlay,
-                green_rounded_label := View {
+                green_rounded_label := SolidView {
                     width: Fill,
                     height: Fill,
                     show_bg: true,

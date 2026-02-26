@@ -14,7 +14,7 @@ script_mod! {
         align: Align{ x: 0.5, y: 0.5 }
         flow: Overlay,
 
-        rounded_view := View {
+        rounded_view := SolidView {
             width: Fill,
             height: Fill,
             show_bg: true,
