@@ -20,15 +20,15 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-
     // The duration of the animation when showing/hiding the SpacesBar (in Mobile view mode only).
     mod.widgets.SPACES_BAR_ANIMATION_DURATION_SECS = 0.25
 
     // An entry in the list of all spaces, which shown the Space's avatar and name.
-    mod.widgets.SpacesBarEntry = #(SpacesBarEntry::register_widget(vm)) {
-        // TODO: replace all `68`s with `NAVIGATION_TAB_BAR_SIZE`
-        width: (68 - 5),
-        height: (68 - 5),
+    mod.widgets.SpacesBarEntry = set_type_default() do #(SpacesBarEntry::register_widget(vm)) {
+        ..mod.widgets.RoundedView
+
+        width: (NAVIGATION_TAB_BAR_SIZE - 5),
+        height: (NAVIGATION_TAB_BAR_SIZE - 5),
         flow: Down
         padding: 5,
         margin: 3,
@@ -41,10 +41,8 @@ script_mod! {
             active: instance(0.0)
 
             color: uniform(#0000)
-            // color_hover: uniform((COLOR_NAVIGATION_TAB_BG_HOVER))
-            color_hover: uniform(#f00)
-            // color_active: uniform((COLOR_NAVIGATION_TAB_BG_ACTIVE))
-            color_active: uniform(#0f0)
+            color_hover: uniform((COLOR_NAVIGATION_TAB_BG_HOVER))
+            color_active: uniform((COLOR_NAVIGATION_TAB_BG_ACTIVE))
 
             border_size: uniform(0.0)
             border_color: uniform(#0000)
@@ -63,10 +61,6 @@ script_mod! {
                 )
             }
 
-            get_border_color: fn() -> vec4 {
-                return self.border_color
-            }
-
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.box(
@@ -78,7 +72,7 @@ script_mod! {
                 )
                 sdf.fill_keep(self.get_color())
                 if self.border_size > 0.0 {
-                    sdf.stroke(self.get_border_color(), self.border_size)
+                    sdf.stroke(self.border_color, self.border_size)
                 }
                 return sdf.result;
             }
@@ -88,9 +82,7 @@ script_mod! {
             width: 45, height: 45
             // If no avatar picture, use white text on a dark background.
             text_view +: {
-                draw_bg +: {
-                    background_color: (COLOR_FG_DISABLED),
-                }
+                draw_bg.color: (COLOR_FG_DISABLED),
                 text +: {
                     draw_text +: {
                         text_style: theme.font_regular { font_size: 16.0 },
@@ -134,7 +126,7 @@ script_mod! {
             }
         }
 
-        animator: Animator{
+        animator: Animator {
             hover: {
                 default: @off
                 off: AnimatorState{
@@ -180,10 +172,10 @@ script_mod! {
     }
 
     mod.widgets.SpacesStatusLabel = View {
-        width: (68),
-        height: (68),
+        width: (NAVIGATION_TAB_BAR_SIZE),
+        height: (NAVIGATION_TAB_BAR_SIZE),
         align: Align{ x: 0.5, y: 0.5 }
-        margin: Inset{top: 9, left: 2, bottom: 5}
+        margin: Inset{top: 9, left: 0, bottom: 5}
         // padding: 5.0,
 
         label := Label {
@@ -215,8 +207,8 @@ script_mod! {
         spaces_bar_entry := mod.widgets.SpacesBarEntry {}
         StatusLabel := mod.widgets.SpacesStatusLabel {}
         BottomFiller := View {
-            width: (68)
-            height: (68)
+            width: (NAVIGATION_TAB_BAR_SIZE)
+            height: (NAVIGATION_TAB_BAR_SIZE)
         }
     }
 
@@ -224,10 +216,8 @@ script_mod! {
         Desktop := View {
             align: Align{x: 0.5, y: 0.5}
             padding: 0,
-            width: (68), 
+            width: (NAVIGATION_TAB_BAR_SIZE), 
             height: Fill
-
-            show_bg: false
 
             CachedWidget {
                 spaces_list := mod.widgets.SpacesList { }
@@ -238,9 +228,7 @@ script_mod! {
             align: Align{x: 0.5, y: 0.5}
             padding: 0,
             width: Fill,
-            height: (68)
-
-            show_bg: false
+            height: (NAVIGATION_TAB_BAR_SIZE)
 
             CachedWidget {
                 spaces_list := mod.widgets.SpacesList { }

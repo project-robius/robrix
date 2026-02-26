@@ -107,9 +107,7 @@ script_mod! {
             width: 45, height: 45
             // If no avatar picture, use white text on a dark background.
             text_view +: {
-                draw_bg +: {
-                    background_color: (COLOR_FG_DISABLED),
-                }
+                draw_bg.color: (COLOR_FG_DISABLED),
                 text +: {
                     draw_text +: {
                         text_style: theme.font_regular { font_size: 16.0 },
@@ -161,16 +159,16 @@ script_mod! {
     mod.widgets.Separator = LineH { margin: 8 }
 
     mod.widgets.NavigationTabBar = #(NavigationTabBar::register_widget(vm)) {
-        Desktop := View {
+        Desktop := RoundedView {
             flow: Down,
             align: Align{x: 0.5}
             padding: Inset{top: 40., bottom: 8}
             width: (NAVIGATION_TAB_BAR_SIZE), 
             height: Fill
 
-            show_bg: true
             draw_bg +: {
                 color: (COLOR_SECONDARY)
+                border_radius: 4.0
             }
 
             CachedWidget {
@@ -202,7 +200,6 @@ script_mod! {
             width: Fill,
             height: (NAVIGATION_TAB_BAR_SIZE)
 
-            show_bg: true
             draw_bg +: {
                 color: (COLOR_SECONDARY)
                 border_radius: 4.0

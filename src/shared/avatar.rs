@@ -25,10 +25,6 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.IMG_DEFAULT_AVATAR = crate_resource("self://resources/img/default_avatar.png")
-
-
-
     // An avatar view holds either an image thumbnail or a single character of text.
     // By default, the text label is visible, but can be replaced by an image
     // once it is available.
@@ -42,26 +38,20 @@ script_mod! {
         // the text_view and img_view are overlaid on top of each other.
         flow: Overlay,
 
-        text_view := View {
-            visible: true,
-            align: Align{ x: 0.5, y: 0.5 }
-            show_bg: true,
-            draw_bg +: {
-                background_color: uniform((COLOR_AVATAR_BG))
+        // TODO: use PageFlip to switch between text and image instead of an overlay.
 
-                pixel: fn() {
-                    let sdf = Sdf2d.viewport(self.pos * self.rect_size);
-                    let c = self.rect_size * 0.5;
-                    sdf.circle(c.x, c.x, c.x)
-                    sdf.fill_keep(self.background_color);
-                    return sdf.result
-                }
-            }
+        text_view := CircleView {
+            visible: true,
+            align: Align { x: 0.5, y: 0.5 }
+            show_bg: true,
+            draw_bg.color: (COLOR_AVATAR_BG)
 
             text := Label {
                 padding: 0,
+                margin: 0,
                 width: Fit, height: Fit,
                 flow: Right, // do not wrap
+                align: Align{ x: 0.5, y: 0.5 }
                 draw_text +: {
                     text_style: TITLE_TEXT { font_size: 15. }
                     color: #f,
@@ -70,13 +60,12 @@ script_mod! {
             }
         }
 
-        img_view := View {
+        img_view := CircleView {
             visible: false,
-            align: Align{ x: 0.5, y: 0.5 }
+            align: Align { x: 0.5, y: 0.5 }
             img := Image {
                 fit: ImageFit.Stretch,
                 width: Fill, height: Fill,
-                src: (mod.widgets.IMG_DEFAULT_AVATAR),
                 draw_bg +: {
                     pixel: fn() {
                         let maxed = max(self.rect_size.x, self.rect_size.y);
@@ -170,12 +159,10 @@ impl Avatar {
         self.set_text(cx, username.as_ref());
 
         // Apply background color if provided
-        if let Some(color) = bg_color {
+        if let Some(bgc) = bg_color {
             let mut text_view = self.view(cx, ids!(text_view));
             script_apply_eval!(cx, text_view, {
-                draw_bg +: {
-                    background_color: #(color)
-                }
+                draw_bg.color: #(bgc)
             });
         }
     }
