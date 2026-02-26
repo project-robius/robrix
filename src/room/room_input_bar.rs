@@ -383,10 +383,10 @@ impl RoomInputBar {
 
         #[cfg(any(target_os = "ios", target_os = "android"))]
         if self.button(ids!(send_attachment_button)).clicked(actions) {
-            enqueue_popup_notification(PopupItem {
-                message: format!("Sending attachment is not supported on this platform"),
-                auto_dismissal_duration: Some(3.0),
-                kind: PopupKind::Warning
+            enqueue_popup_notification(
+                "Sending attachment is not supported on this platform",
+                PopupKind::Warning,
+                Some(3.0),
             });
         }
 
