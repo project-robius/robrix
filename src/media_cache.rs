@@ -275,7 +275,7 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
     *value_ref.lock().unwrap() = new_value;
 
     if let Some(sender) = update_sender {
-        let _ = sender.send(TimelineUpdate::MediaFetched(request.clone()));
+        let _ = sender.send(TimelineUpdate::MediaFetched(request));
     }
     SignalToUI::set_ui_signal();
 }
