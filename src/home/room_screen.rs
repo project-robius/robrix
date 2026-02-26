@@ -1642,6 +1642,10 @@ impl RoomScreen {
                     let room_input_bar = self.view.room_input_bar(ids!(room_input_bar));
                     room_input_bar.set_abort_handle(handle);
                 }
+                TimelineUpdate::FileUploadError { error, file_data } => {
+                    let room_input_bar = self.view.room_input_bar(ids!(room_input_bar));
+                    room_input_bar.handle_upload_error(cx, error, file_data);
+                }
             }
         }
 
@@ -2797,6 +2801,14 @@ pub enum TimelineUpdate {
         current: u64,
         /// Total value to reach (e.g., total file size in bytes).
         total: u64,
+    },
+    /// A file upload failed with an error.
+    /// Includes the file data so the user can retry the upload.
+    FileUploadError {
+        /// The error message describing why the upload failed.
+        error: String,
+        /// The file data that can be used to retry the upload.
+        file_data: crate::shared::file_upload_modal::FileData,
     },
     /// A notice that a file upload in this timeline was aborted.
     FileUploadAbortHandle(tokio::task::AbortHandle),

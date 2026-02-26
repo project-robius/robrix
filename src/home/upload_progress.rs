@@ -2,6 +2,7 @@
 
 use makepad_widgets::*;
 
+use crate::shared::file_upload_modal::FileData;
 use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
 use crate::shared::progress_bar::ProgressBarWidgetExt;
 
@@ -10,6 +11,8 @@ use crate::shared::progress_bar::ProgressBarWidgetExt;
 pub enum UploadProgressViewAction {
     /// The cancel button was clicked.
     Cancelled,
+    /// The retry button was clicked with the file data to retry.
+    Retry(FileData),
     None,
 }
 
@@ -55,6 +58,26 @@ live_design! {
                 text: "Uploading..."
             }
 
+            retry_button = <RobrixIconButton> {
+                visible: false,
+                align: {x: 0.5, y: 0.5}
+                padding: 15,
+                draw_icon: {
+                    svg_file: (ICON_ROTATE_CW)
+                    color: (COLOR_FG_ACCEPT_GREEN),
+                }
+                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+
+                draw_bg: {
+                    border_color: (COLOR_FG_ACCEPT_GREEN),
+                    color: (COLOR_BG_ACCEPT_GREEN)
+                }
+                text: "Retry"
+                draw_text:{
+                    color: (COLOR_FG_ACCEPT_GREEN),
+                }
+            }
+
             cancel_upload_button = <RobrixIconButton> {
                 align: {x: 0.5, y: 0.5}
                 padding: 15,
@@ -85,7 +108,11 @@ pub struct UploadProgressView {
     #[deref]
     view: View,
     /// AbortHandle for cancelling an in-progress upload
-    #[rust] upload_abort_handle: Option<tokio::task::AbortHandle>
+    #[rust] upload_abort_handle: Option<tokio::task::AbortHandle>,
+    /// Whether the view is showing an error state with retry option
+    #[rust] is_error_state: bool,
+    /// File data to retry if in error state
+    #[rust] retry_file_data: Option<FileData>,
 }
 
 impl Widget for UploadProgressView {
@@ -101,30 +128,78 @@ impl Widget for UploadProgressView {
 
 impl WidgetMatchEvent for UploadProgressView {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
-        // Handle cancel upload button being clicked.
-        if self.button(ids!(cancel_upload_button)).clicked(actions) {
-            log!("Upload cancelled by user");
-            // Abort the upload task if we have a handle
-            if let Some(abort_handle) = self.upload_abort_handle.take() {
-                abort_handle.abort();
+        // Handle retry button being clicked (only visible in error state)
+        if self.button(ids!(retry_button)).clicked(actions) {
+            if let Some(file_data) = self.retry_file_data.take() {
+                log!("Retrying upload");
+                self.is_error_state = false;
+                // Hide retry button
+                self.button(ids!(retry_button)).set_visible(cx, false);
+                // Reset to uploading state
+                self.view.label(ids!(progress_label)).set_text(cx, "Uploading...");
+                self.view.progress_bar(ids!(progress)).set_value(cx, 0.0);
+                cx.widget_action(
+                    self.widget_uid(),
+                    &scope.path,
+                    UploadProgressViewAction::Retry(file_data),
+                );
             }
-            // Hide the progress bar immediately
-            self.hide(cx);
-            enqueue_popup_notification("Upload cancelled", PopupKind::Info, Some(3.0));
+        }
 
-            cx.widget_action(
-                self.widget_uid(),
-                &scope.path,
-                UploadProgressViewAction::Cancelled,
-            );
+        // Handle cancel button being clicked
+        if self.button(ids!(cancel_upload_button)).clicked(actions) {
+            if self.is_error_state {
+                // In error state, just dismiss the error view
+                self.hide(cx);
+            } else {
+                // Normal state, cancel the upload
+                log!("Upload cancelled by user");
+                // Abort the upload task if we have a handle
+                if let Some(abort_handle) = self.upload_abort_handle.take() {
+                    abort_handle.abort();
+                }
+                // Hide the progress bar immediately
+                self.hide(cx);
+                enqueue_popup_notification("Upload cancelled", PopupKind::Info, Some(3.0));
+
+                cx.widget_action(
+                    self.widget_uid(),
+                    &scope.path,
+                    UploadProgressViewAction::Cancelled,
+                );
+            }
         }
     }
 }
 
 impl UploadProgressView {
-    /// Hides the progress view.
+    /// Hides the progress view and resets error state.
     pub fn hide(&mut self, cx: &mut Cx) {
+        self.is_error_state = false;
+        self.retry_file_data = None;
+        // Hide retry button
+        self.button(ids!(retry_button)).set_visible(cx, false);
         self.set_visible(cx, false);
+        self.redraw(cx);
+    }
+
+    /// Shows an error state with the given error message and stores the file data for retry.
+    pub fn show_error(&mut self, cx: &mut Cx, error: String, file_data: FileData) {
+        self.is_error_state = true;
+        self.retry_file_data = Some(file_data);
+        self.upload_abort_handle = None;
+
+        // Update the label to show the error
+        self.view.label(ids!(progress_label)).set_text(cx, &format!("Upload failed: {}", error));
+
+        // Show the retry button
+        self.button(ids!(retry_button)).set_visible(cx, true);
+
+        // Set progress bar to 0
+        self.view.progress_bar(ids!(progress)).set_value(cx, 0.0);
+
+        // Make sure the view is visible
+        self.set_visible(cx, true);
         self.redraw(cx);
     }
 
@@ -181,6 +256,13 @@ impl UploadProgressViewRef {
     pub fn set_abort_handle(&self, handle: tokio::task::AbortHandle) {
         if let Some(mut view) = self.borrow_mut() {
             view.set_abort_handle(handle);
+        }
+    }
+
+    /// Shows an error state with the given error message and stores the file data for retry.
+    pub fn show_error(&self, cx: &mut Cx, error: String, file_data: FileData) {
+        if let Some(mut view) = self.borrow_mut() {
+            view.show_error(cx, error, file_data);
         }
     }
 }

@@ -1701,6 +1701,7 @@ async fn matrix_worker_task(
                     size: t.size,
                 });
                 let sender_clone = sender.clone();
+                let file_data_for_retry = file_data.clone();
                 // Spawn a new async task that will upload the file.
                 let upload_task = Handle::current().spawn(async move {
                     log!("Uploading file to {timeline_kind}: {file_meta:?}...");
@@ -1767,21 +1768,16 @@ async fn matrix_worker_task(
                         }
                         Err(e) => {
                             error!("Failed to upload file to {timeline_kind}: {e:?}");
-                            // Set progress to completion state (0/0) to hide the progress bar
+                            // Send the error to the UI so the user can see it and retry
                             timeline_update_sender
-                                .send(TimelineUpdate::FileUploadUpdate {
-                                    current: 0,
-                                    total: 0,
+                                .send(TimelineUpdate::FileUploadError {
+                                    error: format!("{e}"),
+                                    file_data: file_data_for_retry,
                                 })
                                 .unwrap_or_else(|e| {
-                                    error!("Failed to send progress update to UI: {e:?}");
+                                    error!("Failed to send upload error to UI: {e:?}");
                                 });
                             SignalToUI::set_ui_signal();
-                            enqueue_popup_notification(
-                                format!("Failed to upload file: {e}"),
-                                PopupKind::Error,
-                                None,
-                            );
                         }
                     }
                 });

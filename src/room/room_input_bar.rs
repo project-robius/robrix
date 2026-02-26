@@ -20,7 +20,7 @@ use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetExt}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{FileData, FileLoadReceiver, FileLoadedData, FilePreviewerAction, FilePreviewerMetaData}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{MessageAction, RoomScreenProps, TimelineUpdate, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::{UploadProgressViewAction, UploadProgressViewWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{FileData, FileLoadReceiver, FileLoadedData, FilePreviewerAction, FilePreviewerMetaData}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 
 live_design! {
     use link::theme::*;
@@ -506,6 +506,15 @@ impl RoomInputBar {
         if self.view.editing_pane(ids!(editing_pane)).was_hidden(actions) {
             self.on_editing_pane_hidden(cx);
         }
+
+        // Handle retry action from upload progress view
+        for action in actions {
+            if let UploadProgressViewAction::Retry(file_data) = action.as_widget_action().cast() {
+                // Re-send the file upload confirmation to trigger a retry
+                let _ = file_data.timeline_update_sender.send(TimelineUpdate::FileUploadConfirmed(file_data.clone()));
+                SignalToUI::set_ui_signal();
+            }
+        }
     }
 
     /// Shows a preview of the given event that the user is currently replying to
@@ -682,6 +691,11 @@ impl RoomInputBar {
     /// Sets the abort handle for the upload progress view, which allows the user to cancel an ongoing upload.
     pub fn set_abort_handle(&mut self, handle: tokio::task::AbortHandle) {
         self.view.upload_progress_view(ids!(upload_progress_view)).set_abort_handle(handle);
+    }
+
+    /// Handles an upload error by showing the error in the upload progress view with a retry option.
+    pub fn handle_upload_error(&mut self, cx: &mut Cx, error: String, file_data: crate::shared::file_upload_modal::FileData) {
+        self.view.upload_progress_view(ids!(upload_progress_view)).show_error(cx, error, file_data);
     }
 
     /// Returns true if the TSP signing checkbox is checked, false otherwise.
@@ -873,6 +887,12 @@ impl RoomInputBarRef {
     pub fn set_abort_handle(&self, handle: tokio::task::AbortHandle) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_abort_handle(handle);
+    }
+
+    /// See [`RoomInputBar::handle_upload_error()`].
+    pub fn handle_upload_error(&self, cx: &mut Cx, error: String, file_data: crate::shared::file_upload_modal::FileData) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.handle_upload_error(cx, error, file_data);
     }
 }
 
