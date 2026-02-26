@@ -7,6 +7,7 @@ use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
 use crate::shared::progress_bar::ProgressBarWidgetExt;
 
 /// Actions emitted by the UploadProgressView widget.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, DefaultNone)]
 pub enum UploadProgressViewAction {
     /// The cancel button was clicked.
