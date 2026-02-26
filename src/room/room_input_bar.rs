@@ -332,7 +332,7 @@ impl RoomInputBar {
 
                 // Check for empty files
                 if file_size == 0 {
-                    enqueue_popup_notification(String::from("Cannot upload empty file"), PopupKind::Error, None);
+                    enqueue_popup_notification("Cannot upload empty file", PopupKind::Error, None);
                     return;
                 }
 
