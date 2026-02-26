@@ -11,6 +11,7 @@ use makepad_widgets::image_cache::{ImageBuffer, ImageError};
 use matrix_sdk::attachment::Thumbnail;
 
 use crate::home::room_screen::TimelineUpdate;
+use crate::image_utils::ImageDimensions;
 
 /// Decodes image data into an `ImageBuffer` for rendering.
 ///
@@ -184,7 +185,7 @@ pub struct FileData {
     /// Optional thumbnail for image files.
     pub thumbnail: Option<Thumbnail>,
     /// Optional dimensions for image/video files, width and height in pixels.
-    pub dimensions: Option<(u32, u32)>,
+    pub dimensions: Option<ImageDimensions>,
     /// The sender to notify the timeline when upload is confirmed.
     pub timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
 }
@@ -241,7 +242,7 @@ pub struct FileLoadedData {
     /// Optional thumbnail for image files.
     pub thumbnail: Option<Thumbnail>,
     /// Optional dimensions for image/video files, width and height in pixels.
-    pub dimensions: Option<(u32, u32)>,
+    pub dimensions: Option<ImageDimensions>,
 }
 
 impl Clone for FileLoadedData {

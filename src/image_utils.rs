@@ -7,6 +7,12 @@ use image::{ImageFormat as ImageEncodingFormat, ImageReader};
 use matrix_sdk::{attachment::Thumbnail, ruma::UInt};
 use mime_guess::mime;
 
+/// Image dimensions as (width, height)
+pub type ImageDimensions = (u32, u32);
+
+/// Result type for thumbnail generation
+pub type ThumbnailResult = Result<(Option<Thumbnail>, Option<ImageDimensions>), Box<dyn std::error::Error>>;
+
 /// Maximum dimensions for image thumbnails
 const THUMBNAIL_MAX_WIDTH: u32 = 800;
 const THUMBNAIL_MAX_HEIGHT: u32 = 600;
@@ -27,7 +33,7 @@ const THUMBNAIL_MAX_HEIGHT: u32 = 600;
 pub fn generate_thumbnail_dimension_if_image(
     path: &std::path::Path,
     mime_type: &mime::Mime,
-) -> Result<(Option<Thumbnail>, Option<(u32, u32)>), Box<dyn std::error::Error>> {
+) -> ThumbnailResult {
     // Only generate thumbnails for images
     if mime_type.type_() == mime::IMAGE {
         let file = File::open(path)?;
