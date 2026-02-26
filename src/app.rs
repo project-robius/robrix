@@ -51,7 +51,7 @@ script_mod! {
                             home_screen := HomeScreen {}
                         }
                         join_leave_modal := Modal {
-                            content: {
+                            content +: {
                                 join_leave_modal_inner := JoinLeaveRoomModal {}
                             }
                         }
