@@ -163,7 +163,7 @@ live_design! {
     }
 }
 
-/// Actions emitted by the `FileUploadModal` widget.
+/// Actions emitted by the `RoomInputBar` widget.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, DefaultNone)]
 pub enum FilePreviewerAction {
@@ -183,6 +183,8 @@ pub struct FileData {
     pub metadata: FilePreviewerMetaData,
     /// Optional thumbnail for image files.
     pub thumbnail: Option<Thumbnail>,
+    /// Optional dimensions for image/video files, width and height in pixels.
+    pub dimensions: Option<(u32, u32)>,
     /// The sender to notify the timeline when upload is confirmed.
     pub timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
 }
@@ -198,6 +200,7 @@ impl Clone for FileData {
                 width: t.width,
                 size: t.size,
             }),
+            dimensions: self.dimensions,
             timeline_update_sender: self.timeline_update_sender.clone(),
         }
     }
@@ -208,6 +211,7 @@ impl std::fmt::Debug for FileData {
         f.debug_struct("FileData")
             .field("metadata", &self.metadata)
             .field("thumbnail", &self.thumbnail.as_ref().map(|_| "..."))
+            .field("dimensions", &self.dimensions)
             .field("timeline_update_sender", &"<channel>")
             .finish()
     }
@@ -222,6 +226,7 @@ impl FileData {
         Self {
             metadata: loaded.metadata,
             thumbnail: loaded.thumbnail,
+            dimensions: loaded.dimensions,
             timeline_update_sender,
         }
     }
@@ -235,6 +240,8 @@ pub struct FileLoadedData {
     pub metadata: FilePreviewerMetaData,
     /// Optional thumbnail for image files.
     pub thumbnail: Option<Thumbnail>,
+    /// Optional dimensions for image/video files, width and height in pixels.
+    pub dimensions: Option<(u32, u32)>,
 }
 
 impl Clone for FileLoadedData {
@@ -248,6 +255,7 @@ impl Clone for FileLoadedData {
                 width: t.width,
                 size: t.size,
             }),
+            dimensions: self.dimensions,
         }
     }
 }

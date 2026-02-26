@@ -120,9 +120,9 @@ live_design! {
                         color: (COLOR_ACTIVE_PRIMARY_DARKER)
                     },
                     draw_bg: {
-                        color: (COLOR_PRIMARY),
+                        color: (COLOR_BG_PREVIEW),
                     }
-                    icon_walk: {width: 20, height: 23, margin: {top: 5, left: 5}}
+                    icon_walk: {width: Fit, height: 23}
                     text: "",
                 }
 
@@ -199,11 +199,9 @@ pub struct RoomInputBar {
     #[rust] was_replying_preview_visible: bool,
     /// Info about the message event that the user is currently replying to, if any.
     #[rust] replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
-    /// Counter for generating unique IDs for file load tasks.
-    #[rust] file_load_task_id_counter: u32,
     /// The pending file load operation, if any. Contains the task ID and receiver
     /// channel for receiving the loaded file data from a background thread.
-    #[rust] pending_file_load: Option<(u32, FileLoadReceiver)>,
+    #[rust] pending_file_load: Option<FileLoadReceiver>,
 }
 
 impl Widget for RoomInputBar {
@@ -238,7 +236,7 @@ impl Widget for RoomInputBar {
         if let Event::Actions(actions) = event {
             self.handle_actions(cx, actions, room_screen_props);
         }
-        if let (Event::Signal, Some((_task_id, receiver))) = (event, &mut self.pending_file_load) {
+        if let (Event::Signal, Some(receiver)) = (event, &mut self.pending_file_load) {
             let mut remove_receiver = false;
             match receiver.try_recv() {
                 Ok(Some(loaded_data)) => {
@@ -268,7 +266,6 @@ impl Widget for RoomInputBar {
             }
             if remove_receiver {
                 self.pending_file_load = None;
-                cx.set_cursor(MouseCursor::Default);
                 // Hide loading spinner when file loading is complete
                 self.view.view(ids!(thumbnail_loading_view)).set_visible(cx, false);
                 self.redraw(cx);
@@ -343,8 +340,7 @@ impl RoomInputBar {
                 use mime_guess::mime;
                 let mime: mime::Mime = mime_str.parse().unwrap_or(mime::APPLICATION_OCTET_STREAM);
                 let (sender, receiver) = std::sync::mpsc::channel();
-                self.file_load_task_id_counter = self.file_load_task_id_counter.wrapping_add(1);
-                self.pending_file_load = Some((self.file_load_task_id_counter, receiver));
+                self.pending_file_load = Some(receiver);
 
                 // Show loading spinner while generating thumbnail
                 self.view.view(ids!(thumbnail_loading_view)).set_visible(cx, true);
@@ -352,10 +348,10 @@ impl RoomInputBar {
                 
                 // Read file in background thread to avoid blocking the UI
                 cx.spawn_thread(move || {
-                    use crate::image_utils::generate_thumbnail_if_image;
+                    use crate::image_utils::generate_thumbnail_dimension_if_image;
 
-                    match generate_thumbnail_if_image(&selected_file_path, &mime) {
-                        Ok(thumbnail) => {
+                    match generate_thumbnail_dimension_if_image(&selected_file_path, &mime) {
+                        Ok((thumbnail, dimensions)) => {
                             let loaded_data = FileLoadedData {
                                 metadata: FilePreviewerMetaData {
                                     mime,
@@ -363,6 +359,7 @@ impl RoomInputBar {
                                     file_path: selected_file_path.clone(),
                                 },
                                 thumbnail,
+                                dimensions,
                             };
                             if sender.send(Some(loaded_data)).is_err() {
                                 error!("Failed to send file data to UI: receiver dropped");
@@ -387,7 +384,7 @@ impl RoomInputBar {
                 "Sending attachment is not supported on this platform",
                 PopupKind::Warning,
                 Some(3.0),
-            });
+            );
         }
 
         // Handle the send location button being clicked.

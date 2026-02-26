@@ -8,12 +8,12 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom, attachment::Thumbnail, config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{IncludeRelations, RelationsOptions, RoomMember, edit::EditedContent, reply::Reply}, ruma::{
+    Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom, attachment::{AttachmentInfo, BaseFileInfo, BaseImageInfo, Thumbnail}, config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{IncludeRelations, RelationsOptions, RoomMember, edit::EditedContent, reply::Reply}, ruma::{
         EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, api::{Direction, client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}}, events::{
             MessageLikeEventType, StateEventType, relation::RelationType, room::{
                 MediaSource, message::RoomMessageEventContent, power_levels::RoomPowerLevels
             }
-        }, matrix_uri::MatrixId, uint
+        }, matrix_uri::MatrixId, uint, UInt
     }, sliding_sync::VersionBuilder
 };
 use matrix_sdk_ui::{
@@ -1693,17 +1693,34 @@ async fn matrix_worker_task(
                     continue;
                 };
                 let file_meta = file_data.metadata.clone();
-                let thumbnail = file_data.thumbnail.as_ref().map(|t| {
-                    Thumbnail { data: t.data.clone(), content_type: t.content_type.clone(), height: t.height, width: t.width, size: t.size }
+                let thumbnail = file_data.thumbnail.as_ref().map(|t| Thumbnail {
+                    data: t.data.clone(),
+                    content_type: t.content_type.clone(),
+                    height: t.height,
+                    width: t.width,
+                    size: t.size,
                 });
                 let sender_clone = sender.clone();
                 // Spawn a new async task that will upload the file.
                 let upload_task = Handle::current().spawn(async move {
                     log!("Uploading file to {timeline_kind}: {file_meta:?}...");
-                    let mime_type  = file_meta.mime.clone();
+                    let mime_type = file_meta.mime.clone();
+                    let info = if mime_type.type_() == mime_guess::mime::IMAGE {
+                        Some(AttachmentInfo::Image(BaseImageInfo {
+                            height: file_data.dimensions.map(|(_, h)| UInt::from(h)),
+                            width: file_data.dimensions.map(|(w, _)| UInt::from(w)),
+                            size: UInt::try_from(file_meta.file_size).ok(),
+                            blurhash: None,
+                            is_animated: None,
+                        }))
+                    } else {
+                        Some(AttachmentInfo::File(BaseFileInfo {
+                            size: UInt::try_from(file_meta.file_size).ok(),
+                        }))
+                    };
                     let attachment_config = matrix_sdk_ui::timeline::AttachmentConfig {
                         txn_id: None,
-                        info: None,
+                        info,
                         thumbnail,
                         caption: None,
                         mentions: None,
@@ -1711,44 +1728,66 @@ async fn matrix_worker_task(
                     };
                     let source = AttachmentSource::File(file_meta.file_path.clone());
 
-                    let send_attachment = timeline.send_attachment(
-                        source,
-                        mime_type,
-                        attachment_config
-                    );
+                    let send_attachment = timeline.send_attachment(source, mime_type, attachment_config);
                     let mut subscriber = send_attachment.subscribe_to_send_progress();
                     let timeline_update_sender = sender.clone();
                     Handle::current().spawn(async move {
                         while let Some(progress) = subscriber.next().await {
-                            sender.send(TimelineUpdate::FileUploadUpdate { current: progress.current as u64, total: file_meta.file_size }).unwrap_or_else(|e| {
-                                error!("Failed to send progress update to UI: {e:?}");
-                            });
+                            sender
+                                .send(TimelineUpdate::FileUploadUpdate {
+                                    current: progress.current as u64,
+                                    total: file_meta.file_size,
+                                })
+                                .unwrap_or_else(|e| {
+                                    error!("Failed to send progress update to UI: {e:?}");
+                                });
                             SignalToUI::set_ui_signal();
                         }
                     });
-                    timeline_update_sender.send(TimelineUpdate::FileUploadUpdate { current: 0, total: file_meta.file_size }).unwrap_or_else(|e| {
-                        error!("Failed to send initial progress update to UI: {e:?}");
-                    });
+                    timeline_update_sender
+                        .send(TimelineUpdate::FileUploadUpdate {
+                            current: 0,
+                            total: file_meta.file_size,
+                        })
+                        .unwrap_or_else(|e| {
+                            error!("Failed to send initial progress update to UI: {e:?}");
+                        });
                     match send_attachment.await {
                         Ok(_) => {
                             log!("Successfully uploaded and sent file to {timeline_kind}");
-                            timeline_update_sender.send(TimelineUpdate::FileUploadUpdate { current: file_meta.file_size, total: file_meta.file_size }).unwrap_or_else(|e| {
-                                error!("Failed to send progress update to UI: {e:?}");
-                            });
+                            timeline_update_sender
+                                .send(TimelineUpdate::FileUploadUpdate {
+                                    current: file_meta.file_size,
+                                    total: file_meta.file_size,
+                                })
+                                .unwrap_or_else(|e| {
+                                    error!("Failed to send progress update to UI: {e:?}");
+                                });
                             SignalToUI::set_ui_signal();
                         }
                         Err(e) => {
                             error!("Failed to upload file to {timeline_kind}: {e:?}");
                             // Set progress to completion state (0/0) to hide the progress bar
-                            timeline_update_sender.send(TimelineUpdate::FileUploadUpdate { current: 0, total: 0 }).unwrap_or_else(|e| {
-                                error!("Failed to send progress update to UI: {e:?}");
-                            });
+                            timeline_update_sender
+                                .send(TimelineUpdate::FileUploadUpdate {
+                                    current: 0,
+                                    total: 0,
+                                })
+                                .unwrap_or_else(|e| {
+                                    error!("Failed to send progress update to UI: {e:?}");
+                                });
                             SignalToUI::set_ui_signal();
-                            enqueue_popup_notification(format!("Failed to upload file: {e}"), PopupKind::Error, None);
+                            enqueue_popup_notification(
+                                format!("Failed to upload file: {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
                         }
                     }
                 });
-                match sender_clone.send(TimelineUpdate::FileUploadAbortHandle(upload_task.abort_handle())) {
+                match sender_clone.send(TimelineUpdate::FileUploadAbortHandle(
+                    upload_task.abort_handle(),
+                )) {
                     Ok(_) => SignalToUI::set_ui_signal(),
                     Err(e) => log!("Failed to send file upload abort handle to UI: {e:?}"),
                 }

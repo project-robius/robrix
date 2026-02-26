@@ -11,7 +11,7 @@ use mime_guess::mime;
 const THUMBNAIL_MAX_WIDTH: u32 = 800;
 const THUMBNAIL_MAX_HEIGHT: u32 = 600;
 
-/// Generates a thumbnail for an image file.
+/// Generates a thumbnail and dimensions for an image file.
 ///
 /// For images, this decodes the image and creates a thumbnail to reduce upload size.
 /// For non-image files, returns None.
@@ -21,13 +21,13 @@ const THUMBNAIL_MAX_HEIGHT: u32 = 600;
 /// * `mime_type` - MIME type of the file
 ///
 /// # Returns
-/// * `Ok(Some(Thumbnail))` - The thumbnail data for images
-/// * `Ok(None)` - For non-image files
+/// * `Ok((Some(Thumbnail), Some((width, height)))` - The thumbnail data for images
+/// * `Ok((None, None))` - For non-image files
 /// * `Err(Box<dyn std::error::Error>)` - Error if file cannot be read or processed
-pub fn generate_thumbnail_if_image(
+pub fn generate_thumbnail_dimension_if_image(
     path: &std::path::Path,
     mime_type: &mime::Mime,
-) -> Result<Option<Thumbnail>, Box<dyn std::error::Error>> {
+) -> Result<(Option<Thumbnail>, Option<(u32, u32)>), Box<dyn std::error::Error>> {
 
     // Only generate thumbnails for images
     if mime_type.type_() == mime::IMAGE {
@@ -57,14 +57,14 @@ pub fn generate_thumbnail_if_image(
 
         final_img.write_to(&mut std::io::Cursor::new(&mut bytes), ImageEncodingFormat::Jpeg)?;
         let bytes_size = bytes.len() as u32;
-        Ok(Some(Thumbnail {
+        Ok((Some(Thumbnail {
             data: bytes,
             content_type: mime::IMAGE_JPEG,
             height: UInt::from(thumb_height),
             width: UInt::from(thumb_width),
             size: UInt::from(bytes_size),
-        }))
+        }), Some((thumb_width, thumb_height))))
     } else {
-        Ok(None)
+        Ok((None, None))
     }
 }
