@@ -110,7 +110,7 @@ impl WidgetMatchEvent for UploadProgressView {
             }
             // Hide the progress bar immediately
             self.hide(cx);
-            enqueue_popup_notification("Upload cancelled".to_string(), PopupKind::Info, Some(3.0));
+            enqueue_popup_notification("Upload cancelled", PopupKind::Info, Some(3.0));
 
             cx.widget_action(
                 self.widget_uid(),
