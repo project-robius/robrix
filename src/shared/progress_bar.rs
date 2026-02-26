@@ -70,7 +70,6 @@ pub struct ProgressBar {
 }
 
 impl Widget for ProgressBar {
-
     fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
         // Convert percentage (0-100) to normalized progress (0.0-1.0) for shader
         let normalized_progress = (self.value / 100.0).clamp(0.0, 1.0);

@@ -266,9 +266,13 @@ pub type FileLoadReceiver = std::sync::mpsc::Receiver<Option<FileLoadedData>>;
 /// A widget that previews files by displaying metadata and content based on file type.
 #[derive(Live, Widget, LiveHook)]
 pub struct FileUploadModal {
-    #[redraw] #[deref] view: View,
-    #[rust] file_type: FileType,
-    #[rust] file_data: Option<FileData>,
+    #[redraw]
+    #[deref]
+    view: View,
+    #[rust]
+    file_type: FileType,
+    #[rust]
+    file_data: Option<FileData>,
 }
 
 impl FileUploadModal {
@@ -284,7 +288,8 @@ impl FileUploadModal {
                 image_ref.set_texture(cx, Some(texture));
 
                 self.view(ids!(image_view)).set_visible(cx, true);
-                self.view(ids!(metadata_view.document_view)).set_visible(cx, false);
+                self.view(ids!(metadata_view.document_view))
+                    .set_visible(cx, false);
                 self.file_type = FileType::Image;
             } else {
                 log!("Failed to decode image data, falling back to document view");
@@ -314,8 +319,10 @@ impl MatchEvent for FileUploadModal {
 
         // Handle closing the modal via close button or cancel button
         let cancel_clicked = cancel_button.clicked(actions);
-        if  cancel_clicked ||
-            actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
+        if cancel_clicked
+            || actions
+                .iter()
+                .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
         {
             // If the modal was dismissed by clicking outside of it, we MUST NOT emit
             // a FilePreviewerAction::Hide action, as that would cause
@@ -327,11 +334,17 @@ impl MatchEvent for FileUploadModal {
             return;
         }
 
-        if self.view.button(ids!(buttons_view.upload_button)).clicked(actions) {
+        if self
+            .view
+            .button(ids!(buttons_view.upload_button))
+            .clicked(actions)
+        {
             if let Some(file_data) = self.file_data.take() {
                 // Send the file upload confirmation through the timeline-specific channel
                 // included in the file data.
-                let _ = file_data.timeline_update_sender.send(TimelineUpdate::FileUploadConfirmed(file_data.clone()));
+                let _ = file_data
+                    .timeline_update_sender
+                    .send(TimelineUpdate::FileUploadConfirmed(file_data.clone()));
                 SignalToUI::set_ui_signal();
             }
             cx.action(FilePreviewerAction::Hide);
@@ -351,25 +364,32 @@ impl FileUploadModal {
     /// Sets the displayed file metadata (filename and formatted size).
     pub fn set_metadata(&mut self, cx: &mut Cx, file_data: &FileData) {
         let formatted_size = crate::utils::format_file_size(file_data.metadata.file_size);
-        let filename = file_data.metadata.file_path.file_name()
+        let filename = file_data
+            .metadata
+            .file_path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown");
         let display_text = format!("{} - ({})", filename, formatted_size);
-        self.view.label(ids!(metadata_view.filename_text)).set_text(cx, &display_text);
+        self.view
+            .label(ids!(metadata_view.filename_text))
+            .set_text(cx, &display_text);
     }
 
     /// Displays an image preview by calling the provided function to set the image content.
     ///
     /// Falls back to document view if the image setting function returns an error.
     pub fn show_image<F, E>(&mut self, cx: &mut Cx, image_set_function: F) -> Result<(), E>
-        where F: FnOnce(&mut Cx, ImageRef) -> Result<(), E>
+    where
+        F: FnOnce(&mut Cx, ImageRef) -> Result<(), E>,
     {
         let image_ref = self.view.image(ids!(image_view.preview_image));
         match image_set_function(cx, image_ref) {
             Ok(_) => {
                 self.file_type = FileType::Image;
                 self.view(ids!(image_view)).set_visible(cx, true);
-                self.view(ids!(metadata_view.document_view)).set_visible(cx, false);
+                self.view(ids!(metadata_view.document_view))
+                    .set_visible(cx, false);
                 Ok(())
             }
             Err(error) => {
@@ -384,7 +404,8 @@ impl FileUploadModal {
     /// Used for non-image files or when image preview fails.
     pub fn show_document(&mut self, cx: &mut Cx) {
         self.file_type = FileType::Document;
-        self.view(ids!(metadata_view.document_view)).set_visible(cx, true);
+        self.view(ids!(metadata_view.document_view))
+            .set_visible(cx, true);
         self.view(ids!(image_view)).set_visible(cx, false);
     }
 
@@ -404,7 +425,8 @@ impl FileUploadModalRef {
 
     /// See [FileUploadModal::show_image()].
     pub fn show_image<F, E>(&self, cx: &mut Cx, image_set_function: F) -> Result<(), E>
-        where F: FnOnce(&mut Cx, ImageRef) -> Result<(), E>
+    where
+        F: FnOnce(&mut Cx, ImageRef) -> Result<(), E>,
     {
         if let Some(mut inner) = self.borrow_mut() {
             inner.show_image(cx, image_set_function)

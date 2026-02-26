@@ -109,11 +109,14 @@ pub struct UploadProgressView {
     #[deref]
     view: View,
     /// AbortHandle for cancelling an in-progress upload
-    #[rust] upload_abort_handle: Option<tokio::task::AbortHandle>,
+    #[rust]
+    upload_abort_handle: Option<tokio::task::AbortHandle>,
     /// Whether the view is showing an error state with retry option
-    #[rust] is_error_state: bool,
+    #[rust]
+    is_error_state: bool,
     /// File data to retry if in error state
-    #[rust] retry_file_data: Option<FileData>,
+    #[rust]
+    retry_file_data: Option<FileData>,
 }
 
 impl Widget for UploadProgressView {
@@ -137,7 +140,9 @@ impl WidgetMatchEvent for UploadProgressView {
                 // Hide retry button
                 self.button(ids!(retry_button)).set_visible(cx, false);
                 // Reset to uploading state
-                self.view.label(ids!(progress_label)).set_text(cx, "Uploading...");
+                self.view
+                    .label(ids!(progress_label))
+                    .set_text(cx, "Uploading...");
                 self.view.progress_bar(ids!(progress)).set_value(cx, 0.0);
                 cx.widget_action(
                     self.widget_uid(),
@@ -191,7 +196,9 @@ impl UploadProgressView {
         self.upload_abort_handle = None;
 
         // Update the label to show the error
-        self.view.label(ids!(progress_label)).set_text(cx, &format!("Upload failed: {}", error));
+        self.view
+            .label(ids!(progress_label))
+            .set_text(cx, &format!("Upload failed: {}", error));
 
         // Show the retry button
         self.button(ids!(retry_button)).set_visible(cx, true);
@@ -228,8 +235,12 @@ impl UploadProgressView {
         } else {
             0.0
         };
-        self.view.label(ids!(progress_label)).set_text(cx, &format!("Uploading... {:.0}%", progress_percentage));
-        self.view.progress_bar(ids!(progress)).set_value(cx, progress_percentage);
+        self.view
+            .label(ids!(progress_label))
+            .set_text(cx, &format!("Uploading... {:.0}%", progress_percentage));
+        self.view
+            .progress_bar(ids!(progress))
+            .set_value(cx, progress_percentage);
     }
 
     /// Sets the abort handle for the upload task, allowing the progress view to cancel the upload if needed.

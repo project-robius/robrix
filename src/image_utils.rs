@@ -28,16 +28,13 @@ pub fn generate_thumbnail_dimension_if_image(
     path: &std::path::Path,
     mime_type: &mime::Mime,
 ) -> Result<(Option<Thumbnail>, Option<(u32, u32)>), Box<dyn std::error::Error>> {
-
     // Only generate thumbnails for images
     if mime_type.type_() == mime::IMAGE {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
 
         // Use ImageReader to decode only what's needed
-        let img = ImageReader::new(reader)
-            .with_guessed_format()?
-            .decode()?;
+        let img = ImageReader::new(reader).with_guessed_format()?.decode()?;
 
         // Create thumbnail if image is larger than max dimensions (preserves aspect ratio)
         let (orig_width, orig_height) = (img.width(), img.height());
@@ -55,15 +52,21 @@ pub fn generate_thumbnail_dimension_if_image(
         // Save to bytes as JPEG for efficient compression
         let mut bytes = Vec::new();
 
-        final_img.write_to(&mut std::io::Cursor::new(&mut bytes), ImageEncodingFormat::Jpeg)?;
+        final_img.write_to(
+            &mut std::io::Cursor::new(&mut bytes),
+            ImageEncodingFormat::Jpeg,
+        )?;
         let bytes_size = bytes.len() as u32;
-        Ok((Some(Thumbnail {
-            data: bytes,
-            content_type: mime::IMAGE_JPEG,
-            height: UInt::from(thumb_height),
-            width: UInt::from(thumb_width),
-            size: UInt::from(bytes_size),
-        }), Some((thumb_width, thumb_height))))
+        Ok((
+            Some(Thumbnail {
+                data: bytes,
+                content_type: mime::IMAGE_JPEG,
+                height: UInt::from(thumb_height),
+                width: UInt::from(thumb_width),
+                size: UInt::from(bytes_size),
+            }),
+            Some((thumb_width, thumb_height)),
+        ))
     } else {
         Ok((None, None))
     }
