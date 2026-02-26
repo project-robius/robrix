@@ -184,13 +184,10 @@ impl JumpToBottomButton {
                 );
                 let mut badge_view = self.view(cx, ids!(unread_message_badge.green_rounded_label));
                 script_apply_eval!(cx, badge_view, {
-                    draw_bg +: {
-                        border_size: #(border_size),
-                    }
+                    draw_bg.border_size: #(border_size),
                 });
             }
         }
-        
     }
 
     /// Updates the visibility of the jump to bottom button and the unread message badge

@@ -102,7 +102,7 @@ impl TspState {
             current_local_vid: None,
             associations: BTreeMap::new(),
             receive_loop_tasks: BTreeMap::new(),
-            pending_verification_requests: SmallVec::new_const(),
+            pending_verification_requests: SmallVec::new(),
         }
     }
 
@@ -174,7 +174,7 @@ impl TspState {
             current_local_vid,
             associations: saved_state.associations,
             receive_loop_tasks: BTreeMap::new(),
-            pending_verification_requests: SmallVec::new_const(),
+            pending_verification_requests: SmallVec::new(),
         })
     }
 
@@ -1000,7 +1000,7 @@ async fn republish_did(
     }
 
 
-    let our_vid: {
+    let our_vid = {
         let tsp_state = tsp_state_ref().lock().unwrap();
         tsp_state.current_wallet.as_ref()
             .ok_or_else(no_default_wallet_error)?

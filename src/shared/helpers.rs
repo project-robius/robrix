@@ -40,7 +40,7 @@ script_mod! {
         margin: 0.0,
         padding: 0.0, spacing: 0.0
         show_bg: true
-        draw_bg +: {color: (COLOR_DIVIDER_DARK)}
+        draw_bg +: {color: instance((COLOR_DIVIDER_DARK))}
     }
 
     mod.widgets.Filler = View { width: Fill, height: Fill }

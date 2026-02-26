@@ -28,8 +28,8 @@ script_mod! {
     mod.widgets.COLOR_HEADER_BG = (mod.widgets.COLOR_ROBRIX_PURPLE); // the purple color from the Robrix logo
 
 
-    mod.widgets.CollapsibleHeader = #(CollapsibleHeader::register_widget(vm)) {
-
+    mod.widgets.CollapsibleHeader = set_type_default() do #(CollapsibleHeader::register_widget(vm)) {
+        ..mod.widgets.RoundedView
 
         width: Fill,
         height: 35,
@@ -41,7 +41,7 @@ script_mod! {
         cursor: MouseCursor.Hand,
         draw_bg +: {
             border_radius: 4.0,
-            color: (mod.widgets.COLOR_HEADER_BG)
+            color: instance((mod.widgets.COLOR_HEADER_BG))
         }
 
         collapse_icon := IconRotated {
@@ -53,6 +53,7 @@ script_mod! {
             }
             icon_walk: Walk{ width: 14, height: Fit, margin: 0, }
         }
+
         label := Label {
             padding: 0,
             width: Fill,
@@ -63,6 +64,7 @@ script_mod! {
                 color: (mod.widgets.COLOR_HEADER_FG),
             }
         }
+
         unread_badge := UnreadBadge {
             margin: Inset{right: 5.5},
         }

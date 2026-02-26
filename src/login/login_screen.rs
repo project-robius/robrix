@@ -23,8 +23,8 @@ script_mod! {
         margin: Inset{ left: 16.6, right: 16.6, top: 10, bottom: 10}
         draw_bg +: {
             border_size: 0.5,
-            border_color: (#6c6c6c),
-            color: (COLOR_PRIMARY)
+            border_color: instance((#6c6c6c)),
+            color: instance((COLOR_PRIMARY))
         }
     }
 
@@ -42,13 +42,13 @@ script_mod! {
     }
 
 
-    mod.widgets.LoginScreen = #(LoginScreen::register_widget(vm)) {
+    mod.widgets.LoginScreen = set_type_default() do #(LoginScreen::register_widget(vm)) {
+        ..mod.widgets.SolidView
+
         width: Fill, height: Fill,
         align: Align{x: 0.5, y: 0.5}
         show_bg: true,
-        draw_bg +: {
-            color: #FFF
-        }
+        draw_bg.color: #FFF
 
         ScrollYView {
             width: Fill, height: Fill,
@@ -56,7 +56,7 @@ script_mod! {
             align: Align{x: 0.5}
             show_bg: true,
             draw_bg +: {
-                color: (COLOR_SECONDARY)
+                color: instance((COLOR_SECONDARY))
                 // color: (COLOR_PRIMARY) // TODO: once Makepad supports `Fill {max: 375}`, change this back to COLOR_PRIMARY
             }
             // allow the view to be scrollable but hide the actual scroll bar
@@ -66,7 +66,7 @@ script_mod! {
                     min_handle_size: 0.0
                 }
             }
-        
+
             RoundedView {
                 margin: Inset{top: 40, bottom: 40}
                 width: Fill // TODO: once Makepad supports it, use `Fill {max: 375}`
@@ -76,7 +76,7 @@ script_mod! {
 
                 show_bg: true,
                 draw_bg +: {
-                    color: (COLOR_SECONDARY)
+                    color: instance((COLOR_SECONDARY))
                     border_radius: 6.0
                 }
 
@@ -144,7 +144,7 @@ script_mod! {
                             align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
 
                             left_line := LineH {
-                                draw_bg +: { color: #C8C8C8 }
+                                draw_bg +: { color: instance(#C8C8C8)}
                             }
 
                             Label {
@@ -158,7 +158,7 @@ script_mod! {
                             }
 
                             right_line := LineH {
-                                draw_bg +: { color: #C8C8C8 }
+                                draw_bg +: { color: instance(#C8C8C8)}
                             }
                         }
                     }
@@ -171,7 +171,7 @@ script_mod! {
                         margin: Inset{top: 5, bottom: 10}
                         align: Align{x: 0.5, y: 0.5}
                         draw_bg +: {
-                            color: (COLOR_ACTIVE_PRIMARY)
+                            color: instance((COLOR_ACTIVE_PRIMARY))
                         }
                         draw_text +: {
                             color: (COLOR_PRIMARY)
@@ -183,7 +183,7 @@ script_mod! {
                     left_line := LineH {
                         width: 275
                         margin: Inset{bottom: -5}
-                        draw_bg +: { color: #C8C8C8 }
+                        draw_bg +: { color: instance(#C8C8C8)}
                     }
                     Label {
                         width: Fit, height: Fit
@@ -240,7 +240,7 @@ script_mod! {
                         align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
 
                         left_line := LineH {
-                            draw_bg +: { color: #C8C8C8 }
+                            draw_bg +: { color: instance(#C8C8C8)}
                         }
 
                         Label {
@@ -254,7 +254,7 @@ script_mod! {
                         }
 
                         right_line := LineH {
-                            draw_bg +: { color: #C8C8C8 }
+                            draw_bg +: { color: instance(#C8C8C8)}
                         }
                     }
                     
@@ -264,7 +264,7 @@ script_mod! {
                         margin: Inset{bottom: 5}
                         align: Align{x: 0.5, y: 0.5}
                         draw_bg +: {
-                            color: (COLOR_ACTIVE_PRIMARY)
+                            color: instance((COLOR_ACTIVE_PRIMARY))
                         }
                         draw_text +: {
                             color: (COLOR_PRIMARY)
@@ -423,7 +423,7 @@ impl MatchEvent for LoginScreen {
                         let Some(view_mut) = view_ref.borrow_mut() else { continue };
                         let mut image = view_mut.image(cx, ids!(image));
                         script_apply_eval!(cx, image, {
-                            draw_bg +: { mask: #(mask) }
+                            draw_bg.mask: #(mask)
                         });
                     }
                     self.sso_pending = *pending;

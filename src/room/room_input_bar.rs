@@ -30,7 +30,9 @@ script_mod! {
     mod.widgets.ICO_LOCATION_PERSON = crate_resource("self://resources/icons/location-person.svg")
 
 
-    mod.widgets.RoomInputBar = #(RoomInputBar::register_widget(vm)) {
+    mod.widgets.RoomInputBar = set_type_default() do #(RoomInputBar::register_widget(vm)) {
+        ..mod.widgets.RoundedView
+
         width: Fill,
         height: Fit
         flow: Down,
@@ -43,9 +45,9 @@ script_mod! {
 
         show_bg: true,
         draw_bg +: {
-            color: (COLOR_PRIMARY)
+            color: instance((COLOR_PRIMARY))
             border_radius: 5.0,
-            border_color: (COLOR_SECONDARY),
+            border_color: instance((COLOR_SECONDARY)),
             border_size: 2.0
             // shadow_color: uniform(#0006)
             // shadow_radius: 0.0,
@@ -86,7 +88,7 @@ script_mod! {
                         color: (COLOR_ACTIVE_PRIMARY_DARKER)
                     },
                     draw_bg +: {
-                        color: (COLOR_BG_PREVIEW),
+                        color: instance((COLOR_BG_PREVIEW)),
                     }
                     icon_walk: Walk{width: 23, height: 23, margin: Inset{bottom: -1}}
                     text: "",
@@ -123,7 +125,7 @@ script_mod! {
                     }
                     icon_walk: Walk{width: 21, height: 21},
                     draw_bg +: {
-                        color: (COLOR_BG_DISABLED),
+                        color: instance((COLOR_BG_DISABLED)),
                     }
                 }
             }
@@ -132,7 +134,7 @@ script_mod! {
                 visible: false
                 show_bg: true
                 draw_bg +: {
-                    color: (COLOR_SECONDARY)
+                    color: instance((COLOR_SECONDARY))
                 }
                 padding: Inset{left: 50, right: 50, top: 20, bottom: 20}
                 align: Align{y: 0.5}
@@ -504,8 +506,8 @@ impl RoomInputBar {
         };
         script_apply_eval!(cx, send_message_button, {
             enabled: #(enable),
-            draw_icon +: { color: #(fg_color) },
-            draw_bg +: { color: #(bg_color) },
+            draw_icon.color: #(fg_color),
+            draw_bg.color: #(bg_color),
         });
     }
 

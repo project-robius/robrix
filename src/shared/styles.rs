@@ -213,13 +213,13 @@ script_mod! {
             text_style: mod.widgets.MESSAGE_TEXT_STYLE {},
             color: (mod.widgets.MESSAGE_TEXT_COLOR),
             // TODO: determine these colors
-            color_hover: uniform((mod.widgets.MESSAGE_TEXT_COLOR)),
-            color_focus: uniform((mod.widgets.MESSAGE_TEXT_COLOR)),
-            color_down: uniform((mod.widgets.MESSAGE_TEXT_COLOR)),
-            color_disabled: uniform((mod.widgets.COLOR_FG_DISABLED)),
-            color_empty: uniform(#B),
-            color_empty_hover: uniform(#B),
-            color_empty_focus: uniform(#B),
+            color_hover: (mod.widgets.MESSAGE_TEXT_COLOR),
+            color_focus: (mod.widgets.MESSAGE_TEXT_COLOR),
+            color_down: (mod.widgets.MESSAGE_TEXT_COLOR),
+            color_disabled: (mod.widgets.COLOR_FG_DISABLED),
+            color_empty: #B,
+            color_empty_hover: #B,
+            color_empty_focus: #B,
 
             get_color: fn() -> vec4 {
                 return mix(
@@ -253,7 +253,6 @@ script_mod! {
         width: Fill, height: Fit
         flow: Flow.Right{wrap: true},
         draw_bg +: {
-            color: (mod.widgets.COLOR_SECONDARY_DARKER)
             border_radius: 2.0
             border_size: 1.0
 

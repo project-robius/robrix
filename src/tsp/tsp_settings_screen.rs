@@ -38,7 +38,7 @@ script_mod! {
                 padding: 12,
                 spacing: 0,
                 draw_bg +: {
-                    color: (COLOR_SECONDARY)
+                    color: instance((COLOR_SECONDARY))
                 }
                 draw_icon +: {
                     svg: (ICON_COPY)
@@ -63,7 +63,7 @@ script_mod! {
             margin: Inset{top: 8, bottom: 10, left: 5},
 
             draw_bg +: {
-                color: (COLOR_ACTIVE_PRIMARY),
+                color: instance((COLOR_ACTIVE_PRIMARY)),
                 border_radius: 5
             }
             draw_icon +: {
@@ -103,7 +103,7 @@ script_mod! {
 
             show_bg: true,
             draw_bg +: {
-                color: #F6F8F9,
+                color: instance(#F6F8F9),
                 border_radius: 4.0,
             }
 
@@ -134,8 +134,8 @@ script_mod! {
                 margin: Inset{left: 5},
 
                 draw_bg +: {
-                    border_color: (COLOR_FG_ACCEPT_GREEN),
-                    color: (COLOR_BG_ACCEPT_GREEN),
+                    border_color: instance((COLOR_FG_ACCEPT_GREEN)),
+                    color: instance((COLOR_BG_ACCEPT_GREEN)),
                     border_radius: 5
                 }
                 draw_icon +: {
@@ -155,8 +155,8 @@ script_mod! {
                 margin: Inset{left: 5},
 
                 draw_bg +: {
-                    border_color: (COLOR_FG_ACCEPT_GREEN),
-                    color: (COLOR_BG_ACCEPT_GREEN),
+                    border_color: instance((COLOR_FG_ACCEPT_GREEN)),
+                    color: instance((COLOR_BG_ACCEPT_GREEN)),
                     border_radius: 5
                 }
                 draw_icon +: {
@@ -174,7 +174,7 @@ script_mod! {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 5}
                 draw_bg +: {
-                    color: (COLOR_ACTIVE_PRIMARY)
+                    color: instance((COLOR_ACTIVE_PRIMARY))
                 }
                 draw_text +: {
                     color: (COLOR_PRIMARY)

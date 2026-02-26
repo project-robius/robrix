@@ -207,6 +207,7 @@ script_mod! {
         info_icon := mod.widgets.InfoIcon {}
         warning_icon := mod.widgets.WarningIcon {}
     }
+
     mod.widgets.CloseButtonView = View {
         width: Fill,
         height: Fit,
@@ -218,7 +219,7 @@ script_mod! {
             width: Fit, height: Fit
             show_bg: true,
             draw_bg +: {
-                color: (COLOR_BG_DISABLED)
+                color: instance((COLOR_BG_DISABLED))
             }
             align: Align{ x: 0.5, y: 0.5 }
             // The "X" close button on the top right
@@ -228,7 +229,7 @@ script_mod! {
                 spacing: 0,
                 align: Align{ x: 0.5, y: 0.5 }
                 draw_bg +: {
-                    color: (COLOR_BG_DISABLED)
+                    color: instance((COLOR_BG_DISABLED))
                 }
                 draw_icon +: {
                     svg: (ICON_CLOSE),
@@ -374,20 +375,21 @@ script_mod! {
             }
         }
     }
-    mod.widgets.RobrixPopupNotificationRightToLeftProgress = #(RobrixPopupNotification::register_widget(vm)) {
+
+    mod.widgets.RobrixPopupNotificationRightToLeftProgress = set_type_default() do #(RobrixPopupNotification::register_widget(vm)) {
+        ..mod.widgets.SolidView
+
         width: 275
         height: Fit
         flow: Down
-        draw_bg +: {
-            pixel: fn() {
-                return vec4(0., 0., 0., 0.0)
-            }
-        }
+        draw_bg.color: (COLOR_TRANSPARENT)
         content: mod.widgets.PopupDialogRightToLeftProgress {}
     }
+
     mod.widgets.RobrixPopupNotificationTopToBottomProgress = mod.widgets.RobrixPopupNotificationRightToLeftProgress {
         content: mod.widgets.PopupDialogTopToBottomProgress {}
     }
+
     // A widget that displays a vertical list of popups at the top right corner of the screen.
     // The progress bar slides from right to left.
     mod.widgets.PopupList = View {
@@ -397,6 +399,7 @@ script_mod! {
         align: Align{x: 0.99, }
         popup_notification := mod.widgets.RobrixPopupNotificationRightToLeftProgress {}
     }
+
     // A widget that displays a vertical list of popups at the top right corner of the screen.
     // The progress bar slides from top to bottom.
     mod.widgets.PopupListTopToBottomProgress = mod.widgets.PopupList {

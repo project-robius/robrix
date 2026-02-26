@@ -25,9 +25,9 @@ script_mod! {
             visible: false
 
             draw_bg +: {
-                color: theme.color_fg_app
+                color: instance(theme.color_fg_app)
                 border_size: theme.beveling
-                border_color: theme.color_bevel
+                border_color: instance(theme.color_bevel)
                 border_radius: theme.corner_radius
 
                 pixel: fn() {
@@ -70,7 +70,7 @@ script_mod! {
                 show_bg: true
                 visible: true
                 draw_bg +: {
-                    color: theme.color_fg_app
+                    color: instance(theme.color_fg_app)
                     top_radius: instance(theme.corner_radius)
                     border_color: instance(theme.color_bevel)
                     border_width: instance(theme.beveling)
@@ -761,24 +761,18 @@ impl CommandTextInput {
                 // Keyboard-selected item is highlighted in blue
                 let color = self.color_focus;
                 script_apply_eval!(cx, item, {
-                    draw_bg +: {
-                        color: #(color)
-                    }
+                    draw_bg.color: #(color)
                 });
             } else if Some(idx) == self.pointer_hover_index && !has_keyboard_focus {
                 // Mouse-hovered item is highlighted in gray, but only when there is no keyboard focus
                 let color = self.color_hover;
                 script_apply_eval!(cx, item, {
-                    draw_bg +: {
-                        color: #(color)
-                    }
+                    draw_bg.color: #(color)
                 });
             } else {
                 // Default state
                 script_apply_eval!(cx, item, {
-                    draw_bg +: {
-                        color: #(Vec4f::all(0.))
-                    }
+                    draw_bg.color: #00000000
                 });
             }
         }

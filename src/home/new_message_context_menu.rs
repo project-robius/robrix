@@ -28,7 +28,9 @@ script_mod! {
         icon_walk: Walk{width: 16, height: 16, margin: Inset{right: 3}}
     }
 
-    mod.widgets.NewMessageContextMenu = #(NewMessageContextMenu::register_widget(vm)) {
+    mod.widgets.NewMessageContextMenu = set_type_default() do #(NewMessageContextMenu::register_widget(vm)) {
+        ..mod.widgets.SolidView
+
         visible: false,
         flow: Overlay,
         width: Fill,
@@ -40,11 +42,7 @@ script_mod! {
 
         // Show a slightly darkened translucent background to make the menu stand out.
         show_bg: true
-        draw_bg +: {
-            pixel: fn() {
-                return vec4(0., 0., 0., 0.3)
-            }
-        }
+        draw_bg.color: #0000004d
 
         main_content := RoundedView {
             flow: Down
@@ -56,10 +54,10 @@ script_mod! {
 
             show_bg: true
             draw_bg +: {
-                color: #fff
+                color: instance(#fff)
                 border_radius: 5.0
                 border_size: 0.5
-                border_color: #888
+                border_color: instance(#888)
             }
 
             // Shows either the "Add Reaction" button or a reaction text input.
@@ -107,8 +105,8 @@ script_mod! {
                         icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
 
                         draw_bg +: {
-                            border_color: (COLOR_FG_ACCEPT_GREEN),
-                            color: (COLOR_BG_ACCEPT_GREEN)
+                            border_color: instance((COLOR_FG_ACCEPT_GREEN)),
+                            color: instance((COLOR_BG_ACCEPT_GREEN))
                         }
                         text: ""
                         draw_text +: {
@@ -202,8 +200,8 @@ script_mod! {
                     color: (COLOR_FG_DANGER_RED),
                 }
                 draw_bg +: {
-                    border_color: (COLOR_FG_DANGER_RED),
-                    color: (COLOR_BG_DANGER_RED)
+                    border_color: instance((COLOR_FG_DANGER_RED)),
+                    color: instance((COLOR_BG_DANGER_RED))
                 }
                 text: "Delete"
                 draw_text +: {

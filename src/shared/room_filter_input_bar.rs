@@ -11,17 +11,17 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.RoomFilterInputBar = #(RoomFilterInputBar::register_widget(vm)) {
-
+    mod.widgets.RoomFilterInputBar = set_type_default() do #(RoomFilterInputBar::register_widget(vm)) {
+        ..mod.widgets.RoundedView
 
         width: Fill,
         height: 35,
 
         show_bg: true,
         draw_bg +: {
-            color: (COLOR_PRIMARY),
+            color: instance((COLOR_PRIMARY)),
             border_radius: 4.0,
-            border_color: (COLOR_SECONDARY),
+            border_color: instance((COLOR_SECONDARY)),
             border_size: 1.0,
         }
 
@@ -58,7 +58,7 @@ script_mod! {
             spacing: 0,
             align: Align{x: 0.5, y: 0.5}
             draw_bg +: {
-                color: (COLOR_SECONDARY)
+                color: instance((COLOR_SECONDARY))
             }
             draw_icon +: {
                 svg: (ICON_CLOSE),

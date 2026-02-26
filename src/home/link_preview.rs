@@ -96,7 +96,7 @@ script_mod! {
             spacing: 10
             show_bg: true,
             draw_bg +: {
-                color: (COLOR_BG_PREVIEW),
+                color: instance((COLOR_BG_PREVIEW)),
                 border_radius: 4.0
             }
             align: Align{ y: 0.5 }
@@ -197,18 +197,18 @@ impl Widget for LinkPreview {
             match event.hits(cx, view.area()) {
                 Hit::FingerHoverIn(_) | Hit::FingerDown(_) => {
                     view.apply_over(cx, live! {
-                        draw_bg: { color: (COLOR_BG_PREVIEW_HOVER) }
+                        draw_bg: { color: instance((COLOR_BG_PREVIEW_HOVER))}
                     });
                 }
                 Hit::FingerHoverOut(_) => {
                     view.apply_over(cx, live! {
-                        draw_bg: { color: (COLOR_BG_PREVIEW) }
+                        draw_bg: { color: instance((COLOR_BG_PREVIEW))}
                     });
                 }
                 Hit::FingerUp(fe) => {
                     // return to normal bg color
                     view.apply_over(cx, live! {
-                        draw_bg: { color: (COLOR_BG_PREVIEW) }
+                        draw_bg: { color: instance((COLOR_BG_PREVIEW))}
                     });
                     if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
                         if let Some(html_link) = view.link_label(cx, ids!(content_view.title_label)).borrow() {

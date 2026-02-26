@@ -18,7 +18,9 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.InviteScreen = #(InviteScreen::register_widget(vm)) {
+    mod.widgets.InviteScreen = set_type_default() do #(InviteScreen::register_widget(vm)) {
+        ..mod.widgets.SolidView
+
         width: Fill,
         height: Fill,
         flow: Down,
@@ -28,7 +30,7 @@ script_mod! {
 
         show_bg: true,
         draw_bg +: {
-            color: (COLOR_PRIMARY_DARKER),
+            color: instance((COLOR_PRIMARY_DARKER)),
         }
         restore_status_view := RestoreStatusView {}
 
@@ -87,7 +89,7 @@ script_mod! {
             LineH {
                 width: 240,
                 draw_bg +: {
-                    color: (COLOR_DIVIDER),
+                    color: instance((COLOR_DIVIDER)),
                 }
             }
         }
@@ -161,8 +163,8 @@ script_mod! {
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
 
                 draw_bg +: {
-                    border_color: (COLOR_FG_DANGER_RED),
-                    color: (COLOR_BG_DANGER_RED)
+                    border_color: instance((COLOR_FG_DANGER_RED)),
+                    color: instance((COLOR_BG_DANGER_RED))
                 }
                 text: "Reject Invite"
                 draw_text +: {
@@ -180,8 +182,8 @@ script_mod! {
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
 
                 draw_bg +: {
-                    border_color: (COLOR_FG_ACCEPT_GREEN),
-                    color: (COLOR_BG_ACCEPT_GREEN)
+                    border_color: instance((COLOR_FG_ACCEPT_GREEN)),
+                    color: instance((COLOR_BG_ACCEPT_GREEN))
                 }
                 text: "Join Room"
                 draw_text +: {

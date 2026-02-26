@@ -28,7 +28,7 @@ script_mod! {
         }
         draw_bg +: {
             border_size: 0,
-            color: #0000
+            color: instance(#0000)
         }
     }
 
@@ -59,7 +59,9 @@ script_mod! {
             }
         }
 
-    mod.widgets.EventSourceModal = #(EventSourceModal::register_widget(vm)) {
+    mod.widgets.EventSourceModal = set_type_default() do #(EventSourceModal::register_widget(vm)) {
+        ..mod.widgets.RoundedView
+
         width: Fill { max: 1000, min: 600 }
         // TODO: i'd like for this height to be Fit with a max of Rel { base: Full, factor: 0.90 },
         //       but Makepad doesn't allow Fit views with a max to be scrolled.
@@ -78,7 +80,7 @@ script_mod! {
 
         show_bg: true
         draw_bg +: {
-            color: (COLOR_PRIMARY)
+            color: instance((COLOR_PRIMARY))
             border_radius: (mod.widgets.VIEW_SOURCE_MODAL_BORDER_RADIUS)
             border_size: 0.0
         }
@@ -110,7 +112,7 @@ script_mod! {
                 }
                 draw_bg +: {
                     border_size: 0,
-                    color: #0000
+                    color: instance(#0000)
                 }
             }
         }
@@ -165,7 +167,7 @@ script_mod! {
                     margin: 12,
                     width: Fill,
                     height: Fit,
-                    draw_bg +: { color: (COLOR_PRIMARY) }
+                    draw_bg.color: (COLOR_PRIMARY)
                     draw_text +: { text_style: theme.font_regular { font_size: 11 } }
 
                 }

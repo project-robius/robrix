@@ -21,7 +21,7 @@ script_mod! {
             visible: true,
             show_bg: true,
             draw_bg +: {
-                color: #dddddd
+                color: instance(#dddddd)
             }
             width: Fill, height: Fit,
             label := Label {

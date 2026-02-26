@@ -82,7 +82,7 @@ script_mod! {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 20}
                 draw_bg +: {
-                    color: (COLOR_ACTIVE_PRIMARY)
+                    color: instance((COLOR_ACTIVE_PRIMARY))
                 }
                 draw_icon +: {
                     svg: (ICON_CHECKMARK)
@@ -100,8 +100,8 @@ script_mod! {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 20}
                 draw_bg +: {
-                    color: (COLOR_BG_DANGER_RED)
-                    border_color: (COLOR_FG_DANGER_RED)
+                    color: instance((COLOR_BG_DANGER_RED))
+                    border_color: instance((COLOR_FG_DANGER_RED))
                 }
                 draw_icon +: {
                     svg: (ICON_CLOSE),
@@ -118,8 +118,8 @@ script_mod! {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 20}
                 draw_bg +: {
-                    color: (COLOR_BG_DANGER_RED)
-                    border_color: (COLOR_FG_DANGER_RED)
+                    color: instance((COLOR_BG_DANGER_RED))
+                    border_color: instance((COLOR_FG_DANGER_RED))
                 }
                 draw_icon +: {
                     svg: (ICON_TRASH),

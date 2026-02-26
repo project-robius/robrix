@@ -17,23 +17,23 @@ script_mod! {
 
 
     mod.widgets.RoomsSideBar = #(RoomsSideBar::register_widget(vm)) {
-        Desktop := SolidView {
+        Desktop := View {
             padding: Inset{top: 20, left: 10, right: 10}
             flow: Down, spacing: 5
             width: Fill, height: Fill
 
             show_bg: true,
             draw_bg +: {
-                bg_color: instance((COLOR_PRIMARY_DARKER))
-                border_color: instance(#f2f2f2)
-                border_size: instance(0.003)
+                color: uniform((COLOR_PRIMARY_DARKER))
+                border_color: uniform(#f2f2f2)
+                border_size: uniform(0.003)
 
                 // Draws a right-side border
                 pixel: fn() {
                     if self.pos.x > 1.0 - self.border_size {
                         return self.border_color;
                     } else {
-                        return self.bg_color;
+                        return self.color;
                     }
                 }
             }
@@ -57,7 +57,7 @@ script_mod! {
 
                 show_bg: true
                 draw_bg +: {
-                    color: (COLOR_PRIMARY_DARKER),
+                    color: instance((COLOR_PRIMARY_DARKER)),
                     border_radius: 4.0,
                     border_size: 0.0
                     shadow_color: #0005

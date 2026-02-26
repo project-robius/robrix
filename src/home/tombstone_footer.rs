@@ -19,7 +19,9 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.TombstoneFooter = #(TombstoneFooter::register_widget(vm)) {
+    mod.widgets.TombstoneFooter = set_type_default() do #(TombstoneFooter::register_widget(vm)) {
+        ..mod.widgets.SolidView
+
         visible: false,
         width: Fill,
         height: Fit
@@ -29,9 +31,7 @@ script_mod! {
         spacing: 8
 
         show_bg: true
-        draw_bg +: {
-            color: (COLOR_SECONDARY)
-        }
+        draw_bg.color: (COLOR_SECONDARY)
 
         replacement_reason := Label {
             width: Fill, height: Fit,
@@ -53,8 +53,8 @@ script_mod! {
             icon_walk: Walk{width: 17, height: 17, margin: Inset{left: -2, right: -1} }
 
             draw_bg +: {
-                border_color: (COLOR_FG_ACCEPT_GREEN),
-                color: #f0fff0 // light green
+                border_color: instance((COLOR_FG_ACCEPT_GREEN)),
+                color: instance(#f0fff0) // light green
             }
             draw_text +: {
                 color: (COLOR_FG_ACCEPT_GREEN),

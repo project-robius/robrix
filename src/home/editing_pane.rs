@@ -57,8 +57,8 @@ script_mod! {
                 margin: Inset{left: 5, right: 5},
 
                 draw_bg +: {
-                    border_color: (COLOR_FG_DANGER_RED),
-                    color: (COLOR_BG_DANGER_RED)
+                    border_color: instance((COLOR_FG_DANGER_RED)),
+                    color: instance((COLOR_BG_DANGER_RED))
                     border_radius: 5
                 }
                 draw_icon +: {
@@ -76,8 +76,8 @@ script_mod! {
                 margin: Inset{left: 5},
 
                 draw_bg +: {
-                    border_color: (COLOR_FG_ACCEPT_GREEN),
-                    color: (COLOR_BG_ACCEPT_GREEN)
+                    border_color: instance((COLOR_FG_ACCEPT_GREEN)),
+                    color: instance((COLOR_BG_ACCEPT_GREEN))
                     border_radius: 5
                 }
                 draw_icon +: {

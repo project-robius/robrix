@@ -96,10 +96,10 @@ script_mod! {
 
         show_bg: true
         draw_bg +: {
-            color: (mod.widgets.COLOR_THREAD_SUMMARY_BG)
+            color: instance((mod.widgets.COLOR_THREAD_SUMMARY_BG))
             border_radius: 4.0
             border_size: 1.5
-            border_color: (mod.widgets.COLOR_THREAD_SUMMARY_BORDER)
+            border_color: instance((mod.widgets.COLOR_THREAD_SUMMARY_BORDER))
         }
 
         thread_summary_count := Label {
@@ -127,7 +127,9 @@ script_mod! {
     }
 
     // The view used for each text-based message event in a room's timeline.
-    mod.widgets.Message = #(Message::register_widget(vm)) {
+    mod.widgets.Message = set_type_default() do #(Message::register_widget(vm)) {
+        ..mod.widgets.SolidView
+
         width: Fill,
         height: Fit,
         margin: 0.0
@@ -140,7 +142,7 @@ script_mod! {
         draw_bg +: {
             highlight: instance(0.0)
             hover: instance(0.0)
-            color: uniform(#ffffff)  // default color
+            color: uniform(#ffffff) // default color
 
             mentions_bar_color: instance(#ffffff)
             mentions_bar_width: instance(4.0)
@@ -408,9 +410,9 @@ script_mod! {
                 margin: Inset{ top: -1.5, left: 2, right: 2}
                 padding: Inset{top: 4, bottom: 4, left: 9, right: 9}
                 draw_bg +: {
-                    color: (COLOR_BG_ACCEPT_GREEN)
+                    color: instance((COLOR_BG_ACCEPT_GREEN))
                     border_size: 0.75
-                    border_color: (COLOR_FG_ACCEPT_GREEN)
+                    border_color: instance((COLOR_FG_ACCEPT_GREEN))
                 }
                 draw_icon +: {
                     svg: (ICON_ADD_USER)
@@ -471,7 +473,7 @@ script_mod! {
     // This is implemented as a DateDivider with a different color and a fixed text label.
     mod.widgets.ReadMarker = mod.widgets.DateDivider {
         left_line := LineH {
-            draw_bg +: {color: (mod.widgets.COLOR_READ_MARKER)}
+            draw_bg +: {color: instance((mod.widgets.COLOR_READ_MARKER))}
         }
 
         date := Label {
@@ -482,7 +484,7 @@ script_mod! {
         }
 
         right_line := LineH {
-            draw_bg +: {color: (mod.widgets.COLOR_READ_MARKER)}
+            draw_bg +: {color: instance((mod.widgets.COLOR_READ_MARKER))}
         }
     }
 
@@ -496,7 +498,7 @@ script_mod! {
         flow: Right,
         show_bg: true,
         draw_bg +: {
-            color: #xDAF5E5F0, // mostly opaque light green
+            color: instance(#xDAF5E5F0,) // mostly opaque light green
         }
 
         label := Label {
@@ -553,10 +555,9 @@ script_mod! {
         room_screen_wrapper := SolidView {
             width: Fill, height: Fill,
             flow: Overlay,
+
             show_bg: true
-            draw_bg +: {
-                color: (COLOR_PRIMARY_DARKER)
-            }
+            draw_bg.color: (COLOR_PRIMARY_DARKER)
 
             restore_status_view := RestoreStatusView {}
 
@@ -4600,9 +4601,7 @@ impl Widget for Message {
             let apply_hover = |cx: &mut Cx, bg_color: Vec4| {
                 let mut thread_root_summary_ref = thread_root_summary.clone();
                 script_apply_eval!(cx, thread_root_summary_ref, {
-                    draw_bg +: {
-                        color: #(bg_color)
-                    }
+                    draw_bg.color: #(bg_color)
                 });
             };
             match event.hits(cx, thread_root_summary.area()) {
@@ -4706,7 +4705,7 @@ impl Widget for Message {
         if self.details.as_ref().is_some_and(|d| d.should_be_highlighted) {
             script_apply_eval!(cx, self, {
                 draw_bg +: {
-                    color: #(vec4(1.0, 1.0, 0.82, 1.0))
+                    color: #ffffd1,
                     mentions_bar_color: #ffd54f
                 }
             });

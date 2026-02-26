@@ -23,7 +23,7 @@ script_mod! {
 
             show_bg: true
             draw_bg +: {
-                color: #CCC
+                color: instance(#CCC)
                 border_radius: 3.0
             }
 
@@ -67,7 +67,7 @@ script_mod! {
                     width: Fit, height: Fit
                     padding: 12
                     draw_bg +: {
-                        color: (COLOR_ACTIVE_PRIMARY)
+                        color: instance((COLOR_ACTIVE_PRIMARY))
                     }
                     draw_text +: {
                         color: (COLOR_PRIMARY)

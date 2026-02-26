@@ -135,7 +135,7 @@ script_mod! {
         spacing: 0,
         align: Align{x: 0.5, y: 0.5}
         draw_bg +: {
-            color: (COLOR_SECONDARY)
+            color: instance((COLOR_SECONDARY))
         }
         draw_icon +: {
             svg: (ICON_SQUARES)
@@ -167,7 +167,7 @@ script_mod! {
             height: Fill
 
             draw_bg +: {
-                color: (COLOR_SECONDARY)
+                color: instance((COLOR_SECONDARY))
                 border_radius: 4.0
             }
 
@@ -201,7 +201,7 @@ script_mod! {
             height: (NAVIGATION_TAB_BAR_SIZE)
 
             draw_bg +: {
-                color: (COLOR_SECONDARY)
+                color: instance((COLOR_SECONDARY))
                 border_radius: 4.0
             }
 

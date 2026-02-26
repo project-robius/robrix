@@ -11,16 +11,17 @@ script_mod! {
 
     mod.widgets.TYPING_NOTICE_ANIMATION_DURATION_SECS = 0.3
 
-    mod.widgets.TypingNotice = #(TypingNotice::register_widget(vm)) {
+    mod.widgets.TypingNotice = set_type_default() do #(TypingNotice::register_widget(vm)) {
+        ..mod.widgets.SolidView
+
         visible: false
         width: Fill
         height: 30
         flow: Right
         padding: Inset{left: 12.0, top: 8.0, bottom: 8.0, right: 10.0}
-        show_bg: true,
-        draw_bg +: {
-            color: #e8f4ff,
-        }
+
+        show_bg: true
+        draw_bg.color: #e8f4ff
 
         typing_label := Label {
             align: Align{x: 0.0, y: 0.5},
@@ -36,7 +37,7 @@ script_mod! {
             margin: Inset{top: 1.1, left: -4 }
             padding: 0.0,
             draw_bg +: {
-                color: (TYPING_NOTICE_TEXT_COLOR),
+                color: instance((TYPING_NOTICE_TEXT_COLOR)),
             }
         }
 

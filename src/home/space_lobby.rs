@@ -40,7 +40,9 @@ script_mod! {
     mod.widgets.SPACE_LOBBY_ICON_COLLAPSE = crate_resource("self://resources/icons/triangle_fill.svg")
 
     // An entry in the RoomsList that will show the SpaceLobby when clicked.
-    mod.widgets.SpaceLobbyEntry = #(SpaceLobbyEntry::register_widget(vm)) {
+    mod.widgets.SpaceLobbyEntry = set_type_default() do #(SpaceLobbyEntry::register_widget(vm)) {
+        ..mod.widgets.RoundedView
+
         visible: false, // only visible when a space is selected
         width: Fill,
         height: 35, // same as CollapsibleHeader
@@ -196,8 +198,11 @@ script_mod! {
         ..mod.draw.DrawQuad
     }
 
-    let TreeLines = #(TreeLines::register_widget(vm)) {
+    let TreeLines = set_type_default() do #(TreeLines::register_widget(vm)) {
+        ..mod.widgets.SolidView
+
         width: 0, height: Fill
+
         draw_bg: DrawTreeLine {
             indent_width: 44.0
             level: 0.0
@@ -252,7 +257,9 @@ script_mod! {
     }
 
     // Entry for a child subspace (can be expanded)
-    let SubspaceEntry = #(SubspaceEntry::register_widget(vm)) {
+    let SubspaceEntry = set_type_default() do #(SubspaceEntry::register_widget(vm)) {
+        ..mod.widgets.SolidView
+
         width: Fill,
         height: 44,
         flow: Right,
@@ -325,8 +332,8 @@ script_mod! {
                 icon_walk: Walk{width: 0, height: 0}
                 draw_bg +: {
                     border_size: 0.75
-                    border_color: (COLOR_FG_ACCEPT_GREEN)
-                    color: (COLOR_BG_ACCEPT_GREEN)
+                    border_color: instance((COLOR_FG_ACCEPT_GREEN))
+                    color: instance((COLOR_BG_ACCEPT_GREEN))
                 }
                 draw_text +: {
                     text_style: REGULAR_TEXT {font_size: 9.5},
@@ -342,7 +349,7 @@ script_mod! {
                 icon_walk: Walk{width: 0, height: 0}
                 draw_bg +: {
                     border_size: 0.0
-                    color: (COLOR_ACTIVE_PRIMARY)
+                    color: instance((COLOR_ACTIVE_PRIMARY))
                 }
                 draw_text +: {
                     text_style: REGULAR_TEXT {font_size: 9.5},
@@ -358,8 +365,8 @@ script_mod! {
                 icon_walk: Walk{width: 0, height: 0}
                 draw_bg +: {
                     border_size: 0.75
-                    border_color: (COLOR_FG_DANGER_RED)
-                    color: (COLOR_BG_DANGER_RED)
+                    border_color: instance((COLOR_FG_DANGER_RED))
+                    color: instance((COLOR_BG_DANGER_RED))
                 }
                 draw_text +: {
                     text_style: REGULAR_TEXT {font_size: 9.5},
@@ -399,7 +406,7 @@ script_mod! {
             width: 18,
             height: 18,
             draw_bg +: {
-                color: (COLOR_ACTIVE_PRIMARY)
+                color: instance((COLOR_ACTIVE_PRIMARY))
                 border_size: 2.5,
             }
         }
@@ -433,7 +440,7 @@ script_mod! {
             height: 14,
             margin: Inset{left: 8, right: 10}
             draw_bg +: {
-                color: (COLOR_ACTIVE_PRIMARY)
+                color: instance((COLOR_ACTIVE_PRIMARY))
                 border_size: 2.0,
             }
         }
@@ -450,14 +457,14 @@ script_mod! {
     }
 
     // The main view that shows the lobby (homepage) for a space.
-    mod.widgets.SpaceLobbyScreen = #(SpaceLobbyScreen::register_widget(vm)) {
+    mod.widgets.SpaceLobbyScreen = set_type_default() do #(SpaceLobbyScreen::register_widget(vm)) {
+        ..mod.widgets.SolidView
+
         width: Fill, height: Fill,
         flow: Down,
 
         show_bg: true
-        draw_bg +: {
-            color: #fff
-        }
+        draw_bg.color: #fff
 
         // Header with parent space info
         header := SolidView {
@@ -468,7 +475,7 @@ script_mod! {
 
             show_bg: true,
             draw_bg +: {
-                color: (COLOR_BG_PREVIEW)
+                color: instance((COLOR_BG_PREVIEW))
             }
 
             space_info_label := Label {
@@ -521,8 +528,8 @@ script_mod! {
 
                     draw_bg +: {
                         border_size: 0.75
-                        border_color: (COLOR_FG_ACCEPT_GREEN),
-                        color: (COLOR_BG_ACCEPT_GREEN)
+                        border_color: instance((COLOR_FG_ACCEPT_GREEN)),
+                        color: instance((COLOR_BG_ACCEPT_GREEN))
                     }
                     text: "Invite"
                     draw_text +: {

@@ -26,7 +26,7 @@ script_mod! {
 
         show_bg: true,
         draw_bg +: {
-            color: #000,
+            color: instance(#000),
             border_radius: 7.0,
         }
 
@@ -358,7 +358,7 @@ impl MatrixLinkPill {
             // Apply red background for current user
             if current_user_id().is_some_and(|u| &u == user_id) {
                 self.view.apply_over(cx, live!{
-                    draw_bg: { color: #d91b38 }
+                    draw_bg: { color: instance(#d91b38)}
                 });
             }
 

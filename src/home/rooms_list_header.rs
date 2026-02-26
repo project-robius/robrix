@@ -47,7 +47,7 @@ script_mod! {
                 width: 20,
                 height: 20,
                 draw_bg +: {
-                    color: (COLOR_ACTIVE_PRIMARY)
+                    color: instance((COLOR_ACTIVE_PRIMARY))
                     border_size: 3.0,
                 }
             }

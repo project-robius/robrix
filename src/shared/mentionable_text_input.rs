@@ -38,7 +38,7 @@ script_mod! {
         show_bg: true
         cursor: MouseCursor.Hand
         draw_bg +: {
-            color: (COLOR_PRIMARY),
+            color: instance((COLOR_PRIMARY)),
             border_radius: uniform(4.0),
             hover: instance(0.0),
             selected: instance(0.0),
@@ -110,7 +110,7 @@ script_mod! {
         show_bg: true
         cursor: MouseCursor.Hand
         draw_bg +: {
-            color: (COLOR_PRIMARY),
+            color: instance((COLOR_PRIMARY)),
             border_radius: uniform(4.0),
             hover: instance(0.0),
             selected: instance(0.0),
@@ -185,7 +185,7 @@ script_mod! {
         spacing: 8.0,
         align: Align{x: 0.0, y: 0.5}
         draw_bg +: {
-            color: (COLOR_PRIMARY),
+            color: instance((COLOR_PRIMARY)),
         }
 
         loading_text := Label {
@@ -201,7 +201,7 @@ script_mod! {
             width: 60,
             height: 24,
             draw_bg +: {
-                color: (COLOR_ROBRIX_PURPLE),
+                color: instance((COLOR_ROBRIX_PURPLE)),
                 dot_radius: 2.0,
             }
         }
@@ -217,7 +217,7 @@ script_mod! {
         spacing: 8.0,
         align: Align{x: 0.0, y: 0.5}
         draw_bg +: {
-            color: (COLOR_PRIMARY),
+            color: instance((COLOR_PRIMARY)),
         }
 
         no_matches_text := Label {
@@ -245,12 +245,12 @@ script_mod! {
             padding: 0.0
 
             draw_bg +: {
-                color: (COLOR_SECONDARY),
+                color: instance((COLOR_SECONDARY)),
             }
             header_view := SolidView {
                 margin: Inset{left: 4, right: 4}
                 draw_bg +: {
-                    color: (COLOR_ROBRIX_PURPLE),
+                    color: instance((COLOR_ROBRIX_PURPLE)),
                 }
                 header_label := Label {
                     draw_text +: {

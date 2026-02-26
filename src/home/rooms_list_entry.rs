@@ -78,7 +78,9 @@ script_mod! {
         }
     }
 
-    mod.widgets.RoomsListEntryContent = #(RoomsListEntryContent::register_widget(vm)) {
+    mod.widgets.RoomsListEntryContent = set_type_default() do #(RoomsListEntryContent::register_widget(vm)) {
+        ..mod.widgets.RoundedView
+
         flow: Right,
         spacing: 10,
         padding: 10,
@@ -89,7 +91,7 @@ script_mod! {
             color: uniform(#0000)
             color_selected: uniform(vec4(0.059, 0.533, 0.996, 1.0))
             border_size: instance(0.0)
-            border_color: instance(#0000)
+            border_color: instance(instance(#0000))
             inset: instance(vec4(0.0))
             border_radius: instance(4.0)
 

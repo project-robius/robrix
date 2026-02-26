@@ -26,7 +26,7 @@ script_mod! {
 
             show_bg: true,
             draw_bg +: {
-                color: #FFFFFF
+                color: instance(#FFFFFF)
             }
             margin: 0
 
@@ -70,7 +70,7 @@ script_mod! {
                     width: Fit, height: Fit,
                     padding: 10,
                     draw_bg +: {
-                        color: (COLOR_SECONDARY)
+                        color: instance((COLOR_SECONDARY))
                     },
                     text: "Cancel"
                     draw_text +: {
@@ -82,7 +82,7 @@ script_mod! {
                 confirm_button := RobrixIconButton {
                     width: Fit, height: Fit,
                     padding: 10,
-                    draw_bg +: { color: (COLOR_BG_DANGER_RED) },
+                    draw_bg +: { color: instance((COLOR_BG_DANGER_RED))},
                     draw_icon +: {
                             svg: (ICON_LOGOUT)
                             color: (COLOR_FG_DANGER_RED),
@@ -252,7 +252,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                         confirm_button.set_text(cx, "Restart now");
                         confirm_button.apply_over(cx, live!{
                             draw_bg: {
-                                color: (COLOR_FG_DANGER_RED)
+                                color: instance((COLOR_FG_DANGER_RED))
                             }
                         });
                         confirm_button.set_enabled(cx, true);
@@ -277,7 +277,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                     confirm_button.set_text(cx, "Restart now");
                     confirm_button.apply_over(cx, live!{
                         draw_bg: {
-                            color: (COLOR_FG_DANGER_RED)
+                            color: instance((COLOR_FG_DANGER_RED))
                         }
                     });
                     confirm_button.set_enabled(cx, true);

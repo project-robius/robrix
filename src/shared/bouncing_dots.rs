@@ -5,7 +5,6 @@ script_mod! {
     use mod.widgets.*
 
     mod.widgets.BouncingDots = #(BouncingDots::register_widget(vm)) {
-
         width: 24,
         height: 12,
         flow: Down,
@@ -44,7 +43,7 @@ script_mod! {
             }
         }
 
-        animator: Animator{
+        animator: Animator {
             dots: {
                 default: @off
                 off: AnimatorState{

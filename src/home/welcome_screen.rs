@@ -13,7 +13,7 @@ script_mod! {
 
         show_bg: true,
         draw_bg +: {
-            color: (COLOR_PRIMARY),
+            color: instance((COLOR_PRIMARY)),
         }
 
         welcome_message := RoundedView {

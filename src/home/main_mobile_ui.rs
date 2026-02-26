@@ -11,16 +11,18 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.MainMobileUI = #(MainMobileUI::register_widget(vm)) {
+    mod.widgets.MainMobileUI = set_type_default() do #(MainMobileUI::register_widget(vm)) {
+        ..mod.widgets.SolidView
+
         width: Fill, height: Fill
-        flow: Down,
-        show_bg: true
-        draw_bg +: {
-            color: (COLOR_PRIMARY_DARKER)
-        }
         align: Align{x: 0.0, y: 0.5}
+        flow: Down,
+
+        show_bg: true
+        draw_bg.color: (COLOR_PRIMARY_DARKER)
 
         welcome := mod.widgets.WelcomeScreen {}
+
         // TODO: see if we can remove these wrappers
         room_view := View {
             align: Align{x: 0.5, y: 0.5}

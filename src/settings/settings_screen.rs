@@ -43,7 +43,7 @@ script_mod! {
                     padding: 15,
 
                     draw_bg +: {
-                        color: (COLOR_SECONDARY)
+                        color: instance((COLOR_SECONDARY))
                     }
                     draw_icon +: {
                         svg: (ICON_CLOSE),

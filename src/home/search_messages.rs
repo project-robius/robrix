@@ -8,14 +8,16 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.SearchMessagesButton = #(SearchMessagesButton::register_widget(vm)) {
+    mod.widgets.SearchMessagesButton = set_type_default() do #(SearchMessagesButton::register_widget(vm)) {
+        ..mod.widgets.SolidView
+
         width: Fit,
         height: 35,
         margin: 0
         enabled: false
 
         draw_bg +: {
-            color: (COLOR_BG_DISABLED)
+            color: instance((COLOR_BG_DISABLED))
             // color: (COLOR_ROBRIX_PURPLE) // or `color: (COLOR_ACTIVE_PRIMARY)`
             // color_hover: (COLOR_PRIMARY_DARKER) // make it whiter (this value is mixed in with `color`)
         }

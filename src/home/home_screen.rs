@@ -17,13 +17,15 @@ script_mod! {
     }
 
     // A wrapper view around the SpacesBar that lets us show/hide it via animation.
-    mod.widgets.SpacesBarWrapper = #(SpacesBarWrapper::register_widget(vm)) {
+    mod.widgets.SpacesBarWrapper = set_type_default() do #(SpacesBarWrapper::register_widget(vm)) {
+        ..mod.widgets.RoundedShadowView
+
         width: Fill,
         height: (NAVIGATION_TAB_BAR_SIZE)
         margin: Inset{left: 4, right: 4}
         show_bg: true
         draw_bg +: {
-            color: (COLOR_PRIMARY_DARKER),
+            color: instance((COLOR_PRIMARY_DARKER)),
             border_radius: 4.0,
             border_size: 0.0
             shadow_color: #0005
@@ -62,7 +64,7 @@ script_mod! {
             Desktop := SolidView {
                 show_bg: true
                 draw_bg +: {
-                    color: (COLOR_SECONDARY),
+                    color: instance((COLOR_SECONDARY)),
                 }
                 width: Fill, height: Fill
                 flow: Right
@@ -114,7 +116,7 @@ script_mod! {
                         width: Fill, height: Fill
                         show_bg: true,
                         draw_bg +: {
-                            color: (COLOR_PRIMARY)
+                            color: instance((COLOR_PRIMARY))
                         }
 
                         CachedWidget {
@@ -126,7 +128,7 @@ script_mod! {
                         width: Fill, height: Fill
                         show_bg: true,
                         draw_bg +: {
-                            color: (COLOR_PRIMARY)
+                            color: instance((COLOR_PRIMARY))
                         }
 
                         CachedWidget {
@@ -142,7 +144,7 @@ script_mod! {
 
                 show_bg: true
                 draw_bg +: {
-                    color: (COLOR_PRIMARY)
+                    color: instance((COLOR_PRIMARY))
                 }
 
                 mod.widgets.StackNavigationWrapper {

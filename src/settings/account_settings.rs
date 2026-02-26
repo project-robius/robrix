@@ -61,7 +61,7 @@ script_mod! {
                         padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                         margin: 0,
                         draw_bg +: {
-                            color: (COLOR_ACTIVE_PRIMARY)
+                            color: instance((COLOR_ACTIVE_PRIMARY))
                         }
                         draw_icon +: {
                             svg: (ICON_UPLOAD)
@@ -79,7 +79,7 @@ script_mod! {
                         width: 16, height: 16
                         visible: false
                         draw_bg +: {
-                            color: (COLOR_ACTIVE_PRIMARY)
+                            color: instance((COLOR_ACTIVE_PRIMARY))
                         }
                     }
                 }
@@ -95,8 +95,8 @@ script_mod! {
                         padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                         margin: 0,
                         draw_bg +: {
-                            color: (COLOR_BG_DANGER_RED)
-                            border_color: (COLOR_FG_DANGER_RED)
+                            color: instance((COLOR_BG_DANGER_RED))
+                            border_color: instance((COLOR_FG_DANGER_RED))
                         }
                         draw_icon +: {
                             svg: (ICON_TRASH),
@@ -113,7 +113,7 @@ script_mod! {
                         width: 16, height: 16
                         visible: false
                         draw_bg +: {
-                            color: (COLOR_ACTIVE_PRIMARY)
+                            color: instance((COLOR_ACTIVE_PRIMARY))
                         }
                     }
                 }
@@ -145,7 +145,7 @@ script_mod! {
                 margin: Inset{left: 5},
 
                 draw_bg +: {
-                    color: (COLOR_BG_DISABLED)
+                    color: instance((COLOR_BG_DISABLED))
                 }
                 draw_icon +: {
                     svg: (ICON_FORBIDDEN),
@@ -165,8 +165,8 @@ script_mod! {
                 margin: Inset{left: 5},
 
                 draw_bg +: {
-                    border_color: (COLOR_FG_DISABLED),
-                    color: (COLOR_BG_DISABLED),
+                    border_color: instance((COLOR_FG_DISABLED)),
+                    color: instance((COLOR_BG_DISABLED)),
                     border_radius: 5
                 }
                 draw_icon +: {
@@ -185,7 +185,7 @@ script_mod! {
                 margin: Inset{left: 5, top: 13} // vertically center with buttons
                 visible: false
                 draw_bg +: {
-                    color: (COLOR_ACTIVE_PRIMARY)
+                    color: instance((COLOR_ACTIVE_PRIMARY))
                 }
             }
         }
@@ -205,7 +205,7 @@ script_mod! {
                 padding: 12,
                 spacing: 0,
                 draw_bg +: {
-                    color: (COLOR_SECONDARY)
+                    color: instance((COLOR_SECONDARY))
                 }
                 draw_icon +: {
                     svg: (ICON_COPY)
@@ -242,7 +242,7 @@ script_mod! {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 5}
                 draw_bg +: {
-                    color: (COLOR_ACTIVE_PRIMARY)
+                    color: instance((COLOR_ACTIVE_PRIMARY))
                 }
                 draw_icon +: {
                     svg: (ICON_EXTERNAL_LINK)
@@ -260,8 +260,8 @@ script_mod! {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 5}
                 draw_bg +: {
-                    color: (COLOR_BG_DANGER_RED)
-                    border_color: (COLOR_FG_DANGER_RED)
+                    color: instance((COLOR_BG_DANGER_RED))
+                    border_color: instance((COLOR_FG_DANGER_RED))
                 }
                 draw_icon +: {
                     svg: (ICON_LOGOUT),
@@ -615,8 +615,8 @@ impl AccountSettings {
         delete_avatar_button.apply_over(cx, live!{
             enabled: (enable),
             draw_bg: {
-                color: (delete_button_bg_color),
-                border_color: (delete_button_fg_color),
+                color: instance((delete_button_bg_color)),
+                border_color: instance((delete_button_fg_color)),
             }
             draw_icon: {
                 color: (delete_button_fg_color),
@@ -641,8 +641,8 @@ impl AccountSettings {
         upload_avatar_button.apply_over(cx, live!{
             enabled: (enable),
             draw_bg: {
-                color: (upload_button_bg_color),
-                border_color: (upload_button_fg_color),
+                color: instance((upload_button_bg_color)),
+                border_color: instance((upload_button_fg_color)),
             }
             draw_icon: {
                 color: (upload_button_fg_color),
@@ -674,8 +674,8 @@ impl AccountSettings {
         accept_display_name_button.apply_over(cx, live!(
             enabled: (enable),
             draw_bg: {
-                color: (accept_button_bg_color),
-                border_color: (accept_button_fg_color),
+                color: instance((accept_button_bg_color)),
+                border_color: instance((accept_button_fg_color)),
             },
             draw_text: {
                 color: (accept_button_fg_color),
@@ -687,8 +687,8 @@ impl AccountSettings {
         cancel_display_name_button.apply_over(cx, live!(
             enabled: (enable),
             draw_bg: {
-                color: (cancel_button_bg_color),
-                border_color: (cancel_button_fg_color),
+                color: instance((cancel_button_bg_color)),
+                border_color: instance((cancel_button_fg_color)),
             },
             draw_text: {
                 color: (cancel_button_fg_color),

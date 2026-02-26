@@ -9,7 +9,9 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.LoadingPane = #(LoadingPane::register_widget(vm)) {
+    mod.widgets.LoadingPane = set_type_default() do #(LoadingPane::register_widget(vm)) {
+        ..mod.widgets.SolidView
+
         visible: false,
         flow: Overlay,
         width: Fill,
@@ -17,11 +19,7 @@ script_mod! {
         align: Align{x: 0.5, y: 0.5}
 
         show_bg: true
-        draw_bg +: {
-            pixel: fn() {
-                return vec4(0., 0., 0., 0.7)
-            }
-        }
+        draw_bg.color: #000000b2
 
         main_content := RoundedView {
             flow: Down
@@ -32,7 +30,7 @@ script_mod! {
 
             show_bg: true
             draw_bg +: {
-                color: #fff
+                color: instance(#fff)
                 border_radius: 3.0
             }
 
@@ -86,8 +84,8 @@ script_mod! {
                         icon_walk: Walk{width: 0, height: 0 }
 
                         draw_bg +: {
-                            border_color: (COLOR_FG_DANGER_RED),
-                            color: (COLOR_BG_DANGER_RED)
+                            border_color: instance((COLOR_FG_DANGER_RED)),
+                            color: instance((COLOR_BG_DANGER_RED))
                         }
                         text: "Cancel"
                         draw_text +: {
