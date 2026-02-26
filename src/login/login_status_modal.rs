@@ -12,9 +12,7 @@ script_mod! {
         align: Align{x: 0.5}
 
         RoundedView {
-            // Halfway between the login screen background (320 px wide)
-            // and the login screen's buttons/content (250 px wide).
-            width: ((320+250)/2),
+            width: 400
             height: Fit,
             flow: Down,
             align: Align{x: 0.5}
@@ -23,8 +21,8 @@ script_mod! {
 
             show_bg: true
             draw_bg +: {
-                color: instance(#CCC)
-                border_radius: 3.0
+                color: #CCC
+                border_radius: 4.0
             }
 
             View {
@@ -66,9 +64,7 @@ script_mod! {
                     align: Align{x: 0.5, y: 0.5}
                     width: Fit, height: Fit
                     padding: 12
-                    draw_bg +: {
-                        color: instance((COLOR_ACTIVE_PRIMARY))
-                    }
+                    draw_bg.color: (COLOR_ACTIVE_PRIMARY)
                     draw_text +: {
                         color: (COLOR_PRIMARY)
                         text_style: REGULAR_TEXT {}

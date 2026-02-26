@@ -277,7 +277,7 @@ script_mod! {
                     // width: Fit, height: Fit,
                     // align: Align{x: 0.5, y: 0.5},
                     can_dismiss: false,
-                    content: {
+                    content +: {
                         login_status_modal_inner := mod.widgets.LoginStatusModal {}
                     }
                 }

@@ -80,13 +80,13 @@ script_mod! {
 
         // We want all modals to appear in front of the settings screen.
         create_wallet_modal := Modal {
-            content: {
+            content +: {
                 create_wallet_modal_inner := CreateWalletModal {}
             }
         }
 
         create_did_modal := Modal {
-            content: {
+            content +: {
                 create_did_modal_inner := CreateDidModal {}
             }
         }

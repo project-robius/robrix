@@ -61,7 +61,7 @@ script_mod! {
                         }
 
                         image_viewer_modal := Modal {
-                            content: {
+                            content +: {
                                 width: Fill, height: Fill,
                                 image_viewer_modal_inner := ImageViewer {}
                             }
@@ -74,28 +74,28 @@ script_mod! {
 
                         // A modal to confirm sending out an invite to a room.
                         invite_confirmation_modal := Modal {
-                            content: {
+                            content +: {
                                 invite_confirmation_modal_inner := PositiveConfirmationModal {}
                             }
                         }
 
                         // A modal to invite a user to a room.
                         invite_modal := Modal {
-                            content: {
+                            content +: {
                                 invite_modal_inner := InviteModal {}
                             }
                         }
 
                         // Show the logout confirmation modal.
                         logout_confirm_modal := Modal {
-                            content: {
+                            content +: {
                                 logout_confirm_modal_inner := LogoutConfirmModal {}
                             }
                         }
 
                         // Show the event source modal (View Source for messages).
                         event_source_modal := Modal {
-                            content: {
+                            content +: {
                                 height: Fill,
                                 width: Fill,
                                 align: Align{x: 0.5, y: 0.5},
@@ -105,26 +105,26 @@ script_mod! {
 
                         // Show incoming verification requests in front of the aforementioned UI elements.
                         verification_modal := Modal {
-                            content: {
+                            content +: {
                                 verification_modal_inner := VerificationModal {}
                             }
                         }
                         tsp_verification_modal := Modal {
-                            content: {
+                            content +: {
                                 tsp_verification_modal_inner := TspVerificationModal {}
                             }
                         }
 
                         // A generic modal to confirm any positive action.
                         positive_confirmation_modal := Modal {
-                            content: {
+                            content +: {
                                 positive_confirmation_modal_inner := PositiveConfirmationModal { }
                             }
                         }
 
                         // A modal to confirm any deletion/removal action.
                         delete_confirmation_modal := Modal {
-                            content: {
+                            content +: {
                                 delete_confirmation_modal_inner := NegativeConfirmationModal { }
                             }
                         }
