@@ -112,7 +112,7 @@ script_mod! {
                 text_style: REGULAR_TEXT {font_size: 9}
                 flow: Flow.Right{wrap: true},
 
-                get_color: fn() -> vec4 {
+                get_color: fn() {
                     return mix(
                         mix(
                             self.color,

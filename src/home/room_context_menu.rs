@@ -138,6 +138,7 @@ pub enum RoomContextMenuAction {
 #[derive(Script, ScriptHook, Widget)]
 pub struct RoomContextMenu {
     #[deref] view: View,
+    #[source] source: ScriptObjectRef,
     #[rust] details: Option<RoomContextMenuDetails>,
 }
 

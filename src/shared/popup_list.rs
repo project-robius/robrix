@@ -510,67 +510,57 @@ impl RobrixPopupNotification {
                 COLOR_WHITE // White text for all other kinds
             };
             
-            // TODO: fix this apply over block (or replace with script_apply_eval)
-            (&mut view).apply_over(
-                cx,
-                live! {
-                    popup_content: {
-                        inner: {
-                            main_content: {
-                                popup_label: {
-                                    draw_text: {
-                                        color: (text_color),
-                                    }
-                                }
-                            }
-                            // For top to bottom progress bar.
-                            close_button_view: {
-                                close_button: {
-                                    draw_icon: {
-                                        color: (text_color),
-                                    }
+            script_apply_eval!(cx, view, {
+                popup_content: {
+                    inner: {
+                        main_content: {
+                            popup_label: {
+                                draw_text: {
+                                    color: #(text_color),
                                 }
                             }
                         }
-                        // For Right to left progress bar.
+                        // For top to bottom progress bar.
                         close_button_view: {
                             close_button: {
                                 draw_icon: {
-                                    color: (text_color),
+                                    color: #(text_color),
                                 }
                             }
                         }
                     }
-                    draw_bg: {
-                        color: ( background_color )
-                    }
-                },
-            );
-        }
-        let close_timer = if let Some(duration) = popup_item.auto_dismissal_duration {
-            (&mut view).apply_over(
-                cx,
-                live! {
-                    popup_content: {
-                        progress_bar: {
-                            draw_bg: { anim_duration: (duration) }
+                    // For Right to left progress bar.
+                    close_button_view: {
+                        close_button: {
+                            draw_icon: {
+                                color: #(text_color),
+                            }
                         }
                     }
-                },
-            );
+                }
+                draw_bg: {
+                    color: #(background_color)
+                }
+            });
+        }
+        let close_timer = if let Some(duration) = popup_item.auto_dismissal_duration {
+            script_apply_eval!(cx, view, {
+                popup_content: {
+                    progress_bar: {
+                        draw_bg: { anim_duration: (duration) }
+                    }
+                }
+            });
             view.animator_play(cx, ids!(mode.slide));
             cx.start_timeout(duration)
         } else {
-            (&mut view).apply_over(
-                cx,
-                live! {
-                    popup_content: {
-                        progress_bar: {
-                            draw_bg: { display_progress_bar: 0.0 }
-                        }
+            script_apply_eval!(cx, view, {
+                popup_content: {
+                    progress_bar: {
+                        draw_bg: { display_progress_bar: 0.0 }
                     }
-                },
-            );
+                }
+            });
             Timer::empty()
         };
         self.popups.push((view, popup_item, close_timer));

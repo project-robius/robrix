@@ -27,19 +27,25 @@ script_mod! {
                 )
             }
         }
-        draw_icon +: {
-            get_color: fn() -> vec4 {
-                return mix(
-                    mix(
-                        (mod.widgets.COLOR_META),
-                        (mod.widgets.COLOR_BRAND),
-                        self.hover
-                    ),
-                    (mod.widgets.COLOR_BRAND_HOVER),
-                    self.down
-                )
-            }
-        }
+        draw_icon.color: #F00
+        // TODO: Makepad's new Button no longer has a `hover` animator for `draw_icon`,
+        // so the below `hover` and `down` instances will never get modified.
+        //
+        // draw_icon +: {
+        //     hover: instance(0.0)
+        //     down: instance(0.0)
+        //     get_color: fn() -> vec4 {
+        //         return mix(
+        //             mix(
+        //                 (mod.widgets.COLOR_META),
+        //                 (mod.widgets.COLOR_BRAND),
+        //                 self.hover
+        //             ),
+        //             (mod.widgets.COLOR_BRAND_HOVER),
+        //             self.down
+        //         )
+        //     }
+        // }
         icon_walk: Walk{width: 7.5, height: Fit, margin: Inset{left: 5.0}}
         draw_bg +: {
             pixel: fn() {
@@ -61,14 +67,13 @@ script_mod! {
         align: Align{x: 0, y: 0.5}
 
         draw_bg +: {
-            hover: instance(0.0)
-            color: uniform((mod.widgets.COLOR_PRIMARY))
+            color: (COLOR_PRIMARY)
             // We set a mid-gray hover color, which gets mixed with the bg color itself
             // in order to create a "lightening" effect upon hover.
-            color_hover: uniform(#A)
-            border_size: uniform(0.0)
-            border_color: uniform(#D0D5DD)
-            border_radius: uniform(4.0)
+            color_hover: #A
+            border_size: 0.0
+            border_color: #D0D5DD
+            border_radius: 4.0
 
             get_color: fn() -> vec4 {
                 return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
@@ -91,23 +96,24 @@ script_mod! {
             }
         }
 
-        draw_icon +: {
-            hover: instance(0.0)
-            color: #000
-            color_hover: uniform(#000)
-            get_color: fn() -> vec4 {
-                return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
-            }
-        }
+        draw_icon.color: #F00
+        // TODO: Makepad's new Button no longer has a `hover` animator for `draw_icon`
+        // so the below `hover` and `down` instances will never get modified.
+        //
+        // draw_icon +: {
+        //     hover: instance(0.0)
+        //     color: #000
+        //     color_hover: uniform(#000)
+        //     get_color: fn() -> vec4 {
+        //         return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
+        //     }
+        // }
         icon_walk: Walk{width: 16, height: 16}
 
         draw_text +: {
-            hover: instance(0.0)
             color: #000
-            color_hover: uniform(#000)
-            get_color: fn() -> vec4 {
-                return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
-            }
+            color_hover: #999
+            color_down: #555
             text_style: mod.widgets.REGULAR_TEXT {font_size: 10},
         }
         text: ""

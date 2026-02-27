@@ -298,6 +298,7 @@ impl MessageDetails {
 #[derive(Script, ScriptHook, Widget)]
 pub struct NewMessageContextMenu {
     #[deref] view: View,
+    #[source] source: ScriptObjectRef,
     #[rust] details: Option<MessageDetails>,
 }
 

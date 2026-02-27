@@ -79,7 +79,6 @@ script_mod! {
     }
 
     mod.widgets.RoomsListEntryContent = set_type_default() do #(RoomsListEntryContent::register_widget(vm)) {
-        ..mod.widgets.RoundedView
 
         flow: Right,
         spacing: 10,
@@ -90,7 +89,7 @@ script_mod! {
         draw_bg +: {
             active: instance(0.0)
             color: instance(#0000)
-            color_selected: instance(mod.widgets.COLOR_ACTIVE_PRIMARY)
+            color_selected: instance(COLOR_ACTIVE_PRIMARY)
             border_color: instance(#0000)
             border_size: uniform(0.0)
             border_radius: uniform(4.0)
@@ -395,6 +394,8 @@ impl RoomsListEntryContent {
 
     /// Updates the styling of the preview based on whether the room is selected or not.
     pub fn update_preview_colors(&mut self, cx: &mut Cx, is_selected: bool) {
+        // TODO WTF THIS REMOVED THE WHOLE FUNCTION!!!
+        // RESTORE THIS: <https://github.com/project-robius/robrix/blob/182a9c4dba2b00c87b934f61f1ba449f8fa6a2eb/src/home/rooms_list_entry.rs#L407>
         self.animator_toggle(cx, is_selected, Animate::No, ids!(selected.on), ids!(selected.off));
     }
 }

@@ -286,14 +286,22 @@ impl MatchEvent for App {
             // Handle an action requesting to open the new message context menu.
             if let MessageAction::OpenMessageContextMenu { details, abs_pos } = action.as_widget_action().cast() {
                 self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
-                let new_message_context_menu = self.ui.new_message_context_menu(cx, ids!(new_message_context_menu));
+                let mut new_message_context_menu = self.ui.new_message_context_menu(cx, ids!(new_message_context_menu));
                 let expected_dimensions = new_message_context_menu.show(cx, details);
                 // Ensure the context menu does not spill over the window's bounds.
                 let rect = self.ui.window(cx, ids!(main_window)).area().rect(cx);
-                let _pos_x = min(abs_pos.x, rect.size.x - expected_dimensions.x);
-                let _pos_y = min(abs_pos.y, rect.size.y - expected_dimensions.y);
-                new_message_context_menu.apply_over(cx, live! {
-                    main_content: { margin: { left: (pos_x), top: (pos_y) } }
+                let pos_x = min(abs_pos.x, rect.size.x - expected_dimensions.x);
+                let pos_y = min(abs_pos.y, rect.size.y - expected_dimensions.y);
+                let margin = Inset {
+                    left: pos_x as f64,
+                    top: pos_y as f64,
+                    right: 0.0,
+                    bottom: 0.0,
+                };
+                log!("Message context menu position: ({}, {})", pos_x, pos_y);
+                let mut main_content_view = new_message_context_menu.view(cx, ids!(main_content));
+                script_apply_eval!(cx, main_content_view, {
+                    margin: #(margin)
                 });
                 self.ui.redraw(cx);
                 continue;
@@ -306,10 +314,18 @@ impl MatchEvent for App {
                 let expected_dimensions = room_context_menu.show(cx, details);
                 // Ensure the context menu does not spill over the window's bounds.
                 let rect = self.ui.window(cx, ids!(main_window)).area().rect(cx);
-                let _pos_x = min(pos.x, rect.size.x - expected_dimensions.x);
-                let _pos_y = min(pos.y, rect.size.y - expected_dimensions.y);
-                room_context_menu.apply_over(cx, live! {
-                    main_content: { margin: { left: (pos_x), top: (pos_y) } }
+                let pos_x = min(pos.x, rect.size.x - expected_dimensions.x);
+                let pos_y = min(pos.y, rect.size.y - expected_dimensions.y);
+                let margin = Inset {
+                    left: pos_x as f64,
+                    top: pos_y as f64,
+                    right: 0.0,
+                    bottom: 0.0,
+                };
+                log!("Room context menu position: ({}, {})", pos_x, pos_y);
+                let mut main_content_view = room_context_menu.view(cx, ids!(main_content));
+                script_apply_eval!(cx, main_content_view, {
+                    margin: #(margin)
                 });
                 self.ui.redraw(cx);
                 continue;

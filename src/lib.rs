@@ -131,9 +131,6 @@ pub mod utils;
 pub mod temp_storage;
 pub mod location;
 
-#[cfg(test)]
-mod script_parse_smoke;
-
 pub const APP_QUALIFIER: &str = "org";
 pub const APP_ORGANIZATION: &str = "robius";
 pub const APP_NAME: &str = "robrix";
