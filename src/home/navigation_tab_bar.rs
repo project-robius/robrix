@@ -64,37 +64,37 @@ script_mod! {
         spacing: 0,
 
         draw_bg +: {
-            color: uniform((COLOR_NAVIGATION_TAB_BG))
-            color_hover: uniform((COLOR_NAVIGATION_TAB_BG_HOVER))
-            color_down: uniform((COLOR_NAVIGATION_TAB_BG_HOVER))
-            color_active: uniform((COLOR_NAVIGATION_TAB_BG_ACTIVE))
-            color_focus: uniform((COLOR_NAVIGATION_TAB_BG_ACTIVE))
+            color: (COLOR_NAVIGATION_TAB_BG)
+            color_hover: (COLOR_NAVIGATION_TAB_BG_HOVER)
+            color_down: (COLOR_NAVIGATION_TAB_BG_HOVER)
+            color_active: (COLOR_NAVIGATION_TAB_BG_ACTIVE)
+            color_focus: (COLOR_NAVIGATION_TAB_BG_ACTIVE)
 
-            border_size: uniform(0.0)
-            border_radius: uniform(4.0)
-            border_color: uniform(#0000)
-            border_color_hover: uniform(#0000)
-            border_color_down: uniform(#0000)
-            border_color_active: uniform(#0000)
-            border_color_focus: uniform(#0000)
+            border_size: 0.0
+            border_radius: 4.0
+            border_color: #0000
+            border_color_hover: #0000
+            border_color_down: #0000
+            border_color_active: #0000
+            border_color_focus: #0000
         }
 
         draw_text +: {
             color: (COLOR_NAVIGATION_TAB_FG)
-            color_hover: uniform((COLOR_NAVIGATION_TAB_FG_HOVER))
-            color_down: uniform((COLOR_NAVIGATION_TAB_FG_HOVER))
-            color_active: uniform((COLOR_NAVIGATION_TAB_FG_ACTIVE))
-            color_focus: uniform((COLOR_NAVIGATION_TAB_FG_ACTIVE))
+            color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
+            color_down: (COLOR_NAVIGATION_TAB_FG_HOVER)
+            color_active: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
+            color_focus: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
 
             text_style: theme.font_bold {font_size: 9}
         }
 
         draw_icon +: {
             color: (COLOR_NAVIGATION_TAB_FG)
-            color_hover: uniform((COLOR_NAVIGATION_TAB_FG_HOVER))
-            color_down: uniform((COLOR_NAVIGATION_TAB_FG_HOVER))
-            color_active: uniform((COLOR_NAVIGATION_TAB_FG_ACTIVE))
-            color_focus: uniform((COLOR_NAVIGATION_TAB_FG_ACTIVE))
+            color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
+            color_down: (COLOR_NAVIGATION_TAB_FG_HOVER)
+            color_active: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
+            color_focus: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
         }
     }
 
@@ -134,9 +134,7 @@ script_mod! {
         padding: 16
         spacing: 0,
         align: Align{x: 0.5, y: 0.5}
-        draw_bg +: {
-            color: instance((COLOR_SECONDARY))
-        }
+        draw_bg.color: (COLOR_SECONDARY)
         draw_icon +: {
             svg: (ICON_SQUARES)
             color: (COLOR_NAVIGATION_TAB_FG)
@@ -167,7 +165,7 @@ script_mod! {
             height: Fill
 
             draw_bg +: {
-                color: instance((COLOR_SECONDARY))
+                color: (COLOR_SECONDARY)
                 border_radius: 4.0
             }
 
@@ -201,7 +199,7 @@ script_mod! {
             height: (NAVIGATION_TAB_BAR_SIZE)
 
             draw_bg +: {
-                color: instance((COLOR_SECONDARY))
+                color: (COLOR_SECONDARY)
                 border_radius: 4.0
             }
 

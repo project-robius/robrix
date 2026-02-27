@@ -53,8 +53,8 @@ script_mod! {
             icon_walk: Walk{width: 17, height: 17, margin: Inset{left: -2, right: -1} }
 
             draw_bg +: {
-                border_color: instance((COLOR_FG_ACCEPT_GREEN)),
-                color: instance(#f0fff0) // light green
+                border_color: (COLOR_FG_ACCEPT_GREEN)
+                color: (COLOR_BG_ACCEPT_GREEN)
             }
             draw_text +: {
                 color: (COLOR_FG_ACCEPT_GREEN),

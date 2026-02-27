@@ -25,8 +25,8 @@ script_mod! {
 
             show_bg: true
             draw_bg +: {
-                color: instance((COLOR_PRIMARY))
-                border_radius: 4
+                color: (COLOR_PRIMARY)
+                border_radius: 4.0
             }
 
             title_view := View {
@@ -76,8 +76,8 @@ script_mod! {
     
                     draw_bg +: {
                         border_size: 0.75
-                        border_color: instance((COLOR_BG_DISABLED)),
-                        color: instance((COLOR_SECONDARY))
+                        border_color: (COLOR_BG_DISABLED)
+                        color: (COLOR_SECONDARY)
                     }
                     draw_text +: {
                         color: (COLOR_TEXT),
@@ -93,8 +93,8 @@ script_mod! {
 
                     draw_bg +: {
                         border_size: 0.75
-                        border_color: instance((COLOR_ACTIVE_PRIMARY_DARKER)),
-                        color: instance((COLOR_ACTIVE_PRIMARY))
+                        border_color: (COLOR_ACTIVE_PRIMARY_DARKER)
+                        color: (COLOR_ACTIVE_PRIMARY)
                     }
                     draw_text +: {
                         color: (COLOR_PRIMARY),

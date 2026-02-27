@@ -37,9 +37,7 @@ script_mod! {
                 margin: Inset{left: 5}
                 padding: 12,
                 spacing: 0,
-                draw_bg +: {
-                    color: instance((COLOR_SECONDARY))
-                }
+                draw_bg.color: (COLOR_SECONDARY)
                 draw_icon +: {
                     svg: (ICON_COPY)
                 }
@@ -63,8 +61,8 @@ script_mod! {
             margin: Inset{top: 8, bottom: 10, left: 5},
 
             draw_bg +: {
-                color: instance((COLOR_ACTIVE_PRIMARY)),
-                border_radius: 5
+                color: (COLOR_ACTIVE_PRIMARY),
+                border_radius: 5.0
             }
             draw_icon +: {
                 svg: (ICON_UPLOAD)
@@ -103,8 +101,8 @@ script_mod! {
 
             show_bg: true,
             draw_bg +: {
-                color: instance(#F6F8F9),
-                border_radius: 4.0,
+                color: #F6F8F9
+                border_radius: 4.0
             }
 
             wallet_list := FlatList {
@@ -134,9 +132,9 @@ script_mod! {
                 margin: Inset{left: 5},
 
                 draw_bg +: {
-                    border_color: instance((COLOR_FG_ACCEPT_GREEN)),
-                    color: instance((COLOR_BG_ACCEPT_GREEN)),
-                    border_radius: 5
+                    border_color: (COLOR_FG_ACCEPT_GREEN),
+                    color: (COLOR_BG_ACCEPT_GREEN),
+                    border_radius: 5.0
                 }
                 draw_icon +: {
                     svg: (ICON_ADD_USER)
@@ -155,9 +153,9 @@ script_mod! {
                 margin: Inset{left: 5},
 
                 draw_bg +: {
-                    border_color: instance((COLOR_FG_ACCEPT_GREEN)),
-                    color: instance((COLOR_BG_ACCEPT_GREEN)),
-                    border_radius: 5
+                    border_color: (COLOR_FG_ACCEPT_GREEN),
+                    color: (COLOR_BG_ACCEPT_GREEN),
+                    border_radius: 5.0
                 }
                 draw_icon +: {
                     svg: (ICON_ADD_WALLET)
@@ -173,9 +171,7 @@ script_mod! {
             import_wallet_button := RobrixIconButton {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 5}
-                draw_bg +: {
-                    color: instance((COLOR_ACTIVE_PRIMARY))
-                }
+                draw_bg.color: (COLOR_ACTIVE_PRIMARY)
                 draw_text +: {
                     color: (COLOR_PRIMARY)
                     text_style: REGULAR_TEXT {}

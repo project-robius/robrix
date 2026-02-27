@@ -45,12 +45,12 @@ script_mod! {
 
         show_bg: true,
         draw_bg +: {
-            color: instance((COLOR_PRIMARY))
-            border_radius: 5.0,
-            border_color: instance((COLOR_SECONDARY)),
+            color: (COLOR_PRIMARY)
+            border_radius: 5.0
+            border_color: (COLOR_SECONDARY)
             border_size: 2.0
-            // shadow_color: uniform(#0006)
-            // shadow_radius: 0.0,
+            // shadow_color: #0006
+            // shadow_radius: 0.0
             // shadow_offset: vec2(0.0,0.0)
         }
 
@@ -87,9 +87,7 @@ script_mod! {
                         svg: (mod.widgets.ICO_LOCATION_PERSON)
                         color: (COLOR_ACTIVE_PRIMARY_DARKER)
                     },
-                    draw_bg +: {
-                        color: instance((COLOR_BG_PREVIEW)),
-                    }
+                    draw_bg.color: (COLOR_BG_PREVIEW)
                     icon_walk: Walk{width: 23, height: 23, margin: Inset{bottom: -1}}
                     text: "",
                 }
@@ -124,21 +122,18 @@ script_mod! {
                         color: (COLOR_FG_DISABLED),
                     }
                     icon_walk: Walk{width: 21, height: 21},
-                    draw_bg +: {
-                        color: instance((COLOR_BG_DISABLED)),
-                    }
+                    draw_bg.color: (COLOR_BG_DISABLED)
                 }
             }
 
             can_not_send_message_notice := SolidView {
                 visible: false
-                show_bg: true
-                draw_bg +: {
-                    color: instance((COLOR_SECONDARY))
-                }
                 padding: Inset{left: 50, right: 50, top: 20, bottom: 20}
                 align: Align{y: 0.5}
                 width: Fill, height: Fit
+
+                show_bg: true
+                draw_bg.color: (COLOR_SECONDARY)
 
                 text := Label {
                     width: Fill,

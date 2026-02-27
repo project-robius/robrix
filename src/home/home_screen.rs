@@ -25,12 +25,12 @@ script_mod! {
         margin: Inset{left: 4, right: 4}
         show_bg: true
         draw_bg +: {
-            color: instance((COLOR_PRIMARY_DARKER)),
-            border_radius: 4.0,
+            color: (COLOR_PRIMARY_DARKER)
+            border_radius: 4.0
             border_size: 0.0
             shadow_color: #0005
             shadow_radius: 15.0
-            shadow_offset: vec2(1.0, 0.0),
+            shadow_offset: vec2(1.0, 0.0)
         }
 
         CachedWidget {
@@ -46,7 +46,7 @@ script_mod! {
                 }
                 hide: AnimatorState{
                     from: { all: Forward { duration: (mod.widgets.SPACES_BAR_ANIMATION_DURATION_SECS) } }
-                    apply: { height: 0,  draw_bg: { shadow_color: #x00000000 } }
+                    apply: { height: 0,  draw_bg: { shadow_color: (COLOR_TRANSPARENT) } }
                 }
             }
         }
@@ -62,15 +62,14 @@ script_mod! {
             //       of those widgets, which means they maintain their state
             //       across transitions between the Desktop and Mobile variant.
             Desktop := SolidView {
-                show_bg: true
-                draw_bg +: {
-                    color: instance((COLOR_SECONDARY)),
-                }
                 width: Fill, height: Fill
                 flow: Right
                 align: Align{x: 0.0, y: 0.0}
                 padding: 0,
                 margin: 0,
+
+                show_bg: true
+                draw_bg.color: (COLOR_SECONDARY)
 
                 // On the left, show the navigation tab bar vertically.
                 CachedWidget {
@@ -115,9 +114,7 @@ script_mod! {
                     settings_page := SolidView {
                         width: Fill, height: Fill
                         show_bg: true,
-                        draw_bg +: {
-                            color: instance((COLOR_PRIMARY))
-                        }
+                        draw_bg.color: (COLOR_PRIMARY)
 
                         CachedWidget {
                             settings_screen := mod.widgets.SettingsScreen {}
@@ -127,9 +124,7 @@ script_mod! {
                     add_room_page := SolidView {
                         width: Fill, height: Fill
                         show_bg: true,
-                        draw_bg +: {
-                            color: instance((COLOR_PRIMARY))
-                        }
+                        draw_bg.color: (COLOR_PRIMARY)
 
                         CachedWidget {
                             add_room_screen := mod.widgets.AddRoomScreen {}
@@ -143,9 +138,7 @@ script_mod! {
                 flow: Down
 
                 show_bg: true
-                draw_bg +: {
-                    color: instance((COLOR_PRIMARY))
-                }
+                draw_bg.color: (COLOR_PRIMARY)
 
                 mod.widgets.StackNavigationWrapper {
                     view_stack := StackNavigation {

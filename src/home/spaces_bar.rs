@@ -25,7 +25,7 @@ script_mod! {
 
     // An entry in the list of all spaces, which shown the Space's avatar and name.
     mod.widgets.SpacesBarEntry = set_type_default() do #(SpacesBarEntry::register_widget(vm)) {
-        ..mod.widgets.RoundedView
+        // ..mod.widgets.RoundedView // TODO: I don't think this is needed if we use our own draw_bg shader
 
         width: (NAVIGATION_TAB_BAR_SIZE - 5),
         height: (NAVIGATION_TAB_BAR_SIZE - 5),
@@ -40,14 +40,14 @@ script_mod! {
             hover: instance(0.0)
             active: instance(0.0)
 
-            color: uniform(#0000)
-            color_hover: uniform((COLOR_NAVIGATION_TAB_BG_HOVER))
-            color_active: uniform((COLOR_NAVIGATION_TAB_BG_ACTIVE))
+            color: instance(#0000)
+            color_hover: instance((COLOR_NAVIGATION_TAB_BG_HOVER))
+            color_active: instance((COLOR_NAVIGATION_TAB_BG_ACTIVE))
 
+            border_color: instance(#0000)
             border_size: uniform(0.0)
-            border_color: uniform(#0000)
-            inset: uniform(vec4(0.0))
             border_radius: uniform(4.0)
+            border_inset: uniform(vec4(0.0))
 
             get_color: fn() -> vec4 {
                 return mix(
@@ -64,10 +64,10 @@ script_mod! {
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.box(
-                    self.inset.x + self.border_size,
-                    self.inset.y + self.border_size,
-                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
-                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
+                    self.border_inset.x + self.border_size,
+                    self.border_inset.y + self.border_size,
+                    self.rect_size.x - (self.border_inset.x + self.border_inset.z + self.border_size * 2.0),
+                    self.rect_size.y - (self.border_inset.y + self.border_inset.w + self.border_size * 2.0),
                     max(1.0, self.border_radius)
                 )
                 sdf.fill_keep(self.get_color())
@@ -104,7 +104,7 @@ script_mod! {
                 hover: instance(0.0)
                 down: instance(0.0)
 
-                color: (COLOR_NAVIGATION_TAB_FG)
+                color: uniform((COLOR_NAVIGATION_TAB_FG))
                 color_hover: uniform((COLOR_NAVIGATION_TAB_FG_HOVER))
                 color_active: uniform((COLOR_NAVIGATION_TAB_FG_ACTIVE))
 

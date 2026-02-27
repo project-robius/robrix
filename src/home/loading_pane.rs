@@ -30,8 +30,8 @@ script_mod! {
 
             show_bg: true
             draw_bg +: {
-                color: instance(#fff)
-                border_radius: 3.0
+                color: (COLOR_PRIMARY)
+                border_radius: 4.0
             }
 
             title_view := View {
@@ -84,8 +84,8 @@ script_mod! {
                         icon_walk: Walk{width: 0, height: 0 }
 
                         draw_bg +: {
-                            border_color: instance((COLOR_FG_DANGER_RED)),
-                            color: instance((COLOR_BG_DANGER_RED))
+                            border_color: (COLOR_FG_DANGER_RED)
+                            color: (COLOR_BG_DANGER_RED)
                         }
                         text: "Cancel"
                         draw_text +: {

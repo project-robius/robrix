@@ -40,8 +40,8 @@ script_mod! {
 
         cursor: MouseCursor.Hand,
         draw_bg +: {
-            border_radius: 4.0,
-            color: instance((mod.widgets.COLOR_HEADER_BG))
+            border_radius: 4.0
+            color: mod.widgets.COLOR_HEADER_BG
         }
 
         collapse_icon := IconRotated {

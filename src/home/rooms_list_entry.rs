@@ -85,36 +85,33 @@ script_mod! {
         spacing: 10,
         padding: 10,
         width: Fill, height: Fit
+
         show_bg: true
         draw_bg +: {
             active: instance(0.0)
-            color: uniform(#0000)
-            color_selected: uniform(vec4(0.059, 0.533, 0.996, 1.0))
-            border_size: instance(0.0)
-            border_color: instance(instance(#0000))
-            inset: instance(vec4(0.0))
-            border_radius: instance(4.0)
+            color: instance(#0000)
+            color_selected: instance(mod.widgets.COLOR_ACTIVE_PRIMARY)
+            border_color: instance(#0000)
+            border_size: uniform(0.0)
+            border_radius: uniform(4.0)
+            border_inset: uniform(vec4(0.0))
 
             get_color: fn() -> vec4 {
                 return mix(self.color, self.color_selected, self.active)
             }
 
-            get_border_color: fn() -> vec4 {
-                return self.border_color
-            }
-
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.box(
-                    self.inset.x + self.border_size,
-                    self.inset.y + self.border_size,
-                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
-                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
+                    self.border_inset.x + self.border_size,
+                    self.border_inset.y + self.border_size,
+                    self.rect_size.x - (self.border_inset.x + self.border_inset.z + self.border_size * 2.0),
+                    self.rect_size.y - (self.border_inset.y + self.border_inset.w + self.border_size * 2.0),
                     max(1.0, self.border_radius)
                 )
                 sdf.fill_keep(self.get_color())
                 if self.border_size > 0.0 {
-                    sdf.stroke(self.get_border_color(), self.border_size)
+                    sdf.stroke(self.border_color, self.border_size)
                 }
                 return sdf.result;
             }
@@ -141,7 +138,6 @@ script_mod! {
     mod.widgets.RoomsListEntry = #(RoomsListEntry::register_widget(vm)) {
         flow: Down, height: Fit
         cursor: MouseCursor.Default,
-        show_bg: true,
 
         // Wrap the RoomsListEntryContent in an AdaptiveView to change the displayed content
         // (and its layout) based on the available space in the sidebar.

@@ -142,8 +142,8 @@ script_mod! {
         padding: 0,
         draw_bg +: {
             direction: uniform(0.0), // Direction of the progress bar: 0.0 is right to left, 1.0 is top to bottom.
-            border_radius: uniform(4.),
-            border_size: uniform(1.0),
+            border_radius:uniform(4.),
+            border_size:uniform(1.0),
             progress_bar_color: uniform(#00000080), //Black with 50% opacity.
             // Display progress bar when there is auto_dismissal_duration.
             display_progress_bar: uniform(1.0)
@@ -217,20 +217,16 @@ script_mod! {
         
         RoundedView {
             width: Fit, height: Fit
-            show_bg: true,
-            draw_bg +: {
-                color: instance((COLOR_BG_DISABLED))
-            }
             align: Align{ x: 0.5, y: 0.5 }
+            show_bg: true,
+            draw_bg.color: (COLOR_BG_DISABLED)
             // The "X" close button on the top right
             close_button := RobrixIconButton {
                 width: Fit, height: Fit,
                 padding: Inset{ top: 5, bottom: 5, left: 8, right: 8 },
                 spacing: 0,
                 align: Align{ x: 0.5, y: 0.5 }
-                draw_bg +: {
-                    color: instance((COLOR_BG_DISABLED))
-                }
+                draw_bg.color: (COLOR_BG_DISABLED)
                 draw_icon +: {
                     svg: (ICON_CLOSE),
                     color: (COLOR_DIVIDER_DARK),
@@ -250,9 +246,9 @@ script_mod! {
         show_bg: true,
         draw_bg +: {
             border_radius: uniform(4.0)
-            border_color: uniform(#000000)
+            border_color: instance(#000000)
             border_size: uniform(2.0)
-            background_color: instance(#ffffff)
+            color: instance(#ffffff)
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                 sdf.box(
@@ -262,10 +258,10 @@ script_mod! {
                     self.rect_size.y - 2.0,
                     self.border_radius
                 )
-                sdf.fill_keep(self.background_color)
+                sdf.fill_keep(self.color)
 
                 // Only draw black border for white background (blank popups)
-                if length(self.background_color.rgb - vec3(1.0, 1.0, 1.0)) < 0.1 {
+                if length(self.color.rgb - vec3(1.0, 1.0, 1.0)) < 0.1 {
                     sdf.stroke(
                         self.border_color,
                         self.border_size
@@ -368,9 +364,9 @@ script_mod! {
                 width: 10,
                 height: Fill,
                 draw_bg +: {
-                    direction: uniform(1.0),
-                    anim_time: uniform(1.0),
-                    border_radius: uniform(2.),
+                    direction: 1.0,
+                    anim_time: 1.0,
+                    border_radius: 2.0,
                 }
             }
         }
@@ -507,13 +503,14 @@ impl RobrixPopupNotification {
             }
         }
         // Apply popup item kind-specific styling
-        if let Some(_background_color) = background_color {
-            let _text_color = if popup_item.kind == PopupKind::Warning {
+        if let Some(background_color) = background_color {
+            let text_color = if popup_item.kind == PopupKind::Warning {
                 vec4(0.0, 0.0, 0.0, 1.0) // Black text for Warning
             } else {
                 COLOR_WHITE // White text for all other kinds
             };
             
+            // TODO: fix this apply over block (or replace with script_apply_eval)
             (&mut view).apply_over(
                 cx,
                 live! {
@@ -545,7 +542,7 @@ impl RobrixPopupNotification {
                         }
                     }
                     draw_bg: {
-                        background_color: ( background_color )
+                        color: ( background_color )
                     }
                 },
             );

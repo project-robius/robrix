@@ -10,10 +10,8 @@ script_mod! {
     mod.widgets.COLOR_META_TEXT = #xaaa
 
     mod.widgets.IconButton = Button {
-
+        padding: 9.0
         draw_text +: {
-            hover: instance(0.0)
-            down: instance(0.0)
             text_style: theme.font_regular {
                 font_size: 11.0
             }
@@ -30,8 +28,6 @@ script_mod! {
             }
         }
         draw_icon +: {
-            hover: instance(0.0)
-            down: instance(0.0)
             get_color: fn() -> vec4 {
                 return mix(
                     mix(
@@ -51,7 +47,6 @@ script_mod! {
                 return sdf.result
             }
         }
-        padding: 9.0
         text: ""
     }
 
@@ -66,13 +61,14 @@ script_mod! {
         align: Align{x: 0, y: 0.5}
 
         draw_bg +: {
-            color: (mod.widgets.COLOR_PRIMARY)
+            hover: instance(0.0)
+            color: uniform((mod.widgets.COLOR_PRIMARY))
             // We set a mid-gray hover color, which gets mixed with the bg color itself
             // in order to create a "lightening" effect upon hover.
-            color_hover: #A
-            border_size: 0.0
-            border_color: #D0D5DD
-            border_radius: 4.0
+            color_hover: uniform(#A)
+            border_size: uniform(0.0)
+            border_color: uniform(#D0D5DD)
+            border_radius: uniform(4.0)
 
             get_color: fn() -> vec4 {
                 return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
@@ -97,7 +93,7 @@ script_mod! {
 
         draw_icon +: {
             hover: instance(0.0)
-            color: #000
+            color: uniform(#000)
             color_hover: uniform(#000)
             get_color: fn() -> vec4 {
                 return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
@@ -106,8 +102,9 @@ script_mod! {
         icon_walk: Walk{width: 16, height: 16}
 
         draw_text +: {
-            color: #000
-            color_hover: #000
+            hover: instance(0.0)
+            color: uniform(#000)
+            color_hover: uniform(#000)
             get_color: fn() -> vec4 {
                 return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
             }

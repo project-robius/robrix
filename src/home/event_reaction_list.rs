@@ -60,13 +60,13 @@ script_mod! {
             draw_bg +: {
                 // Anything that we apply over must be an `instance`,
                 // and their names must be distinct from the base Button type.
-                reaction_bg_color: instance((mod.widgets.COLOR_BUTTON_GREY))
+                reaction_bg_color: instance(mod.widgets.COLOR_BUTTON_GREY)
                 reaction_border_color: instance(#001A11)
                 // Override values from the base Button type.
-                color_hover: #fef65b
-                hover: 0.0
-                border_size: 1.5
-                border_radius: 3.0
+                color_hover: instance(#fef65b)
+                hover: instance(0.0)
+                border_size: instance(1.5)
+                border_radius: instance(3.0)
 
                 get_color: fn() -> vec4 {
                     return mix(self.reaction_bg_color, mix(self.reaction_bg_color, self.color_hover, 0.2), self.hover)

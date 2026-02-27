@@ -36,11 +36,8 @@ script_mod! {
         bouncing_dots := BouncingDots {
             margin: Inset{top: 1.1, left: -4 }
             padding: 0.0,
-            draw_bg +: {
-                color: instance((TYPING_NOTICE_TEXT_COLOR)),
-            }
+            draw_bg.color: (TYPING_NOTICE_TEXT_COLOR)
         }
-
 
         animator: Animator{
             typing_notice_animator: {

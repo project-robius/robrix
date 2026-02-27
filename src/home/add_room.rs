@@ -79,9 +79,7 @@ script_mod! {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 14}
                 height: Fit
                 margin: Inset{ bottom: 4 },
-                draw_bg +: {
-                    color: instance((COLOR_ACTIVE_PRIMARY))
-                }
+                draw_bg.color: (COLOR_ACTIVE_PRIMARY)
                 draw_icon +: {
                     svg: (ICON_SEARCH)
                     color: (COLOR_PRIMARY)
@@ -108,8 +106,8 @@ script_mod! {
                 width: 25,
                 height: 25,
                 draw_bg +: {
-                    color: instance((COLOR_ACTIVE_PRIMARY))
-                    border_size: 3.0,
+                    color: (COLOR_ACTIVE_PRIMARY)
+                    border_size: 3.0
                 }
             }
 
@@ -146,10 +144,10 @@ script_mod! {
 
             show_bg: true
             draw_bg +: {
-                color: instance((COLOR_PRIMARY))
-                border_radius: 4.0,
+                color: (COLOR_PRIMARY)
+                border_radius: 4.0
                 border_size: 1.0
-                border_color: instance((COLOR_BG_DISABLED))
+                border_color: (COLOR_BG_DISABLED)
                 // shadow_color: #0005
                 // shadow_radius: 15.0
                 // shadow_offset: vec2(1.0, 0.0), //5.0,5.0)
@@ -260,8 +258,8 @@ script_mod! {
                     icon_walk: Walk{width: 17, height: 17, margin: Inset{left: -2, right: -1} }
 
                     draw_bg +: {
-                        border_color: instance((COLOR_FG_ACCEPT_GREEN)),
-                        color: instance(#f0fff0) // light green
+                        border_color: (COLOR_FG_ACCEPT_GREEN),
+                        color: (COLOR_BG_ACCEPT_GREEN)
                     }
                     draw_text +: {
                         color: (COLOR_FG_ACCEPT_GREEN),
@@ -278,8 +276,8 @@ script_mod! {
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
 
                     draw_bg +: {
-                        border_color: instance((COLOR_FG_DANGER_RED)),
-                        color: instance((COLOR_BG_DANGER_RED))
+                        border_color: (COLOR_FG_DANGER_RED),
+                        color: (COLOR_BG_DANGER_RED)
                     }
                     text: "Cancel"
                     draw_text +: {

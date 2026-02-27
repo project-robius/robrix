@@ -17,26 +17,12 @@ script_mod! {
 
 
     mod.widgets.RoomsSideBar = #(RoomsSideBar::register_widget(vm)) {
-        Desktop := View {
+        Desktop := SolidView {
             padding: Inset{top: 20, left: 10, right: 10}
             flow: Down, spacing: 5
             width: Fill, height: Fill
 
-            show_bg: true,
-            draw_bg +: {
-                color: uniform((COLOR_PRIMARY_DARKER))
-                border_color: uniform(#f2f2f2)
-                border_size: uniform(0.003)
-
-                // Draws a right-side border
-                pixel: fn() {
-                    if self.pos.x > 1.0 - self.border_size {
-                        return self.border_color;
-                    } else {
-                        return self.color;
-                    }
-                }
-            }
+            draw_bg.color: (COLOR_PRIMARY_DARKER)
 
             CachedWidget {
                 rooms_list_header := RoomsListHeader {}
@@ -57,12 +43,12 @@ script_mod! {
 
                 show_bg: true
                 draw_bg +: {
-                    color: instance((COLOR_PRIMARY_DARKER)),
-                    border_radius: 4.0,
+                    color: (COLOR_PRIMARY_DARKER)
+                    border_radius: 4.0
                     border_size: 0.0
                     shadow_color: #0005
                     shadow_radius: 15.0
-                    shadow_offset: vec2(1.0, 0.0),
+                    shadow_offset: vec2(1.0, 0.0)
                 }
 
                 View { height: 20 }

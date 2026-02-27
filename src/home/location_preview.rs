@@ -31,8 +31,8 @@ script_mod! {
 
         show_bg: true,
         draw_bg +: {
-            color: instance((COLOR_BG_PREVIEW)),
-            border_radius: 5.0,
+            color: (COLOR_BG_PREVIEW)
+            border_radius: 5.0
             border_size: 2.0
         }
 
@@ -76,8 +76,8 @@ script_mod! {
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1, top: -1} }
 
                 draw_bg +: {
-                    border_color: instance((COLOR_FG_DANGER_RED)),
-                    color: instance((COLOR_BG_DANGER_RED))
+                    border_color: (COLOR_FG_DANGER_RED)
+                    color: (COLOR_BG_DANGER_RED)
                 }
                 text: "Cancel"
                 draw_text +: {
@@ -97,8 +97,8 @@ script_mod! {
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
 
                 draw_bg +: {
-                    border_color: instance((COLOR_FG_ACCEPT_GREEN)),
-                    color: instance((COLOR_BG_ACCEPT_GREEN))
+                    border_color: (COLOR_FG_ACCEPT_GREEN)
+                    color: (COLOR_BG_ACCEPT_GREEN)
                 }
                 text: "Yes"
                 draw_text +: {

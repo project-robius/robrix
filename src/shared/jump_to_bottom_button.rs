@@ -30,7 +30,7 @@ script_mod! {
                 icon_walk: Walk{width: 20, height: 20, margin: Inset{top: 10, right: 4.5} }
                 // draw a circular background for the button
                 draw_bg +: {
-                    background_color: instance(#edededce),
+                    background_color: #edededce,
                     pixel: fn() {
                         let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                         let c = self.rect_size * 0.5;
@@ -46,22 +46,21 @@ script_mod! {
 
             // A badge overlay on the jump to bottom button showing unread messages
             unread_message_badge := View {
-                width: 25, height: 20,
-                align: Align{
-                    x: 0.5,
-                    y: 0.5
-                }
                 visible: false,
+                width: 25, height: 20,
+                align: Align { x: 0.5, y: 0.5 }
                 flow: Overlay,
-                green_rounded_label := SolidView {
+
+                green_rounded_label := RoundedView {
                     width: Fill,
                     height: Fill,
                     show_bg: true,
                     draw_bg +: {
-                        color: uniform((COLOR_UNREAD_BADGE_MESSAGES))
-                        border_radius: instance(4.0)
+                        color: instance(COLOR_UNREAD_BADGE_MESSAGES)
+                        border_radius: uniform(4.0)
                         // Adjust this border_size to larger value to make oval smaller 
-                        border_size: instance(2.0)
+                        border_size: uniform(2.0)
+
                         pixel: fn() {
                             let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                             sdf.box(

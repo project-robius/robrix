@@ -42,9 +42,7 @@ script_mod! {
                     margin: Inset{top: 4.5} // vertically align with the title
                     padding: 15,
 
-                    draw_bg +: {
-                        color: instance((COLOR_SECONDARY))
-                    }
+                    draw_bg.color: (COLOR_SECONDARY)
                     draw_icon +: {
                         svg: (ICON_CLOSE),
                         get_color: fn() -> vec4 {

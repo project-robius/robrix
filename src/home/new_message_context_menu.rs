@@ -54,10 +54,10 @@ script_mod! {
 
             show_bg: true
             draw_bg +: {
-                color: instance(#fff)
+                color: (COLOR_PRIMARY)
                 border_radius: 5.0
                 border_size: 0.5
-                border_color: instance(#888)
+                border_color: #888
             }
 
             // Shows either the "Add Reaction" button or a reaction text input.
@@ -105,8 +105,8 @@ script_mod! {
                         icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
 
                         draw_bg +: {
-                            border_color: instance((COLOR_FG_ACCEPT_GREEN)),
-                            color: instance((COLOR_BG_ACCEPT_GREEN))
+                            border_color: (COLOR_FG_ACCEPT_GREEN),
+                            color: (COLOR_BG_ACCEPT_GREEN)
                         }
                         text: ""
                         draw_text +: {
@@ -200,13 +200,11 @@ script_mod! {
                     color: (COLOR_FG_DANGER_RED),
                 }
                 draw_bg +: {
-                    border_color: instance((COLOR_FG_DANGER_RED)),
-                    color: instance((COLOR_BG_DANGER_RED))
+                    border_color: (COLOR_FG_DANGER_RED),
+                    color: (COLOR_BG_DANGER_RED)
                 }
+                draw_text.color: (COLOR_FG_DANGER_RED),
                 text: "Delete"
-                draw_text +: {
-                    color: (COLOR_FG_DANGER_RED),
-                }
             }
         }
     }

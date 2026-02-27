@@ -46,10 +46,10 @@ script_mod! {
 
             show_bg: true
             draw_bg +: {
-                color: instance(#fff)
+                color: (COLOR_PRIMARY)
                 border_radius: 5.0
                 border_size: 0.5
-                border_color: instance(#888)
+                border_color: #888
             }
 
             mark_unread_button := mod.widgets.RoomContextMenuButton {
@@ -104,8 +104,8 @@ script_mod! {
                     color: (COLOR_FG_DANGER_RED),
                 }
                 draw_bg +: {
-                    border_color: instance((COLOR_FG_DANGER_RED)),
-                    color: instance((COLOR_BG_DANGER_RED))
+                    border_color: (COLOR_FG_DANGER_RED),
+                    color: (COLOR_BG_DANGER_RED)
                 }
                 text: "Leave Room"
                 draw_text +: {

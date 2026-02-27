@@ -30,7 +30,7 @@ script_mod! {
     mod.widgets.KEYBOARD_FOCUS_OR_COLOR_HOVER = #1C274C
 
     // Template for user list items in the mention dropdown
-    mod.widgets.UserListItem = SolidView {
+    mod.widgets.UserListItem = RoundedView {
         width: Fill,
         height: Fit,
         margin: Inset{left: 4, right: 4}
@@ -38,7 +38,7 @@ script_mod! {
         show_bg: true
         cursor: MouseCursor.Hand
         draw_bg +: {
-            color: instance((COLOR_PRIMARY)),
+            color: instance(COLOR_PRIMARY),
             border_radius: uniform(4.0),
             hover: instance(0.0),
             selected: instance(0.0),
@@ -110,7 +110,7 @@ script_mod! {
         show_bg: true
         cursor: MouseCursor.Hand
         draw_bg +: {
-            color: instance((COLOR_PRIMARY)),
+            color: instance(COLOR_PRIMARY),
             border_radius: uniform(4.0),
             hover: instance(0.0),
             selected: instance(0.0),
@@ -184,9 +184,7 @@ script_mod! {
         flow: Right,
         spacing: 8.0,
         align: Align{x: 0.0, y: 0.5}
-        draw_bg +: {
-            color: instance((COLOR_PRIMARY)),
-        }
+        draw_bg.color: COLOR_PRIMARY,
 
         loading_text := Label {
             height: Fit,
@@ -201,7 +199,7 @@ script_mod! {
             width: 60,
             height: 24,
             draw_bg +: {
-                color: instance((COLOR_ROBRIX_PURPLE)),
+                color: (COLOR_ROBRIX_PURPLE),
                 dot_radius: 2.0,
             }
         }
@@ -216,9 +214,7 @@ script_mod! {
         flow: Right,
         spacing: 8.0,
         align: Align{x: 0.0, y: 0.5}
-        draw_bg +: {
-            color: instance((COLOR_PRIMARY)),
-        }
+        draw_bg.color: (COLOR_PRIMARY)
 
         no_matches_text := Label {
             height: Fit,
@@ -244,18 +240,13 @@ script_mod! {
             spacing: 0.0
             padding: 0.0
 
-            draw_bg +: {
-                color: instance((COLOR_SECONDARY)),
-            }
+            draw_bg.color: (COLOR_SECONDARY)
+
             header_view := SolidView {
                 margin: Inset{left: 4, right: 4}
-                draw_bg +: {
-                    color: instance((COLOR_ROBRIX_PURPLE)),
-                }
+                draw_bg.color: (COLOR_ROBRIX_PURPLE)
                 header_label := Label {
-                    draw_text +: {
-                        color: (COLOR_PRIMARY_DARKER),
-                    }
+                    draw_text.color: (COLOR_PRIMARY_DARKER),
                     text: "Users in this Room"
                 }
             }

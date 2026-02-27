@@ -9,61 +9,21 @@ script_mod! {
     mod.widgets.COLOR_DOCK_TAB = #E1EEFA // a light blue-ish color, de-saturated from `COLOR_ACTIVE_PRIMARY`
     mod.widgets.COLOR_DRAG_TARGET = (COLOR_ACTIVE_PRIMARY)
 
-    mod.widgets.Splitter = SplitterBase {
+    mod.widgets.Splitter = Splitter {
         draw_bg +: {
-            border_radius: uniform(1.0)
-            splitter_pad: uniform(1.0)
-            splitter_grabber: uniform(110.0)
-
-            down: instance(0.0)
-            hover: instance(0.0)
-
-            pixel: fn() {
-                let sdf = Sdf2d.viewport(self.pos * self.rect_size);
-                sdf.clear(COLOR_SECONDARY);
-
-                sdf.box(
-                    -1.,
-                    -1.,
-                    self.rect_size.x + 2,
-                    self.rect_size.y + 2,
-                    2.5
-                );
-                // if self.is_vertical > 0.5 {
-                //     sdf.box(
-                //         self.splitter_pad,
-                //         self.rect_size.y * 0.5 - self.splitter_grabber * 0.5,
-                //         self.rect_size.x - 2.0 * self.splitter_pad,
-                //         self.splitter_grabber,
-                //         self.border_radius
-                //     );
-                // }
-                // else {
-                //     sdf.box(
-                //         self.rect_size.x * 0.5 - self.splitter_grabber * 0.5,
-                //         self.splitter_pad,
-                //         self.splitter_grabber,
-                //         self.rect_size.y - 2.0 * self.splitter_pad,
-                //         self.border_radius
-                //     );
-                // }
-
-                return sdf.fill_keep(mix(
-                    COLOR_SECONDARY,
-                    COLOR_ROBRIX_PURPLE,
-                    self.hover
-                ));
-            }
+            color: (COLOR_SECONDARY)
+            color_hover: (COLOR_ROBRIX_PURPLE)
+            color_drag: (COLOR_ROBRIX_PURPLE)
         }
-        size: (THEME_SPLITTER_SIZE)
-        min_horizontal: (THEME_SPLITTER_MIN_HORIZONTAL)
-        max_horizontal: (THEME_SPLITTER_MAX_HORIZONTAL)
-        min_vertical: (THEME_SPLITTER_MIN_VERTICAL)
-        max_vertical: (THEME_SPLITTER_MAX_VERTICAL)
+        // size: (THEME_SPLITTER_SIZE)
+        // min_horizontal: (THEME_SPLITTER_MIN_HORIZONTAL)
+        // max_horizontal: (THEME_SPLITTER_MAX_HORIZONTAL)
+        // min_vertical: (THEME_SPLITTER_MIN_VERTICAL)
+        // max_vertical: (THEME_SPLITTER_MAX_VERTICAL)
 
         animator: {
             hover: {
-                default: off
+                default: @off
                 off: {
                     from: {all: Forward {duration: 0.1}}
                     apply: {
@@ -97,35 +57,18 @@ script_mod! {
         }
     }
 
-    mod.widgets.TabCloseButton = TabCloseButtonBase {
+    mod.widgets.TabCloseButton = TabCloseButton {
         height: 10.0, width: 10.0,
         margin: Inset{ right: (THEME_SPACE_2), left: -1 },
         draw_button +: {
-
-            hover: instance(float;)
-            active: instance(float;)
-
-            pixel: fn() {
-                let sdf = Sdf2d.viewport(self.pos * self.rect_size);
-                let mid = self.rect_size / 2.0;
-                let size = (self.hover * 0.25 + 0.5) * 0.25 * length(self.rect_size);
-                let min = mid - vec2(size);
-                let max = mid + vec2(size);
-                sdf.move_to(min.x, min.y);
-                sdf.line_to(max.x, max.y);
-                sdf.move_to(min.x, max.y);
-                sdf.line_to(max.x, min.y);
-                return sdf.stroke(mix(
-                    #0,
-                    #fe8610,
-                    self.hover
-                ), 1.0);
-            }
+            color_hover: #FE8610
+            color_active: #FE8610
+            size: 1.0
         }
 
         animator: {
             hover: {
-                default: off
+                default: @off
                 off: {
                     from: {all: Forward {duration: 0.1}}
                     apply: {
@@ -144,7 +87,7 @@ script_mod! {
         }
     }
 
-    mod.widgets.Tab = TabBase {
+    mod.widgets.Tab = Tab {
         width: Fit, height: Fill, //Fixed((THEME_TAB_HEIGHT)),
 
         align: Align{x: 0.0, y: 0.5}
@@ -153,8 +96,8 @@ script_mod! {
         close_button: TabCloseButton {}
         draw_text +: {
             text_style: theme.font_regular {}
-            hover: instance(0.0)
-            active: instance(0.0)
+            hover: 0.0
+            active: 0.0
             get_color: fn() -> vec4 {
                 return mix(
                     mix(
@@ -169,9 +112,6 @@ script_mod! {
         }
 
         draw_bg +: {
-            hover: instance(float)
-            active: instance(float)
-
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                 sdf.box(
@@ -194,12 +134,12 @@ script_mod! {
 
         animator: {
             hover: {
-                default: off
+                default: @off
                 off: {
                     from: {all: Forward {duration: 0.2}}
                     apply: {
-                        draw_bg +: {hover: 0.0}
-                        draw_text +: {hover: 0.0}
+                        draw_bg: {hover: 0.0}
+                        draw_text: {hover: 0.0}
                     }
                 }
 
@@ -207,36 +147,36 @@ script_mod! {
                     cursor: MouseCursor.Hand,
                     from: {all: Forward {duration: 0.1}}
                     apply: {
-                        draw_bg +: {hover: [{time: 0.0, value: 1.0}]}
-                        draw_text +: {hover: [{time: 0.0, value: 1.0}]}
+                        draw_bg: {hover: [{time: 0.0, value: 1.0}]}
+                        draw_text: {hover: [{time: 0.0, value: 1.0}]}
                     }
                 }
             }
 
             active: {
-                default: off
+                default: @off
                 off: {
                     from: {all: Forward {duration: 0.3}}
                     apply: {
-                        close_button: {draw_button +: {active: 0.0}}
-                        draw_bg +: {active: 0.0}
-                        draw_text +: {active: 0.0}
+                        close_button: {draw_button: {active: 0.0}}
+                        draw_bg: {active: 0.0}
+                        draw_text: {active: 0.0}
                     }
                 }
 
                 on: {
                     from: {all: Snap}
                     apply: {
-                        close_button: {draw_button +: {active: 1.0}}
-                        draw_bg +: {active: 1.0}
-                        draw_text +: {active: 1.0}
+                        close_button: {draw_button: {active: 1.0}}
+                        draw_bg: {active: 1.0}
+                        draw_text: {active: 1.0}
                     }
                 }
             }
         }
     }
 
-    mod.widgets.TabBar = TabBarBase {
+    mod.widgets.TabBar = TabBar {
         CloseableTab := Tab {closeable:true}
         PermanentTab := Tab {closeable:false}
 
@@ -261,31 +201,11 @@ script_mod! {
         }
     }
 
-    mod.widgets.Dock = DockBase {
+    mod.widgets.Dock = Dock {
         flow: Down,
 
         round_corner: {
-            border_radius: 20.
-            pixel: fn() {
-                let pos = vec2(
-                    mix(self.pos.x, 1.0 - self.pos.x, self.flip.x),
-                    mix(self.pos.y, 1.0 - self.pos.y, self.flip.y)
-                )
-
-                let sdf = Sdf2d.viewport(pos * self.rect_size);
-                sdf.rect(-10., -10., self.rect_size.x * 2.0, self.rect_size.y * 2.0);
-                sdf.box(
-                    0.25,
-                    0.25,
-                    self.rect_size.x * 2.0,
-                    self.rect_size.y * 2.0,
-                    4.0
-                );
-
-                sdf.subtract()
-                sdf.fill(COLOR_SECONDARY)
-                return sdf.result
-            }
+            color: (COLOR_SECONDARY)
         }
 
         padding: Inset{left: (THEME_DOCK_BORDER_SIZE), top: 0, right: (THEME_DOCK_BORDER_SIZE), bottom: (THEME_DOCK_BORDER_SIZE)}

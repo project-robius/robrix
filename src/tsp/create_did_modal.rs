@@ -26,7 +26,7 @@ script_mod! {
 
             show_bg: true
             draw_bg +: {
-                color: instance((COLOR_PRIMARY))
+                color: (COLOR_PRIMARY)
                 border_radius: 4.0
             }
 
@@ -57,7 +57,7 @@ script_mod! {
 
                 show_bg: true
                 draw_bg +: {
-                    color: instance((COLOR_SECONDARY))
+                    color: (COLOR_SECONDARY)
                     border_radius: 4.0
                 }
 
@@ -123,7 +123,7 @@ script_mod! {
                         align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
 
                         left_line := LineH {
-                            draw_bg +: { color: instance(#C8C8C8)}
+                            draw_bg.color: #C8C8C8
                         }
 
                         Label {
@@ -137,7 +137,7 @@ script_mod! {
                         }
 
                         right_line := LineH {
-                            draw_bg +: { color: instance(#C8C8C8)}
+                            draw_bg.color: #C8C8C8
                         }
                     }
                 }
@@ -165,7 +165,7 @@ script_mod! {
                         align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
 
                         left_line := LineH {
-                            draw_bg +: { color: instance(#C8C8C8)}
+                            draw_bg.color: #C8C8C8
                         }
 
                         Label {
@@ -179,7 +179,7 @@ script_mod! {
                         }
 
                         right_line := LineH {
-                            draw_bg +: { color: instance(#C8C8C8)}
+                            draw_bg.color: #C8C8C8
                         }
                     }
                 }
@@ -203,8 +203,8 @@ script_mod! {
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
     
                     draw_bg +: {
-                        border_color: instance((COLOR_FG_DANGER_RED)),
-                        color: instance((COLOR_BG_DANGER_RED))
+                        border_color: (COLOR_FG_DANGER_RED),
+                        color: (COLOR_BG_DANGER_RED)
                     }
                     text: "Cancel"
                     draw_text +: {
@@ -223,8 +223,8 @@ script_mod! {
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
 
                     draw_bg +: {
-                        border_color: instance((COLOR_FG_ACCEPT_GREEN)),
-                        color: instance((COLOR_BG_ACCEPT_GREEN))
+                        border_color: (COLOR_FG_ACCEPT_GREEN),
+                        color: (COLOR_BG_ACCEPT_GREEN)
                     }
                     text: "Create DID"
                     draw_text +: {
@@ -428,7 +428,7 @@ impl WidgetMatchEvent for CreateDidModal {
                         enabled: true,
                         text: "Okay",
                         draw_bg: {
-                            color: instance((COLOR_ACTIVE_PRIMARY)),
+                            color: (COLOR_ACTIVE_PRIMARY),
                         },
                         draw_icon: {
                             color: (COLOR_PRIMARY),

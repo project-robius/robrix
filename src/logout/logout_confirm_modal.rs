@@ -22,13 +22,11 @@ script_mod! {
             flow: Down,
             align: Align{x: 0.5},
             padding: 25,
+            margin: 0
             spacing: 10,
 
             show_bg: true,
-            draw_bg +: {
-                color: instance(#FFFFFF)
-            }
-            margin: 0
+            draw_bg.color: (COLOR_PRIMARY)
 
             View {
                 width: Fill,
@@ -40,8 +38,8 @@ script_mod! {
                 title := Label {
                     text: "Confirm Logout",
                     draw_text +: {
-                            text_style: TITLE_TEXT {font_size: 18},
-                            color: #000000
+                        text_style: TITLE_TEXT {font_size: 18},
+                        color: #000000
                     }
                 }
             }
@@ -70,7 +68,7 @@ script_mod! {
                     width: Fit, height: Fit,
                     padding: 10,
                     draw_bg +: {
-                        color: instance((COLOR_SECONDARY))
+                        color: (COLOR_SECONDARY)
                     },
                     text: "Cancel"
                     draw_text +: {
@@ -82,10 +80,10 @@ script_mod! {
                 confirm_button := RobrixIconButton {
                     width: Fit, height: Fit,
                     padding: 10,
-                    draw_bg +: { color: instance((COLOR_BG_DANGER_RED))},
+                    draw_bg +: { color: (COLOR_BG_DANGER_RED)},
                     draw_icon +: {
-                            svg: (ICON_LOGOUT)
-                            color: (COLOR_FG_DANGER_RED),
+                        svg: (ICON_LOGOUT)
+                        color: (COLOR_FG_DANGER_RED),
                     },
                     text: "Logout Now"
                     draw_text +: {
@@ -252,7 +250,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                         confirm_button.set_text(cx, "Restart now");
                         confirm_button.apply_over(cx, live!{
                             draw_bg: {
-                                color: instance((COLOR_FG_DANGER_RED))
+                                color: (COLOR_FG_DANGER_RED)
                             }
                         });
                         confirm_button.set_enabled(cx, true);
@@ -277,7 +275,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                     confirm_button.set_text(cx, "Restart now");
                     confirm_button.apply_over(cx, live!{
                         draw_bg: {
-                            color: instance((COLOR_FG_DANGER_RED))
+                            color: (COLOR_FG_DANGER_RED)
                         }
                     });
                     confirm_button.set_enabled(cx, true);

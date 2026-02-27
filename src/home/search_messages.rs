@@ -17,7 +17,7 @@ script_mod! {
         enabled: false
 
         draw_bg +: {
-            color: instance((COLOR_BG_DISABLED))
+            color: (COLOR_BG_DISABLED)
             // color: (COLOR_ROBRIX_PURPLE) // or `color: (COLOR_ACTIVE_PRIMARY)`
             // color_hover: (COLOR_PRIMARY_DARKER) // make it whiter (this value is mixed in with `color`)
         }

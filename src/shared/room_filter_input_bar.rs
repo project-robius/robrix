@@ -19,10 +19,10 @@ script_mod! {
 
         show_bg: true,
         draw_bg +: {
-            color: instance((COLOR_PRIMARY)),
-            border_radius: 4.0,
-            border_color: instance((COLOR_SECONDARY)),
-            border_size: 1.0,
+            color: (COLOR_PRIMARY)
+            border_radius: 4.0
+            border_color: (COLOR_SECONDARY)
+            border_size: 1.0
         }
 
         padding: Inset{top: 3, bottom: 3, left: 10, right: 4.5}
@@ -33,9 +33,7 @@ script_mod! {
         Icon {
             draw_icon +: {
                 svg: (ICON_SEARCH),
-                get_color: fn() -> vec4 {
-                    return (COLOR_TEXT_INPUT_IDLE);
-                }
+                color: (COLOR_TEXT_INPUT_IDLE),
             }
             icon_walk: Walk{width: 14, height: 14}
         }
@@ -57,9 +55,7 @@ script_mod! {
             padding: Inset{top: 5, bottom: 5, left: 9, right: 9},
             spacing: 0,
             align: Align{x: 0.5, y: 0.5}
-            draw_bg +: {
-                color: instance((COLOR_SECONDARY))
-            }
+            draw_bg.color: (COLOR_SECONDARY)
             draw_icon +: {
                 svg: (ICON_CLOSE),
                 color: (COLOR_TEXT)

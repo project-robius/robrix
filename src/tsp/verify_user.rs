@@ -62,8 +62,8 @@ script_mod! {
                 remove_tsp_association_button := RobrixIconButton {
                     padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                     draw_bg +: {
-                        border_color: instance((COLOR_FG_DANGER_RED)),
-                        color: instance((COLOR_BG_DANGER_RED))
+                        border_color: (COLOR_FG_DANGER_RED),
+                        color: (COLOR_BG_DANGER_RED)
                     }
                     draw_icon +: {
                         svg: (ICON_CLOSE)
@@ -105,8 +105,8 @@ script_mod! {
                 verify_user_button := RobrixIconButton {
                     padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                     draw_bg +: {
-                        border_color: instance((COLOR_FG_ACCEPT_GREEN)),
-                        color: instance((COLOR_BG_ACCEPT_GREEN))
+                        border_color: (COLOR_FG_ACCEPT_GREEN),
+                        color: (COLOR_BG_ACCEPT_GREEN)
                     }
                     draw_icon +: {
                         svg: (ICON_CHECKMARK)

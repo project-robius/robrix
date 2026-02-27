@@ -120,7 +120,7 @@ script_mod! {
         spacing: 0, 
         padding: 0,
         draw_bg +: {
-            color: instance((COLOR_SECONDARY * 0.925))
+            color: (COLOR_SECONDARY * 0.925)
         }
         draw_icon +: {
             svg: (ICON_ZOOM_OUT),
@@ -167,8 +167,8 @@ script_mod! {
                     loading_spinner := LoadingSpinner {
                         width: 40, height: 40,
                         draw_bg +: {
-                            color: instance((COLOR_TEXT))
-                            border_size: 3.0,
+                            color: (COLOR_TEXT)
+                            border_size: 3.0
                         }
                     }
                 }
@@ -210,7 +210,7 @@ script_mod! {
                 show_bg: true
                 draw_bg +: {
                     border_radius: 4.0
-                    color: instance((COLOR_IMAGE_VIEWER_META_BACKGROUND))
+                    color: (COLOR_IMAGE_VIEWER_META_BACKGROUND)
                 }
 
                 // Display user profile view below the button group when the width is not enough.
@@ -301,7 +301,7 @@ script_mod! {
                 spacing: 10
                 show_bg: true
                 draw_bg +: {
-                    color: instance((COLOR_IMAGE_VIEWER_META_BACKGROUND)),
+                    color: (COLOR_IMAGE_VIEWER_META_BACKGROUND),
                     border_radius: 4.0
                 }
                 padding: Inset{ left: 7, top: 4, bottom: 4, right: 7}

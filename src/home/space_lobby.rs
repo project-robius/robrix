@@ -41,7 +41,7 @@ script_mod! {
 
     // An entry in the RoomsList that will show the SpaceLobby when clicked.
     mod.widgets.SpaceLobbyEntry = set_type_default() do #(SpaceLobbyEntry::register_widget(vm)) {
-        ..mod.widgets.RoundedView
+        // ..mod.widgets.RoundedView // TODO: I don't think this is needed if we use our own draw_bg shader
 
         visible: false, // only visible when a space is selected
         width: Fill,
@@ -57,14 +57,13 @@ script_mod! {
             hover: instance(0.0)
             active: instance(0.0)
 
-            color: uniform((COLOR_NAVIGATION_TAB_BG))
-            color_hover: uniform((COLOR_NAVIGATION_TAB_BG_HOVER))
-            color_active: uniform((COLOR_ACTIVE_PRIMARY))
-
+            color: instance((COLOR_NAVIGATION_TAB_BG))
+            color_hover: instance((COLOR_NAVIGATION_TAB_BG_HOVER))
+            color_active: instance((COLOR_ACTIVE_PRIMARY))
             border_size: uniform(0.0)
-            border_color: uniform(#0000)
-            inset: uniform(vec4(0.0))
+            border_color: instance(#0000)
             border_radius: uniform(4.0)
+            border_inset: uniform(vec4(0.0))
 
             get_color: fn() -> vec4 {
                 return mix(
@@ -78,22 +77,18 @@ script_mod! {
                 )
             }
 
-            get_border_color: fn() -> vec4 {
-                return self.border_color
-            }
-
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.box(
-                    self.inset.x + self.border_size,
-                    self.inset.y + self.border_size,
-                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
-                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
+                    self.border_inset.x + self.border_size,
+                    self.border_inset.y + self.border_size,
+                    self.rect_size.x - (self.border_inset.x + self.border_inset.z + self.border_size * 2.0),
+                    self.rect_size.y - (self.border_inset.y + self.border_inset.w + self.border_size * 2.0),
                     max(1.0, self.border_radius)
                 )
                 sdf.fill_keep(self.get_color())
                 if self.border_size > 0.0 {
-                    sdf.stroke(self.get_border_color(), self.border_size)
+                    sdf.stroke(self.border_color, self.border_size)
                 }
                 return sdf.result;
             }
@@ -111,9 +106,9 @@ script_mod! {
                 hover: instance(0.0)
                 down: instance(0.0)
 
-                color: (COLOR_TEXT)
-                color_hover: uniform((COLOR_TEXT))
-                color_active: uniform((COLOR_PRIMARY))
+                color: instance((COLOR_TEXT))
+                color_hover: instance((COLOR_TEXT))
+                color_active: instance((COLOR_PRIMARY))
 
                 get_color: fn() -> vec4 {
                     return mix(
@@ -140,9 +135,9 @@ script_mod! {
                 hover: instance(0.0)
                 down: instance(0.0)
 
-                color: (COLOR_TEXT)
-                color_hover: uniform((COLOR_TEXT))
-                color_active: uniform((COLOR_PRIMARY))
+                color: instance((COLOR_TEXT))
+                color_hover: instance((COLOR_TEXT))
+                color_active: instance((COLOR_PRIMARY))
 
                 text_style: REGULAR_TEXT {font_size: 11},
                 flow: Flow.Right{wrap: true},
@@ -258,7 +253,7 @@ script_mod! {
 
     // Entry for a child subspace (can be expanded)
     let SubspaceEntry = set_type_default() do #(SubspaceEntry::register_widget(vm)) {
-        ..mod.widgets.SolidView
+        // ..mod.widgets.SolidView // TODO: do we need this, since I overrode the draw_bg pixel fn?
 
         width: Fill,
         height: 44,
@@ -270,8 +265,8 @@ script_mod! {
         show_bg: true
         draw_bg +: {
             hover: instance(0.0)
-            color: uniform(#fff)
-            color_hover: uniform(#f5f5f5)
+            color: instance(#fff)
+            color_hover: instance(#f5f5f5)
             pixel: fn() {
                 return mix(self.color, self.color_hover, self.hover);
             }
@@ -332,8 +327,8 @@ script_mod! {
                 icon_walk: Walk{width: 0, height: 0}
                 draw_bg +: {
                     border_size: 0.75
-                    border_color: instance((COLOR_FG_ACCEPT_GREEN))
-                    color: instance((COLOR_BG_ACCEPT_GREEN))
+                    border_color: (COLOR_FG_ACCEPT_GREEN)
+                    color: (COLOR_BG_ACCEPT_GREEN)
                 }
                 draw_text +: {
                     text_style: REGULAR_TEXT {font_size: 9.5},
@@ -349,7 +344,7 @@ script_mod! {
                 icon_walk: Walk{width: 0, height: 0}
                 draw_bg +: {
                     border_size: 0.0
-                    color: instance((COLOR_ACTIVE_PRIMARY))
+                    color: (COLOR_ACTIVE_PRIMARY)
                 }
                 draw_text +: {
                     text_style: REGULAR_TEXT {font_size: 9.5},
@@ -365,8 +360,8 @@ script_mod! {
                 icon_walk: Walk{width: 0, height: 0}
                 draw_bg +: {
                     border_size: 0.75
-                    border_color: instance((COLOR_FG_DANGER_RED))
-                    color: instance((COLOR_BG_DANGER_RED))
+                    border_color: (COLOR_FG_DANGER_RED)
+                    color: (COLOR_BG_DANGER_RED)
                 }
                 draw_text +: {
                     text_style: REGULAR_TEXT {font_size: 9.5},
@@ -406,8 +401,8 @@ script_mod! {
             width: 18,
             height: 18,
             draw_bg +: {
-                color: instance((COLOR_ACTIVE_PRIMARY))
-                border_size: 2.5,
+                color: (COLOR_ACTIVE_PRIMARY)
+                border_size: 2.5
             }
         }
 
@@ -440,8 +435,8 @@ script_mod! {
             height: 14,
             margin: Inset{left: 8, right: 10}
             draw_bg +: {
-                color: instance((COLOR_ACTIVE_PRIMARY))
-                border_size: 2.0,
+                color: (COLOR_ACTIVE_PRIMARY)
+                border_size: 2.0
             }
         }
 
@@ -474,9 +469,7 @@ script_mod! {
             padding: Inset{left: 16, right: 16, top: 16, bottom: 8}
 
             show_bg: true,
-            draw_bg +: {
-                color: instance((COLOR_BG_PREVIEW))
-            }
+            draw_bg.color: (COLOR_BG_PREVIEW)
 
             space_info_label := Label {
                 width: Fill,
@@ -528,8 +521,8 @@ script_mod! {
 
                     draw_bg +: {
                         border_size: 0.75
-                        border_color: instance((COLOR_FG_ACCEPT_GREEN)),
-                        color: instance((COLOR_BG_ACCEPT_GREEN))
+                        border_color: (COLOR_FG_ACCEPT_GREEN)
+                        color: (COLOR_BG_ACCEPT_GREEN)
                     }
                     text: "Invite"
                     draw_text +: {

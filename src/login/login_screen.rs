@@ -31,7 +31,7 @@ script_mod! {
     mod.widgets.SsoImage = Image {
         width: 30, height: 30,
         draw_bg +: {
-            mask: uniform(0.0)
+            mask: instance(0.0)
             pixel: fn() {
                 let color = self.get_color();
                 let gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));

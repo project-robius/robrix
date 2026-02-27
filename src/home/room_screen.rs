@@ -96,10 +96,10 @@ script_mod! {
 
         show_bg: true
         draw_bg +: {
-            color: instance((mod.widgets.COLOR_THREAD_SUMMARY_BG))
+            color: (mod.widgets.COLOR_THREAD_SUMMARY_BG)
             border_radius: 4.0
             border_size: 1.5
-            border_color: instance((mod.widgets.COLOR_THREAD_SUMMARY_BORDER))
+            border_color: (mod.widgets.COLOR_THREAD_SUMMARY_BORDER)
         }
 
         thread_summary_count := Label {
@@ -128,7 +128,7 @@ script_mod! {
 
     // The view used for each text-based message event in a room's timeline.
     mod.widgets.Message = set_type_default() do #(Message::register_widget(vm)) {
-        ..mod.widgets.SolidView
+        // ..mod.widgets.SolidView // TODO: do we need this here since i manually impl'd the shader?
 
         width: Fill,
         height: Fit,
@@ -142,9 +142,9 @@ script_mod! {
         draw_bg +: {
             highlight: instance(0.0)
             hover: instance(0.0)
-            color: uniform(#ffffff) // default color
+            color: instance((COLOR_PRIMARY)) // default color)
 
-            mentions_bar_color: instance(#ffffff)
+            mentions_bar_color: instance((COLOR_PRIMARY))
             mentions_bar_width: instance(4.0)
 
             pixel: fn() {
@@ -410,9 +410,9 @@ script_mod! {
                 margin: Inset{ top: -1.5, left: 2, right: 2}
                 padding: Inset{top: 4, bottom: 4, left: 9, right: 9}
                 draw_bg +: {
-                    color: instance((COLOR_BG_ACCEPT_GREEN))
+                    color: (COLOR_BG_ACCEPT_GREEN)
                     border_size: 0.75
-                    border_color: instance((COLOR_FG_ACCEPT_GREEN))
+                    border_color: (COLOR_FG_ACCEPT_GREEN)
                 }
                 draw_icon +: {
                     svg: (ICON_ADD_USER)
@@ -473,18 +473,16 @@ script_mod! {
     // This is implemented as a DateDivider with a different color and a fixed text label.
     mod.widgets.ReadMarker = mod.widgets.DateDivider {
         left_line := LineH {
-            draw_bg +: {color: instance((mod.widgets.COLOR_READ_MARKER))}
+            draw_bg.color: (mod.widgets.COLOR_READ_MARKER)
         }
 
         date := Label {
-            draw_text +: {
-                color: (mod.widgets.COLOR_READ_MARKER)
-            }
+            draw_text.color: (mod.widgets.COLOR_READ_MARKER)
             text: "New Messages"
         }
 
         right_line := LineH {
-            draw_bg +: {color: instance((mod.widgets.COLOR_READ_MARKER))}
+            draw_bg.color: (mod.widgets.COLOR_READ_MARKER)
         }
     }
 
@@ -497,9 +495,7 @@ script_mod! {
         align: Align{x: 0.5, y: 0}
         flow: Right,
         show_bg: true,
-        draw_bg +: {
-            color: instance(#xDAF5E5F0,) // mostly opaque light green
-        }
+        draw_bg.color: #xDAF5E5F0, // mostly opaque light green
 
         label := Label {
             width: Fill,

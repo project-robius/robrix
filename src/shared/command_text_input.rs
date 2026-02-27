@@ -19,16 +19,16 @@ script_mod! {
         flow: Down
         height: Fit
 
-        popup := RoundedView{
+        popup := RoundedView {
             flow: Down
             height: Fit
             visible: false
 
             draw_bg +: {
                 color: instance(theme.color_fg_app)
-                border_size: theme.beveling
+                border_size: uniform(theme.beveling)
                 border_color: instance(theme.color_bevel)
-                border_radius: theme.corner_radius
+                border_radius: uniform(theme.corner_radius)
 
                 pixel: fn() {
                     let sdf = Sdf2d.viewport(self.pos * self.rect_size)
@@ -63,17 +63,17 @@ script_mod! {
                 }
             }
 
-            header_view := SolidView{
+            header_view := View{
+                visible: true
                 width: Fill
                 height: Fit
                 padding: Inset{left: 12., right: 12., top: 12., bottom: 12.}
                 show_bg: true
-                visible: true
                 draw_bg +: {
                     color: instance(theme.color_fg_app)
-                    top_radius: instance(theme.corner_radius)
+                    top_radius: uniform(theme.corner_radius)
                     border_color: instance(theme.color_bevel)
-                    border_width: instance(theme.beveling)
+                    border_width: uniform(theme.beveling)
                     pixel: fn() {
                         let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                         sdf.box_all(

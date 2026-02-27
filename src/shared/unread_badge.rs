@@ -14,15 +14,16 @@ script_mod! {
         align: Align{ x: 0.5, y: 0.5 }
         flow: Overlay,
 
-        rounded_view := SolidView {
+        rounded_view := View {
             width: Fill,
             height: Fill,
             show_bg: true,
             draw_bg +: {
                 badge_color: instance((COLOR_UNREAD_BADGE_MESSAGES)),
                 border_radius: instance(4.0)
-                // Adjust this border_size to larger value to make oval smaller 
+                // Set this border_size to a larger value to make the oval smaller 
                 border_size: instance(2.0)
+
                 pixel: fn() {
                     let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                     sdf.box(

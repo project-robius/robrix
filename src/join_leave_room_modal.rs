@@ -27,10 +27,8 @@ script_mod! {
             padding: Inset{top: 30, right: 40, bottom: 20, left: 40}
 
             show_bg: true
-            draw_bg +: {
-                color: instance(#fff)
-                border_radius: 4.0
-            }
+            draw_bg.color: (COLOR_PRIMARY)
+            draw_bg.border_radius: 4.0
 
             title_view := View {
                 width: Fill,
@@ -82,8 +80,8 @@ script_mod! {
                         icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
         
                         draw_bg +: {
-                            border_color: instance((COLOR_FG_DANGER_RED)),
-                            color: instance((COLOR_BG_DANGER_RED))
+                            border_color: (COLOR_FG_DANGER_RED),
+                            color: (COLOR_BG_DANGER_RED)
                         }
                         text: "Cancel"
                         draw_text +: {
@@ -102,8 +100,8 @@ script_mod! {
                         icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
 
                         draw_bg +: {
-                            border_color: instance((COLOR_FG_ACCEPT_GREEN)),
-                            color: instance((COLOR_BG_ACCEPT_GREEN))
+                            border_color: (COLOR_FG_ACCEPT_GREEN),
+                            color: (COLOR_BG_ACCEPT_GREEN)
                         }
                         text: "Yes"
                         draw_text +: {
@@ -454,8 +452,8 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                 enabled: true
                 text: "Okay"
                 draw_bg: {
-                    color: instance((COLOR_ACTIVE_PRIMARY)),
-                    border_color: instance((COLOR_ACTIVE_PRIMARY))
+                    color: (COLOR_ACTIVE_PRIMARY),
+                    border_color: (COLOR_ACTIVE_PRIMARY)
                 }
                 draw_text: {
                     color: (COLOR_PRIMARY)
@@ -562,8 +560,8 @@ impl JoinLeaveRoomModal {
         accept_button.set_text(cx, "Yes");
         accept_button.apply_over(cx, live!{
             draw_bg: {
-                border_color: instance((COLOR_FG_ACCEPT_GREEN)),
-                color: instance((COLOR_BG_ACCEPT_GREEN))
+                border_color: (COLOR_FG_ACCEPT_GREEN),
+                color: (COLOR_BG_ACCEPT_GREEN)
             }
             draw_text: {
                 color: (COLOR_FG_ACCEPT_GREEN)

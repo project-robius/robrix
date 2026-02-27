@@ -27,7 +27,7 @@ script_mod! {
 
             show_bg: true
             draw_bg +: {
-                color: instance((COLOR_PRIMARY))
+                color: (COLOR_PRIMARY)
                 border_radius: 4.0
             }
 
@@ -78,8 +78,8 @@ script_mod! {
 
                     draw_bg +: {
                         border_size: 0.75
-                        border_color: instance((COLOR_BG_DISABLED)),
-                        color: instance((COLOR_SECONDARY))
+                        border_color: (COLOR_BG_DISABLED)
+                        color: (COLOR_SECONDARY)
                     }
                     text: "Cancel"
                     draw_text +: {
@@ -99,13 +99,11 @@ script_mod! {
 
                     draw_bg +: {
                         border_size: 0.75
-                        border_color: instance((COLOR_FG_ACCEPT_GREEN)),
-                        color: instance((COLOR_BG_ACCEPT_GREEN))
+                        border_color: (COLOR_FG_ACCEPT_GREEN)
+                        color: (COLOR_BG_ACCEPT_GREEN)
                     }
                     text: "Invite"
-                    draw_text +: {
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
+                    draw_text.color: (COLOR_FG_ACCEPT_GREEN)
                 }
 
                 okay_button := RobrixIconButton {
@@ -119,13 +117,10 @@ script_mod! {
                     }
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
 
-                    draw_bg +: {
-                        color: instance((COLOR_ACTIVE_PRIMARY))
-                    }
+                    draw_bg.color: (COLOR_ACTIVE_PRIMARY)
+
                     text: "Okay"
-                    draw_text +: {
-                        color: (COLOR_PRIMARY),
-                    }
+                    draw_text.color: (COLOR_PRIMARY)
                 }
             }
 

@@ -12,9 +12,7 @@ script_mod! {
         align: Align{x: 0.0, y: 0.5}
 
         show_bg: true,
-        draw_bg +: {
-            color: instance((COLOR_PRIMARY)),
-        }
+        draw_bg.color: (COLOR_PRIMARY)
 
         welcome_message := RoundedView {
             padding: 40.

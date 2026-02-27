@@ -28,7 +28,7 @@ script_mod! {
         }
         draw_bg +: {
             border_size: 0,
-            color: instance(#0000)
+            color: #0000
         }
     }
 
@@ -80,8 +80,8 @@ script_mod! {
 
         show_bg: true
         draw_bg +: {
-            color: instance((COLOR_PRIMARY))
-            border_radius: (mod.widgets.VIEW_SOURCE_MODAL_BORDER_RADIUS)
+            color: (COLOR_PRIMARY)
+            border_radius: mod.widgets.VIEW_SOURCE_MODAL_BORDER_RADIUS
             border_size: 0.0
         }
 
@@ -111,8 +111,8 @@ script_mod! {
                     color: #666
                 }
                 draw_bg +: {
-                    border_size: 0,
-                    color: instance(#0000)
+                    border_size: 0
+                    color: #0000
                 }
             }
         }
@@ -175,35 +175,15 @@ script_mod! {
 
             // Border overlay frame (drawn on top of content)
             // Only draws the stroke, fill is transparent
-            border_frame := SolidView {
+            border_frame := RoundedView {
                 width: Fill,
                 height: Fill,
                 show_bg: true
                 draw_bg +: {
-                    border_radius: uniform((mod.widgets.VIEW_SOURCE_MODAL_BORDER_RADIUS))
-                    border_size: uniform(1.25)
-                    border_color: uniform((COLOR_SECONDARY))
-
-                    pixel: fn() {
-                        let sdf = Sdf2d.viewport(self.pos * self.rect_size);
-                        
-                        // Draw rounded box - but only the stroke, no fill
-                        sdf.box(
-                            self.border_size * 0.5,
-                            self.border_size * 0.5,
-                            self.rect_size.x - self.border_size,
-                            self.rect_size.y - self.border_size,
-                            self.border_radius
-                        );
-                        
-                        // Fill with transparent (let content show through)
-                        sdf.fill_keep(vec4(0.0, 0.0, 0.0, 0.0));
-                        
-                        // Draw the border stroke
-                        sdf.stroke(self.border_color, self.border_size);
-                        
-                        return sdf.result;
-                    }
+                    color: (COLOR_TRANSPARENT)
+                    border_radius: mod.widgets.VIEW_SOURCE_MODAL_BORDER_RADIUS,
+                    border_size: 1.25,
+                    border_color: (COLOR_SECONDARY)
                 }
             }
         }

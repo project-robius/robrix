@@ -19,11 +19,10 @@ script_mod! {
 
         text_view := SolidView {
             visible: true,
-            show_bg: true,
-            draw_bg +: {
-                color: instance(#dddddd)
-            }
             width: Fill, height: Fit,
+            show_bg: true,
+            draw_bg.color: #dddddd
+
             label := Label {
                 width: Fill, height: Fit,
                 draw_text +: {

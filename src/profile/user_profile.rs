@@ -78,9 +78,7 @@ script_mod! {
         cursor: MouseCursor.Default,
 
         show_bg: true,
-        draw_bg +: {
-            color: instance((COLOR_PRIMARY))
-        }
+        draw_bg.color: (COLOR_PRIMARY)
 
         personal_info := View {
             width: Fill, height: Fit
@@ -190,7 +188,7 @@ script_mod! {
                 margin: 0,
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 draw_bg +: {
-                    color: instance((COLOR_ACTIVE_PRIMARY))
+                    color: (COLOR_ACTIVE_PRIMARY)
                 }
                 draw_icon +: {
                     svg: (mod.widgets.ICON_DOUBLE_CHAT)
@@ -208,7 +206,7 @@ script_mod! {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
                 draw_bg +: {
-                    color: instance((COLOR_SECONDARY))
+                    color: (COLOR_SECONDARY)
                 }
                 draw_icon +: {
                     svg: (ICON_COPY)
@@ -222,7 +220,7 @@ script_mod! {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
                 draw_bg +: {
-                    color: instance((COLOR_SECONDARY))
+                    color: (COLOR_SECONDARY)
                 }
                 draw_icon +: {
                     svg: (ICON_JUMP)
@@ -241,8 +239,8 @@ script_mod! {
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -0.5} }
 
                 draw_bg +: {
-                    border_color: instance((COLOR_FG_DANGER_RED)),
-                    color: instance((COLOR_BG_DANGER_RED))
+                    border_color: (COLOR_FG_DANGER_RED),
+                    color: (COLOR_BG_DANGER_RED)
                 }
                 text: "Ignore (Block) User"
                 draw_text +: {
@@ -269,12 +267,7 @@ script_mod! {
             height: Fill
             visible: false,
             show_bg: true
-            draw_bg +: {
-                bg_color: uniform(#000000BB)
-                pixel: fn() {
-                    return self.bg_color;
-                }
-            }
+            draw_bg.color: #000000BB
         }
 
         main_content := FadeView {
@@ -293,9 +286,7 @@ script_mod! {
                 margin: 7,
                 padding: 15,
 
-                draw_bg +: {
-                    color: instance((COLOR_SECONDARY))
-                }
+                draw_bg.color: (COLOR_SECONDARY)
                 draw_icon +: {
                     svg: (ICON_CLOSE),
                     get_color: fn() -> vec4 {
@@ -316,7 +307,7 @@ script_mod! {
                     apply: {
                         main_content: { margin: Inset{right: 0} },
                         bg_view: {
-                            draw_bg: { bg_color: instance(#000000BB)}
+                            draw_bg: { color: #000000BB}
                         }
                     }
                 }
@@ -327,7 +318,7 @@ script_mod! {
                     apply: {
                         main_content: { margin: Inset{right: -300} },
                         bg_view: {
-                            draw_bg: { bg_color: instance(#x00000000)}
+                            draw_bg: { color: (COLOR_TRANSPARENT) }
                         }
                     }
                 }
