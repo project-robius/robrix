@@ -184,7 +184,7 @@ script_mod! {
         flow: Right,
         spacing: 8.0,
         align: Align{x: 0.0, y: 0.5}
-        draw_bg.color: COLOR_PRIMARY,
+        draw_bg.color: (COLOR_PRIMARY),
 
         loading_text := Label {
             height: Fit,

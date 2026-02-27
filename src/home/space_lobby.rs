@@ -50,6 +50,7 @@ script_mod! {
         align: Align{y: 0.5}
         padding: 5,
         margin: Inset{top: 10, bottom: 0}
+        spacing: 5
         cursor: MouseCursor.Hand
 
         show_bg: true
@@ -57,9 +58,9 @@ script_mod! {
             hover: instance(0.0)
             active: instance(0.0)
 
-            color: instance((COLOR_NAVIGATION_TAB_BG))
-            color_hover: instance((COLOR_NAVIGATION_TAB_BG_HOVER))
-            color_active: instance((COLOR_ACTIVE_PRIMARY))
+            color: instance(COLOR_NAVIGATION_TAB_BG)
+            color_hover: instance(COLOR_NAVIGATION_TAB_BG_HOVER)
+            color_active: instance(COLOR_ACTIVE_PRIMARY)
             border_size: uniform(0.0)
             border_color: instance(#0000)
             border_radius: uniform(4.0)
@@ -106,9 +107,9 @@ script_mod! {
                 hover: instance(0.0)
                 down: instance(0.0)
 
-                color: instance((COLOR_TEXT))
-                color_hover: instance((COLOR_TEXT))
-                color_active: instance((COLOR_PRIMARY))
+                color: (COLOR_TEXT)
+                color_hover: instance(COLOR_TEXT)
+                color_active: instance(COLOR_PRIMARY)
 
                 get_color: fn() -> vec4 {
                     return mix(
@@ -122,7 +123,7 @@ script_mod! {
                     )
                 }
             }
-            icon_walk: Walk{ width: 25, height: 20, margin: Inset{left: 0, bottom: 0} }
+            icon_walk: Walk{ width: 25, height: 20, margin: Inset{top: 2} }
         }
 
         space_lobby_label := Label {
@@ -135,9 +136,9 @@ script_mod! {
                 hover: instance(0.0)
                 down: instance(0.0)
 
-                color: instance((COLOR_TEXT))
-                color_hover: instance((COLOR_TEXT))
-                color_active: instance((COLOR_PRIMARY))
+                color: (COLOR_TEXT)
+                color_hover: instance(COLOR_TEXT)
+                color_active: instance(COLOR_PRIMARY)
 
                 text_style: REGULAR_TEXT {font_size: 11},
                 flow: Flow.Right{wrap: true},

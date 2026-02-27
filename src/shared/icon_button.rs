@@ -93,7 +93,7 @@ script_mod! {
 
         draw_icon +: {
             hover: instance(0.0)
-            color: uniform(#000)
+            color: #000
             color_hover: uniform(#000)
             get_color: fn() -> vec4 {
                 return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
@@ -103,7 +103,7 @@ script_mod! {
 
         draw_text +: {
             hover: instance(0.0)
-            color: uniform(#000)
+            color: #000
             color_hover: uniform(#000)
             get_color: fn() -> vec4 {
                 return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)

@@ -104,9 +104,9 @@ script_mod! {
                 hover: instance(0.0)
                 down: instance(0.0)
 
-                color: uniform((COLOR_NAVIGATION_TAB_FG))
-                color_hover: uniform((COLOR_NAVIGATION_TAB_FG_HOVER))
-                color_active: uniform((COLOR_NAVIGATION_TAB_FG_ACTIVE))
+                color: (COLOR_NAVIGATION_TAB_FG)
+                color_hover: uniform(COLOR_NAVIGATION_TAB_FG_HOVER)
+                color_active: uniform(COLOR_NAVIGATION_TAB_FG_ACTIVE)
 
                 // text_style: theme.font_bold {font_size: 9}
                 text_style: REGULAR_TEXT {font_size: 9}
