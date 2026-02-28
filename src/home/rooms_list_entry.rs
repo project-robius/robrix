@@ -275,7 +275,7 @@ impl Widget for RoomsListEntry {
 pub struct RoomsListEntryContent {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
-    #[animator] animator: Animator,
+    #[apply_default] animator: Animator,
 }
 
 impl Widget for RoomsListEntryContent {

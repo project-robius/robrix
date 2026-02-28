@@ -432,7 +432,7 @@ struct ImageViewer {
     #[rust] rotation_step: i8,
     /// A lock to prevent multiple rotation animations from running at the same time
     #[rust] is_animating_rotation: bool,
-    #[animator] animator: Animator,
+    #[apply_default] animator: Animator,
     /// Zoom constraints for the image viewer
     #[rust] config: ImageViewerZoomConfig,
     /// Indicates if the mouse cursor is currently hovering over the image.

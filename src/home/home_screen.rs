@@ -222,7 +222,7 @@ script_mod! {
 pub struct SpacesBarWrapper {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
-    #[animator] animator: Animator,
+    #[apply_default] animator: Animator,
 }
 
 impl Widget for SpacesBarWrapper {

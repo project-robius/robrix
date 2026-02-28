@@ -68,7 +68,7 @@ script_mod! {
 pub struct BouncingDots {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
-    #[animator] animator: Animator,
+    #[apply_default] animator: Animator,
 }
 impl Widget for BouncingDots {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {

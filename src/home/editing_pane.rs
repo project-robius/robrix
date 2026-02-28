@@ -157,15 +157,11 @@ struct EditingPaneInfo {
 #[derive(Script, ScriptHook, Widget, Animator)]
 pub struct EditingPane {
     #[source] source: ScriptObjectRef,
-    #[deref]
-    view: View,
-    #[animator]
-    animator: Animator,
+    #[deref] view: View,
+    #[apply_default] animator: Animator,
 
-    #[rust]
-    info: Option<EditingPaneInfo>,
-    #[rust]
-    is_animating_out: bool,
+    #[rust] info: Option<EditingPaneInfo>,
+    #[rust] is_animating_out: bool,
 }
 
 impl Widget for EditingPane {

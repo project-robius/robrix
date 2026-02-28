@@ -576,7 +576,7 @@ struct SpaceLobbyUiState {
 pub struct SpaceLobbyEntry {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
-    #[animator] animator: Animator,
+    #[apply_default] animator: Animator,
 }
 
 impl Widget for SpaceLobbyEntry {
@@ -656,7 +656,7 @@ impl Widget for TreeLines {
 pub struct SubspaceEntry {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
-    #[animator] animator: Animator,
+    #[apply_default] animator: Animator,
     #[rust] room_id: Option<OwnedRoomId>,
     #[rust] is_space: bool,
     #[rust] show_buttons_view: bool,

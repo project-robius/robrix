@@ -4538,7 +4538,7 @@ impl ActionDefaultRef for MessageAction {
 pub struct Message {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
-    #[animator] animator: Animator,
+    #[apply_default] animator: Animator,
 
     #[rust] details: Option<MessageDetails>,
 }

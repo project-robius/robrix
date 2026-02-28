@@ -272,7 +272,6 @@ script_mod! {
             height: Fill
             flow: Overlay,
             align: Align{x: 1.0}
-            margin: Inset { right: -300.0 }
 
             show_bg: true,
             draw_bg.color: (COLOR_PRIMARY)
@@ -296,29 +295,27 @@ script_mod! {
             }
         }
 
+        slide: 1.0,
+
         animator: Animator {
             panel: {
                 default: @hide
                 show: AnimatorState{
                     redraw: true,
-                    from: {all: Forward {duration: 0.4}}
-                    ease: ExpDecay {d1: 0.80, d2: 0.97}
+                    from: {all: Forward {duration: 0.5}}
+                    ease: Ease.ExpDecay {d1: 0.80, d2: 0.97}
                     apply: {
-                        main_content: { margin: Inset{right: 0} },
-                        bg_view: {
-                            draw_bg: { color: #000000BB}
-                        }
+                        slide: 0.0,
+                        bg_view: { draw_bg: { color: (COLOR_TRANSPARENT) } }
                     }
                 }
                 hide: AnimatorState{
                     redraw: true,
                     from: {all: Forward {duration: 0.5}}
-                    ease: ExpDecay {d1: 0.80, d2: 0.97}
+                    ease: Ease.ExpDecay {d1: 0.80, d2: 0.97}
                     apply: {
-                        main_content: { margin: Inset{right: -300.0} },
-                        bg_view: {
-                            draw_bg: { color: (COLOR_TRANSPARENT) }
-                        }
+                        slide: 1.0,
+                        bg_view: { draw_bg: { color: #000000BB } }
                     }
                 }
             }
@@ -392,7 +389,8 @@ impl UserProfilePaneInfo {
 pub struct UserProfileSlidingPane {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
-    #[animator] animator: Animator,
+    #[apply_default] animator: Animator,
+    #[live] slide: f64,
 
     #[rust] info: Option<UserProfilePaneInfo>,
     #[rust] is_animating_out: bool,
@@ -408,14 +406,7 @@ impl Widget for UserProfileSlidingPane {
         if animator_action.must_redraw() {
             self.redraw(cx);
         }
-        log!("User profile animator action: {:?}, animator in `hide` state: {}",
-            match animator_action {
-                AnimatorAction::Animating { redraw: true } => "Animating (true)",
-                AnimatorAction::Animating { redraw: false } => "Animating (false)",
-                AnimatorAction::None => "None",
-            },
-            self.animator_in_state(cx, ids!(panel.hide))
-        );
+
         // If the animator is in the `hide` state and has finished animating out,
         // that means it has fully animated off-screen and can be set to invisible.
         if self.animator_in_state(cx, ids!(panel.hide)) {
@@ -424,7 +415,6 @@ impl Widget for UserProfileSlidingPane {
                 matches!(animator_action, AnimatorAction::Animating { .. }),
             ) {
                 (true, false) => {
-                    log!("Finished animating out user profile pane");
                     self.visible = false;
                     cx.revert_key_focus();
                     self.view(cx, ids!(bg_view)).set_visible(cx, false);
@@ -433,7 +423,6 @@ impl Widget for UserProfileSlidingPane {
                 }
                 (false, true) => {
                     self.is_animating_out = true;
-                    log!("Started animating out user profile pane");
                 }
                 _ => { }
             }
@@ -467,7 +456,6 @@ impl Widget for UserProfileSlidingPane {
             }
         };
         if close_pane {
-            log!("Closing user profile pane");
             self.animator_play(cx, ids!(panel.hide));
             self.redraw(cx);
             return;
@@ -566,6 +554,20 @@ impl Widget for UserProfileSlidingPane {
             self.visible = false;
             return self.view.draw_walk(cx, scope, walk);
         };
+
+        // Use the `slide` value to position main_content.
+        // slide=0.0 means fully shown; slide=1.0 means fully hidden (off-screen right).
+        let panel_width = 300.0;
+        let right_margin = -(self.slide * panel_width);
+        let mut main_content = self.view(cx, ids!(main_content));
+        script_apply_eval!(cx, main_content, {
+            margin.right: #(right_margin)
+        });
+        // let bg_alpha = (1.0 - self.slide) * 0.733; // 0.733 ≈ 0xBB/0xFF
+        // let mut bg_view = self.view(cx, ids!(bg_view));
+        // script_apply_eval!(cx, bg_view, {
+        //     draw_bg +: { color: vec4(0.0, 0.0, 0.0, #(bg_alpha)) }
+        // });
 
         // Set the user name, using the user ID as a fallback.
         self.label(cx, ids!(user_name)).set_text(cx, info.displayable_name());
