@@ -305,8 +305,7 @@ script_mod! {
                     from: {all: Forward {duration: 0.5}}
                     ease: Ease.ExpDecay {d1: 0.80, d2: 0.97}
                     apply: {
-                        slide: 0.0,
-                        bg_view: { draw_bg: { color: (COLOR_TRANSPARENT) } }
+                        slide: 0.0
                     }
                 }
                 hide: AnimatorState{
@@ -314,8 +313,7 @@ script_mod! {
                     from: {all: Forward {duration: 0.5}}
                     ease: Ease.ExpDecay {d1: 0.80, d2: 0.97}
                     apply: {
-                        slide: 1.0,
-                        bg_view: { draw_bg: { color: #000000BB } }
+                        slide: 1.0
                     }
                 }
             }
@@ -390,7 +388,7 @@ pub struct UserProfileSlidingPane {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
     #[apply_default] animator: Animator,
-    #[live] slide: f64,
+    #[live] slide: f32,
 
     #[rust] info: Option<UserProfilePaneInfo>,
     #[rust] is_animating_out: bool,
@@ -555,11 +553,15 @@ impl Widget for UserProfileSlidingPane {
         script_apply_eval!(cx, main_content, {
             margin.right: #(right_margin)
         });
-        // let bg_alpha = (1.0 - self.slide) * 0.733; // 0.733 ≈ 0xBB/0xFF
-        // let mut bg_view = self.view(cx, ids!(bg_view));
-        // script_apply_eval!(cx, bg_view, {
-        //     draw_bg +: { color: vec4(0.0, 0.0, 0.0, #(bg_alpha)) }
-        // });
+        // Also derive the bg_view overlay alpha from `slide`.
+        // The animator can only interpolate struct fields, not child view properties,
+        // so we compute the bg color here from the smoothly-animated `slide` value.
+        let bg_alpha = (1.0 - self.slide) * 0.733; // 0.733 ≈ 0xBB/0xFF
+        let bg_color = vec4(0.0, 0.0, 0.0, bg_alpha);
+        let mut bg_view = self.view(cx, ids!(bg_view));
+        script_apply_eval!(cx, bg_view, {
+            draw_bg +: { color: #(bg_color) }
+        });
 
         // Set the user name, using the user ID as a fallback.
         self.label(cx, ids!(user_name)).set_text(cx, info.displayable_name());
