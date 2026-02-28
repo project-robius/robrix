@@ -68,7 +68,6 @@ script_mod! {
         height: Fill // { max: 1400 }
         margin: 40,
         align: Align{x: 0.5, y: 0}
-            
         flow: Down
         padding: Inset{top: 20, right: 25, bottom: 20, left: 25}
 

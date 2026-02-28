@@ -7,12 +7,18 @@ script_mod! {
 
     mod.widgets.WELCOME_TEXT_COLOR = #x4
 
-    mod.widgets.WelcomeScreen = ScrollYView {
+    mod.widgets.WelcomeScreen = SolidView {
         width: Fill, height: Fill
         align: Align{x: 0.0, y: 0.5}
 
         show_bg: true,
         draw_bg.color: (COLOR_PRIMARY)
+
+        // make this a ScrollYView
+        scroll_bars: mod.widgets.ScrollBars {
+            show_scroll_x: false show_scroll_y: true
+            scroll_bar_y.drag_scrolling: true
+        }
 
         welcome_message := RoundedView {
             padding: 40.

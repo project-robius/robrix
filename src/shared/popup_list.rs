@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-use crate::ApplyOverCompat;
 use crate::{LivePtr, view_from_live_ptr};
 
 use crate::shared::styles::*;

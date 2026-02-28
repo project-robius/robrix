@@ -4,7 +4,6 @@
 
 use std::{cell::RefCell, collections::HashMap};
 use makepad_widgets::*;
-use crate::ApplyOverCompat;
 use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, RoomId}};
 use serde::{Deserialize, Serialize};
 use crate::{
@@ -286,7 +285,7 @@ impl MatchEvent for App {
             // Handle an action requesting to open the new message context menu.
             if let MessageAction::OpenMessageContextMenu { details, abs_pos } = action.as_widget_action().cast() {
                 self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
-                let mut new_message_context_menu = self.ui.new_message_context_menu(cx, ids!(new_message_context_menu));
+                let new_message_context_menu = self.ui.new_message_context_menu(cx, ids!(new_message_context_menu));
                 let expected_dimensions = new_message_context_menu.show(cx, details);
                 // Ensure the context menu does not spill over the window's bounds.
                 let rect = self.ui.window(cx, ids!(main_window)).area().rect(cx);

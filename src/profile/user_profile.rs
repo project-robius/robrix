@@ -68,7 +68,7 @@ script_mod! {
 
     mod.widgets.ICON_DOUBLE_CHAT = crate_resource("self://resources/icons/double_chat.svg")
 
-    mod.widgets.UserProfileView = ScrollXYView {
+    let UserProfileView = ScrollXYView {
         width: Fill,
         height: Fill,
         align: Align{x: 0.5, y: 0},
@@ -76,9 +76,6 @@ script_mod! {
         spacing: 20,
         flow: Down,
         cursor: MouseCursor.Default,
-
-        show_bg: true,
-        draw_bg.color: (COLOR_PRIMARY)
 
         personal_info := View {
             width: Fill, height: Fit
@@ -270,13 +267,17 @@ script_mod! {
             draw_bg.color: #000000BB
         }
 
-        main_content := FadeView {
+        main_content := SolidView {
             width: 300,
             height: Fill
             flow: Overlay,
             align: Align{x: 1.0}
+            margin: Inset { right: -300.0 }
 
-            user_profile_view := mod.widgets.UserProfileView { }
+            show_bg: true,
+            draw_bg.color: (COLOR_PRIMARY)
+
+            user_profile_view := UserProfileView { }
 
             // The "X" close button on the top right
             close_button := RobrixIconButton {
@@ -289,15 +290,13 @@ script_mod! {
                 draw_bg.color: (COLOR_SECONDARY)
                 draw_icon +: {
                     svg: (ICON_CLOSE),
-                    get_color: fn() -> vec4 {
-                        return #x0;
-                    }
+                    color: #000
                 }
                 icon_walk: Walk{width: 14, height: 14}
             }
         }
 
-        animator: Animator{
+        animator: Animator {
             panel: {
                 default: @hide
                 show: AnimatorState{
@@ -316,7 +315,7 @@ script_mod! {
                     from: {all: Forward {duration: 0.5}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
                     apply: {
-                        main_content: { margin: Inset{right: -300} },
+                        main_content: { margin: Inset{right: -300.0} },
                         bg_view: {
                             draw_bg: { color: (COLOR_TRANSPARENT) }
                         }
@@ -409,6 +408,14 @@ impl Widget for UserProfileSlidingPane {
         if animator_action.must_redraw() {
             self.redraw(cx);
         }
+        log!("User profile animator action: {:?}, animator in `hide` state: {}",
+            match animator_action {
+                AnimatorAction::Animating { redraw: true } => "Animating (true)",
+                AnimatorAction::Animating { redraw: false } => "Animating (false)",
+                AnimatorAction::None => "None",
+            },
+            self.animator_in_state(cx, ids!(panel.hide))
+        );
         // If the animator is in the `hide` state and has finished animating out,
         // that means it has fully animated off-screen and can be set to invisible.
         if self.animator_in_state(cx, ids!(panel.hide)) {
@@ -417,6 +424,7 @@ impl Widget for UserProfileSlidingPane {
                 matches!(animator_action, AnimatorAction::Animating { .. }),
             ) {
                 (true, false) => {
+                    log!("Finished animating out user profile pane");
                     self.visible = false;
                     cx.revert_key_focus();
                     self.view(cx, ids!(bg_view)).set_visible(cx, false);
@@ -425,6 +433,7 @@ impl Widget for UserProfileSlidingPane {
                 }
                 (false, true) => {
                     self.is_animating_out = true;
+                    log!("Started animating out user profile pane");
                 }
                 _ => { }
             }
@@ -458,6 +467,7 @@ impl Widget for UserProfileSlidingPane {
             }
         };
         if close_pane {
+            log!("Closing user profile pane");
             self.animator_play(cx, ids!(panel.hide));
             self.redraw(cx);
             return;
@@ -660,6 +670,7 @@ impl UserProfileSlidingPane {
 
     pub fn show(&mut self, cx: &mut Cx) {
         self.visible = true;
+        self.is_animating_out = false;
         cx.set_key_focus(self.view.area());
         self.animator_play(cx, ids!(panel.show));
         self.view(cx, ids!(bg_view)).set_visible(cx, true);

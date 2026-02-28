@@ -29,10 +29,6 @@ script_mod! {
         }
     }
 
-    // Keep FadeView as a simple View to avoid custom cached-shader compile failures.
-    // This preserves layout/behavior while we stay compatible with current script runtime.
-    mod.widgets.FadeView = View {}
-
     mod.widgets.LineH = RoundedView {
         width: Fill,
         height: 2.0,
