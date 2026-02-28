@@ -26,7 +26,7 @@ use matrix_sdk_ui::timeline::{
 use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}, owned_room_id};
 
 use crate::{
-    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::{RoomsListAction, RoomsListRef}, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, event_group::extract_small_state_events, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::{RoomsListAction, RoomsListRef}, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
@@ -535,9 +535,84 @@ script_mod! {
             ImageMessage := mod.widgets.ImageMessage {}
             CondensedImageMessage := mod.widgets.CondensedImageMessage {}
             SmallStateEvent := mod.widgets.SmallStateEvent {}
+            SmallStateGroupHeader := mod.prelude.widgets.FoldHeader {
+                header: View{
+                    width: Fill,
+                    height: Fit,
+                    flow: Right,
+                    align: Align{ x: 0.0, y: 0.5 },
+                    margin: Inset{top: 5.0, bottom: 5.0}
+                    spacing: 8.0,
+                    padding: Inset{
+                        left: 7.0,
+                        top: 2.0,
+                        bottom: 2.0,
+                        right: 10.0
+                    }
+                    fold_button := FoldButton {
+                        width: 25, height: 25
+                        draw_bg +: {
+                            color: uniform(#555)
+                            color_hover: uniform(#333)
+                            color_active: uniform(#444)
+                            // Make triangle larger
+                            pixel: fn() {
+                                let sz = 5.0
+                                let c = vec2(self.rect_size.x * 0.5, self.rect_size.y * 0.5)
+                                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                                sdf.clear(vec4(0.))
+                                sdf.rotate(self.active * 0.5 * PI + 0.5 * PI, c.x, c.y)
+                                sdf.move_to(c.x - sz, c.y + sz)
+                                sdf.line_to(c.x, c.y - sz)
+                                sdf.line_to(c.x + sz, c.y + sz)
+                                sdf.close_path()
+                                sdf.fill(
+                                    mix(
+                                        mix(self.color, self.color_hover, self.hover)
+                                        mix(self.color_active, self.color_hover, self.hover)
+                                        self.active
+                                    )
+                                )
+                                return sdf.result * self.fade
+                            }
+                        }
+                    }
+                    user_event_avatar_row := mod.widgets.AvatarRow {
+                        margin: Inset{
+                            left: 5.0,
+                            top: 0.0
+                        }
+                    }
+                    summary_text := Label {
+                        width: Fill, height: Fit
+                        flow: Flow.Right{wrap: true},
+                        draw_text+: {
+                            wrap: Line,
+                            color: (SMALL_STATE_TEXT_COLOR),
+                            text_style: SMALL_STATE_TEXT_COLOR { font_size: 11 },
+                        }
+                    }
+                }
+                body: View{
+                    width: Fill,
+                    height: Fit
+                    flow: Down
+                    padding: Inset{ left: 30.0 }
+                    PortalList{
+                        height: Fit, width: Fill
+                        SmallStateEvent := mod.widgets.SmallStateEvent {}
+                        CondensedMessage := mod.widgets.CondensedMessage {}
+                        Message := mod.widgets.Message {}
+                    }
+                }
+            }
             Empty := mod.widgets.Empty {}
             DateDivider := mod.widgets.DateDivider {}
             ReadMarker := mod.widgets.ReadMarker {}
+            BottomSpace := View {
+                height: 100.0
+                width: Fill
+            }
         }
 
         // A jump to bottom button (with an unread message badge) that is shown
@@ -1074,6 +1149,46 @@ impl Widget for RoomScreen {
             while let Some(item_id) = list.next_visible_item(cx) {
                 let item = {
                     let tl_idx = item_id;
+                    if let Some(group_range) = tl_state.small_state_group_manager.check_group_range(item_id) {
+                        if group_range.start == item_id {
+                            // This is the first item of a group - render FoldHeader
+                            if let (Some(group), Some(timeline_kind)) = (tl_state.small_state_group_manager.get_group_at_item_id(item_id), &self.timeline_kind) {
+                                populate_small_state_group_header(
+                                    cx,
+                                    scope,
+                                    walk,
+                                    list,
+                                    item_id,
+                                    timeline_kind,
+                                    &group_range,
+                                    group,
+                                    tl_items,
+                                    &mut tl_state.content_drawn_since_last_update,
+                                    &mut tl_state.profile_drawn_since_last_update,
+                                    &mut tl_state.media_cache,
+                                    &mut tl_state.link_preview_cache,
+                                    &tl_state.fetched_thread_summaries,
+                                    &mut tl_state.pending_thread_summary_fetches,
+                                    &tl_state.user_power,
+                                    &self.pinned_events,
+                                    room_screen_widget_uid,
+                                );
+                            } else {
+                                let item = list.item(cx, item_id, id!(Empty));
+                                item.draw_all(cx, scope);
+                            }
+                            continue;
+                        } else if group_range.contains(&item_id) {
+                            let item = list.item(cx, item_id, id!(Empty));
+                            item.draw_all(cx, scope);
+                            continue;
+                        }
+                    }
+                    if item_id > tl_items.len() {
+                        let item = list.item(cx, item_id, id!(BottomSpace));
+                        item.draw_all(cx, scope);
+                        continue;
+                    }
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                         // but we can always safely fill the item with an empty widget that takes up no space.
@@ -1263,6 +1378,8 @@ impl RoomScreen {
 
                     tl.items = initial_items;
                     done_loading = true;
+                    let small_state_events = extract_small_state_events(tl.items.iter().cloned());
+                    tl.small_state_group_manager.compute_group_state(small_state_events);
                 }
                 TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
                     if new_items.is_empty() {
@@ -1380,6 +1497,8 @@ impl RoomScreen {
                         // log!("process_timeline_updates(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                     }
                     tl.items = new_items;
+                    let small_state_events = extract_small_state_events(tl.items.iter().cloned());
+                    tl.small_state_group_manager.compute_group_state(small_state_events);
                     done_loading = true;
                 }
                 TimelineUpdate::NewUnreadMessagesCount(unread_messages_count) => {
@@ -2254,6 +2373,7 @@ impl RoomScreen {
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
                 tombstone_info,
+                small_state_group_manager: crate::home::event_group::SmallStateGroupManager::default(),
             };
             (tl_state, true)
         };
@@ -2846,6 +2966,8 @@ struct TimelineUiState {
     /// If `Some`, this room has been tombstoned and the details of its successor room
     /// are contained within. If `None`, the room has not been tombstoned.
     tombstone_info: Option<SuccessorRoomDetails>,
+    /// Manager for small state event groups that can be collapsed/expanded.
+    small_state_group_manager: crate::home::event_group::SmallStateGroupManager,
 }
 
 #[derive(Default, Debug)]
@@ -4172,6 +4294,93 @@ pub fn populate_preview_of_timeline_item(
     widget_out.show_html(cx, html);
 }
 
+/// Creates and populates a SmallStateGroupHeader (FoldHeader) for a group of small state events.
+///
+/// This follows the portal_list_auto_grouping pattern:
+/// - The header shows a summary and fold button
+/// - The body contains a ViewList with all grouped items (excluding the first one)
+///
+/// # Arguments
+/// * `group_range` - The range of timeline indices covered by this group
+/// * `group` - The SmallStateGroup metadata containing cached summary and user IDs
+/// * `tl_items` - The full list of timeline items
+fn populate_small_state_group_header(
+    cx: &mut Cx2d,
+    scope: &mut Scope,
+    walk: Walk,
+    list: &mut PortalList,
+    item_id: usize,
+    timeline_kind: &TimelineKind,
+    group_range: &std::ops::Range<usize>,
+    group: &crate::home::event_group::SmallStateGroup,
+    tl_items: &imbl::Vector<Arc<TimelineItem>>,
+    content_drawn_since_last_update: &mut RangeSet<usize>,
+    profile_drawn_since_last_update: &mut RangeSet<usize>,
+    media_cache: &mut MediaCache,
+    link_preview_cache: &mut LinkPreviewCache,
+    fetched_thread_summaries: &HashMap<OwnedEventId, FetchedThreadSummary>,
+    pending_thread_summary_fetches: &mut HashSet<OwnedEventId>,
+    user_power_levels: &UserPowerLevels,
+    pinned_events: &[OwnedEventId],
+    room_screen_widget_uid: WidgetUid,
+) {
+    let (fold_item, _existed) = list.item_with_existed(cx, item_id, id!(SmallStateGroupHeader));
+    // Set the header summary text
+    if let Some(summary) = &group.cached_summary {
+        fold_item.label(cx, ids!(summary_text)).set_text(cx, summary);
+    }
+
+    // Set the avatars in the header
+    if let Some(user_ids) = &group.cached_avatar_user_ids {
+        crate::home::event_group::populate_avatar_row_from_user_ids(
+            cx,
+            &fold_item,
+            timeline_kind,
+            user_ids,
+        );
+    }
+    let mut walk = walk;
+    walk.height = Size::fit();
+    while let Some(item) = fold_item.draw_walk(cx, scope, walk).step() {
+        if let Some(mut list_ref) = item.as_portal_list().borrow_mut() {
+            let list = list_ref.deref_mut();
+            for tl_idx in (group_range.start)..group_range.end {
+                if let Some(timeline_item) = tl_items.get(tl_idx) {
+                    let item_drawn_status = ItemDrawnStatus {
+                        content_drawn: content_drawn_since_last_update.contains(&tl_idx),
+                        profile_drawn: profile_drawn_since_last_update.contains(&tl_idx),
+                    };
+                    if let TimelineItemKind::Event(event_tl_item) = timeline_item.kind() {
+                        // Create a new SmallStateEvent view from the template
+                        let (item, item_drawn_status) = match event_tl_item.content() {
+                            TimelineItemContent::MsgLike(msg_like_content) => match &msg_like_content.kind {
+                                MsgLikeKind::Redacted => {
+                                    let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
+                                    populate_message_view(cx, list, tl_idx, timeline_kind, event_tl_item, msg_like_content, prev_event, media_cache, link_preview_cache, fetched_thread_summaries, pending_thread_summary_fetches, user_power_levels, pinned_events, item_drawn_status, room_screen_widget_uid)
+                                }
+                                MsgLikeKind::Poll(poll_state) => populate_small_state_event(cx, list, tl_idx, timeline_kind, event_tl_item, poll_state, item_drawn_status),
+                                MsgLikeKind::UnableToDecrypt(utd) => populate_small_state_event(cx, list, tl_idx, timeline_kind, event_tl_item, utd, item_drawn_status),
+                                MsgLikeKind::Other(other) => populate_small_state_event(cx, list, tl_idx, timeline_kind, event_tl_item, other, item_drawn_status),
+                                _ => (list.item_with_existed(cx, tl_idx, id!(Empty)).0, item_drawn_status)
+                            },
+                            TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(cx, list, tl_idx, timeline_kind, event_tl_item, membership_change, item_drawn_status),
+                            TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(cx, list, tl_idx, timeline_kind, event_tl_item, profile_change, item_drawn_status),
+                            TimelineItemContent::OtherState(other_state) => populate_small_state_event(cx, list, tl_idx, timeline_kind, event_tl_item, other_state, item_drawn_status),
+                            _=> (list.item_with_existed(cx, tl_idx, id!(Empty)).0, item_drawn_status)
+                        };
+                        if item_drawn_status.content_drawn {
+                            content_drawn_since_last_update.insert(tl_idx..tl_idx + 1);
+                        }
+                        if item_drawn_status.profile_drawn {
+                            profile_drawn_since_last_update.insert(tl_idx..tl_idx + 1);
+                        }
+                        item.draw_all(cx, scope);
+                    }
+                }
+            }
+        }
+    }
+}
 
 /// A trait for abstracting over the different types of timeline events
 /// that can be displayed in a `SmallStateEvent` widget.

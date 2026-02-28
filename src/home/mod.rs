@@ -60,5 +60,4 @@ pub fn script_mod(vm: &mut ScriptVm) {
     navigation_tab_bar::script_mod(vm);
     // Keep HomeScreen last, it references many widgets registered above.
     home_screen::script_mod(vm);
-    event_group::script_mod(vm);
 }

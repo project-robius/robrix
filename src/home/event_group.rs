@@ -14,54 +14,6 @@ const MIN_GROUP_SIZE_FOR_COLLAPSE: usize = 3;
 // Maximum number of user names to display before coalescing
 const SUMMARY_LENGTH: usize = 4;
 
-script_mod! {
-    use mod.prelude.widgets.*
-    use mod.widgets.*
-    mod.widgets.SmallStateGroupHeader = FoldHeader{
-        header:= View{
-            width: Fill,
-            height: Fit,
-            flow: Flow.Down{wrap: true},
-            margin: Inset{top: 5.0}
-            spacing: 8.0,
-            padding: Inset{
-                left: 7.0,
-                top: 2.0,
-                bottom: 2.0
-            }
-            View {
-                width: Fill, height: Fit
-                user_event_avatar_row := AvatarRow {
-                    margin: Inset{
-                        left: 10.0,
-                        top: 0.0
-                    }
-                }
-                summary_text := Label {
-                    width: Fill, height: Fit
-                    flow: Flow.RightWrap,
-                    padding: 0,
-                    draw_text: {
-                        wrap: WrapMode::Word,
-                        text_style: THEME_FONT_REGULAR{
-                            font_size: SMALL_STATE_FONT_SIZE
-                        },
-                        color: SMALL_STATE_TEXT_COLOR
-                    }
-                }
-            }
-            View {
-                width: Fill, height: Fit,
-                flow: Flow.Right,
-                align: Align{ x: 0.5, y: 0.5 },
-                padding: Inset{top: 4.0},
-                fold_button := FoldButton {}
-            }
-        }
-        body:= View{}
-    }
-}
-
 /// Represents a group of adjacent small state events that can be collapsed/expanded in the UI.
 ///
 /// This struct encapsulates the grouping logic for small state events (membership changes,
