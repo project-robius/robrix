@@ -407,25 +407,16 @@ impl Widget for UserProfileSlidingPane {
             self.redraw(cx);
         }
 
-        // If the animator is in the `hide` state and has finished animating out,
-        // that means it has fully animated off-screen and can be set to invisible.
-        if self.animator_in_state(cx, ids!(panel.hide)) {
-            match (
-                self.is_animating_out,
-                matches!(animator_action, AnimatorAction::Animating { .. }),
-            ) {
-                (true, false) => {
-                    self.visible = false;
-                    cx.revert_key_focus();
-                    self.view(cx, ids!(bg_view)).set_visible(cx, false);
-                    self.redraw(cx);
-                    return;
-                }
-                (false, true) => {
-                    self.is_animating_out = true;
-                }
-                _ => { }
-            }
+        // If we're animating the pane closed and the animation track has finished
+        // (the Animator removes ended tracks on the same frame it returns the last
+        // Animating action), hide everything and mark the pane as invisible.
+        if self.is_animating_out && !self.animator.is_track_animating(id!(panel)) {
+            self.visible = false;
+            self.is_animating_out = false;
+            cx.revert_key_focus();
+            self.view(cx, ids!(bg_view)).set_visible(cx, false);
+            self.redraw(cx);
+            return;
         }
 
         let area = self.view.area();
@@ -456,6 +447,7 @@ impl Widget for UserProfileSlidingPane {
             }
         };
         if close_pane {
+            self.is_animating_out = true;
             self.animator_play(cx, ids!(panel.hide));
             self.redraw(cx);
             return;
