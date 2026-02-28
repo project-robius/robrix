@@ -716,7 +716,7 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::Logout { is_desktop } => {
-                log!("Received MatrixRequest::Logout, is_desktop={}", is_desktop);
+                log!("Received MatrixRequest::Logout, is_desktop: {}", is_desktop);
                 let _logout_task = Handle::current().spawn(async move {
                     log!("Starting logout task");
                     // Use the state machine implementation
@@ -1916,7 +1916,7 @@ async fn matrix_worker_task(
 
                     // match &result {
                     //     Ok(preview_data) => {
-                    //         log!("Successfully fetched URL preview for {}: title={:?}, site_name={:?}", 
+                    //         log!("Successfully fetched URL preview for {}: title: {:?}, site_name: {:?}", 
                     //              url, preview_data.title, preview_data.site_name);
                     //     }
                     //     Err(e) => {

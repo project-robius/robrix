@@ -22,15 +22,15 @@ pub mod tsp_verification_modal;
 pub mod wallet_entry;
 pub mod verify_user;
 
-pub fn live_design(cx: &mut Cx) {
-    create_did_modal::live_design(cx);
-    create_wallet_modal::live_design(cx);
-    wallet_entry::live_design(cx);
-    verify_user::live_design(cx);
-    sign_anycast_checkbox::live_design(cx);
-    tsp_sign_indicator::live_design(cx);
-    tsp_verification_modal::live_design(cx);
-    tsp_settings_screen::live_design(cx);
+pub fn script_mod(vm: &mut ScriptVm) {
+    create_did_modal::script_mod(vm);
+    create_wallet_modal::script_mod(vm);
+    wallet_entry::script_mod(vm);
+    verify_user::script_mod(vm);
+    sign_anycast_checkbox::script_mod(vm);
+    tsp_sign_indicator::script_mod(vm);
+    tsp_verification_modal::script_mod(vm);
+    tsp_settings_screen::script_mod(vm);
 }
 
 /// The sender used by [`submit_tsp_request()`] to send TSP requests to the async worker thread.
@@ -102,7 +102,7 @@ impl TspState {
             current_local_vid: None,
             associations: BTreeMap::new(),
             receive_loop_tasks: BTreeMap::new(),
-            pending_verification_requests: SmallVec::new_const(),
+            pending_verification_requests: SmallVec::new(),
         }
     }
 
@@ -174,7 +174,7 @@ impl TspState {
             current_local_vid,
             associations: saved_state.associations,
             receive_loop_tasks: BTreeMap::new(),
-            pending_verification_requests: SmallVec::new_const(),
+            pending_verification_requests: SmallVec::new(),
         })
     }
 
