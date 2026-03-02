@@ -216,7 +216,7 @@ impl WidgetMatchEvent for InviteModal {
         let confirm_button = self.view.button(cx, ids!(confirm_button));
         let user_id_input = self.view.text_input(cx, ids!(user_id_input));
         let status_view = self.view.view(cx, ids!(status_label_view));
-        let mut status_label_view = self.view.label(cx, ids!(status_label_view.status_label));
+        let mut status_label = self.view.label(cx, ids!(status_label_view.status_label));
 
         // Handle return key or invite button click.
         if let Some(user_id_str) = confirm_button.clicked(actions)
@@ -225,9 +225,9 @@ impl WidgetMatchEvent for InviteModal {
         {
             // Validate the user ID
             if user_id_str.is_empty() {
-                script_apply_eval!(cx, status_label_view, {
+                script_apply_eval!(cx, status_label, {
                     text: "Please enter a user ID.",
-                    draw_text: {
+                    draw_text +: {
                         color: mod.widgets.COLOR_FG_DANGER_RED,
                     },
                 });
@@ -245,9 +245,9 @@ impl WidgetMatchEvent for InviteModal {
                             user_id: user_id.to_owned(),
                         });
                         self.state = InviteModalState::WaitingForInvite(user_id.to_owned());
-                        script_apply_eval!(cx, status_label_view, {
+                        script_apply_eval!(cx, status_label, {
                             text: "Sending invite...",
-                            draw_text: {
+                            draw_text +: {
                                 color: mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER,
                             },
                         });
@@ -257,9 +257,9 @@ impl WidgetMatchEvent for InviteModal {
                     }
                 }
                 Err(_) => {
-                    script_apply_eval!(cx, status_label_view, {
+                    script_apply_eval!(cx, status_label, {
                         text: "Invalid User ID. Expected format: @user:server.xyz",
-                        draw_text: {
+                        draw_text +: {
                             color: mod.widgets.COLOR_FG_DANGER_RED,
                         },
                     });
@@ -279,9 +279,9 @@ impl WidgetMatchEvent for InviteModal {
                             && invited_user_id == user_id
                     => {
                         let status = format!("Successfully invited {user_id}!");
-                        script_apply_eval!(cx, status_label_view, {
+                        script_apply_eval!(cx, status_label, {
                             text: #(status),
-                            draw_text: {
+                            draw_text +: {
                                 color: mod.widgets.COLOR_FG_ACCEPT_GREEN
                             }
                         });
@@ -296,9 +296,9 @@ impl WidgetMatchEvent for InviteModal {
                             && invited_user_id == user_id
                     => {
                         let status = format!("Failed to send invite: {error}");
-                        script_apply_eval!(cx, status_label_view, {
+                        script_apply_eval!(cx, status_label, {
                             text: #(status),
-                            draw_text: {
+                            draw_text +: {
                                 color: mod.widgets.COLOR_FG_DANGER_RED,
                             }
                         });

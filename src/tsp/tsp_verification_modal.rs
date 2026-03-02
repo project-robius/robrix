@@ -235,13 +235,13 @@ impl WidgetMatchEvent for TspVerificationModal {
                         cancel_button.set_visible(cx, false);
                         script_apply_eval!(cx, accept_button, {
                             text: "Okay",
-                            draw_bg: {
+                            draw_bg +: {
                                 color: mod.widgets.COLOR_ACTIVE_PRIMARY,
                             },
-                            draw_icon: {
+                            draw_icon +: {
                                 color: mod.widgets.COLOR_PRIMARY,
                             }
-                            draw_text: {
+                            draw_text +: {
                                 color: mod.widgets.COLOR_PRIMARY,
                             },
                         });
@@ -302,13 +302,13 @@ impl WidgetMatchEvent for TspVerificationModal {
                     script_apply_eval!(cx, accept_button, {
                         enabled: true,
                         text: "Okay",
-                        draw_bg: {
+                        draw_bg +: {
                             color: mod.widgets.COLOR_ACTIVE_PRIMARY,
                         },
-                        draw_icon: {
+                        draw_icon +: {
                             color: mod.widgets.COLOR_PRIMARY,
                         }
-                        draw_text: {
+                        draw_text +: {
                             color: mod.widgets.COLOR_PRIMARY,
                         }
                     });

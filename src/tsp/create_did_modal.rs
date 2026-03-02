@@ -339,7 +339,7 @@ impl WidgetMatchEvent for CreateDidModal {
                         self.is_showing_error = true;
                         script_apply_eval!(cx, status_label, {
                             text: "Please enter a DID username.",
-                            draw_text: {
+                            draw_text +: {
                                 color: mod.widgets.COLOR_FG_DANGER_RED,
                             },
                         });
@@ -369,7 +369,7 @@ impl WidgetMatchEvent for CreateDidModal {
                         self.is_showing_error = false;
                         script_apply_eval!(cx, status_label, {
                             text: "Waiting for identity to be created and published...",
-                            draw_text: {
+                            draw_text +: {
                                 color: mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER,
                             },
                         });
@@ -403,7 +403,7 @@ impl WidgetMatchEvent for CreateDidModal {
                 script_apply_eval!(cx, accept_button, {
                     text: "Create DID",
                     enabled: true,
-                    draw_text: {
+                    draw_text +: {
                         color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
                     },
                 });
@@ -419,20 +419,20 @@ impl WidgetMatchEvent for CreateDidModal {
                     let message = format!("Successfully created and published DID: \"{}\"", did);
                     script_apply_eval!(cx, status_label, {
                         text: #(message),
-                        draw_text: {
+                        draw_text +: {
                             color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
                         },
                     });
                     script_apply_eval!(cx, accept_button, {
                         enabled: true,
                         text: "Okay",
-                        draw_bg: {
+                        draw_bg +: {
                             color: mod.widgets.COLOR_ACTIVE_PRIMARY,
                         },
-                        draw_icon: {
+                        draw_icon +: {
                             color: mod.widgets.COLOR_PRIMARY,
                         }
-                        draw_text: {
+                        draw_text +: {
                             color: mod.widgets.COLOR_PRIMARY,
                         },
                     });
@@ -448,7 +448,7 @@ impl WidgetMatchEvent for CreateDidModal {
                     let message = format!("Failed to create DID: {e}");
                     script_apply_eval!(cx, status_label, {
                         text: #(message),
-                        draw_text: {
+                        draw_text +: {
                             color: mod.widgets.COLOR_FG_DANGER_RED,
                         },
                     });

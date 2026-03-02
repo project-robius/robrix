@@ -450,14 +450,14 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
             script_apply_eval!(cx, accept_button, {
                 enabled: true
                 text: "Okay"
-                draw_bg: {
+                draw_bg +: {
                     color: mod.widgets.COLOR_ACTIVE_PRIMARY,
                     border_color: mod.widgets.COLOR_ACTIVE_PRIMARY
                 }
-                draw_text: {
+                draw_text +: {
                     color: mod.widgets.COLOR_PRIMARY
                 }
-                draw_icon: {
+                draw_icon +: {
                     color: mod.widgets.COLOR_PRIMARY
                 }
             });
@@ -558,14 +558,14 @@ impl JoinLeaveRoomModal {
         let cancel_button = self.button(cx, ids!(cancel_button));
         accept_button.set_text(cx, "Yes");
         script_apply_eval!(cx, accept_button, {
-            draw_bg: {
+            draw_bg +: {
                 border_color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
                 color: mod.widgets.COLOR_BG_ACCEPT_GREEN
             }
-            draw_text: {
+            draw_text +: {
                 color: mod.widgets.COLOR_FG_ACCEPT_GREEN
             }
-            draw_icon: {
+            draw_icon +: {
                 color: mod.widgets.COLOR_FG_ACCEPT_GREEN
             }
         });

@@ -278,7 +278,7 @@ impl Widget for TspSettingsScreen {
         let mut current_identity_label = self.view.label(cx, ids!(current_identity_label));
         script_apply_eval!(cx, current_identity_label, {
             text: #(current_did_text),
-            draw_text: { color: #(current_did_text_color) },
+            draw_text +: { color: #(current_did_text_color) },
         });
         self.view.button(cx, ids!(republish_identity_button)).set_visible(cx, show_republish_button);
 

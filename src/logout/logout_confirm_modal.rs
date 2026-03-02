@@ -248,7 +248,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
 
                         confirm_button.set_text(cx, "Restart now");
                         script_apply_eval!(cx, confirm_button, {
-                            draw_bg: {
+                            draw_bg +: {
                                 color: mod.widgets.COLOR_FG_DANGER_RED
                             }
                         });
@@ -273,7 +273,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
 
                     confirm_button.set_text(cx, "Restart now");
                     script_apply_eval!(cx, confirm_button, {
-                        draw_bg: {
+                        draw_bg +: {
                             color: mod.widgets.COLOR_FG_DANGER_RED
                         }
                     });

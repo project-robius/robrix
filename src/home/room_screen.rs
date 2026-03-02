@@ -1006,7 +1006,7 @@ impl Widget for RoomScreen {
                         );
 
                         script_apply_eval!(cx, message_action_bar_popup, {
-                            content: { margin: { left: #(coords.x), top: #(coords.y) } }
+                            content +: { margin +: { left: #(coords.x), top: #(coords.y) } }
                         });
 
                         if let Some(message_widget_uid) = action.as_widget_action().map(|a| a.widget_uid) {

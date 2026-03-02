@@ -357,7 +357,7 @@ impl MatrixLinkPill {
             // Apply red background for current user
             if current_user_id().is_some_and(|u| &u == user_id) {
                 script_apply_eval!(cx, self, {
-                    draw_bg: { color: #d91b38}
+                    draw_bg +: { color: #d91b38}
                 });
             }
 

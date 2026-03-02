@@ -179,7 +179,7 @@ impl Widget for ReactionList {
                         };
                         let mut reaction_button = button_ref.clone();
                         script_apply_eval!(cx, reaction_button, {
-                            draw_bg: { reaction_bg_color: #(bg_color), reaction_border_color: #(border_color) }
+                            draw_bg +: { reaction_bg_color: #(bg_color), reaction_border_color: #(border_color) }
                         });
                         self.do_hover_out(cx, scope, button_ref);
                     }
@@ -212,7 +212,7 @@ impl ReactionList {
             },
         );
         let mut button_ref = button_ref.clone();
-        script_apply_eval!(cx, button_ref, { draw_bg: { hover: 1.0 } });
+        script_apply_eval!(cx, button_ref, { draw_bg +: { hover: 1.0 } });
         cx.set_cursor(MouseCursor::Hand);
     }
 
@@ -225,7 +225,7 @@ impl ReactionList {
     ) {
         cx.widget_action(self.widget_uid(),  RoomScreenTooltipActions::HoverOut);
         let mut button_ref = button_ref.clone();
-        script_apply_eval!(cx, button_ref, { draw_bg: { hover: 0.0 } });
+        script_apply_eval!(cx, button_ref, { draw_bg +: { hover: 0.0 } });
         cx.set_cursor(MouseCursor::Default);
     }
 }
@@ -301,7 +301,7 @@ impl ReactionListRef {
                 )
             };
             script_apply_eval!(cx, button, {
-                draw_bg: { reaction_bg_color: #(bg_color), reaction_border_color: #(border_color) }
+                draw_bg +: { reaction_bg_color: #(bg_color), reaction_border_color: #(border_color) }
             });
             inner.children.push((button, reaction_data));
         }

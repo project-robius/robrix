@@ -141,12 +141,12 @@ impl Widget for CollapsibleHeader {
         if self.is_expanded {
             let mut collapse_icon = self.icon(cx, ids!(collapse_icon));
             script_apply_eval!(cx, collapse_icon, {
-                draw_icon: { rotation_angle: 180.0 }
+                draw_icon +: { rotation_angle: 180.0 }
             });
         } else {
             let mut collapse_icon = self.icon(cx, ids!(collapse_icon));
             script_apply_eval!(cx, collapse_icon, {
-                draw_icon: { rotation_angle: 90.0 }
+                draw_icon +: { rotation_angle: 90.0 }
             });
         }
         self.view.draw_walk(cx, scope, walk)

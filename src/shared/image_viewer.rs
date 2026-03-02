@@ -489,7 +489,7 @@ impl Widget for ImageViewer {
 
                 if let Some(offset) = saved_pan_offset {
                     script_apply_eval!(cx, rotated_image, {
-                        margin: { top: #(offset.y), left: #(offset.x) },
+                        margin +: { top: #(offset.y), left: #(offset.x) },
                         width: #(width),
                         height: #(height),
                     });
@@ -549,7 +549,7 @@ impl Widget for ImageViewer {
                     self.drag_state.pan_offset = Some(DVec2::default());
                     let mut rotated_image_container = self.view.image(cx, ids!(rotated_image));
                     script_apply_eval!(cx, rotated_image_container, {
-                        margin: { top: 0.0, left: 0.0 },
+                        margin +: { top: 0.0, left: 0.0 },
                     });
                     rotated_image_container.redraw(cx);
                 }
@@ -572,7 +572,7 @@ impl Widget for ImageViewer {
                     let mut rotated_image_container = self.view.image(cx, ids!(rotated_image));
                     let size = rotated_image_container.area().rect(cx).size;
                     script_apply_eval!(cx, rotated_image_container, {
-                        margin: { top: #(new_offset.y), left: #(new_offset.x) },
+                        margin +: { top: #(new_offset.y), left: #(new_offset.x) },
                         width: #(size.x),
                         height: #(size.y)
                     });
@@ -828,7 +828,7 @@ impl ImageViewer {
         // Reset image position and scale
         let mut rotated_image_container = self.view.image(cx, ids!(rotated_image));
         script_apply_eval!(cx, rotated_image_container, {
-            margin: { top: 0.0, left: 0.0 }
+            margin +: { top: 0.0, left: 0.0 }
         });
         rotated_image_container.redraw(cx);
 

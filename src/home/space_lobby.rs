@@ -1049,12 +1049,12 @@ impl Widget for SpaceLobbyScreen {
                                 if is_expanded {
                                     let mut expand_icon = item.icon(cx, ids!(expand_icon));
                                     script_apply_eval!(cx, expand_icon, {
-                                        draw_icon: { rotation_angle: 180.0 }
+                                        draw_icon +: { rotation_angle: 180.0 }
                                     });
                                 } else {
                                     let mut expand_icon = item.icon(cx, ids!(expand_icon));
                                     script_apply_eval!(cx, expand_icon, {
-                                        draw_icon: { rotation_angle: 90.0 }
+                                        draw_icon +: { rotation_angle: 90.0 }
                                     });
                                 }
                                 item
