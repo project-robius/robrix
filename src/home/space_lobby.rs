@@ -10,7 +10,6 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use imbl::Vector;
 use makepad_widgets::*;
-use crate::ApplyOverCompat;
 use matrix_sdk::{RoomDisplayName, RoomState, ruma::OwnedRoomId};
 use matrix_sdk_ui::spaces::SpaceRoom;
 use ruma::room::JoinRuleSummary;
@@ -1022,7 +1021,7 @@ impl Widget for SpaceLobbyScreen {
                 else if entry_count == 0 && item_id == 0 {
                     let item = list.item(cx, item_id, id!(status_label));
                     item.label(cx, ids!(label)).set_text(cx, "No rooms or spaces found.");
-                    item.view(cx, ids!(loading_spinner)).apply_over(cx, live! { visible: false });
+                    item.view(cx, ids!(loading_spinner)).set_visible(cx, false);
                     item
                 }
                 // Draw a regular entry
@@ -1048,19 +1047,15 @@ impl Widget for SpaceLobbyScreen {
                                 // Expand icon
                                 let is_expanded = self.expanded_spaces.contains(&info.id);
                                 if is_expanded {
-                                    item.icon(cx, ids!(expand_icon)).apply_over(
-                                        cx,
-                                        live! {
-                                            draw_icon: { rotation_angle: 180.0 }
-                                        },
-                                    );
+                                    let mut expand_icon = item.icon(cx, ids!(expand_icon));
+                                    script_apply_eval!(cx, expand_icon, {
+                                        draw_icon: { rotation_angle: 180.0 }
+                                    });
                                 } else {
-                                    item.icon(cx, ids!(expand_icon)).apply_over(
-                                        cx,
-                                        live! {
-                                            draw_icon: { rotation_angle: 90.0 }
-                                        },
-                                    );
+                                    let mut expand_icon = item.icon(cx, ids!(expand_icon));
+                                    script_apply_eval!(cx, expand_icon, {
+                                        draw_icon: { rotation_angle: 90.0 }
+                                    });
                                 }
                                 item
                             } else {

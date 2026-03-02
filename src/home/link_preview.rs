@@ -7,7 +7,7 @@ use std::{
 };
 
 use makepad_widgets::*;
-use crate::{ApplyOverCompat, LivePtr, widget_ref_from_live_ptr};
+use crate::{LivePtr, widget_ref_from_live_ptr};
 use matrix_sdk::ruma::{events::room::{ImageInfo, MediaSource}, OwnedMxcUri, UInt};
 use serde::Deserialize;
 use url::Url;
@@ -196,19 +196,22 @@ impl Widget for LinkPreview {
         for view in self.children.iter() {
             match event.hits(cx, view.area()) {
                 Hit::FingerHoverIn(_) | Hit::FingerDown(_) => {
-                    view.apply_over(cx, live! {
-                        draw_bg.color: (COLOR_BG_PREVIEW_HOVER)
+                    let mut view = view.clone();
+                    script_apply_eval!(cx, view, {
+                        draw_bg.color: mod.widgets.COLOR_BG_PREVIEW_HOVER
                     });
                 }
                 Hit::FingerHoverOut(_) => {
-                    view.apply_over(cx, live! {
-                        draw_bg.color: (COLOR_BG_PREVIEW)
+                    let mut view = view.clone();
+                    script_apply_eval!(cx, view, {
+                        draw_bg.color: mod.widgets.COLOR_BG_PREVIEW
                     });
                 }
                 Hit::FingerUp(fe) => {
                     // return to normal bg color
-                    view.apply_over(cx, live! {
-                        draw_bg.color: (COLOR_BG_PREVIEW)
+                    let mut view = view.clone();
+                    script_apply_eval!(cx, view, {
+                        draw_bg.color: mod.widgets.COLOR_BG_PREVIEW
                     });
                     if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
                         if let Some(html_link) = view.link_label(cx, ids!(content_view.title_label)).borrow() {

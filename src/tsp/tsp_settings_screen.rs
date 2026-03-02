@@ -1,6 +1,5 @@
 
 use makepad_widgets::*;
-use crate::ApplyOverCompat;
 
 use crate::{shared::{popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
 
@@ -273,13 +272,14 @@ impl Widget for TspSettingsScreen {
         let (current_did_text, current_did_text_color, show_republish_button) = match
             self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref())
         {
-            Some(current_did) => (current_did, COLOR_FG_ACCEPT_GREEN, true),
-            None => ("No default identity has been set.", COLOR_WARNING_NOT_FOUND, false),
+            Some(current_did) => (current_did.to_string(), COLOR_FG_ACCEPT_GREEN, true),
+            None => ("No default identity has been set.".to_string(), COLOR_WARNING_NOT_FOUND, false),
         };
-        self.view.label(cx, ids!(current_identity_label)).apply_over(cx, live!(
-            text: (current_did_text),
-            draw_text: { color: (current_did_text_color) },
-        ));
+        let mut current_identity_label = self.view.label(cx, ids!(current_identity_label));
+        script_apply_eval!(cx, current_identity_label, {
+            text: #(current_did_text),
+            draw_text: { color: #(current_did_text_color) },
+        });
         self.view.button(cx, ids!(republish_identity_button)).set_visible(cx, show_republish_button);
 
 
@@ -313,7 +313,7 @@ impl Widget for TspSettingsScreen {
 
 impl MatchEvent for TspSettingsScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        let republish_identity_button = self.view.button(cx, ids!(republish_identity_button));
+        let mut republish_identity_button = self.view.button(cx, ids!(republish_identity_button));
 
         for action in actions {
             match action.downcast_ref() {
@@ -421,10 +421,10 @@ impl MatchEvent for TspSettingsScreen {
                 }
                 Some(TspIdentityAction::DidRepublishResult(result)) => {
                     // restore the republish button to its original state.
-                    republish_identity_button.apply_over(cx, live!(
+                    script_apply_eval!(cx, republish_identity_button, {
                         enabled: true,
-                        text: (REPUBLISH_IDENTITY_BUTTON_TEXT),
-                    ));
+                        text: #(REPUBLISH_IDENTITY_BUTTON_TEXT),
+                    });
                     match result {
                         Ok(did) => {
                             enqueue_popup_notification(
@@ -476,10 +476,10 @@ impl MatchEvent for TspSettingsScreen {
         if self.view.button(cx, ids!(republish_identity_button)).clicked(actions) {
             if self.has_default_wallet() {
                 if let Some(our_did) = self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref()) {
-                    republish_identity_button.apply_over(cx, live!(
+                    script_apply_eval!(cx, republish_identity_button, {
                         enabled: false,
                         text: "Republishing DID now...",
-                    ));
+                    });
 
                     submit_tsp_request(TspRequest::RepublishDid { did: our_did.to_string() });
                 } else {

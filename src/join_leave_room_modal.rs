@@ -5,7 +5,6 @@
 use std::borrow::Cow;
 
 use makepad_widgets::*;
-use crate::ApplyOverCompat;
 use matrix_sdk::ruma::OwnedRoomId;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -241,7 +240,7 @@ impl Widget for JoinLeaveRoomModal {
 
 impl WidgetMatchEvent for JoinLeaveRoomModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let accept_button = self.view.button(cx, ids!(accept_button));
+        let mut accept_button = self.view.button(cx, ids!(accept_button));
         let cancel_button = self.view.button(cx, ids!(cancel_button));
 
         let cancel_clicked = cancel_button.clicked(actions);
@@ -448,18 +447,18 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
         if let Some(success) = new_final_success {
             self.final_success = Some(success);
             needs_redraw = true;
-            accept_button.apply_over(cx, live!{
+            script_apply_eval!(cx, accept_button, {
                 enabled: true
                 text: "Okay"
                 draw_bg: {
-                    color: (COLOR_ACTIVE_PRIMARY),
-                    border_color: (COLOR_ACTIVE_PRIMARY)
+                    color: mod.widgets.COLOR_ACTIVE_PRIMARY,
+                    border_color: mod.widgets.COLOR_ACTIVE_PRIMARY
                 }
                 draw_text: {
-                    color: (COLOR_PRIMARY)
+                    color: mod.widgets.COLOR_PRIMARY
                 }
                 draw_icon: {
-                    color: (COLOR_PRIMARY)
+                    color: mod.widgets.COLOR_PRIMARY
                 }
             });
             accept_button.reset_hover(cx);
@@ -555,19 +554,19 @@ impl JoinLeaveRoomModal {
             self.view.view(cx, ids!(tip_view)).set_visible(cx, false);
         }
 
-        let accept_button = self.button(cx, ids!(accept_button));
+        let mut accept_button = self.button(cx, ids!(accept_button));
         let cancel_button = self.button(cx, ids!(cancel_button));
         accept_button.set_text(cx, "Yes");
-        accept_button.apply_over(cx, live!{
+        script_apply_eval!(cx, accept_button, {
             draw_bg: {
-                border_color: (COLOR_FG_ACCEPT_GREEN),
-                color: (COLOR_BG_ACCEPT_GREEN)
+                border_color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
+                color: mod.widgets.COLOR_BG_ACCEPT_GREEN
             }
             draw_text: {
-                color: (COLOR_FG_ACCEPT_GREEN)
+                color: mod.widgets.COLOR_FG_ACCEPT_GREEN
             }
             draw_icon: {
-                color: (COLOR_FG_ACCEPT_GREEN)
+                color: mod.widgets.COLOR_FG_ACCEPT_GREEN
             }
         });
         accept_button.set_enabled(cx, true);

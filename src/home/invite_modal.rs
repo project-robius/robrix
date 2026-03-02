@@ -1,7 +1,6 @@
 //! A modal dialog for inviting a user to a room.
 
 use makepad_widgets::*;
-use crate::ApplyOverCompat;
 use ruma::OwnedUserId;
 
 use crate::home::room_screen::InviteResultAction;
@@ -217,7 +216,7 @@ impl WidgetMatchEvent for InviteModal {
         let confirm_button = self.view.button(cx, ids!(confirm_button));
         let user_id_input = self.view.text_input(cx, ids!(user_id_input));
         let status_view = self.view.view(cx, ids!(status_label_view));
-        let status_label_view = self.view.label(cx, ids!(status_label_view.status_label));
+        let mut status_label_view = self.view.label(cx, ids!(status_label_view.status_label));
 
         // Handle return key or invite button click.
         if let Some(user_id_str) = confirm_button.clicked(actions)
@@ -226,10 +225,10 @@ impl WidgetMatchEvent for InviteModal {
         {
             // Validate the user ID
             if user_id_str.is_empty() {
-                status_label_view.apply_over(cx, live!{
+                script_apply_eval!(cx, status_label_view, {
                     text: "Please enter a user ID.",
                     draw_text: {
-                        color: (COLOR_FG_DANGER_RED),
+                        color: mod.widgets.COLOR_FG_DANGER_RED,
                     },
                 });
                 status_view.set_visible(cx, true);
@@ -246,24 +245,24 @@ impl WidgetMatchEvent for InviteModal {
                             user_id: user_id.to_owned(),
                         });
                         self.state = InviteModalState::WaitingForInvite(user_id.to_owned());
-                        status_label_view.apply_over(cx, live!(
+                        script_apply_eval!(cx, status_label_view, {
                             text: "Sending invite...",
                             draw_text: {
-                                color: (COLOR_ACTIVE_PRIMARY_DARKER),
+                                color: mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER,
                             },
-                        ));
+                        });
                         status_view.set_visible(cx, true);
                         confirm_button.set_enabled(cx, false);
                         user_id_input.set_is_read_only(cx, true);
                     }
                 }
                 Err(_) => {
-                    status_label_view.apply_over(cx, live!(
+                    script_apply_eval!(cx, status_label_view, {
                         text: "Invalid User ID. Expected format: @user:server.xyz",
                         draw_text: {
-                            color: (COLOR_FG_DANGER_RED),
+                            color: mod.widgets.COLOR_FG_DANGER_RED,
                         },
-                    ));
+                    });
                     status_view.set_visible(cx, true);
                     user_id_input.set_key_focus(cx);
                 }
@@ -279,11 +278,11 @@ impl WidgetMatchEvent for InviteModal {
                         if self.room_name_id.as_ref().is_some_and(|rni| rni.room_id() == room_id)
                             && invited_user_id == user_id
                     => {
-                        let _status = format!("Successfully invited {user_id}!");
-                        status_label_view.apply_over(cx, live!{
-                            text: (status),
+                        let status = format!("Successfully invited {user_id}!");
+                        script_apply_eval!(cx, status_label_view, {
+                            text: #(status),
                             draw_text: {
-                                color: (COLOR_FG_ACCEPT_GREEN)
+                                color: mod.widgets.COLOR_FG_ACCEPT_GREEN
                             }
                         });
                         status_view.set_visible(cx, true);
@@ -296,11 +295,11 @@ impl WidgetMatchEvent for InviteModal {
                         if self.room_name_id.as_ref().is_some_and(|rni| rni.room_id() == room_id)
                             && invited_user_id == user_id
                     => {
-                        let _status = format!("Failed to send invite: {error}");
-                        status_label_view.apply_over(cx, live!{
-                            text: (status),
+                        let status = format!("Failed to send invite: {error}");
+                        script_apply_eval!(cx, status_label_view, {
+                            text: #(status),
                             draw_text: {
-                                color: (COLOR_FG_DANGER_RED),
+                                color: mod.widgets.COLOR_FG_DANGER_RED,
                             }
                         });
                         status_view.set_visible(cx, true);

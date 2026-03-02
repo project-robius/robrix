@@ -1,9 +1,8 @@
 //! A modal dialog for creating a new TSP wallet.
 
 use makepad_widgets::*;
-use crate::ApplyOverCompat;
 
-use crate::{shared::styles::*, tsp::{self, TspWalletMetadata}};
+use crate::tsp::{self, TspWalletMetadata};
 
 
 script_mod! {
@@ -247,7 +246,7 @@ impl Widget for CreateWalletModal {
 
 impl WidgetMatchEvent for CreateWalletModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let accept_button = self.view.button(cx, ids!(accept_button));
+        let mut accept_button = self.view.button(cx, ids!(accept_button));
         let cancel_button = self.view.button(cx, ids!(cancel_button));
 
         // Handle canceling/closing the modal.
@@ -271,7 +270,7 @@ impl WidgetMatchEvent for CreateWalletModal {
         let wallet_file_name_input = self.view.text_input(cx, ids!(wallet_file_name_input));
         let password_input = self.view.text_input(cx, ids!(password_input));
         let confirm_password_input = self.view.text_input(cx, ids!(confirm_password_input));
-        let status_label = self.view.label(cx, ids!(status_label));
+        let mut status_label = self.view.label(cx, ids!(status_label));
 
         // Handle clicking the accept button.
         let mut needs_redraw = false;
@@ -291,28 +290,28 @@ impl WidgetMatchEvent for CreateWalletModal {
                     // Check to ensure that the user has entered all required fields.
                     if password.is_empty() || confirm_password.is_empty() {
                         self.is_showing_error = true;
-                        status_label.apply_over(cx, live!(
+                        script_apply_eval!(cx, status_label, {
                             text: "Please enter a wallet password.",
                             draw_text: {
-                                color: (COLOR_FG_DANGER_RED),
+                                color: mod.widgets.COLOR_FG_DANGER_RED,
                             },
-                        ));
+                        });
                     } else if password != confirm_password {
                         self.is_showing_error = true;
-                        status_label.apply_over(cx, live!(
+                        script_apply_eval!(cx, status_label, {
                             text: "Passwords do not match.",
                             draw_text: {
-                                color: (COLOR_FG_DANGER_RED),
+                                color: mod.widgets.COLOR_FG_DANGER_RED,
                             },
-                        ));
+                        });
                     } else if wallet_name.is_empty() {
                         self.is_showing_error = true;
-                        status_label.apply_over(cx, live!(
+                        script_apply_eval!(cx, status_label, {
                             text: "Please enter a wallet name.",
                             draw_text: {
-                                color: (COLOR_FG_DANGER_RED),
+                                color: mod.widgets.COLOR_FG_DANGER_RED,
                             },
-                        ));
+                        });
                     } else {
                         let url = tsp::TspWalletSqliteUrl::from_wallet_file_name(
                             match wallet_file_name_input.text() {
@@ -330,12 +329,12 @@ impl WidgetMatchEvent for CreateWalletModal {
                         tsp::submit_tsp_request(tsp::TspRequest::CreateWallet { metadata });
                         self.state = CreateWalletModalState::WaitingForWalletCreation;
                         self.is_showing_error = false;
-                        status_label.apply_over(cx, live!(
+                        script_apply_eval!(cx, status_label, {
                             text: "Waiting for wallet to be created...",
                             draw_text: {
-                                color: (COLOR_ACTIVE_PRIMARY_DARKER),
+                                color: mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER,
                             },
-                        ));
+                        });
                         accept_button.set_enabled(cx, false);
                         cancel_button.set_enabled(cx, false); // TODO: support canceling the wallet creation request?
                         wallet_name_input.set_is_read_only(cx, true);
@@ -362,13 +361,13 @@ impl WidgetMatchEvent for CreateWalletModal {
                 self.is_showing_error = false;
                 self.view.label(cx, ids!(status_label)).set_text(cx, "");
                 self.state = CreateWalletModalState::WaitingForUserInput;
-                accept_button.apply_over(cx, live!(
+                script_apply_eval!(cx, accept_button, {
                     text: "Create Wallet",
                     enabled: true,
                     draw_text: {
-                        color: (COLOR_FG_ACCEPT_GREEN),
+                        color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
                     },
-                ));
+                });
                 needs_redraw = true;
             }
         }
@@ -390,25 +389,25 @@ impl WidgetMatchEvent for CreateWalletModal {
                     } else {
                         format!("Wallet \"{}\" created successfully.", metadata.wallet_name)
                     };
-                    status_label.apply_over(cx, live!(
-                        text: (message),
+                    script_apply_eval!(cx, status_label, {
+                        text: #(message),
                         draw_text: {
-                            color: (COLOR_FG_ACCEPT_GREEN),
+                            color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
                         },
-                    ));
-                    accept_button.apply_over(cx, live!(
+                    });
+                    script_apply_eval!(cx, accept_button, {
                         enabled: true,
                         text: "Okay",
                         draw_bg: {
-                            color: (COLOR_ACTIVE_PRIMARY),
+                            color: mod.widgets.COLOR_ACTIVE_PRIMARY,
                         },
                         draw_icon: {
-                            color: (COLOR_PRIMARY),
+                            color: mod.widgets.COLOR_PRIMARY,
                         }
                         draw_text: {
-                            color: (COLOR_PRIMARY),
+                            color: mod.widgets.COLOR_PRIMARY,
                         },
-                    ));
+                    });
                     cancel_button.set_visible(cx, false);
                 }
 
@@ -417,12 +416,12 @@ impl WidgetMatchEvent for CreateWalletModal {
                     self.state = CreateWalletModalState::WalletCreationError;
                     self.is_showing_error = true;
                     let message = format!("Failed to create wallet: {error}.");
-                    status_label.apply_over(cx, live!(
-                        text: (message),
+                    script_apply_eval!(cx, status_label, {
+                        text: #(message),
                         draw_text: {
-                            color: (COLOR_FG_DANGER_RED),
+                            color: mod.widgets.COLOR_FG_DANGER_RED,
                         },
-                    ));
+                    });
                     accept_button.set_enabled(cx, false);
                     cancel_button.set_enabled(cx, true);
                     wallet_name_input.set_is_read_only(cx, false);

@@ -3,7 +3,7 @@ use crate::profile::user_profile_cache;
 use crate::sliding_sync::{current_user_id, submit_async_request, MatrixRequest, TimelineKind};
 use indexmap::IndexMap;
 use makepad_widgets::*;
-use crate::{ApplyOverCompat, LivePtr, widget_ref_from_live_ptr};
+use crate::{LivePtr, widget_ref_from_live_ptr};
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
 use matrix_sdk_ui::timeline::{ReactionInfo, ReactionsByKeyBySender, TimelineEventItemId};
 
@@ -172,13 +172,14 @@ impl Widget for ReactionList {
                             reaction: reaction_data.reaction.clone(),
                         });
                         // update the reaction button before the timeline is updated
-                        let (_bg_color, _border_color) = if !reaction_data.includes_user {
+                        let (bg_color, border_color) = if !reaction_data.includes_user {
                             (EMOJI_BG_COLOR_INCLUDE_SELF, EMOJI_BORDER_COLOR_INCLUDE_SELF)
                         } else {
                             (EMOJI_BG_COLOR_NOT_INCLUDE_SELF, EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF)
                         };
-                        button_ref.apply_over(cx, live! {
-                            draw_bg: { reaction_bg_color: (bg_color) , reaction_border_color: (border_color) }
+                        let mut reaction_button = button_ref.clone();
+                        script_apply_eval!(cx, reaction_button, {
+                            draw_bg: { reaction_bg_color: #(bg_color), reaction_border_color: #(border_color) }
                         });
                         self.do_hover_out(cx, scope, button_ref);
                     }
@@ -210,7 +211,8 @@ impl ReactionList {
                 reaction_data,
             },
         );
-        button_ref.apply_over(cx, live!(draw_bg: {hover: 1.0}));
+        let mut button_ref = button_ref.clone();
+        script_apply_eval!(cx, button_ref, { draw_bg: { hover: 1.0 } });
         cx.set_cursor(MouseCursor::Hand);
     }
 
@@ -222,7 +224,8 @@ impl ReactionList {
         button_ref: &ButtonRef,
     ) {
         cx.widget_action(self.widget_uid(),  RoomScreenTooltipActions::HoverOut);
-        button_ref.apply_over(cx, live!(draw_bg: {hover: 0.0}));
+        let mut button_ref = button_ref.clone();
+        script_apply_eval!(cx, button_ref, { draw_bg: { hover: 0.0 } });
         cx.set_cursor(MouseCursor::Default);
     }
 }
@@ -284,12 +287,12 @@ impl ReactionListRef {
                 reaction_senders: reaction_senders.clone(),
                 room_id: timeline_kind.room_id().clone(),
             };
-            let button = widget_ref_from_live_ptr(cx, inner.item).as_button();
+            let mut button = widget_ref_from_live_ptr(cx, inner.item).as_button();
             button.set_text(cx, &format!("{}  {}",
                 reaction_data.reaction,
                 reaction_senders.len()
             ));
-            let (_bg_color, _border_color) = if reaction_data.includes_user {
+            let (bg_color, border_color) = if reaction_data.includes_user {
                 (EMOJI_BG_COLOR_INCLUDE_SELF, EMOJI_BORDER_COLOR_INCLUDE_SELF)
             } else {
                 (
@@ -297,12 +300,9 @@ impl ReactionListRef {
                     EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF,
                 )
             };
-            button.apply_over(
-                cx,
-                live! {
-                    draw_bg: { reaction_bg_color: (bg_color) , reaction_border_color: (border_color) }
-                },
-            );
+            script_apply_eval!(cx, button, {
+                draw_bg: { reaction_bg_color: #(bg_color), reaction_border_color: #(border_color) }
+            });
             inner.children.push((button, reaction_data));
         }
         inner.timeline_kind = Some(timeline_kind);

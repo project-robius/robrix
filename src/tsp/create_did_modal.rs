@@ -1,9 +1,8 @@
 //! A modal dialog for creating a new TSP Decentralized Identity (DID).
 
 use makepad_widgets::*;
-use crate::ApplyOverCompat;
 
-use crate::{shared::styles::*, tsp};
+use crate::tsp;
 
 
 script_mod! {
@@ -295,7 +294,7 @@ impl Widget for CreateDidModal {
 
 impl WidgetMatchEvent for CreateDidModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let accept_button = self.view.button(cx, ids!(accept_button));
+        let mut accept_button = self.view.button(cx, ids!(accept_button));
         let cancel_button = self.view.button(cx, ids!(cancel_button));
 
         // Handle canceling/closing the modal.
@@ -319,7 +318,7 @@ impl WidgetMatchEvent for CreateDidModal {
         let alias_input = self.view.text_input(cx, ids!(alias_input));
         let server_input = self.view.text_input(cx, ids!(server_input));
         let did_server_input = self.view.text_input(cx, ids!(did_server_input));
-        let status_label = self.view.label(cx, ids!(status_label));
+        let mut status_label = self.view.label(cx, ids!(status_label));
 
         // Handle clicking the accept button.
         let mut needs_redraw = false;
@@ -338,12 +337,12 @@ impl WidgetMatchEvent for CreateDidModal {
                     // Check to ensure that the user has entered all required fields.
                     if username.is_empty() {
                         self.is_showing_error = true;
-                        status_label.apply_over(cx, live!(
+                        script_apply_eval!(cx, status_label, {
                             text: "Please enter a DID username.",
                             draw_text: {
-                                color: (COLOR_FG_DANGER_RED),
+                                color: mod.widgets.COLOR_FG_DANGER_RED,
                             },
-                        ));
+                        });
                     } else {
                         let alias = match alias_input.text().trim() {
                             "" => None,
@@ -368,12 +367,12 @@ impl WidgetMatchEvent for CreateDidModal {
 
                         self.state = CreateDidModalState::WaitingForIdentityCreation;
                         self.is_showing_error = false;
-                        status_label.apply_over(cx, live!(
+                        script_apply_eval!(cx, status_label, {
                             text: "Waiting for identity to be created and published...",
                             draw_text: {
-                                color: (COLOR_ACTIVE_PRIMARY_DARKER),
+                                color: mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER,
                             },
-                        ));
+                        });
                         accept_button.set_enabled(cx, false);
                         cancel_button.set_enabled(cx, false); // TODO: support canceling the identity creation request?
                         username_input.set_is_read_only(cx, true);
@@ -401,13 +400,13 @@ impl WidgetMatchEvent for CreateDidModal {
                 self.is_showing_error = false;
                 self.view.label(cx, ids!(status_label)).set_text(cx, "");
                 self.state = CreateDidModalState::WaitingForUserInput;
-                accept_button.apply_over(cx, live!(
+                script_apply_eval!(cx, accept_button, {
                     text: "Create DID",
                     enabled: true,
                     draw_text: {
-                        color: (COLOR_FG_ACCEPT_GREEN),
+                        color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
                     },
-                ));
+                });
                 needs_redraw = true;
             }
         }
@@ -418,25 +417,25 @@ impl WidgetMatchEvent for CreateDidModal {
                     self.state = CreateDidModalState::IdentityCreated;
                     self.is_showing_error = false;
                     let message = format!("Successfully created and published DID: \"{}\"", did);
-                    status_label.apply_over(cx, live!(
-                        text: (message),
+                    script_apply_eval!(cx, status_label, {
+                        text: #(message),
                         draw_text: {
-                            color: (COLOR_FG_ACCEPT_GREEN),
+                            color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
                         },
-                    ));
-                    accept_button.apply_over(cx, live!(
+                    });
+                    script_apply_eval!(cx, accept_button, {
                         enabled: true,
                         text: "Okay",
                         draw_bg: {
-                            color: (COLOR_ACTIVE_PRIMARY),
+                            color: mod.widgets.COLOR_ACTIVE_PRIMARY,
                         },
                         draw_icon: {
-                            color: (COLOR_PRIMARY),
+                            color: mod.widgets.COLOR_PRIMARY,
                         }
                         draw_text: {
-                            color: (COLOR_PRIMARY),
+                            color: mod.widgets.COLOR_PRIMARY,
                         },
-                    ));
+                    });
                     cancel_button.set_visible(cx, false);
                     needs_redraw = true;
                 }
@@ -447,12 +446,12 @@ impl WidgetMatchEvent for CreateDidModal {
                     self.state = CreateDidModalState::IdentityCreationError;
                     self.is_showing_error = true;
                     let message = format!("Failed to create DID: {e}");
-                    status_label.apply_over(cx, live!(
-                        text: (message),
+                    script_apply_eval!(cx, status_label, {
+                        text: #(message),
                         draw_text: {
-                            color: (COLOR_FG_DANGER_RED),
+                            color: mod.widgets.COLOR_FG_DANGER_RED,
                         },
-                    ));
+                    });
                     accept_button.set_enabled(cx, false);
                     cancel_button.set_enabled(cx, true);
                     username_input.set_is_read_only(cx, false);

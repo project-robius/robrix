@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 
 use makepad_widgets::{text::selection::Cursor, *};
-use crate::ApplyOverCompat;
 
 use crate::{app::ConfirmDeleteAction, avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, MatrixRequest, submit_async_request}, utils};
 
@@ -594,22 +593,23 @@ impl AccountSettings {
         enable: bool,
         delete_avatar_button: &ButtonRef,
     ) {
-        let (_delete_button_fg_color, _delete_button_bg_color) = if enable {
+        let (delete_button_fg_color, delete_button_bg_color) = if enable {
             (COLOR_FG_DANGER_RED, COLOR_BG_DANGER_RED)
         } else {
             (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
         };
-        delete_avatar_button.apply_over(cx, live!{
-            enabled: (enable),
+        let mut delete_avatar_button = delete_avatar_button.clone();
+        script_apply_eval!(cx, delete_avatar_button, {
+            enabled: #(enable),
             draw_bg: {
-                color: (delete_button_bg_color),
-                border_color: (delete_button_fg_color),
+                color: #(delete_button_bg_color),
+                border_color: #(delete_button_fg_color),
             }
             draw_icon: {
-                color: (delete_button_fg_color),
+                color: #(delete_button_fg_color),
             }
             draw_text: {
-                color: (delete_button_fg_color),
+                color: #(delete_button_fg_color),
             }
         });
     }
@@ -620,22 +620,23 @@ impl AccountSettings {
         enable: bool,
         upload_avatar_button: &ButtonRef,
     ) {
-        let (_upload_button_fg_color, _upload_button_bg_color) = if enable {
+        let (upload_button_fg_color, upload_button_bg_color) = if enable {
             (COLOR_PRIMARY, COLOR_ACTIVE_PRIMARY)
         } else {
             (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
         };
-        upload_avatar_button.apply_over(cx, live!{
-            enabled: (enable),
+        let mut upload_avatar_button = upload_avatar_button.clone();
+        script_apply_eval!(cx, upload_avatar_button, {
+            enabled: #(enable),
             draw_bg: {
-                color: (upload_button_bg_color),
-                border_color: (upload_button_fg_color),
+                color: #(upload_button_bg_color),
+                border_color: #(upload_button_fg_color),
             }
             draw_icon: {
-                color: (upload_button_fg_color),
+                color: #(upload_button_fg_color),
             }
             draw_text: {
-                color: (upload_button_fg_color),
+                color: #(upload_button_fg_color),
             }
         });
     }
@@ -647,43 +648,45 @@ impl AccountSettings {
         accept_display_name_button: &ButtonRef,
         cancel_display_name_button: &ButtonRef,
     ) {
-        let (_accept_button_fg_color, _accept_button_bg_color) = if enable {
+        let (accept_button_fg_color, accept_button_bg_color) = if enable {
             (COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN)
         } else {
             (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
         };
-        let (_cancel_button_fg_color, _cancel_button_bg_color) = if enable {
+        let (cancel_button_fg_color, cancel_button_bg_color) = if enable {
             (COLOR_FG_DANGER_RED, COLOR_BG_DANGER_RED)
         } else {
             (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
         };
 
-        accept_display_name_button.apply_over(cx, live!(
-            enabled: (enable),
+        let mut accept_display_name_button = accept_display_name_button.clone();
+        script_apply_eval!(cx, accept_display_name_button, {
+            enabled: #(enable),
             draw_bg: {
-                color: (accept_button_bg_color),
-                border_color: (accept_button_fg_color),
+                color: #(accept_button_bg_color),
+                border_color: #(accept_button_fg_color),
             },
             draw_text: {
-                color: (accept_button_fg_color),
+                color: #(accept_button_fg_color),
             },
             draw_icon: {
-                color: (accept_button_fg_color),
+                color: #(accept_button_fg_color),
             }
-        ));
-        cancel_display_name_button.apply_over(cx, live!(
-            enabled: (enable),
+        });
+        let mut cancel_display_name_button = cancel_display_name_button.clone();
+        script_apply_eval!(cx, cancel_display_name_button, {
+            enabled: #(enable),
             draw_bg: {
-                color: (cancel_button_bg_color),
-                border_color: (cancel_button_fg_color),
+                color: #(cancel_button_bg_color),
+                border_color: #(cancel_button_fg_color),
             },
             draw_text: {
-                color: (cancel_button_fg_color),
+                color: #(cancel_button_fg_color),
             },
             draw_icon: {
-                color: (cancel_button_fg_color),
+                color: #(cancel_button_fg_color),
             }
-        ));
+        });
     }
 }
 

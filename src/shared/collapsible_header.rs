@@ -9,7 +9,6 @@
 
 use makepad_widgets::*;
 
-use crate::ApplyOverCompat;
 use crate::home::rooms_list::RoomsListScopeProps;
 
 use super::unread_badge::UnreadBadgeWidgetExt;
@@ -140,19 +139,15 @@ impl Widget for CollapsibleHeader {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if self.is_expanded {
-            self.icon(cx, ids!(collapse_icon)).apply_over(
-                cx,
-                live! {
-                    draw_icon: { rotation_angle: 180.0 }
-                },
-            );
+            let mut collapse_icon = self.icon(cx, ids!(collapse_icon));
+            script_apply_eval!(cx, collapse_icon, {
+                draw_icon: { rotation_angle: 180.0 }
+            });
         } else {
-            self.icon(cx, ids!(collapse_icon)).apply_over(
-                cx,
-                live! {
-                    draw_icon: { rotation_angle: 90.0 }
-                },
-            );
+            let mut collapse_icon = self.icon(cx, ids!(collapse_icon));
+            script_apply_eval!(cx, collapse_icon, {
+                draw_icon: { rotation_angle: 90.0 }
+            });
         }
         self.view.draw_walk(cx, scope, walk)
     }

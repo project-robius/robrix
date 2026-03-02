@@ -3,7 +3,7 @@
 use makepad_widgets::*;
 use matrix_sdk::{ruma::{matrix_uri::MatrixId, OwnedMxcUri}, OwnedServerName};
 
-use crate::{ApplyOverCompat, avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, sliding_sync::{current_user_id, submit_async_request, MatrixRequest}, utils};
+use crate::{avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, sliding_sync::{current_user_id, submit_async_request, MatrixRequest}, utils};
 
 use super::avatar::AvatarWidgetExt;
 
@@ -356,7 +356,7 @@ impl MatrixLinkPill {
         if let MatrixId::User(user_id) = matrix_id {
             // Apply red background for current user
             if current_user_id().is_some_and(|u| &u == user_id) {
-                self.view.apply_over(cx, live!{
+                script_apply_eval!(cx, self, {
                     draw_bg: { color: #d91b38}
                 });
             }

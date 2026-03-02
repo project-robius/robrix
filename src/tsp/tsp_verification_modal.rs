@@ -1,9 +1,8 @@
 
 use makepad_widgets::*;
-use crate::ApplyOverCompat;
 use tsp_sdk::AsyncSecureStore;
 
-use crate::{shared::styles::*, sliding_sync::current_user_id, tsp::{submit_tsp_request, TspRequest, TspVerificationDetails}};
+use crate::{sliding_sync::current_user_id, tsp::{submit_tsp_request, TspRequest, TspVerificationDetails}};
 
 script_mod! {
     link tsp_enabled
@@ -168,7 +167,7 @@ impl Widget for TspVerificationModal {
 
 impl WidgetMatchEvent for TspVerificationModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let accept_button = self.button(cx, ids!(accept_button));
+        let mut accept_button = self.button(cx, ids!(accept_button));
         let cancel_button = self.button(cx, ids!(cancel_button));
 
         let cancel_button_clicked = cancel_button.clicked(actions);
@@ -234,18 +233,18 @@ impl WidgetMatchEvent for TspVerificationModal {
                             accepted: false,
                         });
                         cancel_button.set_visible(cx, false);
-                        accept_button.apply_over(cx, live!(
+                        script_apply_eval!(cx, accept_button, {
                             text: "Okay",
                             draw_bg: {
-                                color: (COLOR_ACTIVE_PRIMARY),
+                                color: mod.widgets.COLOR_ACTIVE_PRIMARY,
                             },
                             draw_icon: {
-                                color: (COLOR_PRIMARY),
+                                color: mod.widgets.COLOR_PRIMARY,
                             }
                             draw_text: {
-                                color: (COLOR_PRIMARY),
+                                color: mod.widgets.COLOR_PRIMARY,
                             },
-                        ));
+                        });
                         new_state = TspVerificationModalState::RequestDeclined;
                     }
                     else {
@@ -300,19 +299,19 @@ impl WidgetMatchEvent for TspVerificationModal {
                         }
                     }
                     cancel_button.set_visible(cx, false);
-                    accept_button.apply_over(cx, live!(
+                    script_apply_eval!(cx, accept_button, {
                         enabled: true,
                         text: "Okay",
                         draw_bg: {
-                            color: (COLOR_ACTIVE_PRIMARY),
+                            color: mod.widgets.COLOR_ACTIVE_PRIMARY,
                         },
                         draw_icon: {
-                            color: (COLOR_PRIMARY),
+                            color: mod.widgets.COLOR_PRIMARY,
                         }
                         draw_text: {
-                            color: (COLOR_PRIMARY),
+                            color: mod.widgets.COLOR_PRIMARY,
                         }
-                    ));
+                    });
                     self.redraw(cx);
                 }
                 _ => {}

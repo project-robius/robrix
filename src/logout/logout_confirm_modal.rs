@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use makepad_widgets::*;
-use crate::ApplyOverCompat;
 use tokio::sync::Notify;
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
 use super::logout_state_machine::is_logout_past_point_of_no_return;
@@ -194,7 +193,7 @@ impl Widget for LogoutConfirmModal {
 impl WidgetMatchEvent for LogoutConfirmModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         let cancel_button = self.button(cx, ids!(cancel_button));
-        let confirm_button = self.button(cx, ids!(confirm_button));
+        let mut confirm_button = self.button(cx, ids!(confirm_button));
 
         let modal_dismissed = actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
         let cancel_clicked = cancel_button.clicked(actions);
@@ -248,9 +247,9 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                         self.set_message(cx, "The logout process encountered an error when communicating with the homeserver. Since your login session has been partially invalidated, Robrix must restart in order to continue to properly function.");
 
                         confirm_button.set_text(cx, "Restart now");
-                        confirm_button.apply_over(cx, live!{
+                        script_apply_eval!(cx, confirm_button, {
                             draw_bg: {
-                                color: (COLOR_FG_DANGER_RED)
+                                color: mod.widgets.COLOR_FG_DANGER_RED
                             }
                         });
                         confirm_button.set_enabled(cx, true);
@@ -273,9 +272,9 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                     self.set_message(cx, "Application is in an inconsistent state and needs to be restarted to continue.");
 
                     confirm_button.set_text(cx, "Restart now");
-                    confirm_button.apply_over(cx, live!{
+                    script_apply_eval!(cx, confirm_button, {
                         draw_bg: {
-                            color: (COLOR_FG_DANGER_RED)
+                            color: mod.widgets.COLOR_FG_DANGER_RED
                         }
                     });
                     confirm_button.set_enabled(cx, true);

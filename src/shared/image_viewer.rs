@@ -13,7 +13,6 @@ use makepad_widgets::{
 use matrix_sdk_ui::timeline::EventTimelineItem;
 use thiserror::Error;
 use crate::{
-    ApplyOverCompat,
     shared::{avatar::AvatarWidgetExt, timestamp::TimestampWidgetRefExt},
     sliding_sync::TimelineKind,
 };
@@ -484,27 +483,21 @@ impl Widget for ImageViewer {
 
             // Reapply zoom and pan if they differ from defaults
             if saved_zoom_level != 1.0 || saved_pan_offset.is_some() {
-                let rotated_image = self.view.image(cx, ids!(rotated_image));
-                let _width = self.capped_dimension.x * saved_zoom_level;
-                let _height = self.capped_dimension.y * saved_zoom_level;
+                let mut rotated_image = self.view.image(cx, ids!(rotated_image));
+                let width = self.capped_dimension.x * saved_zoom_level;
+                let height = self.capped_dimension.y * saved_zoom_level;
 
-                if let Some(_offset) = saved_pan_offset {
-                    rotated_image.apply_over(
-                        cx,
-                        live! {
-                            margin: { top: (offset.y), left: (offset.x) },
-                            width: (width),
-                            height: (height),
-                        },
-                    );
+                if let Some(offset) = saved_pan_offset {
+                    script_apply_eval!(cx, rotated_image, {
+                        margin: { top: #(offset.y), left: #(offset.x) },
+                        width: #(width),
+                        height: #(height),
+                    });
                 } else {
-                    rotated_image.apply_over(
-                        cx,
-                        live! {
-                            width: (width),
-                            height: (height),
-                        },
-                    );
+                    script_apply_eval!(cx, rotated_image, {
+                        width: #(width),
+                        height: #(height),
+                    });
                 }
             }
         }
@@ -554,13 +547,10 @@ impl Widget for ImageViewer {
                 // Only reset pan_offset on double-tap, not single tap
                 if fe.tap_count == 2 {
                     self.drag_state.pan_offset = Some(DVec2::default());
-                    let rotated_image_container = self.view.image(cx, ids!(rotated_image));
-                    rotated_image_container.apply_over(
-                        cx,
-                        live! {
-                            margin: { top: 0.0, left: 0.0 },
-                        },
-                    );
+                    let mut rotated_image_container = self.view.image(cx, ids!(rotated_image));
+                    script_apply_eval!(cx, rotated_image_container, {
+                        margin: { top: 0.0, left: 0.0 },
+                    });
                     rotated_image_container.redraw(cx);
                 }
                 self.ui_visible_toggle = !self.ui_visible_toggle;
@@ -579,16 +569,13 @@ impl Widget for ImageViewer {
                 if let Some(current_offset) = self.drag_state.pan_offset {
                     let drag_delta = fe.abs - self.drag_state.drag_start;
                     let new_offset = current_offset + drag_delta * self.config.pan_sensitivity;
-                    let rotated_image_container = self.view.image(cx, ids!(rotated_image));
-                    let _size = rotated_image_container.area().rect(cx).size;
-                    rotated_image_container.apply_over(
-                        cx,
-                        live! {
-                            margin: { top: (new_offset.y), left: (new_offset.x) },
-                            width: (size.x),
-                            height: (size.y)
-                        },
-                    );
+                    let mut rotated_image_container = self.view.image(cx, ids!(rotated_image));
+                    let size = rotated_image_container.area().rect(cx).size;
+                    script_apply_eval!(cx, rotated_image_container, {
+                        margin: { top: #(new_offset.y), left: #(new_offset.x) },
+                        width: #(size.x),
+                        height: #(size.y)
+                    });
 
                     // Update pan_offset with new position
                     self.drag_state.pan_offset = Some(new_offset);
@@ -839,13 +826,10 @@ impl ImageViewer {
         self.drag_state = DragState::default();
 
         // Reset image position and scale
-        let rotated_image_container = self.view.image(cx, ids!(rotated_image));
-        rotated_image_container.apply_over(
-            cx,
-            live! {
-                margin: { top: 0.0, left: 0.0 }
-            },
-        );
+        let mut rotated_image_container = self.view.image(cx, ids!(rotated_image));
+        script_apply_eval!(cx, rotated_image_container, {
+            margin: { top: 0.0, left: 0.0 }
+        });
         rotated_image_container.redraw(cx);
 
         self.update_rotation_animation(cx);
@@ -880,7 +864,7 @@ impl ImageViewer {
             return;
         }
         let texture = self.texture.clone();
-        let rotated_image = self.image(cx, ids!(rotated_image));
+        let mut rotated_image = self.image(cx, ids!(rotated_image));
         let (texture_width, texture_height) = texture
             .as_ref()
             .and_then(|texture| texture.get_format(cx).vec_width_height())
@@ -901,22 +885,19 @@ impl ImageViewer {
         };
         
         rotated_image.set_texture(cx, texture);
-        rotated_image.apply_over(
-            cx,
-            live! {
-                width: (capped_width),
-                height: (capped_height),
-            },
-        );
+        script_apply_eval!(cx, rotated_image, {
+            width: #(capped_width),
+            height: #(capped_height),
+        });
     }
 
     /// Adjust the zoom level of the image viewer based on the provided zoom factor.
     fn adjust_zoom(&mut self, cx: &mut Cx, zoom_factor: f64) {
-        let rotated_image = self.view.image(cx, ids!(rotated_image));
+        let mut rotated_image = self.view.image(cx, ids!(rotated_image));
         let size = rotated_image.area().rect(cx).size;
         let capped_dimension = self.capped_dimension;
         let target_zoom = self.drag_state.zoom_level * zoom_factor;
-        let (_width, _height) = if target_zoom < self.config.min_zoom {
+        let (width, height) = if target_zoom < self.config.min_zoom {
             (capped_dimension.x * self.config.min_zoom, capped_dimension.y * self.config.min_zoom)
         } else {
             let actual_zoom_factor = target_zoom / self.drag_state.zoom_level;
@@ -927,9 +908,9 @@ impl ImageViewer {
             (width, height)
         };
 
-        rotated_image.apply_over(cx, live! {
-            width: (width),
-            height: (height),
+        script_apply_eval!(cx, rotated_image, {
+            width: #(width),
+            height: #(height),
         });
     }
 
@@ -970,14 +951,11 @@ impl ImageViewer {
     /// status label is set to "Loading...".
     pub fn show_loading(&mut self, cx: &mut Cx) {
         let footer = self.view.view(cx, ids!(image_layer.footer));
-        footer
-            .view(cx, ids!(image_viewer_loading_spinner_view))
+        footer.view(cx, ids!(image_viewer_loading_spinner_view))
             .set_visible(cx, true);
-        footer
-            .label(cx, ids!(image_viewer_status_label))
+        footer.label(cx, ids!(image_viewer_status_label))
             .set_text(cx, "Loading...");
-        footer
-            .view(cx, ids!(image_viewer_forbidden_view))
+        footer.view(cx, ids!(image_viewer_forbidden_view))
             .set_visible(cx, false);
         footer.set_visible(cx, true);
         self.ui_visible_toggle = true;
@@ -994,14 +972,11 @@ impl ImageViewer {
             return;
         }
         let footer = self.view.view(cx, ids!(image_layer.footer));
-        footer
-            .view(cx, ids!(image_viewer_loading_spinner_view))
+        footer.view(cx, ids!(image_viewer_loading_spinner_view))
             .set_visible(cx, false);
-        footer
-            .view(cx, ids!(image_viewer_forbidden_view))
+        footer.view(cx, ids!(image_viewer_forbidden_view))
             .set_visible(cx, true);
-        footer
-            .label(cx, ids!(image_viewer_status_label))
+        footer.label(cx, ids!(image_viewer_status_label))
             .set_text(cx, &error.to_string());
         footer.set_visible(cx, true);
     }

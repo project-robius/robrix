@@ -16,56 +16,6 @@ macro_rules! live {
 
 pub type LivePtr = makepad_widgets::ScriptValue;
 
-pub trait ApplyOverCompat {
-    fn apply_over(self, cx: &mut makepad_widgets::Cx, script: makepad_widgets::ScriptMod);
-}
-
-impl<T> ApplyOverCompat for &mut T
-where
-    T: makepad_widgets::ScriptApply,
-{
-    fn apply_over(self, cx: &mut makepad_widgets::Cx, script: makepad_widgets::ScriptMod) {
-        cx.with_vm(|vm| self.script_apply_eval(vm, script));
-    }
-}
-
-impl<T> ApplyOverCompat for &T
-where
-    T: makepad_widgets::ScriptApply + Clone,
-{
-    fn apply_over(self, cx: &mut makepad_widgets::Cx, script: makepad_widgets::ScriptMod) {
-        let mut target = self.clone();
-        cx.with_vm(|vm| target.script_apply_eval(vm, script));
-    }
-}
-
-pub trait AnimatorCompat {
-    fn animator_in_state(
-        &self,
-        cx: &makepad_widgets::Cx,
-        check_state_pair: &[makepad_widgets::LiveId; 2],
-    ) -> bool;
-}
-
-impl AnimatorCompat for makepad_widgets::Animator {
-    fn animator_in_state(
-        &self,
-        cx: &makepad_widgets::Cx,
-        check_state_pair: &[makepad_widgets::LiveId; 2],
-    ) -> bool {
-        self.in_state(cx, check_state_pair)
-    }
-}
-
-pub trait AnimatorActionCompat {
-    fn is_animating(&self) -> bool;
-}
-
-impl AnimatorActionCompat for makepad_widgets::AnimatorAction {
-    fn is_animating(&self) -> bool {
-        matches!(self, makepad_widgets::AnimatorAction::Animating { .. })
-    }
-}
 
 pub fn widget_ref_from_live_ptr(
     cx: &mut makepad_widgets::Cx,

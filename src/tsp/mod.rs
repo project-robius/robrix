@@ -70,9 +70,9 @@ struct ReceiveLoopTask {
 
 
 /// The global singleton TSP state, storing all known TSP wallets.
-static TSP_STATE: Mutex<TspState> = Mutex::new(TspState::new());
+static TSP_STATE: OnceLock<Mutex<TspState>> = OnceLock::new();
 pub fn tsp_state_ref() -> &'static Mutex<TspState> {
-    &TSP_STATE
+    TSP_STATE.get_or_init(|| Mutex::new(TspState::new()))
 }
 
 /// The current actively-used (singleton) state of TSP wallets known to Robrix.
@@ -95,7 +95,7 @@ pub struct TspState {
     pending_verification_requests: SmallVec<[TspVerificationDetails; 1]>,
 }
 impl TspState {
-    const fn new() -> Self {
+    fn new() -> Self {
         Self {
             current_wallet: None,
             other_wallets: Vec::new(),
@@ -470,7 +470,7 @@ async fn inner_tsp_init() -> anyhow::Result<()> {
             &private_vid,
         );
     }
-    *TSP_STATE.lock().unwrap() = new_tsp_state;
+    *tsp_state_ref().lock().unwrap() = new_tsp_state;
     Ok(())
 }
 
