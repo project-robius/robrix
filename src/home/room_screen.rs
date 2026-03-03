@@ -30,7 +30,7 @@ use crate::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
-    room::{BasicRoomDetails, room_input_bar::RoomInputBarState, typing_notice::TypingNoticeWidgetExt},
+    room::{BasicRoomDetails, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
         avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
@@ -637,7 +637,7 @@ impl Drop for RoomScreen {
         // and that other RoomScreen instances can show this room in the future.
         // RoomScreen will be dropped whenever its widget instance is destroyed, e.g.,
         // when a Tab is closed or the app is resized to a different AdaptiveView layout.
-        self.timeline_kind = None;
+        self.hide_timeline();
     }
 }
 impl Widget for RoomScreen {
@@ -2346,10 +2346,10 @@ impl RoomScreen {
     }
 
     /// Invoke this when this RoomScreen/timeline is being hidden or no longer being shown.
-    fn hide_timeline(&mut self, cx: &mut Cx) {
+    fn hide_timeline(&mut self) {
         let Some(timeline_kind) = self.timeline_kind.clone() else { return };
 
-        self.save_state(cx);
+        self.save_state();
 
         // When closing a room view, we do the following with non-persistent states.
         // (This should be the inverse of what's done in `show_timeline()`.)
@@ -2377,16 +2377,18 @@ impl RoomScreen {
     /// and saves it to the map of `TIMELINE_STATES` such that it can be restored later.
     ///
     /// Note: after calling this function, the widget's `tl_state` will be `None`.
-    fn save_state(&mut self, cx: &mut Cx) {
+    fn save_state(&mut self) {
         let Some(mut tl) = self.tl_state.take() else {
             error!("Timeline::save_state(): skipping due to missing state, room {:?}", self.room_name_id);
             return;
         };
 
-        let portal_list = self.portal_list(cx, ids!(list));
+        let portal_list = self.child_by_path(ids!(timeline.list)).as_portal_list();
+        let room_input_bar = self.child(id!(room_input_bar)).as_room_input_bar();
+        log!("Saving state for room {:?}: first_id: {:?}, scroll: {}", self.room_name_id, portal_list.first_id(), portal_list.scroll_position());
         let state = SavedState {
             first_index_and_scroll: Some((portal_list.first_id(), portal_list.scroll_position())),
-            room_input_bar_state: self.room_input_bar(cx, ids!(room_input_bar)).save_state(cx),
+            room_input_bar_state: room_input_bar.save_state(),
         };
         tl.saved_state = state;
         // Clear room_members to avoid wasting memory (in case this room is never re-opened).
@@ -2404,18 +2406,22 @@ impl RoomScreen {
             first_index_and_scroll,
             room_input_bar_state,
         } = &mut tl_state.saved_state;
+
         // 1. Restore the position of the timeline.
+        let portal_list = self.portal_list(cx, ids!(timeline.list));
         if let Some((first_index, scroll_from_first_id)) = first_index_and_scroll {
-            self.portal_list(cx, ids!(timeline.list))
-                .set_first_id_and_scroll(*first_index, *scroll_from_first_id);
+            log!("Restoring state for room {:?}: first_id: {:?}, scroll: {}", self.room_name_id, first_index, scroll_from_first_id);
+            portal_list.set_first_id_and_scroll(*first_index, *scroll_from_first_id);
+            portal_list.set_tail_range(false);
         } else {
             // If the first index is not set, then the timeline has not yet been scrolled by the user,
             // so we set the portal list to "tail" (track) the bottom of the list.
-            self.portal_list(cx, ids!(timeline.list)).set_tail_range(true);
+            log!("Restoring state for room {:?}: first_id: None, scroll: None", self.room_name_id);
+            portal_list.set_tail_range(true);
         }
 
         // 2. Restore the state of the room input bar.
-        let room_input_bar = self.view.room_input_bar(cx, ids!(room_input_bar));
+        let room_input_bar = self.child(id!(room_input_bar)).as_room_input_bar();
         let saved_room_input_bar_state = std::mem::take(room_input_bar_state);
         room_input_bar.restore_state(
             cx,
@@ -2451,7 +2457,7 @@ impl RoomScreen {
             return;
         }
 
-        self.hide_timeline(cx);
+        self.hide_timeline();
         // Reset the the state of the inner loading pane.
         self.loading_pane(cx, ids!(loading_pane)).take_state();
 

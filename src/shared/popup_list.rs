@@ -156,7 +156,7 @@ script_mod! {
                 let rect_size = self.rect_size;
                 let time = self.anim_time / self.anim_duration;
                 if self.debug_progress_bar > 0.5 {
-                    time = sin(self.time * PI)
+                    time = sin(self.draw_pass.time * PI)
                 }
                 if self.display_progress_bar > 0.5 {
                     if self.direction > 0.5 {

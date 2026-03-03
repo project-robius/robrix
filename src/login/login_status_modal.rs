@@ -12,7 +12,7 @@ script_mod! {
         align: Align{x: 0.5}
 
         RoundedView {
-            width: 400
+            width: 350
             height: Fit,
             flow: Down,
             align: Align{x: 0.5}

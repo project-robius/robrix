@@ -20,7 +20,7 @@ use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, TimelineKind, UserPowerLevels}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -214,7 +214,7 @@ impl RoomInputBar {
         room_screen_props: &RoomScreenProps,
     ) {
         let mentionable_text_input = self.mentionable_text_input(cx, ids!(mentionable_text_input));
-        let text_input = mentionable_text_input.text_input_ref(cx);
+        let text_input = mentionable_text_input.text_input_ref();
 
         // Clear the replying-to preview pane if the "cancel reply" button was clicked
         // or if the `Escape` key was pressed within the message input box.
@@ -288,7 +288,7 @@ impl RoomInputBar {
         if self.button(cx, ids!(send_message_button)).clicked(actions)
             || text_input.returned(actions).is_some_and(|(_, m)| m.is_primary())
         {
-            let entered_text = mentionable_text_input.text(cx).trim().to_string();
+            let entered_text = mentionable_text_input.text().trim().to_string();
             if !entered_text.is_empty() {
                 let message = mentionable_text_input.create_message_with_mentions(&entered_text);
                 let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
@@ -593,16 +593,16 @@ impl RoomInputBarRef {
     }
 
     /// Save a snapshot of the UI state of this `RoomInputBar`.
-    pub fn save_state(&self, cx: &mut Cx) -> RoomInputBarState {
+    pub fn save_state(&self) -> RoomInputBarState {
         let Some(inner) = self.borrow() else { return Default::default() };
         // Clear the location preview. We don't save this state because the
         // current location might change by the next time the user opens this same room.
-        inner.location_preview(cx, ids!(location_preview)).clear();
+        inner.child(id!(location_preview)).as_location_preview().clear();
         RoomInputBarState {
             was_replying_preview_visible: inner.was_replying_preview_visible,
             replying_to: inner.replying_to.clone(),
-            editing_pane_state: inner.editing_pane(cx, ids!(editing_pane)).save_state(cx),
-            text_input_state: inner.text_input(cx, ids!(input_bar.mentionable_text_input.text_input)).save_state(),
+            editing_pane_state: inner.child(id!(editing_pane)).as_editing_pane().save_state(),
+            text_input_state: inner.child_by_path(ids!(input_bar.mentionable_text_input.text_input)).as_text_input().save_state(),
         }
     }
 

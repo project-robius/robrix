@@ -27,7 +27,7 @@ script_mod! {
                 off: {
                     from: {all: Forward {duration: 0.1}}
                     apply: {
-                        draw_bg +: {down: 0.0, hover: 0.0}
+                        draw_bg: {down: 0.0, hover: 0.0}
                     }
                 }
 
@@ -37,7 +37,7 @@ script_mod! {
                         state_down: Forward {duration: 0.01}
                     }
                     apply: {
-                        draw_bg +: {
+                        draw_bg: {
                             down: 0.0,
                             hover: [{time: 0.0, value: 1.0}],
                         }
@@ -47,7 +47,7 @@ script_mod! {
                 drag: {
                     from: { all: Forward { duration: 0.1 }}
                     apply: {
-                        draw_bg +: {
+                        draw_bg: {
                             down: [{time: 0.0, value: 1.0}],
                             hover: 1.0,
                         }
@@ -72,7 +72,7 @@ script_mod! {
                 off: {
                     from: {all: Forward {duration: 0.1}}
                     apply: {
-                        draw_button +: {hover: 0.0}
+                        draw_button: {hover: 0.0}
                     }
                 }
 
@@ -80,7 +80,7 @@ script_mod! {
                     cursor: MouseCursor.Hand,
                     from: {all: Snap}
                     apply: {
-                        draw_button +: {hover: 1.0}
+                        draw_button: {hover: 1.0}
                     }
                 }
             }

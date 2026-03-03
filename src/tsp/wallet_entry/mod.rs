@@ -165,7 +165,7 @@ impl Widget for WalletEntry {
                         metadata.wallet_name
                     ).into(),
                     accept_button_text: Some("Remove".into()),
-                    on_accept_clicked: Some(Box::new(move |cx| {
+                    on_accept_clicked: Some(Box::new(move |_cx| {
                         submit_tsp_request(TspRequest::RemoveWallet(metadata_clone));
                     })),
                     ..Default::default()

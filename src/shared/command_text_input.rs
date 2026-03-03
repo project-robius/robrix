@@ -212,7 +212,7 @@ pub struct CommandTextInput {
 
 impl Widget for CommandTextInput {
     fn set_text(&mut self, cx: &mut Cx, v: &str) {
-        self.text_input_ref(cx).set_text(cx, v);
+        self.text_input_ref().set_text(cx, v);
     }
 
     fn text(&self) -> String {
@@ -230,19 +230,19 @@ impl Widget for CommandTextInput {
 
         if self.is_search_input_focus_pending {
             self.is_search_input_focus_pending = false;
-            self.search_input_ref(cx).set_key_focus(cx);
+            self.search_input_ref().set_key_focus(cx);
         }
 
         if self.is_text_input_focus_pending {
             self.is_text_input_focus_pending = false;
-            self.text_input_ref(cx).set_key_focus(cx);
+            self.text_input_ref().set_key_focus(cx);
         }
 
         DrawStep::done()
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if cx.has_key_focus(self.key_controller_text_input_ref(cx).area()) {
+        if cx.has_key_focus(self.key_controller_text_input_ref().area()) {
             if let Event::KeyDown(key_event) = event {
                 let popup_visible = self.view(cx, ids!(popup)).visible();
 
@@ -282,15 +282,15 @@ impl Widget for CommandTextInput {
 
         self.deref.handle_event(cx, event, scope);
 
-        if cx.has_key_focus(self.text_input_ref(cx).area()) {
+        if cx.has_key_focus(self.text_input_ref().area()) {
             if let Event::TextInput(input_event) = event {
                 self.on_text_inserted(cx, scope, &input_event.input);
             }
 
             if self.inline_search {
                 if let Some(trigger_pos) = self.trigger_position {
-                    let current_pos = get_head(&self.text_input_ref(cx));
-                    let current_search = self.search_text(cx);
+                    let current_pos = get_head(&self.text_input_ref());
+                    let current_search = self.search_text();
 
                     if current_pos < trigger_pos || graphemes(&current_search).any(is_whitespace) {
                         self.hide_popup(cx);
@@ -345,17 +345,17 @@ impl Widget for CommandTextInput {
             }
 
             for action in actions.iter().filter_map(|a| a.as_widget_action()) {
-                if action.widget_uid == self.key_controller_text_input_ref(cx).widget_uid() {
+                if action.widget_uid == self.key_controller_text_input_ref().widget_uid() {
                     if let TextInputAction::KeyFocusLost = action.cast() {
                         self.hide_popup(cx);
                         self.redraw(cx);
                     }
                 }
 
-                if action.widget_uid == self.search_input_ref(cx).widget_uid() {
+                if action.widget_uid == self.search_input_ref().widget_uid() {
                     if let TextInputAction::Changed(search) = action.cast() {
                         // disallow multiline input
-                        self.search_input_ref(cx)
+                        self.search_input_ref()
                             .set_text(cx, search.lines().next().unwrap_or_default());
 
                         cx.widget_action(self.widget_uid(), InternalAction::ShouldBuildItems);
@@ -365,7 +365,7 @@ impl Widget for CommandTextInput {
             }
         }
 
-        self.prev_cursor_position = get_head(&self.text_input_ref(cx));
+        self.prev_cursor_position = get_head(&self.text_input_ref());
         self.ensure_popup_consistent(cx);
     }
 }
@@ -401,7 +401,7 @@ impl CommandTextInput {
     fn on_text_inserted(&mut self, cx: &mut Cx, _scope: &mut Scope, inserted: &str) {
         if graphemes(inserted).last() == self.trigger_grapheme() {
             self.show_popup(cx);
-            self.trigger_position = Some(get_head(&self.text_input_ref(cx)));
+            self.trigger_position = Some(get_head(&self.text_input_ref()));
 
             if self.inline_search {
                 self.view(cx, ids!(search_input_wrapper))
@@ -438,11 +438,11 @@ impl CommandTextInput {
         let mut to_remove = self.trigger_grapheme().unwrap_or_default().to_string();
 
         if self.inline_search {
-            to_remove.push_str(&self.search_text(cx));
+            to_remove.push_str(&self.search_text());
         }
 
-        let text = self.text_input_ref(cx).text();
-        let end = get_head(&self.text_input_ref(cx));
+        let text = self.text_input_ref().text();
+        let end = get_head(&self.text_input_ref());
         // Use graphemes instead of byte indices
         let text_graphemes: Vec<&str> = text.graphemes(true).collect();
         let mut byte_index = 0;
@@ -474,7 +474,7 @@ impl CommandTextInput {
             .graphemes(true)
             .count();
 
-        self.text_input_ref(cx).set_cursor(
+        self.text_input_ref().set_cursor(
             cx,
             Cursor {
                 index: new_cursor_pos,
@@ -505,13 +505,13 @@ impl CommandTextInput {
     /// Clear all text and hide the popup going back to initial state.
     pub fn reset(&mut self, cx: &mut Cx) {
         self.hide_popup(cx);
-        self.text_input_ref(cx).set_text(cx, "");
+        self.text_input_ref().set_text(cx, "");
     }
 
     fn clear_popup(&mut self, cx: &mut Cx) {
         self.trigger_position = None;
-        self.search_input_ref(cx).set_text(cx, "");
-        self.search_input_ref(cx).set_cursor(
+        self.search_input_ref().set_text(cx, "");
+        self.search_input_ref().set_cursor(
             cx,
             Cursor {
                 index: 0,
@@ -553,14 +553,14 @@ impl CommandTextInput {
     /// Get the current search query.
     ///
     /// You probably want this for filtering purposes when updating the items.
-    pub fn search_text(&self, cx: &Cx) -> String {
+    pub fn search_text(&self) -> String {
         // Define maximum search text length to prevent performance issues with very long search texts
         const MAX_SEARCH_TEXT_LENGTH: usize = 100;
 
         if self.inline_search {
             if let Some(trigger_pos) = self.trigger_position {
-                let text = self.text_input_ref(cx).text();
-                let head = get_head(&self.text_input_ref(cx));
+                let text = self.text_input_ref().text();
+                let head = get_head(&self.text_input_ref());
 
                 if head > trigger_pos {
                     // Parse text into graphemes (Unicode grapheme clusters)
@@ -661,7 +661,7 @@ impl CommandTextInput {
             }
         } else {
             // Non-inline search mode
-            self.search_input_ref(cx).text()
+            self.search_input_ref().text()
         }
     }
 
@@ -695,24 +695,24 @@ impl CommandTextInput {
     }
 
     /// Returns a reference to the inner `TextInput` widget.
-    pub fn text_input_ref(&self, cx: &Cx) -> TextInputRef {
-        self.text_input(cx, ids!(text_input))
+    pub fn text_input_ref(&self) -> TextInputRef {
+        self.child(id!(text_input)).as_text_input()
     }
 
     /// Returns a reference to the inner `TextInput` widget used for search.
-    pub fn search_input_ref(&self, cx: &Cx) -> TextInputRef {
-        self.text_input(cx, ids!(search_input))
+    pub fn search_input_ref(&self) -> TextInputRef {
+        self.child(id!(search_input)).as_text_input()
     }
 
     fn trigger_grapheme(&self) -> Option<&str> {
         self.trigger.as_ref().and_then(|t| graphemes(t).next())
     }
 
-    fn key_controller_text_input_ref(&self, cx: &Cx) -> TextInputRef {
+    fn key_controller_text_input_ref(&self) -> TextInputRef {
         if self.inline_search {
-            self.text_input_ref(cx)
+            self.text_input_ref()
         } else {
-            self.search_input_ref(cx)
+            self.search_input_ref()
         }
     }
 
@@ -818,18 +818,18 @@ impl CommandTextInputRef {
     }
 
     /// See [`CommandTextInput::text_input_ref()`].
-    pub fn text_input_ref(&self, cx: &Cx) -> TextInputRef {
+    pub fn text_input_ref(&self) -> TextInputRef {
         self.borrow()
             .map_or(WidgetRef::empty().as_text_input(), |inner| {
-                inner.text_input_ref(cx)
+                inner.text_input_ref()
             })
     }
 
     /// See [`CommandTextInput::search_input_ref()`].
-    pub fn search_input_ref(&self, cx: &Cx) -> TextInputRef {
+    pub fn search_input_ref(&self) -> TextInputRef {
         self.borrow()
             .map_or(WidgetRef::empty().as_text_input(), |inner| {
-                inner.search_input_ref(cx)
+                inner.search_input_ref()
             })
     }
 
@@ -848,9 +848,9 @@ impl CommandTextInputRef {
     }
 
     /// See [`CommandTextInput::search_text()`].
-    pub fn search_text(&self, cx: &Cx) -> String {
+    pub fn search_text(&self) -> String {
         self.borrow()
-            .map_or(String::new(), |inner| inner.search_text(cx))
+            .map_or(String::new(), |inner| inner.search_text())
     }
 }
 

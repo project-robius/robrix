@@ -10,7 +10,7 @@ use matrix_sdk::{
 };
 use matrix_sdk_ui::timeline::{EventTimelineItem, MsgLikeKind, TimelineEventItemId, TimelineItemContent};
 
-use crate::shared::mentionable_text_input::MentionableTextInputWidgetExt;
+use crate::shared::mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt};
 use crate::{
     shared::popup_list::{enqueue_popup_notification, PopupKind},
     sliding_sync::{submit_async_request, MatrixRequest, TimelineKind},
@@ -201,7 +201,7 @@ impl Widget for EditingPane {
 
             let edit_text_input = self
                 .mentionable_text_input(cx, ids!(editing_content.edit_text_input))
-                .text_input_ref(cx);
+                .text_input_ref();
 
             // Hide the editing pane if the cancel button was clicked
             // or if the `Escape` key was pressed within the edit text input.
@@ -470,8 +470,8 @@ impl EditingPane {
         self.animator_play(cx, ids!(panel.show));
 
         // Set the text input's cursor to the end and give it key focus.
-        let inner_text_input = edit_text_input.text_input_ref(cx);
-        let text_len = edit_text_input.text(cx).len();
+        let inner_text_input = edit_text_input.text_input_ref();
+        let text_len = edit_text_input.text().len();
         inner_text_input.set_cursor(
             cx,
             Cursor { index: text_len, prefer_next_row: false },
@@ -482,12 +482,12 @@ impl EditingPane {
     }
 
     /// Returns the state of this `EditingPane`, if any.
-    pub fn save_state(&self, cx: &mut Cx) -> Option<EditingPaneState> {
+    pub fn save_state(&self) -> Option<EditingPaneState> {
         self.info.as_ref().map(|info| EditingPaneState {
             event_tl_item: info.event_tl_item.clone(),
-            text_input_state: self
-                .mentionable_text_input(cx, ids!(editing_content.edit_text_input))
-                .text_input_ref(cx)
+            text_input_state: self.child_by_path(ids!(editing_content.edit_text_input))
+                .as_mentionable_text_input()
+                .text_input_ref()
                 .save_state(),
         })
     }
@@ -501,7 +501,7 @@ impl EditingPane {
     ) {
         let EditingPaneState { event_tl_item, text_input_state } = editing_pane_state;
         self.mentionable_text_input(cx, ids!(editing_content.edit_text_input))
-            .text_input_ref(cx)
+            .text_input_ref()
             .restore_state(cx, text_input_state);
         self.info = Some(EditingPaneInfo {
             event_tl_item,
@@ -563,8 +563,8 @@ impl EditingPaneRef {
     }
 
     /// See [`EditingPane::save_state()`].
-    pub fn save_state(&self, cx: &mut Cx) -> Option<EditingPaneState> {
-        self.borrow()?.save_state(cx)
+    pub fn save_state(&self) -> Option<EditingPaneState> {
+        self.borrow()?.save_state()
     }
 
     /// Restores the state of this `EditingPane` from the given `event_tl_item` and `text_input_state`.

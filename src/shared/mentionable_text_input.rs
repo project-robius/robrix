@@ -340,7 +340,7 @@ impl Widget for MentionableTextInput {
             .clone();
 
         if let Event::Actions(actions) = event {
-            let text_input_ref = self.cmd_text_input.text_input_ref(cx);
+            let text_input_ref = self.cmd_text_input.text_input_ref();
             let text_input_uid = text_input_ref.widget_uid();
             let text_input_area = text_input_ref.area();
             let has_focus = cx.has_key_focus(text_input_area);
@@ -353,7 +353,7 @@ impl Widget for MentionableTextInput {
             // Handle build items request
             if self.cmd_text_input.should_build_items(actions) {
                 if has_focus {
-                    let search_text = self.cmd_text_input.search_text(cx).to_lowercase();
+                    let search_text = self.cmd_text_input.search_text().to_lowercase();
                     self.update_user_list(cx, &search_text, scope);
                 } else if self.cmd_text_input.view(cx, ids!(popup)).visible() {
                     self.close_mention_popup(cx);
@@ -383,7 +383,7 @@ impl Widget for MentionableTextInput {
                     if self.can_notify_room != *can_notify_room {
                         self.can_notify_room = *can_notify_room;
                         if self.is_searching && has_focus {
-                            let search_text = self.cmd_text_input.search_text(cx).to_lowercase();
+                            let search_text = self.cmd_text_input.search_text().to_lowercase();
                             self.update_user_list(cx, &search_text, scope);
                         } else {
                             self.redraw(cx);
@@ -409,12 +409,12 @@ impl Widget for MentionableTextInput {
                 if !room_members.is_empty() {
                     // Members are now available, update the list
                     self.members_loading = false;
-                    let text_input = self.cmd_text_input.text_input(cx, ids!(text_input));
+                    let text_input = self.cmd_text_input.text_input_ref();
                     let text_input_area = text_input.area();
                     let is_focused = cx.has_key_focus(text_input_area);
 
                     if is_focused {
-                        let search_text = self.cmd_text_input.search_text(cx).to_lowercase();
+                        let search_text = self.cmd_text_input.search_text().to_lowercase();
                         self.update_user_list(cx, &search_text, scope);
                     }
                 }
@@ -424,6 +424,11 @@ impl Widget for MentionableTextInput {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.cmd_text_input.draw_walk(cx, scope, walk)
+    }
+
+    /// Returns the current text content
+    fn text(&self) -> String {
+        self.cmd_text_input.text_input_ref().text()
     }
 }
 
@@ -659,14 +664,14 @@ impl MentionableTextInput {
         if has_items {
             popup.set_visible(cx, true);
             if self.is_searching {
-                self.cmd_text_input.text_input_ref(cx).set_key_focus(cx);
+                self.cmd_text_input.text_input_ref().set_key_focus(cx);
             }
         } else if self.is_searching {
             // If we're searching but have no items, show "no matches" message
             // Keep the popup open so users can correct their search
             self.show_no_matches_indicator(cx);
             popup.set_visible(cx, true);
-            self.cmd_text_input.text_input_ref(cx).set_key_focus(cx);
+            self.cmd_text_input.text_input_ref().set_key_focus(cx);
         } else {
             // Only hide popup if we're not actively searching
             popup.set_visible(cx, false);
@@ -679,7 +684,7 @@ impl MentionableTextInput {
         // This is good practice to maintain signature consistency with other methods
         // and allow for future scope-based enhancements
 
-        let text_input_ref = self.cmd_text_input.text_input_ref(cx);
+        let text_input_ref = self.cmd_text_input.text_input_ref();
         let current_text = text_input_ref.text();
         let head = text_input_ref.borrow().map_or(0, |p| p.cursor().index);
 
@@ -747,7 +752,7 @@ impl MentionableTextInput {
             return;
         }
 
-        let cursor_pos = self.cmd_text_input.text_input_ref(cx).borrow().map_or(0, |p| p.cursor().index);
+        let cursor_pos = self.cmd_text_input.text_input_ref().borrow().map_or(0, |p| p.cursor().index);
 
         // Check if we're currently searching and the @ symbol was deleted
         if self.is_searching {
@@ -1016,7 +1021,7 @@ impl MentionableTextInput {
 
         // Maintain text input focus
         if self.is_searching {
-            self.cmd_text_input.text_input_ref(cx).set_key_focus(cx);
+            self.cmd_text_input.text_input_ref().set_key_focus(cx);
         }
     }
 
@@ -1042,7 +1047,7 @@ impl MentionableTextInput {
 
         // Maintain text input focus so user can continue typing
         if self.is_searching {
-            self.cmd_text_input.text_input_ref(cx).set_key_focus(cx);
+            self.cmd_text_input.text_input_ref().set_key_focus(cx);
         }
     }
 
@@ -1074,19 +1079,11 @@ impl MentionableTextInput {
         self.redraw(cx);
     }
 
-    /// Returns the current text content
-    pub fn text(&self, cx: &Cx) -> String {
-        self.cmd_text_input.text_input_ref(cx).text()
-    }
-
     /// Sets the text content
     pub fn set_text(&mut self, cx: &mut Cx, text: &str) {
-        self.cmd_text_input.text_input_ref(cx).set_text(cx, text);
+        self.cmd_text_input.text_input_ref().set_text(cx, text);
         self.redraw(cx);
     }
-
-
-
 
     /// Sets whether the current user can notify the entire room (@room mention)
     pub fn set_can_notify_room(&mut self, can_notify: bool) {
@@ -1097,28 +1094,15 @@ impl MentionableTextInput {
     pub fn can_notify_room(&self) -> bool {
         self.can_notify_room
     }
-
-
 }
 
 impl MentionableTextInputRef {
-    pub fn text(&self, cx: &Cx) -> String {
-        self.borrow().map_or_else(String::new, |inner| inner.text(cx))
-    }
-
     /// Returns a reference to the inner `TextInput` widget.
-    pub fn text_input_ref(&self, cx: &Cx) -> TextInputRef {
+    pub fn text_input_ref(&self) -> TextInputRef {
         self.borrow()
-            .map(|inner| inner.cmd_text_input.text_input_ref(cx))
+            .map(|inner| inner.cmd_text_input.text_input_ref())
             .unwrap_or_default()
     }
-
-    pub fn set_text(&self, cx: &mut Cx, text: &str) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.set_text(cx, text);
-        }
-    }
-
 
     /// Sets whether the current user can notify the entire room (@room mention)
     pub fn set_can_notify_room(&self, can_notify: bool) {
@@ -1131,7 +1115,6 @@ impl MentionableTextInputRef {
     pub fn can_notify_room(&self) -> bool {
         self.borrow().is_some_and(|inner| inner.can_notify_room())
     }
-
 
     /// Returns the mentions actually present in the given html message content.
     fn get_real_mentions_in_html_text(&self, html: &str) -> Mentions {

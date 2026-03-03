@@ -20,8 +20,6 @@ script_mod! {
 
     mod.widgets.ICON_COLLAPSE = crate_resource("self://resources/icons/triangle_fill.svg")
 
-
-
     mod.widgets.COLOR_HEADER_FG = #F;
 
     mod.widgets.COLOR_HEADER_BG = (mod.widgets.COLOR_ROBRIX_PURPLE); // the purple color from the Robrix logo
@@ -44,13 +42,14 @@ script_mod! {
         }
 
         collapse_icon := IconRotated {
+            align: Align{ x: 0.5, y: 0.5 },
             margin: Inset{left: 5, right: 8, top: 0, bottom: 0},
             draw_icon +: {
                 svg: (mod.widgets.ICON_COLLAPSE),
                 rotation_angle: 180.0, // start in the "expanded" state
                 color: (mod.widgets.COLOR_HEADER_FG),
             }
-            icon_walk: Walk{ width: 14, height: Fit, margin: 0, }
+            icon_walk: Walk { width: 15, height: 15 }
         }
 
         label := Label {
