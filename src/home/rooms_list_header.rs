@@ -17,11 +17,10 @@ script_mod! {
 
     mod.widgets.RoomsListHeader = #(RoomsListHeader::register_widget(vm)) {
         width: Fill,
-        height: 30,
+        height: Fit,
         padding: Inset{bottom: 4}
         flow: Right,
         visible: true,
-        align: Align{x: 0, y: 0.5}
         spacing: 3,
 
         header_title := Label {
@@ -38,7 +37,6 @@ script_mod! {
 
         View {
             width: Fit, height: Fit,
-            align: Align{x: 0, y: 0.5},
             margin: Inset{right: 3}
             flow: Overlay,
 
