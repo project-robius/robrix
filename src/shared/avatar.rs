@@ -443,10 +443,10 @@ impl From<(OwnedUserId, Option<String>, OwnedRoomId, Arc<[u8]>)> for AvatarImage
 
 
 /// The currently-known state of an avatar for a user, room, or space.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub enum AvatarState {
     /// It isn't yet known if this user/room/space has an avatar.
-    Unknown,
+    #[default] Unknown,
     /// It is known that this user/room/space does or does not have an avatar.
     Known(Option<OwnedMxcUri>),
     /// The avatar is known to exist and has been fetched successfully.

@@ -108,7 +108,7 @@ script_mod! {
 
                 color: (COLOR_TEXT)
                 color_hover: instance(COLOR_TEXT)
-                color_active: instance(COLOR_PRIMARY)
+                color_active: instance(COLOR_TEXT)
 
                 get_color: fn() -> vec4 {
                     return mix(
@@ -137,7 +137,7 @@ script_mod! {
 
                 color: (COLOR_TEXT)
                 color_hover: instance(COLOR_TEXT)
-                color_active: instance(COLOR_PRIMARY)
+                color_active: instance(COLOR_TEXT)
 
                 text_style: REGULAR_TEXT {font_size: 11},
                 flow: Flow.Right{wrap: true},
@@ -193,7 +193,7 @@ script_mod! {
         ..mod.draw.DrawQuad
     }
 
-    let TreeLines = set_type_default() do #(TreeLines::register_widget(vm)) {
+    mod.widgets.TreeLines = set_type_default() do #(TreeLines::register_widget(vm)) {
         ..mod.widgets.SolidView
 
         width: 0, height: Fill
@@ -252,8 +252,7 @@ script_mod! {
     }
 
     // Entry for a child subspace (can be expanded)
-    let SubspaceEntry = set_type_default() do #(SubspaceEntry::register_widget(vm)) {
-        // ..mod.widgets.SolidView // TODO: do we need this, since I overrode the draw_bg pixel fn?
+    mod.widgets.SubspaceEntry = set_type_default() do #(SubspaceEntry::register_widget(vm)) {
 
         width: Fill,
         height: 44,
@@ -294,6 +293,7 @@ script_mod! {
             width: Fill
             height: Fit
             flow: Down
+            align: Align { y: 0.5 }
             spacing: 5,
             name_label := Label {
                 width: Fill, height: Fit,
@@ -303,7 +303,7 @@ script_mod! {
                 draw_text +: { text_style: REGULAR_TEXT {font_size: 10.5}, color: #1a1a1a, flow: Flow.Right{wrap: true} }
             }
             info_label := Label {
-                width: Fit, height: Fit,
+                width: Fill, height: Fit,
                 flow: Right
                 margin: 0
                 padding: 0
@@ -348,7 +348,7 @@ script_mod! {
                 }
                 draw_text +: {
                     text_style: REGULAR_TEXT {font_size: 9.5},
-                    color: (COLOR_PRIMARY),
+                    color: (COLOR_TEXT),
                 }
                 text: "View"
             }
@@ -382,7 +382,7 @@ script_mod! {
     }
 
     // Entry for a child room within a space, which cannot be expanded.
-    let RoomEntry = SubspaceEntry {
+    mod.widgets.RoomEntry = SubspaceEntry {
         cursor: MouseCursor.Default
 
         expand_icon := View {
@@ -541,8 +541,8 @@ script_mod! {
             flow: Down,
             spacing: 0.0
 
-            subspace_entry := SubspaceEntry {}
-            room_entry := RoomEntry {}
+            subspace_entry := mod.widgets.SubspaceEntry {}
+            room_entry := mod.widgets.RoomEntry {}
             subspace_loading := mod.widgets.SubspaceLoadingEntry {}
             status_label := mod.widgets.SpaceLobbyStatusLabel {}
             bottom_filler := View {
@@ -787,6 +787,7 @@ impl Widget for SubspaceEntry {
 }
 
 /// The subset of info in [`SpaceRoom`] that we display for each room/space.
+#[derive(Debug)]
 struct SpaceRoomInfo {
     id: OwnedRoomId,
     name: String,
@@ -863,10 +864,12 @@ enum TreeEntry {
 /// The view showing the lobby/homepage for a given space.
 #[derive(Script, ScriptHook, Widget)]
 pub struct SpaceLobbyScreen {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
 
     /// The space that is currently being displayed.
     #[rust] space_name_id: Option<RoomNameId>,
+    #[rust] space_avatar_state: AvatarState,
 
     /// The sender channel to submit space requests to the background service.
     #[rust] space_request_sender: Option<UnboundedSender<SpaceRequest>>,
@@ -909,6 +912,8 @@ impl Widget for SpaceLobbyScreen {
                     // Handle receiving top-level space details (join rule, member count).
                     Some(SpaceRoomListAction::TopLevelSpaceDetails(sr)) => {
                         if self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == &sr.room_id) {
+                            self.space_avatar_state = AvatarState::Known(sr.avatar_url.clone());
+                            self.space_avatar_state.update_from_cache(cx); // prefetch the avatar image
                             self.view.label(cx, ids!(header.space_info_label)).set_text(cx, &format!(
                                 "{}  ·  {} {}",
                                 match sr.join_rule {
@@ -997,6 +1002,20 @@ impl Widget for SpaceLobbyScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // Draw parent avatar from the SpaceRoom's avatar URL, or show initials.
+        let parent_avatar_ref = self.view.avatar(cx, ids!(parent_avatar));
+        if self.space_avatar_state.update_from_cache(cx).is_none_or(|data| {
+            parent_avatar_ref.show_image(
+                cx,
+                None,
+                |cx, img| utils::load_png_or_jpg(&img, cx, &data),
+            ).is_err()
+        }) {
+            let first_char = self.space_name_id.as_ref().and_then(|sni| sni.name_for_avatar())
+                .and_then(|name| utils::user_name_first_letter(name));
+            parent_avatar_ref.show_text(cx, None, None, first_char.unwrap_or("S"));
+        }
+        
         while let Some(widget_to_draw) = self.view.draw_walk(cx, scope, walk).step() {
             let portal_list_ref = widget_to_draw.as_portal_list();
             let Some(mut list) = portal_list_ref.borrow_mut() else { continue };

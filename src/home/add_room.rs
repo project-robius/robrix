@@ -625,7 +625,7 @@ impl Widget for AddRoomScreen {
                                 cx,
                                 None,
                                 None,
-                                frp.room_name_id.name_for_avatar().as_deref().unwrap_or("?"),
+                                frp.room_name_id.name_for_avatar().unwrap_or("?"),
                             );
                         }
                     }
@@ -636,7 +636,7 @@ impl Widget for AddRoomScreen {
                     _ => ("room", "Room"),
                 };
                 let room_name = fetched_room_summary.label(cx, ids!(room_name));
-                match frp.room_name_id.name_for_avatar().as_deref() {
+                match frp.room_name_id.name_for_avatar() {
                     Some(n) => room_name.set_text(cx, n),
                     _ => room_name.set_text(cx, &format!("Unnamed {room_or_space_uc}, ID: {}", frp.room_name_id.room_id())),
                 }
