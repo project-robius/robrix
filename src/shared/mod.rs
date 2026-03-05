@@ -2,6 +2,7 @@ use makepad_widgets::ScriptVm;
 
 pub mod avatar;
 pub mod collapsible_header;
+pub mod expand_arrow;
 pub mod confirmation_modal;
 pub mod helpers;
 pub mod html_or_plaintext;
@@ -26,6 +27,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     styles::script_mod(vm);
     helpers::script_mod(vm);
     icon_button::script_mod(vm);
+    expand_arrow::script_mod(vm);
     unread_badge::script_mod(vm);
     collapsible_header::script_mod(vm);
     timestamp::script_mod(vm);

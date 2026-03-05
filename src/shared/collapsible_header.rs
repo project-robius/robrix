@@ -8,9 +8,11 @@
 //! and its content is also drawn within that PortalList separately from its content.
 
 use makepad_widgets::*;
+use makepad_widgets::animator::Animate;
 
 use crate::home::rooms_list::RoomsListScopeProps;
 
+use super::expand_arrow::ExpandArrow;
 use super::unread_badge::UnreadBadgeWidgetExt;
 
 script_mod! {
@@ -18,12 +20,15 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.ICON_COLLAPSE = crate_resource("self://resources/icons/triangle_fill.svg")
-
     mod.widgets.COLOR_HEADER_FG = #F;
 
     mod.widgets.COLOR_HEADER_BG = (mod.widgets.COLOR_ROBRIX_PURPLE); // the purple color from the Robrix logo
 
+    mod.widgets.WhiteExpandArrow = set_type_default() do mod.widgets.ExpandArrow {
+        draw_bg +: {
+            color: #FFF
+        }
+    }
 
     mod.widgets.CollapsibleHeader = set_type_default() do #(CollapsibleHeader::register_widget(vm)) {
         ..mod.widgets.RoundedView
@@ -41,15 +46,9 @@ script_mod! {
             color: mod.widgets.COLOR_HEADER_BG
         }
 
-        collapse_icon := IconRotated {
-            align: Align{ x: 0.5, y: 0.5 },
-            margin: Inset{left: 5, right: 8, top: 0, bottom: 0},
-            draw_icon +: {
-                svg: (mod.widgets.ICON_COLLAPSE),
-                rotation_angle: 180.0, // start in the "expanded" state
-                color: (mod.widgets.COLOR_HEADER_FG),
-            }
-            icon_walk: Walk { width: 15, height: 15 }
+        collapse_icon := mod.widgets.WhiteExpandArrow {
+            width: 25, height: 25,
+            margin: Inset{left: 5, right: 6, top: 0, bottom: 0},
         }
 
         label := Label {
@@ -137,17 +136,11 @@ impl Widget for CollapsibleHeader {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if self.is_expanded {
-            let mut collapse_icon = self.icon(cx, ids!(collapse_icon));
-            script_apply_eval!(cx, collapse_icon, {
-                draw_icon +: { rotation_angle: 180.0 }
-            });
-        } else {
-            let mut collapse_icon = self.icon(cx, ids!(collapse_icon));
-            script_apply_eval!(cx, collapse_icon, {
-                draw_icon +: { rotation_angle: 90.0 }
-            });
+        // Set arrow and label state during draw to ensure child widgets are available.
+        if let Some(mut arrow) = self.view.child_by_path(ids!(collapse_icon)).borrow_mut::<ExpandArrow>() {
+            arrow.set_is_open_no_animate(self.is_expanded);
         }
+        self.view.child_by_path(ids!(label)).set_text(cx, self.category.as_str());
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -155,6 +148,9 @@ impl Widget for CollapsibleHeader {
 impl CollapsibleHeader {
     fn toggle_collapse(&mut self, cx: &mut Cx, _scope: &mut Scope) {
         self.is_expanded = !self.is_expanded;
+        if let Some(mut arrow) = self.view.child_by_path(ids!(collapse_icon)).borrow_mut::<ExpandArrow>() {
+            arrow.set_is_open(cx, self.is_expanded, Animate::Yes);
+        }
         self.redraw(cx);
         cx.widget_action(
             self.widget_uid(), 
@@ -177,7 +173,6 @@ impl CollapsibleHeaderRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.is_expanded = is_expanded;
             inner.category = category;
-            inner.label(cx, ids!(label)).set_text(cx, category.as_str());
             inner
                 .unread_badge(cx, ids!(unread_badge))
                 .update_counts(false, num_unread_mentions, 0);

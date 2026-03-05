@@ -16,6 +16,7 @@ use matrix_sdk_ui::spaces::SpaceRoom;
 use ruma::room::JoinRuleSummary;
 use tokio::sync::mpsc::UnboundedSender;
 use crate::shared::avatar::AvatarState;
+use crate::shared::expand_arrow::ExpandArrow;
 use crate::utils::replace_linebreaks_separators;
 use crate::{
     app::AppStateAction,
@@ -247,55 +248,6 @@ script_mod! {
         }
     }
 
-    // Animated expand/collapse arrow drawn via Sdf2d.
-    mod.widgets.ExpandArrowBase = #(ExpandArrow::register_widget(vm))
-
-    mod.widgets.ExpandArrow = set_type_default() do mod.widgets.ExpandArrowBase {
-        width: 14, height: 14,
-
-        draw_bg +: {
-            opened: instance(0.0)
-            color: instance(#888)
-
-            pixel: fn() {
-                let sz = 4.0
-                let c = vec2(self.rect_size.x * 0.5, self.rect_size.y * 0.5)
-                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
-                sdf.clear(vec4(0.0))
-
-                // Triangle pointing up; rotation maps opened to:
-                //   0.0 -> 90deg (right-pointing, collapsed)
-                //   1.0 -> 180deg (down-pointing, expanded)
-                sdf.rotate(self.opened * 0.5 * PI + 0.5 * PI, c.x, c.y)
-                sdf.move_to(c.x - sz, c.y + sz)
-                sdf.line_to(c.x, c.y - sz)
-                sdf.line_to(c.x + sz, c.y + sz)
-                sdf.close_path()
-                sdf.fill(self.color)
-
-                return sdf.result
-            }
-        }
-
-        animator: Animator{
-            expand: {
-                default: @collapsed
-                collapsed: AnimatorState{
-                    from: {all: Forward {duration: 0.15}}
-                    ease: ExpDecay {d1: 0.96, d2: 0.97}
-                    redraw: true
-                    apply: { draw_bg: {opened: 0.0} }
-                }
-                expanded: AnimatorState{
-                    from: {all: Forward {duration: 0.15}}
-                    ease: ExpDecay {d1: 0.98, d2: 0.95}
-                    redraw: true
-                    apply: { draw_bg: {opened: 1.0} }
-                }
-            }
-        }
-    }
-
     // Entry for a child subspace (can be expanded)
     mod.widgets.SubspaceEntry = #(SubspaceEntry::register_widget(vm)) {
 
@@ -321,8 +273,8 @@ script_mod! {
 
         // Expand/collapse arrow (animated triangle)
         expand_icon := mod.widgets.ExpandArrow {
-            width: 14,
-            height: 14,
+            width: 20,
+            height: 20,
             margin: Inset{ left: -6, right: 4 }
         }
 
@@ -692,33 +644,6 @@ impl Widget for TreeLines {
     }
 }
 
-/// Animated expand/collapse triangle arrow.
-#[derive(Script, ScriptHook, Widget, Animator)]
-pub struct ExpandArrow {
-    #[source] source: ScriptObjectRef,
-    #[apply_default] animator: Animator,
-    #[redraw] #[live] draw_bg: DrawQuad,
-    #[walk] walk: Walk,
-}
-
-impl ExpandArrow {
-    pub fn set_is_open(&mut self, cx: &mut Cx, is_open: bool, animate: Animate) {
-        self.animator_toggle(cx, is_open, animate, ids!(expand.expanded), ids!(expand.collapsed))
-    }
-}
-
-impl Widget for ExpandArrow {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
-        if self.animator_handle_event(cx, event).must_redraw() {
-            self.draw_bg.redraw(cx);
-        }
-    }
-
-    fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.draw_bg.draw_walk(cx, walk);
-        DrawStep::done()
-    }
-}
 
 /// A clickable entry for a child subspace.
 #[derive(Script, ScriptHook, Widget, Animator)]
