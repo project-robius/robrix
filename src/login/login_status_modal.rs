@@ -44,6 +44,7 @@ script_mod! {
             status := Label {
                 width: Fill
                 margin: Inset{top: 5, bottom: 5}
+                align: Align{x: 0.5, y: 0.0}
                 draw_text +: {
                     text_style: REGULAR_TEXT {
                         font_size: 11.5,

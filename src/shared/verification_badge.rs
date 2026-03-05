@@ -19,8 +19,7 @@ script_mod! {
     mod.widgets.VERIFICATION_UNK = crate_resource("self://resources/icons/verification_unk.svg")
 
     mod.widgets.VerificationIcon = Icon {
-
-        icon_walk: Walk{ width: 19, margin: 0}
+        icon_walk: Walk{ width: 19, height: 19, margin: 0}
         margin: Inset{left: 0, right: 3, top: 2, bottom: 0}
     }
 

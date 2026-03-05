@@ -114,6 +114,7 @@ script_mod! {
             loading_text := Label {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true},
+                margin: Inset { top: 4 }
                 draw_text +: {
                     wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),

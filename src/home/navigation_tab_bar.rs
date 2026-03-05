@@ -103,6 +103,7 @@ script_mod! {
         height: (NAVIGATION_TAB_BAR_SIZE - 8)
         flow: Overlay
         align: Align{ x: 0.5, y: 0.5 }
+
         our_own_avatar := Avatar {
             width: 45, height: 45
             // If no avatar picture, use white text on a dark background.
@@ -118,8 +119,8 @@ script_mod! {
         }
 
         View {
-            align: Align{ x: 0.5, y: 0.0 }
-            margin: Inset{ left: 42 }
+            align: Align { x: 0.5, y: 0.0 }
+            margin: Inset{ left: 39 }
             verification_badge := VerificationBadge {}
         }
     }

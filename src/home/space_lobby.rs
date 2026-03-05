@@ -40,10 +40,9 @@ script_mod! {
 
     // An entry in the RoomsList that will show the SpaceLobby when clicked.
     mod.widgets.SpaceLobbyEntry = #(SpaceLobbyEntry::register_widget(vm)) {
-
         visible: false, // only visible when a space is selected
         width: Fill,
-        height: 35, // same as CollapsibleHeader
+        height: Fit,
         flow: Right,
         align: Align{y: 0.5}
         padding: 5,
@@ -276,7 +275,7 @@ script_mod! {
             width: 16,
             height: 16,
             margin: Inset{ left: -6, right: 4 }
-            draw_bg.border_radius = 1.0 // less rounded
+            draw_bg.border_radius: 1.5 // less rounded
         }
 
         avatar := Avatar { width: 32, height: 32, margin: Inset{right: 8} }

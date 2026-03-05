@@ -26,7 +26,7 @@ script_mod! {
             width: Fill,
             height: Fit,
             padding: 0
-            margin: Inset{left: 5, top: -2}
+            margin: Inset{left: 5, top: -1}
             flow: Right, // do not wrap
             text: "All Rooms"
             draw_text +: {
