@@ -762,7 +762,7 @@ impl Widget for SubspaceEntry {
         // NOTE: Use child_by_path instead of widget tree-based lookups
         //       (e.g., self.view.view(), self.view.button()) because these
         //       fail for portal list items.
-        let buttons_view_ref = self.view.child_by_path(&[live_id!(buttons_view)]);
+        let buttons_view_ref = self.view.child_by_path(ids!(buttons_view));
         let buttons_view_rect = buttons_view_ref.area().rect(cx);
         let are_buttons_visible = self.show_buttons_view;
         match event.hits_with_test(cx, self.view.area(), |abs, rect, _| {
@@ -772,7 +772,7 @@ impl Widget for SubspaceEntry {
                 self.animator_play(cx, ids!(hover.on));
                 if !self.show_buttons_view {
                     self.show_buttons_view = true;
-                    self.view.child_by_path(&[live_id!(buttons_view)]).set_visible(cx, true);
+                    self.view.child_by_path(ids!(buttons_view)).set_visible(cx, true);
                     self.redraw(cx);
                 }
             }
@@ -781,7 +781,7 @@ impl Widget for SubspaceEntry {
             Hit::FingerHoverOver(_) if !self.show_buttons_view => {
                 self.animator_play(cx, ids!(hover.on));
                 self.show_buttons_view = true;
-                self.view.child_by_path(&[live_id!(buttons_view)]).set_visible(cx, true);
+                self.view.child_by_path(ids!(buttons_view)).set_visible(cx, true);
                 self.redraw(cx);
             }
             Hit::FingerHoverOut(fe) => {
@@ -793,7 +793,7 @@ impl Widget for SubspaceEntry {
                 if !entry_rect.contains(fe.abs) && !is_over_buttons_view {
                     self.animator_play(cx, ids!(hover.off));
                     self.show_buttons_view = false;
-                    self.view.child_by_path(&[live_id!(buttons_view)]).set_visible(cx, false);
+                    self.view.child_by_path(ids!(buttons_view)).set_visible(cx, false);
                     self.redraw(cx);
                 }
             }
@@ -802,13 +802,13 @@ impl Widget for SubspaceEntry {
             }
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
                 let is_within_buttons_view = self.show_buttons_view
-                    && self.view.child_by_path(&[live_id!(buttons_view)]).area().rect(cx).contains(fe.abs);
+                    && self.view.child_by_path(ids!(buttons_view)).area().rect(cx).contains(fe.abs);
                 if !is_within_buttons_view {
                     if let Some(room_id) = self.room_id.as_ref() {
                         if self.is_space {
                             // Toggle expansion and animate the arrow
                             self.is_expanded = !self.is_expanded;
-                            if let Some(mut arrow) = self.view.child_by_path(&[live_id!(expand_icon)]).borrow_mut::<ExpandArrow>() {
+                            if let Some(mut arrow) = self.view.child_by_path(ids!(expand_icon)).borrow_mut::<ExpandArrow>() {
                                 arrow.set_is_open(cx, self.is_expanded, Animate::Yes);
                             }
                             cx.widget_action(
@@ -830,9 +830,9 @@ impl Widget for SubspaceEntry {
         self.view.handle_event(cx, event, scope);
 
         if let Event::Actions(actions) = event {
-            let join_button = self.view.child_by_path(&[live_id!(buttons_view), live_id!(join_button)]).as_button();
-            let leave_button = self.view.child_by_path(&[live_id!(buttons_view), live_id!(leave_button)]).as_button();
-            let view_button = self.view.child_by_path(&[live_id!(buttons_view), live_id!(view_button)]).as_button();
+            let join_button = self.view.child_by_path(ids!(buttons_view.join_button)).as_button();
+            let leave_button = self.view.child_by_path(ids!(buttons_view.leave_button)).as_button();
+            let view_button = self.view.child_by_path(ids!(buttons_view.view_button)).as_button();
 
             if join_button.clicked(actions) {
                 if let Some(room_id) = self.room_id.clone() {
@@ -1120,14 +1120,14 @@ impl Widget for SpaceLobbyScreen {
                 // Draw loading indicator
                 let item = if self.is_loading && item_id == 0 {
                     let item = list.item(cx, item_id, id!(status_label));
-                    item.child_by_path(&[live_id!(label)]).as_label().set_text(cx, "Loading rooms and spaces...");
+                    item.child_by_path(ids!(label)).as_label().set_text(cx, "Loading rooms and spaces...");
                     item
                 }
                 // No entries found
                 else if entry_count == 0 && item_id == 0 {
                     let item = list.item(cx, item_id, id!(status_label));
-                    item.child_by_path(&[live_id!(label)]).as_label().set_text(cx, "No rooms or spaces found.");
-                    item.child_by_path(&[live_id!(loading_spinner)]).set_visible(cx, false);
+                    item.child_by_path(ids!(label)).as_label().set_text(cx, "No rooms or spaces found.");
+                    item.child_by_path(ids!(loading_spinner)).set_visible(cx, false);
                     item
                 }
                 // Draw a regular entry
@@ -1153,11 +1153,11 @@ impl Widget for SpaceLobbyScreen {
                                     }
                                     show_buttons_view = inner.show_buttons_view;
                                 }
-                                item.child_by_path(&[live_id!(buttons_view)]).set_visible(cx, show_buttons_view);
+                                item.child_by_path(ids!(buttons_view)).set_visible(cx, show_buttons_view);
                                 // Snap expand arrow to correct state without animation
                                 // when item is reused or state changed externally
                                 if need_snap {
-                                    if let Some(mut arrow) = item.child_by_path(&[live_id!(expand_icon)]).borrow_mut::<ExpandArrow>() {
+                                    if let Some(mut arrow) = item.child_by_path(ids!(expand_icon)).borrow_mut::<ExpandArrow>() {
                                         arrow.set_is_open(cx, is_expanded, Animate::No);
                                     }
                                 }
@@ -1174,20 +1174,19 @@ impl Widget for SpaceLobbyScreen {
                                     }
                                     show_buttons_view = inner.show_buttons_view;
                                 }
-                                item.child_by_path(&[live_id!(buttons_view)]).set_visible(cx, show_buttons_view);
+                                item.child_by_path(ids!(buttons_view)).set_visible(cx, show_buttons_view);
                                 item
                             };
 
-                            item.child_by_path(&[live_id!(buttons_view), live_id!(join_button)]).set_visible(cx, show_join_button);
-                            item.child_by_path(&[live_id!(buttons_view), live_id!(leave_button)]).set_visible(cx, show_leave_button);
-                            item.child_by_path(&[live_id!(buttons_view), live_id!(view_button)]).set_visible(cx, show_view_button);
+                            item.child_by_path(ids!(buttons_view.join_button)).set_visible(cx, show_join_button);
+                            item.child_by_path(ids!(buttons_view.leave_button)).set_visible(cx, show_leave_button);
+                            item.child_by_path(ids!(buttons_view.view_button)).set_visible(cx, show_view_button);
 
                             // Below, draw things that are common to child rooms and subspaces.
-                            item.child_by_path(&[live_id!(content), live_id!(name_label)])
-                                .as_label().set_text(cx, &info.name);
+                            item.child_by_path(ids!(content.name_label)).as_label().set_text(cx, &info.name);
 
                             // Display avatar from stored data, or fetch from cache, or show initials
-                            let avatar_ref = item.child_by_path(&[live_id!(avatar)]).as_avatar();
+                            let avatar_ref = item.child_by_path(ids!(avatar)).as_avatar();
                             let first_char = utils::user_name_first_letter(&info.name);
                             let mut drew_avatar = false;
 
@@ -1222,7 +1221,7 @@ impl Widget for SpaceLobbyScreen {
                                 avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
                             }
 
-                            if let Some(mut lines) = item.child_by_path(&[live_id!(tree_lines)]).borrow_mut::<TreeLines>() {
+                            if let Some(mut lines) = item.child_by_path(ids!(tree_lines)).borrow_mut::<TreeLines>() {
                                 lines.draw_bg.level = *level as f32;
                                 lines.draw_bg.is_last = if *is_last { 1.0 } else { 0.0 };
                                 lines.draw_bg.parent_mask = *parent_mask as f32;
@@ -1231,7 +1230,7 @@ impl Widget for SpaceLobbyScreen {
 
                             // Build the info label with join status, member count, and topic
                             // Note: Public/Private is intentionally not shown per-item to reduce clutter
-                            let info_label = item.child_by_path(&[live_id!(content), live_id!(info_label)]).as_label();
+                            let info_label = item.child_by_path(ids!(content.info_label)).as_label();
                             let mut info_parts = Vec::new();
 
                             // Add join status for rooms we haven't joined
@@ -1276,7 +1275,7 @@ impl Widget for SpaceLobbyScreen {
                             // Draw loading indicator for subspace
                             let item = list.item(cx, item_id, id!(subspace_loading));
                             // Configure tree lines
-                            if let Some(mut lines) = item.child_by_path(&[live_id!(tree_lines)]).borrow_mut::<TreeLines>() {
+                            if let Some(mut lines) = item.child_by_path(ids!(tree_lines)).borrow_mut::<TreeLines>() {
                                 lines.draw_bg.level = *level as f32;
                                 lines.draw_bg.is_last = 1.0;
                                 lines.draw_bg.parent_mask = *parent_mask as f32;
