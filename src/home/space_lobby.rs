@@ -273,9 +273,10 @@ script_mod! {
 
         // Expand/collapse arrow (animated triangle)
         expand_icon := mod.widgets.ExpandArrow {
-            width: 20,
-            height: 20,
+            width: 16,
+            height: 16,
             margin: Inset{ left: -6, right: 4 }
+            draw_bg.border_radius = 1.0 // less rounded
         }
 
         avatar := Avatar { width: 32, height: 32, margin: Inset{right: 8} }

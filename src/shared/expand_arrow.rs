@@ -7,15 +7,15 @@ script_mod! {
     mod.widgets.ExpandArrowBase = #(ExpandArrow::register_widget(vm))
 
     mod.widgets.ExpandArrow = set_type_default() do mod.widgets.ExpandArrowBase {
-        width: 20, height: 20,
+        width: 18, height: 18,
 
         draw_bg +: {
             opened: instance(0.0)
             color: instance(#888)
-            border_radius: uniform(0.06)
+            border_radius: uniform(2.25)
 
             pixel: fn() {
-                let corner_round = self.rect_size.x * self.border_radius
+                let corner_round = self.border_radius
                 let sz = self.rect_size.x * 0.3 - corner_round * 0.5
                 let c = vec2(self.rect_size.x * 0.5, self.rect_size.y * 0.5)
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)

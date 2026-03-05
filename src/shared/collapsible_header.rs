@@ -24,12 +24,6 @@ script_mod! {
 
     mod.widgets.COLOR_HEADER_BG = (mod.widgets.COLOR_ROBRIX_PURPLE); // the purple color from the Robrix logo
 
-    mod.widgets.WhiteExpandArrow = set_type_default() do mod.widgets.ExpandArrow {
-        draw_bg +: {
-            color: #FFF
-        }
-    }
-
     mod.widgets.CollapsibleHeader = set_type_default() do #(CollapsibleHeader::register_widget(vm)) {
         ..mod.widgets.RoundedView
 
@@ -46,9 +40,10 @@ script_mod! {
             color: mod.widgets.COLOR_HEADER_BG
         }
 
-        collapse_icon := mod.widgets.WhiteExpandArrow {
-            width: 25, height: 25,
+        collapse_icon := mod.widgets.ExpandArrow {
+            width: 20, height: 20,
             margin: Inset{left: 5, right: 6, top: 0, bottom: 0},
+            draw_bg.color: mod.widgets.COLOR_HEADER_FG
         }
 
         label := Label {
