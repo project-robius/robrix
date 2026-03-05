@@ -13,7 +13,7 @@ use makepad_widgets::animator::Animate;
 use crate::home::rooms_list::RoomsListScopeProps;
 
 use super::expand_arrow::ExpandArrow;
-use super::unread_badge::UnreadBadgeWidgetExt;
+use super::unread_badge::UnreadBadgeWidgetRefExt as _;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -110,6 +110,7 @@ pub struct CollapsibleHeader {
     #[deref] view: View,
     #[rust(true)] is_expanded: bool,
     #[rust] category: HeaderCategory,
+    #[rust] num_unread_mentions: u64,
 }
 
 impl Widget for CollapsibleHeader {
@@ -136,6 +137,9 @@ impl Widget for CollapsibleHeader {
             arrow.set_is_open_no_animate(self.is_expanded);
         }
         self.view.child_by_path(ids!(label)).set_text(cx, self.category.as_str());
+        self.view.child_by_path(ids!(unread_badge))
+            .as_unread_badge()
+            .update_counts(false, self.num_unread_mentions, 0);
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -160,7 +164,7 @@ impl CollapsibleHeaderRef {
     /// Sets the category and expanded state of the header.
     pub fn set_details(
         &self,
-        cx: &mut Cx,
+        _cx: &mut Cx,
         is_expanded: bool,
         category: HeaderCategory,
         num_unread_mentions: u64,
@@ -168,9 +172,7 @@ impl CollapsibleHeaderRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.is_expanded = is_expanded;
             inner.category = category;
-            inner
-                .unread_badge(cx, ids!(unread_badge))
-                .update_counts(false, num_unread_mentions, 0);
+            inner.num_unread_mentions = num_unread_mentions;
         }
     }
 }
