@@ -12,9 +12,11 @@ script_mod! {
         draw_bg +: {
             opened: instance(0.0)
             color: instance(#888)
+            border_radius: uniform(0.06)
 
             pixel: fn() {
-                let sz = self.rect_size.x * 0.3
+                let corner_round = self.rect_size.x * self.border_radius
+                let sz = self.rect_size.x * 0.3 - corner_round * 0.5
                 let c = vec2(self.rect_size.x * 0.5, self.rect_size.y * 0.5)
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.clear(vec4(0.0))
@@ -27,10 +29,11 @@ script_mod! {
                 sdf.line_to(c.x, c.y - sz)
                 sdf.line_to(c.x + sz, c.y + sz)
                 sdf.close_path()
-                sdf.blur = 2.5
-                sdf.fill(self.color)
 
-                return sdf.result
+                // Keep the filled triangle, then slightly expand it with a crisp stroke
+                // to geometrically round sharp corners (no blur).
+                sdf.fill_keep(self.color)
+                return sdf.stroke(self.color, corner_round)
             }
         }
 
