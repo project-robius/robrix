@@ -96,7 +96,7 @@ script_mod! {
             }
         }
 
-        draw_icon.color: #F00
+        draw_icon.color: #000
         // TODO: Makepad's new Button no longer has a `hover` animator for `draw_icon`
         // so the below `hover` and `down` instances will never get modified.
         //

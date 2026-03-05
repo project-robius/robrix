@@ -20,12 +20,13 @@ script_mod! {
         height: Fit,
         padding: Inset{bottom: 4}
         flow: Right,
-        visible: true,
         spacing: 3,
 
         header_title := Label {
             width: Fill,
             height: Fit,
+            padding: 0
+            margin: Inset{left: 5, top: -2}
             flow: Right, // do not wrap
             text: "All Rooms"
             draw_text +: {
