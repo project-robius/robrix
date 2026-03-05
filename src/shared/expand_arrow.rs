@@ -90,7 +90,9 @@ impl Widget for ExpandArrow {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.draw_bg.set_dyn_instance(cx, id!(opened), &[self.opened_value]);
+        if !self.animator.is_track_animating(id!(expand)) {
+            self.draw_bg.set_dyn_instance(cx, id!(opened), &[self.opened_value]);
+        }
         self.draw_bg.draw_walk(cx, walk);
         DrawStep::done()
     }
