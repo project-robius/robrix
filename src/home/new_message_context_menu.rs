@@ -123,7 +123,7 @@ script_mod! {
 
             reply_button := mod.widgets.NewMessageContextMenuButton {
                 draw_icon +: { svg: (ICON_REPLY) }
-                icon_walk: Walk{ margin: Inset{top: 1, right: 3}}
+                icon_walk +: { margin: Inset{top: 1, right: 3}}
                 text: "Reply"
             }
 
@@ -134,7 +134,7 @@ script_mod! {
 
             edit_message_button := mod.widgets.NewMessageContextMenuButton {
                 draw_icon +: { svg: (ICON_EDIT) }
-                icon_walk: Walk{ margin: Inset{top: -3, right: 3} }
+                icon_walk +: { margin: Inset{top: -3, right: 3} }
                 text: "Edit Message"
             }
 
@@ -152,7 +152,7 @@ script_mod! {
 
             copy_html_button := mod.widgets.NewMessageContextMenuButton {
                 draw_icon +: { svg: (ICON_HTML_FILE) }
-                icon_walk: Walk{ margin: Inset{left: 1.5, right: 1.5} }
+                icon_walk +: { margin: Inset{left: 1.5, right: 1.5} }
                 text: "Copy Text as HTML"
             }
 
@@ -163,7 +163,7 @@ script_mod! {
 
             view_source_button := mod.widgets.NewMessageContextMenuButton {
                 draw_icon +: { svg: (ICON_VIEW_SOURCE) }
-                icon_walk: Walk{ margin: Inset{top: 6, right: 3} }
+                icon_walk +: { margin: Inset{top: 6, right: 3} }
                 text: "View Source"
             }
 
@@ -182,7 +182,7 @@ script_mod! {
             //         svg: (ICON_TRASH) // TODO: ICON_REPORT/WARNING/FLAG
             //         color: (COLOR_FG_DANGER_RED),
             //     }
-            //     icon_walk: Walk{ margin: Inset{left: -2, right: 3} }
+            //     icon_walk +: { margin: Inset{left: -2, right: 3} }
             //
             //     draw_bg +: {
             //         border_color: (COLOR_FG_DANGER_RED),
