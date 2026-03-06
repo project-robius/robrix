@@ -19,7 +19,9 @@ script_mod! {
         flow: Down,
 
         show_bg: true
-        draw_bg.color: (COLOR_PRIMARY_DARKER)
+        draw_bg +: {
+            color: COLOR_PRIMARY_DARKER
+        }
 
         welcome := mod.widgets.WelcomeScreen {}
 

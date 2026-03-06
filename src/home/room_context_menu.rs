@@ -34,7 +34,9 @@ script_mod! {
         align: Align{x: 0, y: 0}
 
         show_bg: true
-        draw_bg.color: #0000004d
+        draw_bg +: {
+            color: #0000004d
+        }
 
         main_content := RoundedView {
             flow: Down

@@ -25,6 +25,8 @@ script_mod! {
             width: Fill, height: Fit
             flow: Down, spacing: 20
 
+            draw_bg.color: (COLOR_PRIMARY)
+
             title := Label {
                 text: "Welcome to Robrix!",
                 draw_text +: {

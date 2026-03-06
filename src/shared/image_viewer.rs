@@ -136,7 +136,9 @@ script_mod! {
         width: Fill, height: Fill,
         flow: Overlay
         show_bg: true
-        draw_bg.color: (COLOR_IMAGE_VIEWER_BACKGROUND)
+        draw_bg +: {
+            color: (COLOR_IMAGE_VIEWER_BACKGROUND)
+        }
 
         image_layer := View {
             width: Fill, height: Fill,

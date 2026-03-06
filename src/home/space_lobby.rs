@@ -453,7 +453,9 @@ script_mod! {
         flow: Down,
 
         show_bg: true
-        draw_bg.color: #fff
+        draw_bg +: {
+            color: COLOR_PRIMARY
+        }
 
         // Header with parent space info
         header := SolidView {

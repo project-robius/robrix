@@ -48,8 +48,10 @@ script_mod! {
         width: Fill, height: Fill,
         align: Align{x: 0.5, y: 0.5}
         show_bg: true,
-        draw_bg.color: (COLOR_SECONDARY)
-        // draw_bg.color: (COLOR_PRIMARY) // TODO: once Makepad supports `Fill {max: 375}`, change this back to COLOR_PRIMARY
+        draw_bg +: {
+            color: COLOR_SECONDARY
+            // color: COLOR_PRIMARY // TODO: once Makepad supports `Fill {max: 375}`, change this back to COLOR_PRIMARY
+        }
 
         ScrollYView {
             width: Fill, height: Fill,

@@ -21,7 +21,9 @@ script_mod! {
         padding: Inset{left: 12.0, top: 8.0, bottom: 8.0, right: 10.0}
 
         show_bg: true
-        draw_bg.color: #e8f4ff
+        draw_bg +: {
+            color: #e8f4ff
+        }
 
         typing_label := Label {
             align: Align{x: 0.0, y: 0.5},

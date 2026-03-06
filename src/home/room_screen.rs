@@ -128,7 +128,6 @@ script_mod! {
 
     // The view used for each text-based message event in a room's timeline.
     mod.widgets.Message = set_type_default() do #(Message::register_widget(vm)) {
-        // ..mod.widgets.SolidView // TODO: do we need this here since i manually impl'd the shader?
 
         width: Fill,
         height: Fit,

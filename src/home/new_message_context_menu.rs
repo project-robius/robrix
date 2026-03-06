@@ -42,7 +42,9 @@ script_mod! {
 
         // Show a slightly darkened translucent background to make the menu stand out.
         show_bg: true
-        draw_bg.color: #0000004D
+        draw_bg +: {
+            color: #0000004D
+        }
 
         main_content := RoundedView {
             flow: Down

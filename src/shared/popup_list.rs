@@ -377,7 +377,9 @@ script_mod! {
         width: 275
         height: Fit
         flow: Down
-        draw_bg.color: (COLOR_TRANSPARENT)
+        draw_bg +: {
+            color: (COLOR_TRANSPARENT)
+        }
         content: mod.widgets.PopupDialogRightToLeftProgress {}
     }
 

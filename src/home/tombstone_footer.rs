@@ -31,7 +31,9 @@ script_mod! {
         spacing: 8
 
         show_bg: true
-        draw_bg.color: (COLOR_SECONDARY)
+        draw_bg +: {
+            color: COLOR_SECONDARY
+        }
 
         replacement_reason := Label {
             width: Fill, height: Fit,
