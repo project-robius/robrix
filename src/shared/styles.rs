@@ -166,8 +166,10 @@ script_mod! {
     mod.widgets.COLOR_LINK_HOVER = #21B070
 
 
-
-    mod.widgets.NAVIGATION_TAB_BAR_SIZE = 68
+    // This is chosen to nicely fit the 3 window chrome buttons on macOS
+    mod.widgets.NAVIGATION_TAB_BAR_SIZE = 76
+    mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE = (mod.widgets.NAVIGATION_TAB_BAR_SIZE * 0.65)
+    mod.widgets.NAVIGATION_TAB_BAR_AVATAR_FONT_SIZE = (mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE * 0.4)
 
 
     mod.widgets.COLOR_NAVIGATION_TAB_FG = (mod.widgets.COLOR_TEXT)

@@ -79,13 +79,14 @@ script_mod! {
         }
 
         avatar := Avatar {
-            width: 45, height: 45
+            width: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE
+            height: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE
             // If no avatar picture, use white text on a dark background.
             text_view +: {
                 draw_bg.color: (COLOR_FG_DISABLED),
                 text +: {
                     draw_text +: {
-                        text_style: theme.font_regular { font_size: 16.0 },
+                        text_style: theme.font_regular { font_size: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_FONT_SIZE },
                         color: (COLOR_PRIMARY),
                     }
                 }
@@ -176,7 +177,7 @@ script_mod! {
         height: (NAVIGATION_TAB_BAR_SIZE),
         align: Align{ x: 0.5, y: 0.5 }
         margin: Inset{top: 9, left: 0, bottom: 5}
-        // padding: 5.0,
+        padding: 4.0,
 
         label := Label {
             padding: 0

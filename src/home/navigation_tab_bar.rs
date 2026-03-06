@@ -105,13 +105,14 @@ script_mod! {
         align: Align{ x: 0.5, y: 0.5 }
 
         our_own_avatar := Avatar {
-            width: 45, height: 45
+            width: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE
+            height: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE
             // If no avatar picture, use white text on a dark background.
             text_view +: {
                 draw_bg.color: (COLOR_FG_DISABLED),
                 text +: {
                     draw_text +: {
-                        text_style: theme.font_regular { font_size: 16.0 },
+                        text_style: theme.font_regular { font_size: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_FONT_SIZE },
                         color: (COLOR_PRIMARY),
                     }
                 }
@@ -119,8 +120,8 @@ script_mod! {
         }
 
         View {
-            align: Align { x: 0.5, y: 0.0 }
-            margin: Inset{ left: 39 }
+            align: Align { x: 0.91, y: 0.0 }
+            // margin: Inset{ left: 39 }
             verification_badge := VerificationBadge {}
         }
     }

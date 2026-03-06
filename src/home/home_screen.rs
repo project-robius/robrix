@@ -69,7 +69,9 @@ script_mod! {
                 margin: 0,
 
                 show_bg: true
-                draw_bg.color: (COLOR_SECONDARY)
+                draw_bg +: {
+                    color: (COLOR_SECONDARY)
+                }
 
                 // On the left, show the navigation tab bar vertically.
                 CachedWidget {
