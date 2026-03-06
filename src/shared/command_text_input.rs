@@ -153,7 +153,7 @@ pub struct CommandTextInput {
 
     /// The character that triggers the popup.
     ///
-    /// If not set, popup can't be triggerd by keyboard.
+    /// If not set, popup can't be triggered by keyboard.
     ///
     /// Behavior is undefined if this string contains anything other than a
     /// single grapheme.
@@ -205,7 +205,7 @@ pub struct CommandTextInput {
     #[rust]
     trigger_position: Option<usize>,
 
-    /// Remmeber which was the last cursor position handled, to support `inline_search`.
+    /// Remember which was the last cursor position handled, to support `inline_search`.
     #[rust]
     prev_cursor_position: usize,
 }
