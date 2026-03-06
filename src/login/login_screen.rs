@@ -106,14 +106,14 @@ script_mod! {
                         text: "Login to Robrix"
                     }
 
-                    user_id_input := SimpleTextInput {
+                    user_id_input := RobrixTextInput {
                         width: 275, height: Fit
                         flow: Right, // do not wrap
                         padding: 10,
                         empty_text: "User ID"
                     }
 
-                    password_input := SimpleTextInput {
+                    password_input := RobrixTextInput {
                         width: 275, height: Fit
                         flow: Right, // do not wrap
                         padding: 10,
@@ -125,7 +125,7 @@ script_mod! {
                         width: 275, height: Fit,
                         flow: Down,
 
-                        homeserver_input := SimpleTextInput {
+                        homeserver_input := RobrixTextInput {
                             width: 275, height: Fit,
                             flow: Right, // do not wrap
                             padding: Inset{top: 5, bottom: 5, left: 10, right: 10}

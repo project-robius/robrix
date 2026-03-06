@@ -29,7 +29,7 @@ script_mod! {
         spacing: 0,
 
         show_bg: true,
-        draw_bg.color: (COLOR_PRIMARY_DARKER)
+        draw_bg.color: mod.widgets.COLOR_PRIMARY_DARKER
 
         restore_status_view := RestoreStatusView {}
 

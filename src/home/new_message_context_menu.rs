@@ -42,7 +42,7 @@ script_mod! {
 
         // Show a slightly darkened translucent background to make the menu stand out.
         show_bg: true
-        draw_bg.color: #0000004d
+        draw_bg.color: #0000004D
 
         main_content := RoundedView {
             flow: Down
@@ -65,14 +65,15 @@ script_mod! {
                 flow: Overlay
                 height: (mod.widgets.NEW_MESSAGE_CONTEXT_MENU_BUTTON_HEIGHT)
                 align: Align{y: 0.5}
+
                 react_button := mod.widgets.NewMessageContextMenuButton {
                     draw_icon +: { svg: (ICON_ADD_REACTION) }
                     text: "Add Reaction"
                 }
 
-                    reaction_input_view := View {
-                        width: Fill,
-                        height: (mod.widgets.NEW_MESSAGE_CONTEXT_MENU_BUTTON_HEIGHT)
+                reaction_input_view := View {
+                    width: Fill,
+                    height: (mod.widgets.NEW_MESSAGE_CONTEXT_MENU_BUTTON_HEIGHT)
                     align: Align{y: 0.5}
                     flow: Right,
                     visible: false, // will be shown once the react_button is clicked
@@ -81,8 +82,9 @@ script_mod! {
                         width: Fill,
                         height: Fit,
                         align: Align{x: 0, y: 0.5}
-                        empty_text: "Enter reaction..."
-                        flow: Right, // do not wrap
+                        padding: 7
+                        flow: Flow.Right{wrap: false}, // do not wrap
+                        draw_bg.border_size: 0.0
                         draw_text +: {
                             // TODO: we want the TextInput flow to show all text
                             // within the single-line box by scrolling horizontally
@@ -90,8 +92,9 @@ script_mod! {
                             // or navigating with the mouse or arrow keys.
                             // However, makepad doesn't yet support this feature,
                             // so Ellipsis is the closest we can get.
-                            flow: Flow.Right{wrap: true},
+                            flow: Flow.Right{wrap: false},
                         }
+                        empty_text: "Enter reaction..."
                     }
                     reaction_send_button := RobrixIconButton {
                         height: (mod.widgets.NEW_MESSAGE_CONTEXT_MENU_BUTTON_HEIGHT)

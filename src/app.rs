@@ -297,7 +297,6 @@ impl MatchEvent for App {
                     right: 0.0,
                     bottom: 0.0,
                 };
-                log!("Message context menu position: ({}, {})", pos_x, pos_y);
                 let mut main_content_view = new_message_context_menu.view(cx, ids!(main_content));
                 script_apply_eval!(cx, main_content_view, {
                     margin: #(margin)
@@ -321,7 +320,6 @@ impl MatchEvent for App {
                     right: 0.0,
                     bottom: 0.0,
                 };
-                log!("Room context menu position: ({}, {})", pos_x, pos_y);
                 let mut main_content_view = room_context_menu.view(cx, ids!(main_content));
                 script_apply_eval!(cx, main_content_view, {
                     margin: #(margin)

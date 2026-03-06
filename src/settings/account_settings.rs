@@ -118,7 +118,7 @@ script_mod! {
             text: "Your Display Name:"
         }
 
-        display_name_input := SimpleTextInput {
+        display_name_input := RobrixTextInput {
             margin: Inset{top: 3, left: 5, right: 5, bottom: 8},
             width: 216, height: Fit
             empty_text: "Add a display name..."

@@ -90,6 +90,7 @@ script_mod! {
                 enabled: false,
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
+                margin: 0
                 draw_icon +: {
                     svg: (ICON_SEND)
                     color: (COLOR_FG_ACCEPT_GREEN),

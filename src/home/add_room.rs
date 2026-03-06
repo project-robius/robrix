@@ -63,22 +63,23 @@ script_mod! {
         join_room_view := View {
             width: Fill,
             height: Fit,
-            margin: Inset{ top: 3 }
+            margin: Inset{ top: 3, bottom: 4 }
             align: Align{y: 0.5}
             spacing: 5
             flow: Right
 
-            room_alias_id_input := SimpleTextInput {
+            room_alias_id_input := RobrixTextInput {
+                align: Align{y: 0.5}
                 margin: Inset{top: 0, left: 5, right: 5, bottom: 0},
+                padding: Inset{left: 12, right: 12, top: 11, bottom: 0}
                 width: Fill { max: 400 } // same width as the above `help_info`
-                height: Fit
+                height: 40
                 empty_text: "Enter alias, ID, or Matrix link..."
             }
 
             search_for_room_button := RobrixIconButton {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 14}
-                height: Fit
-                margin: Inset{ bottom: 4 },
+                height: 40
                 draw_bg.color: (COLOR_ACTIVE_PRIMARY)
                 draw_icon +: {
                     svg: (ICON_SEARCH)

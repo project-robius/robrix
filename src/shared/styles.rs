@@ -118,8 +118,14 @@ script_mod! {
     mod.widgets.COLOR_BG_DISABLED = #E0E0E0
     mod.widgets.COLOR_WARNING_NOT_FOUND = #953800
 
-    mod.widgets.COLOR_SELECT_TEXT = #A6CDFE
-
+    // mod.widgets.COLOR_SELECT_TEXT = #A6CDFE
+    // mod.widgets.COLOR_SELECT_TEXT = #B5D8FE
+    // mod.widgets.COLOR_SELECT_TEXT = #6BB1FD88 // results in #B5D8FE when mixed halfway with white
+    // mod.widgets.COLOR_SELECT_TEXT = #57A3FB44
+    // 0x4C is ~30% opacity , which results in #B5D8FE when atop pure white
+    // But i like the look of 0x33 20% opacity a little better.
+    mod.widgets.COLOR_SELECT_TEXT = #087DFC33
+    // mod.widgets.COLOR_SELECT_TEXT = #4D9BFD88 // results in #A6CDFE when mixed halfway with white
 
     mod.widgets.COLOR_PRIMARY = #ffffff
 
@@ -177,83 +183,14 @@ script_mod! {
 
     // A text input widget styled for Robrix.
     mod.widgets.RobrixTextInput = TextInput {
-        width: Fill, height: Fit,
-        margin: 0,
-        align: Align{y: 0.5}
-
-        draw_bg +: {
-            color: (mod.widgets.COLOR_PRIMARY)
-            border_radius: 2.0
-            border_size: 0.0
-
-            color_hover: (mod.widgets.COLOR_PRIMARY)
-            color_focus: (mod.widgets.COLOR_PRIMARY)
-            color_down: (mod.widgets.COLOR_PRIMARY)
-            color_empty: (mod.widgets.COLOR_PRIMARY)
-            color_disabled: (mod.widgets.COLOR_BG_DISABLED)
-
-            border_color: (mod.widgets.COLOR_PRIMARY)
-        }
-
-        draw_selection +: {
-            color: (mod.widgets.COLOR_SELECT_TEXT)
-            // TODO: determine these other colors below
-            color_hover:  (mod.widgets.COLOR_SELECT_TEXT)
-            color_focus:  (mod.widgets.COLOR_SELECT_TEXT)
-            color_down:  (mod.widgets.COLOR_SELECT_TEXT)
-            color_empty:  (mod.widgets.COLOR_SELECT_TEXT)
-            color_disabled: (mod.widgets.COLOR_SELECT_TEXT)
-        }
-
-        draw_cursor +: {
-            color: (mod.widgets.MESSAGE_TEXT_COLOR)
-        }
-
-        draw_text +: {
-            text_style: mod.widgets.MESSAGE_TEXT_STYLE {},
-            color: (mod.widgets.MESSAGE_TEXT_COLOR),
-            // TODO: determine these colors
-            color_hover: (mod.widgets.MESSAGE_TEXT_COLOR),
-            color_focus: (mod.widgets.MESSAGE_TEXT_COLOR),
-            color_down: (mod.widgets.MESSAGE_TEXT_COLOR),
-            color_disabled: (mod.widgets.COLOR_FG_DISABLED),
-            color_empty: #B,
-            color_empty_hover: #B,
-            color_empty_focus: #B,
-
-            get_color: fn() -> vec4 {
-                return mix(
-                    mix(
-                        mix(
-                            mix(
-                                self.color,
-                                mix(
-                                    self.color_hover,
-                                    self.color_down,
-                                    self.down
-                                ),
-                                self.hover
-                            ),
-                            self.color_focus,
-                            self.focus
-                        ),
-                        self.color_empty,
-                        self.empty
-                    ),
-                    self.color_disabled,
-                    self.disabled
-                )
-            }
-        }
-    }
-
-    mod.widgets.SimpleTextInput = mod.widgets.RobrixTextInput {
-
-        padding: 10,
         width: Fill, height: Fit
         flow: Flow.Right{wrap: true},
+        align: Align{y: 0.5}
+        margin: 0,
+        padding: 10,
+
         draw_bg +: {
-            border_radius: 2.0
+            border_radius: 4.0 // was previously 2.0
             border_size: 1.0
 
             color: (mod.widgets.COLOR_PRIMARY)
@@ -270,17 +207,36 @@ script_mod! {
             border_color_empty: (mod.widgets.COLOR_SECONDARY_DARKER)
             border_color_disabled: (mod.widgets.COLOR_FG_DISABLED)
 
-            border_color_2: (mod.widgets.COLOR_SECONDARY_DARKER)
-            border_color_2_hover: (mod.widgets.COLOR_ACTIVE_PRIMARY)
-            border_color_2_focus: (mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER)
-            border_color_2_down: (mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER)
-            border_color_2_empty: (mod.widgets.COLOR_SECONDARY_DARKER)
-            border_color_2_disabled: (mod.widgets.COLOR_FG_DISABLED)
+            color_2: vec4(-1.0, -1.0, -1.0, -1.0) // don't use color_2*
+            border_color_2: vec4(-1.0, -1.0, -1.0, -1.0) // don't use border_color_2*
         }
+
+        draw_selection +: {
+            color: mod.widgets.COLOR_SELECT_TEXT
+            // color: mix(mod.widgets.COLOR_BG_DISABLED, mod.widgets.COLOR_SELECT_TEXT, 0.5)
+            color_hover:  (mod.widgets.COLOR_SELECT_TEXT)
+            color_focus:  (mod.widgets.COLOR_SELECT_TEXT)
+            color_down:  (mod.widgets.COLOR_SELECT_TEXT)
+            color_empty:  (mod.widgets.COLOR_SELECT_TEXT)
+            color_disabled: (mod.widgets.COLOR_SELECT_TEXT)
+        }
+
+        draw_cursor +: {
+            color: (mod.widgets.MESSAGE_TEXT_COLOR)
+        }
+
         draw_text +: {
-            flow: Flow.Right{wrap: true},
+            color: (mod.widgets.MESSAGE_TEXT_COLOR),
+            color_hover: (mod.widgets.MESSAGE_TEXT_COLOR),
+            color_focus: (mod.widgets.MESSAGE_TEXT_COLOR),
+            color_down: (mod.widgets.MESSAGE_TEXT_COLOR),
+            color_disabled: (mod.widgets.COLOR_FG_DISABLED),
+            color_empty: #C,
+            color_empty_hover: #C,
+            color_empty_focus: #C,
+
+            text_style: mod.widgets.MESSAGE_TEXT_STYLE {},
         }
-        empty_text: "Add a display name..."
     }
 }
 

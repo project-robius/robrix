@@ -55,7 +55,7 @@ script_mod! {
                     text: "✅ Verified via TSP"
                 }
 
-                tsp_did_read_only_input := SimpleTextInput {
+                tsp_did_read_only_input := RobrixTextInput {
                     is_read_only: true
                 }
 
@@ -98,7 +98,7 @@ script_mod! {
                     text: "Interactively verify this user by associating their TSP identity (DID) with their Matrix User ID:"
                 }
 
-                tsp_did_input := SimpleTextInput {
+                tsp_did_input := RobrixTextInput {
                     empty_text: "Enter their TSP DID..."
                 }
 

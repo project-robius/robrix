@@ -42,9 +42,11 @@ script_mod! {
             width: Fill,
             height: Fit,
             flow: Right, // do not wrap
-
+            padding: 5
+            
             empty_text: "Filter rooms & spaces..."
-
+            
+            draw_bg.border_size: 0.0
             draw_text +: {
                 text_style: theme.font_regular { font_size: 10 },
             }

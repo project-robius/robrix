@@ -50,7 +50,7 @@ script_mod! {
                 }
             }
 
-            user_id_input := SimpleTextInput {
+            user_id_input := RobrixTextInput {
                 draw_text +: {
                     text_style: REGULAR_TEXT {font_size: 11},
                     color: #000
