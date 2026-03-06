@@ -231,9 +231,9 @@ script_mod! {
             color_focus: (mod.widgets.MESSAGE_TEXT_COLOR),
             color_down: (mod.widgets.MESSAGE_TEXT_COLOR),
             color_disabled: (mod.widgets.COLOR_FG_DISABLED),
-            color_empty: #C,
-            color_empty_hover: #C,
-            color_empty_focus: #C,
+            color_empty: #B,
+            color_empty_hover: #9,
+            color_empty_focus: #9,
 
             text_style: mod.widgets.MESSAGE_TEXT_STYLE {},
         }
