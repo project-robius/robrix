@@ -63,12 +63,13 @@ script_mod! {
         View {
             width: Fill, height: Fit
             flow: Flow.Right{wrap: true},
+            spacing: 15
             align: Align{x: 0.0, y: 0.5}
 
             cancel_location_button := RobrixIconButton {
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
-                margin: Inset{right: 15}
+                margin: 0
                 draw_icon +: {
                     svg: (ICON_FORBIDDEN)
                     color: (COLOR_FG_DANGER_RED),

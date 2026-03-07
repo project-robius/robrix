@@ -1,6 +1,6 @@
 //! A modal dialog that displays the raw JSON source of a Matrix event.
 
-use makepad_code_editor::code_view::CodeViewWidgetExt;
+use makepad_code_editor::code_view::CodeViewWidgetRefExt;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId};
 
@@ -10,8 +10,6 @@ use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
-
-    use mod.widgets.CodeView
 
     mod.widgets.VIEW_SOURCE_MODAL_BORDER_RADIUS = 6.0
 
@@ -32,37 +30,10 @@ script_mod! {
         }
     }
 
-    // A row showing a label + value + copy button
-    mod.widgets.IdRow = View {
-        width: Fill, height: Fit,
-        flow: Right,
-        align: Align{y: 0.5}
-        margin: Inset{top: -1, bottom: -1}
-        padding: 0
-
-        label := Label {
-            width: Fit, height: Fit,
-            draw_text +: {
-                text_style: REGULAR_TEXT {font_size: 11},
-                color: #666
-            }
-        }
-        value := Label {
-            width: Fit, height: Fit,
-            draw_text +: {
-                text_style: theme.font_code {font_size: 10},
-                color: #000
-            }
-        }
-            copy_button := mod.widgets.CopyButton {
-                margin: Inset{left: 4}
-            }
-        }
-
     mod.widgets.EventSourceModal = set_type_default() do #(EventSourceModal::register_widget(vm)) {
         ..mod.widgets.RoundedView
 
-        width: Fill { max: 1000, min: 600 }
+        width: Fill { max: 1000 } //, min: 600 }
         // TODO: i'd like for this height to be Fit with a max of Rel { base: Full, factor: 0.90 },
         //       but Makepad doesn't allow Fit views with a max to be scrolled.
         height: Fill // { max: 1400 }
@@ -117,15 +88,65 @@ script_mod! {
         }
 
         // Room ID row
-        room_id_row := mod.widgets.IdRow {
-            label: { text: "Room ID:" }
-            value: { text: "" }
+        room_id_row := View {
+            width: Fill, height: Fit,
+            flow: Flow.Right {wrap: true}
+            align: Align{y: 0.5}
+            margin: Inset{top: -1, bottom: -1}
+            padding: 0
+
+            Label {
+                width: Fit, height: Fit,
+                draw_text +: {
+                    text_style: REGULAR_TEXT {font_size: 11},
+                    color: #666
+                }
+                text: "Room ID:"
+            }
+            room_id_value := Label {
+                width: Fit, height: Fit,
+                // the top margin is a hack to fix vertical alignment
+                margin: Inset{top: 1, left: 4}
+                draw_text +: {
+                    text_style: theme.font_code {font_size: 10},
+                    color: #000
+                }
+                text: "<Unknown Room ID>"
+            }
+            room_id_copy_button := mod.widgets.CopyButton {
+                margin: Inset{left: 4}
+            }
         }
 
         // Event ID row
-        event_id_row := mod.widgets.IdRow {
-            label: { text: "Event ID:" }
-            value: { text: "" }
+        event_id_row := View {
+            width: Fill, height: Fit,
+            flow: Flow.Right {wrap: true}
+            align: Align{y: 0.5}
+            margin: Inset{top: -1, bottom: -1}
+            padding: 0
+
+            Label {
+                width: Fit, height: Fit,
+                draw_text +: {
+                    text_style: REGULAR_TEXT {font_size: 11},
+                    color: #666
+                }
+                text: "Event ID:"
+            }
+            event_id_value := Label {
+                width: Fit, height: Fit,
+                // the top margin is a hack to fix vertical alignment
+                margin: Inset{top: 1, left: 4}
+                draw_text +: {
+                    text_style: theme.font_code {font_size: 10},
+                    color: #000
+                }
+                text: "<Unknown Event ID>"
+            }
+            event_id_copy_button := mod.widgets.CopyButton {
+                margin: Inset{left: 4}
+            }
         }
 
         LineH {
@@ -161,15 +182,38 @@ script_mod! {
             padding: 6
 
             // The code editor content (drawn first, behind the overlay)
-            code_view := CodeView {
+            code_view := mod.widgets.CodeView {
                 editor +: {
                     margin: 12,
                     width: Fill,
                     height: Fit,
-                    draw_bg.color: (COLOR_PRIMARY)
-                    draw_text +: { text_style: theme.font_regular { font_size: 11 } }
+                    word_wrap: true
+                    draw_bg +: { color: (COLOR_TRANSPARENT) }
+                    draw_text +: { text_style +: { font_size: 11 } }
 
+                    // Light mode syntax highlighting (inspired by GitHub Light / VS Code Light+)
+                    token_colors +: {
+                        whitespace: #x6a737d,         // Gray for whitespace markers
+                        delimiter: #x24292e,          // Dark gray for punctuation
+                        delimiter_highlight: #x005cc5, // Blue for highlighted delimiters
+                        error_decoration: #xcb2431,   // Red for errors
+                        warning_decoration: #xb08800, // Dark yellow/amber for warnings
+
+                        unknown: #x24292e,            // Default dark text
+                        branch_keyword: #xd73a49,     // Red/pink for keywords (if, else, match)
+                        constant: #x005cc5,           // Blue for constants
+                        identifier: #x24292e,         // Dark gray for variables
+                        loop_keyword: #xd73a49,       // Red/pink for loop keywords
+                        number: #x005cc5,             // Blue for numbers
+                        other_keyword: #xd73a49,      // Red/pink for other keywords
+                        punctuator: #x24292e,         // Dark gray for punctuation
+                        string: #x22863a,             // Green for strings
+                        function: #x6f42c1,           // Purple for functions
+                        typename: #xe36209,           // Orange for types
+                        comment: #x6a737d,            // Gray for comments
+                    }
                 }
+                text: "<Unknown Event Source>"
             }
 
             // Border overlay frame (drawn on top of content)
@@ -223,6 +267,16 @@ impl Widget for EventSourceModal {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if let Some(room_id) = &self.room_id {
+            self.view.label(cx, ids!(room_id_value)).set_text(cx, room_id.as_str());
+        }
+        if let Some(event_id) = &self.event_id {
+            self.view.label(cx, ids!(event_id_value)).set_text(cx, event_id.as_str());
+        }
+        if let Some(json) = &self.original_json {
+            // self.view.code_view(cx, ids!(code_view)).set_text(cx, json);
+            self.view.child_by_path(ids!(code_view)).as_code_view().set_text(cx, json);
+        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -245,7 +299,7 @@ impl WidgetMatchEvent for EventSourceModal {
             return;
         }
 
-        if self.view.button(cx, ids!(room_id_row.copy_button)).clicked(actions) {
+        if self.view.button(cx, ids!(room_id_copy_button)).clicked(actions) {
             if let Some(room_id) = &self.room_id {
                 cx.copy_to_clipboard(room_id.as_str());
                 enqueue_popup_notification(
@@ -256,7 +310,7 @@ impl WidgetMatchEvent for EventSourceModal {
             }
         }
 
-        if self.view.button(cx, ids!(event_id_row.copy_button)).clicked(actions) {
+        if self.view.button(cx, ids!(event_id_copy_button)).clicked(actions) {
             if let Some(event_id) = &self.event_id {
                 cx.copy_to_clipboard(event_id.as_str());
                 enqueue_popup_notification(
@@ -293,20 +347,9 @@ impl EventSourceModal {
         self.event_id = event_id.clone();
         self.original_json = original_json.clone();
 
-        self.view.label(cx, ids!(room_id_row.value)).set_text(cx, room_id.as_str());
-        self.view.label(cx, ids!(event_id_row.value)).set_text(
-            cx,
-            event_id.as_ref().map(|e| e.as_str()).unwrap_or("<Event ID Unknown>"),
-        );
-
-        self.view.code_view(cx, ids!(code_view)).set_text(
-            cx,
-            original_json.as_deref().unwrap_or("<Unable to load event source JSON>"),
-        );
-
         self.view.button(cx, ids!(close_button)).reset_hover(cx);
-        self.view.button(cx, ids!(room_id_row.copy_button)).reset_hover(cx);
-        self.view.button(cx, ids!(event_id_row.copy_button)).reset_hover(cx);
+        self.view.button(cx, ids!(room_id_copy_button)).reset_hover(cx);
+        self.view.button(cx, ids!(event_id_copy_button)).reset_hover(cx);
         self.view.button(cx, ids!(copy_source_button)).reset_hover(cx);
         self.view.redraw(cx);
     }

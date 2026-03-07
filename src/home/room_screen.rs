@@ -738,7 +738,6 @@ impl Widget for RoomScreen {
                 if wr.button(cx, ids!(invite_user_button)).clicked(actions) {
                     let Some(tl) = self.tl_state.as_ref() else { continue };
                     if let Some(event_tl_item) = tl.items.get(index).and_then(|item| item.as_event()) {
-                        log!("invite_user_button clicked: index {index}, details: {:?}", event_tl_item);
                         let user_id = event_tl_item.sender().to_owned();
                         let username = if let TimelineDetails::Ready(profile) = event_tl_item.sender_profile() {
                             profile.display_name.as_deref().unwrap_or(user_id.as_str())

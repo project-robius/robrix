@@ -163,7 +163,6 @@ script_mod! {
 
             view_source_button := mod.widgets.NewMessageContextMenuButton {
                 draw_icon +: { svg: (ICON_VIEW_SOURCE) }
-                icon_walk +: { margin: Inset{top: 6, right: 3} }
                 text: "View Source"
             }
 
