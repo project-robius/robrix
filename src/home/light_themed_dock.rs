@@ -4,52 +4,42 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-
-    mod.widgets.COLOR_TAB_BAR = (COLOR_PRIMARY * 0.96)
-    mod.widgets.COLOR_DOCK_TAB = #E1EEFA // a light blue-ish color, de-saturated from `COLOR_ACTIVE_PRIMARY`
-    mod.widgets.COLOR_DRAG_TARGET = (COLOR_ACTIVE_PRIMARY)
-
-    mod.widgets.Splitter = Splitter {
+    mod.widgets.RobrixSplitter = Splitter {
         draw_bg +: {
-            color: (COLOR_SECONDARY)
-            color_hover: (COLOR_ROBRIX_PURPLE)
-            color_drag: (COLOR_ROBRIX_PURPLE)
+            color: uniform(COLOR_SECONDARY)
+            color_hover: uniform(COLOR_ROBRIX_PURPLE)
+            color_drag: uniform(COLOR_ROBRIX_PURPLE)
         }
-        // size: (THEME_SPLITTER_SIZE)
-        // min_horizontal: (THEME_SPLITTER_MIN_HORIZONTAL)
-        // max_horizontal: (THEME_SPLITTER_MAX_HORIZONTAL)
-        // min_vertical: (THEME_SPLITTER_MIN_VERTICAL)
-        // max_vertical: (THEME_SPLITTER_MAX_VERTICAL)
 
-        animator: {
+        animator: Animator{
             hover: {
                 default: @off
-                off: {
+                off: AnimatorState{
                     from: {all: Forward {duration: 0.1}}
                     apply: {
-                        draw_bg: {down: 0.0, hover: 0.0}
+                        draw_bg: {drag: 0.0, hover: 0.0}
                     }
                 }
 
-                on: {
+                on: AnimatorState{
                     from: {
                         all: Forward {duration: 0.1}
-                        state_down: Forward {duration: 0.01}
+                        drag: Forward {duration: 0.01}
                     }
                     apply: {
                         draw_bg: {
-                            down: 0.0,
-                            hover: [{time: 0.0, value: 1.0}],
+                            drag: 0.0,
+                            hover: snap(1.0)
                         }
                     }
                 }
 
-                drag: {
+                drag: AnimatorState{
                     from: { all: Forward { duration: 0.1 }}
                     apply: {
                         draw_bg: {
-                            down: [{time: 0.0, value: 1.0}],
-                            hover: 1.0,
+                            drag: snap(1.0),
+                            hover: 1.0
                         }
                     }
                 }
@@ -57,27 +47,28 @@ script_mod! {
         }
     }
 
-    mod.widgets.TabCloseButton = TabCloseButton {
-        height: 10.0, width: 10.0,
-        margin: Inset{ right: (THEME_SPACE_2), left: -1 },
+    mod.widgets.RobrixTabCloseButton = TabCloseButton {
+        height: 10.0
+        width: 10.0
+        margin: Inset{ right: theme.space_2, left: -1 }
         draw_button +: {
-            color_hover: #FE8610
-            color_active: #FE8610
-            size: 1.0
+            color: uniform(#0)
+            color_hover: uniform(#FE8610)
+            color_active: uniform(#FE8610)
         }
 
-        animator: {
+        animator: Animator{
             hover: {
                 default: @off
-                off: {
+                off: AnimatorState{
                     from: {all: Forward {duration: 0.1}}
                     apply: {
                         draw_button: {hover: 0.0}
                     }
                 }
 
-                on: {
-                    cursor: MouseCursor.Hand,
+                on: AnimatorState{
+                    cursor: MouseCursor.Hand
                     from: {all: Snap}
                     apply: {
                         draw_button: {hover: 1.0}
@@ -87,55 +78,32 @@ script_mod! {
         }
     }
 
-    mod.widgets.Tab = Tab {
-        width: Fit, height: Fill, //Fixed((THEME_TAB_HEIGHT)),
+    mod.widgets.RobrixTab = Tab {
+        width: Fit
+        height: Fill
 
         align: Align{x: 0.0, y: 0.5}
         padding: 9
 
-        close_button: TabCloseButton {}
+        close_button: mod.widgets.RobrixTabCloseButton {}
         draw_text +: {
             text_style: theme.font_regular {}
-            hover: 0.0
-            active: 0.0
-            get_color: fn() -> vec4 {
-                return mix(
-                    mix(
-                        #x0, // THEME_COLOR_TEXT_INACTIVE,
-                        #xf, // THEME_COLOR_TEXT_ACTIVE,
-                        self.active
-                    ),
-                    #fe8610,
-                    self.hover
-                )
-            }
+
+            color: #000
+            color_hover: uniform(#fe8610)
+            color_active: uniform(#fff)
         }
 
         draw_bg +: {
-            pixel: fn() {
-                let sdf = Sdf2d.viewport(self.pos * self.rect_size);
-                sdf.box(
-                    -1.,
-                    -1.,
-                    self.rect_size.x + 2,
-                    self.rect_size.y + 2,
-                    1.
-                );
-                sdf.fill_keep(
-                    mix(
-                        (COLOR_DOCK_TAB),
-                        (COLOR_ACTIVE_PRIMARY),
-                        self.active
-                    )
-                );
-                return sdf.result
-            }
+            // Light blue-ish color, de-saturated from COLOR_ACTIVE_PRIMARY
+            color: uniform(#E1EEFA)
+            color_active: uniform(COLOR_ACTIVE_PRIMARY)
         }
 
-        animator: {
+        animator: Animator{
             hover: {
                 default: @off
-                off: {
+                off: AnimatorState{
                     from: {all: Forward {duration: 0.2}}
                     apply: {
                         draw_bg: {hover: 0.0}
@@ -143,19 +111,19 @@ script_mod! {
                     }
                 }
 
-                on: {
-                    cursor: MouseCursor.Hand,
+                on: AnimatorState{
+                    cursor: MouseCursor.Hand
                     from: {all: Forward {duration: 0.1}}
                     apply: {
-                        draw_bg: {hover: [{time: 0.0, value: 1.0}]}
-                        draw_text: {hover: [{time: 0.0, value: 1.0}]}
+                        draw_bg: {hover: snap(1.0)}
+                        draw_text: {hover: snap(1.0)}
                     }
                 }
             }
 
             active: {
                 default: @off
-                off: {
+                off: AnimatorState{
                     from: {all: Forward {duration: 0.3}}
                     apply: {
                         close_button: {draw_button: {active: 0.0}}
@@ -164,7 +132,7 @@ script_mod! {
                     }
                 }
 
-                on: {
+                on: AnimatorState{
                     from: {all: Snap}
                     apply: {
                         close_button: {draw_button: {active: 1.0}}
@@ -176,44 +144,44 @@ script_mod! {
         }
     }
 
-    mod.widgets.TabBar = TabBar {
-        CloseableTab := Tab {closeable:true}
-        PermanentTab := Tab {closeable:false}
+    mod.widgets.RobrixTabBar = TabBar {
+        CloseableTab := mod.widgets.RobrixTab {closeable: true}
+        PermanentTab := mod.widgets.RobrixTab {closeable: false}
 
         draw_drag +: {
             draw_depth: 10
             color: #x0
         }
         draw_fill +: {
-            color: (COLOR_TAB_BAR)
+            color: COLOR_PRIMARY * 0.96
         }
 
-        width: Fill, height: (THEME_TAB_HEIGHT)
+        width: Fill
+        height: max(theme.tab_height, 25.)
 
         scroll_bars: ScrollBarsTabs {
             show_scroll_x: true
             show_scroll_y: false
-            scroll_bar_x: {
-                draw_bg +: {size: 3.0}
+            scroll_bar_x +: {
                 bar_size: 4
                 use_vertical_finger_scroll: true
             }
         }
     }
 
-    mod.widgets.Dock = Dock {
-        flow: Down,
+    mod.widgets.RobrixDock = Dock {
+        flow: Down
 
-        round_corner: {
-            color: (COLOR_SECONDARY)
+        round_corner +: {
+            color: uniform(COLOR_SECONDARY)
         }
 
-        padding: Inset{left: (THEME_DOCK_BORDER_SIZE), top: 0, right: (THEME_DOCK_BORDER_SIZE), bottom: (THEME_DOCK_BORDER_SIZE)}
-        drag_target_preview: {
+        padding: Inset{left: theme.dock_border_size, top: 0, right: theme.dock_border_size, bottom: theme.dock_border_size}
+        drag_target_preview +: {
             draw_depth: 10.0
-            color: (mix((COLOR_DRAG_TARGET), #FFFFFF00, pow(0.5, THEME_COLOR_CONTRAST)))
+            color: mix(COLOR_ACTIVE_PRIMARY, #FFFFFF00, 0.5)
         }
-        tab_bar: TabBar {}
-        splitter: Splitter {}
+        tab_bar: mod.widgets.RobrixTabBar {}
+        splitter: mod.widgets.RobrixSplitter {}
     }
 }

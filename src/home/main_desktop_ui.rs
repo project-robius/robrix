@@ -12,7 +12,7 @@ script_mod! {
 
 
     mod.widgets.MainDesktopUI = #(MainDesktopUI::register_widget(vm)) {
-        dock := Dock {
+        dock := mod.widgets.RobrixDock {
             width: Fill,
             height: Fill,
             padding: 0,
@@ -21,8 +21,8 @@ script_mod! {
             margin: Inset{left: 1.75}
 
             tab_bar +: {
-                CloseableTab := Tab { closeable: true }
-                PermanentTab := Tab { closeable: false }
+                CloseableTab := mod.widgets.RobrixTab { closeable: true }
+                PermanentTab := mod.widgets.RobrixTab { closeable: false }
             }
 
 

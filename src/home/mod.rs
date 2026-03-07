@@ -53,6 +53,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     room_screen::script_mod(vm);
     rooms_sidebar::script_mod(vm);
     welcome_screen::script_mod(vm);
+    light_themed_dock::script_mod(vm);
     main_mobile_ui::script_mod(vm);
     main_desktop_ui::script_mod(vm);
     spaces_bar::script_mod(vm);
