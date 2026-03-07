@@ -47,15 +47,17 @@ script_mod! {
             dots: {
                 default: @off
                 off: AnimatorState{
+                    redraw: true,
                     from: {all: Forward {duration: 0.0}}
                     apply: {
                         draw_bg: {anim_time: 0.0}
                     }
                 }
                 on: AnimatorState{
+                    redraw: true,
                     from: {all: Loop {duration: 1.0, end: 1.0}}
                     apply: {
-                        draw_bg: {anim_time: [{time: 0.0, value: 0.0}, {time: 1.0, value: 1.0}]}
+                        draw_bg: {anim_time: 1.0}
                     }
                 }
             }
@@ -72,7 +74,9 @@ pub struct BouncingDots {
 }
 impl Widget for BouncingDots {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.animator_handle_event(cx, event);
+        if self.animator_handle_event(cx, event).must_redraw() {
+            self.redraw(cx);
+        }
         self.view.handle_event(cx, event, scope);
     }
 
