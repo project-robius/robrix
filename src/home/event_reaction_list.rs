@@ -113,6 +113,7 @@ pub struct ReactionData {
 
 #[derive(Script, ScriptHook, Widget)]
 pub struct ReactionList {
+    #[uid] uid: WidgetUid,
     #[redraw] #[rust] area: Area,
     #[live] item: Option<LivePtr>,
     #[rust] children: Vec<(ButtonRef, ReactionData)>,

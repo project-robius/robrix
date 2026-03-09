@@ -1,6 +1,6 @@
 //! A modal dialog that displays the raw JSON source of a Matrix event.
 
-use makepad_code_editor::code_view::{CodeViewWidgetExt, CodeViewWidgetRefExt};
+use makepad_code_editor::code_view::CodeViewWidgetExt;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId};
 
@@ -276,9 +276,9 @@ impl Widget for EventSourceModal {
         if let Some(json) = &self.original_json {
             // DOESN'T WORK:
             // self.view.code_view(cx, ids!(code_view)).set_text(cx, json);
-            // ALSO DOESN'T WORK WITH FULLY-SPECIFIED PATH:
+            // // ALSO DOESN'T WORK WITH FULLY-SPECIFIED PATH:
             // self.view.code_view(cx, ids!(code_block.code_view)).set_text(cx, json);
-            // DOES WORK:
+            // // DOES WORK:
             self.view.child_by_path(ids!(code_view)).as_code_view().set_text(cx, json);
         }
         self.view.draw_walk(cx, scope, walk)

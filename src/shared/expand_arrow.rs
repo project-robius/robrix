@@ -60,6 +60,7 @@ script_mod! {
 /// Animated expand/collapse triangle arrow.
 #[derive(Script, ScriptHook, Widget, Animator)]
 pub struct ExpandArrow {
+    #[uid] uid: WidgetUid,
     #[source] source: ScriptObjectRef,
     #[apply_default] animator: Animator,
     #[redraw] #[live] draw_bg: DrawQuad,

@@ -439,6 +439,7 @@ impl MatrixLinkPillRef {
 /// A widget used to display a single HTML `<span>` tag or a `<font>` tag.
 #[derive(Script, ScriptHook, Widget)]
 struct MatrixHtmlSpan {
+    #[uid] uid: WidgetUid,
     // TODO: this is unused; just here to invalidly satisfy the area provider.
     //       I'm not sure how to implement `fn area()` given that it has multiple area rects.
     #[redraw] #[area] area: Area,
@@ -505,7 +506,7 @@ impl Widget for MatrixHtmlSpan {
         for area in &self.drawn_areas {
             match event.hits(cx, *area) {
                 Hit::FingerDown(..) if self.grab_key_focus => {
-                    cx.set_key_focus(self.area());
+                    cx.set_key_focus(self.area);
                 }
                 Hit::FingerHoverIn(..) if self.spoiler.is_some() => {
                     cx.set_cursor(MouseCursor::Hand);
@@ -616,7 +617,7 @@ impl Widget for MatrixHtmlSpan {
 
     fn set_text(&mut self, cx: &mut Cx, v: &str) {
         self.text.as_mut_empty().push_str(v);
-        self.redraw(cx);
+        self.area.redraw(cx);
     }
 }
 

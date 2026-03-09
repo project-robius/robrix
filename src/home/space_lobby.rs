@@ -629,6 +629,7 @@ pub struct DrawTreeLine {
 
 #[derive(Script, ScriptHook, Widget)]
 pub struct TreeLines {
+    #[uid] uid: WidgetUid,
     #[redraw] #[live] draw_bg: DrawTreeLine,
     #[walk] walk: Walk,
 }

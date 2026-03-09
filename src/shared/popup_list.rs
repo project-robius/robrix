@@ -407,6 +407,7 @@ script_mod! {
 /// A widget that displays a vertical list of popups.
 #[derive(Script, Widget)]
 pub struct RobrixPopupNotification {
+    #[uid] uid: WidgetUid,
     #[live]
     pub content: Option<LivePtr>,
 
@@ -531,7 +532,7 @@ impl RobrixPopupNotification {
             Timer::empty()
         };
         self.popups.push((view, popup_item, close_timer));
-        self.redraw(cx);
+        self.draw_bg.redraw(cx);
     }
 
     /// Adds a new popup with a custom view to the right side of the screen.

@@ -153,35 +153,6 @@ pub struct App {
     #[rust] waiting_to_navigate_to_room: Option<(BasicRoomDetails, Option<OwnedRoomId>)>,
 }
 
-impl App {
-    fn run(vm: &mut ScriptVm) -> Self {
-        // Order matters: base widgets first, then app widgets, then app UI.
-        makepad_widgets::script_mod(vm);
-        makepad_code_editor::script_mod(vm);
-        crate::shared::script_mod(vm);
-
-        #[cfg(feature = "tsp")]
-        crate::tsp::script_mod(vm);
-        #[cfg(not(feature = "tsp"))]
-        crate::tsp_dummy::script_mod(vm);
-
-        crate::settings::script_mod(vm);
-        // RoomInputBar depends on these Home widgets; preload them before room::script_mod.
-        crate::home::location_preview::script_mod(vm);
-        crate::home::tombstone_footer::script_mod(vm);
-        crate::home::editing_pane::script_mod(vm);
-        crate::room::script_mod(vm);
-        crate::join_leave_room_modal::script_mod(vm);
-        crate::verification_modal::script_mod(vm);
-        crate::profile::script_mod(vm);
-        crate::home::script_mod(vm);
-        crate::login::script_mod(vm);
-        crate::logout::script_mod(vm);
-
-        App::from_script_mod(vm, self::script_mod)
-    }
-}
-
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
         // only init logging/tracing once
@@ -602,6 +573,33 @@ fn clear_all_app_state(cx: &mut Cx) {
 }
 
 impl AppMain for App {
+    fn script_mod(vm: &mut ScriptVm) -> makepad_widgets::ScriptValue {
+        // Order matters: base widgets first, then app widgets, then app UI.
+        makepad_widgets::script_mod(vm);
+        makepad_code_editor::script_mod(vm);
+        crate::shared::script_mod(vm);
+
+        #[cfg(feature = "tsp")]
+        crate::tsp::script_mod(vm);
+        #[cfg(not(feature = "tsp"))]
+        crate::tsp_dummy::script_mod(vm);
+
+        crate::settings::script_mod(vm);
+        // RoomInputBar depends on these Home widgets; preload them before room::script_mod.
+        crate::home::location_preview::script_mod(vm);
+        crate::home::tombstone_footer::script_mod(vm);
+        crate::home::editing_pane::script_mod(vm);
+        crate::room::script_mod(vm);
+        crate::join_leave_room_modal::script_mod(vm);
+        crate::verification_modal::script_mod(vm);
+        crate::profile::script_mod(vm);
+        crate::home::script_mod(vm);
+        crate::login::script_mod(vm);
+        crate::logout::script_mod(vm);
+
+        self::script_mod(vm)
+    }
+
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         if let Event::Shutdown = event {
             let window_ref = self.ui.window(cx, ids!(main_window));
