@@ -8,7 +8,14 @@ use std::mem::discriminant;
 use makepad_widgets::*;
 use matrix_sdk_ui::sync_service::State;
 
-use crate::{home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, shared::{image_viewer::{ImageViewerAction, ImageViewerError, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}};
+use crate::{
+    home::navigation_tab_bar::{NavigationBarAction, SelectedTab},
+    shared::{
+        callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition},
+        image_viewer::{ImageViewerAction, ImageViewerError, LoadState},
+        popup_list::{PopupKind, enqueue_popup_notification},
+    },
+};
 
 live_design! {
     use link::theme::*;
@@ -91,6 +98,39 @@ pub struct RoomsListHeader {
 
 impl Widget for RoomsListHeader {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let loading_spinner = self.view.view(ids!(loading_spinner));
+        let offline_icon = self.view.view(ids!(offline_icon));
+        let synced_icon = self.view.view(ids!(synced_icon));
+
+        for (_id, view, text) in [
+            (live_id!(loading_spinner), loading_spinner, "Syncing..."),
+            (live_id!(offline_icon), offline_icon, "Offline"),
+            (live_id!(synced_icon), synced_icon, "Fully synced"),
+        ] {
+            match event.hits(cx, view.area()) {
+                Hit::FingerHoverIn(_) => {
+                    if view.visible() {
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &scope.path,
+                            TooltipAction::HoverIn {
+                                text: text.to_string(),
+                                widget_rect: view.area().rect(cx),
+                                options: CalloutTooltipOptions {
+                                    position: TooltipPosition::Bottom,
+                                    ..Default::default()
+                                },
+                            },
+                        );
+                    }
+                }
+                Hit::FingerHoverOut(_) => {
+                    cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
+                }
+                _ => {}
+            }
+        }
+
         if let Event::Actions(actions) = event {
             for action in actions {
                 match action.downcast_ref() {
