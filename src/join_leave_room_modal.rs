@@ -9,129 +9,124 @@ use matrix_sdk::ruma::OwnedRoomId;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{home::invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, room::BasicRoomDetails, shared::popup_list::{PopupKind, enqueue_popup_notification}, sliding_sync::{MatrixRequest, submit_async_request}, space_service_sync::{SpaceRequest, SpaceRoomListAction}, utils::{self, RoomNameId}};
-use crate::shared::styles::{COLOR_ACTIVE_PRIMARY, COLOR_PRIMARY, COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN};
 
-live_design! {
-    use link::theme::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::shared::icon_button::RobrixIconButton;
 
-    pub JoinLeaveRoomModal = {{JoinLeaveRoomModal}} {
+    mod.widgets.JoinLeaveRoomModal = #(JoinLeaveRoomModal::register_widget(vm)) {
         width: Fit
         height: Fit
 
-        <RoundedView> {
+        RoundedView {
             flow: Down
             width: 400
             height: Fit
-            padding: {top: 30, right: 40, bottom: 20, left: 40}
+            padding: Inset{top: 30, right: 40, bottom: 20, left: 40}
 
             show_bg: true
-            draw_bg: {
-                color: #fff
-                border_radius: 4.0
-            }
+            draw_bg.color: (COLOR_PRIMARY)
+            draw_bg.border_radius: 4.0
 
-            title_view = <View> {
+            title_view := View {
                 width: Fill,
                 height: Fit,
-                padding: {top: 0, bottom: 25}
-                align: {x: 0.5, y: 0.0}
+                padding: Inset{top: 0, bottom: 25}
+                align: Align{x: 0.5, y: 0.0}
 
-                title = <Label> {
-                    flow: RightWrap,
-                    draw_text: {
-                        text_style: <TITLE_TEXT>{font_size: 13},
+                title := Label {
+                    flow: Flow.Right{wrap: true},
+                    draw_text +: {
+                        text_style: TITLE_TEXT {font_size: 13},
                         color: #000
-                        wrap: Word
+                        flow: Flow.Right{wrap: true}
                     }
                 }
             }
 
-            body = <View> {
+            body := View {
                 width: Fill,
                 height: Fit,
                 flow: Down,
 
-                description = <Label> {
+                description := Label {
                     width: Fill
-                    draw_text: {
-                        text_style: <REGULAR_TEXT>{
+                    draw_text +: {
+                        text_style: REGULAR_TEXT {
                             font_size: 11.5,
                         },
                         color: #000
-                        wrap: Word
+                        flow: Flow.Right{wrap: true}
                     }
                 }
 
-                <View> {
+                View {
                     width: Fill, height: Fit
                     flow: Right,
-                    padding: {top: 20, bottom: 20}
-                    align: {x: 1.0, y: 0.5}
+                    padding: Inset{top: 20, bottom: 20}
+                    align: Align{x: 1.0, y: 0.5}
                     spacing: 20
 
-                    cancel_button = <RobrixIconButton> {
+                    cancel_button := RobrixIconButton {
                         width: 120,
-                        align: {x: 0.5, y: 0.5}
+                        align: Align{x: 0.5, y: 0.5}
                         padding: 15,
-                        draw_icon: {
-                            svg_file: (ICON_FORBIDDEN)
+                        draw_icon +: {
+                            svg: (ICON_FORBIDDEN)
                             color: (COLOR_FG_DANGER_RED),
                         }
-                        icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                        icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
         
-                        draw_bg: {
+                        draw_bg +: {
                             border_color: (COLOR_FG_DANGER_RED),
                             color: (COLOR_BG_DANGER_RED)
                         }
                         text: "Cancel"
-                        draw_text:{
+                        draw_text +: {
                             color: (COLOR_FG_DANGER_RED),
                         }
                     }
 
-                    accept_button = <RobrixIconButton> {
+                    accept_button := RobrixIconButton {
                         width: 120,
-                        align: {x: 0.5, y: 0.5}
+                        align: Align{x: 0.5, y: 0.5}
                         padding: 15,
-                        draw_icon: {
-                            svg_file: (ICON_CHECKMARK)
+                        draw_icon +: {
+                            svg: (ICON_CHECKMARK)
                             color: (COLOR_FG_ACCEPT_GREEN),
                         }
-                        icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                        icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
 
-                        draw_bg: {
+                        draw_bg +: {
                             border_color: (COLOR_FG_ACCEPT_GREEN),
                             color: (COLOR_BG_ACCEPT_GREEN)
                         }
                         text: "Yes"
-                        draw_text:{
+                        draw_text +: {
                             color: (COLOR_FG_ACCEPT_GREEN),
                         }
                     }
                 }
 
-                tip_view = <View> {
+                tip_view := View {
                     width: Fill,
                     height: Fit,
-                    align: {x: 0.5, y: 0.0}
+                    align: Align{x: 0.5, y: 0.0}
 
-                    tip = <Label> {
+                    tip := Label {
                         padding: 0,
                         margin: 0,
                         width: Fill,
                         height: Fit,
-                        flow: RightWrap,
-                        align: {x: 0.5}
-                        draw_text: {
-                            text_style: <REGULAR_TEXT>{
+                        flow: Flow.Right{wrap: true},
+                        align: Align{x: 0.5}
+                        draw_text +: {
+                            text_style: REGULAR_TEXT {
                                 font_size: 9,
                             },
                             color: #A,
-                            wrap: Word
+                            flow: Flow.Right{wrap: true}
                         }
                         text: "Tip: hold Shift when clicking a button to bypass this prompt."
                     }
@@ -141,7 +136,7 @@ live_design! {
     }
 }
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct JoinLeaveRoomModal {
     #[deref] view: View,
     #[rust] kind: Option<JoinLeaveModalKind>,
@@ -245,8 +240,8 @@ impl Widget for JoinLeaveRoomModal {
 
 impl WidgetMatchEvent for JoinLeaveRoomModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let accept_button = self.view.button(ids!(accept_button));
-        let cancel_button = self.view.button(ids!(cancel_button));
+        let mut accept_button = self.view.button(cx, ids!(accept_button));
+        let cancel_button = self.view.button(cx, ids!(cancel_button));
 
         let cancel_clicked = cancel_button.clicked(actions);
         if cancel_clicked ||
@@ -340,9 +335,9 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     }
                 }
 
-                self.view.label(ids!(title)).set_text(cx, &title);
-                self.view.label(ids!(description)).set_text(cx, &description);
-                self.view.view(ids!(tip_view)).set_visible(cx, false);
+                self.view.label(cx, ids!(title)).set_text(cx, &title);
+                self.view.label(cx, ids!(description)).set_text(cx, &description);
+                self.view.view(cx, ids!(tip_view)).set_visible(cx, false);
                 accept_button.set_text(cx, accept_button_text);
                 accept_button.set_enabled(cx, false);
                 needs_redraw = true;
@@ -358,18 +353,18 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         PopupKind::Success,
                         Some(3.0),
                     );
-                    self.view.label(ids!(title)).set_text(cx, "Joined room!");
-                    self.view.label(ids!(description)).set_text(cx, &format!(
+                    self.view.label(cx, ids!(title)).set_text(cx, "Joined room!");
+                    self.view.label(cx, ids!(description)).set_text(cx, &format!(
                         "Successfully joined \"{}\".",
                         kind.room_name(),
                     ));
                     new_final_success = Some(true);
                 }
                 Some(JoinRoomResultAction::Failed { room_id, error }) if room_id == kind.room_id() => {
-                    self.view.label(ids!(title)).set_text(cx, "Error joining room!");
+                    self.view.label(cx, ids!(title)).set_text(cx, "Error joining room!");
                     let was_invite = matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_));
                     let msg = utils::stringify_join_leave_error(error, kind.room_name(), true, was_invite);
-                    self.view.label(ids!(description)).set_text(cx, &msg);
+                    self.view.label(cx, ids!(description)).set_text(cx, &msg);
                     enqueue_popup_notification(
                         msg,
                         PopupKind::Error,
@@ -400,8 +395,8 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         );
                         popup_msg = "Successfully left room.".into();
                     }
-                    self.view.label(ids!(title)).set_text(cx, title);
-                    self.view.label(ids!(description)).set_text(cx, &description);
+                    self.view.label(cx, ids!(title)).set_text(cx, title);
+                    self.view.label(cx, ids!(description)).set_text(cx, &description);
                     enqueue_popup_notification(popup_msg, PopupKind::Success, Some(5.0));
                     new_final_success = Some(true);
                 }
@@ -419,8 +414,8 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         popup_msg = "Failed to leave room.".into();
                     }
 
-                    self.view.label(ids!(title)).set_text(cx, title);
-                    self.view.label(ids!(description)).set_text(cx, &description);
+                    self.view.label(cx, ids!(title)).set_text(cx, title);
+                    self.view.label(cx, ids!(description)).set_text(cx, &description);
                     enqueue_popup_notification(popup_msg, PopupKind::Error, None);
                     new_final_success = Some(false);
                 }
@@ -443,8 +438,8 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                             new_final_success = Some(false);
                         }
                     }
-                    self.view.label(ids!(title)).set_text(cx, title);
-                    self.view.label(ids!(description)).set_text(cx, &description);
+                    self.view.label(cx, ids!(title)).set_text(cx, title);
+                    self.view.label(cx, ids!(description)).set_text(cx, &description);
                 }
             }
         }
@@ -452,18 +447,18 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
         if let Some(success) = new_final_success {
             self.final_success = Some(success);
             needs_redraw = true;
-            accept_button.apply_over(cx, live!{
+            script_apply_eval!(cx, accept_button, {
                 enabled: true
                 text: "Okay"
-                draw_bg: {
-                    color: (COLOR_ACTIVE_PRIMARY),
-                    border_color: (COLOR_ACTIVE_PRIMARY)
+                draw_bg +: {
+                    color: mod.widgets.COLOR_ACTIVE_PRIMARY,
+                    border_color: mod.widgets.COLOR_ACTIVE_PRIMARY
                 }
-                draw_text: {
-                    color: (COLOR_PRIMARY)
+                draw_text +: {
+                    color: mod.widgets.COLOR_PRIMARY
                 }
-                draw_icon: {
-                    color: (COLOR_PRIMARY)
+                draw_icon +: {
+                    color: mod.widgets.COLOR_PRIMARY
                 }
             });
             accept_button.reset_hover(cx);
@@ -548,30 +543,30 @@ impl JoinLeaveRoomModal {
             }
         }
 
-        self.view.label(ids!(title)).set_text(cx, title);
-        self.view.label(ids!(description)).set_text(cx, &description);
+        self.view.label(cx, ids!(title)).set_text(cx, title);
+        self.view.label(cx, ids!(description)).set_text(cx, &description);
         if show_tip {
-            self.view.view(ids!(tip_view)).set_visible(cx, true);
-            self.view.label(ids!(tip)).set_text(cx, &format!(
+            self.view.view(cx, ids!(tip_view)).set_visible(cx, true);
+            self.view.label(cx, ids!(tip)).set_text(cx, &format!(
                 "Tip: hold Shift when clicking the \"{tip_button}\" button to bypass this prompt.",
             ));
         } else {
-            self.view.view(ids!(tip_view)).set_visible(cx, false);
+            self.view.view(cx, ids!(tip_view)).set_visible(cx, false);
         }
 
-        let accept_button = self.button(ids!(accept_button));
-        let cancel_button = self.button(ids!(cancel_button));
+        let mut accept_button = self.button(cx, ids!(accept_button));
+        let cancel_button = self.button(cx, ids!(cancel_button));
         accept_button.set_text(cx, "Yes");
-        accept_button.apply_over(cx, live!{
-            draw_bg: {
-                border_color: (COLOR_FG_ACCEPT_GREEN),
-                color: (COLOR_BG_ACCEPT_GREEN)
+        script_apply_eval!(cx, accept_button, {
+            draw_bg +: {
+                border_color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
+                color: mod.widgets.COLOR_BG_ACCEPT_GREEN
             }
-            draw_text: {
-                color: (COLOR_FG_ACCEPT_GREEN)
+            draw_text +: {
+                color: mod.widgets.COLOR_FG_ACCEPT_GREEN
             }
-            draw_icon: {
-                color: (COLOR_FG_ACCEPT_GREEN)
+            draw_icon +: {
+                color: mod.widgets.COLOR_FG_ACCEPT_GREEN
             }
         });
         accept_button.set_enabled(cx, true);

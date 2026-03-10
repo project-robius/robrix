@@ -871,13 +871,14 @@ impl RoomNameId {
     /// For `EmptyWas`, returns the previous name (preserving the old name for avatar).
     /// For other variants, returns the string representation.
     /// Unlike `Display::to_string()`, this does NOT fall back to the room ID for Empty names.
-    pub fn name_for_avatar(&self) -> Option<String> {
+    pub fn name_for_avatar(&self) -> Option<&str> {
         match &self.display_name {
             RoomDisplayName::Empty => None,
-            // Preserve the previous name for avatar generation
-            // so "EmptyWas(Alice)" shows "A" not "E"
-            RoomDisplayName::EmptyWas(name) => Some(name.clone()),
-            other => Some(other.to_string()),
+            // Use previous name so that avatars show "A" for "Empty(was Alice)", not "E".
+            RoomDisplayName::EmptyWas(name)
+            | RoomDisplayName::Aliased(name)
+            | RoomDisplayName::Calculated(name)
+            | RoomDisplayName::Named(name) => Some(name.as_str()),
         }
     }
 

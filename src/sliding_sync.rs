@@ -716,7 +716,7 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::Logout { is_desktop } => {
-                log!("Received MatrixRequest::Logout, is_desktop={}", is_desktop);
+                log!("Received MatrixRequest::Logout, is_desktop: {}", is_desktop);
                 let _logout_task = Handle::current().spawn(async move {
                     log!("Starting logout task");
                     // Use the state machine implementation
@@ -1916,7 +1916,7 @@ async fn matrix_worker_task(
 
                     // match &result {
                     //     Ok(preview_data) => {
-                    //         log!("Successfully fetched URL preview for {}: title={:?}, site_name={:?}", 
+                    //         log!("Successfully fetched URL preview for {}: title: {:?}, site_name: {:?}", 
                     //              url, preview_data.title, preview_data.site_name);
                     //     }
                     //     Err(e) => {
@@ -2988,7 +2988,7 @@ async fn add_new_room(
             let invite_details = new_room.room.invite_details().await.ok();
             let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
             // Start with a basic text avatar; the avatar image will be fetched asynchronously below.
-            let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar().as_deref());
+            let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar());
             let inviter_info = if let Some(inviter) = invite_details.and_then(|d| d.inviter) {
                 Some(InviterInfo {
                     user_id: inviter.user_id().to_owned(),
@@ -3872,7 +3872,7 @@ async fn room_avatar(room: &Room, room_name_id: &RoomNameId) -> FetchedRoomAvata
                     }
                 }
             }
-            utils::avatar_from_room_name(room_name_id.name_for_avatar().as_deref())
+            utils::avatar_from_room_name(room_name_id.name_for_avatar())
         }
     }
 }

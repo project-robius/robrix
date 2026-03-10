@@ -1,24 +1,25 @@
 [package]
 name = "robrix"
-authors = [
-    "Kevin Boos <kevinaboos@gmail.com>",
-    "Robius Project Maintainers",
-]
+authors = ["Kevin Boos <kevinaboos@gmail.com>", "Robius Project Maintainers"]
 description = "A Matrix chat client written using Makepad + Robius app dev framework in Rust."
 documentation = "https://docs.rs/robrix"
-edition = "2024"  ## mostly just to allow let-chains
+edition = "2024" ## mostly just to allow let-chains
 homepage = "https://robius.rs/"
 keywords = ["matrix", "chat", "client", "robius", "makepad"]
 license = "MIT"
 readme = "README.md"
-categories = [ "gui" ]
+categories = ["gui"]
 repository = "https://github.com/project-robius/robrix"
 version = "0.0.1-pre-alpha-4"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
+# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev" }
+# makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
+
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "dock_hide_tab_bar" }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "dock_hide_tab_bar" }
+
 
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
@@ -36,9 +37,9 @@ chrono = "0.4"
 clap = { version = "4.0.16", features = ["derive"] }
 crossbeam-channel = "0.5.10"
 crossbeam-queue = "0.3.8"
-eyeball = { version = "0.8.8", features = ["tracing"] }     # same as matrix-sdk-ui
-eyeball-im = { version = "0.8.0", features = ["tracing"] }  # same as matrix-sdk-ui
-imbl = { version = "6.1.0", features = ["serde"] }          # same as matrix-sdk-ui
+eyeball = { version = "0.8.8", features = ["tracing"] } # same as matrix-sdk-ui
+eyeball-im = { version = "0.8.0", features = [ "tracing" ] } # same as matrix-sdk-ui
+imbl = { version = "6.1.0", features = ["serde"] } # same as matrix-sdk-ui
 futures-util = "0.3"
 hashbrown = { version = "0.16", features = ["raw-entry"] }
 htmlize = "1.0.5"
@@ -46,14 +47,27 @@ indexmap = "2.6.0"
 imghdr = "0.7.0"
 linkify = "0.10.0"
 matrix-sdk-base = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main" }
-matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [ "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
-matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [ "rustls-tls" ] }
+matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [
+    "e2e-encryption",
+    "automatic-room-key-forwarding",
+    "markdown",
+    "sqlite",
+    "rustls-tls",
+    "bundled-sqlite",
+    "sso-login",
+] }
+matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [
+    "rustls-tls",
+] }
 ## Use the same ruma version as what's specified in matrix-sdk's Cargo.toml.
 ## Enable a few extra features:
 ## * "compat-optional" feature to allow missing body field in m.room.tombstone event.
 ## * "compat-unset-avatar" feature to allow deleting the user's avatar to work properly.
 ## * Note: we need a feature like "compat-unset-display-name" to unset display names, but that doesn't exist yet.
-ruma = { version = "0.14.1", features = ["compat-optional", "compat-unset-avatar"] } 
+ruma = { version = "0.14.1", features = [
+    "compat-optional",
+    "compat-unset-avatar",
+] }
 rand = "0.8.5"
 rangemap = "1.5.0"
 sanitize-filename = "0.6"
@@ -70,7 +84,10 @@ url = "2.5.0"
 ## Commit "f0bc4625dcd729e07e4a36257df2f1d94c81cef4" is the most recent one without the invalid change to pin serde to 1.0.219.
 ## See my issue here: <https://github.com/openwallet-foundation-labs/tsp/issues/237>.
 ## However, that commit doesn't build.... yikes. So we have to use a slightly older commit in the "rev" field below.
-tsp_sdk = { git = "https://github.com/openwallet-foundation-labs/tsp.git", rev = "1cd0cc9442e144ad7c01ccd30daffbb3a52c0f20", optional = true, features = ["async", "resolve"] }
+tsp_sdk = { git = "https://github.com/openwallet-foundation-labs/tsp.git", rev = "1cd0cc9442e144ad7c01ccd30daffbb3a52c0f20", optional = true, features = [
+    "async",
+    "resolve",
+] }
 quinn = { version = "0.11", default-features = false, optional = true }
 ## We only include this such that we can specify the prebuilt-nasm features,
 ## which is required to build this on Windows x86_64 without having to install NASM separately.
@@ -137,7 +154,7 @@ askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
 ## and then we won't need to patch ruma-events anymore.
 ## But that is a significant amount of work, so for now we just patch ruma-events.
 ##
-ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp"}
+ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
 
 
 [package.metadata.docs.rs]
@@ -158,7 +175,7 @@ lto = "thin"
 [profile.distribution]
 inherits = "release"
 codegen-units = 1
-lto = "fat" 
+lto = "fat"
 
 ## For very fast compilation, not for creating an actual high-quality executable.
 ## This is primarily useful for CI builds.
@@ -171,13 +188,15 @@ strip = true
 debug-assertions = false
 
 
-
 ## Configuration for `cargo packager`
 [package.metadata.packager]
 product_name = "Robrix"
 identifier = "org.robius.robrix"
 category = "SocialNetworking"
-authors = ["Project Robius <contact@robius.rs>", "Kevin Boos <kevinaboos@gmail.com>"]
+authors = [
+    "Project Robius <contact@robius.rs>",
+    "Kevin Boos <kevinaboos@gmail.com>",
+]
 publisher = "robius"
 license_file = "LICENSE-MIT"
 copyright = "Copyright 2023-202, Project Robius"
@@ -221,7 +240,10 @@ robius-packaging-commands before-each-package \
 """
 
 deep_link_protocols = [
-    { schemes = ["robrix", "matrix"], role = "viewer" }, ## `name` is left as default
+    { schemes = [
+        "robrix",
+        "matrix",
+    ], role = "viewer" }, ## `name` is left as default
 ]
 
 [package.metadata.packager.deb]
@@ -231,7 +253,7 @@ section = "utils"
 
 [package.metadata.packager.macos]
 minimum_system_version = "11.0"
-frameworks = [ ]
+frameworks = []
 info_plist_path = "./packaging/Info.plist"
 entitlements = "./packaging/Entitlements.plist"
 signing_identity = "Developer ID Application: AppChef Inc. (SFVQ5V48GD)"

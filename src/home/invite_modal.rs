@@ -4,149 +4,140 @@ use makepad_widgets::*;
 use ruma::OwnedUserId;
 
 use crate::home::room_screen::InviteResultAction;
-use crate::shared::styles::*;
 use crate::sliding_sync::{MatrixRequest, submit_async_request};
 use crate::utils::RoomNameId;
 
 
-live_design! {
-    use link::theme::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::shared::helpers::*;
-    use crate::shared::icon_button::RobrixIconButton;
 
-    pub InviteModal = {{InviteModal}} {
+    mod.widgets.InviteModal = #(InviteModal::register_widget(vm)) {
         width: Fit
         height: Fit
 
-        <RoundedView> {
+        RoundedView {
             width: 400
             height: Fit
-            align: {x: 0.5}
+            align: Align{x: 0.5}
             flow: Down
-            padding: {top: 30, right: 25, bottom: 20, left: 25}
+            padding: Inset{top: 30, right: 25, bottom: 20, left: 25}
 
             show_bg: true
-            draw_bg: {
+            draw_bg +: {
                 color: (COLOR_PRIMARY)
                 border_radius: 4.0
             }
 
-            title_view = <View> {
+            title_view := View {
                 width: Fill,
                 height: Fit,
-                padding: {top: 0, bottom: 25}
-                align: {x: 0.5, y: 0.0}
+                padding: Inset{top: 0, bottom: 25}
+                align: Align{x: 0.5, y: 0.0}
 
-                title = <Label> {
+                title := Label {
                     width: Fill
                     height: Fit
-                    align: {x: 0.5}
-                    flow: RightWrap,
-                    draw_text: {
-                        text_style: <TITLE_TEXT>{font_size: 13},
+                    align: Align{x: 0.5}
+                    flow: Flow.Right{wrap: true},
+                    draw_text +: {
+                        text_style: TITLE_TEXT {font_size: 13},
                         color: #000
-                        wrap: Word
+                        flow: Flow.Right{wrap: true}
                     }
                     text: "Invite to Room"
                 }
             }
 
-            user_id_input = <SimpleTextInput> {
-                draw_text: {
-                    text_style: <REGULAR_TEXT>{font_size: 11},
+            user_id_input := RobrixTextInput {
+                draw_text +: {
+                    text_style: REGULAR_TEXT {font_size: 11},
                     color: #000
                 }
                 empty_text: "@user:example.org",
             }
 
-            <View> {
+            View {
                 width: Fill, height: Fit
                 flow: Right,
-                padding: {top: 20, bottom: 10}
-                align: {x: 1.0, y: 0.5}
+                padding: Inset{top: 20, bottom: 10}
+                align: Align{x: 1.0, y: 0.5}
                 spacing: 20
 
-                cancel_button = <RobrixIconButton> {
+                cancel_button := RobrixIconButton {
                     width: 120,
-                    align: {x: 0.5, y: 0.5}
+                    align: Align{x: 0.5, y: 0.5}
                     padding: 12,
-                    draw_icon: {
-                        svg_file: (ICON_FORBIDDEN)
+                    draw_icon +: {
+                        svg: (ICON_FORBIDDEN)
                         color: (COLOR_TEXT),
                     }
-                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
 
-                    draw_bg: {
+                    draw_bg +: {
                         border_size: 0.75
-                        border_color: (COLOR_BG_DISABLED),
+                        border_color: (COLOR_BG_DISABLED)
                         color: (COLOR_SECONDARY)
                     }
                     text: "Cancel"
-                    draw_text:{
+                    draw_text +: {
                         color: (COLOR_TEXT),
                     }
                 }
 
-                confirm_button = <RobrixIconButton> {
+                confirm_button := RobrixIconButton {
                     width: 120
-                    align: {x: 0.5, y: 0.5}
+                    align: Align{x: 0.5, y: 0.5}
                     padding: 12,
-                    draw_icon: {
-                        svg_file: (ICON_ADD_USER)
+                    draw_icon +: {
+                        svg: (ICON_ADD_USER)
                         color: (COLOR_FG_ACCEPT_GREEN),
                     }
-                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
 
-                    draw_bg: {
+                    draw_bg +: {
                         border_size: 0.75
-                        border_color: (COLOR_FG_ACCEPT_GREEN),
+                        border_color: (COLOR_FG_ACCEPT_GREEN)
                         color: (COLOR_BG_ACCEPT_GREEN)
                     }
                     text: "Invite"
-                    draw_text:{
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
+                    draw_text.color: (COLOR_FG_ACCEPT_GREEN)
                 }
 
-                okay_button = <RobrixIconButton> {
+                okay_button := RobrixIconButton {
                     visible: false
                     width: 120
-                    align: {x: 0.5, y: 0.5}
+                    align: Align{x: 0.5, y: 0.5}
                     padding: 12,
-                    draw_icon: {
-                        svg_file: (ICON_CHECKMARK)
+                    draw_icon +: {
+                        svg: (ICON_CHECKMARK)
                         color: (COLOR_PRIMARY),
                     }
-                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
 
-                    draw_bg: {
-                        color: (COLOR_ACTIVE_PRIMARY)
-                    }
+                    draw_bg.color: (COLOR_ACTIVE_PRIMARY)
+
                     text: "Okay"
-                    draw_text:{
-                        color: (COLOR_PRIMARY),
-                    }
+                    draw_text.color: (COLOR_PRIMARY)
                 }
             }
 
-            status_label_view = <View> {
+            status_label_view := View {
                 visible: false
                 width: Fill,
                 height: Fit,
-                align: {x: 0.5, y: 0.0}
+                align: Align{x: 0.5, y: 0.0}
 
-                status_label = <Label> {
+                status_label := Label {
                     width: Fill,
                     height: Fit,
-                    flow: RightWrap,
-                    align: {x: 0.5, y: 0.0}
-                    margin: {top: 10}
-                    draw_text: {
-                        wrap: Word
-                        text_style: <REGULAR_TEXT>{font_size: 11},
+                    flow: Flow.Right{wrap: true},
+                    align: Align{x: 0.5, y: 0.0}
+                    margin: Inset{top: 10}
+                    draw_text +: {
+                        flow: Flow.Right{wrap: true}
+                        text_style: REGULAR_TEXT {font_size: 11},
                         color: #000
                     }
                     text: ""
@@ -179,7 +170,7 @@ enum InviteModalState {
 }
 
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct InviteModal {
     #[deref] view: View,
     #[rust] state: InviteModalState,
@@ -199,7 +190,7 @@ impl Widget for InviteModal {
 
 impl WidgetMatchEvent for InviteModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let cancel_button = self.view.button(ids!(cancel_button));
+        let cancel_button = self.view.button(cx, ids!(cancel_button));
 
         // Handle canceling/closing the modal.
         let cancel_clicked = cancel_button.clicked(actions);
@@ -216,16 +207,16 @@ impl WidgetMatchEvent for InviteModal {
         }
 
         // Handle the okay button (shown after invite success).
-        let okay_button = self.view.button(ids!(okay_button));
+        let okay_button = self.view.button(cx, ids!(okay_button));
         if okay_button.clicked(actions) {
             cx.action(InviteModalAction::Close);
             return;
         }
 
-        let confirm_button = self.view.button(ids!(confirm_button));
-        let user_id_input = self.view.text_input(ids!(user_id_input));
-        let status_view = self.view.view(ids!(status_label_view));
-        let status_label_view = self.view.label(ids!(status_label_view.status_label));
+        let confirm_button = self.view.button(cx, ids!(confirm_button));
+        let user_id_input = self.view.text_input(cx, ids!(user_id_input));
+        let status_view = self.view.view(cx, ids!(status_label_view));
+        let mut status_label = self.view.label(cx, ids!(status_label_view.status_label));
 
         // Handle return key or invite button click.
         if let Some(user_id_str) = confirm_button.clicked(actions)
@@ -234,10 +225,10 @@ impl WidgetMatchEvent for InviteModal {
         {
             // Validate the user ID
             if user_id_str.is_empty() {
-                status_label_view.apply_over(cx, live!{
+                script_apply_eval!(cx, status_label, {
                     text: "Please enter a user ID.",
-                    draw_text: {
-                        color: (COLOR_FG_DANGER_RED),
+                    draw_text +: {
+                        color: mod.widgets.COLOR_FG_DANGER_RED,
                     },
                 });
                 status_view.set_visible(cx, true);
@@ -254,24 +245,24 @@ impl WidgetMatchEvent for InviteModal {
                             user_id: user_id.to_owned(),
                         });
                         self.state = InviteModalState::WaitingForInvite(user_id.to_owned());
-                        status_label_view.apply_over(cx, live!(
+                        script_apply_eval!(cx, status_label, {
                             text: "Sending invite...",
-                            draw_text: {
-                                color: (COLOR_ACTIVE_PRIMARY_DARKER),
+                            draw_text +: {
+                                color: mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER,
                             },
-                        ));
+                        });
                         status_view.set_visible(cx, true);
                         confirm_button.set_enabled(cx, false);
                         user_id_input.set_is_read_only(cx, true);
                     }
                 }
                 Err(_) => {
-                    status_label_view.apply_over(cx, live!(
+                    script_apply_eval!(cx, status_label, {
                         text: "Invalid User ID. Expected format: @user:server.xyz",
-                        draw_text: {
-                            color: (COLOR_FG_DANGER_RED),
+                        draw_text +: {
+                            color: mod.widgets.COLOR_FG_DANGER_RED,
                         },
-                    ));
+                    });
                     status_view.set_visible(cx, true);
                     user_id_input.set_key_focus(cx);
                 }
@@ -288,10 +279,10 @@ impl WidgetMatchEvent for InviteModal {
                             && invited_user_id == user_id
                     => {
                         let status = format!("Successfully invited {user_id}!");
-                        status_label_view.apply_over(cx, live!{
-                            text: (status),
-                            draw_text: {
-                                color: (COLOR_FG_ACCEPT_GREEN)
+                        script_apply_eval!(cx, status_label, {
+                            text: #(status),
+                            draw_text +: {
+                                color: mod.widgets.COLOR_FG_ACCEPT_GREEN
                             }
                         });
                         status_view.set_visible(cx, true);
@@ -305,10 +296,10 @@ impl WidgetMatchEvent for InviteModal {
                             && invited_user_id == user_id
                     => {
                         let status = format!("Failed to send invite: {error}");
-                        status_label_view.apply_over(cx, live!{
-                            text: (status),
-                            draw_text: {
-                                color: (COLOR_FG_DANGER_RED),
+                        script_apply_eval!(cx, status_label, {
+                            text: #(status),
+                            draw_text +: {
+                                color: mod.widgets.COLOR_FG_DANGER_RED,
                             }
                         });
                         status_view.set_visible(cx, true);
@@ -331,7 +322,7 @@ impl WidgetMatchEvent for InviteModal {
 
 impl InviteModal {
     pub fn show(&mut self, cx: &mut Cx, room_name_id: RoomNameId) {
-        self.view.label(ids!(title)).set_text(
+        self.view.label(cx, ids!(title)).set_text(
             cx,
             &format!("Invite to {room_name_id}"),
         );
@@ -339,10 +330,10 @@ impl InviteModal {
         self.room_name_id = Some(room_name_id);
 
         // Reset the UI state
-        let confirm_button = self.view.button(ids!(confirm_button));
-        let cancel_button = self.view.button(ids!(cancel_button));
-        let okay_button = self.view.button(ids!(okay_button));
-        let user_id_input = self.view.text_input(ids!(user_id_input));
+        let confirm_button = self.view.button(cx, ids!(confirm_button));
+        let cancel_button = self.view.button(cx, ids!(cancel_button));
+        let okay_button = self.view.button(cx, ids!(okay_button));
+        let user_id_input = self.view.text_input(cx, ids!(user_id_input));
         confirm_button.set_visible(cx, true);
         confirm_button.set_enabled(cx, true);
         confirm_button.reset_hover(cx);
@@ -353,8 +344,8 @@ impl InviteModal {
         okay_button.reset_hover(cx);
         user_id_input.set_is_read_only(cx, false);
         user_id_input.set_text(cx, "");
-        self.view.view(ids!(status_label_view)).set_visible(cx, false);
-        self.view.label(ids!(status_label_view.status_label)).set_text(cx, "");
+        self.view.view(cx, ids!(status_label_view)).set_visible(cx, false);
+        self.view.label(cx, ids!(status_label_view.status_label)).set_text(cx, "");
         self.view.redraw(cx);
     }
 }
