@@ -26,7 +26,7 @@ script_mod! {
             }
 
 
-            root := DockSplitter{
+            root := DockSplitter {
                 axis: SplitterAxis.Horizontal
                 align: SplitterAlign.FromA(300.0)
                 a: @rooms_sidebar_tabs
@@ -37,6 +37,7 @@ script_mod! {
             rooms_sidebar_tabs := DockTabs{
                 tabs: [@rooms_sidebar_tab]
                 selected: 0
+                hide_tab_bar: true
             }
 
             main_tabs := DockTabs{

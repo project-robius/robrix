@@ -6,9 +6,45 @@ script_mod! {
 
     mod.widgets.RobrixSplitter = Splitter {
         draw_bg +: {
-            color: uniform(COLOR_SECONDARY)
-            color_hover: uniform(COLOR_ROBRIX_PURPLE)
-            color_drag: uniform(COLOR_ROBRIX_PURPLE)
+            color: COLOR_SECONDARY
+            color_hover: COLOR_ROBRIX_PURPLE
+            color_drag: COLOR_ROBRIX_PURPLE
+
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+
+                // Body: dark gray by default, transitions to purple on hover/drag
+                let body_color = mix(
+                    theme.color_bg_app
+                    mix(self.color_hover, self.color_drag, self.drag)
+                    self.hover
+                )
+                sdf.clear(body_color)
+
+                // Draw the grab bar shape
+                if self.is_vertical > 0.5 {
+                    sdf.box(
+                        self.splitter_pad
+                        self.rect_size.y * 0.5 - self.bar_size * 0.5
+                        self.rect_size.x - 2.0 * self.splitter_pad
+                        self.bar_size
+                        self.border_radius
+                    )
+                }
+                else {
+                    sdf.box(
+                        self.rect_size.x * 0.5 - self.bar_size * 0.5
+                        self.splitter_pad
+                        self.bar_size
+                        self.rect_size.y - 2.0 * self.splitter_pad
+                        self.border_radius
+                    )
+                }
+
+                // Grab bar: white when hovered/dragged, otherwise matches body
+                let grab_color = mix(self.color, #fff, self.hover)
+                return sdf.fill_keep(grab_color)
+            }
         }
 
         animator: Animator{
@@ -52,9 +88,9 @@ script_mod! {
         width: 10.0
         margin: Inset{ right: theme.space_2, left: -1 }
         draw_button +: {
-            color: uniform(#0)
-            color_hover: uniform(#FE8610)
-            color_active: uniform(#FE8610)
+            color: #0
+            color_hover: #FE8610
+            color_active: #FE8610
         }
 
         animator: Animator{
@@ -84,20 +120,26 @@ script_mod! {
 
         align: Align{x: 0.0, y: 0.5}
         padding: 9
+        margin: 0
 
         close_button: mod.widgets.RobrixTabCloseButton {}
         draw_text +: {
             text_style: theme.font_regular {}
 
             color: #000
-            color_hover: uniform(#fe8610)
-            color_active: uniform(#fff)
+            color_hover: #fe8610
+            color_active: COLOR_PRIMARY
         }
 
         draw_bg +: {
             // Light blue-ish color, de-saturated from COLOR_ACTIVE_PRIMARY
-            color: uniform(#E1EEFA)
-            color_active: uniform(COLOR_ACTIVE_PRIMARY)
+            color: #E1EEFA
+            // A slightly darker shade of the tab color for hover visibility
+            color_hover: #C8DDEF
+            color_active: COLOR_ACTIVE_PRIMARY
+            // Remove the border and rounded corners from the default Tab style
+            border_size: 0.0
+            border_radius: 3.0
         }
 
         animator: Animator{
@@ -155,6 +197,9 @@ script_mod! {
         draw_fill +: {
             color: COLOR_PRIMARY * 0.96
         }
+        draw_bg +: {
+            color: COLOR_PRIMARY * 0.96
+        }
 
         width: Fill
         height: max(theme.tab_height, 25.)
@@ -173,7 +218,7 @@ script_mod! {
         flow: Down
 
         round_corner +: {
-            color: uniform(COLOR_SECONDARY)
+            color: COLOR_SECONDARY
         }
 
         padding: Inset{left: theme.dock_border_size, top: 0, right: theme.dock_border_size, bottom: theme.dock_border_size}
