@@ -14,7 +14,7 @@ use crate::{
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::{callout_tooltip::{
         CalloutTooltipWidgetRefExt,
         TooltipAction,
-    }, confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, file_upload_modal::FilePreviewerAction, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -39,6 +39,7 @@ live_design! {
     use crate::home::event_source_modal::EventSourceModal;
     use crate::shared::callout_tooltip::CalloutTooltip;
     use crate::shared::image_viewer::ImageViewer;
+    use crate::shared::file_upload_modal::FileUploadModal;
     use link::tsp_link::TspVerificationModal;
 
 
@@ -99,6 +100,13 @@ live_design! {
                             content: {
                                 width: Fill, height: Fill,
                                 image_viewer_modal_inner = <ImageViewer> {}
+                            }
+                        }
+                        file_upload_modal = <Modal> {
+                            content: {
+                                height: Fill, width: Fill,
+                                align: {x: 0.5, y: 0.5},
+                                file_upload_modal_inner = <FileUploadModal> {}
                             }
                         }
                         
@@ -504,6 +512,17 @@ impl MatchEvent for App {
                 }
                 Some(ImageViewerAction::Hide) => {
                     self.ui.modal(ids!(image_viewer_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
+            }
+            match action.downcast_ref() {
+                Some(FilePreviewerAction::Show(_)) => {
+                    self.ui.modal(ids!(file_upload_modal)).open(cx);
+                    continue;
+                }
+                Some(FilePreviewerAction::Hide) => {
+                    self.ui.modal(ids!(file_upload_modal)).close(cx);
                     continue;
                 }
                 _ => {}

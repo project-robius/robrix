@@ -957,6 +957,7 @@ impl Widget for RoomScreen {
                     timeline_kind: tl.kind.clone(),
                     room_members,
                     room_avatar_url,
+                    timeline_update_sender: Some(tl.update_sender.clone()),
                 }
             } else if let Some(room_name) = &self.room_name_id {
                 // Fallback case: we have a room_name but no tl_state yet
@@ -967,6 +968,7 @@ impl Widget for RoomScreen {
                         .expect("BUG: room_name_id was set but timeline_kind was missing"),
                     room_members: None,
                     room_avatar_url: None,
+                    timeline_update_sender: None,
                 }
             } else {
                 // No room selected yet, skip event handling that requires room context
@@ -982,6 +984,7 @@ impl Widget for RoomScreen {
                     timeline_kind: TimelineKind::MainRoom { room_id },
                     room_members: None,
                     room_avatar_url: None,
+                    timeline_update_sender: None,
                 }
             };
             let mut room_scope = Scope::with_props(&room_props);
@@ -1617,6 +1620,32 @@ impl RoomScreen {
                     tl.tombstone_info = Some(successor_room_details);
                 }
                 TimelineUpdate::LinkPreviewFetched => {}
+                TimelineUpdate::FileUploadConfirmed(file_data) => {
+                    // Handle file upload confirmation from the file upload modal.
+                    // This ensures the upload is associated with the correct timeline.
+                    let room_input_bar = self.view.room_input_bar(ids!(room_input_bar));
+                    if let Some(replied_to) = room_input_bar.handle_file_upload_confirmed(cx) {
+                        submit_async_request(MatrixRequest::SendAttachment {
+                            timeline_kind: tl.kind.clone(),
+                            file_data,
+                            replied_to,
+                            #[cfg(feature = "tsp")]
+                            sign_with_tsp: room_input_bar.is_tsp_signing_enabled(cx),
+                        });
+                    }
+                }
+                TimelineUpdate::FileUploadUpdate { current, total } => {
+                    let room_input_bar = self.view.room_input_bar(ids!(room_input_bar));
+                    room_input_bar.set_progress_value(cx, current, total);
+                }
+                TimelineUpdate::FileUploadAbortHandle(handle) => {
+                    let room_input_bar = self.view.room_input_bar(ids!(room_input_bar));
+                    room_input_bar.set_abort_handle(handle);
+                }
+                TimelineUpdate::FileUploadError { error, file_data } => {
+                    let room_input_bar = self.view.room_input_bar(ids!(room_input_bar));
+                    room_input_bar.handle_upload_error(cx, error, file_data);
+                }
             }
         }
 
@@ -2274,6 +2303,7 @@ impl RoomScreen {
                 content_drawn_since_last_update: RangeSet::new(),
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
+                update_sender: update_sender.clone(),
                 request_sender,
                 media_cache: MediaCache::new(Some(update_sender.clone())),
                 link_preview_cache: LinkPreviewCache::new(Some(update_sender)),
@@ -2631,6 +2661,10 @@ pub struct RoomScreenProps {
     pub timeline_kind: TimelineKind,
     pub room_members: Option<Arc<Vec<RoomMember>>>,
     pub room_avatar_url: Option<OwnedMxcUri>,
+    /// The sender for timeline updates, used for operations like file uploads
+    /// that need to notify this specific timeline.
+    /// This is `None` in fallback cases where the timeline state isn't fully loaded yet.
+    pub timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 }
 
 
@@ -2759,6 +2793,25 @@ pub enum TimelineUpdate {
     Tombstoned(SuccessorRoomDetails),
     /// A notice that link preview data for a URL has been fetched and is now available.
     LinkPreviewFetched,
+    /// A file upload was confirmed from the file upload modal.
+    FileUploadConfirmed(crate::shared::file_upload_modal::FileData),
+    /// An update on the progress of a file upload that is currently in-flight.
+    FileUploadUpdate {
+        /// Current progress value (e.g., bytes uploaded).
+        current: u64,
+        /// Total value to reach (e.g., total file size in bytes).
+        total: u64,
+    },
+    /// A file upload failed with an error.
+    /// Includes the file data so the user can retry the upload.
+    FileUploadError {
+        /// The error message describing why the upload failed.
+        error: String,
+        /// The file data that can be used to retry the upload.
+        file_data: crate::shared::file_upload_modal::FileData,
+    },
+    /// A notice that a file upload in this timeline was aborted.
+    FileUploadAbortHandle(tokio::task::AbortHandle),
 }
 
 thread_local! {
@@ -2819,6 +2872,10 @@ struct TimelineUiState {
     /// in a sync context and the sender runs in an async context,
     /// which is okay because a sender on an unbounded channel never needs to block.
     update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
+
+    /// The channel sender for timeline updates for this room.
+    /// This is passed to child widgets that need to send updates to this timeline.
+    update_sender: crossbeam_channel::Sender<TimelineUpdate>,
 
     /// The sender for timeline requests from a RoomScreen showing this room
     /// to the background async task that handles this room's timeline updates.
