@@ -12,6 +12,7 @@
 #![recursion_limit = "256"]
 
 use axum::{
+    extract::State,
     response::sse::{Event, Sse},
     routing::get,
     Router,
@@ -35,10 +36,21 @@ use matrix_sdk::{
 };
 
 /// Shared state for tracking SSE messages that need to be edited
-#[derive(Clone, Default)]
-struct SseState {
+#[derive(Clone)]
+struct AppState {
     /// Maps event_id to (room_id, accumulated_content)
     pending_edits: Arc<Mutex<HashMap<OwnedEventId, (OwnedRoomId, String)>>>,
+    /// Matrix client for editing messages
+    client: Arc<Mutex<Option<Client>>>,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            pending_edits: Arc::new(Mutex::new(HashMap::new())),
+            client: Arc::new(Mutex::new(None)),
+        }
+    }
 }
 
 /// The messages to stream via SSE
@@ -48,15 +60,32 @@ const SSE_MESSAGES: &[&str] = &[
     "Local News: Community embraces new SSE widget for real-time updates",
     "Science: Researchers achieve breakthrough in quantum computing",
     "Weather: Sunny skies expected throughout the week",
-    "[STREAM_END]", // Marker for end of stream
 ];
 
-/// SSE handler that streams messages and signals completion
-async fn sse_handler() -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+/// SSE handler that streams messages and edits Matrix message when complete
+async fn sse_handler(
+    State(state): State<AppState>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    // Collect all content for the final edit
+    let all_content: String = SSE_MESSAGES
+        .iter()
+        .map(|s| *s)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Create a channel to signal stream completion
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    let tx = Arc::new(Mutex::new(Some(tx)));
+
+    let state_clone = state.clone();
+    let tx_clone = tx.clone();
+
     let stream = stream::iter(SSE_MESSAGES.iter().enumerate())
+        .chain(stream::once(async { (SSE_MESSAGES.len(), &"[STREAM_END]") }))
         .throttle(Duration::from_secs(1))
-        .map(|(i, msg)| {
-            let data = if *msg == "[STREAM_END]" {
+        .map(move |(i, msg)| {
+            let is_end = *msg == "[STREAM_END]";
+            let data = if is_end {
                 format!(r#"{{"id": {}, "status": "complete"}}"#, i)
             } else {
                 format!(
@@ -66,8 +95,28 @@ async fn sse_handler() -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
                     msg
                 )
             };
+
+            // Signal completion when STREAM_END is sent
+            if is_end {
+                let tx = tx_clone.clone();
+                tokio::spawn(async move {
+                    if let Some(sender) = tx.lock().await.take() {
+                        let _ = sender.send(());
+                    }
+                });
+            }
+
             Ok(Event::default().data(data))
         });
+
+    // Spawn a task that waits for stream completion signal, then edits the message
+    let content_for_edit = all_content;
+    tokio::spawn(async move {
+        // Wait for the stream to signal completion
+        let _ = rx.await;
+        // Edit the pending Matrix message
+        edit_pending_message(state_clone, content_for_edit).await;
+    });
 
     Sse::new(stream).keep_alive(
         axum::response::sse::KeepAlive::new()
@@ -76,12 +125,51 @@ async fn sse_handler() -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     )
 }
 
-/// Run the Matrix bot that responds to /sse commands
-async fn run_matrix_bot(state: SseState) -> anyhow::Result<()> {
-    let homeserver_url = "http://localhost:8008";
-    let username = "testuser2";
-    let password = "testpassword";
+/// Edit the most recent pending Matrix message with the accumulated content
+async fn edit_pending_message(state: AppState, content: String) {
+    let client_guard = state.client.lock().await;
+    let Some(client) = client_guard.as_ref() else {
+        eprintln!("Matrix bot: No client available for editing");
+        return;
+    };
 
+    // Get the first pending edit (there should be one per SSE request)
+    let pending_edit = {
+        let mut pending = state.pending_edits.lock().await;
+        pending.drain().next()
+    };
+
+    if let Some((event_id, (room_id, _))) = pending_edit {
+        if let Some(room) = client.get_room(&room_id) {
+            let final_content = format!("SSE Stream Complete:\n\n{}", content);
+
+            // Create edit content using ReplacementMetadata
+            let metadata = ReplacementMetadata::new(event_id.clone(), None);
+            let new_content = RoomMessageEventContent::text_plain(&final_content)
+                .make_replacement(metadata);
+
+            match room.send(new_content).await {
+                Ok(_) => {
+                    println!("Matrix bot: Successfully edited message {}", event_id);
+                }
+                Err(e) => {
+                    eprintln!("Matrix bot: Failed to edit message: {}", e);
+                }
+            }
+        }
+    } else {
+        println!("Matrix bot: No pending message to edit");
+    }
+}
+
+/// Run the Matrix bot that responds to /sse commands
+async fn run_matrix_bot(state: AppState) -> anyhow::Result<()> {
+    // let homeserver_url = "http://localhost:8008";
+    // let username = "testuser2";
+    // let password = "testpassword";
+    let homeserver_url = "https://matrix.org";
+    let username = "ruitobeta";
+    let password = "!C6WS3hcPGM:GMa";
     println!("Matrix bot: Connecting to homeserver {}", homeserver_url);
 
     // Build the client
@@ -100,17 +188,21 @@ async fn run_matrix_bot(state: SseState) -> anyhow::Result<()> {
 
     println!("Matrix bot: Logged in as {}", username);
 
+    // Store the client in shared state for later use
+    {
+        let mut client_guard = state.client.lock().await;
+        *client_guard = Some(client.clone());
+    }
+
     // Clone state for the event handler
     let state_clone = state.clone();
-    let client_clone = client.clone();
 
     // Add event handler for room messages
     client.add_event_handler(
         move |event: OriginalSyncRoomMessageEvent, room: Room| {
             let state = state_clone.clone();
-            let client = client_clone.clone();
             async move {
-                handle_room_message(event, room, state, client).await;
+                handle_room_message(event, room, state).await;
             }
         },
     );
@@ -126,8 +218,7 @@ async fn run_matrix_bot(state: SseState) -> anyhow::Result<()> {
 async fn handle_room_message(
     event: OriginalSyncRoomMessageEvent,
     room: Room,
-    state: SseState,
-    client: Client,
+    state: AppState,
 ) {
     // Only handle text messages
     let MessageType::Text(text_content) = &event.content.msgtype else {
@@ -154,110 +245,15 @@ async fn handle_room_message(
                     event_id
                 );
 
-                // Store the event_id for later editing
+                // Store the event_id for later editing (will be edited when SSE stream ends)
                 {
                     let mut pending = state.pending_edits.lock().await;
-                    pending.insert(event_id.clone(), (room_id, String::new()));
+                    pending.insert(event_id, (room_id, String::new()));
                 }
-
-                // Spawn a task to fetch SSE and accumulate content
-                let state_clone = state.clone();
-                let client_clone = client.clone();
-                tokio::spawn(async move {
-                    fetch_sse_and_edit(event_id, state_clone, client_clone).await;
-                });
             }
             Err(e) => {
                 eprintln!("Matrix bot: Failed to send message: {}", e);
             }
-        }
-    }
-}
-
-/// Fetch SSE content and edit the original message when complete
-async fn fetch_sse_and_edit(event_id: OwnedEventId, state: SseState, client: Client) {
-    println!("Matrix bot: Starting SSE fetch for event {}", event_id);
-
-    let sse_url = "http://127.0.0.1:3001/events";
-
-    // Use reqwest to fetch SSE
-    let response = match reqwest::Client::new()
-        .get(sse_url)
-        .header("Accept", "text/event-stream")
-        .send()
-        .await
-    {
-        Ok(resp) => resp,
-        Err(e) => {
-            eprintln!("Matrix bot: Failed to connect to SSE server: {}", e);
-            return;
-        }
-    };
-
-    let mut accumulated_content = String::new();
-    let mut stream = response.bytes_stream();
-
-    while let Some(chunk_result) = stream.next().await {
-        match chunk_result {
-            Ok(chunk) => {
-                let text = String::from_utf8_lossy(&chunk);
-                // Parse SSE data lines
-                for line in text.lines() {
-                    if let Some(data) = line.strip_prefix("data: ") {
-                        // Parse JSON to extract content
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                            if let Some(content) = json.get("content").and_then(|c| c.as_str()) {
-                                if !accumulated_content.is_empty() {
-                                    accumulated_content.push_str("\n");
-                                }
-                                accumulated_content.push_str(content);
-                            }
-                            // Check for stream end
-                            if json.get("status").and_then(|s| s.as_str()) == Some("complete") {
-                                println!("Matrix bot: SSE stream completed");
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("Matrix bot: Error reading SSE stream: {}", e);
-                break;
-            }
-        }
-    }
-
-    // Now edit the original message with accumulated content
-    let room_id = {
-        let pending = state.pending_edits.lock().await;
-        pending.get(&event_id).map(|(room_id, _)| room_id.clone())
-    };
-
-    if let Some(room_id) = room_id {
-        if let Some(room) = client.get_room(&room_id) {
-            let final_content = format!(
-                "SSE Stream Complete:\n\n{}",
-                accumulated_content
-            );
-
-            // Create edit content using ReplacementMetadata
-            let metadata = ReplacementMetadata::new(event_id.clone(), None);
-            let new_content = RoomMessageEventContent::text_plain(&final_content)
-                .make_replacement(metadata);
-
-            match room.send(new_content).await {
-                Ok(_) => {
-                    println!("Matrix bot: Successfully edited message {}", event_id);
-                }
-                Err(e) => {
-                    eprintln!("Matrix bot: Failed to edit message: {}", e);
-                }
-            }
-
-            // Remove from pending edits
-            let mut pending = state.pending_edits.lock().await;
-            pending.remove(&event_id);
         }
     }
 }
@@ -267,10 +263,12 @@ async fn main() {
     println!("Starting SSE Server with Matrix Bot...");
 
     // Create shared state
-    let state = SseState::default();
+    let state = AppState::default();
 
-    // Create SSE server
-    let app = Router::new().route("/events", get(sse_handler));
+    // Create SSE server with state
+    let app = Router::new()
+        .route("/events", get(sse_handler))
+        .with_state(state.clone());
 
     // Spawn SSE server
     let sse_handle = tokio::spawn(async move {

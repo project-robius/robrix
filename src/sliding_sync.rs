@@ -664,6 +664,15 @@ pub enum MatrixRequest {
         destination: Arc<Mutex<crate::home::link_preview::TimestampedCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
+    /// Request to fetch SSE (Server-Sent Events) content from a URL.
+    FetchSse {
+        /// The event ID of the message containing the SSE header.
+        event_id: OwnedEventId,
+        /// The SSE endpoint URL to fetch from.
+        url: String,
+        /// The sender for timeline updates.
+        update_sender: crossbeam_channel::Sender<crate::home::room_screen::TimelineUpdate>,
+    },
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -1925,6 +1934,121 @@ async fn matrix_worker_task(
                     // }
 
                     on_fetched(url, destination, result, update_sender);
+                    SignalToUI::set_ui_signal();
+                });
+            }
+
+            MatrixRequest::FetchSse { event_id, url, update_sender } => {
+                let _fetch_sse_task = Handle::current().spawn(async move {
+                    use futures_util::StreamExt;
+                    use reqwest_eventsource::{Event, EventSource};
+
+                    log!("Starting SSE fetch for event {} from {}", event_id, url);
+
+                    let client = reqwest::Client::builder()
+                        .no_proxy()
+                        .build()
+                        .unwrap_or_default();
+                    let request = client.get(&url);
+
+                    let mut es = match EventSource::new(request) {
+                        Ok(es) => es,
+                        Err(e) => {
+                            error!("SSE: Failed to create EventSource for {}: {:?}", url, e);
+                            let _ = update_sender.send(crate::home::room_screen::TimelineUpdate::SseContentUpdate {
+                                event_id,
+                                content: format!("Error creating EventSource: {:?}", e),
+                                is_complete: true,
+                            });
+                            SignalToUI::set_ui_signal();
+                            return;
+                        }
+                    };
+
+                    log!("SSE: Connected to {}, waiting for events...", url);
+                    let mut accumulated = String::new();
+
+                    while let Some(event) = es.next().await {
+                        match event {
+                            Ok(Event::Open) => {
+                                log!("SSE: Connection opened for event {}", event_id);
+                            }
+                            Ok(Event::Message(msg)) => {
+                                log!("SSE: Event '{}': {}", msg.event, msg.data);
+
+                                // Try to parse as JSON first
+                                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&msg.data) {
+                                    // Check for content field
+                                    if let Some(content) = json.get("content").and_then(|c| c.as_str()) {
+                                        if !accumulated.is_empty() {
+                                            accumulated.push('\n');
+                                        }
+                                        accumulated.push_str(content);
+
+                                        // Send incremental update
+                                        let _ = update_sender.send(crate::home::room_screen::TimelineUpdate::SseContentUpdate {
+                                            event_id: event_id.clone(),
+                                            content: accumulated.clone(),
+                                            is_complete: false,
+                                        });
+                                        SignalToUI::set_ui_signal();
+                                    }
+
+                                    // Check for stream completion
+                                    if json.get("status").and_then(|s| s.as_str()) == Some("complete")
+                                        || json.get("type").and_then(|t| t.as_str()) == Some("complete")
+                                    {
+                                        log!("SSE: Stream completed for event {}", event_id);
+                                        let _ = update_sender.send(crate::home::room_screen::TimelineUpdate::SseContentUpdate {
+                                            event_id: event_id.clone(),
+                                            content: accumulated.clone(),
+                                            is_complete: true,
+                                        });
+                                        SignalToUI::set_ui_signal();
+                                        es.close();
+                                        return;
+                                    }
+                                } else {
+                                    // Not JSON, treat as raw content
+                                    if !msg.data.is_empty() {
+                                        if !accumulated.is_empty() {
+                                            accumulated.push('\n');
+                                        }
+                                        accumulated.push_str(&msg.data);
+
+                                        let _ = update_sender.send(crate::home::room_screen::TimelineUpdate::SseContentUpdate {
+                                            event_id: event_id.clone(),
+                                            content: accumulated.clone(),
+                                            is_complete: false,
+                                        });
+                                        SignalToUI::set_ui_signal();
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                error!("SSE: Error for event {}: {:?}", event_id, e);
+                                let _ = update_sender.send(crate::home::room_screen::TimelineUpdate::SseContentUpdate {
+                                    event_id,
+                                    content: if accumulated.is_empty() {
+                                        format!("SSE Error: {:?}", e)
+                                    } else {
+                                        format!("{}\n\nSSE Error: {:?}", accumulated, e)
+                                    },
+                                    is_complete: true,
+                                });
+                                SignalToUI::set_ui_signal();
+                                return;
+                            }
+                        }
+                    }
+
+                    // Stream ended
+                    log!("SSE: Connection closed for event {}", event_id);
+                    let _ = update_sender.send(crate::home::room_screen::TimelineUpdate::SseContentUpdate {
+                        event_id,
+                        content: accumulated,
+                        is_complete: true,
+                    });
                     SignalToUI::set_ui_signal();
                 });
             }
