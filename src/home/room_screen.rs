@@ -1150,7 +1150,6 @@ impl Widget for RoomScreen {
                                                 item_drawn_status,
                                                 room_screen_widget_uid,
                                                 &mut tl_state.sse_streams,
-                                                tl_state.update_sender.clone(),
                                             )
                                         },
                                         // TODO: properly implement `Poll` as a regular Message-like timeline item.
@@ -1413,6 +1412,43 @@ impl RoomScreen {
                         // log!("process_timeline_updates(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                     }
                     tl.items = new_items;
+
+                    // Check new items for SSE messages and start fetching if needed
+                    for item in tl.items.iter() {
+                        if let Some(event_tl_item) = item.as_event() {
+                            if let Some(event_id) = event_tl_item.event_id() {
+                                // Check if this message contains an SSE header
+                                if let TimelineItemContent::MsgLike(msg_like_content) = event_tl_item.content() {
+                                    if let MsgLikeKind::Message(message) = &msg_like_content.kind {
+                                        if let MessageType::Text(text_content) = message.msgtype() {
+                                            if let Some(sse_url) = parse_sse_header(&text_content.body) {
+                                                // Get or create SSE stream state
+                                                let sse_state = tl.sse_streams.entry(event_id.to_owned()).or_insert_with(|| {
+                                                    SseStreamState {
+                                                        url: sse_url.clone(),
+                                                        accumulated_content: String::new(),
+                                                        is_fetching: false,
+                                                        is_complete: false,
+                                                    }
+                                                });
+
+                                                // Start SSE fetch if not already fetching
+                                                if !sse_state.is_fetching && !sse_state.is_complete {
+                                                    sse_state.is_fetching = true;
+                                                    start_sse_fetch(
+                                                        tl.kind.clone(),
+                                                        event_id.to_owned(),
+                                                        sse_url,
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     done_loading = true;
                 }
                 TimelineUpdate::NewUnreadMessagesCount(unread_messages_count) => {
@@ -2296,7 +2332,6 @@ impl RoomScreen {
                 content_drawn_since_last_update: RangeSet::new(),
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
-                update_sender: update_sender.clone(),
                 request_sender,
                 media_cache: MediaCache::new(Some(update_sender.clone())),
                 link_preview_cache: LinkPreviewCache::new(Some(update_sender)),
@@ -2853,9 +2888,6 @@ struct TimelineUiState {
     /// which is okay because a sender on an unbounded channel never needs to block.
     update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
 
-    /// The channel sender for timeline updates, used for SSE fetching.
-    update_sender: crossbeam_channel::Sender<TimelineUpdate>,
-
     /// The sender for timeline requests from a RoomScreen showing this room
     /// to the background async task that handles this room's timeline updates.
     request_sender: TimelineRequestSender,
@@ -3074,7 +3106,6 @@ fn populate_message_view(
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
     sse_streams: &mut HashMap<OwnedEventId, SseStreamState>,
-    update_sender: crossbeam_channel::Sender<TimelineUpdate>,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
     let ts_millis = event_tl_item.timestamp();
@@ -3117,36 +3148,23 @@ fn populate_message_view(
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
-                        // Check for SSE pattern: !SSE|<URL>|
-                        let (display_body, display_formatted) = if let Some(sse_url) = parse_sse_header(body) {
-                            // Get or create SSE stream state
+                        // Check for SSE pattern in the message and display SSE content if available.
+                        // Note: SSE fetch is triggered in process_timeline_updates when NewItems arrive.
+                        let (display_body, display_formatted) = if parse_sse_header(body).is_some() {
+                            // Check if we have SSE state for this event
                             if let Some(event_id) = event_tl_item.event_id() {
-                                let sse_state = sse_streams.entry(event_id.to_owned()).or_insert_with(|| {
-                                    SseStreamState {
-                                        url: sse_url.clone(),
-                                        accumulated_content: String::new(),
-                                        is_fetching: false,
-                                        is_complete: false,
+                                if let Some(sse_state) = sse_streams.get(event_id) {
+                                    // Display accumulated content or loading message
+                                    if sse_state.accumulated_content.is_empty() {
+                                        (format!("Loading SSE from {}...", sse_state.url), None)
+                                    } else if sse_state.is_complete {
+                                        (format!("SSE Complete:\n\n{}", sse_state.accumulated_content), None)
+                                    } else {
+                                        (format!("SSE Streaming...\n\n{}", sse_state.accumulated_content), None)
                                     }
-                                });
-
-                                // Start SSE fetch if not already fetching
-                                if !sse_state.is_fetching && !sse_state.is_complete {
-                                    sse_state.is_fetching = true;
-                                    start_sse_fetch(
-                                        event_id.to_owned(),
-                                        sse_url,
-                                        update_sender.clone(),
-                                    );
-                                }
-
-                                // Display accumulated content or loading message
-                                if sse_state.accumulated_content.is_empty() {
-                                    (format!("Loading SSE from {}...", sse_state.url), None)
-                                } else if sse_state.is_complete {
-                                    (format!("SSE Complete:\n\n{}", sse_state.accumulated_content), None)
                                 } else {
-                                    (format!("SSE Streaming...\n\n{}", sse_state.accumulated_content), None)
+                                    // SSE state not yet created (shouldn't happen normally)
+                                    (body.to_string(), formatted.clone())
                                 }
                             } else {
                                 (body.to_string(), formatted.clone())
@@ -4922,17 +4940,17 @@ fn parse_sse_header(body: &str) -> Option<String> {
 /// Starts an SSE fetch in a background task.
 ///
 /// This function submits an async request to fetch SSE content.
-/// Updates are sent via the timeline update channel.
+/// Updates are sent via the timeline update channel obtained from the timeline_kind.
 fn start_sse_fetch(
+    timeline_kind: TimelineKind,
     event_id: OwnedEventId,
     url: String,
-    update_sender: crossbeam_channel::Sender<TimelineUpdate>,
 ) {
     use crate::sliding_sync::{submit_async_request, MatrixRequest};
 
     submit_async_request(MatrixRequest::FetchSse {
+        timeline_kind,
         event_id,
         url,
-        update_sender,
     });
 }

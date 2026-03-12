@@ -666,12 +666,12 @@ pub enum MatrixRequest {
     },
     /// Request to fetch SSE (Server-Sent Events) content from a URL.
     FetchSse {
+        /// The timeline kind (room) where the SSE message is displayed.
+        timeline_kind: TimelineKind,
         /// The event ID of the message containing the SSE header.
         event_id: OwnedEventId,
         /// The SSE endpoint URL to fetch from.
         url: String,
-        /// The sender for timeline updates.
-        update_sender: crossbeam_channel::Sender<crate::home::room_screen::TimelineUpdate>,
     },
 }
 
@@ -1938,12 +1938,18 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::FetchSse { event_id, url, update_sender } => {
+            MatrixRequest::FetchSse { timeline_kind, event_id, url } => {
                 let _fetch_sse_task = Handle::current().spawn(async move {
                     use futures_util::StreamExt;
                     use reqwest_eventsource::{Event, EventSource};
 
                     log!("Starting SSE fetch for event {} from {}", event_id, url);
+
+                    // Get the timeline sender using get_timeline_and_sender
+                    let Some((_timeline, update_sender)) = get_timeline_and_sender(&timeline_kind) else {
+                        error!("SSE: Failed to get timeline sender for {:?}", timeline_kind);
+                        return;
+                    };
 
                     let client = reqwest::Client::builder()
                         .no_proxy()
