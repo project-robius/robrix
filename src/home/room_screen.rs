@@ -2,6 +2,7 @@
 //! of events (messages，state changes, etc.), along with an input bar at the bottom.
 
 use std::{borrow::Cow, cell::RefCell, ops::{DerefMut, Range}, sync::Arc};
+use futures_util::StreamExt as FuturesStreamExt;
 
 use bytesize::ByteSize;
 use hashbrown::{HashMap, HashSet};
@@ -1149,6 +1150,8 @@ impl Widget for RoomScreen {
                                                 &self.pinned_events,
                                                 item_drawn_status,
                                                 room_screen_widget_uid,
+                                                &mut tl_state.sse_streams,
+                                                tl_state.update_receiver.clone(),
                                             )
                                         },
                                         // TODO: properly implement `Poll` as a regular Message-like timeline item.
@@ -1617,6 +1620,19 @@ impl RoomScreen {
                     tl.tombstone_info = Some(successor_room_details);
                 }
                 TimelineUpdate::LinkPreviewFetched => {}
+                TimelineUpdate::SseContentUpdate { event_id, content, is_complete } => {
+                    // Update the SSE stream state for this event
+                    if let Some(sse_state) = tl.sse_streams.get_mut(&event_id) {
+                        sse_state.accumulated_content.push_str(&content);
+                        if is_complete {
+                            sse_state.is_complete = true;
+                            sse_state.is_fetching = false;
+                        }
+                    }
+                    // Clear the draw cache for all items so the message gets redrawn
+                    // with the updated SSE content
+                    tl.content_drawn_since_last_update.clear();
+                }
             }
         }
 
@@ -2286,6 +2302,7 @@ impl RoomScreen {
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
                 tombstone_info,
+                sse_streams: HashMap::new(),
             };
             (tl_state, true)
         };
@@ -2759,6 +2776,15 @@ pub enum TimelineUpdate {
     Tombstoned(SuccessorRoomDetails),
     /// A notice that link preview data for a URL has been fetched and is now available.
     LinkPreviewFetched,
+    /// An update containing SSE (Server-Sent Events) content for a message.
+    SseContentUpdate {
+        /// The event ID of the message that contains the SSE stream.
+        event_id: OwnedEventId,
+        /// The new content to append to the message.
+        content: String,
+        /// Whether this is the final update (stream completed).
+        is_complete: bool,
+    },
 }
 
 thread_local! {
@@ -2877,6 +2903,34 @@ struct TimelineUiState {
     /// If `Some`, this room has been tombstoned and the details of its successor room
     /// are contained within. If `None`, the room has not been tombstoned.
     tombstone_info: Option<SuccessorRoomDetails>,
+
+    /// Tracks active SSE streams by event ID.
+    /// Maps event_id to (accumulated_content, is_fetching).
+    sse_streams: HashMap<OwnedEventId, SseStreamState>,
+}
+
+/// State for tracking an SSE (Server-Sent Events) stream for a message.
+#[derive(Debug, Clone)]
+struct SseStreamState {
+    /// The URL of the SSE endpoint.
+    url: String,
+    /// Accumulated content from the SSE stream.
+    accumulated_content: String,
+    /// Whether the SSE stream is currently being fetched.
+    is_fetching: bool,
+    /// Whether the stream has completed.
+    is_complete: bool,
+}
+
+impl Default for SseStreamState {
+    fn default() -> Self {
+        Self {
+            url: String::new(),
+            accumulated_content: String::new(),
+            is_fetching: false,
+            is_complete: false,
+        }
+    }
 }
 
 #[derive(Default, Debug)]
@@ -3009,6 +3063,8 @@ fn populate_message_view(
     pinned_events: &[OwnedEventId],
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
+    sse_streams: &mut HashMap<OwnedEventId, SseStreamState>,
+    update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
     let ts_millis = event_tl_item.timestamp();
@@ -3051,11 +3107,49 @@ fn populate_message_view(
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
+                        // Check for SSE pattern: !SSE|<URL>|
+                        let (display_body, display_formatted) = if let Some(sse_url) = parse_sse_header(body) {
+                            // Get or create SSE stream state
+                            if let Some(event_id) = event_tl_item.event_id() {
+                                let sse_state = sse_streams.entry(event_id.to_owned()).or_insert_with(|| {
+                                    SseStreamState {
+                                        url: sse_url.clone(),
+                                        accumulated_content: String::new(),
+                                        is_fetching: false,
+                                        is_complete: false,
+                                    }
+                                });
+
+                                // Start SSE fetch if not already fetching
+                                if !sse_state.is_fetching && !sse_state.is_complete {
+                                    sse_state.is_fetching = true;
+                                    start_sse_fetch(
+                                        event_id.to_owned(),
+                                        sse_url,
+                                        update_receiver.clone(),
+                                    );
+                                }
+
+                                // Display accumulated content or loading message
+                                if sse_state.accumulated_content.is_empty() {
+                                    (format!("Loading SSE from {}...", sse_state.url), None)
+                                } else if sse_state.is_complete {
+                                    (format!("SSE Complete:\n\n{}", sse_state.accumulated_content), None)
+                                } else {
+                                    (format!("SSE Streaming...\n\n{}", sse_state.accumulated_content), None)
+                                }
+                            } else {
+                                (body.to_string(), formatted.clone())
+                            }
+                        } else {
+                            (body.to_string(), formatted.clone())
+                        };
+
                         new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
                             &item.html_or_plaintext(ids!(content.message)),
-                            body,
-                            formatted.as_ref(),
+                            &display_body,
+                            display_formatted.as_ref(),
                             Some(&mut item.link_preview(ids!(content.link_preview_view))),
                             Some(media_cache),
                             Some(link_preview_cache),
@@ -4787,10 +4881,151 @@ impl MessageRef {
 ///
 /// This function requires passing in a reference to `Cx`,
 /// which isn't used, but acts as a guarantee that this function
-/// must only be called by the main UI thread. 
+/// must only be called by the main UI thread.
 pub fn clear_timeline_states(_cx: &mut Cx) {
     // Clear timeline states cache
     TIMELINE_STATES.with_borrow_mut(|states| {
         states.clear();
+    });
+}
+
+/// Parses an SSE header from a message body.
+///
+/// The expected format is: `!SSE|<URL>|`
+/// For example: `!SSE|http://127.0.0.1:3000/events|`
+///
+/// Returns the URL if the pattern matches, otherwise None.
+fn parse_sse_header(body: &str) -> Option<String> {
+    let trimmed = body.trim();
+    if trimmed.starts_with("!SSE|") {
+        // Find the closing |
+        if let Some(end_idx) = trimmed[5..].find('|') {
+            let url = &trimmed[5..5 + end_idx];
+            if !url.is_empty() {
+                return Some(url.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Starts an SSE fetch in a background task.
+///
+/// This function spawns an async task that:
+/// 1. Connects to the SSE URL
+/// 2. Reads the event stream
+/// 3. Sends updates via the timeline update channel
+fn start_sse_fetch(
+    event_id: OwnedEventId,
+    url: String,
+    _update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
+) {
+    // We need to get the update sender, not receiver
+    // The sender should be obtained from the timeline state
+    // For now, we'll use a global approach with SignalToUI
+
+    use tokio::runtime::Handle;
+
+    // Check if we're in a tokio runtime context
+    if let Ok(handle) = Handle::try_current() {
+        let event_id_clone = event_id.clone();
+        handle.spawn(async move {
+            log!("Starting SSE fetch for event {} from {}", event_id_clone, url);
+
+            match fetch_sse_content(&url).await {
+                Ok(content_updates) => {
+                    for (content, is_complete) in content_updates {
+                        // We need to send updates through the timeline system
+                        // Since we don't have direct access to the sender,
+                        // we'll use the global TIMELINE_STATES to update
+                        update_sse_content(&event_id_clone, &content, is_complete);
+                        SignalToUI::set_ui_signal();
+
+                        if is_complete {
+                            break;
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("SSE fetch error for event {}: {}", event_id_clone, e);
+                    update_sse_content(&event_id_clone, &format!("Error: {}", e), true);
+                    SignalToUI::set_ui_signal();
+                }
+            }
+        });
+    } else {
+        error!("No tokio runtime available for SSE fetch");
+    }
+}
+
+/// Fetches SSE content from the given URL.
+///
+/// Returns a vector of (content, is_complete) tuples.
+async fn fetch_sse_content(url: &str) -> Result<Vec<(String, bool)>, String> {
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(url)
+        .header("Accept", "text/event-stream")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to connect: {}", e))?;
+
+    let mut stream = response.bytes_stream();
+    let mut updates = Vec::new();
+    let mut accumulated = String::new();
+
+    while let Some(chunk_result) = stream.next().await {
+        match chunk_result {
+            Ok(chunk) => {
+                let text = String::from_utf8_lossy(&chunk);
+                for line in text.lines() {
+                    if let Some(data) = line.strip_prefix("data: ") {
+                        // Parse JSON to extract content
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                            if let Some(content) = json.get("content").and_then(|c| c.as_str()) {
+                                if !accumulated.is_empty() {
+                                    accumulated.push('\n');
+                                }
+                                accumulated.push_str(content);
+                                updates.push((accumulated.clone(), false));
+                            }
+                            // Check for stream end
+                            if json.get("status").and_then(|s| s.as_str()) == Some("complete") {
+                                updates.push((accumulated.clone(), true));
+                                return Ok(updates);
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                return Err(format!("Stream error: {}", e));
+            }
+        }
+    }
+
+    // Stream ended without explicit complete marker
+    updates.push((accumulated, true));
+    Ok(updates)
+}
+
+/// Updates the SSE content in the timeline state.
+///
+/// This is called from the background SSE fetch task to update the accumulated content.
+fn update_sse_content(event_id: &OwnedEventId, content: &str, is_complete: bool) {
+    TIMELINE_STATES.with_borrow_mut(|states| {
+        for tl_state in states.values_mut() {
+            if let Some(sse_state) = tl_state.sse_streams.get_mut(event_id) {
+                sse_state.accumulated_content = content.to_string();
+                sse_state.is_complete = is_complete;
+                if is_complete {
+                    sse_state.is_fetching = false;
+                }
+                // Clear the draw cache so the message gets redrawn
+                tl_state.content_drawn_since_last_update.clear();
+                return;
+            }
+        }
     });
 }

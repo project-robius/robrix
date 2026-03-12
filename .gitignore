@@ -7,3 +7,5 @@
 .DS_Store
 CLAUDE.md
 proxychains.conf
+docker
+dm_invite_sessions
