@@ -10,15 +10,12 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.ReplyPreviewContent = SolidView {
+    mod.widgets.ReplyPreviewContent = View {
         width: Fill
         height: Fit
         flow: Down
         padding: Inset{left: 16.0, bottom: 5.0, top: 2.0, right: 11.0}
         cursor: MouseCursor.Hand,
-
-        show_bg: true,
-        draw_bg.color: (COLOR_PRIMARY)
 
         View {
             width: Fill
@@ -149,7 +146,7 @@ script_mod! {
         replied_to_message_content := mod.widgets.ReplyPreviewContent {
             show_bg: true
             draw_bg +: {
-                color: instance(COLOR_PRIMARY)
+                color: instance(COLOR_TRANSPARENT)
                 vertical_bar_color: instance(USERNAME_TEXT_COLOR)
                 vertical_bar_width: instance(2.0)
                 border_radius: instance(0.0)

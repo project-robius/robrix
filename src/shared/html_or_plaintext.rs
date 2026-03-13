@@ -74,9 +74,9 @@ script_mod! {
             }
         }
 
-            matrix_link_view := View {
-                visible: false
-                width: Fit, height: Fit,
+        matrix_link_view := View {
+            visible: false
+            width: Fit, height: Fit,
 
             matrix_link := mod.widgets.MatrixLinkPill { }
         }
@@ -204,7 +204,7 @@ pub enum RobrixHtmlLinkAction{
 /// A RobrixHtmlLink is either a regular `HtmlLink` (default) or a Matrix link.
 ///
 /// Matrix links are displayed using the [`MatrixLinkPill`] widget.
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 struct RobrixHtmlLink {
     #[deref] view: View,
 
@@ -213,8 +213,25 @@ struct RobrixHtmlLink {
     /// when it parses and draws an Html `<a>` tag.
     #[live] pub text: ArcStringMut,
     /// The URL of the link.
-    /// This is set by the `after_apply()` logic below.
+    /// This is set by the `on_after_new_scoped()` hook below.
     #[live] pub url: String,
+}
+
+impl ScriptHook for RobrixHtmlLink {
+    fn on_after_new_scoped(&mut self, _vm: &mut ScriptVm, scope: &mut Scope) {
+        if let Some(doc) = scope.props.get::<makepad_html::HtmlDoc>() {
+            let mut walker = doc.new_walker_with_index(scope.index + 1);
+            while let Some((lc, attr)) = walker.while_attr_lc() {
+                match lc {
+                    live_id!(href) => {
+                        self.url = attr.into();
+                        break;
+                    }
+                    _ => { }
+                }
+            }
+        }
+    }
 }
 
 impl Widget for RobrixHtmlLink {

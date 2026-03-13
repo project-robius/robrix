@@ -1,6 +1,6 @@
 //! A modal dialog that displays the raw JSON source of a Matrix event.
 
-use makepad_code_editor::code_view::{CodeViewWidgetExt, CodeViewWidgetRefExt};
+use makepad_code_editor::code_view::CodeViewWidgetExt;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId};
 
