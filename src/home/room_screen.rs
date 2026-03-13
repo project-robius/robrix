@@ -208,9 +208,9 @@ script_mod! {
         replied_to_message := mod.widgets.RepliedToMessage {
             flow: Right
             margin: Inset{ bottom: 3, top: 10 }
-            replied_to_message_content: {
-                margin: Inset{ left: 29 }
-                padding: Inset{ bottom: 10 }
+            replied_to_message_content +: {
+                margin +: { left: 29 }
+                padding +: { bottom: 10 }
             }
         }
 
@@ -279,12 +279,12 @@ script_mod! {
     // from the same sender, and thus doesn't need to display the sender's profile again.
     mod.widgets.CondensedMessage = mod.widgets.Message {
         padding: Inset{ top: 2.0, bottom: 2.0 }
-        replied_to_message := mod.widgets.RepliedToMessage {
-            replied_to_message_content: {
+        replied_to_message +: {
+            replied_to_message_content +: {
                 margin: Inset{ left: 74, bottom: 5.0 }
             }
         }
-        body: {
+        body := View {
             padding: Inset{ top: 0, bottom: 2.5, left: 10.0, right: 10.0 },
             profile := View {
                 align: Align{x: 0.5, y: 0.0} // centered horizontally, top aligned
@@ -320,8 +320,8 @@ script_mod! {
     // The view used for each static image-based message event in a room's timeline.
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
     mod.widgets.ImageMessage = mod.widgets.Message {
-        body: {
-            content: {
+        body +: {
+            content +: {
                 width: Fill,
                 height: Fit
                 padding: Inset{ left: 10.0 }
@@ -344,8 +344,8 @@ script_mod! {
     // from the same sender, and thus doesn't need to display the sender's profile again.
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
     mod.widgets.CondensedImageMessage = mod.widgets.CondensedMessage {
-        body: {
-            content: {
+        body +: {
+            content +: {
                 message := TextOrImage { }
                 View {
                     width: Fill,

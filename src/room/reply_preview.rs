@@ -152,7 +152,7 @@ script_mod! {
                 color: instance(COLOR_PRIMARY)
                 vertical_bar_color: instance(USERNAME_TEXT_COLOR)
                 vertical_bar_width: instance(2.0)
-                border_radius:instance(0.0)
+                border_radius: instance(0.0)
 
                 pixel: fn() {
                     let sdf = Sdf2d.viewport(self.pos * self.rect_size);
