@@ -285,6 +285,9 @@ script_mod! {
             }
         }
         body := View {
+            width: Fill,
+            height: Fit
+            flow: Right,
             padding: Inset{ top: 0, bottom: 2.5, left: 10.0, right: 10.0 },
             profile := View {
                 align: Align{x: 0.5, y: 0.0} // centered horizontally, top aligned
