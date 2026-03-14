@@ -636,9 +636,9 @@ impl Widget for ImageViewer {
             let mut remove_receiver = false;
             match receiver.try_recv() {
                 Ok(Ok(image_buffer)) => {
-                    let rotated_image = self.view.image(cx, ids!(rotated_image));
                     let texture = image_buffer.into_new_texture(cx);
-                    rotated_image.set_texture(cx, Some(texture));
+                    self.texture = Some(texture);
+                    self.next_frame = cx.new_next_frame();
                     remove_receiver = true;
                     cx.action(ImageViewerAction::Show(
                         LoadState::FinishedBackgroundDecoding,
@@ -696,8 +696,10 @@ impl Widget for ImageViewer {
         if self.image_container_size.length() == 0.0 {
             let rect = cx.peek_walk_turtle(walk);
             self.image_container_size = rect.size;
+            error!("[ImageViewer] draw_walk FIRST: container_size={:?}", self.image_container_size);
             self.next_frame = cx.new_next_frame();
         }
+        error!("[ImageViewer] draw_walk: visible={}, show_bg={}, children={}", self.view.visible, self.view.show_bg, self.view.child_count());
         self.view.draw_walk(cx, scope, walk)
     }
 }
