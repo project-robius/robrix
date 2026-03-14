@@ -343,32 +343,56 @@ script_mod! {
                 degree_neg90: AnimatorState{
                     redraw: false,
                     from: {all: Forward {duration: (mod.widgets.ROTATION_ANIMATION_DURATION_SECS)}}
-                    apply: {}
+                    apply: {
+                        image_layer: { rotated_image_container: { rotated_image: {
+                            draw_bg: {rotation: -90.0}
+                        }}}
+                    }
                 }
                 upright: AnimatorState{
                     redraw: false,
                     from: {all: Forward {duration: (mod.widgets.ROTATION_ANIMATION_DURATION_SECS)}}
-                    apply: {}
+                    apply: {
+                        image_layer: { rotated_image_container: { rotated_image: {
+                            draw_bg: {rotation: 0.0}
+                        }}}
+                    }
                 }
                 degree_90: AnimatorState{
                     redraw: false,
                     from: {all: Forward {duration: (mod.widgets.ROTATION_ANIMATION_DURATION_SECS)}}
-                    apply: {}
+                    apply: {
+                        image_layer: { rotated_image_container: { rotated_image: {
+                            draw_bg: {rotation: 90.0}
+                        }}}
+                    }
                 }
                 degree_180: AnimatorState{
                     redraw: false,
                     from: {all: Forward {duration: (mod.widgets.ROTATION_ANIMATION_DURATION_SECS)}}
-                    apply: {}
+                    apply: {
+                        image_layer: { rotated_image_container: { rotated_image: {
+                            draw_bg: {rotation: 180.0}
+                        }}}
+                    }
                 }
                 degree_270: AnimatorState{
                     redraw: false,
                     from: {all: Forward {duration: (mod.widgets.ROTATION_ANIMATION_DURATION_SECS)}}
-                    apply: {}
+                    apply: {
+                        image_layer: { rotated_image_container: { rotated_image: {
+                            draw_bg: {rotation: 270.0}
+                        }}}
+                    }
                 }
                 degree_360: AnimatorState{
                     redraw: false,
                     from: {all: Forward {duration: 0.0}}
-                    apply: {}
+                    apply: {
+                        image_layer: { rotated_image_container: { rotated_image: {
+                            draw_bg: {rotation: 360.0}
+                        }}}
+                    }
                 }
             }
             hover: {
@@ -825,6 +849,20 @@ impl ImageViewer {
             _ => ids!(mode.upright),
         };
         self.animator_play(cx, animation_id);
+
+        // Also directly set the rotation value on the image's draw_bg shader,
+        // in case the animator apply paths don't work for deeply nested children.
+        let rotation_deg = match self.rotation_step {
+            0 => 0.0_f64,
+            1 => 90.0,
+            2 => 180.0,
+            3 => 270.0,
+            _ => 0.0,
+        };
+        let mut rotated_image = self.view.image(cx, ids!(rotated_image));
+        script_apply_eval!(cx, rotated_image, {
+            draw_bg +: { rotation: #(rotation_deg) }
+        });
     }
 
     /// Resets the drag state of the modal to its initial state.
