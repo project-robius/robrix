@@ -9,8 +9,6 @@ script_mod! {
 
     mod.widgets.ICO_JUMP_TO_BOTTOM = crate_resource("self://resources/icon_jump_to_bottom.svg")
 
-
-
     // A jump to bottom button that appears when the timeline is not at the bottom.
     mod.widgets.JumpToBottomButton = #(JumpToBottomButton::register_widget(vm)) {
         width: Fill,
@@ -22,23 +20,33 @@ script_mod! {
             width: 65, height: 75,
             align: Align{x: 0.5, y: 1.0},
             flow: Overlay,
-            jump_to_bottom_button := IconButton {
+            inner_button := RobrixIconButton {
                 spacing: 0,
                 width: 50, height: 50,
+                align: Align{x: 0.5, y: 0.5},
                 margin: Inset{bottom: 8},
-                draw_icon +: {svg: (mod.widgets.ICO_JUMP_TO_BOTTOM)},
-                icon_walk: Walk{width: 20, height: 20, margin: Inset{top: 10, right: 4.5} }
+                draw_icon +: {
+                    svg: (mod.widgets.ICO_JUMP_TO_BOTTOM),
+                    color: #BBB,
+                    color_hover: #000,
+                    color_down: #000,
+                    get_color: fn() -> vec4 {
+                        return mix(self.color, self.color_hover, self.hover)
+                    }
+                },
+                icon_walk: Walk{width: 20, height: 20}
                 // draw a circular background for the button
                 draw_bg +: {
                     background_color: #edededce,
+                    background_color_hover: #d0d0d0ce,
                     pixel: fn() {
                         let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                         let c = self.rect_size * 0.5;
                         sdf.circle(c.x, c.x, c.x);
-                        sdf.fill_keep(self.background_color);
+                        sdf.fill_keep(mix(self.background_color, self.background_color_hover, self.hover));
                         return sdf.result
                     }
-                } 
+                }
                 enable_long_press: true,
             }
 
@@ -101,7 +109,7 @@ pub struct JumpToBottomButton {
 
 impl Widget for JumpToBottomButton {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let button_area = self.button(cx, ids!(jump_to_bottom_button)).area();
+        let button_area = self.button(cx, ids!(inner_button)).area();
         match event.hits(cx, button_area) {
             Hit::FingerHoverIn(_) | Hit::FingerLongPress(_) => {
                 cx.widget_action(
@@ -207,7 +215,7 @@ impl JumpToBottomButton {
         //       to check if the portallist has been scrolled than to just directly
         //       query the portallist's `at_end` state and set the visibility accordingly.
 
-        if self.button(cx, ids!(jump_to_bottom_button)).clicked(actions) {
+        if self.button(cx, ids!(inner_button)).clicked(actions) {
             portal_list.smooth_scroll_to_end(
                 cx,
                 SCROLL_TO_BOTTOM_SPEED,

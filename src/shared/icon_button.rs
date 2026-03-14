@@ -5,58 +5,6 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.COLOR_BRAND = #x5
-    mod.widgets.COLOR_BRAND_HOVER = #x3
-    mod.widgets.COLOR_META_TEXT = #xaaa
-
-    mod.widgets.IconButton = Button {
-        padding: 9.0
-        draw_text +: {
-            text_style: theme.font_regular {
-                font_size: 11.0
-            }
-            get_color: fn() -> vec4 {
-                return mix(
-                    mix(
-                        (mod.widgets.COLOR_META_TEXT),
-                        (mod.widgets.COLOR_BRAND),
-                        self.hover
-                    ),
-                    (mod.widgets.COLOR_BRAND_HOVER),
-                    self.down
-                )
-            }
-        }
-        draw_icon.color: #F00
-        // TODO: Makepad's new Button no longer has a `hover` animator for `draw_icon`,
-        // so the below `hover` and `down` instances will never get modified.
-        //
-        // draw_icon +: {
-        //     hover: instance(0.0)
-        //     down: instance(0.0)
-        //     get_color: fn() -> vec4 {
-        //         return mix(
-        //             mix(
-        //                 (mod.widgets.COLOR_META),
-        //                 (mod.widgets.COLOR_BRAND),
-        //                 self.hover
-        //             ),
-        //             (mod.widgets.COLOR_BRAND_HOVER),
-        //             self.down
-        //         )
-        //     }
-        // }
-        icon_walk: Walk{width: 7.5, height: Fit, margin: Inset{left: 5.0}}
-        draw_bg +: {
-            pixel: fn() {
-                let sdf = Sdf2d.viewport(self.pos * self.rect_size);
-                return sdf.result
-            }
-        }
-        text: ""
-    }
-
-
     // Customized button widget, based on the RoundedView shaders with some modifications
     // which is a better fit with our application UI design
     mod.widgets.RobrixIconButton = Button {
