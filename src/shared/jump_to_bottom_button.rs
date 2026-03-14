@@ -27,12 +27,14 @@ script_mod! {
                 margin: Inset{bottom: 8},
                 draw_icon +: {
                     svg: (mod.widgets.ICO_JUMP_TO_BOTTOM),
-                    color: #BBB,
-                    color_hover: #000,
-                    color_down: #000,
-                    get_color: fn() -> vec4 {
-                        return mix(self.color, self.color_hover, self.hover)
-                    }
+                    color: #888,
+                    // TODO: once Makepad button support draw_icon hover/down animated states, reenable this.
+                    // color: #BBB,
+                    // color_hover: #000,
+                    // color_down: #000,
+                    // get_color: fn() -> vec4 {
+                    //     return mix(self.color, self.color_hover, self.hover)
+                    // }
                 },
                 icon_walk: Walk{width: 20, height: 20}
                 // draw a circular background for the button
