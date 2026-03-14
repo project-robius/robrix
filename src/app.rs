@@ -426,7 +426,12 @@ impl MatchEvent for App {
                     match state {
                         LoadState::Loading(texture, metadata) => {
                             image_viewer.show_loading(cx, texture.clone(), metadata);
-                            self.ui.view(cx, ids!(image_viewer_overlay)).set_visible(cx, true);
+                            let overlay = self.ui.view(cx, ids!(image_viewer_overlay));
+                            overlay.set_visible(cx, true);
+                            cx.set_key_focus(overlay.area());
+                            // Block scrolling immediately so scroll events don't
+                            // pierce through to the timeline before the next draw.
+                            cx.block_scrolling_except_within(Area::Empty);
                         }
                         LoadState::Loaded(data) => {
                             image_viewer.show_loaded(cx, data);
@@ -442,6 +447,8 @@ impl MatchEvent for App {
                 }
                 Some(ImageViewerAction::Hide) => {
                     self.ui.view(cx, ids!(image_viewer_overlay)).set_visible(cx, false);
+                    cx.revert_key_focus();
+                    cx.unblock_scrolling();
                     continue;
                 }
                 _ => {}

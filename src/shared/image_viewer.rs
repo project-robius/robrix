@@ -696,11 +696,15 @@ impl Widget for ImageViewer {
         if self.image_container_size.length() == 0.0 {
             let rect = cx.peek_walk_turtle(walk);
             self.image_container_size = rect.size;
-            error!("[ImageViewer] draw_walk FIRST: container_size={:?}", self.image_container_size);
             self.next_frame = cx.new_next_frame();
         }
-        error!("[ImageViewer] draw_walk: visible={}, show_bg={}, children={}", self.view.visible, self.view.show_bg, self.view.child_count());
-        self.view.draw_walk(cx, scope, walk)
+        let result = self.view.draw_walk(cx, scope, walk);
+        // Block all scroll-bar-based scrolling so scroll events don't pierce through
+        // to views behind this full-screen overlay. Using `Area::Empty` blocks all scrolling,
+        // which is correct because ImageViewer handles zoom via raw `Event::Scroll`,
+        // not through Makepad's ScrollBar widgets.
+        cx.block_scrolling_except_within(Area::Empty);
+        result
     }
 }
 
