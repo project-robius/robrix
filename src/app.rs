@@ -79,7 +79,7 @@ script_mod! {
                                             svg: (ICON_INVITE),
                                             color: (COLOR_PRIMARY),
                                         }
-                                        icon_walk: Walk{width: 28, height: Fit, margin: Inset{left: -12} }
+                                        icon_walk: Walk{width: 28, height: Fit, margin: Inset{left: -10, right: 2} }
                                     } } }
                                 }
                             }
@@ -149,7 +149,7 @@ script_mod! {
 
 app_main!(App);
 
-#[derive(Script, ScriptHook)]
+#[derive(Script)]
 pub struct App {
     #[live] ui: WidgetRef,
     /// The top-level app state, shared across various parts of the app.
@@ -158,6 +158,22 @@ pub struct App {
     /// This can be either a room we're waiting to join, or one we're waiting to be invited to.
     /// Also includes an optional room ID to be closed once the awaited room has been loaded.
     #[rust] waiting_to_navigate_to_room: Option<(BasicRoomDetails, Option<OwnedRoomId>)>,
+}
+
+impl ScriptHook for App {
+    /// After a hot-reload update, refresh the login/home screen visibility.
+    fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            self.update_login_visibility(cx);
+        });
+    }
+
+    /// After initial creation, set the global singleton for the PopupList widget.
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
+        });
+    }
 }
 
 impl MatchEvent for App {
@@ -734,13 +750,6 @@ impl App {
         });
 
         let destination_room_id = destination_room.room_id();
-        if !cx.has_global::<RoomsListRef>() {
-            error!(
-                "navigate_to_room: missing RoomsListRef global for room {}",
-                destination_room_id
-            );
-            return;
-        }
         let room_state = cx.get_global::<RoomsListRef>().get_room_state(destination_room_id);
         let new_selected_room = match room_state {
             Some(RoomState::Joined) => SelectedRoom::JoinedRoom {

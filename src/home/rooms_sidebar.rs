@@ -51,7 +51,7 @@ script_mod! {
                     shadow_offset: vec2(1.0, 0.0)
                 }
 
-                View { height: 20 }
+                View { height: 23 }
 
                 CachedWidget {
                     rooms_list_header := RoomsListHeader {}
@@ -61,7 +61,7 @@ script_mod! {
                     width: Fill,
                     height: 45,
                     flow: Right
-                    padding: Inset{top: 5, bottom: 3}
+                    padding: Inset{top: 5, bottom: 2}
                     spacing: 5 
                     align: Align{y: 0.5}
 
