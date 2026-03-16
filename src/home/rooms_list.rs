@@ -389,7 +389,7 @@ struct SpaceMapValue {
     parent_chain: ParentChain,
 }
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct RoomsList {
     #[deref] view: View,
 
@@ -466,6 +466,12 @@ pub struct RoomsList {
     #[rust] max_known_rooms: Option<u32>,
     // /// Whether the room list service has loaded all requested rooms from the homeserver.
     // #[rust] all_rooms_loaded: bool,
+}
+
+impl ScriptHook for RoomsList {
+    fn on_after_new(&mut self, _vm: &mut ScriptVm) {
+        self.invited_rooms = ALL_INVITED_ROOMS.with(Rc::clone);
+    }
 }
 
 /// A macro that returns whether a given Room should be displayed in the RoomsList.
@@ -1170,11 +1176,6 @@ impl RoomsList {
 
 impl Widget for RoomsList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let global_invited_rooms = ALL_INVITED_ROOMS.with(Rc::clone);
-        if !Rc::ptr_eq(&self.invited_rooms, &global_invited_rooms) {
-            self.invited_rooms = global_invited_rooms;
-        }
-
         // Process all pending updates to the list of all rooms, and then redraw it.
         if matches!(event, Event::Signal) {
             self.handle_rooms_list_updates(cx, event, scope);

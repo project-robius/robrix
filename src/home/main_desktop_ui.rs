@@ -67,7 +67,7 @@ script_mod! {
     }
 }
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct MainDesktopUI {
     #[deref]
     view: View,
@@ -110,29 +110,27 @@ pub struct MainDesktopUI {
     drawn_previously: bool,
 }
 
+impl ScriptHook for MainDesktopUI {
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            self.default_layout = self.save_dock_state(cx);
+        });
+    }
+}
 impl Widget for MainDesktopUI {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if self.default_layout.dock_items.is_empty()
-            && self.default_layout.open_rooms.is_empty()
-            && self.default_layout.room_order.is_empty()
-            && self.default_layout.selected_room.is_none()
-        {
-            self.default_layout = self.save_dock_state(cx);
-        }
         self.widget_match_event(cx, event, scope); // invokes `WidgetMatchEvent` impl
         self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if !self.drawn_previously {
+        if !self.drawn_previously && cx.has_global::<RoomsListRef>() {
             // When changing from Mobile to Desktop view mode, we need to restore the state
             // of this widget, which we get from the `AppState` passed down via `scope`.
             // This includes the currently selected space, which we get from the RoomsList widget.
             // We must set `selected_space` first before the load operation occurs, in order for
             // the proper space-specific instance of the saved dock UI layout/state to be selected.
-            if cx.has_global::<RoomsListRef>() {
-                self.selected_space = cx.get_global::<RoomsListRef>().get_selected_space_id();
-            }
+            self.selected_space = cx.get_global::<RoomsListRef>().get_selected_space_id();
             cx.action(MainDesktopUiAction::LoadDockFromAppState);
             self.drawn_previously = true;
         }

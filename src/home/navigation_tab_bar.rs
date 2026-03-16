@@ -120,8 +120,8 @@ script_mod! {
         }
 
         View {
-            align: Align { x: 0.91, y: 0.0 }
-            // margin: Inset{ left: 39 }
+            align: Align { x: 0.5, y: 0.0 }
+            margin: Inset{ left: (mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE * 0.9) }
             verification_badge := VerificationBadge {}
         }
     }

@@ -91,15 +91,22 @@ script_mod! {
 /// * In the desktop view, it is a permanent tab in the dock,
 ///   showing only the title label and the RoomsList
 ///   (because the search bar is at the top of the HomeScreen).
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct RoomsSideBar {
     #[deref] view: AdaptiveView,
 }
 
+impl ScriptHook for RoomsSideBar {
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            // Here we set the global singleton for the RoomsList widget,
+            // which is used to access the list of rooms from anywhere in the app.
+            cx.set_global(self.view.rooms_list(cx, ids!(rooms_list)));
+        });
+    }
+}
 impl Widget for RoomsSideBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // Keep the global RoomsList handle available for cross-widget access.
-        Cx::set_global(cx, self.view.rooms_list(cx, ids!(rooms_list)));
         self.view.handle_event(cx, event, scope);
     }
 
