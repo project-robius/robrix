@@ -14,11 +14,11 @@ version = "0.0.1-pre-alpha-4"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev" }
-# makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
+makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev" }
+makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "dock_hide_tab_bar" }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "dock_hide_tab_bar" }
+# makepad-widgets = { path = "../makepad/widgets" }
+# makepad-code-editor = { path = "../makepad/code_editor" }
 
 
 
