@@ -59,9 +59,9 @@ script_mod! {
 
                 View {
                     width: Fill,
-                    height: 39,
+                    height: 45,
                     flow: Right
-                    padding: Inset{top: 2, bottom: 2}
+                    padding: Inset{top: 5, bottom: 3}
                     spacing: 5 
                     align: Align{y: 0.5}
 

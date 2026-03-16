@@ -9,7 +9,7 @@ script_mod! {
 
 
     mod.widgets.SearchMessagesButton = set_type_default() do #(SearchMessagesButton::register_widget(vm)) {
-        ..mod.widgets.SolidView
+        ..mod.widgets.RoundedView
 
         width: Fit,
         height: 35,
@@ -20,6 +20,9 @@ script_mod! {
             color: (COLOR_BG_DISABLED)
             // color: (COLOR_ROBRIX_PURPLE) // or `color: (COLOR_ACTIVE_PRIMARY)`
             // color_hover: (COLOR_PRIMARY_DARKER) // make it whiter (this value is mixed in with `color`)
+            border_radius: 4.0
+            border_color: (COLOR_SECONDARY)
+            border_size: 1.0
         }
         draw_icon +: {
             svg: (ICON_SEARCH)
