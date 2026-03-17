@@ -110,13 +110,14 @@ script_mod! {
     mod.widgets.COLOR_DIVIDER_DARK = #00000044
 
     mod.widgets.COLOR_FG_ACCEPT_GREEN = #138808
-
     mod.widgets.COLOR_BG_ACCEPT_GREEN = #F0FFF0
     mod.widgets.COLOR_FG_DANGER_RED = #DC0005
     mod.widgets.COLOR_BG_DANGER_RED = #FFF0F0
     mod.widgets.COLOR_FG_DISABLED = #B3B3B3
     mod.widgets.COLOR_BG_DISABLED = #E0E0E0
-    mod.widgets.COLOR_WARNING_NOT_FOUND = #953800
+    mod.widgets.COLOR_INFO_BLUE = #0f88fe
+    mod.widgets.COLOR_WARNING_YELLOW = #fcdb03
+    mod.widgets.COLOR_TEXT_WARNING_NOT_FOUND = #953800
 
     // mod.widgets.COLOR_SELECT_TEXT = #A6CDFE
     // mod.widgets.COLOR_SELECT_TEXT = #B5D8FE
@@ -276,16 +277,10 @@ pub const COLOR_UNREAD_BADGE_MARKED:   Vec4 = COLOR_ROBRIX_CYAN;
 pub const COLOR_UNREAD_BADGE_MESSAGES: Vec4 = vec4(0.667, 0.667, 0.667, 1.0);
 /// #FF6e00
 pub const COLOR_UNKNOWN_ROOM_AVATAR:   Vec4 = vec4(1.0, 0.431, 0.0, 1.0);
-/// #fcdb03
-pub const COLOR_WARNING_YELLOW:        Vec4 = vec4(0.988, 0.859, 0.01, 1.0);
-/// #0f88fe
-pub const COLOR_INFO_BLUE:             Vec4 = vec4(0.05, 0.53, 0.996, 1.0);
-/// #FFFFFF
-pub const COLOR_WHITE:                 Vec4 = vec4(1.0, 1.0, 1.0, 1.0);
 /// #888888
 pub const COLOR_MESSAGE_NOTICE_TEXT:   Vec4 = vec4(0.5, 0.5, 0.5, 1.0);
 /// #953800
-pub const COLOR_WARNING_NOT_FOUND:     Vec4 = vec4(0.584, 0.219, 0.0, 1.0);
+pub const COLOR_TEXT_WARNING_NOT_FOUND: Vec4 = vec4(0.584, 0.219, 0.0, 1.0);
 /// #F0F5FF
 pub const COLOR_BG_PREVIEW:            Vec4 = vec4(0.941, 0.961, 1.0, 1.0);
 /// #CDEDDF

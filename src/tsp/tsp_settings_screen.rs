@@ -87,7 +87,7 @@ script_mod! {
                 flow: Flow.Right{wrap: true},
                 draw_text +: {
                     wrap: Line,
-                    color: (COLOR_WARNING_NOT_FOUND),
+                    color: (COLOR_TEXT_WARNING_NOT_FOUND),
                     text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
                 text: "No wallets found. Create or import a wallet."
@@ -273,7 +273,7 @@ impl Widget for TspSettingsScreen {
             self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref())
         {
             Some(current_did) => (current_did.to_string(), COLOR_FG_ACCEPT_GREEN, true),
-            None => ("No default identity has been set.".to_string(), COLOR_WARNING_NOT_FOUND, false),
+            None => ("No default identity has been set.".to_string(), COLOR_TEXT_WARNING_NOT_FOUND, false),
         };
         let mut current_identity_label = self.view.label(cx, ids!(current_identity_label));
         script_apply_eval!(cx, current_identity_label, {
