@@ -52,7 +52,7 @@ pub fn set_global_popup_list(cx: &mut Cx, parent_ref: &WidgetRef) {
 }
 
 /// Kind of a popup notification.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum PopupKind {
     /// Shows no icon at all.
     #[default]
@@ -180,33 +180,42 @@ script_mod! {
         }
     }
 
+    mod.widgets.PopupCloseButton = ButtonFlat {
+        width: 32,
+        height: 32,
+        text: "",
+        spacing: 0,
+        margin: 0,
+        padding: 0,
+        align: Align{ x: 0.5, y: 0.5 }
+        label_walk: Walk{ width: 0, height: 0 }
+        icon_walk: Walk{ width: 14, height: 14, margin: 0 }
+        draw_bg +: {
+            border_radius: 4.0
+            border_size: 1.0
+            color: #00000014
+            color_hover: #00000022
+            color_down: #x0000002E
+            border_color: #00000020
+            border_color_hover: #0000002C
+            border_color_down: #00000038
+        }
+        draw_icon +: {
+            svg: (ICON_CLOSE),
+            color: #000000D0,
+        }
+    }
+
     mod.widgets.CloseButtonView = View {
         width: Fill,
         height: Fit,
         flow: Down,
-        padding: Inset{ top: 3 }
-        align: Align{ x: 0.98 }
-        
-        close_button_bg := RoundedView {
-            width: Fit, height: Fit
-            align: Align{ x: 0.5, y: 0.5 }
-            show_bg: true,
-            draw_bg +: { color: (COLOR_BG_DISABLED) }
-            // The "X" close button on the top right
-            close_button := RobrixIconButton {
-                width: Fit, height: Fit,
-                padding: Inset{ top: 5, bottom: 5, left: 8, right: 8 },
-                spacing: 0,
-                align: Align{ x: 0.5, y: 0.5 }
-                draw_bg +: { color: (COLOR_BG_DISABLED) }
-                draw_icon +: {
-                    svg: (ICON_CLOSE),
-                    color: (COLOR_DIVIDER_DARK),
-                }
-                icon_walk: Walk{width: 15, height: 15}
-            }
-        }
+        padding: Inset{ top: 5, right: 5 }
+        align: Align{ x: 1.0 }
+
+        close_button := mod.widgets.PopupCloseButton {}
     }
+
     // Other possible color themes that is not too glaring.
     // COLOR_POPUP_GREEN = #43bb9e;
     // COLOR_POPUP_RED = #e74c3c;
@@ -441,68 +450,106 @@ impl RobrixPopupNotification {
         let mut view = view_from_live_ptr(cx, self.content);
         let left_side_view = view.view(cx, ids!(popup_content.inner.left_side_view));
         let mut popup_icon = view.widget(cx, ids!(popup_content.inner.left_side_view.popup_icon));
+        let mut close_button = view.button(cx, ids!(close_button));
         let mut popup_label = view.label(cx, ids!(popup_label));
         popup_label.set_text(cx, &popup_item.message);
+
+        // Set the icon and icon color based on the popup kind.
+        let show_left_side_view = popup_item.kind != PopupKind::Blank;
+        left_side_view.set_visible(cx, show_left_side_view);
         match popup_item.kind {
-            PopupKind::Blank => {
-                left_side_view.set_visible(cx, false);
-                script_apply_eval!(cx, popup_label, {
-                    draw_text +: { color: #000000 },
-                });
-            }
             PopupKind::Error => {
-                left_side_view.set_visible(cx, true);
                 script_apply_eval!(cx, popup_icon, {
                     draw_icon.svg: mod.widgets.ICON_FORBIDDEN,
                     draw_icon.color: mod.widgets.COLOR_PRIMARY,
                 });
+            }
+            PopupKind::Info => {
+                script_apply_eval!(cx, popup_icon, {
+                    draw_icon.svg: mod.widgets.ICON_INFO,
+                    draw_icon.color: mod.widgets.COLOR_PRIMARY,
+                });
+            }
+            PopupKind::Success => {
+                script_apply_eval!(cx, popup_icon, {
+                    draw_icon.svg: mod.widgets.ICON_CHECKMARK,
+                    draw_icon.color: mod.widgets.COLOR_PRIMARY,
+                });
+            }
+            PopupKind::Warning => {
+                script_apply_eval!(cx, popup_icon, {
+                    draw_icon.svg: mod.widgets.ICON_WARNING,
+                    draw_icon.color: #000000,
+                });
+            }
+            PopupKind::Blank => {}
+        }
+
+        // Set the text and close button color based on the popup kind.
+        match popup_item.kind {
+            PopupKind::Error | PopupKind::Info | PopupKind::Success => {
                 script_apply_eval!(cx, popup_label, {
                     draw_text +: { color: mod.widgets.COLOR_PRIMARY },
                 });
+                script_apply_eval!(cx, close_button, {
+                    draw_bg +: {
+                        color: #FFFFFF22,
+                        color_hover: #FFFFFF30,
+                        color_down: #FFFFFF42,
+                        border_color: #FFFFFF2C,
+                        border_color_hover: #FFFFFF38,
+                        border_color_down: #FFFFFF4A,
+                    },
+                    draw_icon +: { color: #FFFFFFFA }
+                });
+            }
+            PopupKind::Warning | PopupKind::Blank => {
+                script_apply_eval!(cx, popup_label, {
+                    draw_text +: { color: #000000 },
+                });
+                script_apply_eval!(cx, close_button, {
+                    draw_bg +: {
+                        color: #00000014,
+                        color_hover: #00000022,
+                        color_down: #x0000002E,
+                        border_color: #00000020,
+                        border_color_hover: #0000002C,
+                        border_color_down: #00000038,
+                    },
+                    draw_icon +: { color: #000000D0 }
+                });
+            }
+        }
+
+        // Set the background color of the popup based on its kind.
+        match popup_item.kind {
+            PopupKind::Blank => {
+                script_apply_eval!(cx, view, {
+                    draw_bg.color: mod.widgets.COLOR_PRIMARY,
+                });
+            }
+            PopupKind::Error => {
                 script_apply_eval!(cx, view, {
                     draw_bg.color: mod.widgets.COLOR_FG_DANGER_RED,
                 });
             }
             PopupKind::Info => {
-                left_side_view.set_visible(cx, true);
-                script_apply_eval!(cx, popup_icon, {
-                    draw_icon.svg: mod.widgets.ICON_INFO,
-                    draw_icon.color: mod.widgets.COLOR_PRIMARY,
-                });
-                script_apply_eval!(cx, popup_label, {
-                    draw_text +: { color: mod.widgets.COLOR_PRIMARY },
-                });
                 script_apply_eval!(cx, view, {
                     draw_bg.color: mod.widgets.COLOR_INFO_BLUE,
                 });
             }
             PopupKind::Success => {
-                left_side_view.set_visible(cx, true);
-                script_apply_eval!(cx, popup_icon, {
-                    draw_icon.svg: mod.widgets.ICON_CHECKMARK,
-                    draw_icon.color: mod.widgets.COLOR_PRIMARY,
-                });
-                script_apply_eval!(cx, popup_label, {
-                    draw_text +: { color: mod.widgets.COLOR_PRIMARY },
-                });
                 script_apply_eval!(cx, view, {
                     draw_bg.color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
                 });
             }
             PopupKind::Warning => {
-                left_side_view.set_visible(cx, true);
-                script_apply_eval!(cx, popup_icon, {
-                    draw_icon.svg: mod.widgets.ICON_WARNING,
-                    draw_icon.color: #000000,
-                });
-                script_apply_eval!(cx, popup_label, {
-                    draw_text +: { color: #000000 },
-                });
                 script_apply_eval!(cx, view, {
                     draw_bg.color: mod.widgets.COLOR_WARNING_YELLOW,
                 });
             }
         }
+
         let close_timer = if let Some(duration) = popup_item.auto_dismissal_duration {
             let mut progress_bar = view.view(cx, ids!(popup_content.progress_bar));
             script_apply_eval!(cx, progress_bar, {
