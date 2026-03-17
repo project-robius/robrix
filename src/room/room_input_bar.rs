@@ -20,7 +20,7 @@ use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, TimelineKind, UserPowerLevels}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt}, location_preview::LocationPreviewWidgetExt, room_screen::{populate_preview_of_timeline_item, MessageAction, RoomScreenProps}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, sliding_sync::{submit_async_request, MatrixRequest, TimelineKind, UserPowerLevels}, utils};
 
 live_design! {
     use link::theme::*;
@@ -204,6 +204,67 @@ impl Widget for RoomInputBar {
                         None,
                     );
                 }
+            }
+            _ => {}
+        }
+
+        let is_text_input_empty = self.mentionable_text_input(ids!(mentionable_text_input)).text().trim().is_empty();
+        let send_message_button = self.view.button(ids!(send_message_button));
+        let location_button = self.view.button(ids!(location_button));
+
+        match event.hits(cx, send_message_button.area()) {
+            Hit::FingerHoverIn(_) => {
+                let text = if is_text_input_empty {
+                    "Message is empty".to_string()
+                } else {
+                    "Send message".to_string()
+                };
+                let widget_rect = send_message_button.area().rect(cx);
+                cx.widget_action(
+                    room_screen_props.room_screen_widget_uid,
+                    &scope.path,
+                    TooltipAction::HoverIn {
+                        text,
+                        widget_rect,
+                        options: CalloutTooltipOptions {
+                            position: TooltipPosition::Top,
+                            ..Default::default()
+                        },
+                    },
+                );
+            }
+            Hit::FingerHoverOut(_) => {
+                cx.widget_action(
+                    room_screen_props.room_screen_widget_uid,
+                    &scope.path,
+                    TooltipAction::HoverOut,
+                );
+            }
+            _ => {}
+        }
+
+        match event.hits(cx, location_button.area()) {
+            Hit::FingerHoverIn(_) => {
+                let widget_rect = location_button.area().rect(cx);
+                cx.widget_action(
+                    room_screen_props.room_screen_widget_uid,
+                    &scope.path,
+                    TooltipAction::HoverIn {
+                        text: "Share location".to_string(),
+                        widget_rect,
+                        options: CalloutTooltipOptions {
+                            position: TooltipPosition::Top,
+                            ..Default::default()
+                        },
+                    },
+                );
+            }
+            Hit::FingerHoverOut(_) => {
+                cx.widget_action(
+                    room_screen_props.room_screen_widget_uid,
+                    &scope.path,
+                    TooltipAction::HoverOut,
+                );
             }
             _ => {}
         }
