@@ -128,7 +128,6 @@ script_mod! {
 
     mod.widgets.HomeButton = mod.widgets.NavigationTabButton {
         draw_icon +: { svg: (ICON_HOME) }
-        animator +: { active: { default: @on } }
     }
 
     mod.widgets.ToggleSpacesBarButton = RobrixIconButton {
@@ -401,11 +400,23 @@ impl Widget for ProfileIcon {
 ///
 /// * In the "desktop" (wide) layout, this is a vertical bar on the left.
 /// * In the "mobile" (narrow) layout, this is a horizontal bar on the bottom.
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct NavigationTabBar {
     #[deref] view: AdaptiveView,
 
     #[rust] is_spaces_bar_shown: bool,
+}
+
+impl ScriptHook for NavigationTabBar {
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            // Programmatically select the Home button as active on startup,
+            // because animator default overrides in the DSL don't take effect.
+            if let Some(mut rb) = self.view.radio_button(cx, ids!(home_button)).borrow_mut() {
+                rb.animator_play(cx, ids!(active.on));
+            }
+        });
+    }
 }
 
 impl Widget for NavigationTabBar {
