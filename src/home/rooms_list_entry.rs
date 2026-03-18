@@ -348,8 +348,8 @@ impl RoomsListEntryContent {
         // Hide the timestamp field, and use the latest message field to show the inviter.
         self.view.label(ids!(timestamp)).set_text(cx, "");
         let inviter_string = match &room_info.inviter_info {
-            Some(InviterInfo { user_id, display_name: Some(dn), .. }) => format!("Invited by <b>{dn}</b> ({user_id})"),
-            Some(InviterInfo { user_id, .. }) => format!("Invited by {user_id}"),
+            Some(InviterInfo { user_id, display_name: Some(dn), .. }) => format!("Invited by <b>{}</b> ({})", htmlize::escape_text(dn), htmlize::escape_text(user_id.as_str())),
+            Some(InviterInfo { user_id, .. }) => format!("Invited by {}", htmlize::escape_text(user_id.as_str())),
             None => String::from("You were invited"),
         };
         self.view.html_or_plaintext(ids!(latest_message)).show_html(cx, &inviter_string);
