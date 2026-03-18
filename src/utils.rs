@@ -138,6 +138,52 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
 }
 
 
+/// Parses a CSS-style hex color string into a `Vec4` with RGBA components in `[0.0, 1.0]`.
+///
+/// Supports the following formats (with or without a leading `#`):
+/// * 3 hex digits: `RGB` (each digit is doubled, alpha = 1.0)
+/// * 4 hex digits: `RGBA` (each digit is doubled)
+/// * 6 hex digits: `RRGGBB` (alpha = 1.0)
+/// * 8 hex digits: `RRGGBBAA`
+pub fn vec4_from_hex_str(s: &str) -> Option<makepad_widgets::Vec4> {
+    let s = s.strip_prefix('#').unwrap_or(s);
+    let (r, g, b, a) = match s.len() {
+        3 => {
+            let r = u8::from_str_radix(&s[0..1], 16).ok()?;
+            let g = u8::from_str_radix(&s[1..2], 16).ok()?;
+            let b = u8::from_str_radix(&s[2..3], 16).ok()?;
+            (r * 17, g * 17, b * 17, 255)
+        }
+        4 => {
+            let r = u8::from_str_radix(&s[0..1], 16).ok()?;
+            let g = u8::from_str_radix(&s[1..2], 16).ok()?;
+            let b = u8::from_str_radix(&s[2..3], 16).ok()?;
+            let a = u8::from_str_radix(&s[3..4], 16).ok()?;
+            (r * 17, g * 17, b * 17, a * 17)
+        }
+        6 => {
+            let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+            (r, g, b, 255)
+        }
+        8 => {
+            let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+            let a = u8::from_str_radix(&s[6..8], 16).ok()?;
+            (r, g, b, a)
+        }
+        _ => return None,
+    };
+    Some(makepad_widgets::vec4(
+        r as f32 / 255.0,
+        g as f32 / 255.0,
+        b as f32 / 255.0,
+        a as f32 / 255.0,
+    ))
+}
+
 /// A simplified version of `eyeball_im::VectorDiff` that uses `Vec` instead of `imbl::Vector`.
 ///
 /// This is used to communicate room order changes from the room list service to the RoomsList widget.
