@@ -198,10 +198,18 @@ script_mod! {
 }
 
 /// An entry in the rooms list.
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct RoomsListEntry {
     #[deref] view: View,
     #[rust] room_id: Option<OwnedRoomId>,
+}
+
+impl ScriptHook for RoomsListEntry {
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            self.set_adaptive_variant_selector(cx);
+        })
+    }
 }
 
 /// Widget actions that are emitted by a RoomsListEntry.
@@ -215,8 +223,8 @@ pub enum RoomsListEntryAction {
     None,
 }
 
-impl Widget for RoomsListEntry {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+impl RoomsListEntry {
+    fn set_adaptive_variant_selector(&self, cx: &mut Cx) {
         self.view
             .adaptive_view(cx, ids!(adaptive_preview))
             .set_variant_selector(|_cx, parent_size| match parent_size.x {
@@ -224,7 +232,11 @@ impl Widget for RoomsListEntry {
                 width if width <= 200.0 => id!(IconAndName),
                 _ => id!(FullPreview),
             });
+    }
+}
 
+impl Widget for RoomsListEntry {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let uid = self.widget_uid();
         let rooms_list_props = scope.props.get::<RoomsListScopeProps>().unwrap();
 

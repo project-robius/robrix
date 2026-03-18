@@ -10,6 +10,52 @@ use super::avatar::AvatarWidgetExt;
 /// The color of the text used to print the spoiler reason before the hidden text.
 const COLOR_SPOILER_REASON: Vec4 = vec4(0.6, 0.6, 0.6, 1.0);
 
+/// Parses a CSS-style hex color string into a `Vec4` with RGBA components in `[0.0, 1.0]`.
+///
+/// Supports the following formats (with or without a leading `#`):
+/// * 3 hex digits: `RGB` (each digit is doubled, alpha = 1.0)
+/// * 4 hex digits: `RGBA` (each digit is doubled)
+/// * 6 hex digits: `RRGGBB` (alpha = 1.0)
+/// * 8 hex digits: `RRGGBBAA`
+fn vec4_from_hex_str(s: &str) -> Option<Vec4> {
+    let s = s.strip_prefix('#').unwrap_or(s);
+    let (r, g, b, a) = match s.len() {
+        3 => {
+            let r = u8::from_str_radix(&s[0..1], 16).ok()?;
+            let g = u8::from_str_radix(&s[1..2], 16).ok()?;
+            let b = u8::from_str_radix(&s[2..3], 16).ok()?;
+            (r * 17, g * 17, b * 17, 255)
+        }
+        4 => {
+            let r = u8::from_str_radix(&s[0..1], 16).ok()?;
+            let g = u8::from_str_radix(&s[1..2], 16).ok()?;
+            let b = u8::from_str_radix(&s[2..3], 16).ok()?;
+            let a = u8::from_str_radix(&s[3..4], 16).ok()?;
+            (r * 17, g * 17, b * 17, a * 17)
+        }
+        6 => {
+            let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+            (r, g, b, 255)
+        }
+        8 => {
+            let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+            let a = u8::from_str_radix(&s[6..8], 16).ok()?;
+            (r, g, b, a)
+        }
+        _ => return None,
+    };
+    Some(vec4(
+        r as f32 / 255.0,
+        g as f32 / 255.0,
+        b as f32 / 255.0,
+        a as f32 / 255.0,
+    ))
+}
+
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
@@ -454,7 +500,7 @@ impl MatrixLinkPillRef {
 }
 
 /// A widget used to display a single HTML `<span>` tag or a `<font>` tag.
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 struct MatrixHtmlSpan {
     #[uid] uid: WidgetUid,
     // TODO: this is unused; just here to invalidly satisfy the area provider.
@@ -479,6 +525,31 @@ struct MatrixHtmlSpan {
     /// Background color: the `data-mx-bg-color` attribute.
     #[rust] bg_color: Option<Vec4>,
 }
+
+impl ScriptHook for MatrixHtmlSpan {
+    // After an MatrixHtmlSpan instance has been instantiated, we must
+    // populate its struct fields from the `<span>` or `<font>` tag's attributes.
+    fn on_after_new_scoped(&mut self, _vm: &mut ScriptVm, scope: &mut Scope) {
+        // The attributes we care about (we allow all attributes in both tags):
+        // * in `<font>` tags: `color`
+        // * in `<span>` tags: `data-mx-color`, `data-mx-bg-color`, `data-mx-spoiler`
+        if let Some(doc) = scope.props.get::<makepad_html::HtmlDoc>() {
+            let mut walker = doc.new_walker_with_index(scope.index + 1);
+            while let Some((lc, attr)) = walker.while_attr_lc() {
+                let attr = attr.trim_matches(['"', '\'']);
+                match lc {
+                    id!(color)
+                    | id!(data-mx-color) => self.fg_color = vec4_from_hex_str(attr),
+                    id!(data-mx-bg-color) => self.bg_color = vec4_from_hex_str(attr),
+                    id!(data-mx-spoiler) => self.spoiler = SpoilerDisplay::Hidden { reason: attr.into() },
+                    _ => ()
+                }
+            }
+        }
+    }
+}
+
+
 
 
 /// The possible states that a spoiler can be in: hidden or revealed.

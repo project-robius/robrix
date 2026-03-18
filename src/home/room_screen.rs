@@ -615,7 +615,7 @@ script_mod! {
 }
 
 /// The main widget that displays a single Matrix room.
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct RoomScreen {
     #[deref] view: View,
 
@@ -632,6 +632,7 @@ pub struct RoomScreen {
     /// Whether or not all rooms have been loaded (received from the homeserver).
     #[rust] all_rooms_loaded: bool,
 }
+
 impl Drop for RoomScreen {
     fn drop(&mut self) {
         // This ensures that the `TimelineUiState` instance owned by this room is *always* returned
@@ -642,6 +643,20 @@ impl Drop for RoomScreen {
         self.hide_timeline();
     }
 }
+
+impl ScriptHook for RoomScreen {
+    fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            if let Some(tl_state) = &mut self.tl_state.as_mut() {
+                // Clear the timeline's drawn items caches and redraw it.
+                tl_state.content_drawn_since_last_update.clear();
+                tl_state.profile_drawn_since_last_update.clear();
+                self.view.redraw(cx);
+            }
+        });
+    }
+}
+
 impl Widget for RoomScreen {
     // Handle events and actions for the RoomScreen widget and its inner Timeline view.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {

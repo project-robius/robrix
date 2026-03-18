@@ -87,7 +87,7 @@ script_mod! {
     }
 }
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct VerificationBadge {
     #[deref]
     view: View,
@@ -95,15 +95,25 @@ pub struct VerificationBadge {
     verification_state: VerificationState,
 }
 
-impl Widget for VerificationBadge {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if self.verification_state == VerificationState::Unknown {
+impl ScriptHook for VerificationBadge {
+    fn on_after_apply(
+        &mut self,
+        vm: &mut ScriptVm,
+        _apply: &Apply,
+        _scope: &mut Scope,
+        _value: ScriptValue,
+    ) {
+        vm.with_cx_mut(|cx| {
             if let Some(client) = get_client() {
                 self.verification_state = client.encryption().verification_state().get();
                 self.update_icon_visibility(cx);
             }
-        }
+        });
+    }
+}
 
+impl Widget for VerificationBadge {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
 
         if let Event::Actions(actions) = event {

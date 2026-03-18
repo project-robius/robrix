@@ -226,10 +226,20 @@ script_mod! {
 /// The icon in the NavigationTabBar that show the user's avatar.
 ///
 /// Clicking on this icon will open the settings screen.
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct ProfileIcon {
     #[deref] view: View,
     #[rust] own_profile: Option<UserProfile>,
+}
+
+impl ScriptHook for ProfileIcon {
+    fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            if self.own_profile.is_none() {
+                self.own_profile = get_own_profile(cx);
+            }
+        });
+    }
 }
 
 impl Widget for ProfileIcon {
