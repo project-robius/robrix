@@ -756,4 +756,48 @@ impl HtmlOrPlaintextRef {
             inner.show_html(cx, html_body);
         }
     }
+
+    /// Sets the color of links in the HTML content.
+    ///
+    /// This modifies the cached `HtmlLink` widget instances inside the inner
+    /// `Html` widget's `TextFlow` items. On the very first draw (before items
+    /// are created), this is a no-op, but subsequent frames will have the
+    /// correct color.
+    pub fn set_link_color(&self, cx: &mut Cx, color: Option<Vec4>) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_link_color(cx, color);
+        }
+    }
+}
+
+impl HtmlOrPlaintext {
+    /// See [`HtmlOrPlaintextRef::set_link_color()`].
+    pub fn set_link_color(&mut self, cx: &mut Cx, color: Option<Vec4>) {
+        let html_ref = self.html(cx, ids!(html_view.html));
+        let Some(mut html) = html_ref.borrow_mut() else { return };
+        // Iterate over cached TextFlow items (auto-generated IDs start at 1)
+        // until we hit a non-existent item.
+        let mut i = 1u64;
+        loop {
+            let item = html.existing_item(LiveId(i));
+            if item.is_empty() { break; }
+            // Check if this item is a RobrixHtmlLink and modify its inner HtmlLink.
+            if let Some(link) = item.borrow_mut::<RobrixHtmlLink>() {
+                let mut html_link = link.html_link(cx, ids!(html_link));
+                match color {
+                    Some(c) => {
+                        script_apply_eval!(cx, html_link, {
+                            color: #(c)
+                        });
+                    }
+                    None => {
+                        script_apply_eval!(cx, html_link, {
+                            color: nil
+                        });
+                    }
+                }
+            }
+            i += 1;
+        }
+    }
 }

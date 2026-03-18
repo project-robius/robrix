@@ -406,8 +406,70 @@ impl RoomsListEntryContent {
 
     /// Updates the styling of the preview based on whether the room is selected or not.
     pub fn update_preview_colors(&mut self, cx: &mut Cx, is_selected: bool) {
-        // TODO WTF THIS REMOVED THE WHOLE FUNCTION!!!
-        // RESTORE THIS: <https://github.com/project-robius/robrix/blob/182a9c4dba2b00c87b934f61f1ba449f8fa6a2eb/src/home/rooms_list_entry.rs#L407>
+        let message_text_color;
+        let room_name_color;
+        let timestamp_color;
+        let code_bg_color;
+
+        // TODO: use script-defined theme color instead of redefining constants below
+        if is_selected {
+            message_text_color = vec4(1., 1., 1., 1.); // COLOR_PRIMARY
+            room_name_color = vec4(1., 1., 1., 1.); // COLOR_PRIMARY
+            timestamp_color = vec4(1., 1., 1., 1.); // COLOR_PRIMARY
+            code_bg_color = vec4(0.3, 0.3, 0.3, 1.0); // a darker gray used for the background of code blocks and quote blocks
+        } else {
+            message_text_color = vec4(0.267, 0.267, 0.267, 1.0); // MESSAGE_TEXT_COLOR
+            room_name_color = vec4(0., 0., 0., 1.0);
+            timestamp_color = vec4(0.6, 0.6, 0.6, 1.0);
+            code_bg_color = vec4(0.929, 0.929, 0.929, 1.0); // #EDEDED
+        }
+
+        // Toggle the background color via the animator (handles selected/deselected bg).
         self.animator_toggle(cx, is_selected, Animate::No, ids!(selected.on), ids!(selected.off));
+
+        // Update text colors for room name.
+        let mut room_name_label = self.view.label(cx, ids!(room_name));
+        script_apply_eval!(cx, room_name_label, {
+            draw_text +: {
+                color: #(room_name_color)
+            }
+        });
+
+        // Update text colors for timestamp.
+        let mut timestamp_label = self.view.label(cx, ids!(timestamp));
+        script_apply_eval!(cx, timestamp_label, {
+            draw_text +: {
+                color: #(timestamp_color)
+            }
+        });
+
+        // Update text colors for the latest message preview (both HTML and plaintext variants).
+        let mut html_widget = self.view.html(cx, ids!(latest_message.html_view.html));
+        script_apply_eval!(cx, html_widget, {
+            font_color: #(message_text_color),
+            draw_text +: { color: #(message_text_color) },
+            draw_block +: {
+                quote_bg_color: #(code_bg_color),
+                code_color: #(code_bg_color),
+            }
+        });
+
+        // When selected, set link color to None so links inherit font_color (white)
+        // for better contrast against the blue selected background.
+        // When not selected, restore the default blue link color.
+        self.view
+            .html_or_plaintext(cx, ids!(latest_message))
+            .set_link_color(cx, if is_selected {
+                None
+            } else {
+                Some(vec4(0., 0., 0.933, 1.0)) // #0000EE, default HtmlLink color
+            });
+
+        let mut pt_label = self.view.label(cx, ids!(latest_message.plaintext_view.pt_label));
+        script_apply_eval!(cx, pt_label, {
+            draw_text +: {
+                color: #(message_text_color)
+            }
+        });
     }
 }
