@@ -118,7 +118,7 @@ script_mod! {
                 svg: crate_resource("self://resources/icons/double_chat.svg")
                 color: (mod.widgets.COLOR_THREAD_SUMMARY_REPLY_COUNT)
             }
-            icon_walk: Walk{ width: 25, height: 25, margin: Inset{top: 7, right: 7} }
+            icon_walk: Walk{ width: 25, height: 25, margin: Inset{top: 3, right: 7} }
         }
 
         thread_summary_latest := MessageHtml {

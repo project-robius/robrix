@@ -54,11 +54,11 @@ script_mod! {
             html_view +: {
                 html +: {
                     font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE)
-                    text_style_normal: theme.font_regular { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
-                    text_style_italic: theme.font_italic { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
-                    text_style_bold: theme.font_bold { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
-                    text_style_bold_italic: theme.font_bold_italic { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
-                    text_style_fixed: theme.font_code { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
+                    text_style_normal +: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
+                    text_style_italic +: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
+                    text_style_bold +: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
+                    text_style_bold_italic +: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
+                    text_style_fixed +: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
                 }
             }
             plaintext_view +: {

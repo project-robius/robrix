@@ -60,11 +60,11 @@ script_mod! {
             html_view +: {
                 html +: {
                     font_size: 9.3
-                    text_style_normal: theme.font_regular { font_size: 9.3 }
-                    text_style_italic: theme.font_italic { font_size: 9.3 }
-                    text_style_bold: theme.font_bold { font_size: 9.3 }
-                    text_style_bold_italic: theme.font_bold_italic { font_size: 9.3 }
-                    text_style_fixed: theme.font_code { font_size: 9.3 }
+                    text_style_normal +: { font_size: 9.3 }
+                    text_style_italic +: { font_size: 9.3 }
+                    text_style_bold +: { font_size: 9.3 }
+                    text_style_bold_italic +: { font_size: 9.3 }
+                    text_style_fixed +: { font_size: 9.3 }
                 }
             }
             plaintext_view +: {

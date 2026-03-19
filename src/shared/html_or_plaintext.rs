@@ -119,6 +119,7 @@ script_mod! {
         text_style_fixed: theme.font_code {
             font_size: (MESSAGE_FONT_SIZE)
             line_spacing: (MESSAGE_TEXT_LINE_SPACING)
+            top_drop: 0.20
         }
         draw_block +: {
             line_color: (MESSAGE_TEXT_COLOR)
@@ -134,7 +135,8 @@ script_mod! {
         sep_walk: Walk{ margin: Inset{ top: 10, bottom: 10 } }
 
         list_item_layout: Layout{ padding: Inset{left: 5.0, top: 1.0, bottom: 1.0}, }
-        list_item_walk: Walk{ margin: Inset{ left: 0, right: 0, top: 3, bottom: 3 } }
+        list_item_marker_pad: 8.0
+        list_item_walk: Walk{ margin: Inset{ left: 0, right: 0, top: 1, bottom: 3 } }
         code_layout: Layout{ padding: Inset{top: 15.0, bottom: 15.0, left: 15, right: 5 } }
         code_walk: Walk{ margin: Inset{ top: 10, bottom: 10, left: 0, right: 0 } }
 
