@@ -696,12 +696,12 @@ impl CommandTextInput {
 
     /// Returns a reference to the inner `TextInput` widget.
     pub fn text_input_ref(&self) -> TextInputRef {
-        self.child(id!(text_input)).as_text_input()
+        self.child_by_path(ids!(text_input)).as_text_input()
     }
 
     /// Returns a reference to the inner `TextInput` widget used for search.
     pub fn search_input_ref(&self) -> TextInputRef {
-        self.child(id!(search_input)).as_text_input()
+        self.child_by_path(ids!(search_input)).as_text_input()
     }
 
     fn trigger_grapheme(&self) -> Option<&str> {

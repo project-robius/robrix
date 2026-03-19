@@ -81,7 +81,7 @@ script_mod! {
                 padding: 6,
 
                 location_button := RobrixIconButton {
-                    margin: Inset{left: 4}
+                    margin: 4
                     spacing: 0,
                     draw_icon +: {
                         svg: (mod.widgets.ICO_LOCATION_PERSON)
@@ -101,10 +101,14 @@ script_mod! {
                 mentionable_text_input := MentionableTextInput {
                     width: Fill,
                     height: Fit
-                    margin: Inset{ top: 5, bottom: 12, left: 1, right: 1 },
+                    margin: Inset {
+                        top: 3, // add some space between the top border of the text input and the top border of the room input bar
+                        bottom: 5.75, // to line up the middle of the text input with the middle of the buttons
+                        left: 3, right: 3 // to give a bit of breathing room between the text input and the buttons on the sides
+                    },
 
-                    persistent := RoundedView {
-                        center := RoundedView {
+                    persistent +: {
+                        center +: {
                             text_input := RobrixTextInput {
                                 empty_text: "Write a message (in Markdown) ..."
                             }
@@ -116,7 +120,7 @@ script_mod! {
                     // Disabled by default; enabled when text is inputted
                     enabled: false,
                     spacing: 0,
-                    margin: Inset{right: 4}
+                    margin: 4
                     draw_icon +: {
                         svg: (ICON_SEND),
                         color: (COLOR_FG_DISABLED),
@@ -597,11 +601,11 @@ impl RoomInputBarRef {
         let Some(inner) = self.borrow() else { return Default::default() };
         // Clear the location preview. We don't save this state because the
         // current location might change by the next time the user opens this same room.
-        inner.child(id!(location_preview)).as_location_preview().clear();
+        inner.child_by_path(ids!(location_preview)).as_location_preview().clear();
         RoomInputBarState {
             was_replying_preview_visible: inner.was_replying_preview_visible,
             replying_to: inner.replying_to.clone(),
-            editing_pane_state: inner.child(id!(editing_pane)).as_editing_pane().save_state(),
+            editing_pane_state: inner.child_by_path(ids!(editing_pane)).as_editing_pane().save_state(),
             text_input_state: inner.child_by_path(ids!(input_bar.mentionable_text_input.text_input)).as_text_input().save_state(),
         }
     }

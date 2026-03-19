@@ -2400,7 +2400,7 @@ impl RoomScreen {
         };
 
         let portal_list = self.child_by_path(ids!(timeline.list)).as_portal_list();
-        let room_input_bar = self.child(id!(room_input_bar)).as_room_input_bar();
+        let room_input_bar = self.child_by_path(ids!(room_input_bar)).as_room_input_bar();
         log!("Saving state for room {:?}: first_id: {:?}, scroll: {}", self.room_name_id, portal_list.first_id(), portal_list.scroll_position());
         let state = SavedState {
             first_index_and_scroll: Some((portal_list.first_id(), portal_list.scroll_position())),
@@ -2437,7 +2437,7 @@ impl RoomScreen {
         }
 
         // 2. Restore the state of the room input bar.
-        let room_input_bar = self.child(id!(room_input_bar)).as_room_input_bar();
+        let room_input_bar = self.child_by_path(ids!(room_input_bar)).as_room_input_bar();
         let saved_room_input_bar_state = std::mem::take(room_input_bar_state);
         room_input_bar.restore_state(
             cx,
