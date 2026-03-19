@@ -672,11 +672,6 @@ impl MatchEvent for RegisterScreen {
                 self.view
                     .label(ids!(selected_homeserver))
                     .set_text(cx, &normalized);
-                if normalized != text_event {
-                    self.view
-                        .text_input(ids!(custom_homeserver_input))
-                        .set_text(cx, &normalized);
-                }
             } else {
                 self.pending_custom_homeserver = true;
                 self.selected_homeserver.clear();
