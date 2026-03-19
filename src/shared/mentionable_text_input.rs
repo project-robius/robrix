@@ -24,11 +24,6 @@ const MOBILE_ITEM_HEIGHT: f64 = 64.0;
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
-
-    mod.widgets.FOCUS_HOVER_COLOR = #C
-
-    mod.widgets.KEYBOARD_FOCUS_OR_COLOR_HOVER = #1C274C
-
     // Template for user list items in the mention dropdown
     mod.widgets.UserListItem = RoundedView {
         width: Fill,
@@ -38,25 +33,37 @@ script_mod! {
         show_bg: true
         cursor: MouseCursor.Hand
         draw_bg +: {
-            color: instance(COLOR_PRIMARY),
+            color: instance(#ffffff),
             border_radius: uniform(4.0),
             hover: instance(0.0),
             selected: instance(0.0),
 
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size);
-                // Draw rounded rectangle with configurable radius
                 sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
+                // Light blue hover color (#DBEAFE)
+                let hover_color = vec4(0.859, 0.918, 0.996, 1.0);
 
                 if self.selected > 0.0 {
-                    sdf.fill(KEYBOARD_FOCUS_OR_COLOR_HOVER)
+                    sdf.fill(hover_color)
                 } else if self.hover > 0.0 {
-                    sdf.fill(KEYBOARD_FOCUS_OR_COLOR_HOVER)
+                    sdf.fill(hover_color)
                 } else {
-                    // Default state
                     sdf.fill(self.color)
                 }
                 return sdf.result
+            }
+        }
+        animator: Animator {
+            hover: {
+                default: off
+                off: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { hover: 0.0 }}}
+                on: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { hover: 1.0 }}}
+            }
+            selected: {
+                default: off
+                off: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { selected: 0.0 }}}
+                on: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { selected: 1.0 }}}
             }
         }
         flow: Down
@@ -110,7 +117,7 @@ script_mod! {
         show_bg: true
         cursor: MouseCursor.Hand
         draw_bg +: {
-            color: instance(COLOR_PRIMARY),
+            color: instance(#ffffff),
             border_radius: uniform(4.0),
             hover: instance(0.0),
             selected: instance(0.0),
@@ -118,15 +125,29 @@ script_mod! {
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size);
                 sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
+                // Light blue hover color (#DBEAFE)
+                let hover_color = vec4(0.859, 0.918, 0.996, 1.0);
 
                 if self.selected > 0.0 {
-                    sdf.fill(KEYBOARD_FOCUS_OR_COLOR_HOVER)
+                    sdf.fill(hover_color)
                 } else if self.hover > 0.0 {
-                    sdf.fill(KEYBOARD_FOCUS_OR_COLOR_HOVER)
+                    sdf.fill(hover_color)
                 } else {
                     sdf.fill(self.color)
                 }
                 return sdf.result
+            }
+        }
+        animator: Animator {
+            hover: {
+                default: off
+                off: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { hover: 0.0 }}}
+                on: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { hover: 1.0 }}}
+            }
+            selected: {
+                default: off
+                off: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { selected: 0.0 }}}
+                on: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { selected: 1.0 }}}
             }
         }
         flow: Down
@@ -226,27 +247,166 @@ script_mod! {
         }
     }
 
-    mod.widgets.MentionableTextInput = #(MentionableTextInput::register_widget(vm)) {
+    // Step 1: Register the base widget type
+    mod.widgets.MentionableTextInputBase = #(MentionableTextInput::register_widget(vm))
 
-        width: Fill,
+    // Step 2: Define the full widget inheriting from CommandTextInput's DSL structure
+    mod.widgets.MentionableTextInput = mod.widgets.MentionableTextInputBase {
+        //..mod.widgets.CommandTextInput
+        flow: Down
         height: Fit
         trigger: "@"
         inline_search: true
 
-        color_focus: (mod.widgets.FOCUS_HOVER_COLOR),
-        color_hover: (mod.widgets.FOCUS_HOVER_COLOR),
+        // Light blue colors for hover/focus highlighting (#DBEAFE)
+        color_focus: #DBEAFE
+        color_hover: #DBEAFE
 
+        // popup := RoundedView {
+        //     flow: Down
+        //     height: Fit
+        //     visible: false
+
+        //     draw_bg +: {
+        //         color: instance(theme.color_fg_app)
+        //         border_size: uniform(theme.beveling)
+        //         border_color: instance(theme.color_bevel)
+        //         border_radius: uniform(theme.corner_radius)
+
+        //         pixel: fn() {
+        //             let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+
+        //             // External outline (entire component including border)
+        //             sdf.box_all(
+        //                 0.0
+        //                 0.0
+        //                 self.rect_size.x
+        //                 self.rect_size.y
+        //                 self.border_radius
+        //                 self.border_radius
+        //                 self.border_radius
+        //                 self.border_radius
+        //             )
+        //             sdf.fill(self.border_color)  // Fill the entire area with border color
+
+        //             // Internal outline (content area)
+        //             sdf.box_all(
+        //                 self.border_size
+        //                 self.border_size
+        //                 self.rect_size.x - self.border_size * 2.0
+        //                 self.rect_size.y - self.border_size * 2.0
+        //                 self.border_radius - self.border_size
+        //                 self.border_radius - self.border_size
+        //                 self.border_radius - self.border_size
+        //                 self.border_radius - self.border_size
+        //             )
+        //             sdf.fill(self.color)  // Fill content area with background color
+
+        //             return sdf.result
+        //         }
+        //     }
+
+        //     header_view := View{
+        //         visible: true
+        //         width: Fill
+        //         height: Fit
+        //         padding: Inset{left: 12., right: 12., top: 12., bottom: 12.}
+        //         show_bg: true
+        //         draw_bg +: {
+        //             color: instance(theme.color_fg_app)
+        //             top_radius: uniform(theme.corner_radius)
+        //             border_color: instance(theme.color_bevel)
+        //             border_width: uniform(theme.beveling)
+        //             pixel: fn() {
+        //                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+        //                 sdf.box_all(
+        //                     0.0
+        //                     0.0
+        //                     self.rect_size.x
+        //                     self.rect_size.y
+        //                     self.top_radius
+        //                     self.top_radius
+        //                     1.0
+        //                     1.0
+        //                 )
+        //                 sdf.fill(self.color)
+        //                 return sdf.result
+        //             }
+        //         }
+
+        //         header_label := Label{
+        //             draw_text +: {
+        //                 color: theme.color_label_inner
+        //                 text_style: theme.font_regular{
+        //                     font_size: theme.font_size_4
+        //                 }
+        //             }
+        //         }
+        //     }
+
+        //     // Wrapper workaround to hide search input when inline search is enabled
+        //     // as we currently can't hide the search input avoiding events.
+        //     search_input_wrapper := RoundedView{
+        //         height: Fit
+        //         search_input := TextInput{
+        //             width: Fill
+        //             height: Fit
+        //         }
+        //     }
+
+        //     list := mod.widgets.CommandTextInputList{
+        //         height: Fit
+        //     }
+        // }
         popup := RoundedView {
-            spacing: 0.0
-            padding: 0.0
+            flow: Down
+            height: Fit
+            visible: false
 
-            draw_bg.color: (COLOR_SECONDARY)
+            draw_bg +: {
+                color: instance(#ffffff)
+                border_size: uniform(1.0)
+                border_color: instance(#cccccc)
+                border_radius: uniform(4.0)
 
-            header_view := SolidView {
-                margin: Inset{left: 4, right: 4}
-                draw_bg.color: (COLOR_ROBRIX_PURPLE)
+                pixel: fn() {
+                    let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                    sdf.box_all(
+                        0.0, 0.0,
+                        self.rect_size.x, self.rect_size.y,
+                        self.border_radius, self.border_radius,
+                        self.border_radius, self.border_radius
+                    )
+                    sdf.fill(self.border_color)
+                    sdf.box_all(
+                        self.border_size, self.border_size,
+                        self.rect_size.x - self.border_size * 2.0,
+                        self.rect_size.y - self.border_size * 2.0,
+                        self.border_radius - self.border_size,
+                        self.border_radius - self.border_size,
+                        self.border_radius - self.border_size,
+                        self.border_radius - self.border_size
+                    )
+                    sdf.fill(self.color)
+                    return sdf.result
+                }
+            }
+
+            header_view := View {
+                visible: true
+                width: Fill
+                height: Fit
+                padding: Inset{left: 8, right: 8, top: 8, bottom: 4}
+                show_bg: true
+                draw_bg +: {
+                    color: instance(#ffffff)
+                }
+
                 header_label := Label {
-                    draw_text.color: (COLOR_PRIMARY_DARKER),
+                    draw_text +: {
+                        color: #333333
+                        text_style: theme.font_regular { font_size: 12.0 }
+                    }
                     text: "Users in this Room"
                 }
             }
@@ -258,12 +418,17 @@ script_mod! {
                 padding: 0.0
             }
         }
-
-        persistent := RoundedView {
+        persistent := RoundedView{
+            flow: Down
+            height: Fit
             top := View { height: 0 }
             bottom := View { height: 0 }
             center := RoundedView {
+                height: Fit
+                left := View{ width: Fit, height: Fit }
+                right := View{ width: Fit, height: Fit }
                 text_input := RobrixTextInput {
+                    width: Fill
                     empty_text: "Start typing..."
                 }
             }
@@ -530,12 +695,12 @@ impl MentionableTextInput {
         if is_desktop {
             script_apply_eval!(cx, room_mention_item, {
                 height: #(new_height),
-                flow: Flow.Right,
+                flow: #(Flow::Right{ row_align: turtle::RowAlign::Top, wrap: false }),
             });
         } else {
             script_apply_eval!(cx, room_mention_item, {
                 height: #(new_height),
-                flow: Flow.Down,
+                flow: #(Flow::Down),
             });
         }
 
@@ -613,17 +778,15 @@ impl MentionableTextInput {
             if is_desktop {
                 let mut item_ref = item.clone();
                 script_apply_eval!(cx, item_ref, {
-                    flow: Flow.Right,
+                    flow: #(Flow::Right{wrap: false, row_align: turtle::RowAlign::Top}),
                     height: #(DESKTOP_ITEM_HEIGHT),
-                    align: Align{y: 0.5}
                 });
                 item.view(cx, ids!(user_info.filler)).set_visible(cx, true);
             } else {
                 let mut item_ref = item.clone();
                 script_apply_eval!(cx, item_ref, {
-                    flow: Flow.Down,
+                    flow: #(Flow::Down),
                     height: #(MOBILE_ITEM_HEIGHT),
-                    spacing: 2.0
                 });
                 item.view(cx, ids!(user_info.filler)).set_visible(cx, false);
             }

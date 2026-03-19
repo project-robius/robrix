@@ -223,6 +223,7 @@ impl Widget for CommandTextInput {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        
         self.update_highlights(cx);
         self.ensure_popup_consistent(cx);
 
@@ -237,7 +238,6 @@ impl Widget for CommandTextInput {
             self.is_text_input_focus_pending = false;
             self.text_input_ref().set_key_focus(cx);
         }
-
         DrawStep::done()
     }
 
@@ -696,12 +696,12 @@ impl CommandTextInput {
 
     /// Returns a reference to the inner `TextInput` widget.
     pub fn text_input_ref(&self) -> TextInputRef {
-        self.child(id!(text_input)).as_text_input()
+        self.child(id!(persistent)).child(id!(center)).child(id!(text_input)).as_text_input().as_text_input()
     }
 
     /// Returns a reference to the inner `TextInput` widget used for search.
     pub fn search_input_ref(&self) -> TextInputRef {
-        self.child(id!(search_input)).as_text_input()
+        self.child(id!(persistent)).child(id!(center)).child(id!(text_input)).as_text_input().as_text_input()
     }
 
     fn trigger_grapheme(&self) -> Option<&str> {
@@ -752,7 +752,7 @@ impl CommandTextInput {
             let mut item = item.clone();
             script_apply_eval!(cx, item, {
                 show_bg: true,
-                cursor: MouseCursor.Hand
+                // cursor: MouseCursor.Hand
             });
 
             // If there is a keyboard focus, prioritize it over mouse hover

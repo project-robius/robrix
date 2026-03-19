@@ -98,20 +98,23 @@ script_mod! {
                     margin: Inset{bottom: 9, left: 6, right: 0}
                 }
 
-                mentionable_text_input := MentionableTextInput {
-                    width: Fill,
-                    height: Fit
-                    margin: Inset{ top: 5, bottom: 12, left: 1, right: 1 },
+                //mentionable_text_input := 
+                MentionableTextInput {
+                    // width: Fill,
+                    // height: Fit
+                    // margin: Inset{ top: 5, bottom: 12, left: 1, right: 1 },
 
-                    persistent := RoundedView {
-                        center := RoundedView {
-                            text_input := RobrixTextInput {
-                                empty_text: "Write a message (in Markdown) ..."
-                            }
-                        }
-                    }
+                    // persistent := RoundedView {
+                    //     center := RoundedView {
+                    //         text_input := TextInput {
+                    //             empty_text: "Write a message (in Markdown) ..."
+                    //         }
+                    //     }
+                    // }
                 }
-
+                // CommandTextInput {
+                    
+                // }
                 send_message_button := RobrixIconButton {
                     // Disabled by default; enabled when text is inputted
                     enabled: false,
