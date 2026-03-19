@@ -37,6 +37,8 @@ script_mod! {
     mod.widgets.ICON_SQUARES          = crate_resource("self://resources/icons/squares_filled.svg")
     mod.widgets.ICON_TOMBSTONE        = crate_resource("self://resources/icons/tombstone.svg")
     mod.widgets.ICON_TRASH            = crate_resource("self://resources/icons/trash.svg")
+    mod.widgets.ICON_TRIANGLE_DOWN    = crate_resource("self://resources/icons/triangle_down_fill.svg")
+    mod.widgets.ICON_TRIANGLE_UP      = crate_resource("self://resources/icons/triangle_up_fill.svg")
     mod.widgets.ICON_UPLOAD           = crate_resource("self://resources/icons/upload.svg")
     mod.widgets.ICON_VIEW_SOURCE      = crate_resource("self://resources/icons/view_source.svg")
     mod.widgets.ICON_WARNING          = crate_resource("self://resources/icons/warning.svg")
