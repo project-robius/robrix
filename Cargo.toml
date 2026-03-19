@@ -14,10 +14,10 @@ version = "0.0.1-pre-alpha-4"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev" }
+makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
 makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
-# makepad-widgets = { path = "../makepad/widgets" }
+# makepad-widgets = { path = "../makepad/widgets", features = ["serde"] }
 # makepad-code-editor = { path = "../makepad/code_editor" }
 
 
@@ -256,7 +256,7 @@ minimum_system_version = "11.0"
 frameworks = []
 info_plist_path = "./packaging/Info.plist"
 entitlements = "./packaging/Entitlements.plist"
-signing_identity = "Developer ID Application: AppChef Inc. (SFVQ5V48GD)"
+signing_identity = "Developer ID Application: GOSIM FOUNDATION LTD. (HMX6XGJZ3R)"
 
 
 ## Configuration for `cargo packager`'s generation of a macOS `.dmg`.

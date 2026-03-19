@@ -29,6 +29,7 @@
 //!
 
 use makepad_widgets::*;
+use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, profile::{
         user_profile::UserProfile,
@@ -481,7 +482,7 @@ impl Widget for NavigationTabBar {
 
 
 /// Which top-level view is currently shown, and which navigation tab is selected.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SelectedTab {
     #[default]
     Home,

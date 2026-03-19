@@ -815,7 +815,6 @@ pub struct AppState {
     ///
     /// This is not saved to or restored from persistent storage,
     /// so the `Home` screen and tab are always selected upon app startup.
-    #[serde(skip)]
     pub selected_tab: SelectedTab,
     /// The saved "snapshot" of the dock's UI layout/state for the main "all rooms" home view.
     pub saved_dock_state_home: SavedDockState,
@@ -830,10 +829,8 @@ pub struct AppState {
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct SavedDockState {
     /// All items contained in the dock, keyed by their room or space ID.
-    #[serde(skip, default)]
     pub dock_items: HashMap<LiveId, DockItem>,
     /// The rooms that are currently open, keyed by their room or space ID.
-    #[serde(skip, default)]
     pub open_rooms: HashMap<LiveId, SelectedRoom>,
     /// The order in which the rooms were opened, in chronological order
     /// from first opened (at the beginning) to last opened (at the end).
