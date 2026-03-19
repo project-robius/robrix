@@ -15,6 +15,8 @@ pub mod settings;
 
 /// Login screen
 pub mod login;
+/// Register screen
+pub mod register;
 /// Logout confirmation and state management
 pub mod logout;
 /// Core UI content: the main home screen (rooms list), room screen.
