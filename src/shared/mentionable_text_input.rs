@@ -262,106 +262,12 @@ script_mod! {
         color_focus: #DBEAFE
         color_hover: #DBEAFE
 
-        // popup := RoundedView {
-        //     flow: Down
-        //     height: Fit
-        //     visible: false
-
-        //     draw_bg +: {
-        //         color: instance(theme.color_fg_app)
-        //         border_size: uniform(theme.beveling)
-        //         border_color: instance(theme.color_bevel)
-        //         border_radius: uniform(theme.corner_radius)
-
-        //         pixel: fn() {
-        //             let sdf = Sdf2d.viewport(self.pos * self.rect_size)
-
-        //             // External outline (entire component including border)
-        //             sdf.box_all(
-        //                 0.0
-        //                 0.0
-        //                 self.rect_size.x
-        //                 self.rect_size.y
-        //                 self.border_radius
-        //                 self.border_radius
-        //                 self.border_radius
-        //                 self.border_radius
-        //             )
-        //             sdf.fill(self.border_color)  // Fill the entire area with border color
-
-        //             // Internal outline (content area)
-        //             sdf.box_all(
-        //                 self.border_size
-        //                 self.border_size
-        //                 self.rect_size.x - self.border_size * 2.0
-        //                 self.rect_size.y - self.border_size * 2.0
-        //                 self.border_radius - self.border_size
-        //                 self.border_radius - self.border_size
-        //                 self.border_radius - self.border_size
-        //                 self.border_radius - self.border_size
-        //             )
-        //             sdf.fill(self.color)  // Fill content area with background color
-
-        //             return sdf.result
-        //         }
-        //     }
-
-        //     header_view := View{
-        //         visible: true
-        //         width: Fill
-        //         height: Fit
-        //         padding: Inset{left: 12., right: 12., top: 12., bottom: 12.}
-        //         show_bg: true
-        //         draw_bg +: {
-        //             color: instance(theme.color_fg_app)
-        //             top_radius: uniform(theme.corner_radius)
-        //             border_color: instance(theme.color_bevel)
-        //             border_width: uniform(theme.beveling)
-        //             pixel: fn() {
-        //                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
-        //                 sdf.box_all(
-        //                     0.0
-        //                     0.0
-        //                     self.rect_size.x
-        //                     self.rect_size.y
-        //                     self.top_radius
-        //                     self.top_radius
-        //                     1.0
-        //                     1.0
-        //                 )
-        //                 sdf.fill(self.color)
-        //                 return sdf.result
-        //             }
-        //         }
-
-        //         header_label := Label{
-        //             draw_text +: {
-        //                 color: theme.color_label_inner
-        //                 text_style: theme.font_regular{
-        //                     font_size: theme.font_size_4
-        //                 }
-        //             }
-        //         }
-        //     }
-
-        //     // Wrapper workaround to hide search input when inline search is enabled
-        //     // as we currently can't hide the search input avoiding events.
-        //     search_input_wrapper := RoundedView{
-        //         height: Fit
-        //         search_input := TextInput{
-        //             width: Fill
-        //             height: Fit
-        //         }
-        //     }
-
-        //     list := mod.widgets.CommandTextInputList{
-        //         height: Fit
-        //     }
-        // }
         popup := RoundedView {
+            width: Fill
             flow: Down
             height: Fit
             visible: false
+            show_bg: true
 
             draw_bg +: {
                 color: instance(#ffffff)
@@ -391,20 +297,17 @@ script_mod! {
                     return sdf.result
                 }
             }
-
-            header_view := View {
+            
+            header_view := RoundedView {
                 visible: true
                 width: Fill
                 height: Fit
                 padding: Inset{left: 8, right: 8, top: 8, bottom: 4}
-                show_bg: true
-                draw_bg +: {
-                    color: instance(#ffffff)
-                }
+                draw_bg.color: (COLOR_ROBRIX_PURPLE)
 
                 header_label := Label {
                     draw_text +: {
-                        color: #333333
+                        color: #ffffff
                         text_style: theme.font_regular { font_size: 12.0 }
                     }
                     text: "Users in this Room"

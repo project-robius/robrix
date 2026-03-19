@@ -144,12 +144,16 @@ enum InternalAction {
 /// trigger character is typed.
 ///
 /// Limitation: Selectable items are expected to be `View`s.
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct CommandTextInput {
     #[source]
     source: ScriptObjectRef,
     #[deref]
     deref: View,
+
+    /// DrawList for rendering popup in overlay
+    #[rust]
+    draw_list: Option<DrawList2d>,
 
     /// The character that triggers the popup.
     ///
@@ -210,6 +214,12 @@ pub struct CommandTextInput {
     prev_cursor_position: usize,
 }
 
+impl ScriptHook for CommandTextInput {
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        self.draw_list = Some(DrawList2d::script_new(vm));
+    }
+}
+
 impl Widget for CommandTextInput {
     fn set_text(&mut self, cx: &mut Cx, v: &str) {
         self.text_input_ref().set_text(cx, v);
@@ -223,11 +233,53 @@ impl Widget for CommandTextInput {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        
         self.update_highlights(cx);
         self.ensure_popup_consistent(cx);
 
+        // Get popup visibility state and temporarily hide it for main draw
+        let popup_was_visible = self.view(cx, ids!(popup)).visible();
+        self.view(cx, ids!(popup)).set_visible(cx, false);
+
+        // Draw the main view (persistent content only)
         while !self.deref.draw_walk(cx, scope, walk).is_done() {}
+
+        // Restore popup visibility
+        self.view(cx, ids!(popup)).set_visible(cx, popup_was_visible);
+
+        // Draw popup in overlay if visible
+        if popup_was_visible {
+            // Get popup ref and text input rect before borrowing draw_list
+            let popup_ref = self.view(cx, ids!(popup));
+            let text_input_rect = self.text_input_ref().area().rect(cx);
+
+            if let Some(draw_list) = &mut self.draw_list {
+                draw_list.begin_overlay_reuse(cx);
+
+                let size = cx.current_pass_size();
+                cx.begin_root_turtle(size, Layout::flow_overlay());
+
+                // Calculate max popup height based on available space above text input
+                let margin = 10.0;
+                let max_popup_height = size.y - text_input_rect.size.y - margin;
+
+                // Position popup above the text input
+                let popup_x = text_input_rect.pos.x;
+                let popup_y = margin;
+
+                // Draw popup with constrained size
+                let popup_walk = Walk {
+                    abs_pos: Some(dvec2(popup_x, popup_y)),
+                    width: Size::Fixed(text_input_rect.size.x.max(300.0)),
+                    height: Size::Fixed(max_popup_height),
+                    ..Walk::default()
+                };
+
+                let _ = popup_ref.draw_walk(cx, scope, popup_walk);
+
+                cx.end_pass_sized_turtle();
+                draw_list.end(cx);
+            }
+        }
 
         if self.is_search_input_focus_pending {
             self.is_search_input_focus_pending = false;
@@ -495,11 +547,20 @@ impl CommandTextInput {
         }
         self.view(cx, ids!(popup)).set_visible(cx, true);
         self.view(cx, ids!(popup)).redraw(cx);
+        self.redraw_overlay(cx);
     }
 
     fn hide_popup(&mut self, cx: &mut Cx) {
         self.clear_popup(cx);
         self.view(cx, ids!(popup)).set_visible(cx, false);
+        self.redraw_overlay(cx);
+    }
+
+    /// Redraws the overlay containing the popup.
+    fn redraw_overlay(&self, cx: &mut Cx) {
+        if let Some(draw_list) = &self.draw_list {
+            draw_list.redraw(cx);
+        }
     }
 
     /// Clear all text and hide the popup going back to initial state.
