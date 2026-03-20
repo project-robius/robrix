@@ -369,6 +369,7 @@ impl Widget for AddRoomScreen {
             if cancel_button.clicked(actions) {
                 self.state = AddRoomState::WaitingOnUserInput;
                 room_alias_id_input.set_text(cx, "");
+                room_alias_id_input.set_key_focus(cx);
                 self.redraw(cx);
             }
 
@@ -422,6 +423,7 @@ impl Widget for AddRoomScreen {
                             None,
                         );
                         self.state = AddRoomState::ParseError(err_str);
+                        room_alias_id_input.set_key_focus(cx);
                     }
                 }
                 self.redraw(cx);
@@ -440,6 +442,9 @@ impl Widget for AddRoomScreen {
                                 room_or_alias_id,
                                 via,
                             };
+                            // Reset the buttons' hover states when they are first shown.
+                            join_room_button.reset_hover(cx);
+                            cancel_button.reset_hover(cx);
                             self.redraw(cx);
                             break;
                         }
@@ -724,8 +729,6 @@ impl Widget for AddRoomScreen {
                     AddRoomState::FetchedRoomPreview { .. } => {
                         join_room_button.set_enabled(cx, !matches!(join_function, JoinButtonFunction::None));
                         self.join_function = join_function;
-                        join_room_button.reset_hover(cx);
-                        fetched_room_summary.button(cx, ids!(cancel_button)).reset_hover(cx);
                     }
                     AddRoomState::Knocked { .. } => {
                         room_summary.set_text(cx, &format!("You have knocked on this {room_or_space_lc} and must now wait for someone to invite you in."));
