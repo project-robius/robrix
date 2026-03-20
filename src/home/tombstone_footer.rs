@@ -24,7 +24,7 @@ script_mod! {
 
         visible: false,
         width: Fill,
-        height: Fit
+        height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
         flow: Down,
         align: Align{x: 0.5}
         padding: 20,

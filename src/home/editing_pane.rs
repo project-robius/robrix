@@ -23,7 +23,7 @@ script_mod! {
 
     mod.widgets.EditingContent = View {
         width: Fill,
-        height: Fit
+        height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
         align: Align{x: 0.5, y: 1.0}, // centered horizontally, bottom-aligned
         padding: Inset{ left: 20, right: 20, top: 10, bottom: 10 }
         margin: Inset{top: 2}
@@ -76,7 +76,7 @@ script_mod! {
 
         edit_text_input := MentionableTextInput {
             width: Fill
-            height: Fit
+            height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
             margin: Inset{ bottom: 5, top: 5 }
         }
     }
@@ -85,7 +85,7 @@ script_mod! {
     mod.widgets.EditingPane = #(EditingPane::register_widget(vm)) {
         visible: false,
         width: Fill,
-        height: Fit
+        height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
         align: Align{x: 0.5, y: 1.0}
         // TODO: FIXME: this is a hack to make the editing pane
         //              able to slide out of the bottom of the screen.

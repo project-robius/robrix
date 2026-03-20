@@ -212,7 +212,7 @@ script_mod! {
 
                 // Display user profile view below the button group when the width is not enough.
                 user_profile_view := View {
-                    width: 200
+                    width: Fit,
                     height: Fit,
                     flow: Right,
                     spacing: 13,

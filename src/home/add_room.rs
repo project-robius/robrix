@@ -216,7 +216,7 @@ script_mod! {
             room_topic := MessageHtml {
                 padding: Inset{left: 20, top: 5, right: 10, bottom: 10}
                 width: Fill,
-                height: Fit
+                height: Fit,
                 font_size: 11
                 font_color: (MESSAGE_TEXT_COLOR)
             }

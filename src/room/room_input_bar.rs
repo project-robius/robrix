@@ -1,6 +1,6 @@
 //! The RoomInputBar widget contains all components related to sending messages/content to a room.
 //!
-//! The RoomInputBar is capped to a maximum height of 62.5% of the containing RoomScreen's height.
+//! The RoomInputBar is capped to a maximum height of 75% of the containing RoomScreen's height.
 //!
 //! The widgets included in the RoomInputBar are:
 //! * a preview of the message the user is replying to.
@@ -34,7 +34,7 @@ script_mod! {
         ..mod.widgets.RoundedView
 
         width: Fill,
-        height: Fit
+        height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
         flow: Down,
 
         // These margins are a hack to make the borders of the RoomInputBar
@@ -67,13 +67,13 @@ script_mod! {
         // * the EditingPane, which slides up as an overlay in front of the other views below.
         overlay_wrapper := View {
             width: Fill,
-            height: Fit
+            height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
             flow: Overlay,
 
             // Below that, display a view that holds the message input bar and send button.
             input_bar := View {
                 width: Fill,
-                height: Fit
+                height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
                 flow: Right
                 // Bottom-align everything to ensure that buttons always stick to the bottom
                 // even when the mentionable_text_input box is very tall.
@@ -104,7 +104,7 @@ script_mod! {
 
                 mentionable_text_input := MentionableTextInput {
                     width: Fill,
-                    height: Fit
+                    height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
                     margin: Inset {
                         top: 3, // add some space between the top border of the text input and the top border of the room input bar
                         bottom: 5.75, // to line up the middle of the text input with the middle of the buttons
