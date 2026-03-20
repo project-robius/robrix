@@ -3912,20 +3912,25 @@ fn populate_location_message_content(
     if let Some((lat, long)) = coords {
         let short_lat = lat.find('.').and_then(|dot| lat.get(..dot + 7)).unwrap_or(lat);
         let short_long = long.find('.').and_then(|dot| long.get(..dot + 7)).unwrap_or(long);
+        let safe_lat = htmlize::escape_attribute(lat);
+        let safe_long = htmlize::escape_attribute(long);
+        let safe_geo_uri = htmlize::escape_attribute(&location.geo_uri);
+        let safe_short_lat = htmlize::escape_text(short_lat);
+        let safe_short_long = htmlize::escape_text(short_long);
         let html_body = format!(
-            "Location: <a href=\"{}\">{short_lat},{short_long}</a><br>\
+            "Location: <a href=\"{}\">{safe_short_lat},{safe_short_long}</a><br>\
             <ul>\
-            <li><a href=\"https://www.openstreetmap.org/?mlat: {lat}&amp;mlon: {long}#map=15/{lat}/{long}\">Open in OpenStreetMap</a></li>\
-            <li><a href=\"https://www.google.com/maps/search/?api=1&amp;query: {lat},{long}\">Open in Google Maps</a></li>\
-            <li><a href=\"https://maps.apple.com/?ll: {lat},{long}&amp;q: {lat},{long}\">Open in Apple Maps</a></li>\
+            <li><a href=\"https://www.openstreetmap.org/?mlat={safe_lat}&amp;mlon={safe_long}#map=15/{safe_lat}/{safe_long}\">Open in OpenStreetMap</a></li>\
+            <li><a href=\"https://www.google.com/maps/search/?api=1&amp;query={safe_lat},{safe_long}\">Open in Google Maps</a></li>\
+            <li><a href=\"https://maps.apple.com/?ll={safe_lat},{safe_long}&amp;q={safe_lat},{safe_long}\">Open in Apple Maps</a></li>\
             </ul>",
-            location.geo_uri,
+            safe_geo_uri,
         );
         message_content_widget.show_html(cx, html_body);
     } else {
         message_content_widget.show_html(
             cx,
-            format!("<i>[Location invalid]</i> {}", location.body)
+            format!("<i>[Location invalid]</i> {}", htmlize::escape_text(&location.body))
         );
     }
 

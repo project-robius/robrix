@@ -17,7 +17,7 @@ use crate::{
 };
 
 /// The data needed to re-build a client.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ClientSessionPersisted {
     /// The URL of the homeserver of the user.
     pub homeserver: String,
@@ -27,6 +27,16 @@ pub struct ClientSessionPersisted {
 
     /// The passphrase of the database.
     pub passphrase: String,
+}
+
+impl std::fmt::Debug for ClientSessionPersisted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClientSessionPersisted")
+            .field("homeserver", &self.homeserver)
+            .field("db_path", &self.db_path)
+            .field("passphrase", &"<REDACTED>")
+            .finish()
+    }
 }
 
 /// The full session to persist.
