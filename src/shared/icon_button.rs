@@ -15,6 +15,30 @@ script_mod! {
         padding: 10,
         align: Align{x: 0, y: 0.5}
 
+        // Disable focus visual styling entirely so that clicking a button
+        // and hovering away doesn't leave it stuck on the theme's focus color.
+        // This works by keeping the `focus` uniform at 0.0 in both on/off states,
+        // so the shader's `mix(color, color_focus, focus)` always evaluates to just `color`.
+        animator +: {
+            focus: {
+                default: @off
+                off: AnimatorState {
+                    from: {all: Forward {duration: 0.0}}
+                    apply: {
+                        draw_bg: {focus: 0.0}
+                        draw_text: {focus: 0.0}
+                    }
+                }
+                on: AnimatorState {
+                    from: {all: Forward {duration: 0.0}}
+                    apply: {
+                        draw_bg: {focus: 0.0}
+                        draw_text: {focus: 0.0}
+                    }
+                }
+            }
+        }
+
         draw_bg +: {
             border_size: 0.0
             border_radius: 4.0
@@ -22,8 +46,6 @@ script_mod! {
             color: (COLOR_ACTIVE_PRIMARY)
             color_hover: (COLOR_ACTIVE_PRIMARY_DARKER)
             color_down: #0C5DAA
-            // Set focus/disabled to match the base color so the theme defaults don't leak through.
-            color_focus: (COLOR_ACTIVE_PRIMARY)
             color_disabled: (COLOR_BG_DISABLED)
 
             border_color: #0000
@@ -44,7 +66,6 @@ script_mod! {
             color: (COLOR_PRIMARY)
             color_hover: (COLOR_PRIMARY)
             color_down: (COLOR_PRIMARY)
-            color_focus: (COLOR_PRIMARY)
             color_disabled: (COLOR_FG_DISABLED)
             text_style: mod.widgets.REGULAR_TEXT {font_size: 10},
         }
@@ -57,18 +78,15 @@ script_mod! {
             border_color: (COLOR_FG_ACCEPT_GREEN)
             border_color_hover: (COLOR_FG_ACCEPT_GREEN)
             border_color_down: (COLOR_FG_ACCEPT_GREEN)
-            border_color_focus: (COLOR_FG_ACCEPT_GREEN)
             color: (COLOR_BG_ACCEPT_GREEN)
             color_hover: #D4EED4
             color_down: #B8E0B8
-            color_focus: (COLOR_BG_ACCEPT_GREEN)
         }
         draw_icon.color: (COLOR_FG_ACCEPT_GREEN)
         draw_text +: {
             color: (COLOR_FG_ACCEPT_GREEN)
             color_hover: (COLOR_FG_ACCEPT_GREEN)
             color_down: (COLOR_FG_ACCEPT_GREEN)
-            color_focus: (COLOR_FG_ACCEPT_GREEN)
         }
     }
 
@@ -78,18 +96,15 @@ script_mod! {
             border_color: (COLOR_FG_DANGER_RED)
             border_color_hover: (COLOR_FG_DANGER_RED)
             border_color_down: (COLOR_FG_DANGER_RED)
-            border_color_focus: (COLOR_FG_DANGER_RED)
             color: (COLOR_BG_DANGER_RED)
             color_hover: #F0D4D4
             color_down: #E0B8B8
-            color_focus: (COLOR_BG_DANGER_RED)
         }
         draw_icon.color: (COLOR_FG_DANGER_RED)
         draw_text +: {
             color: (COLOR_FG_DANGER_RED)
             color_hover: (COLOR_FG_DANGER_RED)
             color_down: (COLOR_FG_DANGER_RED)
-            color_focus: (COLOR_FG_DANGER_RED)
         }
     }
 
@@ -99,18 +114,15 @@ script_mod! {
             border_color: (COLOR_BG_DISABLED)
             border_color_hover: (COLOR_BG_DISABLED)
             border_color_down: (COLOR_BG_DISABLED)
-            border_color_focus: (COLOR_BG_DISABLED)
             color: (COLOR_SECONDARY)
             color_hover: #D0D0D0
             color_down: #C0C0C0
-            color_focus: (COLOR_SECONDARY)
         }
         draw_icon.color: (COLOR_TEXT)
         draw_text +: {
             color: (COLOR_TEXT)
             color_hover: (COLOR_TEXT)
             color_down: (COLOR_TEXT)
-            color_focus: (COLOR_TEXT)
         }
     }
 }

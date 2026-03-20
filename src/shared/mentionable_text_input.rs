@@ -86,6 +86,10 @@ impl Widget for MentionableTextInput {
         self.text_input(cx, ids!(persistent.center.text_input)).set_text(cx, text);
         self.redraw(cx);
     }
+
+    fn set_key_focus(&self, cx: &mut Cx) {
+        self.text_input(cx, ids!(persistent.center.text_input)).set_key_focus(cx);
+    }
 }
 
 impl MentionableTextInput {
@@ -104,10 +108,7 @@ impl MentionableTextInput {
 impl MentionableTextInputRef {
     /// Returns a reference to the inner `TextInput` widget.
     pub fn text_input_ref(&self) -> TextInputRef {
-        self.borrow()
-            .map_or(WidgetRef::empty().as_text_input(), |inner| {
-                inner.child_by_path(ids!(text_input)).as_text_input()
-            })
+        self.child_by_path(ids!(persistent.center.text_input)).as_text_input()
     }
 
     /// Sets whether the current user can notify the entire room (@room mention).

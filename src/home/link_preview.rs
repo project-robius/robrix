@@ -90,18 +90,15 @@ script_mod! {
                     color: #666666,
                     color_hover: #666666,
                     color_down: #666666,
-                    color_focus: #666666,
                 }
                 draw_bg +: {
                     color: (COLOR_BG_PREVIEW)
                     color_hover: (COLOR_BG_PREVIEW_HOVER)
                     color_down: #A8DBBF
-                    color_focus: (COLOR_BG_PREVIEW)
                     border_size: 1.0
                     border_color: #CCCCCC
                     border_color_hover: #CCCCCC
                     border_color_down: #CCCCCC
-                    border_color_focus: #CCCCCC
                     border_radius: 4.0
                 }
                 text: "Show more links"
@@ -124,18 +121,15 @@ script_mod! {
                     color: #666666,
                     color_hover: #666666,
                     color_down: #666666,
-                    color_focus: #666666,
                 }
                 draw_bg +: {
                     color: (COLOR_BG_PREVIEW)
                     color_hover: (COLOR_BG_PREVIEW_HOVER)
                     color_down: #A8DBBF
-                    color_focus: (COLOR_BG_PREVIEW)
                     border_size: 1.0
                     border_color: #CCCCCC
                     border_color_hover: #CCCCCC
                     border_color_down: #CCCCCC
-                    border_color_focus: #CCCCCC
                     border_radius: 4.0
                 }
                 text: "Show fewer links"

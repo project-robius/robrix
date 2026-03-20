@@ -439,7 +439,7 @@ impl EditingPane {
             enqueue_popup_notification(
                 "That message cannot be edited.",
                 PopupKind::Error,
-                None,
+                Some(4.0),
             );
             return;
         }
@@ -463,6 +463,8 @@ impl EditingPane {
             Cursor { index: text_len, prefer_next_row: false },
             false,
         );
+        // TODO: this doesn't work, likely because of Makepad's bug in which you cannot
+        // give key focus to a widget that hasn't been drawn yet (as it has no Area).
         inner_text_input.set_key_focus(cx);
         self.redraw(cx);
     }
@@ -542,9 +544,7 @@ impl EditingPaneRef {
         event_tl_item: EventTimelineItem,
         timeline_kind: TimelineKind,
     ) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
+        let Some(mut inner) = self.borrow_mut() else { return; };
         inner.show(cx, event_tl_item, timeline_kind);
     }
 

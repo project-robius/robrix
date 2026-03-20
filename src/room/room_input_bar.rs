@@ -91,7 +91,6 @@ script_mod! {
                         color: (COLOR_BG_PREVIEW)
                         color_hover: #E0E8F0
                         color_down: #D0D8E8
-                        color_focus: (COLOR_BG_PREVIEW)
                     }
                     icon_walk: Walk{width: 23, height: 23, margin: Inset{bottom: -1}}
                     text: "",
@@ -417,6 +416,7 @@ impl RoomInputBar {
         if grab_key_focus {
             self.text_input(cx, ids!(input_bar.mentionable_text_input.text_input)).set_key_focus(cx);
         }
+        self.button(cx, ids!(cancel_reply_button)).reset_hover(cx);
         self.redraw(cx);
     }
 

@@ -296,13 +296,11 @@ pub fn apply_positive_button_style(cx: &mut Cx, button: &mut ButtonRef) {
             color: mod.widgets.COLOR_BG_ACCEPT_GREEN,
             color_hover: #D4EED4,
             color_down: #B8E0B8,
-            color_focus: mod.widgets.COLOR_BG_ACCEPT_GREEN,
         }
         draw_text +: {
             color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
             color_hover: mod.widgets.COLOR_FG_ACCEPT_GREEN,
             color_down: mod.widgets.COLOR_FG_ACCEPT_GREEN,
-            color_focus: mod.widgets.COLOR_FG_ACCEPT_GREEN,
         }
         draw_icon +: {
             color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
@@ -318,13 +316,11 @@ pub fn apply_negative_button_style(cx: &mut Cx, button: &mut ButtonRef) {
             color: mod.widgets.COLOR_BG_DANGER_RED,
             color_hover: #F0D4D4,
             color_down: #E0B8B8,
-            color_focus: mod.widgets.COLOR_BG_DANGER_RED,
         }
         draw_text +: {
             color: mod.widgets.COLOR_FG_DANGER_RED,
             color_hover: mod.widgets.COLOR_FG_DANGER_RED,
             color_down: mod.widgets.COLOR_FG_DANGER_RED,
-            color_focus: mod.widgets.COLOR_FG_DANGER_RED,
         }
         draw_icon +: {
             color: mod.widgets.COLOR_FG_DANGER_RED,
@@ -340,13 +336,11 @@ pub fn apply_neutral_button_style(cx: &mut Cx, button: &mut ButtonRef) {
             color: mod.widgets.COLOR_SECONDARY,
             color_hover: #D0D0D0,
             color_down: #C0C0C0,
-            color_focus: mod.widgets.COLOR_SECONDARY,
         }
         draw_text +: {
             color: mod.widgets.COLOR_TEXT,
             color_hover: mod.widgets.COLOR_TEXT,
             color_down: mod.widgets.COLOR_TEXT,
-            color_focus: mod.widgets.COLOR_TEXT,
         }
         draw_icon +: {
             color: mod.widgets.COLOR_TEXT,
@@ -361,17 +355,14 @@ pub fn apply_primary_button_style(cx: &mut Cx, button: &mut ButtonRef) {
             color: mod.widgets.COLOR_ACTIVE_PRIMARY,
             color_hover: mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER,
             color_down: #0C5DAA,
-            color_focus: mod.widgets.COLOR_ACTIVE_PRIMARY,
             border_color: #0000,
             border_color_hover: #0000,
             border_color_down: #0000,
-            border_color_focus: #0000,
         }
         draw_text +: {
             color: mod.widgets.COLOR_PRIMARY,
             color_hover: mod.widgets.COLOR_PRIMARY,
             color_down: mod.widgets.COLOR_PRIMARY,
-            color_focus: mod.widgets.COLOR_PRIMARY,
         }
         draw_icon +: {
             color: mod.widgets.COLOR_PRIMARY,
