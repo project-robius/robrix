@@ -718,13 +718,7 @@ impl Widget for ImageViewer {
             self.image_container_size = rect.size;
             self.next_frame = cx.new_next_frame();
         }
-        let result = self.view.draw_walk(cx, scope, walk);
-        // Block all scroll-bar-based scrolling so scroll events don't pierce through
-        // to views behind this full-screen overlay. Using `Area::Empty` blocks all scrolling,
-        // which is correct because ImageViewer handles zoom via raw `Event::Scroll`,
-        // not through Makepad's ScrollBar widgets.
-        cx.block_scrolling_except_within(Area::Empty);
-        result
+        self.view.draw_walk(cx, scope, walk)
     }
 }
 
