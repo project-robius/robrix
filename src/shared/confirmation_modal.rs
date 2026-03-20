@@ -87,11 +87,49 @@ script_mod! {
 
     // A confirmation modal for a positive action.
     // The accept button is green with a checkmark icon.
-    mod.widgets.PositiveConfirmationModal = mod.widgets.ConfirmationModal {}
+    mod.widgets.PositiveConfirmationModal = mod.widgets.ConfirmationModal {
+        wrapper := RoundedView {
+            buttons_view := View {
+                cancel_button := RobrixNeutralIconButton {
+                    draw_icon +: {
+                        svg: (ICON_FORBIDDEN)
+                        color: (COLOR_TEXT)
+                    }
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
+                }
+                accept_button := RobrixPositiveIconButton {
+                    draw_icon +: {
+                        svg: (ICON_CHECKMARK)
+                        color: (COLOR_FG_ACCEPT_GREEN)
+                    }
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
+                }
+            }
+        }
+    }
 
     // A confirmation modal for a negative action.
     // The accept button is red with a forbidden icon.
-    mod.widgets.NegativeConfirmationModal = mod.widgets.ConfirmationModal {}
+    mod.widgets.NegativeConfirmationModal = mod.widgets.ConfirmationModal {
+        wrapper := RoundedView {
+            buttons_view := View {
+                cancel_button := RobrixNeutralIconButton {
+                    draw_icon +: {
+                        svg: (ICON_FORBIDDEN)
+                        color: (COLOR_TEXT)
+                    }
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
+                }
+                accept_button := RobrixNegativeIconButton {
+                    draw_icon +: {
+                        svg: (ICON_CLOSE)
+                        color: (COLOR_FG_DANGER_RED)
+                    }
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
+                }
+            }
+        }
+    }
 }
 
 /// Widget actions emitted by the ConfirmationModal.
