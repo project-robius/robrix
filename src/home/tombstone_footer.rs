@@ -183,12 +183,12 @@ impl TombstoneFooter {
                                 cx,
                                 None,
                                 None,
-                                room_preview.room_name_id.name_for_avatar().as_deref().unwrap_or("?"),
+                                room_preview.room_name_id.name_for_avatar().unwrap_or("?"),
                             );
                         }
                     }
                 }
-                match room_preview.room_name_id.name_for_avatar().as_deref() {
+                match room_preview.room_name_id.name_for_avatar() {
                     Some(n) => successor_room_name.set_text(cx, n),
                     _ => successor_room_name.set_text(cx, &format!("Unnamed Room, ID: {}", room_preview.room_name_id.room_id())),
                 }

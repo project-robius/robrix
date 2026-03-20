@@ -15,6 +15,8 @@ script_mod! {
 
     // The main view that allows the user to add (join) or explore new rooms/spaces.
     mod.widgets.AddRoomScreen = #(AddRoomScreen::register_widget(vm)) {
+        ..mod.widgets.ScrollYView
+
         width: Fill, height: Fill,
         flow: Down,
         padding: Inset{top: 5, left: 15, right: 15, bottom: 0},

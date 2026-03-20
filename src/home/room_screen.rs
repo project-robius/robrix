@@ -3077,6 +3077,15 @@ fn populate_message_view(
                         (item, true)
                     } else {
                         let html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
+                        // Apply red color to all text styles for server notices.
+                        let mut html_widget = html_or_plaintext_ref.html(cx, ids!(html_view.html));
+                        script_apply_eval!(cx, html_widget, {
+                            font_color: (COLOR_FG_DANGER_RED)
+                            draw_normal +: { color: (COLOR_FG_DANGER_RED) }
+                            draw_italic +: { color: (COLOR_FG_DANGER_RED) }
+                            draw_bold +: { color: (COLOR_FG_DANGER_RED) }
+                            draw_bold_italic +: { color: (COLOR_FG_DANGER_RED) }
+                        });
                         let formatted = format!(
                             "<b>Server notice:</b> {}\n\n<i>Notice type:</i>: {}{}{}",
                             sn.body,
@@ -3463,7 +3472,7 @@ fn populate_message_view(
         new_drawn_status.profile_drawn = true;
     } else {
         // log!("\t --> populate_message_view(): DRAWING  profile draw for item_id: {item_id}");
-        let username_label = item.label(cx, ids!(content.username));
+        let mut username_label = item.label(cx, ids!(content.username));
 
         if !is_server_notice { // the normal case
             let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
@@ -3484,6 +3493,11 @@ fn populate_message_view(
             let avatar = item.avatar(cx, ids!(profile.avatar));
             avatar.show_text(cx, Some(COLOR_FG_DANGER_RED), None, "⚠");
             username_label.set_text(cx, "Server notice");
+            script_apply_eval!(cx, username_label, {
+                draw_text +: {
+                    color: (COLOR_FG_DANGER_RED)
+                }
+            });
             new_drawn_status.profile_drawn = true;
         }
     }

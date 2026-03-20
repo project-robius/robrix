@@ -153,8 +153,10 @@ impl Avatar {
                 },
                 room_id,
             });
+            self.view.cursor = Some(MouseCursor::Hand);
         } else {
             self.info = None;
+            self.view.cursor = Some(MouseCursor::Default);
         }
         self.set_text(cx, username.as_ref());
 
@@ -202,8 +204,10 @@ impl Avatar {
                     },
                     room_id,
                 });
+                self.view.cursor = Some(MouseCursor::Hand);
             } else {
                 self.info = None;
+                self.view.cursor = Some(MouseCursor::Default);
             }
         }
         res

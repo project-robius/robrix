@@ -21,6 +21,12 @@ script_mod! {
     mod.widgets.InviteScreen = set_type_default() do #(InviteScreen::register_widget(vm)) {
         ..mod.widgets.SolidView
 
+        // make this a ScrollYView
+        scroll_bars: mod.widgets.ScrollBars {
+            show_scroll_x: false show_scroll_y: true
+            scroll_bar_y.drag_scrolling: true
+        }
+
         width: Fill,
         height: Fill,
         flow: Down,

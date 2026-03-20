@@ -200,9 +200,6 @@ impl MatchEvent for App {
         let _app_data_dir = crate::app_data_dir();
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
 
-        // Set the global singleton for PopupList so other modules can enqueue toasts.
-        crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
-
         if let Err(e) = persistence::load_window_state(self.ui.window(cx, ids!(main_window)), cx) {
             error!("Failed to load window state: {}", e);
         }
@@ -600,9 +597,9 @@ impl AppMain for App {
     fn script_mod(vm: &mut ScriptVm) -> makepad_widgets::ScriptValue {
         // Order matters: base widgets first, then app widgets, then app UI.
         makepad_widgets::theme_mod(vm);
-        script_eval!(vm, {
-            mod.theme = mod.themes.light
-        });
+        // script_eval!(vm, {
+        //     mod.theme = mod.themes.light
+        // });
         makepad_widgets::widgets_mod(vm);
         makepad_code_editor::script_mod(vm);
         crate::shared::script_mod(vm);

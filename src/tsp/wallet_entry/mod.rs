@@ -182,7 +182,7 @@ impl Widget for WalletEntry {
             cx,
             sd.is_default
         );
-        self.label(cx, ids!(not_found_label_view)).set_visible(
+        self.view(cx, ids!(not_found_label_view)).set_visible(
             cx,
             sd.status == WalletStatus::NotFound,
         );

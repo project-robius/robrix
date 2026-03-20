@@ -399,12 +399,14 @@ impl MatchEvent for LoginScreen {
                 }
                 Some(LoginAction::SsoPending(pending)) => {
                     let mask = if *pending { 1.0 } else { 0.0 };
+                    let cursor = if *pending { MouseCursor::NotAllowed } else { MouseCursor::Hand };
                     for view_ref in self.view_set(cx, button_set).iter() {
-                        let Some(view_mut) = view_ref.borrow_mut() else { continue };
+                        let Some(mut view_mut) = view_ref.borrow_mut() else { continue };
                         let mut image = view_mut.image(cx, ids!(image));
                         script_apply_eval!(cx, image, {
                             draw_bg.mask: #(mask)
                         });
+                        view_mut.cursor = Some(cursor);
                     }
                     self.sso_pending = *pending;
                     self.redraw(cx);
