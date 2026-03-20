@@ -8,7 +8,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::{home::invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, room::BasicRoomDetails, shared::popup_list::{PopupKind, enqueue_popup_notification}, sliding_sync::{MatrixRequest, submit_async_request}, space_service_sync::{SpaceRequest, SpaceRoomListAction}, utils::{self, RoomNameId}};
+use crate::{home::invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, room::BasicRoomDetails, shared::{popup_list::{PopupKind, enqueue_popup_notification}, styles::{apply_negative_button_style, apply_neutral_button_style, apply_positive_button_style, apply_primary_button_style}}, sliding_sync::{MatrixRequest, submit_async_request}, space_service_sync::{SpaceRequest, SpaceRoomListAction}, utils::{self, RoomNameId}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -425,29 +425,9 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
         if let Some(success) = new_final_success {
             self.final_success = Some(success);
             needs_redraw = true;
-            script_apply_eval!(cx, accept_button, {
-                enabled: true
-                text: "Okay"
-                draw_bg +: {
-                    color: mod.widgets.COLOR_ACTIVE_PRIMARY,
-                    color_hover: mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER,
-                    color_down: #0C5DAA,
-                    color_focus: mod.widgets.COLOR_ACTIVE_PRIMARY,
-                    border_color: #0000,
-                    border_color_hover: #0000,
-                    border_color_down: #0000,
-                    border_color_focus: #0000,
-                }
-                draw_text +: {
-                    color: mod.widgets.COLOR_PRIMARY,
-                    color_hover: mod.widgets.COLOR_PRIMARY,
-                    color_down: mod.widgets.COLOR_PRIMARY,
-                    color_focus: mod.widgets.COLOR_PRIMARY,
-                }
-                draw_icon +: {
-                    color: mod.widgets.COLOR_PRIMARY,
-                }
-            });
+            accept_button.set_enabled(cx, true);
+            accept_button.set_text(cx, "Okay");
+            apply_primary_button_style(cx, &mut accept_button);
             accept_button.reset_hover(cx);
             cancel_button.set_visible(cx, false);
         }
@@ -553,80 +533,12 @@ impl JoinLeaveRoomModal {
 
         if is_negative {
             // Negative action: accept button is red, cancel button is gray/neutral.
-            script_apply_eval!(cx, accept_button, {
-                draw_bg +: {
-                    border_color: mod.widgets.COLOR_FG_DANGER_RED,
-                    color: mod.widgets.COLOR_BG_DANGER_RED,
-                    color_hover: #F0D4D4,
-                    color_down: #E0B8B8,
-                    color_focus: mod.widgets.COLOR_BG_DANGER_RED,
-                }
-                draw_text +: {
-                    color: mod.widgets.COLOR_FG_DANGER_RED,
-                    color_hover: mod.widgets.COLOR_FG_DANGER_RED,
-                    color_down: mod.widgets.COLOR_FG_DANGER_RED,
-                    color_focus: mod.widgets.COLOR_FG_DANGER_RED,
-                }
-                draw_icon +: {
-                    color: mod.widgets.COLOR_FG_DANGER_RED,
-                }
-            });
-            script_apply_eval!(cx, cancel_button, {
-                draw_bg +: {
-                    border_color: mod.widgets.COLOR_BG_DISABLED,
-                    color: mod.widgets.COLOR_SECONDARY,
-                    color_hover: #D0D0D0,
-                    color_down: #C0C0C0,
-                    color_focus: mod.widgets.COLOR_SECONDARY,
-                }
-                draw_text +: {
-                    color: mod.widgets.COLOR_TEXT,
-                    color_hover: mod.widgets.COLOR_TEXT,
-                    color_down: mod.widgets.COLOR_TEXT,
-                    color_focus: mod.widgets.COLOR_TEXT,
-                }
-                draw_icon +: {
-                    color: mod.widgets.COLOR_TEXT,
-                }
-            });
+            apply_negative_button_style(cx, &mut accept_button);
+            apply_neutral_button_style(cx, &mut cancel_button);
         } else {
             // Positive action: accept button is green, cancel button is red/negative.
-            script_apply_eval!(cx, accept_button, {
-                draw_bg +: {
-                    border_color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
-                    color: mod.widgets.COLOR_BG_ACCEPT_GREEN,
-                    color_hover: #D4EED4,
-                    color_down: #B8E0B8,
-                    color_focus: mod.widgets.COLOR_BG_ACCEPT_GREEN,
-                }
-                draw_text +: {
-                    color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
-                    color_hover: mod.widgets.COLOR_FG_ACCEPT_GREEN,
-                    color_down: mod.widgets.COLOR_FG_ACCEPT_GREEN,
-                    color_focus: mod.widgets.COLOR_FG_ACCEPT_GREEN,
-                }
-                draw_icon +: {
-                    color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
-                }
-            });
-            script_apply_eval!(cx, cancel_button, {
-                draw_bg +: {
-                    border_color: mod.widgets.COLOR_FG_DANGER_RED,
-                    color: mod.widgets.COLOR_BG_DANGER_RED,
-                    color_hover: #F0D4D4,
-                    color_down: #E0B8B8,
-                    color_focus: mod.widgets.COLOR_BG_DANGER_RED,
-                }
-                draw_text +: {
-                    color: mod.widgets.COLOR_FG_DANGER_RED,
-                    color_hover: mod.widgets.COLOR_FG_DANGER_RED,
-                    color_down: mod.widgets.COLOR_FG_DANGER_RED,
-                    color_focus: mod.widgets.COLOR_FG_DANGER_RED,
-                }
-                draw_icon +: {
-                    color: mod.widgets.COLOR_FG_DANGER_RED,
-                }
-            });
+            apply_positive_button_style(cx, &mut accept_button);
+            apply_negative_button_style(cx, &mut cancel_button);
         }
 
         accept_button.set_enabled(cx, true);
