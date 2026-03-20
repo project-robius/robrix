@@ -20,13 +20,13 @@ script_mod! {
         spacing: 0
         align: Align{x: 0.5, y: 0.5}
         icon_walk: Walk{width: 14, height: 14, margin: 0}
-        draw_icon +: {
-            svg: (ICON_COPY),
-            color: #666
-        }
+        draw_icon.svg: (ICON_COPY)
+        draw_icon.color: #666
         draw_bg +: {
             border_size: 0,
             color: #0000
+            color_hover: #00000015
+            color_down: #00000025
         }
     }
 
@@ -76,13 +76,13 @@ script_mod! {
                 spacing: 0
                 align: Align{x: 0.5, y: 0.5}
                 icon_walk: Walk{width: 18, height: 18, margin: 0}
-                draw_icon +: {
-                    svg: (ICON_CLOSE),
-                    color: #666
-                }
+                draw_icon.svg: (ICON_CLOSE)
+                draw_icon.color: #666
                 draw_bg +: {
                     border_size: 0
                     color: #0000
+                    color_hover: #00000015
+                    color_down: #00000025
                 }
             }
         }

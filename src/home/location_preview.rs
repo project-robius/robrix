@@ -66,46 +66,24 @@ script_mod! {
             spacing: 15
             align: Align{x: 0.0, y: 0.5}
 
-            cancel_location_button := RobrixIconButton {
+            cancel_location_button := RobrixNegativeIconButton {
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
                 margin: 0
-                draw_icon +: {
-                    svg: (ICON_FORBIDDEN)
-                    color: (COLOR_FG_DANGER_RED),
-                }
+                draw_icon.svg: (ICON_FORBIDDEN)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1, top: -1} }
-
-                draw_bg +: {
-                    border_color: (COLOR_FG_DANGER_RED)
-                    color: (COLOR_BG_DANGER_RED)
-                }
                 text: "Cancel"
-                draw_text +: {
-                    color: (COLOR_FG_DANGER_RED),
-                }
             }
 
-            send_location_button := RobrixIconButton {
+            send_location_button := RobrixPositiveIconButton {
                 // disabled by default; will be enabled upon receiving valid location update.
                 enabled: false,
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
                 margin: 0
-                draw_icon +: {
-                    svg: (ICON_SEND)
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
+                draw_icon.svg: (ICON_SEND)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-
-                draw_bg +: {
-                    border_color: (COLOR_FG_ACCEPT_GREEN)
-                    color: (COLOR_BG_ACCEPT_GREEN)
-                }
                 text: "Yes"
-                draw_text +: {
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
             }
         }
     }

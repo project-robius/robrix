@@ -815,6 +815,7 @@ pub struct AppState {
     ///
     /// This is not saved to or restored from persistent storage,
     /// so the `Home` screen and tab are always selected upon app startup.
+    #[serde(skip)]
     pub selected_tab: SelectedTab,
     /// The saved "snapshot" of the dock's UI layout/state for the main "all rooms" home view.
     pub saved_dock_state_home: SavedDockState,

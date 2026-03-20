@@ -119,7 +119,7 @@ script_mod! {
         text_style_fixed: theme.font_code {
             font_size: (MESSAGE_FONT_SIZE)
             line_spacing: (MESSAGE_TEXT_LINE_SPACING)
-            top_drop: 0.20
+            top_drop: 0.21
         }
         draw_block +: {
             line_color: (MESSAGE_TEXT_COLOR)

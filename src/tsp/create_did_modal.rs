@@ -191,44 +191,22 @@ script_mod! {
                 align: Align{x: 1.0, y: 0.5}
                 spacing: 20
 
-                cancel_button := RobrixIconButton {
+                cancel_button := RobrixNegativeIconButton {
                     width: 100,
                     align: Align{x: 0.5, y: 0.5}
                     padding: 15,
-                    draw_icon +: {
-                        svg: (ICON_FORBIDDEN)
-                        color: (COLOR_FG_DANGER_RED),
-                    }
+                    draw_icon.svg: (ICON_FORBIDDEN)
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-    
-                    draw_bg +: {
-                        border_color: (COLOR_FG_DANGER_RED),
-                        color: (COLOR_BG_DANGER_RED)
-                    }
                     text: "Cancel"
-                    draw_text +: {
-                        color: (COLOR_FG_DANGER_RED),
-                    }
                 }
 
-                accept_button := RobrixIconButton {
+                accept_button := RobrixPositiveIconButton {
                     width: 140
                     align: Align{x: 0.5, y: 0.5}
                     padding: 15,
-                    draw_icon +: {
-                        svg: (ICON_CHECKMARK)
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
+                    draw_icon.svg: (ICON_CHECKMARK)
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-
-                    draw_bg +: {
-                        border_color: (COLOR_FG_ACCEPT_GREEN),
-                        color: (COLOR_BG_ACCEPT_GREEN)
-                    }
                     text: "Create DID"
-                    draw_text +: {
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
                 }
             }
 

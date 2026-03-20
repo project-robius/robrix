@@ -46,21 +46,10 @@ script_mod! {
             }
         }
 
-        join_successor_button := RobrixIconButton {
+        join_successor_button := RobrixPositiveIconButton {
             padding: 15,
-            draw_icon +: {
-                svg: (ICON_JOIN_ROOM),
-                color: (COLOR_FG_ACCEPT_GREEN),
-            }
+            draw_icon.svg: (ICON_JOIN_ROOM)
             icon_walk: Walk{width: 17, height: 17, margin: Inset{left: -2, right: -1} }
-
-            draw_bg +: {
-                border_color: (COLOR_FG_ACCEPT_GREEN)
-                color: (COLOR_BG_ACCEPT_GREEN)
-            }
-            draw_text +: {
-                color: (COLOR_FG_ACCEPT_GREEN),
-            }
         }
 
         successor_room_avatar := Avatar {

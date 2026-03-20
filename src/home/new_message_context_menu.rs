@@ -26,6 +26,10 @@ script_mod! {
         width: Fill,
         margin: 0,
         icon_walk: Walk{width: 16, height: 16, margin: Inset{right: 3}}
+        // Override the blue default back to neutral for context menu items
+        draw_bg +: { color: (COLOR_PRIMARY), color_hover: #EBEBEB, color_down: #DCDCDC }
+        draw_icon.color: #000
+        draw_text +: { color: #000, color_hover: #000, color_down: #000 }
     }
 
     mod.widgets.NewMessageContextMenu = set_type_default() do #(NewMessageContextMenu::register_widget(vm)) {
@@ -98,25 +102,13 @@ script_mod! {
                         }
                         empty_text: "Enter reaction..."
                     }
-                    reaction_send_button := RobrixIconButton {
+                    reaction_send_button := RobrixPositiveIconButton {
                         height: (mod.widgets.NEW_MESSAGE_CONTEXT_MENU_BUTTON_HEIGHT)
                         align: Align{x: 0.5, y: 0.5}
                         padding: Inset{left: 10, right: 10, top: 8, bottom: 8}
                         spacing: 0,
-                        draw_icon +: {
-                            svg: (ICON_SEND)
-                            color: (COLOR_FG_ACCEPT_GREEN),
-                        }
+                        draw_icon.svg: (ICON_SEND)
                         icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-
-                        draw_bg +: {
-                            border_color: (COLOR_FG_ACCEPT_GREEN),
-                            color: (COLOR_BG_ACCEPT_GREEN)
-                        }
-                        text: ""
-                        draw_text +: {
-                            color: (COLOR_FG_ACCEPT_GREEN),
-                        }
                     }
                 }
             }

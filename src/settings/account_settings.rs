@@ -59,16 +59,7 @@ script_mod! {
                         width: 140,
                         padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                         margin: 0,
-
-                        draw_bg.color: (COLOR_ACTIVE_PRIMARY)
-                        draw_icon +: {
-                            svg: (ICON_UPLOAD)
-                            color: (COLOR_PRIMARY)
-                        }
-                        draw_text +: {
-                            color: (COLOR_PRIMARY)
-                            text_style: REGULAR_TEXT {}
-                        }
+                        draw_icon.svg: (ICON_UPLOAD)
                         icon_walk: Walk{width: 16, height: 16}
                         text: "Upload Avatar"
                     }
@@ -86,21 +77,11 @@ script_mod! {
                     align: Align{y: 0.5}
                     spacing: 10
 
-                    delete_avatar_button := RobrixIconButton {
+                    delete_avatar_button := RobrixNegativeIconButton {
                         width: 140,
                         padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                         margin: 0,
-                        draw_bg +: {
-                            color: (COLOR_BG_DANGER_RED)
-                            border_color: (COLOR_FG_DANGER_RED)
-                        }
-                        draw_icon +: {
-                            svg: (ICON_TRASH),
-                            color: (COLOR_FG_DANGER_RED),
-                        }
-                        draw_text +: {
-                            color: (COLOR_FG_DANGER_RED),
-                        }
+                        draw_icon.svg: (ICON_TRASH)
                         icon_walk: Walk{ width: 16, height: 16 }
                         text: "Delete Avatar"
                     }
@@ -132,43 +113,26 @@ script_mod! {
 
             // These buttons are disabled by default, and enabled when the user
             // changes the `display_name_input` text.
-            cancel_display_name_button := RobrixIconButton {
+            // These buttons start disabled; Rust code enables them and swaps
+            // their styles to RobrixNeutralIconButton / RobrixPositiveIconButton.
+            cancel_display_name_button := RobrixNeutralIconButton {
                 enabled: false,
                 width: Fit, height: Fit,
                 padding: 10,
                 margin: Inset{left: 5},
-
-                draw_bg.color: (COLOR_BG_DISABLED)
-                draw_icon +: {
-                    svg: (ICON_FORBIDDEN),
-                    color: (COLOR_FG_DISABLED)
-                }
+                draw_icon.svg: (ICON_FORBIDDEN)
                 icon_walk: Walk{width: 16, height: 16, margin: 0}
-                draw_text +: {
-                    color: (COLOR_FG_DISABLED),
-                }
                 text: "Cancel"
             }
 
-            accept_display_name_button := RobrixIconButton {
+            accept_display_name_button := RobrixPositiveIconButton {
                 enabled: false,
                 width: Fit, height: Fit,
                 padding: 10,
                 margin: Inset{left: 5},
-
-                draw_bg +: {
-                    border_color: (COLOR_FG_DISABLED),
-                    color: (COLOR_BG_DISABLED),
-                    border_radius: 5.0
-                }
-                draw_icon +: {
-                    svg: (ICON_CHECKMARK)
-                    color: (COLOR_FG_DISABLED),
-                }
+                draw_bg.border_radius: 5.0
+                draw_icon.svg: (ICON_CHECKMARK)
                 icon_walk: Walk{width: 16, height: 16, margin: 0}
-                draw_text +: {
-                    color: (COLOR_FG_DISABLED),
-                }
                 text: "Save Name"
             }
 
@@ -189,15 +153,12 @@ script_mod! {
             flow: Right,
             spacing: 10
 
-            copy_user_id_button := RobrixIconButton {
+            copy_user_id_button := RobrixNeutralIconButton {
                 enable_long_press: true,
                 margin: Inset{left: 5}
                 padding: 12,
                 spacing: 0,
-                draw_bg.color: (COLOR_SECONDARY)
-                draw_icon +: {
-                    svg: (ICON_COPY)
-                }
+                draw_icon.svg: (ICON_COPY)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{right: -2} }
             }
 
@@ -226,36 +187,17 @@ script_mod! {
             spacing: 10
 
             manage_account_button := RobrixIconButton {
-                
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 5}
-                draw_bg.color: (COLOR_ACTIVE_PRIMARY)
-                draw_icon +: {
-                    svg: (ICON_EXTERNAL_LINK)
-                    color: (COLOR_PRIMARY)
-                }
-                draw_text +: {
-                    color: (COLOR_PRIMARY)
-                    text_style: REGULAR_TEXT {}
-                }
+                draw_icon.svg: (ICON_EXTERNAL_LINK)
                 icon_walk: Walk{width: 16, height: 16}
                 text: "Manage Account"
             }
 
-            logout_button := RobrixIconButton {
+            logout_button := RobrixNegativeIconButton {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 5}
-                draw_bg +: {
-                    color: (COLOR_BG_DANGER_RED)
-                    border_color: (COLOR_FG_DANGER_RED)
-                }
-                draw_icon +: {
-                    svg: (ICON_LOGOUT),
-                    color: (COLOR_FG_DANGER_RED),
-                }
-                draw_text +: {
-                    color: (COLOR_FG_DANGER_RED),
-                }
+                draw_icon.svg: (ICON_LOGOUT)
                 icon_walk: Walk{ width: 16, height: 16, margin: Inset{right: -2} }
                 text: "Log out"
             }

@@ -65,11 +65,6 @@ script_mod! {
                     align: Align{x: 0.5, y: 0.5}
                     width: Fit, height: Fit
                     padding: 12
-                    draw_bg.color: (COLOR_ACTIVE_PRIMARY)
-                    draw_text +: {
-                        color: (COLOR_PRIMARY)
-                        text_style: REGULAR_TEXT {}
-                    }
                     text: "Cancel"
                 }
             }

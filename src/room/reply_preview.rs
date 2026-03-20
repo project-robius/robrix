@@ -103,22 +103,14 @@ script_mod! {
                 text: "Replying to:"
             }
 
-            cancel_reply_button := RobrixIconButton {
+            cancel_reply_button := RobrixNegativeIconButton {
                 width: Fit,
                 height: Fit,
                 padding: 13,
                 spacing: 0,
                 margin: Inset{left: 5, right: 0},
-
-                draw_bg +: {
-                    border_color: (COLOR_FG_DANGER_RED),
-                    color: (COLOR_BG_DANGER_RED)
-                    border_radius: 5.0
-                }
-                draw_icon +: {
-                    svg: (ICON_CLOSE),
-                    color: (COLOR_FG_DANGER_RED)
-                }
+                draw_bg.border_radius: 5.0
+                draw_icon.svg: (ICON_CLOSE)
                 icon_walk: Walk{width: 16, height: 16, margin: 0}
             }
         }

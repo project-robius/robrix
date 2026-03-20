@@ -32,14 +32,11 @@ script_mod! {
             flow: Right,
             spacing: 10
 
-            copy_identity_button := RobrixIconButton {
+            copy_identity_button := RobrixNeutralIconButton {
                 margin: Inset{left: 5}
                 padding: 12,
                 spacing: 0,
-                draw_bg.color: (COLOR_SECONDARY)
-                draw_icon +: {
-                    svg: (ICON_COPY)
-                }
+                draw_icon.svg: (ICON_COPY)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{right: -2} }
             }
 
@@ -58,19 +55,9 @@ script_mod! {
             width: Fit, height: Fit,
             padding: 10,
             margin: Inset{top: 8, bottom: 10, left: 5},
-
-            draw_bg +: {
-                color: (COLOR_ACTIVE_PRIMARY),
-                border_radius: 5.0
-            }
-            draw_icon +: {
-                svg: (ICON_UPLOAD)
-                color: (COLOR_PRIMARY),
-            }
+            draw_bg.border_radius: 5.0
+            draw_icon.svg: (ICON_UPLOAD)
             icon_walk: Walk{width: 16, height: 16}
-            draw_text +: {
-                color: (COLOR_PRIMARY),
-            }
             text: (REPUBLISH_IDENTITY_BUTTON_TEXT)
         }
 
@@ -125,56 +112,29 @@ script_mod! {
             align: Align{y: 0.5},
             spacing: 10
 
-            create_did_button := RobrixIconButton {
+            create_did_button := RobrixPositiveIconButton {
                 width: Fit, height: Fit,
                 padding: 10,
                 margin: Inset{left: 5},
-
-                draw_bg +: {
-                    border_color: (COLOR_FG_ACCEPT_GREEN),
-                    color: (COLOR_BG_ACCEPT_GREEN),
-                    border_radius: 5.0
-                }
-                draw_icon +: {
-                    svg: (ICON_ADD_USER)
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
+                draw_bg.border_radius: 5.0
+                draw_icon.svg: (ICON_ADD_USER)
                 icon_walk: Walk{width: 21, height: Fit, margin: 0}
-                draw_text +: {
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
                 text: "Create New Identity (DID)"
             }
 
-            create_wallet_button := RobrixIconButton {
+            create_wallet_button := RobrixPositiveIconButton {
                 width: Fit, height: Fit,
                 padding: 10,
                 margin: Inset{left: 5},
-
-                draw_bg +: {
-                    border_color: (COLOR_FG_ACCEPT_GREEN),
-                    color: (COLOR_BG_ACCEPT_GREEN),
-                    border_radius: 5.0
-                }
-                draw_icon +: {
-                    svg: (ICON_ADD_WALLET)
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
+                draw_bg.border_radius: 5.0
+                draw_icon.svg: (ICON_ADD_WALLET)
                 icon_walk: Walk{width: 21, height: Fit, margin: 0}
-                draw_text +: {
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
                 text: "Create New Wallet"
             }
 
             import_wallet_button := RobrixIconButton {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 5}
-                draw_bg.color: (COLOR_ACTIVE_PRIMARY)
-                draw_text +: {
-                    color: (COLOR_PRIMARY)
-                    text_style: REGULAR_TEXT {}
-                }
                 text: "Import Existing Wallet"
                 // TODO: fix this icon, or pick a different SVG
                 // draw_icon +: {

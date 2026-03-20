@@ -19,11 +19,6 @@ script_mod! {
         flow: Down,
         padding: Inset{top: 5, left: 15, right: 15, bottom: 0},
 
-        // show_bg: true
-        // draw_bg +: {
-        //     color: (COLOR_PRIMARY)
-        // }
-
         title := TitleLabel {
             flow: Flow.Right{wrap: true},
             draw_text +: {
@@ -80,15 +75,7 @@ script_mod! {
             search_for_room_button := RobrixIconButton {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 14}
                 height: 40
-                draw_bg.color: (COLOR_ACTIVE_PRIMARY)
-                draw_icon +: {
-                    svg: (ICON_SEARCH)
-                    color: (COLOR_PRIMARY)
-                }
-                draw_text +: {
-                    color: (COLOR_PRIMARY)
-                    text_style: REGULAR_TEXT {}
-                }
+                draw_icon.svg: (ICON_SEARCH)
                 icon_walk: Walk{width: 16, height: 16}
                 text: "Go"
             }
@@ -251,40 +238,18 @@ script_mod! {
 
                 // This button's text is based on the room state (e.g., joined, left, invited)
                 // the room's join rules (e.g., public, can knock, invite-only (in which we disable it)).
-                join_room_button := RobrixIconButton {
+                join_room_button := RobrixPositiveIconButton {
                     padding: 15,
-                    draw_icon +: {
-                        svg: (ICON_JOIN_ROOM),
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
+                    draw_icon.svg: (ICON_JOIN_ROOM)
                     icon_walk: Walk{width: 17, height: 17, margin: Inset{left: -2, right: -1} }
-
-                    draw_bg +: {
-                        border_color: (COLOR_FG_ACCEPT_GREEN),
-                        color: (COLOR_BG_ACCEPT_GREEN)
-                    }
-                    draw_text +: {
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
                 }
 
-                cancel_button := RobrixIconButton {
+                cancel_button := RobrixNegativeIconButton {
                     align: Align{x: 0.5, y: 0.5}
                     padding: 15
-                    draw_icon +: {
-                        svg: (ICON_FORBIDDEN)
-                        color: (COLOR_FG_DANGER_RED),
-                    }
+                    draw_icon.svg: (ICON_FORBIDDEN)
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-
-                    draw_bg +: {
-                        border_color: (COLOR_FG_DANGER_RED),
-                        color: (COLOR_BG_DANGER_RED)
-                    }
                     text: "Cancel"
-                    draw_text +: {
-                        color: (COLOR_FG_DANGER_RED),
-                    }
                 }
             }
         }

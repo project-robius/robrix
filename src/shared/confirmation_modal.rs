@@ -68,20 +68,11 @@ script_mod! {
                 align: Align{x: 1.0, y: 0.5}
                 spacing: 20
 
-                cancel_button := RobrixIconButton {
+                cancel_button := RobrixNeutralIconButton {
                     width: 120,
                     align: Align{x: 0.5, y: 0.5}
                     padding: 15,
                     icon_walk: Walk{width: 0, height: 0, margin: 0}
-    
-                    draw_bg +: {
-                        border_size: 0.75
-                        border_color: (COLOR_BG_DISABLED)
-                        color: (COLOR_SECONDARY)
-                    }
-                    draw_text +: {
-                        color: (COLOR_TEXT),
-                    }
                     text: "Cancel"
                 }
 
@@ -90,15 +81,6 @@ script_mod! {
                     align: Align{x: 0.5, y: 0.5}
                     padding: 15,
                     icon_walk: Walk{width: 0, height: 0, margin: 0}
-
-                    draw_bg +: {
-                        border_size: 0.75
-                        border_color: (COLOR_ACTIVE_PRIMARY_DARKER)
-                        color: (COLOR_ACTIVE_PRIMARY)
-                    }
-                    draw_text +: {
-                        color: (COLOR_PRIMARY),
-                    }
                     text: "Confirm"
                 }
             }

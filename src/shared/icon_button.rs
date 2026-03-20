@@ -4,9 +4,10 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-
-    // Customized button widget, based on the RoundedView shaders with some modifications
-    // which is a better fit with our application UI design
+    // The base Robrix button widget.
+    // Uses COLOR_ACTIVE_PRIMARY (blue) background with white text by default.
+    // See also the preset variants below:
+    //   RobrixPositiveIconButton, RobrixNegativeIconButton, RobrixNeutralIconButton.
     mod.widgets.RobrixIconButton = Button {
         width: Fit,
         height: Fit,
@@ -15,55 +16,101 @@ script_mod! {
         align: Align{x: 0, y: 0.5}
 
         draw_bg +: {
-            color: (COLOR_PRIMARY)
-            // We set a mid-gray hover color, which gets mixed with the bg color itself
-            // in order to create a "lightening" effect upon hover.
-            color_hover: #A
             border_size: 0.0
-            border_color: #D0D5DD
             border_radius: 4.0
 
-            get_color: fn() -> vec4 {
-                return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
-            }
+            color: (COLOR_ACTIVE_PRIMARY)
+            color_hover: (COLOR_ACTIVE_PRIMARY_DARKER)
+            color_down: #0C5DAA
+            // Set focus/disabled to match the base color so the theme defaults don't leak through.
+            color_focus: (COLOR_ACTIVE_PRIMARY)
+            color_disabled: (COLOR_BG_DISABLED)
 
-            pixel: fn() {
-                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
-                sdf.box(
-                    self.border_size,
-                    self.border_size,
-                    self.rect_size.x - (self.border_size * 2.0),
-                    self.rect_size.y - (self.border_size * 2.0),
-                    max(1.0, self.border_radius)
-                )
-                sdf.fill_keep(self.get_color())
-                if self.border_size > 0.0 {
-                    sdf.stroke(self.border_color, self.border_size)
-                }
-                return sdf.result;
-            }
+            border_color: #0000
+            border_color_hover: #0000
+            border_color_down: #0000
+            border_color_focus: #0000
+            border_color_disabled: #0000
+
+            // Disable gradient (color_2) by default
+            color_2: vec4(-1.0, -1.0, -1.0, -1.0)
+            border_color_2: vec4(-1.0, -1.0, -1.0, -1.0)
         }
 
-        draw_icon.color: #000
-        // TODO: Makepad's new Button no longer has a `hover` animator for `draw_icon`
-        // so the below `hover` and `down` instances will never get modified.
-        //
-        // draw_icon +: {
-        //     hover: instance(0.0)
-        //     color: #000
-        //     color_hover: uniform(#000)
-        //     get_color: fn() -> vec4 {
-        //         return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
-        //     }
-        // }
+        draw_icon.color: (COLOR_PRIMARY)
         icon_walk: Walk{width: 16, height: 16}
 
         draw_text +: {
-            color: #000
-            color_hover: #999
-            color_down: #555
+            color: (COLOR_PRIMARY)
+            color_hover: (COLOR_PRIMARY)
+            color_down: (COLOR_PRIMARY)
+            color_focus: (COLOR_PRIMARY)
+            color_disabled: (COLOR_FG_DISABLED)
             text_style: mod.widgets.REGULAR_TEXT {font_size: 10},
         }
         text: ""
+    }
+
+    // Green button for positive/accept actions: joining a room, confirming, accepting an invite.
+    mod.widgets.RobrixPositiveIconButton = mod.widgets.RobrixIconButton {
+        draw_bg +: {
+            border_color: (COLOR_FG_ACCEPT_GREEN)
+            border_color_hover: (COLOR_FG_ACCEPT_GREEN)
+            border_color_down: (COLOR_FG_ACCEPT_GREEN)
+            border_color_focus: (COLOR_FG_ACCEPT_GREEN)
+            color: (COLOR_BG_ACCEPT_GREEN)
+            color_hover: #D4EED4
+            color_down: #B8E0B8
+            color_focus: (COLOR_BG_ACCEPT_GREEN)
+        }
+        draw_icon.color: (COLOR_FG_ACCEPT_GREEN)
+        draw_text +: {
+            color: (COLOR_FG_ACCEPT_GREEN)
+            color_hover: (COLOR_FG_ACCEPT_GREEN)
+            color_down: (COLOR_FG_ACCEPT_GREEN)
+            color_focus: (COLOR_FG_ACCEPT_GREEN)
+        }
+    }
+
+    // Red button for negative/dangerous actions: rejecting, leaving, deleting, blocking.
+    mod.widgets.RobrixNegativeIconButton = mod.widgets.RobrixIconButton {
+        draw_bg +: {
+            border_color: (COLOR_FG_DANGER_RED)
+            border_color_hover: (COLOR_FG_DANGER_RED)
+            border_color_down: (COLOR_FG_DANGER_RED)
+            border_color_focus: (COLOR_FG_DANGER_RED)
+            color: (COLOR_BG_DANGER_RED)
+            color_hover: #F0D4D4
+            color_down: #E0B8B8
+            color_focus: (COLOR_BG_DANGER_RED)
+        }
+        draw_icon.color: (COLOR_FG_DANGER_RED)
+        draw_text +: {
+            color: (COLOR_FG_DANGER_RED)
+            color_hover: (COLOR_FG_DANGER_RED)
+            color_down: (COLOR_FG_DANGER_RED)
+            color_focus: (COLOR_FG_DANGER_RED)
+        }
+    }
+
+    // Gray button for cancel/dismiss actions: canceling, closing, going back.
+    mod.widgets.RobrixNeutralIconButton = mod.widgets.RobrixIconButton {
+        draw_bg +: {
+            border_color: (COLOR_BG_DISABLED)
+            border_color_hover: (COLOR_BG_DISABLED)
+            border_color_down: (COLOR_BG_DISABLED)
+            border_color_focus: (COLOR_BG_DISABLED)
+            color: (COLOR_SECONDARY)
+            color_hover: #D0D0D0
+            color_down: #C0C0C0
+            color_focus: (COLOR_SECONDARY)
+        }
+        draw_icon.color: (COLOR_TEXT)
+        draw_text +: {
+            color: (COLOR_TEXT)
+            color_hover: (COLOR_TEXT)
+            color_down: (COLOR_TEXT)
+            color_focus: (COLOR_TEXT)
+        }
     }
 }

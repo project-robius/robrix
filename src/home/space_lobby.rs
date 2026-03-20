@@ -314,20 +314,12 @@ script_mod! {
             margin: Inset{left: 8}
             visible: false
 
-            join_button := RobrixIconButton {
+            join_button := RobrixPositiveIconButton {
                 width: Fit,
                 padding: 8
                 spacing: 0
                 icon_walk: Walk{width: 0, height: 0}
-                draw_bg +: {
-                    border_size: 0.75
-                    border_color: (COLOR_FG_ACCEPT_GREEN)
-                    color: (COLOR_BG_ACCEPT_GREEN)
-                }
-                draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: 9.5},
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
+                draw_text.text_style: REGULAR_TEXT {font_size: 9.5}
                 text: "Join"
             }
 
@@ -336,31 +328,16 @@ script_mod! {
                 padding: 8
                 spacing: 0
                 icon_walk: Walk{width: 0, height: 0}
-                draw_bg +: {
-                    border_size: 0.0
-                    color: (COLOR_ACTIVE_PRIMARY)
-                }
-                draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: 9.5},
-                    color: (COLOR_PRIMARY),
-                }
+                draw_text.text_style: REGULAR_TEXT {font_size: 9.5}
                 text: "View"
             }
 
-            leave_button := RobrixIconButton {
+            leave_button := RobrixNegativeIconButton {
                 width: Fit,
                 padding: 8
                 spacing: 0
                 icon_walk: Walk{width: 0, height: 0}
-                draw_bg +: {
-                    border_size: 0.75
-                    border_color: (COLOR_FG_DANGER_RED)
-                    color: (COLOR_BG_DANGER_RED)
-                }
-                draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: 9.5},
-                    color: (COLOR_FG_DANGER_RED),
-                }
+                draw_text.text_style: REGULAR_TEXT {font_size: 9.5}
                 text: "Leave"
             }
         }
@@ -504,26 +481,14 @@ script_mod! {
                     text: ""
                 }
 
-                invite_button := RobrixIconButton {
+                invite_button := RobrixPositiveIconButton {
                     width: Fit
                     align: Align{x: 0.5, y: 0.5}
                     margin: Inset{left: 6}
                     padding: 12,
-                    draw_icon +: {
-                        svg: (ICON_ADD_USER)
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
+                    draw_icon.svg: (ICON_ADD_USER)
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-
-                    draw_bg +: {
-                        border_size: 0.75
-                        border_color: (COLOR_FG_ACCEPT_GREEN)
-                        color: (COLOR_BG_ACCEPT_GREEN)
-                    }
                     text: "Invite"
-                    draw_text +: {
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
                 }
             }
         }

@@ -407,23 +407,15 @@ script_mod! {
 
             // Show an invite button only for a `Knocked` room membership change.
             // All other small state events will not show this button.
-            invite_user_button := RobrixIconButton {
+            invite_user_button := RobrixPositiveIconButton {
                 visible: false
                 margin: Inset{ top: -1.5, left: 2, right: 2}
                 padding: Inset{top: 4, bottom: 4, left: 9, right: 9}
                 draw_bg +: {
-                    color: (COLOR_BG_ACCEPT_GREEN)
                     border_size: 0.75
-                    border_color: (COLOR_FG_ACCEPT_GREEN)
                 }
-                draw_icon +: {
-                    svg: (ICON_ADD_USER)
-                    color: (COLOR_FG_ACCEPT_GREEN)
-                }
-                draw_text +: {
-                    color: (COLOR_FG_ACCEPT_GREEN)
-                    text_style: SMALL_STATE_TEXT_STYLE {},
-                }
+                draw_icon.svg: (ICON_ADD_USER)
+                draw_text.text_style: SMALL_STATE_TEXT_STYLE {}
                 icon_walk: Walk{width: 15, height: Fit, margin: Inset{right: -4}}
                 text: "Invite to Room"
             }

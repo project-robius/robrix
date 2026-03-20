@@ -112,20 +112,16 @@ script_mod! {
 
     mod.widgets.ROTATION_ANIMATION_DURATION_SECS = 0.2
 
-    mod.widgets.ImageViewerButton = RobrixIconButton {
+    mod.widgets.ImageViewerButton = RobrixNeutralIconButton {
 
         width: 44, height: 44
         align: Align{x: 0.5, y: 0.5},
-        spacing: 0, 
+        spacing: 0,
         padding: 0,
-        draw_bg +: {
-            color: (COLOR_SECONDARY * 0.925)
-        }
+        draw_bg.color: (COLOR_SECONDARY * 0.925)
         draw_icon +: {
             svg: (ICON_ZOOM_OUT),
-            get_color: fn() -> vec4 {
-                return #x0;
-            }
+            color: #000
         }
         icon_walk: Walk{width: 27, height: 27}
     }

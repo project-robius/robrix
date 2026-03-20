@@ -131,12 +131,11 @@ script_mod! {
         draw_icon +: { svg: (ICON_HOME) }
     }
 
-    mod.widgets.ToggleSpacesBarButton = RobrixIconButton {
+    mod.widgets.ToggleSpacesBarButton = RobrixNeutralIconButton {
         width: Fill,
         padding: 16
         spacing: 0,
         align: Align{x: 0.5, y: 0.5}
-        draw_bg.color: (COLOR_SECONDARY)
         draw_icon +: {
             svg: (ICON_SQUARES)
             color: (COLOR_NAVIGATION_TAB_FG)

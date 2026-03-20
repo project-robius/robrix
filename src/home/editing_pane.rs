@@ -49,39 +49,25 @@ script_mod! {
                 text: "Editing:"
             }
 
-            cancel_button := RobrixIconButton {
+            cancel_button := RobrixNegativeIconButton {
                 width: Fit,
                 height: Fit,
                 padding: 13,
                 spacing: 0,
                 margin: Inset{left: 5, right: 5},
 
-                draw_bg +: {
-                    border_color: (COLOR_FG_DANGER_RED),
-                    color: (COLOR_BG_DANGER_RED)
-                }
-                draw_icon +: {
-                    svg: (ICON_CLOSE),
-                    color: (COLOR_FG_DANGER_RED)
-                }
+                draw_icon.svg: (ICON_CLOSE)
                 icon_walk: Walk{width: 16, height: 16, margin: 0}
             }
 
-            accept_button := RobrixIconButton {
+            accept_button := RobrixPositiveIconButton {
                 width: Fit,
                 height: Fit,
                 padding: 13,
                 spacing: 0,
                 margin: Inset{left: 5},
 
-                draw_bg +: {
-                    border_color: (COLOR_FG_ACCEPT_GREEN),
-                    color: (COLOR_BG_ACCEPT_GREEN)
-                }
-                draw_icon +: {
-                    svg: (ICON_CHECKMARK)
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
+                draw_icon.svg: (ICON_CHECKMARK)
                 icon_walk: Walk{width: 16, height: 16, margin: 0}
             }
         }

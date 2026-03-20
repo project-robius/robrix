@@ -172,11 +172,6 @@ script_mod! {
                         padding: 10
                         margin: Inset{top: 5, bottom: 10}
                         align: Align{x: 0.5, y: 0.5}
-                        draw_bg.color: (COLOR_ACTIVE_PRIMARY)
-                        draw_text +: {
-                            color: (COLOR_PRIMARY)
-                            text_style: REGULAR_TEXT {}
-                        }
                         text: "Login"
                     }
 
@@ -263,12 +258,6 @@ script_mod! {
                         padding: Inset{left: 15, right: 15, top: 10, bottom: 10}
                         margin: Inset{bottom: 5}
                         align: Align{x: 0.5, y: 0.5}
-                        draw_bg.color: (COLOR_ACTIVE_PRIMARY)
-                        draw_text +: {
-                            color: (COLOR_PRIMARY)
-                            text_style: REGULAR_TEXT {}
-                        }
-
                         text: "Sign up here"
                     }
                 }

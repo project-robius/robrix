@@ -21,6 +21,10 @@ script_mod! {
         width: Fill,
         margin: 0,
         icon_walk: Walk{width: 16, height: 16, margin: Inset{right: 3}}
+        // Override the blue default back to neutral for context menu items
+        draw_bg +: { color: (COLOR_PRIMARY), color_hover: #EBEBEB, color_down: #DCDCDC }
+        draw_icon.color: #000
+        draw_text +: { color: #000, color_hover: #000, color_down: #000 }
     }
 
     mod.widgets.RoomContextMenu = set_type_default() do #(RoomContextMenu::register_widget(vm)) {
@@ -100,19 +104,13 @@ script_mod! {
                 width: Fill,
             }
 
-            leave_button := mod.widgets.RoomContextMenuButton {
-                draw_icon +: {
-                    svg: (ICON_LOGOUT)
-                    color: (COLOR_FG_DANGER_RED),
-                }
-                draw_bg +: {
-                    border_color: (COLOR_FG_DANGER_RED),
-                    color: (COLOR_BG_DANGER_RED)
-                }
+            leave_button := RobrixNegativeIconButton {
+                height: (mod.widgets.ROOM_CONTEXT_MENU_BUTTON_HEIGHT)
+                width: Fill,
+                margin: 0,
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{right: 3}}
+                draw_icon.svg: (ICON_LOGOUT)
                 text: "Leave Room"
-                draw_text +: {
-                    color: (COLOR_FG_DANGER_RED),
-                }
             }
         }
     }

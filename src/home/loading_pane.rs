@@ -76,23 +76,11 @@ script_mod! {
                     align: Align{x: 1.0, y: 0.5}
                     spacing: 20
 
-                    cancel_button := RobrixIconButton {
+                    cancel_button := RobrixNegativeIconButton {
                         align: Align{x: 0.5, y: 0.5}
                         padding: 15
-                        // draw_icon +: {
-                        //     svg: (ICON_FORBIDDEN)
-                        //     color: (COLOR_FG_DANGER_RED),
-                        // }
                         icon_walk: Walk{width: 0, height: 0 }
-
-                        draw_bg +: {
-                            border_color: (COLOR_FG_DANGER_RED)
-                            color: (COLOR_BG_DANGER_RED)
-                        }
                         text: "Cancel"
-                        draw_text +: {
-                            color: (COLOR_FG_DANGER_RED),
-                        }
                     }
                 }
             }

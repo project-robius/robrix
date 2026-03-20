@@ -52,16 +52,12 @@ script_mod! {
             }
         }
 
-        clear_button := RobrixIconButton {
+        clear_button := RobrixNeutralIconButton {
             visible: false,
             padding: Inset{top: 5, bottom: 5, left: 9, right: 9},
             spacing: 0,
             align: Align{x: 0.5, y: 0.5}
-            draw_bg.color: (COLOR_SECONDARY)
-            draw_icon +: {
-                svg: (ICON_CLOSE),
-                color: (COLOR_TEXT)
-            }
+            draw_icon.svg: (ICON_CLOSE)
             icon_walk: Walk{width: Fit, height: 10, margin: 0}
         }
     }

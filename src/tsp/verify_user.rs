@@ -59,20 +59,9 @@ script_mod! {
                     is_read_only: true
                 }
 
-                remove_tsp_association_button := RobrixIconButton {
+                remove_tsp_association_button := RobrixNegativeIconButton {
                     padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
-                    draw_bg +: {
-                        border_color: (COLOR_FG_DANGER_RED),
-                        color: (COLOR_BG_DANGER_RED)
-                    }
-                    draw_icon +: {
-                        svg: (ICON_CLOSE)
-                        color: (COLOR_FG_DANGER_RED),
-                    }
-                    draw_text +: {
-                        color: (COLOR_FG_DANGER_RED),
-                        text_style: REGULAR_TEXT {}
-                    }
+                    draw_icon.svg: (ICON_CLOSE)
                     icon_walk: Walk{width: 22, height: 16, margin: Inset{left: -5, right: -3, top: 1, bottom: -1} }
                     text: "Remove TSP Association"
                 }
@@ -102,20 +91,9 @@ script_mod! {
                     empty_text: "Enter their TSP DID..."
                 }
 
-                verify_user_button := RobrixIconButton {
+                verify_user_button := RobrixPositiveIconButton {
                     padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
-                    draw_bg +: {
-                        border_color: (COLOR_FG_ACCEPT_GREEN),
-                        color: (COLOR_BG_ACCEPT_GREEN)
-                    }
-                    draw_icon +: {
-                        svg: (ICON_CHECKMARK)
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
-                    draw_text +: {
-                        color: (COLOR_FG_ACCEPT_GREEN)
-                        text_style: REGULAR_TEXT {}
-                    }
+                    draw_icon.svg: (ICON_CHECKMARK)
                     icon_walk: Walk{width: 22, height: 16, margin: Inset{left: -5, right: -3, top: 1, bottom: -1} }
                     text: "Verify this user via TSP"
                 }

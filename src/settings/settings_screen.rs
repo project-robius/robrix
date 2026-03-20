@@ -34,21 +34,14 @@ script_mod! {
                 }
 
                 // The "X" close button on the top right
-                close_button := RobrixIconButton {
+                close_button := RobrixNeutralIconButton {
                     width: Fit,
                     height: Fit,
                     align: Align{x: 1.0, y: 0.0},
                     spacing: 0,
                     margin: Inset{top: 4.5} // vertically align with the title
                     padding: 15,
-
-                    draw_bg.color: (COLOR_SECONDARY)
-                    draw_icon +: {
-                        svg: (ICON_CLOSE),
-                        get_color: fn() -> vec4 {
-                            return #x0;
-                        }
-                    }
+                    draw_icon.svg: (ICON_CLOSE)
                     icon_walk: Walk{width: 14, height: 14}
                 }
             }

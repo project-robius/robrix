@@ -184,65 +184,34 @@ script_mod! {
             direct_message_button := RobrixIconButton {
                 margin: 0,
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
-                draw_bg +: {
-                    color: (COLOR_ACTIVE_PRIMARY)
-                }
-                draw_icon +: {
-                    svg: (mod.widgets.ICON_DOUBLE_CHAT)
-                    color: (COLOR_PRIMARY)
-                }
-                draw_text +: {
-                    color: (COLOR_PRIMARY)
-                    text_style: REGULAR_TEXT {}
-                }
+                draw_icon.svg: (mod.widgets.ICON_DOUBLE_CHAT)
                 icon_walk: Walk{width: 22, height: 16, margin: Inset{left: -5, right: -3, top: 1, bottom: -1} }
                 text: "Direct Message"
             }
 
-            copy_link_to_user_button := RobrixIconButton {
+            copy_link_to_user_button := RobrixNeutralIconButton {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
-                draw_bg +: {
-                    color: (COLOR_SECONDARY)
-                }
-                draw_icon +: {
-                    svg: (ICON_COPY)
-                }
+                draw_icon.svg: (ICON_COPY)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -1, right: -1} }
                 text: "Copy Link to User"
             }
 
-            jump_to_read_receipt_button := RobrixIconButton {
+            jump_to_read_receipt_button := RobrixNeutralIconButton {
                 enabled: false, // TODO: support this button
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
-                draw_bg +: {
-                    color: (COLOR_SECONDARY)
-                }
-                draw_icon +: {
-                    svg: (ICON_JUMP)
-                }
+                draw_icon.svg: (ICON_JUMP)
                 icon_walk: Walk{width: 14, height: 16, margin: Inset{left: -1, right: 1.5}}
                 text: "Jump to Read Receipt"
             }
 
-            ignore_user_button := RobrixIconButton {
+            ignore_user_button := RobrixNegativeIconButton {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
-                draw_icon +: {
-                    svg: (ICON_FORBIDDEN)
-                    color: (COLOR_FG_DANGER_RED),
-                }
+                draw_icon.svg: (ICON_FORBIDDEN)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -0.5} }
-
-                draw_bg +: {
-                    border_color: (COLOR_FG_DANGER_RED),
-                    color: (COLOR_BG_DANGER_RED)
-                }
                 text: "Ignore (Block) User"
-                draw_text +: {
-                    color: (COLOR_FG_DANGER_RED),
-                }
             }
         }
 
@@ -279,18 +248,13 @@ script_mod! {
             user_profile_view := UserProfileView { }
 
             // The "X" close button on the top right
-            close_button := RobrixIconButton {
+            close_button := RobrixNeutralIconButton {
                 width: Fit,
                 height: Fit,
                 spacing: 0,
                 margin: 7,
                 padding: 15,
-
-                draw_bg.color: (COLOR_SECONDARY)
-                draw_icon +: {
-                    svg: (ICON_CLOSE),
-                    color: #000
-                }
+                draw_icon.svg: (ICON_CLOSE)
                 icon_walk: Walk{width: 14, height: 14}
             }
         }

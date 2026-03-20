@@ -87,7 +87,12 @@ script_mod! {
                         svg: (mod.widgets.ICO_LOCATION_PERSON)
                         color: (COLOR_ACTIVE_PRIMARY_DARKER)
                     },
-                    draw_bg.color: (COLOR_BG_PREVIEW)
+                    draw_bg +: {
+                        color: (COLOR_BG_PREVIEW)
+                        color_hover: #E0E8F0
+                        color_down: #D0D8E8
+                        color_focus: (COLOR_BG_PREVIEW)
+                    }
                     icon_walk: Walk{width: 23, height: 23, margin: Inset{bottom: -1}}
                     text: "",
                 }
@@ -116,17 +121,14 @@ script_mod! {
                     }
                 }
 
-                send_message_button := RobrixIconButton {
+                send_message_button := RobrixPositiveIconButton {
                     // Disabled by default; enabled when text is inputted
                     enabled: false,
                     spacing: 0,
+                    text: "",
                     margin: 4
-                    draw_icon +: {
-                        svg: (ICON_SEND),
-                        color: (COLOR_FG_DISABLED),
-                    }
+                    draw_icon +: { svg: (ICON_SEND) }
                     icon_walk: Walk{width: 21, height: 21},
-                    draw_bg.color: (COLOR_BG_DISABLED)
                 }
             }
 

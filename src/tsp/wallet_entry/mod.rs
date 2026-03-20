@@ -81,51 +81,23 @@ script_mod! {
             set_default_wallet_button := RobrixIconButton {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 20}
-                draw_bg.color: (COLOR_ACTIVE_PRIMARY)
-                draw_icon +: {
-                    svg: (ICON_CHECKMARK)
-                    color: (COLOR_PRIMARY)
-                }
-                draw_text +: {
-                    color: (COLOR_PRIMARY)
-                    text_style: REGULAR_TEXT {}
-                }
+                draw_icon.svg: (ICON_CHECKMARK)
                 icon_walk: Walk{width: 16, height: 16}
                 text: "Set As Default"
             }
 
-            remove_wallet_button := RobrixIconButton {
+            remove_wallet_button := RobrixNegativeIconButton {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 20}
-                draw_bg +: {
-                    color: (COLOR_BG_DANGER_RED)
-                    border_color: (COLOR_FG_DANGER_RED)
-                }
-                draw_icon +: {
-                    svg: (ICON_CLOSE),
-                    color: (COLOR_FG_DANGER_RED),
-                }
-                draw_text +: {
-                    color: (COLOR_FG_DANGER_RED),
-                }
+                draw_icon.svg: (ICON_CLOSE)
                 icon_walk: Walk{ width: 16, height: 16 }
                 text: "Remove From List"
             }
 
-            delete_wallet_button := RobrixIconButton {
+            delete_wallet_button := RobrixNegativeIconButton {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 20}
-                draw_bg +: {
-                    color: (COLOR_BG_DANGER_RED)
-                    border_color: (COLOR_FG_DANGER_RED)
-                }
-                draw_icon +: {
-                    svg: (ICON_TRASH),
-                    color: (COLOR_FG_DANGER_RED),
-                }
-                draw_text +: {
-                    color: (COLOR_FG_DANGER_RED),
-                }
+                draw_icon.svg: (ICON_TRASH)
                 icon_walk: Walk{ width: 16, height: 16 }
                 text: "Delete Wallet"
             }
