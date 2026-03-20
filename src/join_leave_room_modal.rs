@@ -430,13 +430,22 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                 text: "Okay"
                 draw_bg +: {
                     color: mod.widgets.COLOR_ACTIVE_PRIMARY,
-                    border_color: mod.widgets.COLOR_ACTIVE_PRIMARY
+                    color_hover: mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER,
+                    color_down: #0C5DAA,
+                    color_focus: mod.widgets.COLOR_ACTIVE_PRIMARY,
+                    border_color: #0000,
+                    border_color_hover: #0000,
+                    border_color_down: #0000,
+                    border_color_focus: #0000,
                 }
                 draw_text +: {
-                    color: mod.widgets.COLOR_PRIMARY
+                    color: mod.widgets.COLOR_PRIMARY,
+                    color_hover: mod.widgets.COLOR_PRIMARY,
+                    color_down: mod.widgets.COLOR_PRIMARY,
+                    color_focus: mod.widgets.COLOR_PRIMARY,
                 }
                 draw_icon +: {
-                    color: mod.widgets.COLOR_PRIMARY
+                    color: mod.widgets.COLOR_PRIMARY,
                 }
             });
             accept_button.reset_hover(cx);
@@ -533,20 +542,93 @@ impl JoinLeaveRoomModal {
         }
 
         let mut accept_button = self.button(cx, ids!(accept_button));
-        let cancel_button = self.button(cx, ids!(cancel_button));
+        let mut cancel_button = self.button(cx, ids!(cancel_button));
         accept_button.set_text(cx, "Yes");
-        script_apply_eval!(cx, accept_button, {
-            draw_bg +: {
-                border_color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
-                color: mod.widgets.COLOR_BG_ACCEPT_GREEN
-            }
-            draw_text +: {
-                color: mod.widgets.COLOR_FG_ACCEPT_GREEN
-            }
-            draw_icon +: {
-                color: mod.widgets.COLOR_FG_ACCEPT_GREEN
-            }
-        });
+
+        let is_negative = matches!(kind,
+            JoinLeaveModalKind::RejectInvite(_)
+            | JoinLeaveModalKind::LeaveRoom(_)
+            | JoinLeaveModalKind::LeaveSpace { .. }
+        );
+
+        if is_negative {
+            // Negative action: accept button is red, cancel button is gray/neutral.
+            script_apply_eval!(cx, accept_button, {
+                draw_bg +: {
+                    border_color: mod.widgets.COLOR_FG_DANGER_RED,
+                    color: mod.widgets.COLOR_BG_DANGER_RED,
+                    color_hover: #F0D4D4,
+                    color_down: #E0B8B8,
+                    color_focus: mod.widgets.COLOR_BG_DANGER_RED,
+                }
+                draw_text +: {
+                    color: mod.widgets.COLOR_FG_DANGER_RED,
+                    color_hover: mod.widgets.COLOR_FG_DANGER_RED,
+                    color_down: mod.widgets.COLOR_FG_DANGER_RED,
+                    color_focus: mod.widgets.COLOR_FG_DANGER_RED,
+                }
+                draw_icon +: {
+                    color: mod.widgets.COLOR_FG_DANGER_RED,
+                }
+            });
+            script_apply_eval!(cx, cancel_button, {
+                draw_bg +: {
+                    border_color: mod.widgets.COLOR_BG_DISABLED,
+                    color: mod.widgets.COLOR_SECONDARY,
+                    color_hover: #D0D0D0,
+                    color_down: #C0C0C0,
+                    color_focus: mod.widgets.COLOR_SECONDARY,
+                }
+                draw_text +: {
+                    color: mod.widgets.COLOR_TEXT,
+                    color_hover: mod.widgets.COLOR_TEXT,
+                    color_down: mod.widgets.COLOR_TEXT,
+                    color_focus: mod.widgets.COLOR_TEXT,
+                }
+                draw_icon +: {
+                    color: mod.widgets.COLOR_TEXT,
+                }
+            });
+        } else {
+            // Positive action: accept button is green, cancel button is red/negative.
+            script_apply_eval!(cx, accept_button, {
+                draw_bg +: {
+                    border_color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
+                    color: mod.widgets.COLOR_BG_ACCEPT_GREEN,
+                    color_hover: #D4EED4,
+                    color_down: #B8E0B8,
+                    color_focus: mod.widgets.COLOR_BG_ACCEPT_GREEN,
+                }
+                draw_text +: {
+                    color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
+                    color_hover: mod.widgets.COLOR_FG_ACCEPT_GREEN,
+                    color_down: mod.widgets.COLOR_FG_ACCEPT_GREEN,
+                    color_focus: mod.widgets.COLOR_FG_ACCEPT_GREEN,
+                }
+                draw_icon +: {
+                    color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
+                }
+            });
+            script_apply_eval!(cx, cancel_button, {
+                draw_bg +: {
+                    border_color: mod.widgets.COLOR_FG_DANGER_RED,
+                    color: mod.widgets.COLOR_BG_DANGER_RED,
+                    color_hover: #F0D4D4,
+                    color_down: #E0B8B8,
+                    color_focus: mod.widgets.COLOR_BG_DANGER_RED,
+                }
+                draw_text +: {
+                    color: mod.widgets.COLOR_FG_DANGER_RED,
+                    color_hover: mod.widgets.COLOR_FG_DANGER_RED,
+                    color_down: mod.widgets.COLOR_FG_DANGER_RED,
+                    color_focus: mod.widgets.COLOR_FG_DANGER_RED,
+                }
+                draw_icon +: {
+                    color: mod.widgets.COLOR_FG_DANGER_RED,
+                }
+            });
+        }
+
         accept_button.set_enabled(cx, true);
         accept_button.set_visible(cx, true);
         accept_button.reset_hover(cx);
