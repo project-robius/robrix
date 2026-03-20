@@ -33,7 +33,7 @@ script_mod! {
     mod.widgets.EventSourceModal = set_type_default() do #(EventSourceModal::register_widget(vm)) {
         ..mod.widgets.RoundedView
 
-        width: Fill { max: 1000 } //, min: 600 }
+        width: Fill { max: 1000 }
         // TODO: i'd like for this height to be Fit with a max of Rel { base: Full, factor: 0.90 },
         //       but Makepad doesn't allow Fit views with a max to be scrolled.
         height: Fill // { max: 1400 }

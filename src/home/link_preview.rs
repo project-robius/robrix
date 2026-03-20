@@ -688,7 +688,7 @@ fn insert_into_cache(
             if let LinkPreviewError::RateLimited = error_type {
                 LinkPreviewCacheEntry::Requested
             } else {
-                error!("Failed to fetch link preview data for {url}: {e:?}");
+                warning!("Failed to fetch link preview data for {url}: {e:?}");
                 LinkPreviewCacheEntry::Failed(error_type)
             }
         }

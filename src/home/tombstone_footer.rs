@@ -30,6 +30,12 @@ script_mod! {
         padding: 20,
         spacing: 8
 
+        // make this a ScrollYView
+        scroll_bars: mod.widgets.ScrollBars {
+            show_scroll_x: false show_scroll_y: true
+            scroll_bar_y.drag_scrolling: true
+        }
+
         show_bg: true
         draw_bg +: {
             color: COLOR_SECONDARY

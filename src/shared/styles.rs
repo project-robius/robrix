@@ -72,6 +72,7 @@ script_mod! {
 
 
     mod.widgets.MESSAGE_FONT_SIZE = 11
+    mod.widgets.REDACTED_MESSAGE_FONT_SIZE = 10
 
     mod.widgets.MESSAGE_TEXT_COLOR = #x333
     // notices (automated messages from bots) use a lighter color
@@ -245,9 +246,6 @@ script_mod! {
     }
 }
 
-
-pub const NAVIGATION_TAB_BAR_SIZE: f64 = 68.0;
-pub const REDACTED_MESSAGE_FONT_SIZE: f32 = 10.0;
 
 /// #FFFFFF
 pub const COLOR_PRIMARY:               Vec4 = vec4(1.0, 1.0, 1.0, 1.0);
