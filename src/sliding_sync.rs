@@ -3080,7 +3080,7 @@ async fn add_new_room(
     ).await;
     let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
     // Start with a basic text avatar; the avatar image will be fetched asynchronously below.
-    let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar().as_deref());
+    let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar());
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddJoinedRoom(JoinedRoomInfo {
         latest,
         tags: new_room.tags.clone().unwrap_or_default(),

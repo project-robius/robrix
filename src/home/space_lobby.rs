@@ -982,7 +982,7 @@ impl Widget for SpaceLobbyScreen {
             parent_avatar_ref.show_image(
                 cx,
                 None,
-                |cx, img| utils::load_png_or_jpg(&img, cx, &data),
+                |cx, img| utils::load_png_or_jpg(&img, cx, data),
             ).is_err()
         }) {
             let first_char = self.space_name_id.as_ref().and_then(|sni| sni.name_for_avatar())
