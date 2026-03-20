@@ -145,9 +145,7 @@ script_mod! {
                             spacing: 0.0,
                             align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
 
-                            left_line := LineH {
-                                draw_bg.color: #C8C8C8
-                            }
+                            LineH { draw_bg.color: #C8C8C8 }
 
                             Label {
                                 width: Fit, height: Fit
@@ -159,9 +157,7 @@ script_mod! {
                                 text: "Homeserver URL (optional)"
                             }
 
-                            right_line := LineH {
-                                draw_bg.color: #C8C8C8
-                            }
+                            LineH { draw_bg.color: #C8C8C8 }
                         }
                     }
                     
@@ -175,11 +171,12 @@ script_mod! {
                         text: "Login"
                     }
 
-                    left_line := LineH {
+                    LineH {
                         width: 275
                         margin: Inset{bottom: -5}
                         draw_bg.color: #C8C8C8
                     }
+
                     Label {
                         width: Fit, height: Fit
                         padding: 0,
@@ -234,9 +231,7 @@ script_mod! {
                         spacing: 0.0,
                         align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
 
-                        left_line := LineH {
-                            draw_bg.color: #C8C8C8
-                        }
+                        LineH { draw_bg.color: #C8C8C8 }
 
                         Label {
                             width: Fit, height: Fit
@@ -248,9 +243,7 @@ script_mod! {
                             text: "Don't have an account?"
                         }
 
-                        right_line := LineH {
-                            draw_bg.color: #C8C8C8
-                        }
+                        LineH { draw_bg.color: #C8C8C8 }
                     }
                     
                     signup_button := RobrixIconButton {
