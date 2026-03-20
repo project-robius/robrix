@@ -138,7 +138,6 @@ script_mod! {
                 color_active: instance(COLOR_TEXT)
 
                 text_style: REGULAR_TEXT {font_size: 11},
-                flow: Flow.Right{wrap: true},
 
                 get_color: fn() -> vec4 {
                     return mix(
@@ -383,7 +382,6 @@ script_mod! {
             flow: Flow.Right{wrap: true},
             align: Align{ x: 0.5, y: 0.5 }
             draw_text +: {
-                flow: Flow.Right{wrap: true},
                 color: #737373,
                 text_style: REGULAR_TEXT {font_size: 10}
             }
@@ -447,11 +445,11 @@ script_mod! {
             space_info_label := Label {
                 width: Fill,
                 height: Fit,
+                flow: Right, // do not wrap
                 margin: Inset{left: 2}
                 draw_text +: {
                     text_style: REGULAR_TEXT {font_size: 10},
                     color: #737373,
-                    flow: Flow.Right{wrap: true},
                 }
                 text: "Welcome to the space:"
             }
@@ -472,11 +470,11 @@ script_mod! {
                 parent_name := Label {
                     width: Fill,
                     height: Fit,
+                    flow: Right, // do not wrap
                     margin: Inset{top: 4} // vertically center-align with the avatar
                     draw_text +: {
                         text_style: TITLE_TEXT {font_size: 14},
                         color: #1a1a1a,
-                        flow: Flow.Right{wrap: true},
                     }
                     text: ""
                 }

@@ -43,7 +43,6 @@ script_mod! {
                 draw_text +: {
                     text_style: USERNAME_TEXT_STYLE { font_size: 10 },
                     color: (USERNAME_TEXT_COLOR)
-                    flow: Flow.Right{wrap: true},
                 }
                 text: "<Username not available>"
             }
@@ -98,7 +97,6 @@ script_mod! {
                 draw_text +: {
                     text_style: USERNAME_TEXT_STYLE {},
                     color: #222,
-                    flow: Flow.Right{wrap: true},
                 }
                 text: "Replying to:"
             }

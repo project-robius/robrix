@@ -143,10 +143,10 @@ script_mod! {
 
                 text := Label {
                     width: Fill,
+                    flow: Flow.Right{wrap: true},
                     draw_text +: {
                         color: (COLOR_TEXT)
                         text_style: theme.font_italic {font_size: 12.2}
-                        flow: Flow.Right{wrap: true},
                     }
                     text: "You don't have permission to post to this room.",
                 }

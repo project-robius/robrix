@@ -39,8 +39,8 @@ script_mod! {
         Label {
             width: Fill,
             height: Fit,
+            flow: Flow.Right{wrap: true},
             draw_text +: {
-                flow: Flow.Right{wrap: true},
                 color: (MESSAGE_TEXT_COLOR),
                 text_style: MESSAGE_TEXT_STYLE { font_size: 10.0 },
             }
@@ -52,8 +52,8 @@ script_mod! {
             height: Fit,
             align: Align{x: 0.0, y: 0.5},
             padding: Inset{left: 10, bottom: 7}
+            flow: Flow.Right{wrap: true},
             draw_text +: {
-                flow: Flow.Right{wrap: true},
                 color: (MESSAGE_TEXT_COLOR),
                 text_style: MESSAGE_TEXT_STYLE {},
             }

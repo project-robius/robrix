@@ -40,7 +40,6 @@ script_mod! {
                     draw_text +: {
                         text_style: TITLE_TEXT {font_size: 13},
                         color: #000
-                        flow: Flow.Right{wrap: true}
                     }
                 }
             }
@@ -52,12 +51,12 @@ script_mod! {
 
                 description := Label {
                     width: Fill
+                    flow: Flow.Right{wrap: true}
                     draw_text +: {
                         text_style: REGULAR_TEXT {
                             font_size: 11.5,
                         },
                         color: #000
-                        flow: Flow.Right{wrap: true}
                     }
                 }
 
@@ -104,7 +103,6 @@ script_mod! {
                                 font_size: 9,
                             },
                             color: #A,
-                            flow: Flow.Right{wrap: true}
                         }
                         text: "Tip: hold Shift when clicking a button to bypass this prompt."
                     }

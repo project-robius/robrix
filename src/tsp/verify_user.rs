@@ -29,8 +29,8 @@ script_mod! {
 
             Label {
                 width: Fill, height: Fit
+                flow: Flow.Right{wrap: true}
                 draw_text +: {
-                    flow: Flow.Right{wrap: true},
                     text_style: USERNAME_TEXT_STYLE { font_size: 11.5 },
                     color: #000
                 }
@@ -47,8 +47,8 @@ script_mod! {
 
                 Label {
                     width: Fill, height: Fit
+                    flow: Flow.Right{wrap: true}
                     draw_text +: {
-                        wrap: Line,
                         color: (COLOR_FG_ACCEPT_GREEN),
                         text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                     }
@@ -80,7 +80,6 @@ script_mod! {
                     width: Fill, height: Fit
                     flow: Flow.Right{wrap: true},
                     draw_text +: {
-                        flow: Flow.Right{wrap: true},
                         color: (MESSAGE_TEXT_COLOR),
                         text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                     }

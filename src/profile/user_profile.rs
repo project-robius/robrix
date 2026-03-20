@@ -100,8 +100,8 @@ script_mod! {
             user_name := Label {
                 width: Fill, height: Fit
                 align: Align{x: 0.5}
+                flow: Flow.Right{wrap: true}
                 draw_text +: {
-                    flow: Flow.Right{wrap: true},
                     color: #000,
                     text_style: USERNAME_TEXT_STYLE { font_size: 12 },
                 }
@@ -111,8 +111,8 @@ script_mod! {
             user_id := Label {
                 width: Fill, height: Fit
                 align: Align{x: 0.5}
+                flow: Flow.Right{wrap: true}
                 draw_text +: {
-                    wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
                     text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
@@ -132,8 +132,8 @@ script_mod! {
 
             membership_title_label := Label {
                 width: Fill, height: Fit
+                flow: Flow.Right{wrap: true}
                 draw_text +: {
-                    flow: Flow.Right{wrap: true},
                     text_style: USERNAME_TEXT_STYLE { font_size: 11.5 },
                     color: #000
                 }
@@ -143,8 +143,8 @@ script_mod! {
             membership_status_label := Label {
                 margin: Inset{ left: 7 }
                 width: Fill, height: Fit
+                flow: Flow.Right{wrap: true}
                 draw_text +: {
-                    wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
                     text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
@@ -154,8 +154,8 @@ script_mod! {
             role_info_label := Label {
                 margin: Inset{ left: 7 }
                 width: Fill, height: Fit
+                flow: Flow.Right{wrap: true}
                 draw_text +: {
-                    wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
                     text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
@@ -173,8 +173,8 @@ script_mod! {
 
             Label {
                 width: Fill, height: Fit
+                flow: Flow.Right{wrap: true}
                 draw_text +: {
-                    wrap: Line,
                     text_style: USERNAME_TEXT_STYLE { font_size: 11.5 },
                     color: #000
                 }

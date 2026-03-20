@@ -97,7 +97,7 @@ script_mod! {
             width: Fill,
             // height: Fit
             height: 0,
-            flow: Flow.Right{wrap: true}, // do not wrap
+            flow: Flow.Right{wrap: false}, // do not wrap
             padding: 0,
             align: Align{x: 0.5}
             draw_text +: {
@@ -111,7 +111,6 @@ script_mod! {
 
                 // text_style: theme.font_bold {font_size: 9}
                 text_style: REGULAR_TEXT {font_size: 9}
-                flow: Flow.Right{wrap: true},
 
                 get_color: fn() {
                     return mix(
@@ -184,9 +183,9 @@ script_mod! {
             margin: 0
             width: Fill,
             height: Fill
+            flow: Flow.Right{wrap: true},
             align: Align{ x: 0.5, y: 0.5 }
             draw_text +: {
-                flow: Flow.Right{wrap: true},
                 color: (MESSAGE_TEXT_COLOR),
                 text_style: REGULAR_TEXT {font_size: 9}
             }

@@ -24,7 +24,6 @@ script_mod! {
             draw_text +: {
                 text_style: TITLE_TEXT {font_size: 13},
                 color: #000
-                flow: Flow.Right{wrap: true}
             }
             text: "Add/Explore Rooms and Spaces"
             draw_text +: {
@@ -104,7 +103,6 @@ script_mod! {
                 flow: Flow.Right{wrap: true},
                 margin: Inset { top: 4 }
                 draw_text +: {
-                    wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
                     text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
@@ -117,7 +115,6 @@ script_mod! {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true},
                 draw_text +: {
-                    wrap: Line,
                     color: (COLOR_FG_DANGER_RED),
                     text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
@@ -167,7 +164,6 @@ script_mod! {
                     draw_text +: {
                         text_style: TITLE_TEXT { font_size: 16 }
                         color: (COLOR_TEXT)
-                        flow: Flow.Right{wrap: true},
                     }
                 }
             }
@@ -178,7 +174,6 @@ script_mod! {
                 flow: Flow.Right{wrap: true},
                 margin: Inset{top: 10}
                 draw_text +: {
-                    wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
                     text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
@@ -199,7 +194,6 @@ script_mod! {
                     width: Fit, height: Fit
                     flow: Flow.Right{wrap: true},
                     draw_text +: {
-                        wrap: Line,
                         color: (MESSAGE_TEXT_COLOR),
                         text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                     }
@@ -209,7 +203,6 @@ script_mod! {
                     width: Fit, height: Fit
                     flow: Flow.Right{wrap: true},
                     draw_text +: {
-                        wrap: Line,
                         color: (SMALL_STATE_TEXT_COLOR),
                         text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                     }

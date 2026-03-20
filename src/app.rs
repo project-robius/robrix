@@ -599,7 +599,11 @@ fn clear_all_app_state(cx: &mut Cx) {
 impl AppMain for App {
     fn script_mod(vm: &mut ScriptVm) -> makepad_widgets::ScriptValue {
         // Order matters: base widgets first, then app widgets, then app UI.
-        makepad_widgets::script_mod(vm);
+        makepad_widgets::theme_mod(vm);
+        script_eval!(vm, {
+            mod.theme = mod.themes.light
+        });
+        makepad_widgets::widgets_mod(vm);
         makepad_code_editor::script_mod(vm);
         crate::shared::script_mod(vm);
 

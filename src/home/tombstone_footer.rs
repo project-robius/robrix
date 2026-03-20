@@ -42,7 +42,6 @@ script_mod! {
             draw_text +: {
                 color: (TYPING_NOTICE_TEXT_COLOR),
                 text_style: REGULAR_TEXT {font_size: 11}
-                flow: Flow.Right{wrap: true},
             }
         }
 
@@ -71,7 +70,6 @@ script_mod! {
             draw_text +: {
                 text_style: TITLE_TEXT { font_size: 12 }
                 color: (COLOR_TEXT)
-                flow: Flow.Right{wrap: true},
             }
         }
     }

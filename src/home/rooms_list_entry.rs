@@ -32,11 +32,10 @@ script_mod! {
 
     mod.widgets.RoomName = Label {
         width: Fill, height: Fit
-        flow: Right, // do not wrap
+        flow: Flow.Right{wrap: false},
         padding: 0,
         draw_text +: {
             color: #000,
-            flow: Flow.Right{wrap: true},
             text_style: USERNAME_TEXT_STYLE { font_size: 10. }
         }
         text: "[Room name unknown]"
@@ -45,12 +44,10 @@ script_mod! {
     mod.widgets.RoomsListEntryTimestamp = Label {
         padding: Inset{top: 1},
         width: Fit, height: Fit
-        flow: Right, // do not wrap
+        flow: Flow.Right{wrap: false},
         draw_text +: {
             color: (TIMESTAMP_TEXT_COLOR)
-            text_style: TIMESTAMP_TEXT_STYLE {
-                font_size: 7.5
-            },
+            text_style: TIMESTAMP_TEXT_STYLE { font_size: 7.5 }
         }
     }
 

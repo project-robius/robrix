@@ -40,7 +40,6 @@ script_mod! {
                     draw_text +: {
                         text_style: TITLE_TEXT {font_size: 13},
                         color: #000
-                        flow: Flow.Right{wrap: true}
                     }
                 }
             }
@@ -55,7 +54,6 @@ script_mod! {
                     draw_text +: {
                         text_style: REGULAR_TEXT {font_size: 11.5},
                         color: #000
-                        flow: Flow.Right{wrap: true}
                     }
                 }
             }

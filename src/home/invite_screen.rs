@@ -68,7 +68,6 @@ script_mod! {
                         font_size: 15,
                     },
                     color: #000
-                    flow: Flow.Right{wrap: true}
                 }
             }
 
@@ -83,7 +82,6 @@ script_mod! {
                         font_size: 10,
                     },
                     color: #888
-                    flow: Flow.Right{wrap: true},
                 }
             }
 
@@ -104,7 +102,6 @@ script_mod! {
                     font_size: 15,
                 },
                 color: #000
-                flow: Flow.Right{wrap: true}
             }
         }
 
@@ -138,7 +135,6 @@ script_mod! {
                         font_size: 18,
                     },
                     color: #000
-                    flow: Flow.Right{wrap: true},
                 }
             }
         }
@@ -177,7 +173,6 @@ script_mod! {
             draw_text +: {
                 color: (COLOR_FG_ACCEPT_GREEN),
                 text_style: theme.font_bold {font_size: 12}
-                flow: Flow.Right{wrap: true},
             }
             text: ""
         }

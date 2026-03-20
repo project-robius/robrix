@@ -44,7 +44,6 @@ script_mod! {
                     draw_text +: {
                         text_style: TITLE_TEXT {font_size: 13},
                         color: #000
-                        flow: Flow.Right{wrap: true}
                     }
                     text: "Invite to Room"
                 }
@@ -107,7 +106,6 @@ script_mod! {
                     align: Align{x: 0.5, y: 0.0}
                     margin: Inset{top: 10}
                     draw_text +: {
-                        flow: Flow.Right{wrap: true}
                         text_style: REGULAR_TEXT {font_size: 11},
                         color: #000
                     }

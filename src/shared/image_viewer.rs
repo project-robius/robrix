@@ -245,7 +245,6 @@ script_mod! {
                             draw_text +: {
                                 text_style: REGULAR_TEXT {font_size: 12},
                                 color: (COLOR_TEXT)
-                                flow: Flow.Right{wrap: true}
                             }
                         }
 
@@ -277,10 +276,10 @@ script_mod! {
                         width: Fill,
                         height: Fit,
                         align: Align{x: 0.5, y: 0.5}
+                        flow: Flow.Right{wrap: true}
                         draw_text +: {
                             text_style: REGULAR_TEXT {font_size: 13},
                             color: (COLOR_TEXT),
-                            flow: Flow.Right{wrap: true}
                         }
                     }
                 }

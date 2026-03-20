@@ -52,12 +52,12 @@ script_mod! {
 
                 prompt := Label {
                     width: Fill
+                    flow: Flow.Right{wrap: true}
                     draw_text +: {
                         text_style: REGULAR_TEXT {
                             font_size: 11.5,
                         },
                         color: #000
-                        flow: Flow.Right{wrap: true}
                     }
                 }
 

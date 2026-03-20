@@ -177,24 +177,24 @@ script_mod! {
 
                     title_label := LinkLabel {
                         width: Fit, height: Fit,
+                        flow: Flow.Right{wrap: true},
                         draw_text +: {
                             text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
                                 font_size: 12.0,
                             },
                             color: #x0000EE,
-                            flow: Flow.Right{wrap: true},
                             color_hover: (COLOR_LINK_HOVER),
                         }
                     }
 
                     site_name_label := Label {
                         width: Fit, height: Fit,
+                        flow: Flow.Right{wrap: true},
                         draw_text +: {
                             text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
                                 font_size: 12.0,
                             },
                             color: #666666,
-                            flow: Flow.Right{wrap: true},
                         }
                     }
                 }
@@ -204,13 +204,13 @@ script_mod! {
 
                     description_label := Label {
                         width: Fill, height: Fit,
+                        flow: Flow.Right{wrap: true},
                         padding: Inset{ left: 0.0 }
                         draw_text +: {
                             text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
                                 font_size: 11.0,
                             },
                             color: #666666,
-                            flow: Flow.Right{wrap: true},
                         }
                     }
                 }

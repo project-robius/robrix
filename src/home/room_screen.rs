@@ -255,7 +255,6 @@ script_mod! {
                         draw_text +: {
                             text_style: USERNAME_TEXT_STYLE {},
                             color: (USERNAME_TEXT_COLOR)
-                            flow: Flow.Right{wrap: true},
                         }
                         text: "<Username not available>"
                     }
@@ -423,10 +422,10 @@ script_mod! {
             content := Label {
                 width: Fill,
                 height: Fit
+                flow: Flow.Right{wrap: true},
                 margin: Inset{top: 2.5}
                 padding: Inset{ top: 0.0, bottom: 0.0, left: 0.0, right: 0.0 }
                 draw_text +: {
-                    flow: Flow.Right{wrap: true},
                     text_style: SMALL_STATE_TEXT_STYLE {},
                     color: (SMALL_STATE_TEXT_COLOR)
                 }

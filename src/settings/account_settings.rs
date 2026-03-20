@@ -167,7 +167,6 @@ script_mod! {
                 flow: Flow.Right{wrap: true},
                 margin: Inset{top: 10}
                 draw_text +: {
-                    wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
                     text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }

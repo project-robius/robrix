@@ -103,7 +103,6 @@ script_mod! {
             flow: Flow.Right{wrap: true},
             align: Align{ x: 0.5, y: 0.5 }
             draw_text +: {
-                flow: Flow.Right{wrap: true},
                 color: (MESSAGE_TEXT_COLOR),
                 text_style: REGULAR_TEXT {}
             }

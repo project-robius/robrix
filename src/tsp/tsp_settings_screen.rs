@@ -45,7 +45,6 @@ script_mod! {
                 flow: Flow.Right{wrap: true},
                 margin: Inset{top: 10}
                 draw_text +: {
-                    wrap: Line,
                     text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
             }
@@ -73,7 +72,6 @@ script_mod! {
                 margin: Inset{top: 10, bottom: 8, left: 13, right: 10},
                 flow: Flow.Right{wrap: true},
                 draw_text +: {
-                    wrap: Line,
                     color: (COLOR_TEXT_WARNING_NOT_FOUND),
                     text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }

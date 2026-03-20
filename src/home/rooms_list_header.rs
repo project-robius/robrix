@@ -32,7 +32,6 @@ script_mod! {
             draw_text +: {
                 color: #x0
                 text_style: TITLE_TEXT {}
-                flow: Flow.Right{wrap: true}
             }
         },
 

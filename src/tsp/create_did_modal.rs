@@ -40,7 +40,6 @@ script_mod! {
                     draw_text +: {
                         text_style: TITLE_TEXT {font_size: 13},
                         color: #000
-                        flow: Flow.Right{wrap: true}
                     }
                     text: "Create New Identity (DID)"
                 }
@@ -218,7 +217,6 @@ script_mod! {
                 flow: Flow.Right{wrap: true},
                 align: Align{x: 0.5, y: 0.0}
                 draw_text +: {
-                    flow: Flow.Right{wrap: true}
                     text_style: REGULAR_TEXT {font_size: 11},
                     color: #000
                 }

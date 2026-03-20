@@ -89,17 +89,14 @@ script_mod! {
                         height: Fit,
                         align: Align{x: 0, y: 0.5}
                         padding: 7
+                        // TODO: we want the TextInput flow to show all text
+                        // within the single-line box by scrolling horizontally
+                        // when the text is too long, upon a user typing/pasting
+                        // or navigating with the mouse or arrow keys.
+                        // However, makepad doesn't yet support this feature,
+                        // so we just make the TextInput non-wrap.
                         flow: Flow.Right{wrap: false}, // do not wrap
                         draw_bg.border_size: 0.0
-                        draw_text +: {
-                            // TODO: we want the TextInput flow to show all text
-                            // within the single-line box by scrolling horizontally
-                            // when the text is too long, upon a user typing/pasting
-                            // or navigating with the mouse or arrow keys.
-                            // However, makepad doesn't yet support this feature,
-                            // so Ellipsis is the closest we can get.
-                            flow: Flow.Right{wrap: false},
-                        }
                         empty_text: "Enter reaction..."
                     }
                     reaction_send_button := RobrixPositiveIconButton {

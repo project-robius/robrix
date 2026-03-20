@@ -46,12 +46,12 @@ script_mod! {
             message := Label {
                 width: Fill,
                 margin: Inset{top: 10, bottom: 20},
+                flow: Flow.Right{wrap: true},
                 draw_text +: {
                     text_style: REGULAR_TEXT {
                         font_size: 14,
                     },
                     color: #000000,
-                    flow: Flow.Right{wrap: true}
                 },
                 text: "Are you sure you want to logout?"
             }
