@@ -274,6 +274,19 @@ impl MatchEvent for App {
                 continue;
             }
 
+            // If a login failure occurs mid-session (e.g., an expired/revoked token detected
+            // by `handle_session_changes`), navigate back to the login screen.
+            // When not yet logged in, the login_screen widget handles displaying the failure modal.
+            if let Some(LoginAction::LoginFailure(_)) = action.downcast_ref() {
+                if self.app_state.logged_in {
+                    log!("Received LoginAction::LoginFailure while logged in; showing login screen.");
+                    self.app_state.logged_in = false;
+                    self.update_login_visibility(cx);
+                    self.ui.redraw(cx);
+                }
+                continue;
+            }
+
             // Handle an action requesting to open the new message context menu.
             if let MessageAction::OpenMessageContextMenu { details, abs_pos } = action.as_widget_action().cast() {
                 self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
