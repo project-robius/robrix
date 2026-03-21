@@ -582,7 +582,7 @@ fn set_logout_in_progress(value: bool) {
 
 /// Execute logout using the state machine
 pub async fn logout_with_state_machine(is_desktop: bool) -> Result<()> {
-    log!("logout_with_state_machine called with is_desktop={}", is_desktop);
+    log!("logout_with_state_machine called with is_desktop: {}", is_desktop);
     
     let config = LogoutConfig {
         is_desktop,
