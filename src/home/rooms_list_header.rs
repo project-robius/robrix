@@ -8,7 +8,13 @@ use std::mem::discriminant;
 use makepad_widgets::*;
 use matrix_sdk_ui::sync_service::State;
 
-use crate::{home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, shared::{image_viewer::{ImageViewerAction, ImageViewerError, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}};
+use crate::{
+    home::navigation_tab_bar::{NavigationBarAction, SelectedTab},
+    shared::{
+        image_viewer::{ImageViewerAction, ImageViewerError, LoadState},
+        popup_list::{PopupKind, enqueue_popup_notification},
+    },
+};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -134,6 +140,38 @@ impl Widget for RoomsListHeader {
                     }
                     continue;
                 }
+            }
+        }
+
+        // Show tooltips for the sync status icons.
+        for (view, text, bg_color) in [
+            (self.view.view(cx, ids!(loading_spinner)), "Syncing...",   vec4(0.059, 0.533, 0.996, 1.0)), // COLOR_ACTIVE_PRIMARY #0f88fe
+            (self.view.view(cx, ids!(offline_icon)),    "Offline",      vec4(0.863, 0.0, 0.020, 1.0)),   // COLOR_FG_DANGER_RED #DC0005
+            (self.view.view(cx, ids!(synced_icon)),     "Fully synced", vec4(0.075, 0.533, 0.031, 1.0)), // COLOR_FG_ACCEPT_GREEN #138808
+        ] {
+            if !view.visible() {
+                continue;
+            }
+            match event.hits(cx, view.area()) {
+                Hit::FingerLongPress(_) | Hit::FingerHoverIn(_) => {
+                    cx.widget_action(
+                        self.widget_uid(),
+                        TooltipAction::HoverIn {
+                            text: text.to_string(),
+                            widget_rect: view.area().rect(cx),
+                            options: CalloutTooltipOptions {
+                                text_color: vec4(1.0, 1.0, 1.0, 1.0), // COLOR_PRIMARY
+                                bg_color,
+                                position: TooltipPosition::Left,
+                                ..Default::default()
+                            },
+                        },
+                    );
+                }
+                Hit::FingerHoverOut(_) => {
+                    cx.widget_action(self.widget_uid(), TooltipAction::HoverOut);
+                }
+                _ => {}
             }
         }
 
