@@ -31,7 +31,6 @@ script_mod! {
                     draw_bg.color: #F3F3F3
                     caption_label +: {
                         label +: {
-                            margin: Inset{left: 65},
                             align: Align{x: 0.5},
                             draw_text +: { color: #0 }
                             text: "Robrix"
@@ -218,6 +217,15 @@ impl MatchEvent for App {
 
         if let Err(e) = persistence::load_window_state(self.ui.window(cx, ids!(main_window)), cx) {
             error!("Failed to load window state: {}", e);
+        }
+
+        // Hide the caption bar on macOS, which uses native window chrome.
+        // On Windows (and Linux with custom chrome), the caption bar is needed.
+        if let OsType::Macos = cx.os_type() {
+            let mut window = self.ui.window(cx, ids!(main_window));
+            script_apply_eval!(cx, window, {
+                show_caption_bar: false
+            });
         }
 
         self.update_login_visibility(cx);
