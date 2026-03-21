@@ -1,97 +1,87 @@
 use makepad_widgets::*;
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
+    mod.widgets.RobrixSplitter = Splitter {
+        // size: theme.splitter_size
+        // min_horizontal: theme.splitter_min_horizontal
+        // max_horizontal: theme.splitter_max_horizontal
+        // min_vertical: theme.splitter_min_vertical
+        // max_vertical: theme.splitter_max_vertical
 
-    COLOR_TAB_BAR = (COLOR_PRIMARY * 0.96)
-    COLOR_DOCK_TAB = #E1EEFA // a light blue-ish color, de-saturated from `COLOR_ACTIVE_PRIMARY`
-    COLOR_DRAG_TARGET = (COLOR_ACTIVE_PRIMARY)
+        draw_bg +: {
+            color: COLOR_SECONDARY
+            color_hover: COLOR_ROBRIX_PURPLE
+            color_drag: COLOR_ROBRIX_PURPLE
 
-    pub Splitter = <SplitterBase> {
-        draw_bg: {
-            uniform border_radius: 1.0
-            uniform splitter_pad: 1.0
-            uniform splitter_grabber: 110.0
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
 
-            instance down: 0.0
-            instance hover: 0.0
-
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                sdf.clear(COLOR_SECONDARY);
-
-                sdf.box(
-                    -1.,
-                    -1.,
-                    self.rect_size.x + 2,
-                    self.rect_size.y + 2,
-                    2.5
-                );
-                // if self.is_vertical > 0.5 {
-                //     sdf.box(
-                //         self.splitter_pad,
-                //         self.rect_size.y * 0.5 - self.splitter_grabber * 0.5,
-                //         self.rect_size.x - 2.0 * self.splitter_pad,
-                //         self.splitter_grabber,
-                //         self.border_radius
-                //     );
-                // }
-                // else {
-                //     sdf.box(
-                //         self.rect_size.x * 0.5 - self.splitter_grabber * 0.5,
-                //         self.splitter_pad,
-                //         self.splitter_grabber,
-                //         self.rect_size.y - 2.0 * self.splitter_pad,
-                //         self.border_radius
-                //     );
-                // }
-
-                return sdf.fill_keep(mix(
-                    COLOR_SECONDARY,
-                    COLOR_ROBRIX_PURPLE,
+                // Body: dark gray by default, transitions to purple on hover/drag
+                let body_color = mix(
+                    theme.color_bg_app
+                    mix(self.color_hover, self.color_drag, self.drag)
                     self.hover
-                ));
+                )
+                sdf.clear(body_color)
+
+                // Draw the grab bar shape
+                if self.is_vertical > 0.5 {
+                    sdf.box(
+                        self.splitter_pad
+                        self.rect_size.y * 0.5 - self.bar_size * 0.5
+                        self.rect_size.x - 2.0 * self.splitter_pad
+                        self.bar_size
+                        self.border_radius
+                    )
+                }
+                else {
+                    sdf.box(
+                        self.rect_size.x * 0.5 - self.bar_size * 0.5
+                        self.splitter_pad
+                        self.bar_size
+                        self.rect_size.y - 2.0 * self.splitter_pad
+                        self.border_radius
+                    )
+                }
+
+                // Grab bar: white when hovered/dragged, otherwise matches body
+                let grab_color = mix(self.color, #fff, self.hover)
+                return sdf.fill_keep(grab_color)
             }
         }
-        size: (THEME_SPLITTER_SIZE)
-        min_horizontal: (THEME_SPLITTER_MIN_HORIZONTAL)
-        max_horizontal: (THEME_SPLITTER_MAX_HORIZONTAL)
-        min_vertical: (THEME_SPLITTER_MIN_VERTICAL)
-        max_vertical: (THEME_SPLITTER_MAX_VERTICAL)
 
-        animator: {
-            hover = {
-                default: off
-                off = {
+        animator: Animator{
+            hover: {
+                default: @off
+                off: AnimatorState{
                     from: {all: Forward {duration: 0.1}}
                     apply: {
-                        draw_bg: {down: 0.0, hover: 0.0}
+                        draw_bg: {drag: 0.0, hover: 0.0}
                     }
                 }
 
-                on = {
+                on: AnimatorState{
                     from: {
                         all: Forward {duration: 0.1}
-                        state_down: Forward {duration: 0.01}
+                        drag: Forward {duration: 0.01}
                     }
                     apply: {
                         draw_bg: {
-                            down: 0.0,
-                            hover: [{time: 0.0, value: 1.0}],
+                            drag: 0.0,
+                            hover: snap(1.0)
                         }
                     }
                 }
 
-                drag = {
+                drag: AnimatorState{
                     from: { all: Forward { duration: 0.1 }}
                     apply: {
                         draw_bg: {
-                            down: [{time: 0.0, value: 1.0}],
-                            hover: 1.0,
+                            drag: snap(1.0),
+                            hover: 1.0
                         }
                     }
                 }
@@ -99,44 +89,28 @@ live_design! {
         }
     }
 
-    pub TabCloseButton = <TabCloseButtonBase> {
-        height: 10.0, width: 10.0,
-        margin: { right: (THEME_SPACE_2), left: -1 },
-        draw_button: {
-
-            instance hover: float;
-            instance active: float;
-
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                let mid = self.rect_size / 2.0;
-                let size = (self.hover * 0.25 + 0.5) * 0.25 * length(self.rect_size);
-                let min = mid - vec2(size);
-                let max = mid + vec2(size);
-                sdf.move_to(min.x, min.y);
-                sdf.line_to(max.x, max.y);
-                sdf.move_to(min.x, max.y);
-                sdf.line_to(max.x, min.y);
-                return sdf.stroke(mix(
-                    #0,
-                    #fe8610,
-                    self.hover
-                ), 1.0);
-            }
+    mod.widgets.RobrixTabCloseButton = TabCloseButton {
+        height: 10.0
+        width: 10.0
+        margin: Inset{ right: theme.space_2, left: -1 }
+        draw_button +: {
+            color: #0
+            color_hover: #FE8610
+            color_active: #FE8610
         }
 
-        animator: {
-            hover = {
-                default: off
-                off = {
+        animator: Animator{
+            hover: {
+                default: @off
+                off: AnimatorState{
                     from: {all: Forward {duration: 0.1}}
                     apply: {
                         draw_button: {hover: 0.0}
                     }
                 }
 
-                on = {
-                    cursor: Hand,
+                on: AnimatorState{
+                    cursor: MouseCursor.Hand
                     from: {all: Snap}
                     apply: {
                         draw_button: {hover: 1.0}
@@ -146,58 +120,38 @@ live_design! {
         }
     }
 
-    pub Tab = <TabBase> {
-        width: Fit, height: Fill, //Fixed((THEME_TAB_HEIGHT)),
+    mod.widgets.RobrixTab = Tab {
+        width: Fit
+        height: Fill
 
-        align: {x: 0.0, y: 0.5}
-        padding: <THEME_MSPACE_3> { }
+        align: Align{x: 0.0, y: 0.5}
+        padding: 9
+        margin: 0
 
-        close_button: <TabCloseButton> {}
-        draw_text: {
-            text_style: <THEME_FONT_REGULAR> {}
-            instance hover: 0.0
-            instance active: 0.0
-            fn get_color(self) -> vec4 {
-                return mix(
-                    mix(
-                        #x0, // THEME_COLOR_TEXT_INACTIVE,
-                        #xf, // THEME_COLOR_TEXT_ACTIVE,
-                        self.active
-                    ),
-                    #fe8610,
-                    self.hover
-                )
-            }
+        close_button: mod.widgets.RobrixTabCloseButton {}
+        draw_text +: {
+            text_style: theme.font_regular {}
+
+            color: #000
+            color_hover: #fe8610
+            color_active: COLOR_PRIMARY
         }
 
-        draw_bg: {
-            instance hover: float
-            instance active: float
-
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                sdf.box(
-                    -1.,
-                    -1.,
-                    self.rect_size.x + 2,
-                    self.rect_size.y + 2,
-                    1.
-                );
-                sdf.fill_keep(
-                    mix(
-                        (COLOR_DOCK_TAB),
-                        (COLOR_ACTIVE_PRIMARY),
-                        self.active
-                    )
-                );
-                return sdf.result
-            }
+        draw_bg +: {
+            // Light blue-ish color, de-saturated from COLOR_ACTIVE_PRIMARY
+            color: #E1EEFA
+            // A slightly darker shade of the tab color for hover visibility
+            color_hover: #C8DDEF
+            color_active: COLOR_ACTIVE_PRIMARY
+            // Remove the border and rounded corners from the default Tab style
+            border_size: 0.0
+            border_radius: 3.0
         }
 
-        animator: {
-            hover = {
-                default: off
-                off = {
+        animator: Animator{
+            hover: {
+                default: @off
+                off: AnimatorState{
                     from: {all: Forward {duration: 0.2}}
                     apply: {
                         draw_bg: {hover: 0.0}
@@ -205,19 +159,19 @@ live_design! {
                     }
                 }
 
-                on = {
-                    cursor: Hand,
+                on: AnimatorState{
+                    cursor: MouseCursor.Hand
                     from: {all: Forward {duration: 0.1}}
                     apply: {
-                        draw_bg: {hover: [{time: 0.0, value: 1.0}]}
-                        draw_text: {hover: [{time: 0.0, value: 1.0}]}
+                        draw_bg: {hover: snap(1.0)}
+                        draw_text: {hover: snap(1.0)}
                     }
                 }
             }
 
-            active = {
-                default: off
-                off = {
+            active: {
+                default: @off
+                off: AnimatorState{
                     from: {all: Forward {duration: 0.3}}
                     apply: {
                         close_button: {draw_button: {active: 0.0}}
@@ -226,7 +180,7 @@ live_design! {
                     }
                 }
 
-                on = {
+                on: AnimatorState{
                     from: {all: Snap}
                     apply: {
                         close_button: {draw_button: {active: 1.0}}
@@ -238,64 +192,47 @@ live_design! {
         }
     }
 
-    pub TabBar = <TabBarBase> {
-        CloseableTab = <Tab> {closeable:true}
-        PermanentTab = <Tab> {closeable:false}
+    mod.widgets.RobrixTabBar = TabBar {
+        CloseableTab := mod.widgets.RobrixTab {closeable: true}
+        PermanentTab := mod.widgets.RobrixTab {closeable: false}
 
-        draw_drag: {
+        draw_drag +: {
             draw_depth: 10
             color: #x0
         }
-        draw_fill: {
-            color: (COLOR_TAB_BAR)
+        draw_fill +: {
+            color: COLOR_PRIMARY * 0.96
+        }
+        draw_bg +: {
+            color: COLOR_PRIMARY * 0.96
         }
 
-        width: Fill, height: (THEME_TAB_HEIGHT)
+        width: Fill
+        height: max(theme.tab_height, 25.)
 
-        scroll_bars: <ScrollBarsTabs> {
+        scroll_bars: ScrollBarsTabs {
             show_scroll_x: true
             show_scroll_y: false
-            scroll_bar_x: {
-                draw_bg: {size: 3.0}
+            scroll_bar_x +: {
                 bar_size: 4
                 use_vertical_finger_scroll: true
             }
         }
     }
 
-    pub Dock = <DockBase> {
-        flow: Down,
+    mod.widgets.RobrixDock = Dock {
+        flow: Down
 
-        round_corner: {
-            border_radius: 20.
-            fn pixel(self) -> vec4 {
-                let pos = vec2(
-                    mix(self.pos.x, 1.0 - self.pos.x, self.flip.x),
-                    mix(self.pos.y, 1.0 - self.pos.y, self.flip.y)
-                )
-
-                let sdf = Sdf2d::viewport(pos * self.rect_size);
-                sdf.rect(-10., -10., self.rect_size.x * 2.0, self.rect_size.y * 2.0);
-                sdf.box(
-                    0.25,
-                    0.25,
-                    self.rect_size.x * 2.0,
-                    self.rect_size.y * 2.0,
-                    4.0
-                );
-
-                sdf.subtract()
-                sdf.fill(COLOR_SECONDARY)
-                return sdf.result
-            }
+        round_corner +: {
+            color: COLOR_SECONDARY
         }
 
-        padding: {left: (THEME_DOCK_BORDER_SIZE), top: 0, right: (THEME_DOCK_BORDER_SIZE), bottom: (THEME_DOCK_BORDER_SIZE)}
-        drag_target_preview: {
+        padding: Inset{left: theme.dock_border_size, top: 0, right: theme.dock_border_size, bottom: theme.dock_border_size}
+        drag_target_preview +: {
             draw_depth: 10.0
-            color: (mix((COLOR_DRAG_TARGET), #FFFFFF00, pow(0.5, THEME_COLOR_CONTRAST)))
+            color: mix(COLOR_ACTIVE_PRIMARY, #FFFFFF00, 0.5)
         }
-        tab_bar: <TabBar> {}
-        splitter: <Splitter> {}
+        tab_bar: mod.widgets.RobrixTabBar {}
+        splitter: mod.widgets.RobrixSplitter {}
     }
 }
