@@ -74,7 +74,7 @@ script_mod! {
                     text: "Cancel"
                 }
 
-                accept_button := RobrixIconButton {
+                accept_button := RobrixPositiveIconButton {
                     width: 120
                     align: Align{x: 0.5, y: 0.5}
                     padding: 15,
@@ -88,20 +88,14 @@ script_mod! {
     // A confirmation modal for a positive action.
     // The accept button is green with a checkmark icon.
     mod.widgets.PositiveConfirmationModal = mod.widgets.ConfirmationModal {
-        wrapper := RoundedView {
-            buttons_view := View {
-                cancel_button := RobrixNeutralIconButton {
-                    draw_icon +: {
-                        svg: (ICON_FORBIDDEN)
-                        color: (COLOR_TEXT)
-                    }
+        wrapper +: {
+            buttons_view +: {
+                cancel_button +: {
+                    draw_icon +: { svg: (ICON_FORBIDDEN) }
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
                 }
-                accept_button := RobrixPositiveIconButton {
-                    draw_icon +: {
-                        svg: (ICON_CHECKMARK)
-                        color: (COLOR_FG_ACCEPT_GREEN)
-                    }
+                accept_button +: {
+                    draw_icon +: { svg: (ICON_CHECKMARK) }
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
                 }
             }
@@ -111,20 +105,20 @@ script_mod! {
     // A confirmation modal for a negative action.
     // The accept button is red with a forbidden icon.
     mod.widgets.NegativeConfirmationModal = mod.widgets.ConfirmationModal {
-        wrapper := RoundedView {
-            buttons_view := View {
+        wrapper +: {
+            buttons_view +: {
                 cancel_button := RobrixNeutralIconButton {
-                    draw_icon +: {
-                        svg: (ICON_FORBIDDEN)
-                        color: (COLOR_TEXT)
-                    }
+                    width: 120,
+                    align: Align{x: 0.5, y: 0.5}
+                    padding: 15,
+                    draw_icon +: { svg: (ICON_FORBIDDEN) }
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
                 }
                 accept_button := RobrixNegativeIconButton {
-                    draw_icon +: {
-                        svg: (ICON_CLOSE)
-                        color: (COLOR_FG_DANGER_RED)
-                    }
+                    width: 120,
+                    align: Align{x: 0.5, y: 0.5}
+                    padding: 15,
+                    draw_icon +: { svg: (ICON_CLOSE) }
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
                 }
             }

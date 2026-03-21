@@ -91,10 +91,7 @@ script_mod! {
                             content +: {
                                 invite_confirmation_modal_inner := PositiveConfirmationModal {
                                     wrapper +: { buttons_view +: { accept_button +: {
-                                        draw_icon +: {
-                                            svg: (ICON_INVITE),
-                                            color: (COLOR_PRIMARY),
-                                        }
+                                        draw_icon +: { svg: (ICON_INVITE) }
                                         icon_walk: Walk{width: 28, height: Fit, margin: Inset{left: -10, right: 2} }
                                     } } }
                                 }
