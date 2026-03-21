@@ -27,13 +27,29 @@ script_mod! {
                 window.inner_size: vec2(1280, 800)
                 window.title: "Robrix"
                 pass.clear_color: #FFFFFF00
-                caption_bar: {
-                    caption_label: {
-                        label: {
+                caption_bar +: {
+                    draw_bg.color: #F3F3F3
+                    caption_label +: {
+                        label +: {
                             margin: Inset{left: 65},
                             align: Align{x: 0.5},
+                            draw_text +: { color: #0 }
                             text: "Robrix"
                         }
+                    }
+                    windows_buttons +: {
+                         // Note: these are the background colors of the buttons used in Windows:
+                        // * idle: Clear, for all three buttons.
+                        // * hover: #E9E9E9 for minimize and maximize, #E81123 for close.
+                        // * down: either darker (on light mode) or lighter (on dark mode).
+                        //
+                        // However, the DesktopButton widget doesn't support drawing a background color yet,
+                        // so these colors are the colors of the icon itself, not the background highlight.
+                        // When it supports that, we will keep the icon color always black,
+                        // and change the background color instead based on the above colors.
+                        min +: { draw_bg +: {color: #0, color_hover: #9, color_down: #3} }
+                        max +: { draw_bg +: {color: #0, color_hover: #9, color_down: #3} }
+                        close +: { draw_bg +: {color: #0, color_hover: #E81123, color_down: #FF0015} }
                     }
                 }
             
