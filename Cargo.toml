@@ -17,8 +17,8 @@ metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 # makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
 # makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "windows_build_fix", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "windows_build_fix" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "fix_svg_draw_shaders", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "fix_svg_draw_shaders" }
 
 
 
