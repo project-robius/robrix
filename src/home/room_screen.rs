@@ -3784,7 +3784,7 @@ fn populate_file_message_content(
     file_content: &FileMessageEventContent,
 ) -> bool {
     // Display the file name, human-readable size, caption, and a button to download it.
-    let filename = file_content.filename();
+    let filename = htmlize::escape_text(file_content.filename());
     let size = file_content
         .info
         .as_ref()
@@ -3814,7 +3814,7 @@ fn populate_audio_message_content(
     audio: &AudioMessageEventContent,
 ) -> bool {
     // Display the file name, human-readable size, caption, and a button to download it.
-    let filename = audio.filename();
+    let filename = htmlize::escape_text(audio.filename());
     let (duration, mime, size) = audio
         .info
         .as_ref()
@@ -3855,7 +3855,7 @@ fn populate_video_message_content(
     video: &VideoMessageEventContent,
 ) -> bool {
     // Display the file name, human-readable size, caption, and a button to download it.
-    let filename = video.filename();
+    let filename = htmlize::escape_text(video.filename());
     let (duration, mime, size, dimensions) = video
         .info
         .as_ref()
