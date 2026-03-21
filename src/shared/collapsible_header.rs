@@ -8,66 +8,63 @@
 //! and its content is also drawn within that PortalList separately from its content.
 
 use makepad_widgets::*;
+use makepad_widgets::animator::Animate;
 
 use crate::home::rooms_list::RoomsListScopeProps;
 
-use super::unread_badge::UnreadBadgeWidgetExt;
+use super::expand_arrow::ExpandArrow;
+use super::unread_badge::UnreadBadgeWidgetRefExt as _;
 
-live_design! {
-    use link::theme::*;
-    use link::widgets::*;
-    use link::shaders::*;
-
-    use crate::shared::styles::*;
-    use crate::shared::unread_badge::*;
-
-    ICON_COLLAPSE = dep("crate://self/resources/icons/triangle_fill.svg")
-
-    COLOR_HEADER_FG = #F;
-    COLOR_HEADER_BG = (COLOR_ROBRIX_PURPLE); // the purple color from the Robrix logo
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
 
-    pub CollapsibleHeader = {{CollapsibleHeader}}<RoundedView> {
+    mod.widgets.COLOR_HEADER_FG = #F;
+
+    mod.widgets.COLOR_HEADER_BG = (mod.widgets.COLOR_ROBRIX_PURPLE); // the purple color from the Robrix logo
+
+    mod.widgets.CollapsibleHeader = set_type_default() do #(CollapsibleHeader::register_widget(vm)) {
+        ..mod.widgets.RoundedView
+
         width: Fill,
         height: 35,
-        align: { x: 0.0, y: 0.5 },
-        margin: {top: 3, bottom: 3, left: 0, right: 0},
+        align: Align{ x: 0.0, y: 0.5 },
+        margin: Inset{top: 3, bottom: 3, left: 0, right: 0},
         padding: 5
         flow: Right,
 
-        cursor: Hand,
-        draw_bg: {
-            border_radius: 4.0,
-            color: (COLOR_HEADER_BG)
+        cursor: MouseCursor.Hand,
+        draw_bg +: {
+            border_radius: 4.0
+            color: mod.widgets.COLOR_HEADER_BG
         }
 
-        collapse_icon = <IconRotated> {
-            margin: {left: 5, right: 8, top: 0, bottom: 0},
-            draw_icon: {
-                svg_file: (ICON_COLLAPSE),
-                rotation_angle: 180.0, // start in the "expanded" state
-                color: (COLOR_HEADER_FG),
-            }
-            icon_walk: { width: 14, height: Fit, margin: 0, }
+        collapse_icon := mod.widgets.ExpandArrow {
+            width: 20, height: 20,
+            margin: Inset{left: 5, right: 6, top: 0, bottom: 0},
+            draw_bg.color: mod.widgets.COLOR_HEADER_FG
         }
-        label = <Label> {
+
+        label := Label {
             padding: 0,
             width: Fill,
             height: Fit,
             text: "",
-            draw_text: {
-                text_style: <REGULAR_TEXT>{font_size: 11},
-                color: (COLOR_HEADER_FG),
+            draw_text +: {
+                text_style: mod.widgets.REGULAR_TEXT {font_size: 11},
+                color: (mod.widgets.COLOR_HEADER_FG),
             }
         }
-        unread_badge = <UnreadBadge> {
-            margin: {right: 5.5},
+
+        unread_badge := UnreadBadge {
+            margin: Inset{right: 5.5},
         }
     }
 }
 
 /// The categories of collapsible headers in the rooms list.
-#[derive(Copy, Clone, Debug, DefaultNone)]
+#[derive(Copy, Clone, Debug, Default)]
 pub enum HeaderCategory {
     /// Rooms the user has been invited to but has not yet joined.
     Invites,
@@ -81,6 +78,7 @@ pub enum HeaderCategory {
     LowPriority,
     /// Rooms that the user has left.
     LeftRooms,
+    #[default]
     None,
 }
 impl HeaderCategory {
@@ -97,20 +95,22 @@ impl HeaderCategory {
     }
 }
 
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Clone, Debug, Default)]
 pub enum CollapsibleHeaderAction {
     /// The header was clicked to toggled its expanded/collapsed state.
     Toggled {
         category: HeaderCategory,
     },
+    #[default]
     None,
 }
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct CollapsibleHeader {
     #[deref] view: View,
     #[rust(true)] is_expanded: bool,
     #[rust] category: HeaderCategory,
+    #[rust] num_unread_mentions: u64,
 }
 
 impl Widget for CollapsibleHeader {
@@ -132,28 +132,27 @@ impl Widget for CollapsibleHeader {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let angle = if self.is_expanded {
-            180.0
-        } else {
-            90.0
-        };
-        self.icon(ids!(collapse_icon)).apply_over(
-            cx,
-            live! {
-                draw_icon: { rotation_angle: (angle) }
-            },
-        );
+        // Set arrow and label state during draw to ensure child widgets are available.
+        if let Some(mut arrow) = self.view.child_by_path(ids!(collapse_icon)).borrow_mut::<ExpandArrow>() {
+            arrow.set_is_open_no_animate(self.is_expanded);
+        }
+        self.view.child_by_path(ids!(label)).set_text(cx, self.category.as_str());
+        self.view.child_by_path(ids!(unread_badge))
+            .as_unread_badge()
+            .update_counts(false, self.num_unread_mentions, 0);
         self.view.draw_walk(cx, scope, walk)
     }
 }
 
 impl CollapsibleHeader {
-    fn toggle_collapse(&mut self, cx: &mut Cx, scope: &mut Scope) {
+    fn toggle_collapse(&mut self, cx: &mut Cx, _scope: &mut Scope) {
         self.is_expanded = !self.is_expanded;
+        if let Some(mut arrow) = self.view.child_by_path(ids!(collapse_icon)).borrow_mut::<ExpandArrow>() {
+            arrow.set_is_open(cx, self.is_expanded, Animate::Yes);
+        }
         self.redraw(cx);
         cx.widget_action(
-            self.widget_uid(),
-            &scope.path,
+            self.widget_uid(), 
             CollapsibleHeaderAction::Toggled {
                 category: self.category,
             },
@@ -165,7 +164,7 @@ impl CollapsibleHeaderRef {
     /// Sets the category and expanded state of the header.
     pub fn set_details(
         &self,
-        cx: &mut Cx,
+        _cx: &mut Cx,
         is_expanded: bool,
         category: HeaderCategory,
         num_unread_mentions: u64,
@@ -173,10 +172,7 @@ impl CollapsibleHeaderRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.is_expanded = is_expanded;
             inner.category = category;
-            inner.label(ids!(label)).set_text(cx, category.as_str());
-            inner
-                .unread_badge(ids!(unread_badge))
-                .update_counts(false, num_unread_mentions, 0);
+            inner.num_unread_mentions = num_unread_mentions;
         }
     }
 }
