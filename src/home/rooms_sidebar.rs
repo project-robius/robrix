@@ -11,94 +11,73 @@ use makepad_widgets::*;
 
 use crate::home::rooms_list::RoomsListWidgetExt;
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::shared::helpers::*;
-    use crate::shared::room_filter_input_bar::RoomFilterInputBar;
-    use crate::home::search_messages::*;
-    use crate::home::rooms_list::RoomsList;
-    use crate::home::rooms_list_header::RoomsListHeader;
 
-    pub RoomsSideBar = {{RoomsSideBar}}<AdaptiveView> {
-        Desktop = <View> {
-            padding: {top: 20, left: 10, right: 10}
+    mod.widgets.RoomsSideBar = #(RoomsSideBar::register_widget(vm)) {
+        Desktop := SolidView {
+            padding: Inset{top: 20, left: 10, right: 10}
             flow: Down, spacing: 5
             width: Fill, height: Fill
 
-            show_bg: true,
-            draw_bg: {
-                instance bg_color: (COLOR_PRIMARY_DARKER)
-                instance border_color: #f2f2f2
-                instance border_size: 0.003
+            draw_bg.color: (COLOR_PRIMARY_DARKER)
 
-                // Draws a right-side border
-                fn pixel(self) -> vec4 {
-                    if self.pos.x > 1.0 - self.border_size {
-                        return self.border_color;
-                    } else {
-                        return self.bg_color;
-                    }
-                }
+            CachedWidget {
+                rooms_list_header := RoomsListHeader {}
             }
-
-            <CachedWidget> {
-                rooms_list_header = <RoomsListHeader> {}
-            }
-            <CachedWidget> {
-                rooms_list = <RoomsList> {}
+            CachedWidget {
+                rooms_list := RoomsList {}
             }
         },
 
-        Mobile = <View> {
+        Mobile := View {
             width: Fill, height: Fill
             flow: Down,
             
-            <RoundedShadowView> {
+            RoundedShadowView {
                 width: Fill, height: Fit
-                padding: {top: 15, left: 15, right: 15, bottom: 10}
+                padding: Inset{top: 15, left: 15, right: 15, bottom: 10}
                 flow: Down,
 
                 show_bg: true
-                draw_bg: {
-                    color: (COLOR_PRIMARY_DARKER),
-                    border_radius: 4.0,
+                draw_bg +: {
+                    color: (COLOR_PRIMARY_DARKER)
+                    border_radius: 4.0
                     border_size: 0.0
                     shadow_color: #0005
                     shadow_radius: 15.0
-                    shadow_offset: vec2(1.0, 0.0),
+                    shadow_offset: vec2(1.0, 0.0)
                 }
 
-                <View> { height: 20 }
+                View { height: 23 }
 
-                <CachedWidget> {
-                    rooms_list_header = <RoomsListHeader> {}
+                CachedWidget {
+                    rooms_list_header := RoomsListHeader {}
                 }
 
-                <View> {
+                View {
                     width: Fill,
-                    height: 39,
+                    height: 45,
                     flow: Right
-                    padding: {top: 2, bottom: 2}
+                    padding: Inset{top: 5, bottom: 2}
                     spacing: 5 
-                    align: {y: 0.5}
+                    align: Align{y: 0.5}
 
-                    <CachedWidget> {
-                        room_filter_input_bar = <RoomFilterInputBar> {}
+                    CachedWidget {
+                        room_filter_input_bar := RoomFilterInputBar {}
                     }
 
-                    search_messages_button = <SearchMessagesButton> { }
+                    search_messages_button := SearchMessagesButton { }
                 }
             }
 
-            <View> {
-                padding: {left: 15, right: 15}
+            View {
+                padding: Inset{left: 15, right: 15}
 
-                <CachedWidget> {
-                    rooms_list = <RoomsList> {}
+                CachedWidget {
+                    rooms_list := RoomsList {}
                 }
             }
         }
@@ -112,19 +91,20 @@ live_design! {
 /// * In the desktop view, it is a permanent tab in the dock,
 ///   showing only the title label and the RoomsList
 ///   (because the search bar is at the top of the HomeScreen).
-#[derive(Live, Widget)]
+#[derive(Script, Widget)]
 pub struct RoomsSideBar {
     #[deref] view: AdaptiveView,
 }
 
-impl LiveHook for RoomsSideBar {
-    fn after_new_from_doc(&mut self, cx: &mut Cx) {
-        // Here we set the global singleton for the RoomsList widget,
-        // which is used to access the list of rooms from anywhere in the app.
-        Cx::set_global(cx, self.view.rooms_list(ids!(rooms_list)));
+impl ScriptHook for RoomsSideBar {
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            // Here we set the global singleton for the RoomsList widget,
+            // which is used to access the list of rooms from anywhere in the app.
+            cx.set_global(self.view.rooms_list(cx, ids!(rooms_list)));
+        });
     }
 }
-
 impl Widget for RoomsSideBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
@@ -134,4 +114,3 @@ impl Widget for RoomsSideBar {
         self.view.draw_walk(cx, scope, walk)
     }
 }
-
