@@ -2,174 +2,201 @@
 
 use makepad_widgets::*;
 
-use crate::tsp::{self, TspWalletMetadata};
+use crate::{shared::styles::*, tsp::{self, TspWalletMetadata}};
 
 
-script_mod! {
+live_design! {
     link tsp_enabled
 
-    use mod.prelude.widgets.*
-    use mod.widgets.*
+    use link::theme::*;
+    use link::widgets::*;
 
+    use crate::shared::styles::*;
+    use crate::shared::helpers::*;
+    use crate::shared::icon_button::RobrixIconButton;
 
-    mod.widgets.CreateWalletModal = #(CreateWalletModal::register_widget(vm)) {
+    pub CreateWalletModal = {{CreateWalletModal}} {
         width: Fit
         height: Fit
 
-        RoundedView {
+        <RoundedView> {
             width: 400
             height: Fit
-            align: Align{x: 0.5}
+            align: {x: 0.5}
             flow: Down
-            padding: Inset{top: 30, right: 25, bottom: 20, left: 25}
+            padding: {top: 30, right: 25, bottom: 20, left: 25}
 
             show_bg: true
-            draw_bg +: {
+            draw_bg: {
                 color: (COLOR_PRIMARY)
-                border_radius: 4.0
+                border_radius: 4
             }
 
-            title_view := View {
+            title_view = <View> {
                 width: Fill,
                 height: Fit,
-                padding: Inset{top: 0, bottom: 25}
-                align: Align{x: 0.5, y: 0.0}
+                padding: {top: 0, bottom: 25}
+                align: {x: 0.5, y: 0.0}
 
-                title := Label {
-                    flow: Flow.Right{wrap: true},
-                    draw_text +: {
-                        text_style: TITLE_TEXT {font_size: 13},
+                title = <Label> {
+                    flow: RightWrap,
+                    draw_text: {
+                        text_style: <TITLE_TEXT>{font_size: 13},
                         color: #000
+                        wrap: Word
                     }
                     text: "Create New TSP Wallet"
                 }
             }
 
-            RoundedView {
+            <RoundedView> {
                 width: 350,
                 height: Fit,
                 spacing: 15,
                 padding: 15,
-                align: Align{x: 0.5}
+                align: {x: 0.5}
                 flow: Down,
 
                 show_bg: true
-                draw_bg +: {
+                draw_bg: {
                     color: (COLOR_SECONDARY)
                     border_radius: 4.0
                 }
 
-                wallet_name_input := RobrixTextInput {
+                wallet_name_input = <RobrixTextInput> {
                     width: Fill,
                     height: Fit,
                     padding: 10,
-                    draw_text +: {
-                        text_style: REGULAR_TEXT {font_size: 12},
+                    draw_text: {
+                        text_style: <REGULAR_TEXT>{font_size: 12},
                         color: #000
                     }
                     empty_text: "Wallet Name",
                 }
 
-                password_input := RobrixTextInput {
+                password_input = <RobrixTextInput> {
                     width: Fill,
                     height: Fit,
                     padding: 10,
-                    draw_text +: {
-                        text_style: REGULAR_TEXT {font_size: 12},
+                    draw_text: {
+                        text_style: <REGULAR_TEXT>{font_size: 12},
                         color: #000
                     }
                     is_password: true,
                     empty_text: "Wallet Password",
                 }
 
-                confirm_password_input := RobrixTextInput {
+                confirm_password_input = <RobrixTextInput> {
                     width: Fill,
                     height: Fit,
                     padding: 10,
-                    draw_text +: {
-                        text_style: REGULAR_TEXT {font_size: 12},
+                    draw_text: {
+                        text_style: <REGULAR_TEXT>{font_size: 12},
                         color: #000
                     }
                     is_password: true,
                     empty_text: "Confirm Wallet Password",
                 }
 
-                View {
+                <View> {
                     width: Fill, height: Fit
                     flow: Down
 
-                    wallet_file_name_input := RobrixTextInput {
+                    wallet_file_name_input = <RobrixTextInput> {
                         width: Fill, height: Fit,
                         flow: Right, // do not wrap
-                        padding: Inset{top: 3, bottom: 3}
+                        padding: {top: 3, bottom: 3}
                         empty_text: "my_wallet_file",
-                        draw_text +: {
-                            text_style: REGULAR_TEXT {font_size: 10.0}
+                        draw_text: {
+                            text_style: <REGULAR_TEXT>{font_size: 10.0}
                         }
                     }
 
-                    View {
+                    <View> {
                         width: Fill,
                         height: Fit,
                         flow: Right,
-                        padding: Inset{top: 5, left: 2, right: 2, bottom: 2}
+                        padding: {top: 5, left: 2, right: 2, bottom: 2}
                         spacing: 0.0,
-                        align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
+                        align: {x: 0.5, y: 0.5} // center horizontally and vertically
 
-                        left_line := LineH {
-                            draw_bg.color: #C8C8C8
+                        left_line = <LineH> {
+                            draw_bg: { color: #C8C8C8 }
                         }
 
-                        Label {
+                        <Label> {
                             width: Fit, height: Fit
                             padding: 0
-                            draw_text +: {
+                            draw_text: {
                                 color: #777777
-                                text_style: REGULAR_TEXT {font_size: 9}
+                                text_style: <REGULAR_TEXT>{font_size: 9}
                             }
                             text: "Wallet File Name (optional)"
                         }
 
-                        right_line := LineH {
-                            draw_bg.color: #C8C8C8
+                        right_line = <LineH> {
+                            draw_bg: { color: #C8C8C8 }
                         }
                     }
                 }
             }
 
-            View {
+            <View> {
                 width: Fill, height: Fit
                 flow: Right,
-                padding: Inset{top: 20, bottom: 20}
-                align: Align{x: 1.0, y: 0.5}
+                padding: {top: 20, bottom: 20}
+                align: {x: 1.0, y: 0.5}
                 spacing: 20
 
-                cancel_button := RobrixNegativeIconButton {
+                cancel_button = <RobrixIconButton> {
                     width: 100,
-                    align: Align{x: 0.5, y: 0.5}
+                    align: {x: 0.5, y: 0.5}
                     padding: 15,
-                    draw_icon.svg: (ICON_FORBIDDEN)
-                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                    draw_icon: {
+                        svg_file: (ICON_FORBIDDEN)
+                        color: (COLOR_FG_DANGER_RED),
+                    }
+                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+
+                    draw_bg: {
+                        border_color: (COLOR_FG_DANGER_RED),
+                        color: (COLOR_BG_DANGER_RED)
+                    }
                     text: "Cancel"
+                    draw_text:{
+                        color: (COLOR_FG_DANGER_RED),
+                    }
                 }
 
-                accept_button := RobrixPositiveIconButton {
+                accept_button = <RobrixIconButton> {
                     width: 140
-                    align: Align{x: 0.5, y: 0.5}
+                    align: {x: 0.5, y: 0.5}
                     padding: 15,
-                    draw_icon.svg: (ICON_CHECKMARK)
-                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                    draw_icon: {
+                        svg_file: (ICON_CHECKMARK)
+                        color: (COLOR_FG_ACCEPT_GREEN),
+                    }
+                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+
+                    draw_bg: {
+                        border_color: (COLOR_FG_ACCEPT_GREEN),
+                        color: (COLOR_BG_ACCEPT_GREEN)
+                    }
                     text: "Create Wallet"
+                    draw_text:{
+                        color: (COLOR_FG_ACCEPT_GREEN),
+                    }
                 }
             }
 
-            status_label := Label {
+            status_label = <Label> {
                 width: Fill,
                 height: Fit,
-                flow: Flow.Right{wrap: true},
-                align: Align{x: 0.5, y: 0.0}
-                draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: 11},
+                flow: RightWrap,
+                align: {x: 0.5, y: 0.0}
+                draw_text: {
+                    wrap: Word
+                    text_style: <REGULAR_TEXT>{font_size: 11},
                     color: #000
                 }
                 text: "status label"
@@ -202,7 +229,7 @@ enum CreateWalletModalState {
 }
 
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Live, LiveHook, Widget)]
 pub struct CreateWalletModal {
     #[deref] view: View,
     #[rust] state: CreateWalletModalState,
@@ -222,8 +249,8 @@ impl Widget for CreateWalletModal {
 
 impl WidgetMatchEvent for CreateWalletModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let mut accept_button = self.view.button(cx, ids!(accept_button));
-        let cancel_button = self.view.button(cx, ids!(cancel_button));
+        let accept_button = self.view.button(ids!(accept_button));
+        let cancel_button = self.view.button(ids!(cancel_button));
 
         // Handle canceling/closing the modal.
         let cancel_clicked = cancel_button.clicked(actions);
@@ -242,11 +269,11 @@ impl WidgetMatchEvent for CreateWalletModal {
             return;
         }
 
-        let wallet_name_input = self.view.text_input(cx, ids!(wallet_name_input));
-        let wallet_file_name_input = self.view.text_input(cx, ids!(wallet_file_name_input));
-        let password_input = self.view.text_input(cx, ids!(password_input));
-        let confirm_password_input = self.view.text_input(cx, ids!(confirm_password_input));
-        let mut status_label = self.view.label(cx, ids!(status_label));
+        let wallet_name_input = self.view.text_input(ids!(wallet_name_input));
+        let wallet_file_name_input = self.view.text_input(ids!(wallet_file_name_input));
+        let password_input = self.view.text_input(ids!(password_input));
+        let confirm_password_input = self.view.text_input(ids!(confirm_password_input));
+        let status_label = self.view.label(ids!(status_label));
 
         // Handle clicking the accept button.
         let mut needs_redraw = false;
@@ -266,28 +293,28 @@ impl WidgetMatchEvent for CreateWalletModal {
                     // Check to ensure that the user has entered all required fields.
                     if password.is_empty() || confirm_password.is_empty() {
                         self.is_showing_error = true;
-                        script_apply_eval!(cx, status_label, {
+                        status_label.apply_over(cx, live!(
                             text: "Please enter a wallet password.",
-                            draw_text +: {
-                                color: mod.widgets.COLOR_FG_DANGER_RED,
+                            draw_text: {
+                                color: (COLOR_FG_DANGER_RED),
                             },
-                        });
+                        ));
                     } else if password != confirm_password {
                         self.is_showing_error = true;
-                        script_apply_eval!(cx, status_label, {
+                        status_label.apply_over(cx, live!(
                             text: "Passwords do not match.",
-                            draw_text +: {
-                                color: mod.widgets.COLOR_FG_DANGER_RED,
+                            draw_text: {
+                                color: (COLOR_FG_DANGER_RED),
                             },
-                        });
+                        ));
                     } else if wallet_name.is_empty() {
                         self.is_showing_error = true;
-                        script_apply_eval!(cx, status_label, {
+                        status_label.apply_over(cx, live!(
                             text: "Please enter a wallet name.",
-                            draw_text +: {
-                                color: mod.widgets.COLOR_FG_DANGER_RED,
+                            draw_text: {
+                                color: (COLOR_FG_DANGER_RED),
                             },
-                        });
+                        ));
                     } else {
                         let url = tsp::TspWalletSqliteUrl::from_wallet_file_name(
                             match wallet_file_name_input.text() {
@@ -305,12 +332,12 @@ impl WidgetMatchEvent for CreateWalletModal {
                         tsp::submit_tsp_request(tsp::TspRequest::CreateWallet { metadata });
                         self.state = CreateWalletModalState::WaitingForWalletCreation;
                         self.is_showing_error = false;
-                        script_apply_eval!(cx, status_label, {
+                        status_label.apply_over(cx, live!(
                             text: "Waiting for wallet to be created...",
-                            draw_text +: {
-                                color: mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER,
+                            draw_text: {
+                                color: (COLOR_ACTIVE_PRIMARY_DARKER),
                             },
-                        });
+                        ));
                         accept_button.set_enabled(cx, false);
                         cancel_button.set_enabled(cx, false); // TODO: support canceling the wallet creation request?
                         wallet_name_input.set_is_read_only(cx, true);
@@ -335,15 +362,15 @@ impl WidgetMatchEvent for CreateWalletModal {
                 || confirm_password_input.changed(actions).is_some()
             {
                 self.is_showing_error = false;
-                self.view.label(cx, ids!(status_label)).set_text(cx, "");
+                self.view.label(ids!(status_label)).set_text(cx, "");
                 self.state = CreateWalletModalState::WaitingForUserInput;
-                script_apply_eval!(cx, accept_button, {
+                accept_button.apply_over(cx, live!(
                     text: "Create Wallet",
                     enabled: true,
-                    draw_text +: {
-                        color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
+                    draw_text: {
+                        color: (COLOR_FG_ACCEPT_GREEN),
                     },
-                });
+                ));
                 needs_redraw = true;
             }
         }
@@ -365,25 +392,25 @@ impl WidgetMatchEvent for CreateWalletModal {
                     } else {
                         format!("Wallet \"{}\" created successfully.", metadata.wallet_name)
                     };
-                    script_apply_eval!(cx, status_label, {
-                        text: #(message),
-                        draw_text +: {
-                            color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
+                    status_label.apply_over(cx, live!(
+                        text: (message),
+                        draw_text: {
+                            color: (COLOR_FG_ACCEPT_GREEN),
                         },
-                    });
-                    script_apply_eval!(cx, accept_button, {
+                    ));
+                    accept_button.apply_over(cx, live!(
                         enabled: true,
                         text: "Okay",
-                        draw_bg +: {
-                            color: mod.widgets.COLOR_ACTIVE_PRIMARY,
+                        draw_bg: {
+                            color: (COLOR_ACTIVE_PRIMARY),
                         },
-                        draw_icon +: {
-                            color: mod.widgets.COLOR_PRIMARY,
+                        draw_icon: {
+                            color: (COLOR_PRIMARY),
                         }
-                        draw_text +: {
-                            color: mod.widgets.COLOR_PRIMARY,
+                        draw_text: {
+                            color: (COLOR_PRIMARY),
                         },
-                    });
+                    ));
                     cancel_button.set_visible(cx, false);
                 }
 
@@ -392,12 +419,12 @@ impl WidgetMatchEvent for CreateWalletModal {
                     self.state = CreateWalletModalState::WalletCreationError;
                     self.is_showing_error = true;
                     let message = format!("Failed to create wallet: {error}.");
-                    script_apply_eval!(cx, status_label, {
-                        text: #(message),
-                        draw_text +: {
-                            color: mod.widgets.COLOR_FG_DANGER_RED,
+                    status_label.apply_over(cx, live!(
+                        text: (message),
+                        draw_text: {
+                            color: (COLOR_FG_DANGER_RED),
                         },
-                    });
+                    ));
                     accept_button.set_enabled(cx, false);
                     cancel_button.set_enabled(cx, true);
                     wallet_name_input.set_is_read_only(cx, false);
@@ -419,8 +446,8 @@ impl WidgetMatchEvent for CreateWalletModal {
 impl CreateWalletModal {
     pub fn show(&mut self, cx: &mut Cx) {
         self.state = CreateWalletModalState::WaitingForUserInput;
-        let accept_button = self.view.button(cx, ids!(accept_button));
-        let cancel_button = self.view.button(cx, ids!(cancel_button));
+        let accept_button = self.view.button(ids!(accept_button));
+        let cancel_button = self.view.button(ids!(cancel_button));
         accept_button.set_text(cx, "Create Wallet");
         cancel_button.set_text(cx, "Cancel");
         accept_button.reset_hover(cx);
@@ -430,11 +457,11 @@ impl CreateWalletModal {
         accept_button.set_visible(cx, true);
         cancel_button.set_visible(cx, true);
         // TODO: return buttons to their default state/appearance
-        self.view.text_input(cx, ids!(wallet_name_input)).set_is_read_only(cx, false);
-        self.view.text_input(cx, ids!(wallet_file_name_input)).set_is_read_only(cx, false);
-        self.view.text_input(cx, ids!(password_input)).set_is_read_only(cx, false);
-        self.view.text_input(cx, ids!(confirm_password_input)).set_is_read_only(cx, false);
-        self.view.label(cx, ids!(status_label)).set_text(cx, "");
+        self.view.text_input(ids!(wallet_name_input)).set_is_read_only(cx, false);
+        self.view.text_input(ids!(wallet_file_name_input)).set_is_read_only(cx, false);
+        self.view.text_input(ids!(password_input)).set_is_read_only(cx, false);
+        self.view.text_input(ids!(confirm_password_input)).set_is_read_only(cx, false);
+        self.view.label(ids!(status_label)).set_text(cx, "");
         self.is_showing_error = false;
         self.view.redraw(cx);        
     }

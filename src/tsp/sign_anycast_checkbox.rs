@@ -3,14 +3,15 @@
 
 use makepad_widgets::*;
 
-script_mod! {
+live_design! {
     link tsp_enabled
 
-    use mod.prelude.widgets.*
-    use mod.widgets.*
+    use link::theme::*;
+    use link::widgets::*;
 
+    use crate::shared::styles::*;
 
-    mod.widgets.TspSignAnycastCheckbox = CheckBoxFlat {
+    pub TspSignAnycastCheckbox = <CheckBoxFlat> {
         text: "TSP",
         active: false,
     }

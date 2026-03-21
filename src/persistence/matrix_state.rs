@@ -169,7 +169,7 @@ pub async fn restore_session(
         serde_json::from_str(&serialized_session)?;
 
     let status_str = format!(
-        "Loaded session file for:\n{user_id}\n\nTrying to connect to homeserver...\n{}",
+        "Loaded session file for {user_id}. Trying to connect to homeserver ({})...",
         client_session.homeserver,
     );
     log!("{status_str}");

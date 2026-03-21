@@ -1,9 +1,9 @@
-use makepad_widgets::ScriptVm;
+use makepad_widgets::Cx;
 
 pub mod settings_screen;
 pub mod account_settings;
 
-pub fn script_mod(vm: &mut ScriptVm) {
-    account_settings::script_mod(vm);
-    settings_screen::script_mod(vm);
+pub fn live_design(cx: &mut Cx) {
+    account_settings::live_design(cx);
+    settings_screen::live_design(cx);
 }

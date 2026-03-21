@@ -7,7 +7,6 @@ use std::{
 };
 
 use makepad_widgets::*;
-use crate::{LivePtr, widget_ref_from_live_ptr};
 use matrix_sdk::ruma::{events::room::{ImageInfo, MediaSource}, OwnedMxcUri, UInt};
 use serde::Deserialize;
 use url::Url;
@@ -15,7 +14,10 @@ use url::Url;
 use crate::{
     home::room_screen::TimelineUpdate,
     media_cache::MediaCache,
-    shared::text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
+    shared::{
+        styles::{COLOR_BG_PREVIEW, COLOR_BG_PREVIEW_HOVER},
+        text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
+    },
     sliding_sync::{submit_async_request, MatrixRequest, UrlPreviewError},
 };
 
@@ -54,157 +56,112 @@ pub enum LinkPreviewCacheEntry {
     Failed(LinkPreviewError),
 }
 
-script_mod! {
-    use mod.prelude.widgets.*
-    use mod.widgets.*
+live_design! {
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
+    use crate::shared::styles::*;
+    use crate::shared::text_or_image::TextOrImage;
 
-    mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE = theme.font_regular {
+    pub MESSAGE_TEXT_STYLE = <THEME_FONT_REGULAR>{
         font_size: (16),
         line_spacing: (1.2),
     }
 
-    mod.widgets.LinkPreview = #(LinkPreview::register_widget(vm)) {
+    DEFAULT_IMAGE = dep("crate://self/resources/img/default_image.png")
+
+    pub LinkPreview = {{LinkPreview}} {
         width: Fill, height: Fit,
         flow: Down,
 
-        collapsible_buttons := View {
+        collapsible_button = <View> {
             width: Fill, height: Fit,
             flow: Right,
-            align: Align{x: 0.5, y: 0.5},
-            padding: Inset{top: 4},
+            align: {x: 0.5, y: 0.5},
+            padding: {top: 4},
             visible: false,
-
-            expand_button := RobrixIconButton {
+            expand_collapse_button = <Button> {
                 width: Fit, height: Fit,
-                spacing: 4,
-                padding: Inset{top: 4, bottom: 4, left: 8, right: 8},
-                draw_icon +: {
-                    svg: (ICON_TRIANGLE_DOWN)
-                    color: #666666
-                }
-                icon_walk: Walk{width: 10, height: 10}
-                draw_text +: {
-                    text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
+                padding: {top: 2, bottom: 2, left: 8, right: 8},
+                draw_text: {
+                    text_style: <MESSAGE_TEXT_STYLE> {
                         font_size: 10.0,
                     },
                     color: #666666,
-                    color_hover: #666666,
-                    color_down: #666666,
                 }
-                draw_bg +: {
-                    color: (COLOR_BG_PREVIEW)
-                    color_hover: (COLOR_BG_PREVIEW_HOVER)
-                    color_down: #A8DBBF
-                    border_size: 1.0
-                    border_color: #CCCCCC
-                    border_color_hover: #CCCCCC
-                    border_color_down: #CCCCCC
-                    border_radius: 4.0
-                }
-                text: "Show more links"
-            }
-
-            collapse_button := RobrixIconButton {
-                visible: false,
-                width: Fit, height: Fit,
-                spacing: 4,
-                padding: Inset{top: 4, bottom: 4, left: 8, right: 8},
-                draw_icon +: {
-                    svg: (ICON_TRIANGLE_UP)
-                    color: #666666
-                }
-                icon_walk: Walk{width: 10, height: 10}
-                draw_text +: {
-                    text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
-                        font_size: 10.0,
-                    },
-                    color: #666666,
-                    color_hover: #666666,
-                    color_down: #666666,
-                }
-                draw_bg +: {
-                    color: (COLOR_BG_PREVIEW)
-                    color_hover: (COLOR_BG_PREVIEW_HOVER)
-                    color_down: #A8DBBF
-                    border_size: 1.0
-                    border_color: #CCCCCC
-                    border_color_hover: #CCCCCC
-                    border_color_down: #CCCCCC
-                    border_radius: 4.0
-                }
-                text: "Show fewer links"
+                text: "▼ Show more links"
             }
         }
 
-        item_template: RoundedView {
-            cursor: MouseCursor.Hand,
+        item_template: <RoundedView> {
+            cursor: Hand,
             flow: Right,
             spacing: 4.0,
             width: Fill, height: Fit,
-            margin: Inset{ top: 7 }
-            padding: Inset{ top: 8, bottom: 8, left: 12, right: 12 },
+            margin: { top: 7 }
+            padding: { top: 8, bottom: 8, left: 12, right: 12 },
             spacing: 10
             show_bg: true,
-            draw_bg +: {
-                color: (COLOR_BG_PREVIEW)
+            draw_bg: {
+                color: (COLOR_BG_PREVIEW),
                 border_radius: 4.0
             }
-            align: Align{ y: 0.5 }
+            align: { y: 0.5 }
 
-            image_view := View {
+            image_view = <View> {
                 visible: true,
                 width: Fit, height: 80,
                 flow: Down
-                image := TextOrImage {
+                image = <TextOrImage> {
                     width: 120, height: Fill,
-                    align: Align{ y: 0.5 }
+                    align: { y: 0.5 }
                 }
             }
 
-            content_view := View {
+            content_view = <View> {
                 width: Fill, height: Fill,
                 flow: Down,
 
-                View {
+                <View> {
                     width: Fit, height: Fit,
-                    flow: Flow.Right{wrap: true},
+                    flow: RightWrap,
 
-                    title_label := LinkLabel {
+                    title_label = <LinkLabel> {
                         width: Fit, height: Fit,
-                        flow: Flow.Right{wrap: true},
-                        draw_text +: {
-                            text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
+                        draw_text: {
+                            text_style: <MESSAGE_TEXT_STYLE> {
                                 font_size: 12.0,
                             },
                             color: #x0000EE,
-                            color_hover: (COLOR_LINK_HOVER),
+                            wrap: Word,
+                            uniform color_hover: (COLOR_LINK_HOVER),
                         }
                     }
 
-                    site_name_label := Label {
+                    site_name_label = <Label> {
                         width: Fit, height: Fit,
-                        flow: Flow.Right{wrap: true},
-                        draw_text +: {
-                            text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
+                        draw_text: {
+                            text_style: <MESSAGE_TEXT_STYLE> {
                                 font_size: 12.0,
                             },
                             color: #666666,
+                            wrap: Word,
                         }
                     }
                 }
 
-                View {
+                <View> {
                     width: Fill, height: Fit,
 
-                    description_label := Label {
+                    description_label = <Label> {
                         width: Fill, height: Fit,
-                        flow: Flow.Right{wrap: true},
-                        padding: Inset{ left: 0.0 }
-                        draw_text +: {
-                            text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
+                        padding: { left: 0.0 }
+                        draw_text: {
+                            text_style: <MESSAGE_TEXT_STYLE> {
                                 font_size: 11.0,
                             },
                             color: #666666,
+                            wrap: Word,
                         }
                     }
                 }
@@ -213,7 +170,7 @@ script_mod! {
     }
 }
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Live, LiveHook, Widget)]
 pub struct LinkPreview {
     #[deref]
     view: View,
@@ -224,7 +181,7 @@ pub struct LinkPreview {
     #[layout]
     layout: Layout,
     #[rust]
-    show_collapsible_buttons: bool,
+    show_collapsible_button: bool,
     #[rust]
     is_expanded: bool,
     #[rust]
@@ -235,9 +192,8 @@ impl Widget for LinkPreview {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // Handle collapsible button clicks
         if let Event::Actions(actions) = event {
-            let expand_btn = self.view.button(cx, ids!(collapsible_buttons.expand_button));
-            let collapse_btn = self.view.button(cx, ids!(collapsible_buttons.collapse_button));
-            if expand_btn.clicked(actions) || collapse_btn.clicked(actions) {
+            let expand_button = self.view.button(ids!(collapsible_button.expand_collapse_button));
+            if expand_button.clicked(actions) {
                 self.is_expanded = !self.is_expanded;
                 self.update_button_and_visibility(cx);
                 cx.redraw_all();
@@ -247,28 +203,26 @@ impl Widget for LinkPreview {
         for view in self.children.iter() {
             match event.hits(cx, view.area()) {
                 Hit::FingerHoverIn(_) | Hit::FingerDown(_) => {
-                    let mut view = view.clone();
-                    script_apply_eval!(cx, view, {
-                        draw_bg.color: mod.widgets.COLOR_BG_PREVIEW_HOVER
+                    view.apply_over(cx, live! {
+                        draw_bg: { color: (COLOR_BG_PREVIEW_HOVER) }
                     });
                 }
                 Hit::FingerHoverOut(_) => {
-                    let mut view = view.clone();
-                    script_apply_eval!(cx, view, {
-                        draw_bg.color: mod.widgets.COLOR_BG_PREVIEW
+                    view.apply_over(cx, live! {
+                        draw_bg: { color: (COLOR_BG_PREVIEW) }
                     });
                 }
                 Hit::FingerUp(fe) => {
                     // return to normal bg color
-                    let mut view = view.clone();
-                    script_apply_eval!(cx, view, {
-                        draw_bg.color: mod.widgets.COLOR_BG_PREVIEW
+                    view.apply_over(cx, live! {
+                        draw_bg: { color: (COLOR_BG_PREVIEW) }
                     });
                     if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
-                        if let Some(html_link) = view.link_label(cx, ids!(content_view.title_label)).borrow() {
+                        if let Some(html_link) = view.link_label(ids!(content_view.title_label)).borrow() {
                             if !html_link.url.is_empty() {
                                 cx.widget_action(
-                                    html_link.widget_uid(), 
+                                    html_link.widget_uid(),
+                                    &scope.path,
                                     HtmlLinkAction::Clicked {
                                         url: html_link.url.clone(),
                                         key_modifiers: fe.modifiers,
@@ -305,22 +259,16 @@ impl LinkPreview {
     }
 
     fn update_button_and_visibility(&mut self, cx: &mut Cx) {
-        if self.show_collapsible_buttons {
-            self.view.view(cx, ids!(collapsible_buttons)).set_visible(cx, true);
-            let expand_btn = self.view.button(cx, ids!(collapsible_buttons.expand_button));
-            let collapse_btn = self.view.button(cx, ids!(collapsible_buttons.collapse_button));
+        if self.show_collapsible_button {
+            self.view.view(ids!(collapsible_button)).set_visible(cx, true);
+            let button_ref = self.view.button(ids!(collapsible_button.expand_collapse_button));
             if self.is_expanded {
-                expand_btn.set_visible(cx, false);
-                collapse_btn.set_visible(cx, true);
+                button_ref.set_text(cx, "▲ Show fewer links");
             } else {
-                expand_btn.set_text(cx, &format!("Show {} more links", self.hidden_links_count));
-                expand_btn.set_visible(cx, true);
-                collapse_btn.set_visible(cx, false);
+                button_ref.set_text(cx, &format!("▼ Show {} more links", self.hidden_links_count));
             }
-            expand_btn.reset_hover(cx);
-            collapse_btn.reset_hover(cx);
         } else {
-            self.view.view(cx, ids!(collapsible_buttons)).set_visible(cx, false);
+            self.view.view(ids!(collapsible_button)).set_visible(cx, false);
         }
     }
 }
@@ -350,15 +298,13 @@ impl LinkPreviewRef {
     /// This function is usually called when the link preview is updated.
     /// If the link preview is updated, and the collapsible button should be shown,
     /// this function should be called.
-    fn show_collapsible_buttons(&mut self, cx: &mut Cx, hidden_count: usize) {
+    fn show_collapsible_button(&mut self, cx: &mut Cx, hidden_count: usize) {
          if let Some(mut inner) = self.borrow_mut() {
-            inner.show_collapsible_buttons = true;
+            inner.show_collapsible_button = true;
             inner.hidden_links_count = hidden_count;
-            let expand_btn = inner.view.button(cx, ids!(collapsible_buttons.expand_button));
-            expand_btn.set_text(cx, &format!("Show {} more links", inner.hidden_links_count));
-            expand_btn.set_visible(cx, true);
-            inner.view.button(cx, ids!(collapsible_buttons.collapse_button)).set_visible(cx, false);
-            inner.view.view(cx, ids!(collapsible_buttons)).set_visible(cx, true);
+            let button_ref = inner.view.button(ids!(collapsible_button.expand_collapse_button));
+            button_ref.set_text(cx, &format!("▼ Show {} more links", inner.hidden_links_count));
+            inner.view.view(ids!(collapsible_button)).set_visible(cx, true);
         }
     }
 
@@ -375,15 +321,15 @@ impl LinkPreviewRef {
     where
         F: FnOnce(&mut Cx, &TextOrImageRef, Option<Box<ImageInfo>>, MediaSource, &str, &mut MediaCache) -> bool,
     {
-        let view_ref = widget_ref_from_live_ptr(cx, self.item_template()).as_view();
+        let view_ref = WidgetRef::new_from_ptr(cx, self.item_template()).as_view();
         let mut fully_drawn = true;
         // Set title and URL
-        let title_link = view_ref.link_label(cx, ids!(content_view.title_label));
+        let title_link = view_ref.link_label(ids!(content_view.title_label));
         title_link.set_text(cx, link.as_str());
         if let Some(mut title_link) = title_link.borrow_mut() {
             title_link.url = link.to_string();
         }
-        let text_or_image_ref = view_ref.text_or_image(cx, ids!(image));
+        let text_or_image_ref = view_ref.text_or_image(ids!(image));
         text_or_image_ref.show_default_image(cx);
         let link_preview_data = match link_preview_cache_entry {
             LinkPreviewCacheEntry::LoadedLinkPreview(link_preview_data) => link_preview_data,
@@ -402,8 +348,8 @@ impl LinkPreviewRef {
         // Set site name
         if let Some(site_name) = &link_preview_data.site_name {
             view_ref
-                .view(cx, ids!(content_view))
-                .label(cx, ids!(site_name_label))
+                .view(ids!(content_view))
+                .label(ids!(site_name_label))
                 .set_text(cx, site_name);
         }
 
@@ -417,8 +363,8 @@ impl LinkPreviewRef {
                 description
             };
             view_ref
-                .view(cx, ids!(content_view))
-                .label(cx, ids!(description_label))
+                .view(ids!(content_view))
+                .label(ids!(description_label))
                 .set_text(cx, &truncated_description);
         }
 
@@ -429,7 +375,7 @@ impl LinkPreviewRef {
             image_info.size = link_preview_data.image_size;
             let image_info_source = Some(Box::new(image_info));
             let owned_mxc_uri = OwnedMxcUri::from(image.clone());
-            let text_or_image_ref = view_ref.text_or_image(cx, ids!(image));
+            let text_or_image_ref = view_ref.text_or_image(ids!(image));
             let original_source = MediaSource::Plain(owned_mxc_uri);
             // Calls the closure with the image populate function
             fully_drawn = image_populate_fn(
@@ -501,7 +447,7 @@ impl LinkPreviewRef {
         }
         if views.len() > MAX_LINK_PREVIEWS_BY_EXPAND {
             let hidden_count = views.len() - MAX_LINK_PREVIEWS_BY_EXPAND;
-            self.show_collapsible_buttons(cx, hidden_count);
+            self.show_collapsible_button(cx, hidden_count);
         }
         self.set_children(views);
         fully_drawn_count == accepted_link_count
@@ -688,7 +634,7 @@ fn insert_into_cache(
             if let LinkPreviewError::RateLimited = error_type {
                 LinkPreviewCacheEntry::Requested
             } else {
-                warning!("Failed to fetch link preview data for {url}: {e:?}");
+                error!("Failed to fetch link preview data for {url}: {e:?}");
                 LinkPreviewCacheEntry::Failed(error_type)
             }
         }

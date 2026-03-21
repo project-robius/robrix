@@ -11,33 +11,35 @@ use chrono::{DateTime, Local};
 use makepad_widgets::*;
 use matrix_sdk_ui::timeline::EventTimelineItem;
 
-use crate::utils::unix_time_millis_to_datetime;
+use crate::{shared::callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, utils::unix_time_millis_to_datetime};
 
-script_mod! {
-    use mod.prelude.widgets.*
-    use mod.widgets.*
+live_design! {
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
+    use crate::shared::styles::*;
 
-    mod.widgets.EDITED_INDICATOR_FONT_SIZE = 9.5
-    mod.widgets.EDITED_INDICATOR_FONT_COLOR = #666666
+    pub EDITED_INDICATOR_FONT_SIZE  = 9.5
+    pub EDITED_INDICATOR_FONT_COLOR = #666666
 
-    mod.widgets.EditedIndicator = #(EditedIndicator::register_widget(vm)) {
+    pub EditedIndicator = {{EditedIndicator}} {
         visible: false, // default to hidden
         width: Fit, height: Fit
         flow: Right,
         padding: 0,
-        margin: Inset{ top: 5 }
+        margin: { top: 5 }
 
         // TODO: re-enable this once we have implemented the edit history modal
-        // cursor: MouseCursor.Hand,
+        // cursor: Hand,
 
-        edit_html := Html {
+        edit_html = <Html> {
             width: Fit, height: Fit
             flow: Right, // do not wrap
             padding: 0,
             margin: 0,
 
-            font_size: (mod.widgets.EDITED_INDICATOR_FONT_SIZE),
+            font_size: (EDITED_INDICATOR_FONT_SIZE),
             font_color: (COLOR_ROBRIX_PURPLE),
             body: "(<u>edited</u>)",
         }
@@ -45,7 +47,7 @@ script_mod! {
 }
 
 /// A interactive label that indicates a message has been edited.
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Live, LiveHook, Widget)]
 pub struct EditedIndicator {
     #[deref] view: View,
     #[rust] latest_edit_ts: Option<DateTime<Local>>,
@@ -65,7 +67,7 @@ impl Widget for EditedIndicator {
             //     false
             // },
             Hit::FingerHoverOut(_) => {
-                cx.widget_action(self.widget_uid(),  TooltipAction::HoverOut);
+                cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
                 false
             }
             _ => false,
@@ -79,7 +81,8 @@ impl Widget for EditedIndicator {
                 "Last edit time unknown".to_string()
             };
             cx.widget_action(
-                self.widget_uid(), 
+                self.widget_uid(),
+                &scope.path,
                 TooltipAction::HoverIn {
                     text,
                     widget_rect: area.rect(cx),
@@ -122,11 +125,10 @@ impl EditedIndicatorRef {
 
 
 /// Actions emitted by an `EditedIndicator` widget.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, DefaultNone)]
 pub enum EditedIndicatorAction {
     /// The indicator was clicked, and thus we should open
     /// a modal/dialog showing the message's full edit history.
     ShowEditHistory,
-    #[default]
     None,
 }

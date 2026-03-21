@@ -1,23 +1,24 @@
 use makepad_widgets::*;
 
-script_mod! {
-    use mod.prelude.widgets.*
-    use mod.widgets.*
+live_design! {
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    mod.widgets.BouncingDots = #(BouncingDots::register_widget(vm)) {
+    pub BouncingDots = {{BouncingDots}} {
         width: 24,
         height: 12,
         flow: Down,
 
         show_bg: true,
-        draw_bg +: {
-            color: uniform(#x000),
-            anim_time: uniform(0.0),
-            freq: uniform(0.9),  // Animation frequency
-            phase_offset: uniform(5.0), // Phase difference
-            dot_radius: uniform(1.5), // Dot radius
-            pixel: fn() {
-                let sdf = Sdf2d.viewport(self.pos * self.rect_size);
+        draw_bg: {
+            color: #x000,
+            uniform anim_time: 0.0,
+            uniform freq: 0.9,  // Animation frequency
+            uniform phase_offset: 5.0, // Phase difference
+            uniform dot_radius: 1.5, // Dot radius
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 let amplitude = self.rect_size.y * 0.21;
                 let center_y = self.rect_size.y * 0.5;
                 // Create three circle SDFs
@@ -43,21 +44,19 @@ script_mod! {
             }
         }
 
-        animator: Animator {
-            dots: {
-                default: @off
-                off: AnimatorState{
-                    redraw: true,
+        animator: {
+            dots = {
+                default: off,
+                off = {
                     from: {all: Forward {duration: 0.0}}
                     apply: {
                         draw_bg: {anim_time: 0.0}
                     }
                 }
-                on: AnimatorState{
-                    redraw: true,
+                on = {
                     from: {all: Loop {duration: 1.0, end: 1.0}}
                     apply: {
-                        draw_bg: {anim_time: 1.0}
+                        draw_bg: {anim_time: [{time: 0.0, value: 0.0}, {time: 1.0, value: 1.0}]}
                     }
                 }
             }
@@ -66,17 +65,14 @@ script_mod! {
     }
 }
 
-#[derive(Script, ScriptHook, Widget, Animator)]
+#[derive(Live, LiveHook, Widget)]
 pub struct BouncingDots {
-    #[source] source: ScriptObjectRef,
     #[deref] view: View,
-    #[apply_default] animator: Animator,
+    #[animator] animator: Animator,
 }
 impl Widget for BouncingDots {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if self.animator_handle_event(cx, event).must_redraw() {
-            self.redraw(cx);
-        }
+        self.animator_handle_event(cx, event);
         self.view.handle_event(cx, event, scope);
     }
 

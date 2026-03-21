@@ -8,34 +8,35 @@
 use makepad_widgets::*;
 use crate::utils::RoomNameId;
 
-script_mod! {
-    use mod.prelude.widgets.*
-    use mod.widgets.*
+live_design! {
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
+    use crate::shared::styles::*;
 
-    mod.widgets.RestoreStatusView = #(RestoreStatusView::register_widget(vm)) {
-
+    pub RestoreStatusView = {{RestoreStatusView}} {
         width: Fill, height: Fit,
         flow: Down,
-        align: Align{x: 0.5, y: 0.5},
+        align: {x: 0.5, y: 0.5},
         padding: 20,
 
-        restore_status_spinner := LoadingSpinner {
+        restore_status_spinner = <LoadingSpinner> {
             width: 50,
             height: 50,
             visible: true,
-            draw_bg +: {
+            draw_bg: {
                 color: (COLOR_ACTIVE_PRIMARY)
-                border_size: 3.0
+                border_size: 3.0,
             }
         }
 
-        restore_status_label := Label {
+        restore_status_label = <Label> {
             width: Fill, height: Fit,
-            align: Align{x: 0.5, y: 0.0},
-            padding: Inset{left: 5.0, right: 0.0}
-            margin: Inset{top: 10.0},
-            flow: Flow.Right{wrap: true},
-            draw_text +: {
+            align: {x: 0.5, y: 0.0},
+            padding: {left: 5.0, right: 0.0}
+            margin: {top: 10.0},
+            flow: RightWrap,
+            draw_text: {
                 color: (TYPING_NOTICE_TEXT_COLOR),
             }
         }
@@ -43,7 +44,7 @@ script_mod! {
 }
 
 /// A view that displays a spinner and a label to indicate that a restore operation is in progress for a room.
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Live, LiveHook, Widget)]
 pub struct RestoreStatusView {
     #[deref] view: View,
     #[live(true)] visible: bool,
@@ -74,7 +75,7 @@ impl RestoreStatusViewRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.visible = visible;
             if !visible {
-                inner.label(cx, ids!(restore_status_label))
+                inner.label(ids!(restore_status_label))
                     .set_text(cx, "");
             }
         }
@@ -98,8 +99,8 @@ impl RestoreStatusViewRef {
         room_name: &RoomNameId,
     ) {
         let Some(inner) = self.borrow() else { return };
-        let restore_status_spinner = inner.view.view(cx, ids!(restore_status_spinner));
-        let restore_status_label = inner.view.label(cx, ids!(restore_status_label));
+        let restore_status_spinner = inner.view.view(ids!(restore_status_spinner));
+        let restore_status_label = inner.view.label(ids!(restore_status_label));
         if all_rooms_loaded {
             restore_status_spinner.set_visible(cx, false);
             restore_status_label.set_text(

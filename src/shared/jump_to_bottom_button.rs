@@ -1,78 +1,69 @@
 use makepad_widgets::*;
+use crate::shared::callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition};
 
 const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
 
-script_mod! {
-    use mod.prelude.widgets.*
-    use mod.widgets.*
+live_design! {
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
+    use crate::shared::styles::*;
+    use crate::shared::icon_button::*;
 
-    mod.widgets.ICO_JUMP_TO_BOTTOM = crate_resource("self://resources/icon_jump_to_bottom.svg")
+    ICO_JUMP_TO_BOTTOM = dep("crate://self/resources/icon_jump_to_bottom.svg")
 
     // A jump to bottom button that appears when the timeline is not at the bottom.
-    mod.widgets.JumpToBottomButton = #(JumpToBottomButton::register_widget(vm)) {
+    pub JumpToBottomButton = {{JumpToBottomButton}} {
         width: Fill,
         height: Fill,
         flow: Overlay,
-        align: Align{x: 1.0, y: 1.0},
+        align: {x: 1.0, y: 1.0},
         visible: false,
-        View {
+        <View> {
             width: 65, height: 75,
-            align: Align{x: 0.5, y: 1.0},
+            align: {x: 0.5, y: 1.0},
             flow: Overlay,
-            inner_button := RobrixIconButton {
+            jump_to_bottom_button = <IconButton> {
                 spacing: 0,
                 width: 50, height: 50,
-                align: Align{x: 0.5, y: 0.5},
-                margin: Inset{bottom: 8},
-                draw_icon +: {
-                    svg: (mod.widgets.ICO_JUMP_TO_BOTTOM),
-                    color: #888,
-                    // TODO: once Makepad button support draw_icon hover/down animated states, reenable this.
-                    // color: #BBB,
-                    // color_hover: #000,
-                    // color_down: #000,
-                    // get_color: fn() -> vec4 {
-                    //     return mix(self.color, self.color_hover, self.hover)
-                    // }
-                },
-                icon_walk: Walk{width: 20, height: 20}
+                margin: {bottom: 8},
+                draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
+                icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} }
                 // draw a circular background for the button
-                draw_bg +: {
-                    background_color: #edededce,
-                    background_color_hover: #d0d0d0ce,
-                    pixel: fn() {
-                        let sdf = Sdf2d.viewport(self.pos * self.rect_size);
+                draw_bg: {
+                    instance background_color: #edededce,
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                         let c = self.rect_size * 0.5;
                         sdf.circle(c.x, c.x, c.x);
-                        sdf.fill_keep(mix(self.background_color, self.background_color_hover, self.hover));
+                        sdf.fill_keep(self.background_color);
                         return sdf.result
                     }
                 }
                 enable_long_press: true,
             }
 
-            // TODO: replace the below with the UnreadBadge widget
-
             // A badge overlay on the jump to bottom button showing unread messages
-            unread_message_badge := View {
-                visible: false,
+            unread_message_badge = <View> {
                 width: 25, height: 20,
-                align: Align { x: 0.5, y: 0.5 }
+                align: {
+                    x: 0.5,
+                    y: 0.5
+                }
+                visible: false,
                 flow: Overlay,
-
-                green_rounded_label := RoundedView {
+                green_rounded_label = <View> {
                     width: Fill,
                     height: Fill,
                     show_bg: true,
-                    draw_bg +: {
-                        color: instance(COLOR_UNREAD_BADGE_MESSAGES)
-                        border_radius: uniform(4.0)
+                    draw_bg: {
+                        color: (COLOR_UNREAD_BADGE_MESSAGES)
+                        instance border_radius: 4.0
                         // Adjust this border_size to larger value to make oval smaller 
-                        border_size: uniform(2.0)
-
-                        pixel: fn() {
-                            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                        instance border_size: 2.0
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size)
                             sdf.box(
                                 self.border_size,
                                 self.border_size,
@@ -86,14 +77,14 @@ script_mod! {
                     }
                 }
                 // Label that displays the unread message count
-                unread_messages_count := Label {
+                unread_messages_count = <Label> {
                     width: Fit,
                     height: Fit,
                     flow: Right, // do not wrap
                     text: "",
-                    draw_text +: {
+                    draw_text: {
                         color: #ffffff,
-                        text_style: theme.font_regular {font_size: 8.0},
+                        text_style: {font_size: 8.0},
                     }
                 }
             }
@@ -103,19 +94,19 @@ script_mod! {
 }
 
 
-#[derive(ScriptHook, Script, Widget)]
+#[derive(LiveHook, Live, Widget)]
 pub struct JumpToBottomButton {
-    #[source] source: ScriptObjectRef,
     #[deref] view: View,
 }
 
 impl Widget for JumpToBottomButton {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let button_area = self.button(cx, ids!(inner_button)).area();
+        let button_area = self.button(ids!(jump_to_bottom_button)).area();
         match event.hits(cx, button_area) {
             Hit::FingerHoverIn(_) | Hit::FingerLongPress(_) => {
                 cx.widget_action(
-                    self.widget_uid(), 
+                    self.widget_uid(),
+                    &scope.path,
                     TooltipAction::HoverIn {
                         text: "Jump to bottom".to_string(),
                         widget_rect: button_area.rect(cx),
@@ -128,7 +119,8 @@ impl Widget for JumpToBottomButton {
             }
             Hit::FingerHoverOut(_) => {
                 cx.widget_action(
-                    self.widget_uid(), 
+                    self.widget_uid(),
+                    &scope.path,
                     TooltipAction::HoverOut,
                 );
             }
@@ -155,7 +147,7 @@ impl JumpToBottomButton {
     pub fn update_visibility(&mut self, cx: &mut Cx, is_at_bottom: bool) {
         if is_at_bottom {
             self.visible = false;
-            self.view(cx, ids!(unread_message_badge)).set_visible(cx, false);
+            self.view(ids!(unread_message_badge)).set_visible(cx, false);
         } else {
             self.visible = true;
         }
@@ -169,17 +161,17 @@ impl JumpToBottomButton {
         match count {
             UnreadMessageCount::Unknown => {
                 self.visible = true;
-                self.view(cx, ids!(unread_message_badge)).set_visible(cx, true);
-                self.label(cx, ids!(unread_messages_count)).set_text(cx, "");
+                self.view(ids!(unread_message_badge)).set_visible(cx, true);
+                self.label(ids!(unread_messages_count)).set_text(cx, "");
             }
             UnreadMessageCount::Known(0) => {
                 self.visible = false;
-                self.view(cx, ids!(unread_message_badge)).set_visible(cx, false);
-                self.label(cx, ids!(unread_messages_count)).set_text(cx, "");
+                self.view(ids!(unread_message_badge)).set_visible(cx, false);
+                self.label(ids!(unread_messages_count)).set_text(cx, "");
             }
             UnreadMessageCount::Known(unread_message_count) => {
                 self.visible = true;
-                self.view(cx, ids!(unread_message_badge)).set_visible(cx, true);
+                self.view(ids!(unread_message_badge)).set_visible(cx, true);
                 let (border_size, plus_sign) = if unread_message_count > 99 {
                     (0.0, "+")
                 } else if unread_message_count > 9 {
@@ -187,16 +179,18 @@ impl JumpToBottomButton {
                 } else {
                     (2.0, "")
                 };
-                self.label(cx, ids!(unread_messages_count)).set_text(
+                self.label(ids!(unread_messages_count)).set_text(
                     cx,
                     &format!("{}{plus_sign}", std::cmp::min(unread_message_count, 99))
                 );
-                let mut badge_view = self.view(cx, ids!(unread_message_badge.green_rounded_label));
-                script_apply_eval!(cx, badge_view, {
-                    draw_bg.border_size: #(border_size),
+                self.view(ids!(unread_message_badge.green_rounded_label)).apply_over(cx, live!{
+                    draw_bg: {
+                        border_size: (border_size),
+                    }
                 });
             }
         }
+
     }
 
     /// Updates the visibility of the jump to bottom button and the unread message badge
@@ -217,7 +211,7 @@ impl JumpToBottomButton {
         //       to check if the portallist has been scrolled than to just directly
         //       query the portallist's `at_end` state and set the visibility accordingly.
 
-        if self.button(cx, ids!(inner_button)).clicked(actions) {
+        if self.button(ids!(jump_to_bottom_button)).clicked(actions) {
             portal_list.smooth_scroll_to_end(
                 cx,
                 SCROLL_TO_BOTTOM_SPEED,

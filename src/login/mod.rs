@@ -1,9 +1,9 @@
-use makepad_widgets::ScriptVm;
+use makepad_widgets::*;
 
 pub mod login_screen;
 pub mod login_status_modal;
 
-pub fn script_mod(vm: &mut ScriptVm) {
-    login_status_modal::script_mod(vm);
-    login_screen::script_mod(vm);
+pub fn live_design(cx: &mut Cx) {
+    login_screen::live_design(cx);
+    login_status_modal::live_design(cx);
 }

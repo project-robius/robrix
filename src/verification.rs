@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use futures_util::StreamExt;
-use makepad_widgets::{log, Cx};
+use makepad_widgets::{log, ActionDefaultRef, Cx, DefaultNone};
 use matrix_sdk_base::crypto::{AcceptedProtocols, CancelInfo, EmojiShortAuthString};
 use matrix_sdk::{
     encryption::{
@@ -14,10 +14,9 @@ use matrix_sdk::{
 };
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, DefaultNone)]
 pub enum VerificationStateAction {
     Update(VerificationState),
-    #[default]
     None,
 }
 
@@ -253,7 +252,7 @@ async fn request_verification_handler(client: Client, request: VerificationReque
 
 
 /// Actions related to verification that should be handled by the top-level app context.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, DefaultNone)]
 pub enum VerificationAction {
     /// Informs the main UI thread that a verification request has been received.
     RequestReceived(VerificationRequestActionState),
@@ -289,7 +288,6 @@ pub enum VerificationAction {
     SasConfirmationError(Arc<matrix_sdk::Error>),
     /// Informs the main UI thread that a verification request has been fully completed.
     RequestCompleted,
-    #[default]
     None,
 }
 

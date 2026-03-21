@@ -1,44 +1,55 @@
 use makepad_widgets::*;
 
-script_mod! {
-    use mod.prelude.widgets.*
-    use mod.widgets.*
+live_design! {
+    use link::theme::*;
+    use link::widgets::*;
+    use link::shaders::*;
 
+    use crate::shared::styles::*;
 
-    mod.widgets.TitleLabel = Label {
-
-
+    pub TitleLabel = <Label> {
         width: Fill, height: Fit
-        margin: Inset{top: 5},
-        flow: Flow.Right{wrap: true},
-        draw_text +: {
-            text_style: TITLE_TEXT {font_size: 15},
+        margin: {top: 5},
+        flow: RightWrap,
+        draw_text: {
+            text_style: <TITLE_TEXT>{font_size: 15},
             color: #000
+            wrap: Word
         }
     }
 
-    mod.widgets.SubsectionLabel = Label {
-
+    pub SubsectionLabel = <Label> {
         width: Fill, height: Fit
-        margin: Inset{top: 5},
+        margin: {top: 5},
         flow: Right,
-        draw_text +: {
+        draw_text: {
             color: (COLOR_TEXT),
-            text_style: theme.font_bold { font_size: 13 },
+            text_style: <THEME_FONT_BOLD>{ font_size: 13 },
         }
     }
 
-    mod.widgets.LineH = RoundedView {
+    // Copied from Moly
+    pub FadeView = <CachedView> {
+        draw_bg: {
+            instance opacity: 1.0
+
+            fn pixel(self) -> vec4 {
+                let color = sample2d_rt(self.image, self.pos * self.scale + self.shift);
+                return Pal::premul(vec4(color.xyz, color.w * self.opacity))
+            }
+        }
+    }
+
+    pub LineH = <RoundedView> {
         width: Fill,
         height: 2.0,
         margin: 0.0,
         padding: 0.0, spacing: 0.0
         show_bg: true
-        draw_bg.color: (COLOR_DIVIDER_DARK)
+        draw_bg: {color: (COLOR_DIVIDER_DARK)}
     }
 
-    mod.widgets.Filler = View { width: Fill, height: Fill }
-
-    mod.widgets.FillerX = View { width: Fill, height: Fit }
-    mod.widgets.FillerY = View { width: Fit,  height: Fill }
+    pub Filler  = <View> { width: Fill, height: Fill }
+    pub FillerX = <View> { width: Fill, height: Fit }
+    pub FillerY = <View> { width: Fit,  height: Fill }
 }

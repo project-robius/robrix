@@ -2,85 +2,109 @@
 use makepad_widgets::*;
 use tsp_sdk::AsyncSecureStore;
 
-use crate::{sliding_sync::current_user_id, tsp::{submit_tsp_request, TspRequest, TspVerificationDetails}};
+use crate::{shared::styles::*, sliding_sync::current_user_id, tsp::{submit_tsp_request, TspRequest, TspVerificationDetails}};
 
-script_mod! {
+live_design! {
     link tsp_enabled
 
-    use mod.prelude.widgets.*
-    use mod.widgets.*
+    use link::theme::*;
+    use link::widgets::*;
 
+    use crate::shared::styles::*;
+    use crate::shared::icon_button::RobrixIconButton;
 
-    mod.widgets.TspVerificationModal = #(TspVerificationModal::register_widget(vm)) {
+    pub TspVerificationModal = {{TspVerificationModal}} {
         width: Fit
         height: Fit
 
-        RoundedView {
+        <RoundedView> {
             flow: Down
             width: 400
             height: Fit
-            padding: Inset{top: 25, right: 30 bottom: 30 left: 45}
+            padding: {top: 25, right: 30 bottom: 30 left: 45}
             spacing: 10
 
             show_bg: true
-            draw_bg +: {
-                color: (COLOR_PRIMARY)
+            draw_bg: {
+                color: #fff
                 border_radius: 3.0
             }
 
-            title := View {
+            title = <View> {
                 width: Fill,
                 height: Fit,
                 flow: Right
-                padding: Inset{top: 0, bottom: 40}
-                align: Align{x: 0.5, y: 0.0}
+                padding: {top: 0, bottom: 40}
+                align: {x: 0.5, y: 0.0}
 
-                Label {
+                <Label> {
                     text: "TSP Verification Request"
-                    draw_text +: {
-                        text_style: TITLE_TEXT {font_size: 13},
+                    draw_text: {
+                        text_style: <TITLE_TEXT>{font_size: 13},
                         color: #000
                     }
                 }
             }
 
-            body := View {
+            body = <View> {
                 width: Fill,
                 height: Fit,
                 flow: Down,
                 spacing: 40,
 
-                prompt := Label {
+                prompt = <Label> {
                     width: Fill
-                    flow: Flow.Right{wrap: true}
-                    draw_text +: {
-                        text_style: REGULAR_TEXT {
+                    draw_text: {
+                        text_style: <REGULAR_TEXT>{
                             font_size: 11.5,
                         },
                         color: #000
+                        wrap: Word
                     }
                 }
 
-                View {
+                <View> {
                     width: Fill, height: Fit
                     flow: Right,
-                    align: Align{x: 1.0, y: 0.5}
+                    align: {x: 1.0, y: 0.5}
                     spacing: 20
 
-                    cancel_button := RobrixNegativeIconButton {
-                        align: Align{x: 0.5, y: 0.5}
+                    cancel_button = <RobrixIconButton> {
+                        align: {x: 0.5, y: 0.5}
                         padding: 15,
-                        draw_icon.svg: (ICON_FORBIDDEN)
-                        icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                        draw_icon: {
+                            svg_file: (ICON_FORBIDDEN)
+                            color: (COLOR_FG_DANGER_RED),
+                        }
+                        icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+
+                        draw_bg: {
+                            border_color: (COLOR_FG_DANGER_RED),
+                            color: (COLOR_BG_DANGER_RED)
+                        }
                         text: "Ignore Request"
+                        draw_text:{
+                            color: (COLOR_FG_DANGER_RED),
+                        }
                     }
 
-                    accept_button := RobrixPositiveIconButton {
-                        align: Align{x: 0.5, y: 0.5}
+                    accept_button = <RobrixIconButton> {
+                        align: {x: 0.5, y: 0.5}
                         padding: 15,
-                        draw_icon.svg: (ICON_CHECKMARK)
-                        icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                        draw_icon: {
+                            svg_file: (ICON_CHECKMARK)
+                            color: (COLOR_FG_ACCEPT_GREEN),
+                        }
+                        icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+
+                        draw_bg: {
+                            border_color: (COLOR_FG_ACCEPT_GREEN),
+                            color: (COLOR_BG_ACCEPT_GREEN)
+                        }
                         text: "Accept Request"
+                        draw_text:{
+                            color: (COLOR_FG_ACCEPT_GREEN),
+                        }
                     }
                 }
             }
@@ -88,7 +112,7 @@ script_mod! {
     }
 }
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Live, LiveHook, Widget)]
 pub struct TspVerificationModal {
     #[deref] view: View,
     #[rust] state: TspVerificationModalState,
@@ -145,8 +169,8 @@ impl Widget for TspVerificationModal {
 
 impl WidgetMatchEvent for TspVerificationModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let mut accept_button = self.button(cx, ids!(accept_button));
-        let cancel_button = self.button(cx, ids!(cancel_button));
+        let accept_button = self.button(ids!(accept_button));
+        let cancel_button = self.button(ids!(cancel_button));
 
         let cancel_button_clicked = cancel_button.clicked(actions);
         let modal_dismissed = actions
@@ -175,7 +199,7 @@ impl WidgetMatchEvent for TspVerificationModal {
             return;
         }
 
-        let prompt_label = self.view.label(cx, ids!(prompt));
+        let prompt_label = self.view.label(ids!(prompt));
         if accept_button.clicked(actions) {
             let current_state = std::mem::take(&mut self.state);
             let new_state: TspVerificationModalState;
@@ -211,18 +235,18 @@ impl WidgetMatchEvent for TspVerificationModal {
                             accepted: false,
                         });
                         cancel_button.set_visible(cx, false);
-                        script_apply_eval!(cx, accept_button, {
+                        accept_button.apply_over(cx, live!(
                             text: "Okay",
-                            draw_bg +: {
-                                color: mod.widgets.COLOR_ACTIVE_PRIMARY,
+                            draw_bg: {
+                                color: (COLOR_ACTIVE_PRIMARY),
                             },
-                            draw_icon +: {
-                                color: mod.widgets.COLOR_PRIMARY,
+                            draw_icon: {
+                                color: (COLOR_PRIMARY),
                             }
-                            draw_text +: {
-                                color: mod.widgets.COLOR_PRIMARY,
+                            draw_text: {
+                                color: (COLOR_PRIMARY),
                             },
-                        });
+                        ));
                         new_state = TspVerificationModalState::RequestDeclined;
                     }
                     else {
@@ -268,28 +292,28 @@ impl WidgetMatchEvent for TspVerificationModal {
                 {
                     match result {
                         Ok(()) => {
-                            self.label(cx, ids!(prompt)).set_text(cx, "The TSP verification process has completed successfully.\n\nYou may now close this.");
+                            self.label(ids!(prompt)).set_text(cx, "The TSP verification process has completed successfully.\n\nYou may now close this.");
                             self.state = TspVerificationModalState::RequestVerified;
                         }
                         Err(e) => {
-                            self.label(cx, ids!(prompt)).set_text(cx, &format!("Error: failed to complete the TSP verification process:\n\n{e}"));
+                            self.label(ids!(prompt)).set_text(cx, &format!("Error: failed to complete the TSP verification process:\n\n{e}"));
                             self.state = TspVerificationModalState::RequestDeclined;
                         }
                     }
                     cancel_button.set_visible(cx, false);
-                    script_apply_eval!(cx, accept_button, {
+                    accept_button.apply_over(cx, live!(
                         enabled: true,
                         text: "Okay",
-                        draw_bg +: {
-                            color: mod.widgets.COLOR_ACTIVE_PRIMARY,
+                        draw_bg: {
+                            color: (COLOR_ACTIVE_PRIMARY),
                         },
-                        draw_icon +: {
-                            color: mod.widgets.COLOR_PRIMARY,
+                        draw_icon: {
+                            color: (COLOR_PRIMARY),
                         }
-                        draw_text +: {
-                            color: mod.widgets.COLOR_PRIMARY,
+                        draw_text: {
+                            color: (COLOR_PRIMARY),
                         }
-                    });
+                    ));
                     self.redraw(cx);
                 }
                 _ => {}
@@ -315,10 +339,10 @@ impl TspVerificationModal {
             details.responding_vid,
             details.responding_user_id,
         );
-        self.label(cx, ids!(prompt)).set_text(cx, &prompt_text);
+        self.label(ids!(prompt)).set_text(cx, &prompt_text);
 
-        let accept_button = self.button(cx, ids!(accept_button));
-        let cancel_button = self.button(cx, ids!(cancel_button));
+        let accept_button = self.button(ids!(accept_button));
+        let cancel_button = self.button(ids!(cancel_button));
         accept_button.set_text(cx, "Accept Request");
         accept_button.set_enabled(cx, true);
         accept_button.set_visible(cx, true);

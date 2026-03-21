@@ -4,83 +4,100 @@ use matrix_sdk::ruma::OwnedEventId;
 use crate::sliding_sync::TimelineRequestSender;
 
 
-script_mod! {
-    use mod.prelude.widgets.*
-    use mod.widgets.*
+live_design! {
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
+    use crate::shared::helpers::*;
+    use crate::shared::styles::*;
+    use crate::shared::avatar::*;
+    use crate::shared::icon_button::*;
 
-    mod.widgets.LoadingPane = set_type_default() do #(LoadingPane::register_widget(vm)) {
-        ..mod.widgets.SolidView
-
+    pub LoadingPane = {{LoadingPane}} {
         visible: false,
         flow: Overlay,
         width: Fill,
         height: Fill,
-        align: Align{x: 0.5, y: 0.5}
+        align: {x: 0.5, y: 0.5}
 
         show_bg: true
-        draw_bg +: {
-            color: #000000b2
+        draw_bg: {
+            fn pixel(self) -> vec4 {
+                return vec4(0., 0., 0., 0.7)
+            }
         }
 
-        main_content := RoundedView {
+        main_content = <RoundedView> {
             flow: Down
             width: 400
             height: Fit
-            padding: Inset{top: 25, right: 30 bottom: 30 left: 45}
+            padding: {top: 25, right: 30 bottom: 30 left: 45}
             spacing: 10
 
             show_bg: true
-            draw_bg +: {
-                color: (COLOR_PRIMARY)
-                border_radius: 4.0
+            draw_bg: {
+                color: #fff
+                border_radius: 3.0
             }
 
-            title_view := View {
+            title_view = <View> {
                 width: Fill,
                 height: Fit,
                 flow: Right
-                padding: Inset{top: 0, bottom: 40}
-                align: Align{x: 0.5, y: 0.0}
+                padding: {top: 0, bottom: 40}
+                align: {x: 0.5, y: 0.0}
 
-                title := Label {
+                title = <Label> {
                     text: "Loading content..."
-                    draw_text +: {
-                        text_style: TITLE_TEXT {font_size: 13},
+                    draw_text: {
+                        text_style: <TITLE_TEXT>{font_size: 13},
                         color: #000
                     }
                 }
             }
 
-            body := View {
+            body = <View> {
                 width: Fill,
                 height: Fit, // TODO: ideally this would be a range, maybe like 300-500 px
                 flow: Down,
                 spacing: 40,
 
-                status := Label {
+                status = <Label> {
                     width: Fill,
                     height: Fit,
-                    flow: Flow.Right{wrap: true},
-                    draw_text +: {
-                        text_style: REGULAR_TEXT {
+                    draw_text: {
+                        text_style: <REGULAR_TEXT>{
                             font_size: 11.5,
                         },
                         color: #000
+                        wrap: Word
                     }
                 }
 
-                View {
+                <View> {
                     width: Fill, height: Fit
                     flow: Right,
-                    align: Align{x: 1.0, y: 0.5}
+                    align: {x: 1.0, y: 0.5}
                     spacing: 20
 
-                    cancel_button := RobrixNegativeIconButton {
-                        align: Align{x: 0.5, y: 0.5}
+                    cancel_button = <RobrixIconButton> {
+                        align: {x: 0.5, y: 0.5}
                         padding: 15
-                        icon_walk: Walk{width: 0, height: 0 }
+                        // draw_icon: {
+                        //     svg_file: (ICON_FORBIDDEN)
+                        //     color: (COLOR_FG_DANGER_RED),
+                        // }
+                        icon_walk: {width: 0, height: 0 }
+
+                        draw_bg: {
+                            border_color: (COLOR_FG_DANGER_RED),
+                            color: (COLOR_BG_DANGER_RED)
+                        }
                         text: "Cancel"
+                        draw_text:{
+                            color: (COLOR_FG_DANGER_RED),
+                        }
                     }
                 }
             }
@@ -91,7 +108,7 @@ script_mod! {
 
 
 /// The state of a LoadingPane: the possible tasks that it may be performing.
-#[derive(Clone, Default)]
+#[derive(Clone, DefaultNone)]
 pub enum LoadingPaneState {
     /// The room is being backwards paginated until the target event is reached.
     BackwardsPaginateUntilEvent {
@@ -106,12 +123,11 @@ pub enum LoadingPaneState {
     /// The loading pane is displaying an error message until the user closes it.
     Error(String),
     /// The LoadingPane is not doing anything and can be hidden.
-    #[default]
     None,
 }
 
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Live, LiveHook, Widget)]
 pub struct LoadingPane {
     #[deref] view: View,
     #[rust] state: LoadingPaneState,
@@ -158,7 +174,7 @@ impl Widget for LoadingPane {
         let close_pane = {
             matches!(
                 event,
-                Event::Actions(actions) if self.button(cx, ids!(cancel_button)).clicked(actions)
+                Event::Actions(actions) if self.button(ids!(cancel_button)).clicked(actions)
             )
             || event.back_pressed()
             || match event.hits_with_capture_overload(cx, area, true) {
@@ -169,7 +185,7 @@ impl Widget for LoadingPane {
                 }
                 Hit::FingerUp(fue) if fue.is_over => {
                     fue.mouse_button().is_some_and(|b| b.is_back())
-                    || !self.view(cx, ids!(main_content)).area().rect(cx).contains(fue.abs)
+                    || !self.view(ids!(main_content)).area().rect(cx).contains(fue.abs)
                 }
                 _ => false,
             }
@@ -208,7 +224,7 @@ impl LoadingPane {
     }
 
     pub fn set_state(&mut self, cx: &mut Cx, state: LoadingPaneState) {
-        let cancel_button = self.button(cx, ids!(cancel_button));
+        let cancel_button = self.button(ids!(cancel_button));
         match &state {
             LoadingPaneState::BackwardsPaginateUntilEvent {
                 target_event_id,
@@ -235,11 +251,11 @@ impl LoadingPane {
     }
 
     pub fn set_status(&mut self, cx: &mut Cx, status: &str) {
-        self.label(cx, ids!(status)).set_text(cx, status);
+        self.label(ids!(status)).set_text(cx, status);
     }
 
     pub fn set_title(&mut self, cx: &mut Cx, title: &str) {
-        self.label(cx, ids!(title)).set_text(cx, title);
+        self.label(ids!(title)).set_text(cx, title);
     }
 }
 

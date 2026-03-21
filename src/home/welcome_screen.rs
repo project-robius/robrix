@@ -1,52 +1,51 @@
 use makepad_widgets::*;
 
-script_mod! {
-    use mod.prelude.widgets.*
-    use mod.widgets.*
+live_design! {
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
+    use crate::shared::styles::*;
+    use crate::shared::html_or_plaintext::*;
 
-    mod.widgets.WELCOME_TEXT_COLOR = #x4
+    WELCOME_TEXT_COLOR: #x4
 
-    mod.widgets.WelcomeScreen = SolidView {
+    pub WelcomeScreen = <ScrollYView> {
         width: Fill, height: Fill
-        align: Align{x: 0.0, y: 0.5}
+        align: {x: 0.0, y: 0.5}
 
         show_bg: true,
-        draw_bg.color: (COLOR_PRIMARY)
-
-        // make this a ScrollYView
-        scroll_bars: mod.widgets.ScrollBars {
-            show_scroll_x: false show_scroll_y: true
-            scroll_bar_y.drag_scrolling: true
+        draw_bg: {
+            color: (COLOR_PRIMARY),
         }
 
-        welcome_message := RoundedView {
+        welcome_message = <RoundedView> {
             padding: 40.
             width: Fill, height: Fit
             flow: Down, spacing: 20
 
-            draw_bg.color: (COLOR_PRIMARY)
-
-            title := Label {
+            title = <Label> {
                 text: "Welcome to Robrix!",
-                draw_text +: {
-                    color: (mod.widgets.WELCOME_TEXT_COLOR),
-                    text_style: theme.font_bold {
+                draw_text: {
+                    color: (WELCOME_TEXT_COLOR),
+                    text_style: <THEME_FONT_BOLD> {
                         font_size: 22.0
                     }
                 }
             }
 
             // Using the HTML widget to taking advantage of embedding a link within text with proper vertical alignment
-            MessageHtml {
-                padding: Inset{top: 12, left: 0.}
+            <MessageHtml> {
+                padding: {top: 12, left: 0.}
                 font_size: 14.
-                font_color: (mod.widgets.WELCOME_TEXT_COLOR)
-                text_style_normal: theme.font_regular { font_size: 14.0 }
-                a: {
-                    padding: Inset{left: 8., right: 8., top: 4., bottom: 5.},
-                    // draw_text +: {
-                    //     text_style: theme.font_bold {top_drop: 1.2, font_size: 11. },
+                font_color: (WELCOME_TEXT_COLOR)
+                draw_normal: {
+                    color: (WELCOME_TEXT_COLOR)
+                }
+                a = {
+                    padding: {left: 8., right: 8., top: 4., bottom: 5.},
+                    // draw_text: {
+                    //     text_style: <THEME_FONT_BOLD> {top_drop: 1.2, font_size: 11. },
                     //     color: #f,
                     //     color_pressed: #f00,
                     //     color_hover: #0f0,

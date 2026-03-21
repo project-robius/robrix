@@ -6,68 +6,64 @@ use std::{collections::HashMap, sync::Arc};
 use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, utils::RoomNameId};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
 
-script_mod! {
-    use mod.prelude.widgets.*
-    use mod.widgets.*
+live_design! {
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
+    use crate::shared::styles::*;
+    use crate::home::light_themed_dock::*;
+    use crate::home::rooms_sidebar::RoomsSideBar;
+    use crate::home::welcome_screen::WelcomeScreen;
+    use crate::home::room_screen::RoomScreen;
+    use crate::home::invite_screen::InviteScreen;
+    use crate::home::space_lobby::SpaceLobbyScreen;
 
-    mod.widgets.MainDesktopUI = #(MainDesktopUI::register_widget(vm)) {
-        dock := mod.widgets.RobrixDock {
+    pub MainDesktopUI = {{MainDesktopUI}} {
+        dock = <Dock> {
             width: Fill,
             height: Fill,
             padding: 0,
             spacing: 0,
             // Align the dock with the RoomFilterInputBar. Not sure why we need this...
-            margin: Inset{left: 1.75}
-
-            tab_bar +: {
-                CloseableTab := mod.widgets.RobrixTab { closeable: true }
-                PermanentTab := mod.widgets.RobrixTab { closeable: false }
-            }
+            margin: {left: 1.75}
 
 
-            root := DockSplitter {
-                axis: SplitterAxis.Horizontal
-                align: SplitterAlign.FromA(300.0)
-                a: @rooms_sidebar_tabs
-                b: @main_tabs
+            root = Splitter {
+                axis: Horizontal,
+                align: FromA(300.0),
+                a: rooms_sidebar_tab,
+                b: main
             }
 
             // This is a "fixed" tab with no header that cannot be closed.
-            rooms_sidebar_tabs := DockTabs{
-                tabs: [@rooms_sidebar_tab]
-                selected: 0
-                hide_tab_bar: true
-            }
-
-            main_tabs := DockTabs{
-                tabs: [@home_tab]
-                selected: 0
-            }
-
-            rooms_sidebar_tab := DockTab{
+            rooms_sidebar_tab = Tab {
                 name: "" // show no tab header
-                kind: @rooms_sidebar // this template is defined below.
-                template: @PermanentTab
+                kind: rooms_sidebar // this template is defined below.
             }
 
-            home_tab := DockTab{
+            main = Tabs {
+                tabs: [home_tab],
+                selected: 0,
+            }
+
+            home_tab = Tab {
                 name: "Home"
-                kind: @welcome_screen
-                template: @PermanentTab
+                kind: welcome_screen
+                template: PermanentTab
             }
 
             // Below are the templates of widgets that can be created within dock tabs.
-            rooms_sidebar := mod.widgets.RoomsSideBar {}
-            welcome_screen := mod.widgets.WelcomeScreen {}
-            room_screen := mod.widgets.RoomScreen {}
-            invite_screen := mod.widgets.InviteScreen {}
-            space_lobby_screen := mod.widgets.SpaceLobbyScreen {}
+            rooms_sidebar = <RoomsSideBar> {}
+            welcome_screen = <WelcomeScreen> {}
+            room_screen = <RoomScreen> {}
+            invite_screen = <InviteScreen> {}
+            space_lobby_screen = <SpaceLobbyScreen> {}
         }
     }
 }
 
-#[derive(Script, Widget)]
+#[derive(Live, Widget)]
 pub struct MainDesktopUI {
     #[deref]
     view: View,
@@ -110,13 +106,12 @@ pub struct MainDesktopUI {
     drawn_previously: bool,
 }
 
-impl ScriptHook for MainDesktopUI {
-    fn on_after_new(&mut self, vm: &mut ScriptVm) {
-        vm.with_cx_mut(|cx| {
-            self.default_layout = self.save_dock_state(cx);
-        });
+impl LiveHook for MainDesktopUI {
+    fn after_new_from_doc(&mut self, _: &mut Cx) {
+        self.default_layout = self.save_dock_state();
     }
 }
+
 impl Widget for MainDesktopUI {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.widget_match_event(cx, event, scope); // invokes `WidgetMatchEvent` impl
@@ -124,7 +119,7 @@ impl Widget for MainDesktopUI {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if !self.drawn_previously && cx.has_global::<RoomsListRef>() {
+        if !self.drawn_previously {
             // When changing from Mobile to Desktop view mode, we need to restore the state
             // of this widget, which we get from the `AppState` passed down via `scope`.
             // This includes the currently selected space, which we get from the RoomsList widget.
@@ -146,7 +141,7 @@ impl MainDesktopUI {
             return;
         }
 
-        let dock = self.view.dock(cx, ids!(dock));
+        let dock = self.view.dock(ids!(dock));
 
         // If the room is already open, select (jump to) its existing tab
         let room_tab_id = room.tab_id();
@@ -222,7 +217,7 @@ impl MainDesktopUI {
 
     /// Closes a tab in the dock and focuses on the latest open room.
     fn close_tab(&mut self, cx: &mut Cx, tab_id: LiveId) {
-        let dock = self.view.dock(cx, ids!(dock));
+        let dock = self.view.dock(ids!(dock));
         if let Some(room_being_closed) = self.open_rooms.get(&tab_id) {
             self.room_order.retain(|sr| sr != room_being_closed);
 
@@ -255,7 +250,7 @@ impl MainDesktopUI {
 
     /// Closes all tabs
     pub fn close_all_tabs(&mut self, cx: &mut Cx) {
-        let dock = self.view.dock(cx, ids!(dock));
+        let dock = self.view.dock(ids!(dock));
         for tab_id in self.open_rooms.keys() {        
             dock.close_tab(cx, *tab_id);
         }
@@ -277,7 +272,7 @@ impl MainDesktopUI {
         _scope: &mut Scope,
         room_name_id: &RoomNameId,
     ) {
-        let dock = self.view.dock(cx, ids!(dock));
+        let dock = self.view.dock(ids!(dock));
         let Some((new_widget, true)) = dock.replace_tab(
             cx,
             LiveId::from_str(room_name_id.room_id().as_str()),
@@ -310,11 +305,11 @@ impl MainDesktopUI {
 
     /// Saves a copy of the current UI state of the dock into the given app state,
     /// properly accounting for which space is currently selected.
-    fn save_dock_state_to(&mut self, cx: &mut Cx, app_state: &mut AppState) {
+    fn save_dock_state_to(&mut self, app_state: &mut AppState) {
         if self.open_rooms.is_empty() {
             return;
         } 
-        let saved_dock_state = self.save_dock_state(cx);
+        let saved_dock_state = self.save_dock_state();
         if let Some(space_id) = self.selected_space.as_ref() {
             app_state.saved_dock_state_per_space.insert(
                 space_id.clone(),
@@ -326,8 +321,8 @@ impl MainDesktopUI {
     }
 
     /// An inner function that creates a `SavedDockState` from the current contents of this widget. 
-    fn save_dock_state(&self, cx: &mut Cx) -> SavedDockState {
-        let dock = self.view.dock(cx, ids!(dock));
+    fn save_dock_state(&self) -> SavedDockState {
+        let dock = self.view.dock(ids!(dock));
         SavedDockState {
             dock_items: dock.clone_state().unwrap_or_default(),
             open_rooms: self.open_rooms.clone(),
@@ -341,7 +336,7 @@ impl MainDesktopUI {
     /// If the saved state is empty (has no open rooms), we use the default dock layout
     /// defined in the DSL: one splitter with the RoomsList on the left and a Welcome tab on the right.
     fn load_dock_state_from(&mut self, cx: &mut Cx, app_state: &mut AppState) {
-        let dock = self.view.dock(cx, ids!(dock));
+        let dock = self.view.dock(ids!(dock));
         let to_restore_opt = if let Some(ss) = self.selected_space.as_ref() {
             app_state.saved_dock_state_per_space.get(ss)
         } else {
@@ -434,7 +429,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                     _ => continue,
                 };
                 let app_state = scope.data.get_mut::<AppState>().unwrap();
-                self.save_dock_state_to(cx, app_state);
+                self.save_dock_state_to(app_state);
                 self.selected_space = new_space;
                 self.load_dock_state_from(cx, app_state);
                 self.redraw(cx);
@@ -463,7 +458,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                 }
                 // When dragging a tab, allow it to be dragged
                 DockAction::ShouldTabStartDrag(tab_id) => {
-                    self.view.dock(cx, ids!(dock)).tab_start_drag(
+                    self.view.dock(ids!(dock)).tab_start_drag(
                         cx,
                         tab_id,
                         DragItem::FilePath {
@@ -475,7 +470,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                 // When dragging a tab, allow it to be dragged
                 DockAction::Drag(drag_event) => {
                     if drag_event.items.len() == 1 {
-                        self.view.dock(cx, ids!(dock)).accept_drag(cx, drag_event, DragResponse::Move);
+                        self.view.dock(ids!(dock)).accept_drag(cx, drag_event, DragResponse::Move);
                     }
                 }
                 // When dropping a tab, move it to the new position
@@ -485,7 +480,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                         internal_id: Some(internal_id),
                         ..
                     } = &drop_event.items[0] {
-                        self.view.dock(cx, ids!(dock)).drop_move(cx, drop_event.abs, *internal_id);
+                        self.view.dock(ids!(dock)).drop_move(cx, drop_event.abs, *internal_id);
                     }
                     should_save_dock_action = true;
                 }
@@ -515,7 +510,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                 }
                 Some(MainDesktopUiAction::SaveDockIntoAppState) => {
                     let app_state = scope.data.get_mut::<AppState>().unwrap();
-                    self.save_dock_state_to(cx, app_state);
+                    self.save_dock_state_to(app_state);
                 }
                 _ => {}
             }

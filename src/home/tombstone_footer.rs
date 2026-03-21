@@ -14,68 +14,75 @@ use crate::{app::AppStateAction, room::{BasicRoomDetails, FetchedRoomAvatar, Fet
 const DEFAULT_TOMBSTONE_REASON: &str = "This room has been replaced and is no longer active.";
 const DEFAULT_JOIN_BUTTON_TEXT: &str = "Go to the replacement room";
 
-script_mod! {
-    use mod.prelude.widgets.*
-    use mod.widgets.*
+live_design! {
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
+    use crate::shared::helpers::*;
+    use crate::shared::styles::*;
+    use crate::shared::avatar::*;
+    use crate::shared::icon_button::*;
+    use crate::home::invite_screen::*;
 
-    mod.widgets.TombstoneFooter = set_type_default() do #(TombstoneFooter::register_widget(vm)) {
-        ..mod.widgets.SolidView
-
+    pub TombstoneFooter = {{TombstoneFooter}}<ScrollYView> {
         visible: false,
         width: Fill,
-        height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
+        height: Fit { max: Rel { base: Full, factor: 0.625 } }
         flow: Down,
-        align: Align{x: 0.5}
+        align: {x: 0.5}
         padding: 20,
         spacing: 8
 
-        // make this a ScrollYView
-        scroll_bars: mod.widgets.ScrollBars {
-            show_scroll_x: false show_scroll_y: true
-            scroll_bar_y.drag_scrolling: true
-        }
-
         show_bg: true
-        draw_bg +: {
-            color: COLOR_SECONDARY
+        draw_bg: {
+            color: (COLOR_SECONDARY)
         }
 
-        replacement_reason := Label {
+        replacement_reason = <Label> {
             width: Fill, height: Fit,
-            flow: Flow.Right{wrap: true},
-            align: Align{x: 0.5}
-            draw_text +: {
+            flow: RightWrap,
+            align: {x: 0.5}
+            draw_text: {
                 color: (TYPING_NOTICE_TEXT_COLOR),
-                text_style: REGULAR_TEXT {font_size: 11}
+                text_style: <REGULAR_TEXT>{font_size: 11}
+                wrap: Word,
             }
         }
 
-        join_successor_button := RobrixPositiveIconButton {
+        join_successor_button = <RobrixIconButton> {
             padding: 15,
-            draw_icon.svg: (ICON_JOIN_ROOM)
-            icon_walk: Walk{width: 17, height: 17, margin: Inset{left: -2, right: -1} }
-        }
+            draw_icon: {
+                svg_file: (ICON_JOIN_ROOM),
+                color: (COLOR_FG_ACCEPT_GREEN),
+            }
+            icon_walk: {width: 17, height: 17, margin: {left: -2, right: -1} }
 
-        successor_room_avatar := Avatar {
-            width: 30, height: 30,
-            cursor: MouseCursor.Default,
-            text_view +: {
-                text +: {
-                    draw_text +: {
-                        text_style: TITLE_TEXT { font_size: 13.0 }
-                    }
-                }
+            draw_bg: {
+                border_color: (COLOR_FG_ACCEPT_GREEN),
+                color: #f0fff0 // light green
+            }
+            draw_text: {
+                color: (COLOR_FG_ACCEPT_GREEN),
             }
         }
 
-        successor_room_name := Label {
+        successor_room_avatar = <Avatar> {
+            width: 30, height: 30,
+            cursor: Default,
+            text_view = { text = { draw_text: {
+                text_style: <TITLE_TEXT>{ font_size: 13.0 }
+            }}}
+        }
+
+        successor_room_name = <Label> {
             width: Fill, height: Fit,
-            flow: Flow.Right{wrap: true},
-            align: Align{x: 0.5}
-            draw_text +: {
-                text_style: TITLE_TEXT { font_size: 12 }
+            flow: RightWrap,
+            align: {x: 0.5}
+            draw_text: {
+                text_style: <TITLE_TEXT>{ font_size: 12 }
                 color: (COLOR_TEXT)
+                wrap: Word,
             }
         }
     }
@@ -100,7 +107,7 @@ pub enum SuccessorRoomDetails {
 
 
 /// A view that shows information about a tombstoned room and its successor.
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Live, LiveHook, Widget)]
 pub struct TombstoneFooter {
     #[deref] view: View,
     /// The ID of the current tombstoned room.
@@ -112,7 +119,7 @@ pub struct TombstoneFooter {
 impl Widget for TombstoneFooter {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
-            if self.view.button(cx, ids!(join_successor_button)).clicked(actions) {
+            if self.view.button(ids!(join_successor_button)).clicked(actions) {
                 let Some(destination_room) = self.successor_info.clone() else {
                     error!("BUG: cannot navigate to replacement room: no successor room information.");
                     return;
@@ -139,10 +146,10 @@ impl TombstoneFooter {
         tombstoned_room_id: &OwnedRoomId,
         successor_room_details: &SuccessorRoomDetails,
     ) {
-        let replacement_reason = self.view.label(cx, ids!(replacement_reason));
-        let join_successor_button = self.view.button(cx, ids!(join_successor_button));
-        let successor_room_avatar = self.view.avatar(cx, ids!(successor_room_avatar));
-        let successor_room_name = self.view.label(cx, ids!(successor_room_name));
+        let replacement_reason = self.view.label(ids!(replacement_reason));
+        let join_successor_button = self.view.button(ids!(join_successor_button));
+        let successor_room_avatar = self.view.avatar(ids!(successor_room_avatar));
+        let successor_room_name = self.view.label(ids!(successor_room_name));
 
         log!("Showing TombstoneFooter for room {tombstoned_room_id}, Successor: {successor_room_details:?}");
         match successor_room_details {
@@ -189,12 +196,12 @@ impl TombstoneFooter {
                                 cx,
                                 None,
                                 None,
-                                room_preview.room_name_id.name_for_avatar().unwrap_or("?"),
+                                room_preview.room_name_id.name_for_avatar().as_deref().unwrap_or("?"),
                             );
                         }
                     }
                 }
-                match room_preview.room_name_id.name_for_avatar() {
+                match room_preview.room_name_id.name_for_avatar().as_deref() {
                     Some(n) => successor_room_name.set_text(cx, n),
                     _ => successor_room_name.set_text(cx, &format!("Unnamed Room, ID: {}", room_preview.room_name_id.room_id())),
                 }
