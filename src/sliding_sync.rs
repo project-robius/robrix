@@ -771,6 +771,12 @@ pub enum MatrixRequest {
         /// * If `false` (recommended), details will be fetched from the server.
         local_only: bool,
     },
+    /// Request to bind or unbind the configured BotFather for the given room.
+    SetRoomBotBinding {
+        room_id: OwnedRoomId,
+        bound: bool,
+        bot_user_id: OwnedUserId,
+    },
     /// Request to fetch the number of unread messages in the given room.
     GetNumberUnreadMessages { timeline_kind: TimelineKind },
     /// Request to set the unread flag for the given room.
@@ -1551,6 +1557,72 @@ async fn matrix_worker_task(
                 });
             }
 
+            MatrixRequest::SetRoomBotBinding {
+                room_id,
+                bound,
+                bot_user_id,
+            } => {
+                let Some(client) = get_client() else { continue };
+                let _bot_binding_task = Handle::current().spawn(async move {
+                    let Some(room) = client.get_room(&room_id) else {
+                        let error_message =
+                            format!("Room {room_id} was not found for the bot binding request.");
+                        error!("{error_message}");
+                        enqueue_popup_notification(error_message, PopupKind::Error, None);
+                        return;
+                    };
+
+                    let membership_result = if bound {
+                        room.invite_user_by_id(&bot_user_id).await
+                    } else {
+                        room.kick_user(&bot_user_id, Some("Robrix app service unbind"))
+                            .await
+                    };
+
+                    match membership_result {
+                        Ok(()) => {
+                            Cx::post_action(AppStateAction::BotRoomBindingUpdated {
+                                room_id,
+                                bound,
+                                bot_user_id: Some(bot_user_id),
+                                warning: None,
+                            });
+                        }
+                        Err(error) => {
+                            let membership_exists = room
+                                .get_member_no_sync(&bot_user_id)
+                                .await
+                                .ok()
+                                .flatten()
+                                .is_some();
+                            let should_mark_bound = if bound { membership_exists } else { false };
+
+                            if should_mark_bound != bound {
+                                error!(
+                                    "Failed to {} BotFather {bot_user_id} for room {room_id}: {error:?}",
+                                    if bound { "invite" } else { "remove" }
+                                );
+                                enqueue_popup_notification(
+                                    format!(
+                                        "Failed to {} BotFather {bot_user_id}: {error}",
+                                        if bound { "invite" } else { "remove" }
+                                    ),
+                                    PopupKind::Error,
+                                    None,
+                                );
+                                return;
+                            }
+
+                            Cx::post_action(AppStateAction::BotRoomBindingUpdated {
+                                room_id,
+                                bound,
+                                bot_user_id: Some(bot_user_id),
+                                warning: Some(error.to_string()),
+                            });
+                        }
+                    }
+                });
+            }
             MatrixRequest::GetNumberUnreadMessages { timeline_kind } => {
                 let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
                     log!("Skipping get number of unread messages request for {timeline_kind}");

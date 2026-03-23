@@ -1,9 +1,13 @@
 use makepad_widgets::*;
 
 use crate::{
+    app::BotSettingsState,
     home::navigation_tab_bar::{NavigationBarAction, get_own_profile},
     profile::user_profile::UserProfile,
-    settings::account_settings::AccountSettingsWidgetExt,
+    settings::{
+        account_settings::AccountSettingsWidgetExt,
+        bot_settings::BotSettingsWidgetExt,
+    },
 };
 
 script_mod! {
@@ -58,6 +62,10 @@ script_mod! {
 
                 // The account settings section.
                 account_settings := AccountSettings {}
+
+                LineH { width: 400, padding: 10, margin: Inset{top: 20, bottom: 5} }
+
+                bot_settings := BotSettings {}
 
                 LineH { width: 400, padding: 10, margin: Inset{top: 20, bottom: 5} }
 
@@ -170,7 +178,12 @@ impl Widget for SettingsScreen {
 
 impl SettingsScreen {
     /// Fetches the current user's profile and uses it to populate the settings screen.
-    pub fn populate(&mut self, cx: &mut Cx, own_profile: Option<UserProfile>) {
+    pub fn populate(
+        &mut self,
+        cx: &mut Cx,
+        own_profile: Option<UserProfile>,
+        bot_settings: &BotSettingsState,
+    ) {
         let Some(profile) = own_profile.or_else(|| get_own_profile(cx)) else {
             error!("Failed to get own profile for settings screen.");
             return;
@@ -178,6 +191,9 @@ impl SettingsScreen {
         self.view
             .account_settings(cx, ids!(account_settings))
             .populate(cx, profile);
+        self.view
+            .bot_settings(cx, ids!(bot_settings))
+            .populate(cx, bot_settings);
         self.view.button(cx, ids!(close_button)).reset_hover(cx);
         cx.set_key_focus(self.view.area());
         self.redraw(cx);
@@ -186,10 +202,15 @@ impl SettingsScreen {
 
 impl SettingsScreenRef {
     /// See [`SettingsScreen::populate()`].
-    pub fn populate(&self, cx: &mut Cx, own_profile: Option<UserProfile>) {
+    pub fn populate(
+        &self,
+        cx: &mut Cx,
+        own_profile: Option<UserProfile>,
+        bot_settings: &BotSettingsState,
+    ) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
-        inner.populate(cx, own_profile);
+        inner.populate(cx, own_profile, bot_settings);
     }
 }

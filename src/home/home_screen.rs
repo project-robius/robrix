@@ -473,7 +473,7 @@ impl Widget for HomeScreen {
                             {
                                 settings_page
                                     .settings_screen(cx, ids!(settings_screen))
-                                    .populate(cx, None);
+                                    .populate(cx, None, &app_state.bot_settings);
                                 self.view.redraw(cx);
                             } else {
                                 error!("BUG: failed to set active page to show settings screen.");
