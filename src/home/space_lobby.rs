@@ -227,8 +227,11 @@ script_mod! {
                     } else {
                         // Current level: connection to self
                         
-                        // Horizontal line to content
-                        let hy = self.rect_size.y * 0.5;
+                        // Horizontal line to content.
+                        // Snap hy to the nearest pixel center (floor(y) + 0.5) so the
+                        // strict abs() < 0.5 check always hits exactly one pixel regardless
+                        // of whether rect_size.y is even or odd.
+                        let hy = floor(self.rect_size.y * 0.5) + 0.5;
                         if abs(pos.y - hy) < half_line && pos.x > (f32(i) * indent + half_indent) {
                             c = vec4(0.8, 0.8, 0.8, 1.0);
                             break;

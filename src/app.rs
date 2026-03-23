@@ -216,9 +216,9 @@ impl MatchEvent for App {
             error!("Failed to load window state: {}", e);
         }
 
-        // Hide the caption bar on macOS, which uses native window chrome.
-        // On Windows (and Linux with custom chrome), the caption bar is needed.
-        if let OsType::Macos = cx.os_type() {
+        // Hide the caption bar on macOS and Linux, which use native window chrome.
+        // On Windows (with custom chrome), the caption bar is needed.
+        if matches!(cx.os_type(), OsType::Macos | OsType::LinuxWindow(_) | OsType::LinuxDirect) {
             let mut window = self.ui.window(cx, ids!(main_window));
             script_apply_eval!(cx, window, {
                 show_caption_bar: false
