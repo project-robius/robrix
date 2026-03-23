@@ -25,13 +25,14 @@ pub enum UploadAbortHandleAction {
 }
 
 /// Tracks whether the upload view is in an error state with retry data.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Default)]
 pub enum UploadViewState {
     /// Normal state (uploading or hidden)
     #[default]
     Normal,
     /// Error state with file data available for retry
-    Error(Box<FileData>),
+    Error(FileData),
 }
 
 live_design! {
@@ -155,7 +156,7 @@ impl WidgetMatchEvent for UploadProgressView {
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
-                    UploadProgressViewAction::Retry(*file_data),
+                    UploadProgressViewAction::Retry(file_data),
                 );
             }
         }
@@ -198,7 +199,7 @@ impl UploadProgressView {
 
     /// Shows an error state with the given error message and stores the file data for retry.
     pub fn show_error(&mut self, cx: &mut Cx, error: String, file_data: FileData) {
-        self.state = UploadViewState::Error(Box::new(file_data));
+        self.state = UploadViewState::Error(file_data);
         self.upload_abort_handle = None;
 
         // Update the label to show the error

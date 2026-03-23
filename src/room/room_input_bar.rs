@@ -535,7 +535,7 @@ impl RoomInputBar {
                 // Re-send the file upload confirmation to trigger a retry
                 let _ = file_data
                     .timeline_update_sender
-                    .send(TimelineUpdate::FileUploadConfirmed(file_data.clone()));
+                    .send(TimelineUpdate::FileUploadConfirmed((file_data).clone()));
                 SignalToUI::set_ui_signal();
             }
         }

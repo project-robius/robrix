@@ -13,6 +13,17 @@ use matrix_sdk::attachment::Thumbnail;
 use crate::home::room_screen::TimelineUpdate;
 use crate::image_utils::ImageDimensions;
 
+/// Clones a `Thumbnail` since matrix_sdk's `Thumbnail` doesn't implement `Clone`.
+fn clone_thumbnail(t: &Thumbnail) -> Thumbnail {
+    Thumbnail {
+        data: t.data.clone(),
+        content_type: t.content_type.clone(),
+        height: t.height,
+        width: t.width,
+        size: t.size,
+    }
+}
+
 /// Decodes image data into an `ImageBuffer` for rendering.
 ///
 /// Supports PNG and JPEG formats only. Other formats will return an error.
@@ -194,13 +205,7 @@ impl Clone for FileData {
     fn clone(&self) -> Self {
         Self {
             metadata: self.metadata.clone(),
-            thumbnail: self.thumbnail.as_ref().map(|t| Thumbnail {
-                data: t.data.clone(),
-                content_type: t.content_type.clone(),
-                height: t.height,
-                width: t.width,
-                size: t.size,
-            }),
+            thumbnail: self.thumbnail.as_ref().map(clone_thumbnail),
             dimensions: self.dimensions,
             timeline_update_sender: self.timeline_update_sender.clone(),
         }
@@ -249,13 +254,7 @@ impl Clone for FileLoadedData {
     fn clone(&self) -> Self {
         Self {
             metadata: self.metadata.clone(),
-            thumbnail: self.thumbnail.as_ref().map(|t| Thumbnail {
-                data: t.data.clone(),
-                content_type: t.content_type.clone(),
-                height: t.height,
-                width: t.width,
-                size: t.size,
-            }),
+            thumbnail: self.thumbnail.as_ref().map(clone_thumbnail),
             dimensions: self.dimensions,
         }
     }
@@ -280,7 +279,6 @@ impl FileUploadModal {
     /// Sets the file content to preview, including metadata and image/document display.
     /// For images, attempts to decode and display the preview. Falls back to document view on error.
     fn set_content(&mut self, cx: &mut Cx, file_data: FileData) {
-        self.file_data = Some(file_data.clone());
         self.set_metadata(cx, &file_data);
         if let Some(thumbnail) = &file_data.thumbnail {
             if let Ok(image_buffer) = load_image_from_bytes(&thumbnail.data) {
@@ -299,6 +297,7 @@ impl FileUploadModal {
         } else {
             self.show_document(cx);
         }
+        self.file_data = Some(file_data);
         self.redraw(cx);
     }
 }
