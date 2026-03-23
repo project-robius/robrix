@@ -373,11 +373,13 @@ impl MatchEvent for App {
                 _ => {}
             }
 
-            // When a stack navigation view finishes hiding (pop completed),
-            // restore the previous selected_room from the navigation stack.
-            if let StackNavigationTransitionAction::HideEnd(_parent_uid) = action.as_widget_action().cast() {
-                self.app_state.selected_room = self.mobile_room_nav_stack.pop();
-                continue;
+            // When a stack navigation pop is initiated (back button pressed),
+            // pop the mobile nav stack so it stays in sync with StackNavigation.
+            if let StackNavigationAction::Pop = action.as_widget_action().cast() {
+                if self.app_state.selected_room.is_some() {
+                    self.app_state.selected_room = self.mobile_room_nav_stack.pop();
+                }
+                // Don't `continue` — let StackNavigation also process this Pop.
             }
 
             // Handle actions that instruct us to update the top-level app state.
@@ -822,33 +824,57 @@ impl App {
         }
     }
 
-    /// The LiveIds for the room StackNavigationView instances,
-    /// ordered by their position in the navigation stack.
-    /// We have two room views to support one level of stacking
-    /// (e.g., room → thread, or room → linked room).
-    const ROOM_VIEW_IDS: [LiveId; 2] = [
-        live_id!(room_view_0),
-        live_id!(room_view_1),
+    /// Room StackNavigationView instances, one per stack depth.
+    /// Each depth gets its own dedicated view widget to avoid
+    /// complex state save/restore when views would otherwise be reused.
+    const ROOM_VIEW_IDS: [LiveId; 16] = [
+        live_id!(room_view_0),  live_id!(room_view_1),
+        live_id!(room_view_2),  live_id!(room_view_3),
+        live_id!(room_view_4),  live_id!(room_view_5),
+        live_id!(room_view_6),  live_id!(room_view_7),
+        live_id!(room_view_8),  live_id!(room_view_9),
+        live_id!(room_view_10), live_id!(room_view_11),
+        live_id!(room_view_12), live_id!(room_view_13),
+        live_id!(room_view_14), live_id!(room_view_15),
     ];
 
-    /// The LiveIds for the RoomScreen widgets inside each room view,
+    /// The RoomScreen widget IDs inside each room view,
     /// corresponding 1:1 with [`Self::ROOM_VIEW_IDS`].
-    const ROOM_SCREEN_IDS: [LiveId; 2] = [
-        live_id!(room_screen_0),
-        live_id!(room_screen_1),
+    const ROOM_SCREEN_IDS: [LiveId; 16] = [
+        live_id!(room_screen_0),  live_id!(room_screen_1),
+        live_id!(room_screen_2),  live_id!(room_screen_3),
+        live_id!(room_screen_4),  live_id!(room_screen_5),
+        live_id!(room_screen_6),  live_id!(room_screen_7),
+        live_id!(room_screen_8),  live_id!(room_screen_9),
+        live_id!(room_screen_10), live_id!(room_screen_11),
+        live_id!(room_screen_12), live_id!(room_screen_13),
+        live_id!(room_screen_14), live_id!(room_screen_15),
     ];
+
+    /// Returns the room view and room screen LiveIds for the given stack depth.
+    /// Clamps to the last available view if depth exceeds the pool size.
+    fn room_ids_for_depth(depth: usize) -> (LiveId, LiveId) {
+        let index = depth.min(Self::ROOM_VIEW_IDS.len() - 1);
+        (Self::ROOM_VIEW_IDS[index], Self::ROOM_SCREEN_IDS[index])
+    }
 
     /// Pushes the appropriate StackNavigationView for the given `SelectedRoom`,
     /// configuring the view's content widget and header title.
+    ///
+    /// Room and thread views alternate between two room view widgets,
+    /// allowing arbitrary stack depth (e.g., room → thread → room → thread → ...).
+    /// When a view is reused at a deeper level, the previous occupant's
+    /// `RoomScreen` state is automatically saved by `set_displayed_room`
+    /// (via `hide_timeline`), and restored when popping back.
     fn push_selected_room_view(&mut self, cx: &mut Cx, selected_room: SelectedRoom) {
+        // Use the actual StackNavigation depth to pick the next room view slot.
+        let new_depth = self.ui.stack_navigation(cx, ids!(view_stack)).depth();
+
         // Determine which view to push and configure it.
         let view_id = match &selected_room {
             SelectedRoom::JoinedRoom { room_name_id }
             | SelectedRoom::Thread { room_name_id, .. } => {
-                // Determine the stack depth to pick the right room view.
-                let depth = self.ui.stack_navigation(cx, ids!(view_stack)).depth();
-                let room_view_index = depth.min(Self::ROOM_VIEW_IDS.len() - 1);
-                let view_id = Self::ROOM_VIEW_IDS[room_view_index];
+                let (view_id, room_screen_id) = Self::room_ids_for_depth(new_depth);
 
                 // Configure the RoomScreen for this view.
                 let thread_root = if let SelectedRoom::Thread { thread_root_event_id, .. } = &selected_room {
@@ -856,8 +882,6 @@ impl App {
                 } else {
                     None
                 };
-                // Each room view has its own RoomScreen; configure the one being pushed.
-                let room_screen_id = Self::ROOM_SCREEN_IDS[room_view_index];
                 self.ui
                     .room_screen(cx, &[room_screen_id])
                     .set_displayed_room(cx, room_name_id, thread_root);
@@ -890,13 +914,11 @@ impl App {
         // Update app state.
         self.app_state.selected_room = Some(selected_room);
 
-        // Push the view onto the navigation stack.
-        cx.widget_action(
-            self.ui.widget_uid(),
-            StackNavigationAction::Push(view_id),
-        );
+        // Push the view onto the navigation stack directly,
+        self.ui.stack_navigation(cx, ids!(view_stack)).push(cx, view_id);
         self.ui.redraw(cx);
     }
+
 }
 
 /// App-wide state that is stored persistently across multiple app runs

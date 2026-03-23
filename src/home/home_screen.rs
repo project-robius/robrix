@@ -12,10 +12,6 @@ script_mod! {
     // uses an Overlay view internally.
     mod.widgets.STACK_VIEW_HEADER_HEIGHT = 75
 
-    mod.widgets.StackNavigationWrapper = #(StackNavigationWrapper::register_widget(vm)) {
-        view_stack := StackNavigation {}
-    }
-
     // A reusable base for StackNavigationView children in the mobile layout.
     // Each specific content view (room, invite, space lobby) extends this
     // and places its own screen widget inside the body.
@@ -262,8 +258,7 @@ script_mod! {
                 show_bg: true
                 draw_bg.color: (COLOR_PRIMARY)
 
-                mod.widgets.StackNavigationWrapper {
-                    view_stack := StackNavigation {
+                view_stack := StackNavigation {
                         root_view +: {
                             flow: Down
                             width: Fill, height: Fill
@@ -320,18 +315,26 @@ script_mod! {
                             }
                         }
 
-                        // Room views: two instances to support stacking
-                        // (e.g., room -> thread, or room -> linked room).
-                        room_view_0 := mod.widgets.RobrixContentView {
-                            body +: {
-                                room_screen_0 := mod.widgets.RoomScreen {}
-                            }
-                        }
-                        room_view_1 := mod.widgets.RobrixContentView {
-                            body +: {
-                                room_screen_1 := mod.widgets.RoomScreen {}
-                            }
-                        }
+                        // Room views: multiple instances to support deep stacking
+                        // (e.g., room -> thread -> room -> thread -> ...).
+                        // Each stack depth gets its own dedicated view widget,
+                        // avoiding complex state save/restore when views are reused.
+                        room_view_0  := mod.widgets.RobrixContentView { body +: { room_screen_0  := mod.widgets.RoomScreen {} } }
+                        room_view_1  := mod.widgets.RobrixContentView { body +: { room_screen_1  := mod.widgets.RoomScreen {} } }
+                        room_view_2  := mod.widgets.RobrixContentView { body +: { room_screen_2  := mod.widgets.RoomScreen {} } }
+                        room_view_3  := mod.widgets.RobrixContentView { body +: { room_screen_3  := mod.widgets.RoomScreen {} } }
+                        room_view_4  := mod.widgets.RobrixContentView { body +: { room_screen_4  := mod.widgets.RoomScreen {} } }
+                        room_view_5  := mod.widgets.RobrixContentView { body +: { room_screen_5  := mod.widgets.RoomScreen {} } }
+                        room_view_6  := mod.widgets.RobrixContentView { body +: { room_screen_6  := mod.widgets.RoomScreen {} } }
+                        room_view_7  := mod.widgets.RobrixContentView { body +: { room_screen_7  := mod.widgets.RoomScreen {} } }
+                        room_view_8  := mod.widgets.RobrixContentView { body +: { room_screen_8  := mod.widgets.RoomScreen {} } }
+                        room_view_9  := mod.widgets.RobrixContentView { body +: { room_screen_9  := mod.widgets.RoomScreen {} } }
+                        room_view_10 := mod.widgets.RobrixContentView { body +: { room_screen_10 := mod.widgets.RoomScreen {} } }
+                        room_view_11 := mod.widgets.RobrixContentView { body +: { room_screen_11 := mod.widgets.RoomScreen {} } }
+                        room_view_12 := mod.widgets.RobrixContentView { body +: { room_screen_12 := mod.widgets.RoomScreen {} } }
+                        room_view_13 := mod.widgets.RobrixContentView { body +: { room_screen_13 := mod.widgets.RoomScreen {} } }
+                        room_view_14 := mod.widgets.RobrixContentView { body +: { room_screen_14 := mod.widgets.RoomScreen {} } }
+                        room_view_15 := mod.widgets.RobrixContentView { body +: { room_screen_15 := mod.widgets.RoomScreen {} } }
 
                         invite_view := mod.widgets.RobrixContentView {
                             body +: {
@@ -349,7 +352,6 @@ script_mod! {
             }
         }
     }
-}
 
 
 /// A simple wrapper around the SpacesBar that allows us to animate showing or hiding it.
@@ -511,26 +513,3 @@ impl HomeScreen {
     }
 }
 
-/// A wrapper around the StackNavigation widget
-/// that simply forwards stack view actions to it.
-#[derive(Script, ScriptHook, Widget)]
-pub struct StackNavigationWrapper {
-    #[deref] view: View,
-}
-
-impl Widget for StackNavigationWrapper {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.match_event(cx, event);
-        self.view.handle_event(cx, event, scope);
-    }
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.view.draw_walk(cx, scope, walk)
-    }
-}
-
-impl MatchEvent for StackNavigationWrapper {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        self.stack_navigation(cx, ids!(view_stack))
-            .handle_stack_view_actions(cx, actions);
-    }
-}
