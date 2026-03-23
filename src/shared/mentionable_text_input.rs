@@ -5,10 +5,7 @@
 //! can be slotted back in later without changing the code that depends on it.
 
 use makepad_widgets::*;
-use matrix_sdk::ruma::{
-    events::room::message::RoomMessageEventContent,
-    OwnedRoomId,
-};
+use matrix_sdk::ruma::{events::room::message::RoomMessageEventContent, OwnedRoomId};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -43,18 +40,21 @@ pub enum MentionableTextInputAction {
     PowerLevelsUpdated {
         room_id: OwnedRoomId,
         can_notify_room: bool,
-    }
+    },
 }
 
 /// Temporary mock widget that wraps a simple TextInput (RobrixTextInput)
 /// while preserving the same external API as the real MentionableTextInput.
 #[derive(Script, ScriptHook, Widget)]
 pub struct MentionableTextInput {
-    #[source] source: ScriptObjectRef,
-    #[deref] view: View,
+    #[source]
+    source: ScriptObjectRef,
+    #[deref]
+    view: View,
     /// Whether the current user can notify everyone in the room (@room mention).
     /// Stored but not used in this mock; kept for API compatibility.
-    #[rust] can_notify_room: bool,
+    #[rust]
+    can_notify_room: bool,
 }
 
 impl Widget for MentionableTextInput {
@@ -65,7 +65,8 @@ impl Widget for MentionableTextInput {
         if let Event::Actions(actions) = event {
             for action in actions {
                 if let Some(MentionableTextInputAction::PowerLevelsUpdated {
-                    can_notify_room, ..
+                    can_notify_room,
+                    ..
                 }) = action.downcast_ref()
                 {
                     self.can_notify_room = *can_notify_room;
@@ -83,17 +84,18 @@ impl Widget for MentionableTextInput {
     }
 
     fn set_text(&mut self, cx: &mut Cx, text: &str) {
-        self.text_input(cx, ids!(persistent.center.text_input)).set_text(cx, text);
+        self.text_input(cx, ids!(persistent.center.text_input))
+            .set_text(cx, text);
         self.redraw(cx);
     }
 
     fn set_key_focus(&self, cx: &mut Cx) {
-        self.text_input(cx, ids!(persistent.center.text_input)).set_key_focus(cx);
+        self.text_input(cx, ids!(persistent.center.text_input))
+            .set_key_focus(cx);
     }
 }
 
 impl MentionableTextInput {
-
     /// Sets whether the current user can notify the entire room (@room mention).
     pub fn set_can_notify_room(&mut self, can_notify: bool) {
         self.can_notify_room = can_notify;
@@ -108,7 +110,8 @@ impl MentionableTextInput {
 impl MentionableTextInputRef {
     /// Returns a reference to the inner `TextInput` widget.
     pub fn text_input_ref(&self) -> TextInputRef {
-        self.child_by_path(ids!(persistent.center.text_input)).as_text_input()
+        self.child_by_path(ids!(persistent.center.text_input))
+            .as_text_input()
     }
 
     /// Sets whether the current user can notify the entire room (@room mention).

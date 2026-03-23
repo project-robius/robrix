@@ -43,9 +43,9 @@ script_mod! {
             height: Fit,
             flow: Right, // do not wrap
             padding: 5
-            
+
             empty_text: "Filter rooms & spaces..."
-            
+
             draw_bg.border_size: 0.0
             draw_text +: {
                 text_style: theme.font_regular { font_size: 10 },
@@ -68,7 +68,8 @@ script_mod! {
 /// See the module-level docs for more detail.
 #[derive(Script, ScriptHook, Widget)]
 pub struct RoomFilterInputBar {
-    #[deref] view: View,
+    #[deref]
+    view: View,
 }
 
 /// Actions emitted by the `RoomFilterInputBar` based on user interaction with it.
@@ -114,20 +115,14 @@ impl WidgetMatchEvent for RoomFilterInputBar {
             };
             clear_button.set_visible(cx, !keywords.is_empty());
             clear_button.reset_hover(cx);
-            cx.widget_action(
-                self.widget_uid(), 
-                RoomFilterAction::Changed(keywords)
-            );
+            cx.widget_action(self.widget_uid(), RoomFilterAction::Changed(keywords));
         }
 
         if clear_button.clicked(actions) {
             input.set_text(cx, "");
             clear_button.set_visible(cx, false);
             input.set_key_focus(cx);
-            cx.widget_action(
-                self.widget_uid(), 
-                RoomFilterAction::Changed(String::new())
-            );
+            cx.widget_action(self.widget_uid(), RoomFilterAction::Changed(String::new()));
         }
     }
 }

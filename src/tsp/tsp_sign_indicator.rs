@@ -47,7 +47,6 @@ pub enum TspSignState {
     WrongSignature,
 }
 
-
 /// An indicator that is shown nearby a message that has a TSP signature.
 ///
 /// This widget is basically just a clickable icon group that shows
@@ -61,8 +60,10 @@ pub enum TspSignState {
 ///
 #[derive(Script, ScriptHook, Widget)]
 pub struct TspSignIndicator {
-    #[deref] view: View,
-    #[rust] state: TspSignState,
+    #[deref]
+    view: View,
+    #[rust]
+    state: TspSignState,
 }
 
 impl Widget for TspSignIndicator {
@@ -71,15 +72,14 @@ impl Widget for TspSignIndicator {
 
         let area = self.view.area();
         let should_hover_in = match event.hits(cx, area) {
-            Hit::FingerLongPress(_)
-            | Hit::FingerHoverIn(..) => true,
+            Hit::FingerLongPress(_) | Hit::FingerHoverIn(..) => true,
             // TODO: show user profile and TSP info on click
             // Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => {
             //     log!("todo: show user profile and TSP info.");
             //     false
             // },
             Hit::FingerHoverOut(_) => {
-                cx.widget_action(self.widget_uid(),  TooltipAction::HoverOut);
+                cx.widget_action(self.widget_uid(), TooltipAction::HoverOut);
                 false
             }
             _ => false,
@@ -92,7 +92,7 @@ impl Widget for TspSignIndicator {
                 ),
                 TspSignState::Verified => (
                     "This message was signed with the user's verified TSP identity.",
-                    COLOR_FG_ACCEPT_GREEN, 
+                    COLOR_FG_ACCEPT_GREEN,
                 ),
                 TspSignState::WrongSignature => (
                     "Warning: this message's TSP signature does NOT match the expected sender signature.",
@@ -100,7 +100,7 @@ impl Widget for TspSignIndicator {
                 ),
             };
             cx.widget_action(
-                self.widget_uid(), 
+                self.widget_uid(),
                 TooltipAction::HoverIn {
                     text: text.to_string(),
                     widget_rect: area.rect(cx),
@@ -124,15 +124,9 @@ impl TspSignIndicator {
         let tsp_html_ref = self.view.html(cx, ids!(tsp_html));
         if let Some(mut tsp_html) = tsp_html_ref.borrow_mut() {
             let (text, font_color) = match state {
-                TspSignState::Unknown => {
-                    ("TSP ❔", COLOR_MESSAGE_NOTICE_TEXT)
-                }
-                TspSignState::Verified => {
-                    ("TSP ✅", COLOR_FG_ACCEPT_GREEN)
-                }
-                TspSignState::WrongSignature => {
-                    ("❗TSP❗", COLOR_FG_DANGER_RED)
-                }
+                TspSignState::Unknown => ("TSP ❔", COLOR_MESSAGE_NOTICE_TEXT),
+                TspSignState::Verified => ("TSP ✅", COLOR_FG_ACCEPT_GREEN),
+                TspSignState::WrongSignature => ("❗TSP❗", COLOR_FG_DANGER_RED),
             };
             tsp_html.set_text(cx, text);
             tsp_html.font_color = font_color;
@@ -151,7 +145,6 @@ impl TspSignIndicatorRef {
         }
     }
 }
-
 
 /// Actions emitted by an `TspSignIndicator` widget.
 #[derive(Clone, Debug, Default)]

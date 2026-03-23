@@ -47,8 +47,10 @@ script_mod! {
 /// A interactive label that indicates a message has been edited.
 #[derive(Script, ScriptHook, Widget)]
 pub struct EditedIndicator {
-    #[deref] view: View,
-    #[rust] latest_edit_ts: Option<DateTime<Local>>,
+    #[deref]
+    view: View,
+    #[rust]
+    latest_edit_ts: Option<DateTime<Local>>,
 }
 
 impl Widget for EditedIndicator {
@@ -57,36 +59,35 @@ impl Widget for EditedIndicator {
 
         let area = self.view.area();
         let should_hover_in = match event.hits(cx, area) {
-            Hit::FingerLongPress(_)
-            | Hit::FingerHoverIn(..) => true,
+            Hit::FingerLongPress(_) | Hit::FingerHoverIn(..) => true,
             // TODO: show edit history modal on click
             // Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => {
             //     log!("todo: show edit history.");
             //     false
             // },
             Hit::FingerHoverOut(_) => {
-                cx.widget_action(self.widget_uid(),  TooltipAction::HoverOut);
+                cx.widget_action(self.widget_uid(), TooltipAction::HoverOut);
                 false
             }
             _ => false,
         };
         if should_hover_in {
             // TODO: use pure_rust_locales crate to format the time based on the chosen Locale.
-            let locale_extended_fmt_en_us= "%a %b %-d, %Y, %r";
+            let locale_extended_fmt_en_us = "%a %b %-d, %Y, %r";
             let text = if let Some(ts) = self.latest_edit_ts {
                 format!("Last edited {}", ts.format(locale_extended_fmt_en_us))
             } else {
                 "Last edit time unknown".to_string()
             };
             cx.widget_action(
-                self.widget_uid(), 
+                self.widget_uid(),
                 TooltipAction::HoverIn {
                     text,
                     widget_rect: area.rect(cx),
                     options: CalloutTooltipOptions {
                         position: TooltipPosition::Right,
                         ..Default::default()
-                    }
+                    },
                 },
             );
         }
@@ -119,7 +120,6 @@ impl EditedIndicatorRef {
         }
     }
 }
-
 
 /// Actions emitted by an `EditedIndicator` widget.
 #[derive(Clone, Debug, Default)]

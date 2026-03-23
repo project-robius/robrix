@@ -35,7 +35,7 @@ script_mod! {
         Mobile := View {
             width: Fill, height: Fill
             flow: Down,
-            
+
             RoundedShadowView {
                 width: Fill, height: Fit
                 padding: Inset{top: 15, left: 15, right: 15, bottom: 10}
@@ -62,7 +62,7 @@ script_mod! {
                     height: 45,
                     flow: Right
                     padding: Inset{top: 5, bottom: 2}
-                    spacing: 5 
+                    spacing: 5
                     align: Align{y: 0.5}
 
                     CachedWidget {
@@ -93,7 +93,8 @@ script_mod! {
 ///   (because the search bar is at the top of the HomeScreen).
 #[derive(Script, Widget)]
 pub struct RoomsSideBar {
-    #[deref] view: AdaptiveView,
+    #[deref]
+    view: AdaptiveView,
 }
 
 impl ScriptHook for RoomsSideBar {

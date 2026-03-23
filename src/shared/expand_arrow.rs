@@ -60,21 +60,34 @@ script_mod! {
 /// Animated expand/collapse triangle arrow.
 #[derive(Script, ScriptHook, Widget, Animator)]
 pub struct ExpandArrow {
-    #[uid] uid: WidgetUid,
-    #[source] source: ScriptObjectRef,
-    #[apply_default] animator: Animator,
-    #[redraw] #[live] draw_bg: DrawQuad,
-    #[walk] walk: Walk,
+    #[uid]
+    uid: WidgetUid,
+    #[source]
+    source: ScriptObjectRef,
+    #[apply_default]
+    animator: Animator,
+    #[redraw]
+    #[live]
+    draw_bg: DrawQuad,
+    #[walk]
+    walk: Walk,
     /// Tracks the desired opened state set from outside.
     /// Applied to draw_bg.opened during draw_walk.
-    #[rust] opened_value: f32,
+    #[rust]
+    opened_value: f32,
 }
 
 impl ExpandArrow {
     /// Animate open/close (use in event handlers only, not during draw).
     pub fn set_is_open(&mut self, cx: &mut Cx, is_open: bool, animate: Animate) {
         self.opened_value = if is_open { 1.0 } else { 0.0 };
-        self.animator_toggle(cx, is_open, animate, ids!(expand.expanded), ids!(expand.collapsed))
+        self.animator_toggle(
+            cx,
+            is_open,
+            animate,
+            ids!(expand.expanded),
+            ids!(expand.collapsed),
+        )
     }
 
     /// Set open/close state without animation (safe to call anytime).
@@ -92,7 +105,8 @@ impl Widget for ExpandArrow {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
         if !self.animator.is_track_animating(id!(expand)) {
-            self.draw_bg.set_dyn_instance(cx, id!(opened), &[self.opened_value]);
+            self.draw_bg
+                .set_dyn_instance(cx, id!(opened), &[self.opened_value]);
         }
         self.draw_bg.draw_walk(cx, walk);
         DrawStep::done()

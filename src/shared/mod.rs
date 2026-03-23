@@ -21,7 +21,6 @@ pub mod verification_badge;
 pub mod restore_status_view;
 pub mod image_viewer;
 
-
 pub fn script_mod(vm: &mut ScriptVm) {
     // Order matters here, as some widget definitions depend on others.
     styles::script_mod(vm);

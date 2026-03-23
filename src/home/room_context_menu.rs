@@ -3,7 +3,12 @@
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
-use crate::{home::invite_modal::InviteModalAction, shared::popup_list::{PopupKind, enqueue_popup_notification}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
+use crate::{
+    home::invite_modal::InviteModalAction,
+    shared::popup_list::{PopupKind, enqueue_popup_notification},
+    sliding_sync::{MatrixRequest, submit_async_request},
+    utils::RoomNameId,
+};
 
 const BUTTON_HEIGHT: f64 = 35.0;
 const MENU_WIDTH: f64 = 215.0;
@@ -69,7 +74,7 @@ script_mod! {
             }
 
             priority_button := mod.widgets.RoomContextMenuButton {
-                draw_icon +: { svg: (ICON_TOMBSTONE) } 
+                draw_icon +: { svg: (ICON_TOMBSTONE) }
                 text: "Set Low Priority"
             }
 
@@ -77,7 +82,7 @@ script_mod! {
                 draw_icon +: { svg: (ICON_LINK) }
                 text: "Copy Link to Room"
             }
-            
+
             divider1 := LineH {
                 margin: Inset{top: 3, bottom: 3}
                 width: Fill,
@@ -137,9 +142,12 @@ pub enum RoomContextMenuAction {
 
 #[derive(Script, ScriptHook, Widget)]
 pub struct RoomContextMenu {
-    #[deref] view: View,
-    #[source] source: ScriptObjectRef,
-    #[rust] details: Option<RoomContextMenuDetails>,
+    #[deref]
+    view: View,
+    #[source]
+    source: ScriptObjectRef,
+    #[rust]
+    details: Option<RoomContextMenuDetails>,
 }
 
 impl Widget for RoomContextMenu {
@@ -151,21 +159,25 @@ impl Widget for RoomContextMenu {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if !self.visible { return; }
+        if !self.visible {
+            return;
+        }
         self.view.handle_event(cx, event, scope);
 
         // Close logic similar to NewMessageContextMenu
         let area = self.view.area();
         let close_menu = {
             event.back_pressed()
-            || match event.hits_with_capture_overload(cx, area, true) {
-                Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
-                Hit::FingerUp(fue) if fue.is_over => {
-                     !self.view(cx, ids!(main_content)).area().rect(cx).contains(fue.abs)
+                || match event.hits_with_capture_overload(cx, area, true) {
+                    Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
+                    Hit::FingerUp(fue) if fue.is_over => !self
+                        .view(cx, ids!(main_content))
+                        .area()
+                        .rect(cx)
+                        .contains(fue.abs),
+                    Hit::FingerScroll(_) => true,
+                    _ => false,
                 }
-                 Hit::FingerScroll(_) => true,
-                _ => false,
-            }
         };
 
         if close_menu {
@@ -179,31 +191,30 @@ impl Widget for RoomContextMenu {
 
 impl WidgetMatchEvent for RoomContextMenu {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let Some(details) = self.details.as_ref() else { return };
+        let Some(details) = self.details.as_ref() else {
+            return;
+        };
         let mut close_menu = false;
-        
+
         if self.button(cx, ids!(mark_unread_button)).clicked(actions) {
             submit_async_request(MatrixRequest::SetUnreadFlag {
                 room_id: details.room_name_id.room_id().clone(),
                 mark_as_unread: !details.is_marked_unread,
             });
             close_menu = true;
-        } 
-        else if self.button(cx, ids!(favorite_button)).clicked(actions) {
+        } else if self.button(cx, ids!(favorite_button)).clicked(actions) {
             submit_async_request(MatrixRequest::SetIsFavorite {
                 room_id: details.room_name_id.room_id().clone(),
                 is_favorite: !details.is_favorite,
             });
             close_menu = true;
-        }
-        else if self.button(cx, ids!(priority_button)).clicked(actions) {
+        } else if self.button(cx, ids!(priority_button)).clicked(actions) {
             submit_async_request(MatrixRequest::SetIsLowPriority {
                 room_id: details.room_name_id.room_id().clone(),
                 is_low_priority: !details.is_low_priority,
             });
             close_menu = true;
-        }
-        else if self.button(cx, ids!(copy_link_button)).clicked(actions) {
+        } else if self.button(cx, ids!(copy_link_button)).clicked(actions) {
             submit_async_request(MatrixRequest::GenerateMatrixLink {
                 room_id: details.room_name_id.room_id().clone(),
                 event_id: None,
@@ -211,8 +222,7 @@ impl WidgetMatchEvent for RoomContextMenu {
                 join_on_click: false,
             });
             close_menu = true;
-        }
-         else if self.button(cx, ids!(room_settings_button)).clicked(actions) {
+        } else if self.button(cx, ids!(room_settings_button)).clicked(actions) {
             // TODO: handle/implement this
             enqueue_popup_notification(
                 "The room settings page is not yet implemented.",
@@ -220,8 +230,7 @@ impl WidgetMatchEvent for RoomContextMenu {
                 Some(5.0),
             );
             close_menu = true;
-        }
-        else if self.button(cx, ids!(notifications_button)).clicked(actions) {
+        } else if self.button(cx, ids!(notifications_button)).clicked(actions) {
             // TODO: handle/implement this
             enqueue_popup_notification(
                 "The room notifications page is not yet implemented.",
@@ -229,12 +238,10 @@ impl WidgetMatchEvent for RoomContextMenu {
                 Some(5.0),
             );
             close_menu = true;
-        }
-        else if self.button(cx, ids!(invite_button)).clicked(actions) {
+        } else if self.button(cx, ids!(invite_button)).clicked(actions) {
             cx.action(InviteModalAction::Open(details.room_name_id.clone()));
             close_menu = true;
-        }
-        else if self.button(cx, ids!(leave_button)).clicked(actions) {
+        } else if self.button(cx, ids!(leave_button)).clicked(actions) {
             use crate::join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveModalKind};
             use crate::room::BasicRoomDetails;
             let room_details = BasicRoomDetails::Name(details.room_name_id.clone());
@@ -263,7 +270,7 @@ impl RoomContextMenu {
         cx.set_key_focus(self.view.area());
         dvec2(MENU_WIDTH, height)
     }
-    
+
     fn update_buttons(&mut self, cx: &mut Cx, details: &RoomContextMenuDetails) -> f64 {
         let mark_unread_button = self.button(cx, ids!(mark_unread_button));
         if details.is_marked_unread {
@@ -271,12 +278,12 @@ impl RoomContextMenu {
         } else {
             mark_unread_button.set_text(cx, "Mark as Unread");
         }
-        
+
         let favorite_button = self.button(cx, ids!(favorite_button));
         if details.is_favorite {
             favorite_button.set_text(cx, "Un-favorite");
         } else {
-             favorite_button.set_text(cx, "Favorite");
+            favorite_button.set_text(cx, "Favorite");
         }
 
         let priority_button = self.button(cx, ids!(priority_button));
@@ -285,7 +292,7 @@ impl RoomContextMenu {
         } else {
             priority_button.set_text(cx, "Set Low Priority");
         }
-        
+
         // Reset hover states
         mark_unread_button.reset_hover(cx);
         favorite_button.reset_hover(cx);
@@ -295,9 +302,9 @@ impl RoomContextMenu {
         self.button(cx, ids!(notifications_button)).reset_hover(cx);
         self.button(cx, ids!(invite_button)).reset_hover(cx);
         self.button(cx, ids!(leave_button)).reset_hover(cx);
-        
+
         self.redraw(cx);
-        
+
         // Calculate height (rudimentary) - sum of visible buttons + padding
         // 8 buttons * 35.0 + 2 dividers * ~10.0 + padding
         (8.0 * BUTTON_HEIGHT) + 20.0 + 10.0 // approx
@@ -313,12 +320,16 @@ impl RoomContextMenu {
 
 impl RoomContextMenuRef {
     pub fn is_currently_shown(&self, cx: &mut Cx) -> bool {
-        let Some(inner) = self.borrow() else { return false };
+        let Some(inner) = self.borrow() else {
+            return false;
+        };
         inner.is_currently_shown(cx)
     }
 
     pub fn show(&self, cx: &mut Cx, details: RoomContextMenuDetails) -> DVec2 {
-        let Some(mut inner) = self.borrow_mut() else { return DVec2::default()};
+        let Some(mut inner) = self.borrow_mut() else {
+            return DVec2::default();
+        };
         inner.show(cx, details)
     }
 }

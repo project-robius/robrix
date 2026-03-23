@@ -271,7 +271,7 @@ script_mod! {
                 main_content := mod.widgets.MainContent {}
             }
             progress_bar := mod.widgets.ProgressBar {}
-            // Add a small gap between the progress bar and the end of the popup 
+            // Add a small gap between the progress bar and the end of the popup
             // to ensure the progress bar is within the popup.
             View {
                 height: 0.2
@@ -355,16 +355,25 @@ struct PopupEntry {
 /// A widget that displays a vertical list of popups.
 #[derive(Script, Widget)]
 pub struct RobrixPopupNotification {
-    #[uid] uid: WidgetUid,
-    #[source] source: ScriptObjectRef,
-    #[live] pub content: Option<LivePtr>,
+    #[uid]
+    uid: WidgetUid,
+    #[source]
+    source: ScriptObjectRef,
+    #[live]
+    pub content: Option<LivePtr>,
 
-    #[rust] draw_list: Option<DrawList2d>,
-    #[redraw] #[live] draw_bg: DrawQuad,
-    #[layout] layout: Layout,
-    #[walk] walk: Walk,
+    #[rust]
+    draw_list: Option<DrawList2d>,
+    #[redraw]
+    #[live]
+    draw_bg: DrawQuad,
+    #[layout]
+    layout: Layout,
+    #[walk]
+    walk: Walk,
     // A list of tuples containing individual widgets, its content and the close timer in the order they were added.
-    #[rust] popups: Vec<PopupEntry>,
+    #[rust]
+    popups: Vec<PopupEntry>,
 }
 
 impl ScriptHook for RobrixPopupNotification {
@@ -566,10 +575,7 @@ impl RobrixPopupNotification {
             progress_bar.animator_cut(cx, ids!(progress.off));
             Timer::empty()
         };
-        self.popups.push(PopupEntry {
-            view,
-            close_timer,
-        });
+        self.popups.push(PopupEntry { view, close_timer });
         self.redraw_overlay(cx);
     }
 
@@ -616,10 +622,7 @@ impl RobrixPopupNotification {
         popup_item.auto_dismissal_duration = popup_item
             .auto_dismissal_duration
             .map(|duration| duration.min(3. * 60.));
-        self.popups.push(PopupEntry {
-            view,
-            close_timer,
-        });
+        self.popups.push(PopupEntry { view, close_timer });
     }
 
     /// Returns a clone of the template for each  popup in the list.

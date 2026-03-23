@@ -609,8 +609,12 @@ impl CommandTextInput {
                     if let (Some(t_idx), Some(h_idx)) = (trigger_grapheme_idx, head_grapheme_idx) {
                         // Additional range check to prevent index errors
                         if t_idx >= text_graphemes.len() || h_idx > text_graphemes.len() {
-                            log!("Error: Grapheme indices out of range: t_idx={}, h_idx={}, graphemes_len={}",
-                                 t_idx, h_idx, text_graphemes.len());
+                            log!(
+                                "Error: Grapheme indices out of range: t_idx={}, h_idx={}, graphemes_len={}",
+                                t_idx,
+                                h_idx,
+                                text_graphemes.len()
+                            );
                             return String::new();
                         }
 
@@ -641,14 +645,26 @@ impl CommandTextInput {
                             return String::new();
                         } else {
                             // Abnormal case: trigger character is after the cursor
-                            log!("Warning: Trigger character is after cursor: trigger_idx={}, head_idx={}, trigger_pos={}, head={}",
-                                 t_idx, h_idx, trigger_pos, head);
+                            log!(
+                                "Warning: Trigger character is after cursor: trigger_idx={}, head_idx={}, trigger_pos={}, head={}",
+                                t_idx,
+                                h_idx,
+                                trigger_pos,
+                                head
+                            );
                             return String::new();
                         }
                     } else {
                         // Comprehensive diagnostic information
-                        log!("Warning: Unable to find valid grapheme indices: trigger_idx={:?}, head_idx={:?}, trigger_pos={}, head={}, text_len={}, graphemes_len={}",
-                             trigger_grapheme_idx, head_grapheme_idx, trigger_pos, head, text.len(), text_graphemes.len());
+                        log!(
+                            "Warning: Unable to find valid grapheme indices: trigger_idx={:?}, head_idx={:?}, trigger_pos={}, head={}, text_len={}, graphemes_len={}",
+                            trigger_grapheme_idx,
+                            head_grapheme_idx,
+                            trigger_pos,
+                            head,
+                            text.len(),
+                            text_graphemes.len()
+                        );
                         return String::new();
                     }
                 }

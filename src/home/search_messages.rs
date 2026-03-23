@@ -1,4 +1,3 @@
-
 //! UI widgets for searching messages in one or more rooms.
 
 use makepad_widgets::*;
@@ -41,12 +40,13 @@ script_mod! {
         }
     }
 
-    
+
 }
 
 #[derive(Script, ScriptHook, Widget)]
 pub struct SearchMessagesButton {
-    #[deref] button: Button,
+    #[deref]
+    button: Button,
 }
 
 impl Widget for SearchMessagesButton {

@@ -62,9 +62,12 @@ script_mod! {
 /// A notice that slides into view when someone is typing.
 #[derive(Script, ScriptHook, Widget, Animator)]
 pub struct TypingNotice {
-    #[source] source: ScriptObjectRef,
-    #[deref] view: View,
-    #[apply_default] animator: Animator,
+    #[source]
+    source: ScriptObjectRef,
+    #[deref]
+    view: View,
+    #[apply_default]
+    animator: Animator,
 }
 
 impl Widget for TypingNotice {
@@ -87,7 +90,9 @@ impl TypingNotice {
             [] => {
                 // Animate out the typing notice view (sliding it out towards the bottom).
                 self.animator_play(cx, ids!(typing_notice_animator.hide));
-                self.view.bouncing_dots(cx, ids!(bouncing_dots)).stop_animation(cx);
+                self.view
+                    .bouncing_dots(cx, ids!(bouncing_dots))
+                    .stop_animation(cx);
                 return;
             }
             [user] => format!("{user} is typing "),
@@ -96,20 +101,21 @@ impl TypingNotice {
                 if others.len() > 1 {
                     format!("{user1}, {user2}, and {} are typing ", &others[0])
                 } else {
-                    format!(
-                        "{user1}, {user2}, and {} others are typing ",
-                        others.len()
-                    )
+                    format!("{user1}, {user2}, and {} others are typing ", others.len())
                 }
             }
         };
         // Set the typing notice text and make its view visible.
-        self.view.label(cx, ids!(typing_label)).set_text(cx, &typing_notice_text);
+        self.view
+            .label(cx, ids!(typing_label))
+            .set_text(cx, &typing_notice_text);
         self.view.set_visible(cx, true);
         // Animate in the typing notice view (sliding it up from the bottom).
         self.animator_play(cx, ids!(typing_notice_animator.show));
         // Start the typing notice text animation of bouncing dots.
-        self.view.bouncing_dots(cx, ids!(bouncing_dots)).start_animation(cx);
+        self.view
+            .bouncing_dots(cx, ids!(bouncing_dots))
+            .start_animation(cx);
     }
 }
 

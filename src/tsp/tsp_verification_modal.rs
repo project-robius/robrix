@@ -1,8 +1,10 @@
-
 use makepad_widgets::*;
 use tsp_sdk::AsyncSecureStore;
 
-use crate::{sliding_sync::current_user_id, tsp::{submit_tsp_request, TspRequest, TspVerificationDetails}};
+use crate::{
+    sliding_sync::current_user_id,
+    tsp::{submit_tsp_request, TspRequest, TspVerificationDetails},
+};
 
 script_mod! {
     link tsp_enabled
@@ -90,8 +92,10 @@ script_mod! {
 
 #[derive(Script, ScriptHook, Widget)]
 pub struct TspVerificationModal {
-    #[deref] view: View,
-    #[rust] state: TspVerificationModalState,
+    #[deref]
+    view: View,
+    #[rust]
+    state: TspVerificationModalState,
 }
 
 #[derive(Default)]
@@ -185,7 +189,10 @@ impl WidgetMatchEvent for TspVerificationModal {
                     // the wallet. If not, we need to show an error instructing the user
                     // to add that VID to their wallet first and then retry the verification process.
                     // Then, we need to send a negative response to the initiator of the request.
-                    let error_text = if !wallet_db.has_private_vid(&details.responding_vid).is_ok_and(|v| v) {
+                    let error_text = if !wallet_db
+                        .has_private_vid(&details.responding_vid)
+                        .is_ok_and(|v| v)
+                    {
                         Some(format!(
                             "Error: the VID \"{}\" was not found in your current wallet.\n\n\
                             Either the requestor has the wrong VID for you, or you have not yet added that VID to your wallet.\n\n\
@@ -224,16 +231,17 @@ impl WidgetMatchEvent for TspVerificationModal {
                             },
                         });
                         new_state = TspVerificationModalState::RequestDeclined;
-                    }
-                    else {
-                        let prompt = format!("You have accepted the TSP verification request.\n\n\
+                    } else {
+                        let prompt = format!(
+                            "You have accepted the TSP verification request.\n\n\
                             Please confirm that the following code matches for both users:\n\n\
                             Code: \"{}\"\n",
                             details.random_str,
                         );
                         prompt_label.set_text(cx, &prompt);
                         accept_button.set_text(cx, "Yes, they match!");
-                        new_state = TspVerificationModalState::RequestAccepted { details, wallet_db };
+                        new_state =
+                            TspVerificationModalState::RequestAccepted { details, wallet_db };
                     }
                 }
 
@@ -246,7 +254,7 @@ impl WidgetMatchEvent for TspVerificationModal {
                     let prompt_text = "You have confirmed the TSP verification request.\n\nSending a response now...";
                     prompt_label.set_text(cx, prompt_text);
                     accept_button.set_enabled(cx, false);
-                    // stay in this same state until we get an acknowledgment back 
+                    // stay in this same state until we get an acknowledgment back
                     // that we sent the response (the `SentDidAssociationResponse` action).
                     new_state = TspVerificationModalState::RequestAccepted { details, wallet_db };
                 }
@@ -263,16 +271,22 @@ impl WidgetMatchEvent for TspVerificationModal {
 
         for action in actions {
             match action.downcast_ref() {
-                Some(TspVerificationModalAction::SentDidAssociationResponse { details, result }) 
-                    if self.state.details().is_some_and(|d| d == details) =>
-                {
+                Some(TspVerificationModalAction::SentDidAssociationResponse {
+                    details,
+                    result,
+                }) if self.state.details().is_some_and(|d| d == details) => {
                     match result {
                         Ok(()) => {
                             self.label(cx, ids!(prompt)).set_text(cx, "The TSP verification process has completed successfully.\n\nYou may now close this.");
                             self.state = TspVerificationModalState::RequestVerified;
                         }
                         Err(e) => {
-                            self.label(cx, ids!(prompt)).set_text(cx, &format!("Error: failed to complete the TSP verification process:\n\n{e}"));
+                            self.label(cx, ids!(prompt)).set_text(
+                                cx,
+                                &format!(
+                                    "Error: failed to complete the TSP verification process:\n\n{e}"
+                                ),
+                            );
                             self.state = TspVerificationModalState::RequestDeclined;
                         }
                     }
@@ -306,7 +320,8 @@ impl TspVerificationModal {
         wallet_db: AsyncSecureStore,
     ) {
         log!("Initializing TSP verification modal with: {:?}", details);
-        let prompt_text = format!("Matrix User \"{}\" is requesting to verify your identity via TSP.\n\
+        let prompt_text = format!(
+            "Matrix User \"{}\" is requesting to verify your identity via TSP.\n\
             Their TSP identity is: \"{}\".\n\n\
             They want to verify your TSP identity \"{}\" associated with Matrix User ID \"{}\".\n\n\
             If you recognize these details, would you like to accept this request?",
@@ -328,10 +343,7 @@ impl TspVerificationModal {
         cancel_button.set_visible(cx, true);
         cancel_button.reset_hover(cx);
 
-        self.state = TspVerificationModalState::ReceivedRequest {
-            details,
-            wallet_db,
-        };
+        self.state = TspVerificationModalState::ReceivedRequest { details, wallet_db };
     }
 }
 
@@ -339,7 +351,7 @@ impl TspVerificationModalRef {
     /// Initialize this modal with the details of a TSP verification request.
     pub fn initialize_with_details(
         &self,
-        cx: &mut Cx, 
+        cx: &mut Cx,
         details: TspVerificationDetails,
         wallet_db: AsyncSecureStore,
     ) {
