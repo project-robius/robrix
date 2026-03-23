@@ -4522,9 +4522,7 @@ async fn try_add_room_to_space(
         ));
     }
 
-    let Some(user_id) = client.user_id() else {
-        return None;
-    };
+    let user_id = client.user_id()?;
     if let Ok(child_power_levels) = child_room.power_levels().await
         && child_power_levels.user_can_send_state(user_id, StateEventType::SpaceParent)
         && let Ok(parent_route) = space_room.route().await
