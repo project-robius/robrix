@@ -24,6 +24,16 @@ pub enum UploadAbortHandleAction {
     None,
 }
 
+/// Tracks whether the upload view is in an error state with retry data.
+#[derive(Debug, Clone, Default)]
+pub enum UploadViewState {
+    /// Normal state (uploading or hidden)
+    #[default]
+    Normal,
+    /// Error state with file data available for retry
+    Error(Box<FileData>),
+}
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -111,12 +121,9 @@ pub struct UploadProgressView {
     /// AbortHandle for cancelling an in-progress upload
     #[rust]
     upload_abort_handle: Option<tokio::task::AbortHandle>,
-    /// Whether the view is showing an error state with retry option
+    /// Current state of the upload view
     #[rust]
-    is_error_state: bool,
-    /// File data to retry if in error state
-    #[rust]
-    retry_file_data: Option<FileData>,
+    state: UploadViewState,
 }
 
 impl Widget for UploadProgressView {
@@ -134,9 +141,10 @@ impl WidgetMatchEvent for UploadProgressView {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         // Handle retry button being clicked (only visible in error state)
         if self.button(ids!(retry_button)).clicked(actions) {
-            if let Some(file_data) = self.retry_file_data.take() {
+            if let UploadViewState::Error(file_data) =
+                std::mem::take(&mut self.state)
+            {
                 log!("Retrying upload");
-                self.is_error_state = false;
                 // Hide retry button
                 self.button(ids!(retry_button)).set_visible(cx, false);
                 // Reset to uploading state
@@ -147,14 +155,14 @@ impl WidgetMatchEvent for UploadProgressView {
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
-                    UploadProgressViewAction::Retry(file_data),
+                    UploadProgressViewAction::Retry(*file_data),
                 );
             }
         }
 
         // Handle cancel button being clicked
         if self.button(ids!(cancel_upload_button)).clicked(actions) {
-            if self.is_error_state {
+            if matches!(self.state, UploadViewState::Error(_)) {
                 // In error state, just dismiss the error view
                 self.hide(cx);
             } else {
@@ -179,10 +187,9 @@ impl WidgetMatchEvent for UploadProgressView {
 }
 
 impl UploadProgressView {
-    /// Hides the progress view and resets error state.
+    /// Hides the progress view and resets state.
     pub fn hide(&mut self, cx: &mut Cx) {
-        self.is_error_state = false;
-        self.retry_file_data = None;
+        self.state = UploadViewState::Normal;
         // Hide retry button
         self.button(ids!(retry_button)).set_visible(cx, false);
         self.set_visible(cx, false);
@@ -191,8 +198,7 @@ impl UploadProgressView {
 
     /// Shows an error state with the given error message and stores the file data for retry.
     pub fn show_error(&mut self, cx: &mut Cx, error: String, file_data: FileData) {
-        self.is_error_state = true;
-        self.retry_file_data = Some(file_data);
+        self.state = UploadViewState::Error(Box::new(file_data));
         self.upload_abort_handle = None;
 
         // Update the label to show the error
