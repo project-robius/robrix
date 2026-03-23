@@ -44,7 +44,8 @@ use crate::{
     room::{
         FetchedRoomAvatar,
         room_display_filter::{
-            RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn,
+            FilterableRoom, RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria,
+            SortFn,
         },
     },
     shared::{
@@ -309,6 +310,14 @@ pub struct JoinedRoomInfo {
     //       they are children of. One room can be in multiple spaces.
 }
 
+#[derive(Clone, Debug)]
+pub struct RoomSearchResult {
+    pub room_name_id: RoomNameId,
+    pub is_invite: bool,
+    pub is_direct: bool,
+    pub subtitle: String,
+}
+
 /// UI-related info about a room that the user has been invited to.
 ///
 /// This includes info needed display a preview of that room in the RoomsList
@@ -521,6 +530,78 @@ macro_rules! should_display_room {
 }
 
 impl RoomsList {
+    fn build_search_results(&self, keywords: &str) -> Vec<RoomSearchResult> {
+        if keywords.trim().is_empty() {
+            return Vec::new();
+        }
+
+        let (display_filter, _sort_fn) = RoomDisplayFilterBuilder::new()
+            .set_keywords(keywords.to_owned())
+            .set_filter_criteria(RoomFilterCriteria::All)
+            .build();
+        let should_display = |room_id: &OwnedRoomId, room: &dyn FilterableRoom| {
+            !self.hidden_rooms.contains(room_id)
+                && display_filter(room)
+                && self
+                    .selected_space
+                    .as_ref()
+                    .is_none_or(|space| self.is_room_indirectly_in_space(space.room_id(), room_id))
+        };
+
+        let invited_rooms = self.invited_rooms.borrow();
+        let mut results = Vec::new();
+        for room_id in &self.all_known_rooms_order {
+            if let Some(joined_room) = self.all_joined_rooms.get(room_id) {
+                if !should_display(room_id, joined_room) {
+                    continue;
+                }
+                let detail = joined_room
+                    .canonical_alias
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| joined_room.room_name_id.room_id().to_string());
+                results.push(RoomSearchResult {
+                    room_name_id: joined_room.room_name_id.clone(),
+                    is_invite: false,
+                    is_direct: joined_room.is_direct,
+                    subtitle: format!(
+                        "{} · {}",
+                        if joined_room.is_direct {
+                            "Direct room"
+                        } else {
+                            "Room"
+                        },
+                        detail
+                    ),
+                });
+            } else if let Some(invited_room) = invited_rooms.get(room_id) {
+                if !should_display(room_id, invited_room) {
+                    continue;
+                }
+                let detail = invited_room
+                    .canonical_alias
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| invited_room.room_name_id.room_id().to_string());
+                results.push(RoomSearchResult {
+                    room_name_id: invited_room.room_name_id.clone(),
+                    is_invite: true,
+                    is_direct: invited_room.is_direct,
+                    subtitle: format!(
+                        "{} · {}",
+                        if invited_room.is_direct {
+                            "Invite to direct room"
+                        } else {
+                            "Invite"
+                        },
+                        detail
+                    ),
+                });
+            }
+        }
+        results
+    }
+
     /// Returns whether the homeserver has finished syncing all of the rooms
     /// that should be synced to our client based on the currently-specified room list filter.
     pub fn all_rooms_loaded(&self) -> bool {
@@ -1764,6 +1845,14 @@ impl RoomsListRef {
             .space_map
             .get(space_id)
             .map(|smv| smv.parent_chain.clone())
+    }
+
+    /// Returns the rooms matching the given search keywords,
+    /// using the same filtering semantics as the sidebar.
+    pub fn search_results(&self, keywords: &str) -> Vec<RoomSearchResult> {
+        self.borrow()
+            .map(|inner| inner.build_search_results(keywords))
+            .unwrap_or_default()
     }
 }
 

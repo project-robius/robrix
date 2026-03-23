@@ -32,6 +32,7 @@ use makepad_widgets::*;
 use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::{self, AvatarCacheEntry},
+    home::{search_rooms_modal::SearchRoomsModalAction, spaces_bar::SpacesBarWidgetExt},
     login::login_screen::LoginAction,
     logout::logout_confirm_modal::LogoutAction,
     profile::{
@@ -163,6 +164,43 @@ script_mod! {
         draw_icon +: { svg: (ICON_ADD) }
     }
 
+    mod.widgets.NavigationActionButton = RobrixNeutralIconButton {
+        width: Fill
+        height: (NAVIGATION_TAB_BAR_SIZE - 5)
+        padding: 5
+        margin: 3
+        spacing: 0
+        align: Align{x: 0.5, y: 0.5}
+        text: ""
+
+        icon_walk: Walk{
+            margin: 0
+            width: (NAVIGATION_TAB_BAR_SIZE / 2.2)
+            height: (NAVIGATION_TAB_BAR_SIZE / 2.2)
+        }
+
+        draw_bg +: {
+            color: (COLOR_NAVIGATION_TAB_BG)
+            color_hover: (COLOR_NAVIGATION_TAB_BG_HOVER)
+            color_down: (COLOR_NAVIGATION_TAB_BG_ACTIVE)
+            border_size: 0.0
+            border_radius: 4.0
+            border_color: #0000
+            border_color_hover: #0000
+            border_color_down: #0000
+        }
+
+        draw_icon +: {
+            color: (COLOR_NAVIGATION_TAB_FG)
+            color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
+            color_down: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
+        }
+    }
+
+    mod.widgets.SearchButton = mod.widgets.NavigationActionButton {
+        draw_icon +: { svg: (ICON_SEARCH) }
+    }
+
     mod.widgets.Separator = LineH { margin: 8 }
 
     mod.widgets.NavigationTabBar = #(NavigationTabBar::register_widget(vm)) {
@@ -183,6 +221,9 @@ script_mod! {
             }
             CachedWidget {
                 home_button := mod.widgets.HomeButton {}
+            }
+            CachedWidget {
+                search_button := mod.widgets.SearchButton {}
             }
             CachedWidget {
                 add_room_button := mod.widgets.AddRoomButton {}
@@ -214,6 +255,9 @@ script_mod! {
 
             CachedWidget {
                 home_button := mod.widgets.HomeButton {}
+            }
+            CachedWidget {
+                search_button := mod.widgets.SearchButton {}
             }
             CachedWidget {
                 add_room_button := mod.widgets.AddRoomButton {}
@@ -451,6 +495,7 @@ impl ScriptHook for NavigationTabBar {
             if let Some(mut rb) = self.view.radio_button(cx, ids!(home_button)).borrow_mut() {
                 rb.animator_play(cx, ids!(active.on));
             }
+            cx.set_global(self.view.spaces_bar(cx, ids!(root_spaces_bar)));
         });
     }
 }
@@ -479,6 +524,10 @@ impl Widget for NavigationTabBar {
             {
                 self.is_spaces_bar_shown = !self.is_spaces_bar_shown;
                 cx.action(NavigationBarAction::ToggleSpacesBar);
+            }
+
+            if self.view.button(cx, ids!(search_button)).clicked(actions) {
+                cx.action(SearchRoomsModalAction::Open);
             }
 
             for action in actions {

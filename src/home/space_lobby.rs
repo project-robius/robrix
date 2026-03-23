@@ -21,10 +21,16 @@ use crate::utils::replace_linebreaks_separators;
 use crate::{
     app::AppStateAction,
     avatar_cache::{self, AvatarCacheEntry},
-    home::{invite_modal::InviteModalAction, rooms_list::RoomsListRef},
+    home::{
+        add_room::{CreateRoomRequestOrigin, CreateRoomResultAction},
+        create_space_room_modal::CreateSpaceRoomModalAction,
+        invite_modal::InviteModalAction,
+        rooms_list::RoomsListRef,
+    },
     join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction},
     room::BasicRoomDetails,
     shared::avatar::{AvatarWidgetExt, AvatarWidgetRefExt},
+    sliding_sync::{MatrixRequest, submit_async_request},
     space_service_sync::{SpaceRequest, SpaceRoomExt, SpaceRoomListAction},
     utils::{self, RoomNameId},
 };
@@ -484,6 +490,17 @@ script_mod! {
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                     text: "Invite"
                 }
+
+                create_room_button := RobrixIconButton {
+                    visible: false
+                    width: Fit
+                    align: Align{x: 0.5, y: 0.5}
+                    margin: Inset{left: 6}
+                    padding: 12,
+                    draw_icon.svg: (ICON_ADD)
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                    text: "Add Room"
+                }
             }
         }
 
@@ -574,6 +591,14 @@ impl Widget for SpaceLobbyEntry {
 #[derive(Debug)]
 pub enum SpaceLobbyAction {
     SpaceLobbyEntryClicked,
+}
+
+#[derive(Debug)]
+pub enum SpaceRoomCreationPermissionsAction {
+    Loaded {
+        space_id: OwnedRoomId,
+        can_create_child_room: bool,
+    },
 }
 
 #[derive(Script, ScriptHook)]
@@ -932,6 +957,10 @@ pub struct SpaceLobbyScreen {
     /// Whether we are currently loading the initial data.
     #[rust]
     is_loading: bool,
+    #[rust]
+    can_create_child_room: bool,
+    #[rust]
+    pending_created_child_room: Option<OwnedRoomId>,
 }
 
 impl Widget for SpaceLobbyScreen {
@@ -1006,6 +1035,48 @@ impl Widget for SpaceLobbyScreen {
                     _ => {}
                 }
 
+                if let Some(SpaceRoomCreationPermissionsAction::Loaded {
+                    space_id,
+                    can_create_child_room,
+                }) = action.downcast_ref()
+                    && self
+                        .space_name_id
+                        .as_ref()
+                        .is_some_and(|space_name_id| space_name_id.room_id() == space_id)
+                {
+                    self.can_create_child_room = *can_create_child_room;
+                    self.view
+                        .widget(cx, ids!(header.parent_space_row.create_room_button))
+                        .set_visible(cx, *can_create_child_room);
+                    self.redraw(cx);
+                }
+
+                if let Some(CreateRoomResultAction::Created {
+                    room_name_id,
+                    parent_space_id,
+                    origin,
+                    ..
+                }) = action.downcast_ref()
+                    && *origin == CreateRoomRequestOrigin::SpaceLobbyModal
+                    && self.space_name_id.as_ref().is_some_and(|space_name_id| {
+                        Some(space_name_id.room_id()) == parent_space_id.as_ref()
+                    })
+                {
+                    self.pending_created_child_room = Some(room_name_id.room_id().clone());
+                    self.refresh_current_space_children(cx);
+                }
+
+                if let Some(AppStateAction::RoomLoadedSuccessfully { room_name_id, .. }) =
+                    action.downcast_ref()
+                    && self
+                        .pending_created_child_room
+                        .as_ref()
+                        .is_some_and(|pending_room_id| pending_room_id == room_name_id.room_id())
+                {
+                    self.pending_created_child_room = None;
+                    self.refresh_current_space_children(cx);
+                }
+
                 // Handle SubspaceEntry clicks
                 match action.as_widget_action().cast_ref() {
                     SubspaceEntryAction::SpaceClicked { space_id } => {
@@ -1063,6 +1134,16 @@ impl Widget for SpaceLobbyScreen {
                 if let Some(space_name_id) = self.space_name_id.as_ref() {
                     cx.action(InviteModalAction::Open(space_name_id.clone()));
                 }
+            }
+
+            if self
+                .view
+                .button(cx, ids!(header.parent_space_row.create_room_button))
+                .clicked(actions)
+                && self.can_create_child_room
+                && let Some(space_name_id) = self.space_name_id.as_ref()
+            {
+                cx.action(CreateSpaceRoomModalAction::Open(space_name_id.clone()));
             }
         }
     }
@@ -1317,6 +1398,71 @@ impl Widget for SpaceLobbyScreen {
 }
 
 impl SpaceLobbyScreen {
+    /// Requests a fresh snapshot of a space's children.
+    ///
+    /// When `force_refresh` is true, we first tear down the existing per-space
+    /// subscription so the next request is backed by a newly-created
+    /// `SpaceRoomList` instead of potentially stale cached state.
+    fn request_space_snapshot(
+        &mut self,
+        cx: &mut Cx,
+        sender: UnboundedSender<SpaceRequest>,
+        space_id: &OwnedRoomId,
+        force_refresh: bool,
+        include_top_level_details: bool,
+    ) {
+        let parent_chain = cx
+            .get_global::<RoomsListRef>()
+            .get_space_parent_chain(space_id)
+            .unwrap_or_default();
+
+        if force_refresh {
+            let _ = sender.send(SpaceRequest::UnsubscribeFromSpaceRoomList {
+                space_id: space_id.clone(),
+            });
+            let _ = sender.send(SpaceRequest::SubscribeToSpaceRoomList {
+                space_id: space_id.clone(),
+                parent_chain: parent_chain.clone(),
+            });
+        }
+
+        let _ = sender.send(SpaceRequest::GetChildren {
+            space_id: space_id.clone(),
+            parent_chain: parent_chain.clone(),
+        });
+        let _ = sender.send(SpaceRequest::GetDetailedChildren {
+            space_id: space_id.clone(),
+            parent_chain,
+        });
+
+        if include_top_level_details {
+            let _ = sender.send(SpaceRequest::GetTopLevelSpaceDetails {
+                space_id: space_id.clone(),
+            });
+        }
+
+        self.space_request_sender = Some(sender);
+    }
+
+    fn refresh_current_space_children(&mut self, cx: &mut Cx) {
+        let Some(space_id) = self
+            .space_name_id
+            .as_ref()
+            .map(|space_name_id| space_name_id.room_id().clone())
+        else {
+            return;
+        };
+        let Some(sender) = self
+            .space_request_sender
+            .clone()
+            .or_else(|| cx.get_global::<RoomsListRef>().get_space_request_sender())
+        else {
+            return;
+        };
+
+        self.request_space_snapshot(cx, sender, &space_id, true, false);
+    }
+
     /// Finds the given room/space ID in the tree and returns its basic details (including name).
     fn basic_room_details_for(&self, room_id: &OwnedRoomId) -> BasicRoomDetails {
         let room_name = self.tree_entries.iter().find_map(|entry| match entry {
@@ -1346,6 +1492,13 @@ impl SpaceLobbyScreen {
             .as_ref()
             .is_some_and(|sni| sni.room_id() == space_id)
         {
+            if self.pending_created_child_room.as_ref().is_some_and(|pending_room_id| {
+                children
+                    .iter()
+                    .any(|child_room| &child_room.room_id == pending_room_id)
+            }) {
+                self.pending_created_child_room = None;
+            }
             self.is_loading = false;
             // Auto-expand the top-level space (we don't show it, just its children)
             self.expanded_spaces.insert(space_id.clone());
@@ -1498,13 +1651,23 @@ impl SpaceLobbyScreen {
             .label(cx, ids!(header.parent_space_row.parent_name));
         parent_name.set_text(cx, &space_name);
 
-        // If this space is already being displayed, then the only thing we may need to do
-        // is update its name in the top-level header (already done above).
+        // If this space is already being displayed, keep the current UI state intact
+        // but still refresh its children from a new subscription.
         if self
             .space_name_id
             .as_ref()
             .is_some_and(|sni| sni.room_id() == space_name_id.room_id())
         {
+            if let Some(sender) = self
+                .space_request_sender
+                .clone()
+                .or_else(|| cx.get_global::<RoomsListRef>().get_space_request_sender())
+            {
+                self.request_space_snapshot(cx, sender, space_name_id.room_id(), true, true);
+            }
+            submit_async_request(MatrixRequest::GetSpaceRoomCreationPermissions {
+                space_id: space_name_id.room_id().clone(),
+            });
             return;
         }
 
@@ -1512,19 +1675,18 @@ impl SpaceLobbyScreen {
         self.save_current_state();
 
         self.space_name_id = Some(space_name_id.clone());
+        self.pending_created_child_room = None;
+        self.can_create_child_room = false;
+        self.view
+            .widget(cx, ids!(header.parent_space_row.create_room_button))
+            .set_visible(cx, false);
         let rooms_list_ref = cx.get_global::<RoomsListRef>();
         if let Some(sender) = rooms_list_ref.get_space_request_sender() {
-            // Request detailed children for this space so we can start populating it.
-            let parent_chain_opt = rooms_list_ref.get_space_parent_chain(space_name_id.room_id());
-            let _ = sender.send(SpaceRequest::GetDetailedChildren {
-                space_id: space_name_id.room_id().clone(),
-                parent_chain: parent_chain_opt.unwrap_or_default(),
-            });
-            let _ = sender.send(SpaceRequest::GetTopLevelSpaceDetails {
-                space_id: space_name_id.room_id().clone(),
-            });
-            self.space_request_sender = Some(sender);
+            self.request_space_snapshot(cx, sender, space_name_id.room_id(), true, true);
         }
+        submit_async_request(MatrixRequest::GetSpaceRoomCreationPermissions {
+            space_id: space_name_id.room_id().clone(),
+        });
 
         // Clear the main content until we receive the async space info responses.
         self.tree_entries.clear();

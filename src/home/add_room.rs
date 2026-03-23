@@ -3,26 +3,113 @@
 use makepad_widgets::*;
 use matrix_sdk::RoomState;
 use ruma::{
-    IdParseError, MatrixToUri, MatrixUri, OwnedRoomOrAliasId, OwnedServerName,
+    IdParseError, MatrixToUri, MatrixUri, OwnedRoomId, OwnedRoomOrAliasId, OwnedServerName,
     matrix_uri::MatrixId,
     room::{JoinRuleSummary, RoomType},
 };
 
 use crate::{
     app::AppStateAction,
-    home::invite_screen::JoinRoomResultAction,
+    home::{
+        invite_screen::JoinRoomResultAction, navigation_tab_bar::NavigationBarAction,
+        rooms_list::RoomsListRef,
+    },
     room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction},
     shared::{
         avatar::AvatarWidgetRefExt,
         popup_list::{PopupKind, enqueue_popup_notification},
     },
     sliding_sync::{MatrixRequest, submit_async_request},
-    utils,
+    utils::{self, RoomNameId},
 };
 
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
+
+    mod.widgets.AddRoomCreateModeButton = mod.widgets.RadioButtonTabFlat {
+        height: 38
+        padding: Inset{left: 0, right: 0, top: 9, bottom: 9}
+        label_walk +: {
+            margin: Inset{left: 14., right: 14.}
+        }
+        draw_bg +: {
+            border_size: 1.0
+            border_radius: 8.0
+            color: #xF5F7FB
+            color_hover: #xEEF4FF
+            color_down: #xE2ECFF
+            color_active: (COLOR_ACTIVE_PRIMARY)
+            color_disabled: #xF7F7F7
+
+            border_color: (COLOR_SECONDARY_DARKER)
+            border_color_hover: (COLOR_ACTIVE_PRIMARY)
+            border_color_down: (COLOR_ACTIVE_PRIMARY_DARKER)
+            border_color_active: (COLOR_ACTIVE_PRIMARY)
+            border_color_focus: (COLOR_ACTIVE_PRIMARY)
+            border_color_disabled: (COLOR_BG_DISABLED)
+        }
+        draw_text +: {
+            color: (COLOR_TEXT)
+            color_hover: (COLOR_TEXT)
+            color_down: (COLOR_TEXT)
+            color_focus: (COLOR_TEXT)
+            color_active: (COLOR_PRIMARY)
+            color_disabled: (COLOR_FG_DISABLED)
+            text_style: MESSAGE_TEXT_STYLE { font_size: 10.5 }
+        }
+    }
+
+    mod.widgets.AddRoomFormDropdown = mod.widgets.DropDownFlat {
+        width: Fill
+        height: 40
+        margin: 0
+        padding: Inset{left: 12, right: 30, top: 11, bottom: 9}
+        draw_text +: {
+            color: (MESSAGE_TEXT_COLOR)
+            color_hover: (MESSAGE_TEXT_COLOR)
+            color_focus: (MESSAGE_TEXT_COLOR)
+            color_down: (MESSAGE_TEXT_COLOR)
+            color_disabled: (COLOR_FG_DISABLED)
+            text_style: MESSAGE_TEXT_STYLE { font_size: 11 }
+        }
+        draw_bg +: {
+            border_radius: 4.0
+            border_size: 1.0
+            color: (COLOR_PRIMARY)
+            color_hover: (COLOR_PRIMARY)
+            color_focus: (COLOR_PRIMARY)
+            color_down: (COLOR_PRIMARY)
+            color_disabled: #xF5F5F5
+            border_color: (COLOR_SECONDARY_DARKER)
+            border_color_hover: (COLOR_ACTIVE_PRIMARY)
+            border_color_focus: (COLOR_ACTIVE_PRIMARY_DARKER)
+            border_color_down: (COLOR_ACTIVE_PRIMARY_DARKER)
+            border_color_disabled: (COLOR_BG_DISABLED)
+            arrow_color: (MESSAGE_TEXT_COLOR)
+            arrow_color_hover: (MESSAGE_TEXT_COLOR)
+            arrow_color_focus: (MESSAGE_TEXT_COLOR)
+            arrow_color_down: (MESSAGE_TEXT_COLOR)
+            arrow_color_disabled: (COLOR_FG_DISABLED)
+        }
+    }
+
+    mod.widgets.AddRoomFieldLabel = Label {
+        width: Fit, height: Fit
+        draw_text +: {
+            color: (MESSAGE_TEXT_COLOR),
+            text_style: MESSAGE_TEXT_STYLE { font_size: 10.5 },
+        }
+    }
+
+    mod.widgets.AddRoomFieldHint = Label {
+        width: Fill, height: Fit
+        flow: Flow.Right{wrap: true},
+        draw_text +: {
+            color: #x666,
+            text_style: MESSAGE_TEXT_STYLE { font_size: 10 },
+        }
+    }
 
 
 
@@ -47,6 +134,148 @@ script_mod! {
         }
 
         LineH { padding: 10, margin: Inset{top: 10, right: 2} }
+
+        SubsectionLabel {
+            text: "Create a new space or room:"
+        }
+
+        create_room_form := RoundedView {
+            width: Fill,
+            height: Fit,
+            margin: Inset{top: 6, bottom: 14, left: 5, right: 5}
+            padding: 18
+            flow: Down
+
+            show_bg: true
+            draw_bg +: {
+                color: #xFCFDFF
+                border_radius: 10.0
+                border_size: 1.0
+                border_color: (COLOR_BG_DISABLED)
+            }
+
+            create_room_form_content := View {
+                width: Fill { max: 760 }
+                height: Fit
+                flow: Down
+                spacing: 12
+
+                create_form_intro := AddRoomFieldHint {
+                    text: "Choose what you want to create, fill in a name, then decide whether it should be private or publicly discoverable."
+                }
+
+                create_mode_buttons := View {
+                    width: Fill,
+                    height: Fit,
+                    flow: Flow.Right{wrap: true},
+                    spacing: 10
+
+                    create_workspace_mode := AddRoomCreateModeButton {
+                        text: "Space"
+                    }
+
+                    create_room_mode := AddRoomCreateModeButton {
+                        text: "Standalone Room"
+                    }
+
+                    create_room_in_workspace_mode := AddRoomCreateModeButton {
+                        text: "Room In Space"
+                    }
+                }
+
+                create_name_input := RobrixTextInput {
+                    width: Fill,
+                    height: Fit,
+                    margin: Inset{top: 2}
+                    padding: Inset{left: 12, right: 12, top: 11, bottom: 0}
+                    empty_text: "Enter a room or space name..."
+                }
+
+                create_topic_input := RobrixTextInput {
+                    width: Fill,
+                    height: Fit,
+                    padding: Inset{left: 12, right: 12, top: 11, bottom: 0}
+                    empty_text: "Topic (optional)..."
+                }
+
+                create_visibility_view := View {
+                    width: Fill,
+                    height: Fit,
+                    flow: Down
+                    spacing: 6
+
+                    visibility_label := AddRoomFieldLabel {
+                        text: "Visibility"
+                    }
+
+                    visibility_hint := AddRoomFieldHint {
+                        text: "Private rooms are invite-only. Public rooms can be found and joined by others."
+                    }
+
+                    create_visibility_dropdown := AddRoomFormDropdown {
+                        width: Fill { max: 240 }
+                    }
+                }
+
+                parent_space_view := View {
+                    visible: false
+                    width: Fill,
+                    height: Fit,
+                    flow: Down
+                    spacing: 6
+
+                    parent_space_label := AddRoomFieldLabel {
+                        text: "Parent space"
+                    }
+
+                    parent_space_dropdown := AddRoomFormDropdown {
+                        width: Fill
+                    }
+
+                    parent_space_status := AddRoomFieldHint {
+                        text: ""
+                    }
+                }
+
+                create_status_view := View {
+                    width: Fill,
+                    height: Fit,
+                    flow: Right,
+                    align: Align{y: 0.5}
+                    spacing: 8
+
+                    create_status_spinner := LoadingSpinner {
+                        visible: false
+                        width: 18,
+                        height: 18,
+                        draw_bg +: {
+                            color: (COLOR_ACTIVE_PRIMARY)
+                            border_size: 3.0
+                        }
+                    }
+
+                    create_status_text := Label {
+                        width: Fill, height: Fit
+                        flow: Flow.Right{wrap: true},
+                        draw_text +: {
+                            color: (MESSAGE_TEXT_COLOR),
+                            text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
+                        }
+                        text: ""
+                    }
+                }
+
+                create_room_button := RobrixPositiveIconButton {
+                    width: Fit,
+                    padding: Inset{top: 12, bottom: 12, left: 15, right: 15}
+                    draw_icon.svg: (ICON_ADD)
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                    text: "Create Space"
+                }
+            }
+        }
+
+        LineH { padding: 10, margin: Inset{top: 2, right: 2} }
 
         SubsectionLabel {
             text: "Join an existing room or space:"
@@ -265,15 +494,165 @@ script_mod! {
     }
 }
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct AddRoomScreen {
     #[deref]
     view: View,
     #[rust]
     state: AddRoomState,
+    #[rust]
+    create_mode: CreateMode,
+    #[rust]
+    create_state: CreateState,
+    #[rust]
+    editable_spaces_state: EditableSpacesState,
+    #[rust]
+    editable_spaces: Vec<EditableSpaceOption>,
+    #[rust]
+    selected_parent_space: Option<OwnedRoomId>,
     /// The function to perform when the user clicks the `join_room_button`.
     #[rust(JoinButtonFunction::None)]
     join_function: JoinButtonFunction,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EditableSpaceOption {
+    pub room_name_id: RoomNameId,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CreateRoomVisibility {
+    #[default]
+    Private,
+    Public,
+}
+impl CreateRoomVisibility {
+    fn from_dropdown_index(index: usize) -> Self {
+        if index == 1 {
+            Self::Public
+        } else {
+            Self::Private
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CreateRoomRequestOrigin {
+    #[default]
+    AddRoomScreen,
+    SpaceLobbyModal,
+}
+
+#[derive(Clone, Debug)]
+pub struct CreateRoomRequest {
+    pub name: String,
+    pub topic: Option<String>,
+    pub visibility: CreateRoomVisibility,
+    pub parent_space_id: Option<OwnedRoomId>,
+    pub is_space: bool,
+    pub invite_user_ids: Vec<ruma::OwnedUserId>,
+    pub origin: CreateRoomRequestOrigin,
+}
+impl CreateRoomRequest {
+    fn is_room_in_space(&self) -> bool {
+        self.parent_space_id.is_some() && !self.is_space
+    }
+}
+
+#[derive(Debug)]
+pub enum EditableSpacesAction {
+    Loaded(Result<Vec<EditableSpaceOption>, String>),
+}
+
+#[derive(Debug)]
+pub enum CreateRoomResultAction {
+    Created {
+        room_name_id: RoomNameId,
+        is_space: bool,
+        parent_space_id: Option<OwnedRoomId>,
+        warning: Option<String>,
+        origin: CreateRoomRequestOrigin,
+    },
+    Failed {
+        is_space: bool,
+        parent_space_id: Option<OwnedRoomId>,
+        error: String,
+        origin: CreateRoomRequestOrigin,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub enum AddRoomScreenAction {
+    PrefillJoinLookup(String),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum CreateMode {
+    #[default]
+    Space,
+    StandaloneRoom,
+    RoomInSpace,
+}
+impl CreateMode {
+    fn from_radio_index(index: usize) -> Self {
+        match index {
+            1 => Self::StandaloneRoom,
+            2 => Self::RoomInSpace,
+            _ => Self::Space,
+        }
+    }
+
+    fn is_space(self) -> bool {
+        matches!(self, Self::Space)
+    }
+
+    fn requires_parent_space(self) -> bool {
+        matches!(self, Self::RoomInSpace)
+    }
+
+    fn create_button_text(self) -> &'static str {
+        match self {
+            Self::Space => "Create Space",
+            Self::StandaloneRoom => "Create Room",
+            Self::RoomInSpace => "Create Room In Space",
+        }
+    }
+
+    fn idle_status_text(self) -> &'static str {
+        match self {
+            Self::Space => "Create a top-level Matrix space.",
+            Self::StandaloneRoom => "Create a new standalone room.",
+            Self::RoomInSpace => {
+                "Create a new room and attach it under one of your editable spaces."
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+enum CreateState {
+    #[default]
+    Idle,
+    Creating {
+        request: CreateRoomRequest,
+    },
+    CreatedPendingLoad {
+        room_name_id: RoomNameId,
+    },
+    CreatedLoaded {
+        room_name_id: RoomNameId,
+        is_space: bool,
+    },
+    Error(String),
+}
+
+#[derive(Clone, Debug, Default)]
+enum EditableSpacesState {
+    #[default]
+    Unrequested,
+    Loading,
+    Loaded,
+    Error(String),
 }
 
 #[derive(Default)]
@@ -355,6 +734,227 @@ impl AddRoomState {
     }
 }
 
+impl ScriptHook for AddRoomScreen {
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            let create_visibility_dropdown =
+                self.view.drop_down(cx, ids!(create_visibility_dropdown));
+            create_visibility_dropdown
+                .set_labels(cx, vec![String::from("Private"), String::from("Public")]);
+            create_visibility_dropdown.set_selected_item(cx, 0);
+            self.view
+                .radio_button(cx, ids!(create_workspace_mode))
+                .set_active(cx, true);
+            self.view
+                .radio_button(cx, ids!(create_room_mode))
+                .set_active(cx, false);
+            self.view
+                .radio_button(cx, ids!(create_room_in_workspace_mode))
+                .set_active(cx, false);
+            self.view
+                .button(cx, ids!(search_for_room_button))
+                .set_enabled(cx, false);
+            self.sync_create_form(cx);
+        });
+    }
+}
+
+impl AddRoomScreen {
+    fn reset_finished_create_state(&mut self) {
+        if !matches!(self.create_state, CreateState::Creating { .. }) {
+            self.create_state = CreateState::Idle;
+        }
+    }
+
+    fn request_editable_spaces(&mut self, cx: &mut Cx) {
+        self.editable_spaces_state = EditableSpacesState::Loading;
+        submit_async_request(MatrixRequest::GetEditableSpaces);
+        self.sync_create_form(cx);
+    }
+
+    fn select_preferred_parent_space(&mut self, cx: &mut Cx) {
+        let preferred_space_id = cx
+            .get_global::<RoomsListRef>()
+            .get_selected_space_id()
+            .filter(|selected| {
+                self.editable_spaces
+                    .iter()
+                    .any(|space| space.room_name_id.room_id() == selected)
+            });
+        self.selected_parent_space = preferred_space_id.or_else(|| {
+            self.editable_spaces
+                .first()
+                .map(|space| space.room_name_id.room_id().clone())
+        });
+    }
+
+    fn sync_parent_space_dropdown(&mut self, cx: &mut Cx) {
+        let parent_space_dropdown = self.view.drop_down(cx, ids!(parent_space_dropdown));
+        let parent_space_widget = self.view.widget(cx, ids!(parent_space_dropdown));
+
+        let labels = match &self.editable_spaces_state {
+            EditableSpacesState::Loading => vec![String::from("Loading editable spaces...")],
+            EditableSpacesState::Error(_) => {
+                vec![String::from("Unable to load editable spaces")]
+            }
+            EditableSpacesState::Loaded if self.editable_spaces.is_empty() => {
+                vec![String::from("No editable spaces available")]
+            }
+            _ => self
+                .editable_spaces
+                .iter()
+                .map(|space| space.room_name_id.to_string())
+                .collect(),
+        };
+        parent_space_dropdown.set_labels(cx, labels);
+
+        let selected_index = self
+            .selected_parent_space
+            .as_ref()
+            .and_then(|selected| {
+                self.editable_spaces
+                    .iter()
+                    .position(|space| space.room_name_id.room_id() == selected)
+            })
+            .unwrap_or(0);
+        parent_space_dropdown.set_selected_item(cx, selected_index);
+
+        let is_enabled = matches!(self.editable_spaces_state, EditableSpacesState::Loaded)
+            && !self.editable_spaces.is_empty();
+        parent_space_widget.set_disabled(cx, !is_enabled);
+    }
+
+    fn sync_create_form(&mut self, cx: &mut Cx) {
+        self.view
+            .radio_button(cx, ids!(create_workspace_mode))
+            .set_active(cx, matches!(self.create_mode, CreateMode::Space));
+        self.view
+            .radio_button(cx, ids!(create_room_mode))
+            .set_active(cx, matches!(self.create_mode, CreateMode::StandaloneRoom));
+        self.view
+            .radio_button(cx, ids!(create_room_in_workspace_mode))
+            .set_active(cx, matches!(self.create_mode, CreateMode::RoomInSpace));
+
+        let parent_space_view = self.view.view(cx, ids!(parent_space_view));
+        parent_space_view.set_visible(cx, self.create_mode.requires_parent_space());
+        self.sync_parent_space_dropdown(cx);
+
+        let parent_space_status = self.view.label(cx, ids!(parent_space_status));
+        let parent_status_text: String = match &self.editable_spaces_state {
+            EditableSpacesState::Unrequested => {
+                String::from("Choose a joined space where you can manage child rooms.")
+            }
+            EditableSpacesState::Loading => String::from("Loading spaces you can manage..."),
+            EditableSpacesState::Loaded if self.editable_spaces.is_empty() => String::from(
+                "You do not currently have permission to create child rooms in any joined space.",
+            ),
+            EditableSpacesState::Loaded => self
+                .selected_parent_space
+                .as_ref()
+                .and_then(|selected| {
+                    self.editable_spaces
+                        .iter()
+                        .find(|space| space.room_name_id.room_id() == selected)
+                })
+                .map(|space| format!("Selected space: {}", space.room_name_id))
+                .unwrap_or_else(|| String::from("Select a parent space.")),
+            EditableSpacesState::Error(error) => error.clone(),
+        };
+        parent_space_status.set_text(cx, &parent_status_text);
+
+        let create_button = self.view.button(cx, ids!(create_room_button));
+        let create_status_spinner = self.view.widget(cx, ids!(create_status_spinner));
+        let create_status_text = self.view.label(cx, ids!(create_status_text));
+        let create_name_input = self.view.text_input(cx, ids!(create_name_input));
+
+        let (button_text, button_enabled, spinner_visible, status_text) = match &self.create_state {
+            CreateState::Idle => (
+                self.create_mode.create_button_text().to_string(),
+                !create_name_input.text().trim().is_empty()
+                    && (!self.create_mode.requires_parent_space()
+                        || self.selected_parent_space.is_some()),
+                false,
+                self.create_mode.idle_status_text().to_string(),
+            ),
+            CreateState::Creating { request } => (
+                if request.is_space {
+                    String::from("Creating Space...")
+                } else if request.is_room_in_space() {
+                    String::from("Creating Room In Space...")
+                } else {
+                    String::from("Creating Room...")
+                },
+                false,
+                true,
+                if request.is_space {
+                    String::from("Creating space...")
+                } else if request.is_room_in_space() {
+                    String::from("Creating room and linking it into the selected space...")
+                } else {
+                    String::from("Creating room...")
+                },
+            ),
+            CreateState::CreatedPendingLoad { room_name_id, .. } => (
+                String::from("Waiting For Sync..."),
+                false,
+                true,
+                format!(
+                    "Created {}. Waiting for it to finish syncing...",
+                    room_name_id
+                ),
+            ),
+            CreateState::CreatedLoaded {
+                room_name_id,
+                is_space,
+            } => (
+                if *is_space {
+                    String::from("Go To Created Space")
+                } else {
+                    String::from("Go To Created Room")
+                },
+                true,
+                false,
+                if *is_space {
+                    format!("Created space {}.", room_name_id)
+                } else {
+                    format!("Created room {}.", room_name_id)
+                },
+            ),
+            CreateState::Error(error) => (
+                self.create_mode.create_button_text().to_string(),
+                !create_name_input.text().trim().is_empty()
+                    && (!self.create_mode.requires_parent_space()
+                        || self.selected_parent_space.is_some()),
+                false,
+                error.clone(),
+            ),
+        };
+
+        create_button.set_text(cx, &button_text);
+        create_button.set_enabled(cx, button_enabled);
+        create_status_spinner.set_visible(cx, spinner_visible);
+        create_status_text.set_text(cx, &status_text);
+    }
+
+    fn navigate_to_created_destination(
+        &self,
+        cx: &mut Cx,
+        room_name_id: &RoomNameId,
+        is_space: bool,
+    ) {
+        if is_space {
+            cx.action(NavigationBarAction::GoToSpace {
+                space_name_id: room_name_id.clone(),
+            });
+        } else {
+            cx.action(AppStateAction::NavigateToRoom {
+                room_to_close: None,
+                destination_room: crate::room::BasicRoomDetails::Name(room_name_id.clone()),
+            });
+        }
+    }
+}
+
 impl Widget for AddRoomScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
@@ -362,6 +962,20 @@ impl Widget for AddRoomScreen {
         if let Event::Actions(actions) = event {
             let room_alias_id_input = self.view.text_input(cx, ids!(room_alias_id_input));
             let search_for_room_button = self.view.button(cx, ids!(search_for_room_button));
+            let create_name_input = self.view.text_input(cx, ids!(create_name_input));
+            let create_topic_input = self.view.text_input(cx, ids!(create_topic_input));
+            let create_visibility_dropdown =
+                self.view.drop_down(cx, ids!(create_visibility_dropdown));
+            let parent_space_dropdown = self.view.drop_down(cx, ids!(parent_space_dropdown));
+            let create_room_button = self.view.button(cx, ids!(create_room_button));
+            let create_mode_buttons = self.view.radio_button_set(
+                cx,
+                ids_array!(
+                    create_workspace_mode,
+                    create_room_mode,
+                    create_room_in_workspace_mode,
+                ),
+            );
             let cancel_button = self
                 .view
                 .button(cx, ids!(fetched_room_summary.buttons_view.cancel_button));
@@ -372,6 +986,195 @@ impl Widget for AddRoomScreen {
             // Enable or disable the button based on if the text input is empty.
             if let Some(text) = room_alias_id_input.changed(actions) {
                 search_for_room_button.set_enabled(cx, !text.trim().is_empty());
+            }
+
+            let mut create_form_changed = false;
+            if let Some(index) = create_mode_buttons.selected(cx, actions) {
+                let new_mode = CreateMode::from_radio_index(index);
+                if self.create_mode != new_mode {
+                    self.create_mode = new_mode;
+                    self.reset_finished_create_state();
+                    if self.create_mode.requires_parent_space()
+                        && matches!(
+                            self.editable_spaces_state,
+                            EditableSpacesState::Unrequested | EditableSpacesState::Error(_)
+                        )
+                    {
+                        self.request_editable_spaces(cx);
+                    }
+                    create_form_changed = true;
+                }
+            }
+
+            if create_name_input.changed(actions).is_some()
+                || create_topic_input.changed(actions).is_some()
+                || create_visibility_dropdown.changed(actions).is_some()
+            {
+                self.reset_finished_create_state();
+                create_form_changed = true;
+            }
+
+            if let Some(index) = parent_space_dropdown.changed(actions) {
+                self.selected_parent_space = self
+                    .editable_spaces
+                    .get(index)
+                    .map(|space| space.room_name_id.room_id().clone());
+                self.reset_finished_create_state();
+                create_form_changed = true;
+            }
+
+            for action in actions {
+                if let Some(AddRoomScreenAction::PrefillJoinLookup(query)) = action.downcast_ref() {
+                    self.state = AddRoomState::WaitingOnUserInput;
+                    room_alias_id_input.set_text(cx, query);
+                    search_for_room_button.set_enabled(cx, !query.trim().is_empty());
+                    room_alias_id_input.set_key_focus(cx);
+                    self.redraw(cx);
+                }
+
+                match action.downcast_ref() {
+                    Some(EditableSpacesAction::Loaded(Ok(spaces))) => {
+                        self.editable_spaces = spaces.clone();
+                        self.editable_spaces_state = EditableSpacesState::Loaded;
+                        self.select_preferred_parent_space(cx);
+                        create_form_changed = true;
+                    }
+                    Some(EditableSpacesAction::Loaded(Err(error))) => {
+                        self.editable_spaces.clear();
+                        self.selected_parent_space = None;
+                        self.editable_spaces_state = EditableSpacesState::Error(error.clone());
+                        create_form_changed = true;
+                    }
+                    _ => {}
+                }
+
+                if let Some(CreateRoomResultAction::Created {
+                    room_name_id,
+                    is_space,
+                    parent_space_id,
+                    warning,
+                    origin,
+                }) = action.downcast_ref()
+                    && *origin == CreateRoomRequestOrigin::AddRoomScreen
+                {
+                    let success_message = if *is_space {
+                        format!("Successfully created space {}.", room_name_id)
+                    } else if parent_space_id.is_some() {
+                        format!(
+                            "Successfully created room {} in the selected space.",
+                            room_name_id
+                        )
+                    } else {
+                        format!("Successfully created room {}.", room_name_id)
+                    };
+                    enqueue_popup_notification(success_message, PopupKind::Success, Some(4.0));
+                    if let Some(warning) = warning {
+                        enqueue_popup_notification(warning.clone(), PopupKind::Warning, Some(6.0));
+                    }
+                    self.create_state = if *is_space {
+                        CreateState::CreatedLoaded {
+                            room_name_id: room_name_id.clone(),
+                            is_space: true,
+                        }
+                    } else {
+                        CreateState::CreatedPendingLoad {
+                            room_name_id: room_name_id.clone(),
+                        }
+                    };
+                    create_form_changed = true;
+                }
+
+                if let Some(CreateRoomResultAction::Failed { error, origin, .. }) =
+                    action.downcast_ref()
+                    && *origin == CreateRoomRequestOrigin::AddRoomScreen
+                {
+                    enqueue_popup_notification(error.clone(), PopupKind::Error, None);
+                    self.create_state = CreateState::Error(error.clone());
+                    create_form_changed = true;
+                }
+
+                if let Some(AppStateAction::RoomLoadedSuccessfully { room_name_id, .. }) =
+                    action.downcast_ref()
+                    && let CreateState::CreatedPendingLoad {
+                        room_name_id: pending_room_name_id,
+                        ..
+                    } = &self.create_state
+                    && pending_room_name_id.room_id() == room_name_id.room_id()
+                {
+                    self.create_state = CreateState::CreatedLoaded {
+                        room_name_id: room_name_id.clone(),
+                        is_space: false,
+                    };
+                    create_form_changed = true;
+                }
+            }
+
+            if create_room_button.clicked(actions) {
+                match &self.create_state {
+                    CreateState::CreatedLoaded {
+                        room_name_id,
+                        is_space,
+                    } => {
+                        self.navigate_to_created_destination(cx, room_name_id, *is_space);
+                    }
+                    CreateState::Creating { .. } | CreateState::CreatedPendingLoad { .. } => {}
+                    _ => {
+                        let room_name = create_name_input.text().trim().to_string();
+                        if room_name.is_empty() {
+                            let err = String::from("Please enter a name for the room or space.");
+                            enqueue_popup_notification(err.clone(), PopupKind::Error, None);
+                            self.create_state = CreateState::Error(err);
+                            create_name_input.set_key_focus(cx);
+                            create_form_changed = true;
+                        } else {
+                            let parent_space_id = if self.create_mode.requires_parent_space() {
+                                match self.selected_parent_space.clone() {
+                                    Some(parent_space_id) => Some(parent_space_id),
+                                    None => {
+                                        let err = String::from(
+                                            "Please choose a space where the new room should be created.",
+                                        );
+                                        enqueue_popup_notification(
+                                            err.clone(),
+                                            PopupKind::Error,
+                                            None,
+                                        );
+                                        self.create_state = CreateState::Error(err);
+                                        create_form_changed = true;
+                                        None
+                                    }
+                                }
+                            } else {
+                                None
+                            };
+
+                            if !self.create_mode.requires_parent_space()
+                                || parent_space_id.is_some()
+                            {
+                                let topic = create_topic_input.text().trim().to_string();
+                                let request = CreateRoomRequest {
+                                    name: room_name,
+                                    topic: (!topic.is_empty()).then_some(topic),
+                                    visibility: CreateRoomVisibility::from_dropdown_index(
+                                        create_visibility_dropdown.selected_item(),
+                                    ),
+                                    parent_space_id,
+                                    is_space: self.create_mode.is_space(),
+                                    invite_user_ids: Vec::new(),
+                                    origin: CreateRoomRequestOrigin::AddRoomScreen,
+                                };
+                                submit_async_request(MatrixRequest::CreateRoom(request.clone()));
+                                self.create_state = CreateState::Creating { request };
+                                create_form_changed = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if create_form_changed {
+                self.sync_create_form(cx);
+                self.redraw(cx);
             }
 
             // If the cancel button was clicked, hide the room preview and return to default state.
@@ -385,6 +1188,22 @@ impl Widget for AddRoomScreen {
             // If the join button was clicked, perform the appropriate action.
             if join_room_button.clicked(actions) {
                 match (&self.join_function, &self.state) {
+                    (
+                        JoinButtonFunction::NavigateOrJoin,
+                        AddRoomState::FetchedRoomPreview { frp, .. },
+                    ) if matches!(frp.join_rule, Some(JoinRuleSummary::Public))
+                        && !matches!(
+                            frp.state,
+                            Some(RoomState::Joined)
+                                | Some(RoomState::Invited)
+                                | Some(RoomState::Knocked)
+                                | Some(RoomState::Banned)
+                        ) =>
+                    {
+                        submit_async_request(MatrixRequest::JoinRoom {
+                            room_id: frp.room_name_id.room_id().clone(),
+                        });
+                    }
                     (
                         JoinButtonFunction::NavigateOrJoin,
                         AddRoomState::FetchedRoomPreview { frp, .. }

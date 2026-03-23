@@ -389,6 +389,12 @@ pub struct JoinedSpaceInfo {
     pub children_count: u64,
 }
 
+#[derive(Clone, Debug)]
+pub struct SpaceSearchResult {
+    pub space_name_id: RoomNameId,
+    pub subtitle: String,
+}
+
 /// The possible updates that should be displayed by the single list of all spaces.
 ///
 /// These updates are enqueued by the `enqueue_spaces_list_update` function
@@ -649,6 +655,57 @@ impl Widget for SpacesBar {
 }
 
 impl SpacesBar {
+    fn build_search_results(&self, keywords: &str) -> Vec<SpaceSearchResult> {
+        if keywords.trim().is_empty() {
+            return Vec::new();
+        }
+
+        let (display_filter, sort_fn) = RoomDisplayFilterBuilder::new()
+            .set_keywords(keywords.to_owned())
+            .set_filter_criteria(RoomFilterCriteria::All)
+            .build();
+
+        let mut filtered_spaces = self
+            .all_joined_spaces
+            .values()
+            .filter(|space| display_filter(*space))
+            .collect::<Vec<_>>();
+        if let Some(sort_fn) = sort_fn.as_deref() {
+            filtered_spaces.sort_by(|space_a, space_b| sort_fn(*space_a, *space_b));
+        } else {
+            filtered_spaces.sort_by(|space_a, space_b| {
+                space_a
+                    .space_name_id
+                    .to_string()
+                    .to_lowercase()
+                    .cmp(&space_b.space_name_id.to_string().to_lowercase())
+            });
+        }
+
+        filtered_spaces
+            .into_iter()
+            .map(|space| SpaceSearchResult {
+                space_name_id: space.space_name_id.clone(),
+                subtitle: space
+                    .topic
+                    .clone()
+                    .or_else(|| space.canonical_alias.as_ref().map(ToString::to_string))
+                    .unwrap_or_else(|| {
+                        format!(
+                            "{} members · {} child {}",
+                            space.num_joined_members,
+                            space.children_count,
+                            if space.children_count == 1 {
+                                "room"
+                            } else {
+                                "rooms"
+                            }
+                        )
+                    }),
+            })
+            .collect()
+    }
+
     /// Handle all pending updates to the spaces list.
     fn handle_spaces_list_updates(&mut self, cx: &mut Cx, _event: &Event, _scope: &mut Scope) {
         fn adjust_displayed_spaces(
@@ -889,5 +946,14 @@ impl SpacesBar {
 
         portal_list.set_first_id_and_scroll(0, 0.0);
         self.redraw(cx);
+    }
+}
+
+impl SpacesBarRef {
+    /// Returns the spaces matching the given search keywords.
+    pub fn search_results(&self, keywords: &str) -> Vec<SpaceSearchResult> {
+        self.borrow()
+            .map(|inner| inner.build_search_results(keywords))
+            .unwrap_or_default()
     }
 }

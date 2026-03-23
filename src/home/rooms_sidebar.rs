@@ -2,10 +2,9 @@
 //!
 //! It differs in what content it includes based on the adaptive view:
 //! * On a narrow mobile view, it acts as the root_view of StackNavigation
-//!   * It includes a title label, a search bar, and the RoomsList.
+//!   * It includes a title label and the RoomsList.
 //! * On a wide desktop view, it acts as a permanent tab that is on the left side of the dock.
-//!   * It only includes a title label and the RoomsList, because the SearcBar
-//!     is at the top of the HomeScreen in Desktop view.
+//!   * It only includes a title label and the RoomsList.
 
 use makepad_widgets::*;
 
@@ -56,21 +55,6 @@ script_mod! {
                 CachedWidget {
                     rooms_list_header := RoomsListHeader {}
                 }
-
-                View {
-                    width: Fill,
-                    height: 45,
-                    flow: Right
-                    padding: Inset{top: 5, bottom: 2}
-                    spacing: 5
-                    align: Align{y: 0.5}
-
-                    CachedWidget {
-                        room_filter_input_bar := RoomFilterInputBar {}
-                    }
-
-                    search_messages_button := SearchMessagesButton { }
-                }
             }
 
             View {
@@ -87,10 +71,10 @@ script_mod! {
 /// A simple wrapper around `AdaptiveView` that contains several global singleton widgets.
 ///
 /// * In the mobile view, it serves as the root view of the StackNavigation,
-///   showing the title label, the search bar, and the RoomsList.
+///   showing the title label and the RoomsList.
 /// * In the desktop view, it is a permanent tab in the dock,
 ///   showing only the title label and the RoomsList
-///   (because the search bar is at the top of the HomeScreen).
+///   while search is provided by the navigation side bar.
 #[derive(Script, Widget)]
 pub struct RoomsSideBar {
     #[deref]

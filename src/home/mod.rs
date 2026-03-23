@@ -1,6 +1,7 @@
 use makepad_widgets::ScriptVm;
 
 pub mod add_room;
+pub mod create_space_room_modal;
 pub mod edited_indicator;
 pub mod editing_pane;
 pub mod event_source_modal;
@@ -29,12 +30,14 @@ pub mod new_message_context_menu;
 pub mod room_context_menu;
 pub mod link_preview;
 pub mod room_image_viewer;
+pub mod search_rooms_modal;
 
 pub fn script_mod(vm: &mut ScriptVm) {
     search_messages::script_mod(vm);
     loading_pane::script_mod(vm);
     location_preview::script_mod(vm);
     add_room::script_mod(vm);
+    create_space_room_modal::script_mod(vm);
     space_lobby::script_mod(vm);
     link_preview::script_mod(vm);
     event_reaction_list::script_mod(vm);
@@ -49,6 +52,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     room_context_menu::script_mod(vm);
     invite_modal::script_mod(vm);
     invite_screen::script_mod(vm);
+    search_rooms_modal::script_mod(vm);
     tombstone_footer::script_mod(vm);
     room_screen::script_mod(vm);
     rooms_sidebar::script_mod(vm);

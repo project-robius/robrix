@@ -18,20 +18,32 @@ use matrix_sdk::{
             Direction,
             client::{
                 account::register::v3::Request as RegistrationRequest,
+                directory::get_public_rooms_filtered,
                 error::ErrorKind,
                 profile::{AvatarUrl, DisplayName},
                 receipt::create_receipt::v3::ReceiptType,
+                room::{
+                    Visibility as RoomVisibility,
+                    create_room::v3::{
+                        CreationContent, Request as MatrixCreateRoomRequest, RoomPreset,
+                    },
+                },
                 uiaa::{AuthData, AuthType, Dummy},
             },
         },
         events::{
             relation::RelationType,
+            space::{child::SpaceChildEventContent, parent::SpaceParentEventContent},
             room::{message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource},
             MessageLikeEventType, StateEventType,
         },
         matrix_uri::MatrixId,
         EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri,
-        OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, uint,
+        OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId,
+        directory::{Filter, RoomTypeFilter},
+        room::RoomType,
+        serde::Raw,
+        uint,
     },
     sliding_sync::VersionBuilder,
     Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships,
@@ -80,7 +92,10 @@ use crate::{
         BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item,
     },
     home::{
-        add_room::KnockResultAction,
+        add_room::{
+            CreateRoomRequest, CreateRoomResultAction, EditableSpaceOption, EditableSpacesAction,
+            KnockResultAction,
+        },
         invite_screen::{JoinRoomResultAction, LeaveRoomResultAction},
         link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse},
         room_screen::{InviteResultAction, TimelineUpdate},
@@ -89,6 +104,8 @@ use crate::{
             enqueue_rooms_list_update,
         },
         rooms_list_header::RoomsListHeaderAction,
+        search_rooms_modal::{DirectorySearchResult, SearchPublicRoomsAction, SearchUsersAction},
+        space_lobby::SpaceRoomCreationPermissionsAction,
         tombstone_footer::SuccessorRoomDetails,
     },
     login::login_screen::LoginAction,
@@ -746,6 +763,15 @@ pub enum MatrixRequest {
         room_or_alias_id: OwnedRoomOrAliasId,
         via: Vec<OwnedServerName>,
     },
+    /// Request to fetch the list of joined spaces where the current user
+    /// can create child rooms by sending `m.space.child`.
+    GetEditableSpaces,
+    /// Request to determine whether the current user can create child rooms
+    /// under the given space by sending `m.space.child`.
+    GetSpaceRoomCreationPermissions { space_id: OwnedRoomId },
+    /// Request to create a new space or room, optionally attaching
+    /// the new room under a selected parent space.
+    CreateRoom(CreateRoomRequest),
     /// Request to fetch the full details (the room preview) of a tombstoned room.
     GetSuccessorRoomDetails { tombstoned_room_id: OwnedRoomId },
     /// Request to create or open a direct message room with the given user.
@@ -770,6 +796,20 @@ pub enum MatrixRequest {
         /// * If `true` (not recommended), only the local cache will be accessed.
         /// * If `false` (recommended), details will be fetched from the server.
         local_only: bool,
+    },
+    /// Request to search the current homeserver's user directory.
+    SearchUsers {
+        search_term: String,
+        limit: u64,
+        request_id: u64,
+    },
+    /// Request to search the current homeserver's public room directory.
+    SearchPublicRooms {
+        search_term: String,
+        limit: u32,
+        include_spaces: bool,
+        include_rooms: bool,
+        request_id: u64,
     },
     /// Request to fetch the number of unread messages in the given room.
     GetNumberUnreadMessages { timeline_kind: TimelineKind },
@@ -1416,6 +1456,52 @@ async fn matrix_worker_task(
                 });
             }
 
+            MatrixRequest::GetEditableSpaces => {
+                let Some(client) = get_client() else { continue };
+                let _fetch_task = Handle::current().spawn(async move {
+                    Cx::post_action(EditableSpacesAction::Loaded(
+                        fetch_editable_spaces(&client).await,
+                    ));
+                });
+            }
+
+            MatrixRequest::GetSpaceRoomCreationPermissions { space_id } => {
+                let Some(client) = get_client() else { continue };
+                let _fetch_task = Handle::current().spawn(async move {
+                    let can_create_child_room =
+                        fetch_space_room_creation_permission(&client, &space_id)
+                            .await
+                            .unwrap_or(false);
+                    Cx::post_action(SpaceRoomCreationPermissionsAction::Loaded {
+                        space_id,
+                        can_create_child_room,
+                    });
+                });
+            }
+
+            MatrixRequest::CreateRoom(request) => {
+                let Some(client) = get_client() else { continue };
+                let _create_room_task = Handle::current().spawn(async move {
+                    let result_action =
+                        match create_room_from_request(&client, request.clone()).await {
+                            Ok((room_name_id, warning)) => CreateRoomResultAction::Created {
+                                room_name_id,
+                                is_space: request.is_space,
+                                parent_space_id: request.parent_space_id,
+                                warning,
+                                origin: request.origin,
+                            },
+                            Err(error) => CreateRoomResultAction::Failed {
+                                is_space: request.is_space,
+                                parent_space_id: request.parent_space_id,
+                                error,
+                                origin: request.origin,
+                            },
+                        };
+                    Cx::post_action(result_action);
+                });
+            }
+
             MatrixRequest::GetSuccessorRoomDetails { tombstoned_room_id } => {
                 let Some(client) = get_client() else { continue };
                 let (sender, successor_room) = {
@@ -1547,6 +1633,96 @@ async fn matrix_worker_task(
                         enqueue_user_profile_update(upd);
                     } else {
                         log!("Failed to get user profile: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");
+                    }
+                });
+            }
+
+            MatrixRequest::SearchUsers {
+                search_term,
+                limit,
+                request_id,
+            } => {
+                let Some(client) = get_client() else { continue };
+                let _search_users_task = Handle::current().spawn(async move {
+                    match client.search_users(&search_term, limit).await {
+                        Ok(response) => {
+                            let results = response
+                                .results
+                                .into_iter()
+                                .map(|user| UserProfile {
+                                    username: user.display_name,
+                                    user_id: user.user_id,
+                                    avatar_state: AvatarState::Known(user.avatar_url),
+                                })
+                                .collect();
+                            Cx::post_action(SearchUsersAction::Results {
+                                request_id,
+                                query: search_term,
+                                results,
+                                limited: response.limited,
+                            });
+                        }
+                        Err(error) => {
+                            Cx::post_action(SearchUsersAction::Failed {
+                                request_id,
+                                query: search_term,
+                                error: error.to_string(),
+                            });
+                        }
+                    }
+                });
+            }
+
+            MatrixRequest::SearchPublicRooms {
+                search_term,
+                limit,
+                include_spaces,
+                include_rooms,
+                request_id,
+            } => {
+                let Some(client) = get_client() else { continue };
+                let _search_public_rooms_task = Handle::current().spawn(async move {
+                    let mut filter = Filter::new();
+                    filter.generic_search_term = Some(search_term.clone());
+                    if include_spaces && !include_rooms {
+                        filter.room_types = vec![RoomTypeFilter::Space];
+                    } else if include_rooms && !include_spaces {
+                        filter.room_types = vec![RoomTypeFilter::Default];
+                    }
+
+                    let mut request = get_public_rooms_filtered::v3::Request::new();
+                    request.filter = filter;
+                    request.limit = Some(limit.into());
+
+                    match client.public_rooms_filtered(request).await {
+                        Ok(response) => {
+                            let results = response
+                                .chunk
+                                .into_iter()
+                                .map(|room| DirectorySearchResult {
+                                    room_id: room.room_id,
+                                    canonical_alias: room.canonical_alias,
+                                    name: room.name,
+                                    topic: room.topic,
+                                    avatar_url: room.avatar_url,
+                                    room_type: room.room_type,
+                                    join_rule: room.join_rule,
+                                    joined_members: room.num_joined_members.into(),
+                                })
+                                .collect();
+                            Cx::post_action(SearchPublicRoomsAction::Results {
+                                request_id,
+                                query: search_term,
+                                results,
+                            });
+                        }
+                        Err(error) => {
+                            Cx::post_action(SearchPublicRoomsAction::Failed {
+                                request_id,
+                                query: search_term,
+                                error: error.to_string(),
+                            });
+                        }
                     }
                 });
             }
@@ -3642,6 +3818,15 @@ async fn add_new_room(
     room_list_service: &RoomListService,
     subscribe: bool,
 ) -> Result<()> {
+    if new_room.state == RoomState::Joined
+        && ALL_JOINED_ROOMS
+            .lock()
+            .unwrap()
+            .contains_key(&new_room.room_id)
+    {
+        return Ok(());
+    }
+
     match new_room.state {
         RoomState::Knocked => {
             log!(
@@ -4098,6 +4283,192 @@ async fn fetch_room_preview_with_avatar(
         avatar_from_room_name(room_preview.name.as_deref())
     };
     Ok(FetchedRoomPreview::from(room_preview, room_avatar))
+}
+
+async fn fetch_editable_spaces(
+    client: &Client,
+) -> std::result::Result<Vec<EditableSpaceOption>, String> {
+    let Some(user_id) = client.user_id() else {
+        return Err(String::from("Unable to determine the current user ID."));
+    };
+
+    let mut editable_spaces = Vec::new();
+    for room in client.joined_space_rooms() {
+        let power_levels = room
+            .power_levels()
+            .await
+            .map_err(|error| format!("Failed to load space permissions: {error}"))?;
+        if power_levels.user_can_send_state(user_id, StateEventType::SpaceChild) {
+            editable_spaces.push(EditableSpaceOption {
+                room_name_id: RoomNameId::from_room(&room).await,
+            });
+        }
+    }
+
+    editable_spaces.sort_by(|a, b| {
+        a.room_name_id
+            .to_string()
+            .to_lowercase()
+            .cmp(&b.room_name_id.to_string().to_lowercase())
+    });
+    Ok(editable_spaces)
+}
+
+async fn fetch_space_room_creation_permission(
+    client: &Client,
+    space_id: &OwnedRoomId,
+) -> std::result::Result<bool, String> {
+    let Some(user_id) = client.user_id() else {
+        return Err(String::from("Unable to determine the current user ID."));
+    };
+    let Some(room) = client.get_room(space_id) else {
+        return Ok(false);
+    };
+    if room.state() != RoomState::Joined {
+        return Ok(false);
+    }
+
+    let power_levels = room
+        .power_levels()
+        .await
+        .map_err(|error| format!("Failed to load space permissions: {error}"))?;
+    Ok(power_levels.user_can_send_state(user_id, StateEventType::SpaceChild))
+}
+
+async fn create_room_from_request(
+    client: &Client,
+    request: CreateRoomRequest,
+) -> std::result::Result<(RoomNameId, Option<String>), String> {
+    let mut create_request = MatrixCreateRoomRequest::new();
+    create_request.name = Some(request.name.clone());
+    create_request.topic = request.topic.clone();
+    create_request.visibility = match request.visibility {
+        crate::home::add_room::CreateRoomVisibility::Private => RoomVisibility::Private,
+        crate::home::add_room::CreateRoomVisibility::Public => RoomVisibility::Public,
+    };
+    create_request.preset = Some(match request.visibility {
+        crate::home::add_room::CreateRoomVisibility::Private => RoomPreset::PrivateChat,
+        crate::home::add_room::CreateRoomVisibility::Public => RoomPreset::PublicChat,
+    });
+    create_request.invite = request.invite_user_ids.clone();
+
+    if request.is_space {
+        let mut creation_content = CreationContent::new();
+        creation_content.room_type = Some(RoomType::Space);
+        create_request.creation_content = Some(
+            Raw::new(&creation_content)
+                .map_err(|error| format!("Failed to serialize space creation content: {error}"))?,
+        );
+    }
+
+    let room = client
+        .create_room(create_request)
+        .await
+        .map_err(|error| format!("Failed to create room: {error}"))?;
+    eagerly_load_created_room(&room).await;
+    let room_name_id = RoomNameId::from_room(&room).await;
+
+    let warning = if let Some(parent_space_id) = request.parent_space_id {
+        try_add_room_to_space(client, &room, parent_space_id).await
+    } else {
+        None
+    };
+
+    Ok((room_name_id, warning))
+}
+
+async fn eagerly_load_created_room(room: &Room) {
+    if room.state() != RoomState::Joined {
+        return;
+    }
+    if ALL_JOINED_ROOMS
+        .lock()
+        .unwrap()
+        .contains_key(room.room_id())
+    {
+        return;
+    }
+
+    let Some(sync_service) = get_sync_service() else {
+        warning!(
+            "Created room {} but no sync service was available to eagerly load it.",
+            room.room_id()
+        );
+        return;
+    };
+
+    let room_list_service = sync_service.room_list_service();
+    let room_info = RoomListServiceRoomInfo::from_room_ref(room, &current_user_id()).await;
+    if ALL_JOINED_ROOMS
+        .lock()
+        .unwrap()
+        .contains_key(&room_info.room_id)
+    {
+        return;
+    }
+
+    if let Err(error) = add_new_room(&room_info, room_list_service.as_ref(), true).await {
+        error!(
+            "Failed to eagerly load newly-created room {}: {error:?}",
+            room.room_id()
+        );
+    }
+}
+
+async fn try_add_room_to_space(
+    client: &Client,
+    child_room: &Room,
+    parent_space_id: OwnedRoomId,
+) -> Option<String> {
+    let Some(space_room) = client.get_room(&parent_space_id) else {
+        return Some(format!(
+            "The room was created, but space {} was not available locally, so it could not be linked automatically.",
+            parent_space_id
+        ));
+    };
+
+    let child_route = match child_room.route().await {
+        Ok(route) => route,
+        Err(error) => {
+            return Some(format!(
+                "The room was created, but its route could not be determined for space linking: {error}"
+            ));
+        }
+    };
+
+    if let Err(error) = space_room
+        .send_state_event_for_key(
+            child_room.room_id(),
+            SpaceChildEventContent::new(child_route),
+        )
+        .await
+    {
+        return Some(format!(
+            "The room was created, but it could not be added to space {}: {}",
+            parent_space_id, error
+        ));
+    }
+
+    let Some(user_id) = client.user_id() else {
+        return None;
+    };
+    if let Ok(child_power_levels) = child_room.power_levels().await
+        && child_power_levels.user_can_send_state(user_id, StateEventType::SpaceParent)
+        && let Ok(parent_route) = space_room.route().await
+    {
+        if let Err(error) = child_room
+            .send_state_event_for_key(&parent_space_id, SpaceParentEventContent::new(parent_route))
+            .await
+        {
+            warning!(
+                "Created room {} but failed to set m.space.parent for {}: {error}",
+                child_room.room_id(),
+                parent_space_id
+            );
+        }
+    }
+
+    None
 }
 
 /// Fetches key details about the given thread root event.

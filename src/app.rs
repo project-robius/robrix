@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::clear_avatar_cache,
     home::{
+        create_space_room_modal::{CreateSpaceRoomModalAction, CreateSpaceRoomModalWidgetRefExt},
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt},
         invite_modal::{InviteModalAction, InviteModalWidgetRefExt},
         main_desktop_ui::MainDesktopUiAction,
@@ -23,6 +24,7 @@ use crate::{
             RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms,
             enqueue_rooms_list_update,
         },
+        search_rooms_modal::{SearchRoomsModalAction, SearchRoomsModalWidgetRefExt},
     },
     join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt,
@@ -130,6 +132,19 @@ script_mod! {
                         invite_modal := Modal {
                             content +: {
                                 invite_modal_inner := InviteModal {}
+                            }
+                        }
+
+                        create_space_room_modal := Modal {
+                            can_dismiss: false
+                            content +: {
+                                create_space_room_modal_inner := CreateSpaceRoomModal {}
+                            }
+                        }
+
+                        search_rooms_modal := Modal {
+                            content +: {
+                                search_rooms_modal_inner := SearchRoomsModal {}
                             }
                         }
 
@@ -637,6 +652,36 @@ impl MatchEvent for App {
                 }
                 Some(InviteModalAction::Close) => {
                     self.ui.modal(cx, ids!(invite_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
+            }
+
+            match action.downcast_ref() {
+                Some(CreateSpaceRoomModalAction::Open(space_name_id)) => {
+                    self.ui
+                        .create_space_room_modal(cx, ids!(create_space_room_modal_inner))
+                        .show(cx, space_name_id.clone());
+                    self.ui.modal(cx, ids!(create_space_room_modal)).open(cx);
+                    continue;
+                }
+                Some(CreateSpaceRoomModalAction::Close) => {
+                    self.ui.modal(cx, ids!(create_space_room_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
+            }
+
+            match action.downcast_ref() {
+                Some(SearchRoomsModalAction::Open) => {
+                    self.ui
+                        .search_rooms_modal(cx, ids!(search_rooms_modal_inner))
+                        .show(cx);
+                    self.ui.modal(cx, ids!(search_rooms_modal)).open(cx);
+                    continue;
+                }
+                Some(SearchRoomsModalAction::Close) => {
+                    self.ui.modal(cx, ids!(search_rooms_modal)).close(cx);
                     continue;
                 }
                 _ => {}

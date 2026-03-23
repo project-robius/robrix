@@ -2,7 +2,10 @@ use makepad_widgets::*;
 
 use crate::{
     app::AppState,
-    home::navigation_tab_bar::{NavigationBarAction, SelectedTab},
+    home::{
+        navigation_tab_bar::{NavigationBarAction, SelectedTab},
+        spaces_bar::SpacesBarWidgetExt,
+    },
     settings::settings_screen::SettingsScreenWidgetRefExt,
 };
 
@@ -95,26 +98,6 @@ script_mod! {
                     home_page := View {
                         width: Fill, height: Fill
                         flow: Down
-
-                        View {
-                            width: Fill,
-                            height: 39,
-                            flow: Right
-                            padding: Inset{top: 2, bottom: 2}
-                            margin: Inset{right: 2}
-                            spacing: 2
-                            align: Align{y: 0.5}
-
-                            CachedWidget {
-                                room_filter_input_bar := RoomFilterInputBar {}
-                            }
-
-                            search_messages_button := SearchMessagesButton {
-                                // make this button match/align with the RoomFilterInputBar
-                                height: 32.5,
-                                margin: Inset{right: 2}
-                            }
-                        }
 
                         mod.widgets.MainDesktopUI {}
                     }
@@ -329,7 +312,7 @@ script_mod! {
 }
 
 /// A simple wrapper around the SpacesBar that allows us to animate showing or hiding it.
-#[derive(Script, ScriptHook, Widget, Animator)]
+#[derive(Script, Widget, Animator)]
 pub struct SpacesBarWrapper {
     #[source]
     source: ScriptObjectRef,
@@ -355,6 +338,14 @@ impl Widget for SpacesBarWrapper {
         //     return DrawStep::done();
         // }
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl ScriptHook for SpacesBarWrapper {
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            cx.set_global(self.view.spaces_bar(cx, ids!(root_spaces_bar)));
+        });
     }
 }
 
