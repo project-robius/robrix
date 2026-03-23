@@ -345,6 +345,18 @@ impl RoomInputBar {
         {
             let entered_text = mentionable_text_input.text().trim().to_string();
             if !entered_text.is_empty() {
+                if self.try_handle_bot_shortcut(cx, &entered_text, room_screen_props) {
+                    self.clear_replying_to(cx);
+                    mentionable_text_input.set_text(cx, "");
+                    submit_async_request(MatrixRequest::SendTypingNotice {
+                        room_id: room_screen_props.timeline_kind.room_id().clone(),
+                        typing: false,
+                    });
+                    self.enable_send_message_button(cx, false);
+                    self.redraw(cx);
+                    return;
+                }
+
                 let message = mentionable_text_input.create_message_with_mentions(&entered_text);
                 let replied_to = self
                     .replying_to
@@ -432,6 +444,58 @@ impl RoomInputBar {
         {
             self.on_editing_pane_hidden(cx);
         }
+    }
+
+    /// Intercepts `/bot` commands and opens the room-level app service actions UI instead
+    /// of sending the raw command text into the room.
+    fn try_handle_bot_shortcut(
+        &mut self,
+        cx: &mut Cx,
+        entered_text: &str,
+        room_screen_props: &RoomScreenProps,
+    ) -> bool {
+        if !(entered_text == "/bot" || entered_text.starts_with("/bot ")) {
+            return false;
+        }
+
+        let popup_message = if room_screen_props
+            .timeline_kind
+            .thread_root_event_id()
+            .is_some()
+        {
+            Some((
+                "Bot commands are only supported in the main room timeline.",
+                PopupKind::Warning,
+            ))
+        } else if entered_text != "/bot" {
+            Some((
+                "Only `/bot` is supported right now. Use `/bot` and choose an action from the room panel.",
+                PopupKind::Info,
+            ))
+        } else if !room_screen_props.app_service_enabled {
+            Some((
+                "Enable App Service in Settings before using /bot.",
+                PopupKind::Warning,
+            ))
+        } else if !room_screen_props.app_service_room_bound {
+            Some((
+                "Bind BotFather to this room before using /bot.",
+                PopupKind::Warning,
+            ))
+        } else {
+            None
+        };
+
+        if let Some((message, kind)) = popup_message {
+            enqueue_popup_notification(message, kind, Some(4.0));
+        } else {
+            cx.widget_action(
+                room_screen_props.room_screen_widget_uid,
+                MessageAction::ToggleAppServiceActions,
+            );
+        }
+
+        true
     }
 
     /// Shows a preview of the given event that the user is currently replying to

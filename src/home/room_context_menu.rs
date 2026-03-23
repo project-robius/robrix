@@ -4,9 +4,10 @@
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use crate::{
+    app::AppState,
     home::invite_modal::InviteModalAction,
     shared::popup_list::{PopupKind, enqueue_popup_notification},
-    sliding_sync::{MatrixRequest, submit_async_request},
+    sliding_sync::{MatrixRequest, current_user_id, submit_async_request},
     utils::RoomNameId,
 };
 
@@ -104,6 +105,11 @@ script_mod! {
                 text: "Invite"
             }
 
+            bot_binding_button := mod.widgets.RoomContextMenuButton {
+                draw_icon +: { svg: (ICON_HIERARCHY) }
+                text: "Bind BotFather"
+            }
+
             divider2 := LineH {
                 margin: Inset{top: 3, bottom: 3}
                 width: Fill,
@@ -128,6 +134,8 @@ pub struct RoomContextMenuDetails {
     pub is_favorite: bool,
     pub is_low_priority: bool,
     pub is_marked_unread: bool,
+    pub app_service_enabled: bool,
+    pub is_bot_bound: bool,
 }
 
 /// Actions emitted from the RoomContextMenu widget, as they must be handled
@@ -190,7 +198,7 @@ impl Widget for RoomContextMenu {
 }
 
 impl WidgetMatchEvent for RoomContextMenu {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         let Some(details) = self.details.as_ref() else {
             return;
         };
@@ -240,6 +248,41 @@ impl WidgetMatchEvent for RoomContextMenu {
             close_menu = true;
         } else if self.button(cx, ids!(invite_button)).clicked(actions) {
             cx.action(InviteModalAction::Open(details.room_name_id.clone()));
+            close_menu = true;
+        } else if self.button(cx, ids!(bot_binding_button)).clicked(actions) {
+            if let Some(app_state) = scope.data.get::<AppState>() {
+                let room_id = details.room_name_id.room_id().clone();
+                match app_state
+                    .bot_settings
+                    .resolved_bot_user_id(current_user_id().as_deref())
+                {
+                    Ok(bot_user_id) => {
+                        submit_async_request(MatrixRequest::SetRoomBotBinding {
+                            room_id,
+                            bound: !details.is_bot_bound,
+                            bot_user_id: bot_user_id.clone(),
+                        });
+                        enqueue_popup_notification(
+                            if details.is_bot_bound {
+                                format!("Removing BotFather {bot_user_id} from this room...")
+                            } else {
+                                format!("Inviting BotFather {bot_user_id} into this room...")
+                            },
+                            PopupKind::Info,
+                            Some(5.0),
+                        );
+                    }
+                    Err(error) => {
+                        enqueue_popup_notification(error, PopupKind::Error, Some(5.0));
+                    }
+                }
+            } else {
+                enqueue_popup_notification(
+                    "Bot settings are unavailable right now.",
+                    PopupKind::Error,
+                    Some(5.0),
+                );
+            }
             close_menu = true;
         } else if self.button(cx, ids!(leave_button)).clicked(actions) {
             use crate::join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveModalKind};
@@ -293,6 +336,14 @@ impl RoomContextMenu {
             priority_button.set_text(cx, "Set Low Priority");
         }
 
+        let bot_binding_button = self.button(cx, ids!(bot_binding_button));
+        bot_binding_button.set_visible(cx, details.app_service_enabled);
+        if details.is_bot_bound {
+            bot_binding_button.set_text(cx, "Unbind BotFather");
+        } else {
+            bot_binding_button.set_text(cx, "Bind BotFather");
+        }
+
         // Reset hover states
         mark_unread_button.reset_hover(cx);
         favorite_button.reset_hover(cx);
@@ -301,13 +352,14 @@ impl RoomContextMenu {
         self.button(cx, ids!(room_settings_button)).reset_hover(cx);
         self.button(cx, ids!(notifications_button)).reset_hover(cx);
         self.button(cx, ids!(invite_button)).reset_hover(cx);
+        bot_binding_button.reset_hover(cx);
         self.button(cx, ids!(leave_button)).reset_hover(cx);
 
         self.redraw(cx);
 
-        // Calculate height (rudimentary) - sum of visible buttons + padding
-        // 8 buttons * 35.0 + 2 dividers * ~10.0 + padding
-        (8.0 * BUTTON_HEIGHT) + 20.0 + 10.0 // approx
+        // Calculate height (rudimentary) - sum of visible buttons + padding.
+        let button_count = if details.app_service_enabled { 9.0 } else { 8.0 };
+        (button_count * BUTTON_HEIGHT) + 20.0 + 10.0
     }
 
     fn close(&mut self, cx: &mut Cx) {

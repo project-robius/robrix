@@ -1441,6 +1441,13 @@ impl Widget for RoomsList {
                     is_favorite: jr.tags.contains_key(&TagName::Favorite),
                     is_low_priority: jr.tags.contains_key(&TagName::LowPriority),
                     is_marked_unread: jr.is_marked_unread,
+                    app_service_enabled: scope
+                        .data
+                        .get::<AppState>()
+                        .is_some_and(|app_state| app_state.bot_settings.enabled),
+                    is_bot_bound: scope.data.get::<AppState>().is_some_and(|app_state| {
+                        app_state.bot_settings.is_room_bound(jr.room_name_id.room_id())
+                    }),
                 };
                 cx.widget_action(
                     self.widget_uid(),
