@@ -14,7 +14,7 @@ use crate::home::room_screen::TimelineUpdate;
 use crate::image_utils::ImageDimensions;
 
 /// Clones a `Thumbnail` since matrix_sdk's `Thumbnail` doesn't implement `Clone`.
-fn clone_thumbnail(t: &Thumbnail) -> Thumbnail {
+pub fn clone_thumbnail(t: &Thumbnail) -> Thumbnail {
     Thumbnail {
         data: t.data.clone(),
         content_type: t.content_type.clone(),

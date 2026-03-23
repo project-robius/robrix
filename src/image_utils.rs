@@ -35,45 +35,45 @@ pub fn generate_thumbnail_dimension_if_image(
     mime_type: &mime::Mime,
 ) -> ThumbnailResult {
     // Only generate thumbnails for images
-    if mime_type.type_() == mime::IMAGE {
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
-
-        // Use ImageReader to decode only what's needed
-        let img = ImageReader::new(reader).with_guessed_format()?.decode()?;
-
-        // Create thumbnail if image is larger than max dimensions (preserves aspect ratio)
-        let (orig_width, orig_height) = (img.width(), img.height());
-        let needs_resize = orig_width > THUMBNAIL_MAX_WIDTH || orig_height > THUMBNAIL_MAX_HEIGHT;
-
-        let final_img = if needs_resize {
-            img.thumbnail(THUMBNAIL_MAX_WIDTH, THUMBNAIL_MAX_HEIGHT)
-        } else {
-            img
-        };
-
-        // Get the actual thumbnail dimensions (after aspect-ratio-preserving resize)
-        let (thumb_width, thumb_height) = (final_img.width(), final_img.height());
-
-        // Save to bytes as JPEG for efficient compression
-        let mut bytes = Vec::new();
-
-        final_img.write_to(
-            &mut std::io::Cursor::new(&mut bytes),
-            ImageEncodingFormat::Jpeg,
-        )?;
-        let bytes_size = bytes.len() as u32;
-        Ok((
-            Some(Thumbnail {
-                data: bytes,
-                content_type: mime::IMAGE_JPEG,
-                height: UInt::from(thumb_height),
-                width: UInt::from(thumb_width),
-                size: UInt::from(bytes_size),
-            }),
-            Some((thumb_width, thumb_height)),
-        ))
-    } else {
-        Ok((None, None))
+    if mime_type.type_() != mime::IMAGE {
+        return Ok((None, None));
     }
+
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+
+    // Use ImageReader to decode only what's needed
+    let img = ImageReader::new(reader).with_guessed_format()?.decode()?;
+
+    // Create thumbnail if image is larger than max dimensions (preserves aspect ratio)
+    let (orig_width, orig_height) = (img.width(), img.height());
+    let needs_resize = orig_width > THUMBNAIL_MAX_WIDTH || orig_height > THUMBNAIL_MAX_HEIGHT;
+
+    let final_img = if needs_resize {
+        img.thumbnail(THUMBNAIL_MAX_WIDTH, THUMBNAIL_MAX_HEIGHT)
+    } else {
+        img
+    };
+
+    // Get the actual thumbnail dimensions (after aspect-ratio-preserving resize)
+    let (thumb_width, thumb_height) = (final_img.width(), final_img.height());
+
+    // Save to bytes as JPEG for efficient compression
+    let mut bytes = Vec::new();
+
+    final_img.write_to(
+        &mut std::io::Cursor::new(&mut bytes),
+        ImageEncodingFormat::Jpeg,
+    )?;
+    let bytes_size = bytes.len() as u32;
+    Ok((
+        Some(Thumbnail {
+            data: bytes,
+            content_type: mime::IMAGE_JPEG,
+            height: UInt::from(thumb_height),
+            width: UInt::from(thumb_width),
+            size: UInt::from(bytes_size),
+        }),
+        Some((thumb_width, thumb_height)),
+    ))
 }

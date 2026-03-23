@@ -8,7 +8,7 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom, attachment::{AttachmentInfo, BaseFileInfo, BaseImageInfo, Thumbnail}, config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{IncludeRelations, RelationsOptions, RoomMember, edit::EditedContent, reply::Reply}, ruma::{
+    Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom, attachment::{AttachmentInfo, BaseFileInfo, BaseImageInfo}, config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{IncludeRelations, RelationsOptions, RoomMember, edit::EditedContent, reply::Reply}, ruma::{
         EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, api::{Direction, client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}}, events::{
             MessageLikeEventType, StateEventType, relation::RelationType, room::{
                 MediaSource, message::RoomMessageEventContent, power_levels::RoomPowerLevels
@@ -36,7 +36,7 @@ use crate::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
-        avatar::AvatarState, file_upload_modal::FileData, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}
+        avatar::AvatarState, file_upload_modal::{FileData, clone_thumbnail}, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, VecDiff, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -1707,13 +1707,7 @@ async fn matrix_worker_task(
                     continue;
                 };
                 let file_meta = file_data.metadata.clone();
-                let thumbnail = file_data.thumbnail.as_ref().map(|t| Thumbnail {
-                    data: t.data.clone(),
-                    content_type: t.content_type.clone(),
-                    height: t.height,
-                    width: t.width,
-                    size: t.size,
-                });
+                let thumbnail = file_data.thumbnail.as_ref().map(clone_thumbnail);
                 let sender_clone = sender.clone();
                 let file_data_for_retry = file_data.clone();
                 // Spawn a new async task that will upload the file.
