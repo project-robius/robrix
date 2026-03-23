@@ -10,7 +10,9 @@ use std::time::SystemTime;
 use makepad_widgets::*;
 use robius_location::Coordinates;
 
-use crate::location::{get_latest_location, request_location_update, LocationAction, LocationRequest, LocationUpdate};
+use crate::location::{
+    get_latest_location, request_location_update, LocationAction, LocationRequest, LocationUpdate,
+};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -89,12 +91,14 @@ script_mod! {
     }
 }
 
-
 #[derive(Script, ScriptHook, Widget)]
 struct LocationPreview {
-    #[deref] view: View,
-    #[rust] coords: Option<Result<Coordinates, robius_location::Error>>,
-    #[rust] timestamp: Option<SystemTime>,
+    #[deref]
+    view: View,
+    #[rust]
+    coords: Option<Result<Coordinates, robius_location::Error>>,
+    #[rust]
+    timestamp: Option<SystemTime>,
 }
 
 impl Widget for LocationPreview {
@@ -106,16 +110,18 @@ impl Widget for LocationPreview {
                     Some(LocationAction::Update(LocationUpdate { coordinates, time })) => {
                         self.coords = Some(Ok(*coordinates));
                         self.timestamp = *time;
-                        self.button(cx, ids!(send_location_button)).set_enabled(cx, true);
+                        self.button(cx, ids!(send_location_button))
+                            .set_enabled(cx, true);
                         needs_redraw = true;
                     }
                     Some(LocationAction::Error(e)) => {
                         self.coords = Some(Err(*e));
                         self.timestamp = None;
-                        self.button(cx, ids!(send_location_button)).set_enabled(cx, false);
+                        self.button(cx, ids!(send_location_button))
+                            .set_enabled(cx, false);
                         needs_redraw = true;
                     }
-                    _ => { }
+                    _ => {}
                 }
             }
 
@@ -123,7 +129,10 @@ impl Widget for LocationPreview {
             //       in the RoomScreen handle_event function.
 
             // Handle the cancel location button being clicked.
-            if self.button(cx, ids!(cancel_location_button)).clicked(actions) {
+            if self
+                .button(cx, ids!(cancel_location_button))
+                .clicked(actions)
+            {
                 self.clear();
                 needs_redraw = true;
             }
@@ -148,7 +157,6 @@ impl Widget for LocationPreview {
         self.view.draw_walk(cx, scope, walk)
     }
 }
-
 
 impl LocationPreview {
     fn show(&mut self) {

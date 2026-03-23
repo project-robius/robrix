@@ -4,7 +4,6 @@ use std::borrow::Cow;
 
 use makepad_widgets::*;
 
-
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
@@ -135,7 +134,7 @@ pub enum ConfirmationModalAction {
     /// accept button (true) or cancel button (false).
     Close(bool),
     #[default]
-    None
+    None,
 }
 
 impl ActionDefaultRef for ConfirmationModalAction {
@@ -187,11 +186,12 @@ impl std::fmt::Debug for ConfirmationModalContent {
     }
 }
 
-
 #[derive(Script, ScriptHook, Widget)]
 pub struct ConfirmationModal {
-    #[deref] view: View,
-    #[rust] content: ConfirmationModalContent,
+    #[deref]
+    view: View,
+    #[rust]
+    content: ConfirmationModalContent,
 }
 
 impl Widget for ConfirmationModal {
@@ -212,17 +212,16 @@ impl WidgetMatchEvent for ConfirmationModal {
 
         // Handle canceling/closing the modal.
         let cancel_clicked = cancel_button.clicked(actions);
-        if cancel_clicked ||
-            actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
+        if cancel_clicked
+            || actions
+                .iter()
+                .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
         {
             // If the modal was dismissed by clicking outside of it, we MUST NOT emit
             // a `ConfirmationModalAction::Close` action, as that would cause
             // an infinite action feedback loop.
             if cancel_clicked {
-                cx.widget_action(
-                    self.widget_uid(), 
-                    ConfirmationModalAction::Close(false),
-                );
+                cx.widget_action(self.widget_uid(), ConfirmationModalAction::Close(false));
             }
             if let Some(on_cancel_clicked) = self.content.on_cancel_clicked.take() {
                 on_cancel_clicked(cx);
@@ -235,10 +234,7 @@ impl WidgetMatchEvent for ConfirmationModal {
             if let Some(on_accept_clicked) = self.content.on_accept_clicked.take() {
                 on_accept_clicked(cx);
             }
-            cx.widget_action(
-                self.widget_uid(), 
-                ConfirmationModalAction::Close(true),
-            );
+            cx.widget_action(self.widget_uid(), ConfirmationModalAction::Close(true));
         }
     }
 }
@@ -250,21 +246,35 @@ impl ConfirmationModal {
     }
 
     fn apply_content(&mut self, cx: &mut Cx) {
-        self.view.label(cx, ids!(title)).set_text(cx, &self.content.title_text);
-        self.view.label(cx, ids!(body)).set_text(cx, &self.content.body_text);
+        self.view
+            .label(cx, ids!(title))
+            .set_text(cx, &self.content.title_text);
+        self.view
+            .label(cx, ids!(body))
+            .set_text(cx, &self.content.body_text);
         self.view.button(cx, ids!(accept_button)).set_text(
             cx,
-            self.content.accept_button_text.as_deref().unwrap_or("Confirm"),
+            self.content
+                .accept_button_text
+                .as_deref()
+                .unwrap_or("Confirm"),
         );
         self.view.button(cx, ids!(cancel_button)).set_text(
             cx,
-            self.content.cancel_button_text.as_deref().unwrap_or("Cancel"),
+            self.content
+                .cancel_button_text
+                .as_deref()
+                .unwrap_or("Cancel"),
         );
 
         self.view.button(cx, ids!(cancel_button)).reset_hover(cx);
         self.view.button(cx, ids!(accept_button)).reset_hover(cx);
-        self.view.button(cx, ids!(accept_button)).set_enabled(cx, true);
-        self.view.button(cx, ids!(cancel_button)).set_enabled(cx, true);
+        self.view
+            .button(cx, ids!(accept_button))
+            .set_enabled(cx, true);
+        self.view
+            .button(cx, ids!(cancel_button))
+            .set_enabled(cx, true);
         self.view.redraw(cx);
     }
 }
@@ -272,7 +282,9 @@ impl ConfirmationModal {
 impl ConfirmationModalRef {
     /// Shows the confirmation modal with the given content.
     pub fn show(&self, cx: &mut Cx, content: ConfirmationModalContent) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.show(cx, content);
     }
 
@@ -281,7 +293,9 @@ impl ConfirmationModalRef {
     /// If `true`, the user clicked the accept button; if `false`, the user clicked the cancel button.
     /// See [`ConfirmationModalAction::Close`] for more.
     pub fn closed(&self, actions: &Actions) -> Option<bool> {
-        if let ConfirmationModalAction::Close(accepted) = actions.find_widget_action(self.widget_uid()).cast_ref() {
+        if let ConfirmationModalAction::Close(accepted) =
+            actions.find_widget_action(self.widget_uid()).cast_ref()
+        {
             Some(*accepted)
         } else {
             None

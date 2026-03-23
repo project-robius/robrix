@@ -1,11 +1,22 @@
-use std::{borrow::Cow, ops::{Deref, DerefMut}, time::SystemTime};
+use std::{
+    borrow::Cow,
+    ops::{Deref, DerefMut},
+    time::SystemTime,
+};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{Cx, Event, ImageRef, error, image_cache::ImageError};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}, RoomDisplayName};
+use matrix_sdk::{
+    media::{MediaFormat, MediaThumbnailSettings},
+    ruma::{
+        api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch,
+        OwnedRoomId, RoomId,
+    },
+    RoomDisplayName,
+};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
 use crate::{
@@ -15,7 +26,6 @@ use crate::{
 
 /// The scheme for GEO links, used for location messages in Matrix.
 pub const GEO_URI_SCHEME: &str = "geo:";
-
 
 /// A wrapper type that implements the `Debug` trait for non-`Debug` types.
 pub struct DebugWrapper<T>(T);
@@ -58,16 +68,16 @@ pub fn is_interactive_hit_event(event: &Event) -> bool {
     matches!(
         event,
         Event::MouseDown(..)
-        | Event::MouseUp(..)
-        | Event::MouseMove(..)
-        | Event::MouseLeave(..)
-        | Event::TouchUpdate(..)
-        | Event::Scroll(..)
-        | Event::KeyDown(..)
-        | Event::KeyUp(..)
-        | Event::TextInput(..)
-        | Event::TextCopy(..)
-        | Event::TextCut(..)
+            | Event::MouseUp(..)
+            | Event::MouseMove(..)
+            | Event::MouseLeave(..)
+            | Event::TouchUpdate(..)
+            | Event::Scroll(..)
+            | Event::KeyDown(..)
+            | Event::KeyUp(..)
+            | Event::TextInput(..)
+            | Event::TextCopy(..)
+            | Event::TextCut(..)
     )
 }
 
@@ -94,7 +104,6 @@ impl ImageFormat {
 ///
 /// Returns an error if either load fails or if the image format is unknown.
 pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), ImageError> {
-
     fn attempt_both(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), ImageError> {
         img.load_png_from_data(cx, data)
             .or_else(|_| img.load_jpg_from_data(cx, data))
@@ -130,13 +139,15 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
         );
         path.push(filename);
         path.set_extension("unknown");
-        error!("Failed to load PNG/JPG: {err}. Dumping bad image: {:?}", path);
+        error!(
+            "Failed to load PNG/JPG: {err}. Dumping bad image: {:?}",
+            path
+        );
         let _ = std::fs::write(path, data)
             .inspect_err(|e| error!("Failed to write bad image to disk: {e}"));
     }
     res
 }
-
 
 /// Parses a CSS-style hex color string into a `Vec4` with RGBA components in `[0.0, 1.0]`.
 ///
@@ -210,7 +221,6 @@ pub enum VecDiff<T> {
     /// Truncate the list to the given length.
     Truncate { length: usize },
 }
-
 
 pub fn unix_time_millis_to_datetime(millis: MilliSecondsSinceUnixEpoch) -> Option<DateTime<Local>> {
     let millis: i64 = millis.get().into();
@@ -338,10 +348,10 @@ pub fn replace_linebreaks_separators<'a>(s: &'a str, is_html: bool) -> Cow<'a, s
 /// <https://spec.matrix.org/v1.13/client-server-api/#rich-replies>
 pub fn remove_mx_reply(html_message_body: &str) -> &str {
     const MX_REPLY_START: &str = "<mx-reply>";
-    const MX_REPLY_END:   &str = "</mx-reply>";
+    const MX_REPLY_END: &str = "</mx-reply>";
     if html_message_body.trim().starts_with(MX_REPLY_START) {
         if let Some(end) = html_message_body.find(MX_REPLY_END) {
-            if let Some(after) = html_message_body.get(end + MX_REPLY_END.len() ..) {
+            if let Some(after) = html_message_body.get(end + MX_REPLY_END.len()..) {
                 return after;
             }
         }
@@ -361,9 +371,13 @@ pub fn stringify_join_leave_error(
         // We get the string representation of the error and then search for the "got" state.
         matrix_sdk::Error::WrongRoomState(wrs) => {
             if was_join && wrs.to_string().contains(", got: Joined") {
-                Some(format!("Failed to join {room_name_id}: it has already been joined."))
+                Some(format!(
+                    "Failed to join {room_name_id}: it has already been joined."
+                ))
             } else if !was_join && wrs.to_string().contains(", got: Left") {
-                Some(format!("Failed to leave {room_name_id}: it has already been left."))
+                Some(format!(
+                    "Failed to leave {room_name_id}: it has already been left."
+                ))
             } else {
                 None
             }
@@ -372,27 +386,35 @@ pub fn stringify_join_leave_error(
         // This avoids the weird "no known servers" error, which is misleading and incorrect.
         // See: <https://github.com/element-hq/element-web/issues/25627>.
         matrix_sdk::Error::Http(error)
-            if error.as_client_api_error().is_some_and(|e| e.status_code.as_u16() == 404) =>
+            if error
+                .as_client_api_error()
+                .is_some_and(|e| e.status_code.as_u16() == 404) =>
         {
             Some(format!(
                 "Failed to {} {room_name_id}: the room no longer exists on the server.{}",
                 if was_join { "join" } else { "leave" },
-                if was_join && was_invite { "\n\nYou may safely reject this invite." } else { "" },
+                if was_join && was_invite {
+                    "\n\nYou may safely reject this invite."
+                } else {
+                    ""
+                },
             ))
         }
         _ => None,
     };
-    msg_opt.unwrap_or_else(|| format!(
-        "Failed to {} {}: {}",
-        match (was_join, was_invite) {
-            (true, true) => "accept invite to",
-            (true, false) => "join",
-            (false, true) => "reject invite to",
-            (false, false) => "leave",
-        },
-        room_name_id,
-        error
-    ))
+    msg_opt.unwrap_or_else(|| {
+        format!(
+            "Failed to {} {}: {}",
+            match (was_join, was_invite) {
+                (true, true) => "accept invite to",
+                (true, false) => "join",
+                (false, true) => "reject invite to",
+                (false, false) => "leave",
+            },
+            room_name_id,
+            error
+        )
+    })
 }
 
 /// Returns a string error message for pagination errors,
@@ -409,10 +431,12 @@ pub fn stringify_pagination_error(
         match sdk_error {
             matrix_sdk::Error::Http(http_error) => match http_error.deref() {
                 matrix_sdk::HttpError::Reqwest(reqwest_error) if reqwest_error.is_timeout() => {
-                    return Some(format!("Failed to load earlier messages in \"{room_name}\": request timed out."));
+                    return Some(format!(
+                        "Failed to load earlier messages in \"{room_name}\": request timed out."
+                    ));
                 }
                 _ => {}
-            }
+            },
             _ => {}
         }
         None
@@ -420,22 +444,23 @@ pub fn stringify_pagination_error(
 
     match error {
         TimelineError::PaginationError(PaginationError::NotSupported) => {
-            return format!("Failed to load earlier messages in \"{room_name}\": \
-                pagination is not supported in this timeline focus mode.");
+            return format!(
+                "Failed to load earlier messages in \"{room_name}\": \
+                pagination is not supported in this timeline focus mode."
+            );
         }
-        TimelineError::PaginationError(PaginationError::Paginator(PaginatorError::SdkError(sdk_error)))
-        | TimelineError::EventCacheError(EventCacheError::BackpaginationError(sdk_error)) =>
-        {
+        TimelineError::PaginationError(PaginationError::Paginator(PaginatorError::SdkError(
+            sdk_error,
+        )))
+        | TimelineError::EventCacheError(EventCacheError::BackpaginationError(sdk_error)) => {
             if let Some(message) = match_sdk_error(sdk_error) {
-                return message; 
+                return message;
             }
         }
         _ => {}
     }
     format!("Failed to load earlier messages in \"{room_name}\": {error}")
 }
-
-
 
 /// Formats a given Unix timestamp in milliseconds into a relative human-readable date.
 ///
@@ -463,7 +488,11 @@ pub fn relative_format(millis: MilliSecondsSinceUnixEpoch) -> Option<String> {
     if duration < Duration::seconds(60) {
         Some("Now".to_string())
     } else if duration < Duration::minutes(60) {
-        let minutes_text = if duration.num_minutes() == 1 { "min" } else { "mins" };
+        let minutes_text = if duration.num_minutes() == 1 {
+            "min"
+        } else {
+            "mins"
+        };
         Some(format!("{} {} ago", duration.num_minutes(), minutes_text))
     } else if duration < Duration::hours(24) && now.date_naive() == datetime.date_naive() {
         Some(format!("{}", datetime.format("%H:%M"))) // "HH:MM" format for today
@@ -485,11 +514,8 @@ pub fn relative_format(millis: MilliSecondsSinceUnixEpoch) -> Option<String> {
 /// skipping any leading "@" characters.
 pub fn user_name_first_letter(user_name: &str) -> Option<&str> {
     use unicode_segmentation::UnicodeSegmentation;
-    user_name
-        .graphemes(true)
-        .find(|&g| g != "@")
+    user_name.graphemes(true).find(|&g| g != "@")
 }
-
 
 /// A const-compatible version of [`MediaFormat`].
 #[derive(Clone, Debug)]
@@ -538,26 +564,23 @@ impl From<MediaThumbnailSettingsConst> for MediaThumbnailSettings {
     }
 }
 
-
 /// The thumbnail format to use for user and room avatars.
-pub const AVATAR_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
-    MediaThumbnailSettingsConst {
+pub const AVATAR_THUMBNAIL_FORMAT: MediaFormatConst =
+    MediaFormatConst::Thumbnail(MediaThumbnailSettingsConst {
         method: Method::Scale,
         width: 40,
         height: 40,
         animated: false,
-    }
-);
+    });
 
 /// The thumbnail format to use for regular media images.
-pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
-    MediaThumbnailSettingsConst {
+pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst =
+    MediaFormatConst::Thumbnail(MediaThumbnailSettingsConst {
         method: Method::Scale,
         width: 400,
         height: 400,
         animated: false,
-    }
-);
+    });
 
 /// Removes leading whitespace and HTML whitespace tags (`<p>` and `<br>`) from the given `text`.
 pub fn trim_start_html_whitespace(mut text: &str) -> &str {
@@ -589,9 +612,7 @@ pub fn linkify_get_urls<'t>(
     const MAILTO: &str = "mailto:";
 
     use linkify::{Link, LinkFinder, LinkKind};
-    let mut links = LinkFinder::new()
-        .links(text)
-        .peekable();
+    let mut links = LinkFinder::new().links(text).peekable();
     if links.peek().is_none() {
         return Cow::Borrowed(text);
     }
@@ -611,18 +632,19 @@ pub fn linkify_get_urls<'t>(
         let link_txt = link.as_str();
 
         // Only linkify the URL if it's not already part of an HTML or mailto href attribute.
-        let is_link_within_href_attr = text.get(.. link.start())
-            .is_some_and(ends_with_href);
+        let is_link_within_href_attr = text.get(..link.start()).is_some_and(ends_with_href);
         let is_link_within_html_tag = |link: &Link| {
-            text.get(link.end() ..)
+            text.get(link.end()..)
                 .is_some_and(|after| after.trim_end().starts_with("</a>"))
         };
         let is_mailto_link_within_href_attr = |link: &Link| {
-            if !matches!(link.kind(), LinkKind::Email) { return false; }
+            if !matches!(link.kind(), LinkKind::Email) {
+                return false;
+            }
             let mailto_start = link.start().saturating_sub(MAILTO.len());
-            text.get(mailto_start .. link.start())
+            text.get(mailto_start..link.start())
                 .is_some_and(|t| t == MAILTO)
-                .then(|| text.get(.. mailto_start))
+                .then(|| text.get(..mailto_start))
                 .flatten()
                 .is_some_and(ends_with_href)
         };
@@ -668,9 +690,7 @@ pub fn linkify_get_urls<'t>(
         }
         last_end_index = link.end();
     }
-    linkified_text.push_str(
-        &escaped(text.get(last_end_index..).unwrap_or_default())
-    );
+    linkified_text.push_str(&escaped(text.get(last_end_index..).unwrap_or_default()));
     Cow::Owned(linkified_text)
 }
 
@@ -696,7 +716,7 @@ pub fn ends_with_href(text: &str) -> bool {
     match substr.as_bytes().last() {
         Some(b'\'' | b'"') => {
             if substr
-                .get(.. substr.len().saturating_sub(1))
+                .get(..substr.len().saturating_sub(1))
                 .map(|s| {
                     substr = s.trim_end();
                     substr.as_bytes().last() == Some(&b'=')
@@ -729,19 +749,19 @@ pub fn ends_with_href(text: &str) -> bool {
 /// ```
 pub fn human_readable_list<S>(names: &[S], limit: usize) -> String
 where
-    S: AsRef<str>
+    S: AsRef<str>,
 {
     let mut result = String::new();
     match names.len() {
         0 => return result, // early return if no names provided
         1 => {
             result.push_str(names[0].as_ref());
-        },
+        }
         2 => {
             result.push_str(names[0].as_ref());
             result.push_str(" and ");
             result.push_str(names[1].as_ref());
-        },
+        }
         _ => {
             let display_count = names.len().min(limit);
             for (i, name) in names.iter().take(display_count - 1).enumerate() {
@@ -768,7 +788,6 @@ where
     };
     result
 }
-
 
 /// Returns the sender's display name if available.
 ///
@@ -832,7 +851,12 @@ pub fn safe_substring_by_byte_indices(text: &str, start_byte: usize, end_byte: u
 
 /// Safely replaces text between byte indices with a new string,
 /// ensuring proper grapheme boundaries are respected
-pub fn safe_replace_by_byte_indices(text: &str, start_byte: usize, end_byte: usize, replacement: &str) -> String {
+pub fn safe_replace_by_byte_indices(
+    text: &str,
+    start_byte: usize,
+    end_byte: usize,
+    replacement: &str,
+) -> String {
     let text_graphemes: Vec<&str> = text.graphemes(true).collect();
 
     let start_grapheme_idx = byte_index_to_grapheme_index(text, start_byte);
@@ -877,7 +901,10 @@ pub struct RoomNameId {
 impl RoomNameId {
     /// Create a new `RoomNameId` with the given display name and room ID.
     pub fn new(display_name: RoomDisplayName, room_id: OwnedRoomId) -> Self {
-        Self { display_name, room_id }
+        Self {
+            display_name,
+            room_id,
+        }
     }
 
     /// Creates a new `RoomNameId` with an empty display name.
@@ -939,19 +966,20 @@ impl PartialEq for RoomNameId {
         self.room_id == other.room_id
     }
 }
-impl Eq for RoomNameId { }
+impl Eq for RoomNameId {}
 impl std::fmt::Debug for RoomNameId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut ds = f.debug_struct("RoomNameId");
         match &self.display_name {
             RoomDisplayName::Empty => ds.field("name", &"Empty"),
-            RoomDisplayName::EmptyWas(name) => ds.field("name", &format!("Empty Room (was \"{name}\")")),
+            RoomDisplayName::EmptyWas(name) => {
+                ds.field("name", &format!("Empty Room (was \"{name}\")"))
+            }
             RoomDisplayName::Aliased(name)
             | RoomDisplayName::Calculated(name)
-            | RoomDisplayName::Named(name) => ds.field("name", name)
+            | RoomDisplayName::Named(name) => ds.field("name", name),
         };
-        ds.field("ID", &self.room_id)
-            .finish()
+        ds.field("ID", &self.room_id).finish()
     }
 }
 impl std::ops::Deref for RoomNameId {
@@ -1011,14 +1039,15 @@ impl From<(Option<RoomDisplayName>, OwnedRoomId)> for RoomNameId {
 ///
 /// Skips the first character if it is a `#` or `!`, the sigils used for Room aliases and Room IDs.
 pub fn avatar_from_room_name(room_name: Option<&str>) -> FetchedRoomAvatar {
-    let first = room_name.and_then(|rn| rn
-        .graphemes(true)
-        .find(|&g| g != "#" && g != "!")
-        .map(ToString::to_string)
-    ).unwrap_or_else(|| String::from("?"));
+    let first = room_name
+        .and_then(|rn| {
+            rn.graphemes(true)
+                .find(|&g| g != "#" && g != "!")
+                .map(ToString::to_string)
+        })
+        .unwrap_or_else(|| String::from("?"));
     FetchedRoomAvatar::Text(first)
 }
-
 
 #[cfg(test)]
 mod tests_room_name {
@@ -1034,7 +1063,10 @@ mod tests_room_name {
     #[test]
     fn to_string_prefers_display_name() {
         let room_id = sample_room_id("!preferred:example.org");
-        let room_name = RoomNameId::new(RoomDisplayName::Named("Hello World".into()), room_id.clone());
+        let room_name = RoomNameId::new(
+            RoomDisplayName::Named("Hello World".into()),
+            room_id.clone(),
+        );
         assert_eq!(room_name.to_string(), "Hello World");
         assert_eq!(room_name.room_id().as_str(), room_id.as_str());
     }
@@ -1043,7 +1075,10 @@ mod tests_room_name {
     fn to_string_falls_back_to_id_when_empty() {
         let room_id = sample_room_id("!fallback:example.org");
         let room_name = RoomNameId::new(RoomDisplayName::Empty, room_id.clone());
-        assert_eq!(room_name.to_string(), format!("Room ID {}", room_id.as_str()));
+        assert_eq!(
+            room_name.to_string(),
+            format!("Room ID {}", room_id.as_str())
+        );
     }
 
     #[test]
@@ -1087,7 +1122,34 @@ mod tests_human_readable_list {
 
     #[test]
     fn test_human_readable_list_long() {
-        let names: Vec<&str> = vec!["Alice", "Bob", "Charlie", "Dennis", "Eudora", "Fanny", "Gina", "Hiroshi", "Ivan", "James", "Karen", "Lisa", "Michael", "Nathan", "Oliver", "Peter", "Quentin", "Rachel", "Sally", "Tanya", "Ulysses", "Victor", "William", "Xenia", "Yuval", "Zachariah"];
+        let names: Vec<&str> = vec![
+            "Alice",
+            "Bob",
+            "Charlie",
+            "Dennis",
+            "Eudora",
+            "Fanny",
+            "Gina",
+            "Hiroshi",
+            "Ivan",
+            "James",
+            "Karen",
+            "Lisa",
+            "Michael",
+            "Nathan",
+            "Oliver",
+            "Peter",
+            "Quentin",
+            "Rachel",
+            "Sally",
+            "Tanya",
+            "Ulysses",
+            "Victor",
+            "William",
+            "Xenia",
+            "Yuval",
+            "Zachariah",
+        ];
         let result = human_readable_list(&names, 3);
         assert_eq!(result, "Alice, Bob, Charlie, and 23 others");
     }
@@ -1106,7 +1168,8 @@ mod tests_linkify {
     #[test]
     fn test_linkify1() {
         let text = "Check out this website: https://example.com";
-        let expected = "Check out this website: <a href=\"https://example.com\">https://example.com</a>";
+        let expected =
+            "Check out this website: <a href=\"https://example.com\">https://example.com</a>";
         let actual = linkify(text, false);
         println!("{:?}", actual.as_ref());
         assert_eq!(actual.as_ref(), expected);
@@ -1135,7 +1198,6 @@ mod tests_linkify {
         println!("{:?}", actual.as_ref());
         assert_eq!(actual.as_ref(), expected);
     }
-
 
     #[test]
     fn test_linkify5() {
@@ -1181,7 +1243,6 @@ mod tests_linkify {
         assert_eq!(linkify(text, true).as_ref(), expected);
     }
 
-
     #[test]
     fn test_linkify11() {
         let text = "And then https://google.com call <a href=\"https://doc.rust-lang.org/std/io/trait.BufRead.html#method.read_until\"><code>read_until</code></a> or other <code>BufRead</code> methods.";
@@ -1198,8 +1259,10 @@ mod tests_linkify {
 
     #[test]
     fn test_linkify13() {
-        let text = "Check out this website: <a href=\"https://example.com\">https://example.com</a>";
-        let expected = "Check out this website: <a href=\"https://example.com\">https://example.com</a>";
+        let text =
+            "Check out this website: <a href=\"https://example.com\">https://example.com</a>";
+        let expected =
+            "Check out this website: <a href=\"https://example.com\">https://example.com</a>";
         assert_eq!(linkify(text, true).as_ref(), expected);
     }
 

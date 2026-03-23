@@ -4,7 +4,6 @@ use makepad_widgets::*;
 
 use crate::tsp::{self, TspWalletMetadata};
 
-
 script_mod! {
     link tsp_enabled
 
@@ -201,12 +200,14 @@ enum CreateWalletModalState {
     WalletCreationError,
 }
 
-
 #[derive(Script, ScriptHook, Widget)]
 pub struct CreateWalletModal {
-    #[deref] view: View,
-    #[rust] state: CreateWalletModalState,
-    #[rust] is_showing_error: bool,
+    #[deref]
+    view: View,
+    #[rust]
+    state: CreateWalletModalState,
+    #[rust]
+    is_showing_error: bool,
 }
 
 impl Widget for CreateWalletModal {
@@ -227,8 +228,10 @@ impl WidgetMatchEvent for CreateWalletModal {
 
         // Handle canceling/closing the modal.
         let cancel_clicked = cancel_button.clicked(actions);
-        if cancel_clicked ||
-            actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
+        if cancel_clicked
+            || actions
+                .iter()
+                .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
         {
             // If the modal was dismissed by clicking outside of it, we MUST NOT emit
             // a `CreateWalletModalAction::Close` action, as that would cause
@@ -294,7 +297,7 @@ impl WidgetMatchEvent for CreateWalletModal {
                                 empty if empty.is_empty() => wallet_file_name_input.empty_text(),
                                 non_empty => tsp::sanitize_wallet_name(&non_empty),
                             }
-                            .as_str()
+                            .as_str(),
                         );
                         let metadata = TspWalletMetadata {
                             wallet_name,
@@ -322,10 +325,9 @@ impl WidgetMatchEvent for CreateWalletModal {
                     needs_redraw = true;
                 }
 
-                _ => { }
+                _ => {}
             }
         }
-
 
         // Clear the error message if the user changes any of the input fields.
         if self.is_showing_error {
@@ -357,11 +359,17 @@ impl WidgetMatchEvent for CreateWalletModal {
         for action in actions {
             match action.downcast_ref() {
                 // Handle the wallet creation success action.
-                Some(tsp::TspWalletAction::CreateWalletSuccess { metadata, is_default }) => {
+                Some(tsp::TspWalletAction::CreateWalletSuccess {
+                    metadata,
+                    is_default,
+                }) => {
                     self.state = CreateWalletModalState::WalletCreated;
                     self.is_showing_error = false;
                     let message = if *is_default {
-                        format!("Wallet \"{}\" created successfully and set as the default.", metadata.wallet_name)
+                        format!(
+                            "Wallet \"{}\" created successfully and set as the default.",
+                            metadata.wallet_name
+                        )
                     } else {
                         format!("Wallet \"{}\" created successfully.", metadata.wallet_name)
                     };
@@ -406,10 +414,10 @@ impl WidgetMatchEvent for CreateWalletModal {
                     confirm_password_input.set_is_read_only(cx, false);
                 }
 
-                _ => { }
+                _ => {}
             }
         }
-        
+
         if needs_redraw {
             self.view.redraw(cx);
         }
@@ -430,19 +438,29 @@ impl CreateWalletModal {
         accept_button.set_visible(cx, true);
         cancel_button.set_visible(cx, true);
         // TODO: return buttons to their default state/appearance
-        self.view.text_input(cx, ids!(wallet_name_input)).set_is_read_only(cx, false);
-        self.view.text_input(cx, ids!(wallet_file_name_input)).set_is_read_only(cx, false);
-        self.view.text_input(cx, ids!(password_input)).set_is_read_only(cx, false);
-        self.view.text_input(cx, ids!(confirm_password_input)).set_is_read_only(cx, false);
+        self.view
+            .text_input(cx, ids!(wallet_name_input))
+            .set_is_read_only(cx, false);
+        self.view
+            .text_input(cx, ids!(wallet_file_name_input))
+            .set_is_read_only(cx, false);
+        self.view
+            .text_input(cx, ids!(password_input))
+            .set_is_read_only(cx, false);
+        self.view
+            .text_input(cx, ids!(confirm_password_input))
+            .set_is_read_only(cx, false);
         self.view.label(cx, ids!(status_label)).set_text(cx, "");
         self.is_showing_error = false;
-        self.view.redraw(cx);        
+        self.view.redraw(cx);
     }
 }
 
 impl CreateWalletModalRef {
     pub fn show(&self, cx: &mut Cx) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.show(cx);
     }
 }

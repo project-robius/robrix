@@ -1,6 +1,10 @@
 use makepad_widgets::*;
 
-use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, settings::settings_screen::SettingsScreenWidgetRefExt};
+use crate::{
+    app::AppState,
+    home::navigation_tab_bar::{NavigationBarAction, SelectedTab},
+    settings::settings_screen::SettingsScreenWidgetRefExt,
+};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -190,7 +194,7 @@ script_mod! {
                             // We wrap it in the SpacesBarWrapper in order to animate it in or out,
                             // and wrap *that* in a CachedWidget in order to maintain its shown/hidden state
                             // across AdaptiveView transitions between Mobile view mode and Desktop view mode.
-                            // 
+                            //
                             // ... Then we wrap *that* in a ... <https://www.youtube.com/watch?v=evUWersr7pc>
                             CachedWidget {
                                 spaces_bar_wrapper := mod.widgets.SpacesBarWrapper {}
@@ -324,13 +328,15 @@ script_mod! {
     }
 }
 
-
 /// A simple wrapper around the SpacesBar that allows us to animate showing or hiding it.
 #[derive(Script, ScriptHook, Widget, Animator)]
 pub struct SpacesBarWrapper {
-    #[source] source: ScriptObjectRef,
-    #[deref] view: View,
-    #[apply_default] animator: Animator,
+    #[source]
+    source: ScriptObjectRef,
+    #[deref]
+    view: View,
+    #[apply_default]
+    animator: Animator,
 }
 
 impl Widget for SpacesBarWrapper {
@@ -355,7 +361,9 @@ impl Widget for SpacesBarWrapper {
 impl SpacesBarWrapperRef {
     /// Shows or hides the spaces bar by animating it in or out.
     fn show_or_hide(&self, cx: &mut Cx, show: bool) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         if show {
             inner.animator_play(cx, ids!(spaces_bar_animator.show));
         } else {
@@ -365,18 +373,20 @@ impl SpacesBarWrapperRef {
     }
 }
 
-
 #[derive(Script, ScriptHook, Widget)]
 pub struct HomeScreen {
-    #[deref] view: View,
+    #[deref]
+    view: View,
 
     /// The previously-selected navigation tab, used to determine which tab
     /// and top-level view we return to after closing the settings screen.
     ///
     /// Note that the current selected tap is stored in `AppState` so that
     /// other widgets can easily access it.
-    #[rust] previous_selection: SelectedTab,
-    #[rust] is_spaces_bar_shown: bool,
+    #[rust]
+    previous_selection: SelectedTab,
+    #[rust]
+    is_spaces_bar_shown: bool,
 }
 
 impl Widget for HomeScreen {
@@ -389,7 +399,9 @@ impl Widget for HomeScreen {
                         if !matches!(app_state.selected_tab, SelectedTab::Home) {
                             self.previous_selection = app_state.selected_tab.clone();
                             app_state.selected_tab = SelectedTab::Home;
-                            cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
+                            cx.action(NavigationBarAction::TabSelected(
+                                app_state.selected_tab.clone(),
+                            ));
                             self.update_active_page_from_selection(cx, app_state);
                             self.view.redraw(cx);
                         }
@@ -398,17 +410,23 @@ impl Widget for HomeScreen {
                         if !matches!(app_state.selected_tab, SelectedTab::AddRoom) {
                             self.previous_selection = app_state.selected_tab.clone();
                             app_state.selected_tab = SelectedTab::AddRoom;
-                            cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
+                            cx.action(NavigationBarAction::TabSelected(
+                                app_state.selected_tab.clone(),
+                            ));
                             self.update_active_page_from_selection(cx, app_state);
                             self.view.redraw(cx);
                         }
                     }
                     Some(NavigationBarAction::GoToSpace { space_name_id }) => {
-                        let new_space_selection = SelectedTab::Space { space_name_id: space_name_id.clone() };
+                        let new_space_selection = SelectedTab::Space {
+                            space_name_id: space_name_id.clone(),
+                        };
                         if app_state.selected_tab != new_space_selection {
                             self.previous_selection = app_state.selected_tab.clone();
                             app_state.selected_tab = new_space_selection;
-                            cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
+                            cx.action(NavigationBarAction::TabSelected(
+                                app_state.selected_tab.clone(),
+                            ));
                             self.update_active_page_from_selection(cx, app_state);
                             self.view.redraw(cx);
                         }
@@ -418,8 +436,12 @@ impl Widget for HomeScreen {
                         if !matches!(app_state.selected_tab, SelectedTab::Settings) {
                             self.previous_selection = app_state.selected_tab.clone();
                             app_state.selected_tab = SelectedTab::Settings;
-                            cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
-                            if let Some(settings_page) = self.update_active_page_from_selection(cx, app_state) {
+                            cx.action(NavigationBarAction::TabSelected(
+                                app_state.selected_tab.clone(),
+                            ));
+                            if let Some(settings_page) =
+                                self.update_active_page_from_selection(cx, app_state)
+                            {
                                 settings_page
                                     .settings_screen(cx, ids!(settings_screen))
                                     .populate(cx, None);
@@ -432,19 +454,21 @@ impl Widget for HomeScreen {
                     Some(NavigationBarAction::CloseSettings) => {
                         if matches!(app_state.selected_tab, SelectedTab::Settings) {
                             app_state.selected_tab = self.previous_selection.clone();
-                            cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
+                            cx.action(NavigationBarAction::TabSelected(
+                                app_state.selected_tab.clone(),
+                            ));
                             self.update_active_page_from_selection(cx, app_state);
                             self.view.redraw(cx);
                         }
                     }
                     Some(NavigationBarAction::ToggleSpacesBar) => {
                         self.is_spaces_bar_shown = !self.is_spaces_bar_shown;
-                        self.view.spaces_bar_wrapper(cx, ids!(spaces_bar_wrapper))
+                        self.view
+                            .spaces_bar_wrapper(cx, ids!(spaces_bar_wrapper))
                             .show_or_hide(cx, self.is_spaces_bar_shown);
                     }
                     // We're the ones who emitted this action, so we don't need to handle it again.
-                    Some(NavigationBarAction::TabSelected(_))
-                    | None => { }
+                    Some(NavigationBarAction::TabSelected(_)) | None => {}
                 }
             }
         }
@@ -475,8 +499,7 @@ impl HomeScreen {
             .set_active_page(
                 cx,
                 match app_state.selected_tab {
-                    SelectedTab::Space { .. }
-                    | SelectedTab::Home => id!(home_page),
+                    SelectedTab::Space { .. } | SelectedTab::Home => id!(home_page),
                     SelectedTab::Settings => id!(settings_page),
                     SelectedTab::AddRoom => id!(add_room_page),
                 },
@@ -488,7 +511,8 @@ impl HomeScreen {
 /// that simply forwards stack view actions to it.
 #[derive(Script, ScriptHook, Widget)]
 pub struct StackNavigationWrapper {
-    #[deref] view: View,
+    #[deref]
+    view: View,
 }
 
 impl Widget for StackNavigationWrapper {

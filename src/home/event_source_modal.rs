@@ -6,7 +6,6 @@ use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId};
 
 use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
 
-
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
@@ -177,7 +176,7 @@ script_mod! {
         code_block := View {
             width: Fill,
             height: Fit,
-            flow: Overlay 
+            flow: Overlay
             // align the left side of the border frame with the left side of the room id / event id rows
             padding: 6
 
@@ -251,13 +250,16 @@ pub enum EventSourceModalAction {
     Close,
 }
 
-
 #[derive(Script, ScriptHook, Widget)]
 pub struct EventSourceModal {
-    #[deref] view: View,
-    #[rust] room_id: Option<OwnedRoomId>,
-    #[rust] event_id: Option<OwnedEventId>,
-    #[rust] original_json: Option<String>,
+    #[deref]
+    view: View,
+    #[rust]
+    room_id: Option<OwnedRoomId>,
+    #[rust]
+    event_id: Option<OwnedEventId>,
+    #[rust]
+    original_json: Option<String>,
 }
 
 impl Widget for EventSourceModal {
@@ -268,10 +270,14 @@ impl Widget for EventSourceModal {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if let Some(room_id) = &self.room_id {
-            self.view.label(cx, ids!(room_id_value)).set_text(cx, room_id.as_str());
+            self.view
+                .label(cx, ids!(room_id_value))
+                .set_text(cx, room_id.as_str());
         }
         if let Some(event_id) = &self.event_id {
-            self.view.label(cx, ids!(event_id_value)).set_text(cx, event_id.as_str());
+            self.view
+                .label(cx, ids!(event_id_value))
+                .set_text(cx, event_id.as_str());
         }
         if let Some(json) = &self.original_json {
             self.view.code_view(cx, ids!(code_view)).set_text(cx, json);
@@ -286,8 +292,10 @@ impl WidgetMatchEvent for EventSourceModal {
 
         // Handle canceling/closing the modal.
         let close_clicked = close_button.clicked(actions);
-        if close_clicked ||
-            actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
+        if close_clicked
+            || actions
+                .iter()
+                .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
         {
             // If the modal was dismissed by clicking outside of it, we MUST NOT emit
             // an EventSourceModalAction::Close action, as that would cause
@@ -298,7 +306,11 @@ impl WidgetMatchEvent for EventSourceModal {
             return;
         }
 
-        if self.view.button(cx, ids!(room_id_copy_button)).clicked(actions) {
+        if self
+            .view
+            .button(cx, ids!(room_id_copy_button))
+            .clicked(actions)
+        {
             if let Some(room_id) = &self.room_id {
                 cx.copy_to_clipboard(room_id.as_str());
                 enqueue_popup_notification(
@@ -309,7 +321,11 @@ impl WidgetMatchEvent for EventSourceModal {
             }
         }
 
-        if self.view.button(cx, ids!(event_id_copy_button)).clicked(actions) {
+        if self
+            .view
+            .button(cx, ids!(event_id_copy_button))
+            .clicked(actions)
+        {
             if let Some(event_id) = &self.event_id {
                 cx.copy_to_clipboard(event_id.as_str());
                 enqueue_popup_notification(
@@ -320,7 +336,11 @@ impl WidgetMatchEvent for EventSourceModal {
             }
         }
 
-        if self.view.button(cx, ids!(copy_source_button)).clicked(actions) {
+        if self
+            .view
+            .button(cx, ids!(copy_source_button))
+            .clicked(actions)
+        {
             if let Some(json) = &self.original_json {
                 cx.copy_to_clipboard(json);
                 enqueue_popup_notification(
@@ -347,9 +367,15 @@ impl EventSourceModal {
         self.original_json = original_json.clone();
 
         self.view.button(cx, ids!(close_button)).reset_hover(cx);
-        self.view.button(cx, ids!(room_id_copy_button)).reset_hover(cx);
-        self.view.button(cx, ids!(event_id_copy_button)).reset_hover(cx);
-        self.view.button(cx, ids!(copy_source_button)).reset_hover(cx);
+        self.view
+            .button(cx, ids!(room_id_copy_button))
+            .reset_hover(cx);
+        self.view
+            .button(cx, ids!(event_id_copy_button))
+            .reset_hover(cx);
+        self.view
+            .button(cx, ids!(copy_source_button))
+            .reset_hover(cx);
         self.view.redraw(cx);
     }
 }
@@ -363,7 +389,9 @@ impl EventSourceModalRef {
         event_id: Option<OwnedEventId>,
         original_json: Option<String>,
     ) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.show(cx, room_id, event_id, original_json);
     }
 }

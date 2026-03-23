@@ -9,7 +9,7 @@
 //! 2. Add Room (plus sign icon): a separate view that allows adding (joining) existing rooms,
 //!    exploring public rooms, or creating new rooms/spaces.
 //! 3. Spaces: a button that toggles the `SpacesBar` (shows/hides it).
-//!    * This is NOT a regular radio button, it's a separate toggle. 
+//!    * This is NOT a regular radio button, it's a separate toggle.
 //!    * This is only shown in Mobile view mode, because the `SpacesBar` is always shown
 //!      within the NavigationTabBar itself in Desktop view mode.
 //! 4. Activity (an inbox, alert bell, or notifications icon): a separate view that shows
@@ -31,12 +31,20 @@
 use makepad_widgets::*;
 use serde::{Deserialize, Serialize};
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, profile::{
+    avatar_cache::{self, AvatarCacheEntry},
+    login::login_screen::LoginAction,
+    logout::logout_confirm_modal::LogoutAction,
+    profile::{
         user_profile::UserProfile,
         user_profile_cache::{self, UserProfileUpdate},
-    }, shared::{
-        avatar::{AvatarState, AvatarWidgetExt}, styles::*, verification_badge::VerificationBadgeWidgetExt
-    }, sliding_sync::{current_user_id, AccountDataAction}, utils::{self, RoomNameId}
+    },
+    shared::{
+        avatar::{AvatarState, AvatarWidgetExt},
+        styles::*,
+        verification_badge::VerificationBadgeWidgetExt,
+    },
+    sliding_sync::{current_user_id, AccountDataAction},
+    utils::{self, RoomNameId},
 };
 
 script_mod! {
@@ -162,7 +170,7 @@ script_mod! {
             flow: Down,
             align: Align{x: 0.5}
             padding: Inset{top: 40., bottom: 8}
-            width: (NAVIGATION_TAB_BAR_SIZE), 
+            width: (NAVIGATION_TAB_BAR_SIZE),
             height: Fill
 
             draw_bg +: {
@@ -228,8 +236,10 @@ script_mod! {
 /// Clicking on this icon will open the settings screen.
 #[derive(Script, Widget)]
 pub struct ProfileIcon {
-    #[deref] view: View,
-    #[rust] own_profile: Option<UserProfile>,
+    #[deref]
+    view: View,
+    #[rust]
+    own_profile: Option<UserProfile>,
 }
 
 impl ScriptHook for ProfileIcon {
@@ -258,13 +268,15 @@ impl Widget for ProfileIcon {
                 needs_redraw = true;
             }
             // If we're waiting for an avatar image, process avatar updates.
-            if let Some(p) = self.own_profile.as_mut() && p.avatar_state.uri().is_some() {
+            if let Some(p) = self.own_profile.as_mut()
+                && p.avatar_state.uri().is_some()
+            {
                 avatar_cache::process_avatar_updates(cx);
                 let new_data = p.avatar_state.update_from_cache(cx);
                 needs_redraw |= new_data.is_some();
                 if new_data.is_some() {
                     user_profile_cache::enqueue_user_profile_update(
-                        UserProfileUpdate::UserProfileOnly(p.clone())
+                        UserProfileUpdate::UserProfileOnly(p.clone()),
                     );
                 }
             }
@@ -296,7 +308,7 @@ impl Widget for ProfileIcon {
                         if let Some(p) = self.own_profile.as_mut() {
                             p.avatar_state = AvatarState::Known(None);
                             user_profile_cache::enqueue_user_profile_update(
-                                UserProfileUpdate::UserProfileOnly(p.clone())
+                                UserProfileUpdate::UserProfileOnly(p.clone()),
                             );
                             self.view.redraw(cx);
                         }
@@ -307,7 +319,7 @@ impl Widget for ProfileIcon {
                             p.avatar_state = AvatarState::Known(Some(new_uri.clone()));
                             p.avatar_state.update_from_cache(cx);
                             user_profile_cache::enqueue_user_profile_update(
-                                UserProfileUpdate::UserProfileOnly(p.clone())
+                                UserProfileUpdate::UserProfileOnly(p.clone()),
                             );
                             self.view.redraw(cx);
                         }
@@ -321,7 +333,7 @@ impl Widget for ProfileIcon {
                         if let Some(p) = self.own_profile.as_mut() {
                             p.username = new_display_name.clone();
                             user_profile_cache::enqueue_user_profile_update(
-                                UserProfileUpdate::UserProfileOnly(p.clone())
+                                UserProfileUpdate::UserProfileOnly(p.clone()),
                             );
                             self.view.redraw(cx);
                         }
@@ -339,22 +351,33 @@ impl Widget for ProfileIcon {
         let area = self.view.area();
         match event.hits(cx, area) {
             Hit::FingerLongPress(_) | Hit::FingerHoverIn(_) => {
-                let (verification_str, bg_color) = self.view
+                let (verification_str, bg_color) = self
+                    .view
                     .verification_badge(cx, ids!(verification_badge))
                     .tooltip_content();
                 let text = self.own_profile.as_ref().map_or_else(
                     || format!("Not logged in.\n\n{}", verification_str),
-                    |p| format!("Logged in as \"{}\".\n\n{}", p.displayable_name(), verification_str)
+                    |p| {
+                        format!(
+                            "Logged in as \"{}\".\n\n{}",
+                            p.displayable_name(),
+                            verification_str
+                        )
+                    },
                 );
                 let mut options = CalloutTooltipOptions {
-                    position: if cx.display_context.is_desktop() { TooltipPosition::Right} else { TooltipPosition::Top},
+                    position: if cx.display_context.is_desktop() {
+                        TooltipPosition::Right
+                    } else {
+                        TooltipPosition::Top
+                    },
                     ..Default::default()
                 };
                 if let Some(c) = bg_color {
                     options.bg_color = c;
                 }
                 cx.widget_action(
-                    self.widget_uid(), 
+                    self.widget_uid(),
                     TooltipAction::HoverIn {
                         text,
                         widget_rect: area.rect(cx),
@@ -363,9 +386,9 @@ impl Widget for ProfileIcon {
                 );
             }
             Hit::FingerHoverOut(_) => {
-                cx.widget_action(self.widget_uid(),  TooltipAction::HoverOut);
+                cx.widget_action(self.widget_uid(), TooltipAction::HoverOut);
             }
-            _ => { }
+            _ => {}
         };
 
         self.view.handle_event(cx, event, scope);
@@ -386,11 +409,13 @@ impl Widget for ProfileIcon {
 
         let mut drew_avatar = false;
         if let Some(avatar_img_data) = own_profile.avatar_state.data() {
-            drew_avatar = our_own_avatar.show_image(
-                cx,
-                None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
-                |cx, img| utils::load_png_or_jpg(&img, cx, avatar_img_data),
-            ).is_ok();
+            drew_avatar = our_own_avatar
+                .show_image(
+                    cx,
+                    None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
+                    |cx, img| utils::load_png_or_jpg(&img, cx, avatar_img_data),
+                )
+                .is_ok();
         }
         if !drew_avatar {
             our_own_avatar.show_text(
@@ -405,16 +430,17 @@ impl Widget for ProfileIcon {
     }
 }
 
-
 /// The tab bar with buttons that navigate through top-level app pages.
 ///
 /// * In the "desktop" (wide) layout, this is a vertical bar on the left.
 /// * In the "mobile" (narrow) layout, this is a horizontal bar on the bottom.
 #[derive(Script, Widget)]
 pub struct NavigationTabBar {
-    #[deref] view: AdaptiveView,
+    #[deref]
+    view: AdaptiveView,
 
-    #[rust] is_spaces_bar_shown: bool,
+    #[rust]
+    is_spaces_bar_shown: bool,
 }
 
 impl ScriptHook for NavigationTabBar {
@@ -435,19 +461,22 @@ impl Widget for NavigationTabBar {
 
         if let Event::Actions(actions) = event {
             // Handle one of the radio buttons being clicked (selected).
-            let radio_button_set = self.view.radio_button_set(cx, ids_array!(
-                home_button,
-                add_room_button,
-                settings_button,
-            ));
+            let radio_button_set = self.view.radio_button_set(
+                cx,
+                ids_array!(home_button, add_room_button, settings_button,),
+            );
             match radio_button_set.selected(cx, actions) {
                 Some(0) => cx.action(NavigationBarAction::GoToHome),
                 Some(1) => cx.action(NavigationBarAction::GoToAddRoom),
                 Some(2) => cx.action(NavigationBarAction::OpenSettings),
-                _ => { }
+                _ => {}
             }
 
-            if self.view.button(cx, ids!(toggle_spaces_bar_button)).clicked(actions) {
+            if self
+                .view
+                .button(cx, ids!(toggle_spaces_bar_button))
+                .clicked(actions)
+            {
                 self.is_spaces_bar_shown = !self.is_spaces_bar_shown;
                 cx.action(NavigationBarAction::ToggleSpacesBar);
             }
@@ -457,9 +486,18 @@ impl Widget for NavigationTabBar {
                 // update our radio buttons accordingly.
                 if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
                     match tab {
-                        SelectedTab::Home     => self.view.radio_button(cx, ids!(home_button)).select(cx, scope),
-                        SelectedTab::AddRoom  => self.view.radio_button(cx, ids!(add_room_button)).select(cx, scope),
-                        SelectedTab::Settings => self.view.radio_button(cx, ids!(settings_button)).select(cx, scope),
+                        SelectedTab::Home => self
+                            .view
+                            .radio_button(cx, ids!(home_button))
+                            .select(cx, scope),
+                        SelectedTab::AddRoom => self
+                            .view
+                            .radio_button(cx, ids!(add_room_button))
+                            .select(cx, scope),
+                        SelectedTab::Settings => self
+                            .view
+                            .radio_button(cx, ids!(settings_button))
+                            .select(cx, scope),
                         SelectedTab::Space { .. } => {
                             for rb in radio_button_set.iter() {
                                 if let Some(mut rb_inner) = rb.borrow_mut() {
@@ -479,7 +517,6 @@ impl Widget for NavigationTabBar {
     }
 }
 
-
 /// Which top-level view is currently shown, and which navigation tab is selected.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SelectedTab {
@@ -488,9 +525,10 @@ pub enum SelectedTab {
     AddRoom,
     Settings,
     // AlertsInbox,
-    Space { space_name_id: RoomNameId },
+    Space {
+        space_name_id: RoomNameId,
+    },
 }
-
 
 /// Actions for navigating through the top-level views of the app,
 /// e.g., when the user clicks/taps on a button in the NavigationTabBar.
@@ -534,16 +572,14 @@ pub enum NavigationBarAction {
     GoToSpace { space_name_id: RoomNameId },
 
     // TODO: add GoToAlertsInbox, once we add that button/screen
-
     /// The given tab was selected as the active top-level view.
-    /// This is needed to ensure that the proper tab is marked as selected. 
+    /// This is needed to ensure that the proper tab is marked as selected.
     TabSelected(SelectedTab),
     /// Toggle whether the SpacesBar is shown, i.e., show/hide it.
     /// This is only applicable in the Mobile view mode, because the SpacesBar
     /// is always shown in Desktop view mode.
     ToggleSpacesBar,
 }
-
 
 /// Returns the current user's profile and avatar, if available.
 pub fn get_own_profile(cx: &mut Cx) -> Option<UserProfile> {
@@ -562,12 +598,14 @@ pub fn get_own_profile(cx: &mut Cx) -> Option<UserProfile> {
         );
         // If we have an avatar URI to fetch, try to fetch it.
         if let Some(Some(avatar_uri)) = avatar_uri_to_fetch {
-            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, &avatar_uri) {
+            if let AvatarCacheEntry::Loaded(data) =
+                avatar_cache::get_or_fetch_avatar(cx, &avatar_uri)
+            {
                 if let Some(p) = own_profile.as_mut() {
                     p.avatar_state = AvatarState::Loaded(data);
                     // Update the user profile cache with the new avatar data.
                     user_profile_cache::enqueue_user_profile_update(
-                        UserProfileUpdate::UserProfileOnly(p.clone())
+                        UserProfileUpdate::UserProfileOnly(p.clone()),
                     );
                 }
             }

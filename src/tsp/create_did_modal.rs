@@ -4,7 +4,6 @@ use makepad_widgets::*;
 
 use crate::tsp;
 
-
 script_mod! {
     link tsp_enabled
 
@@ -249,12 +248,14 @@ enum CreateDidModalState {
     IdentityCreationError,
 }
 
-
 #[derive(Script, ScriptHook, Widget)]
 pub struct CreateDidModal {
-    #[deref] view: View,
-    #[rust] state: CreateDidModalState,
-    #[rust] is_showing_error: bool,
+    #[deref]
+    view: View,
+    #[rust]
+    state: CreateDidModalState,
+    #[rust]
+    is_showing_error: bool,
 }
 
 impl Widget for CreateDidModal {
@@ -275,8 +276,10 @@ impl WidgetMatchEvent for CreateDidModal {
 
         // Handle canceling/closing the modal.
         let cancel_clicked = cancel_button.clicked(actions);
-        if cancel_clicked ||
-            actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
+        if cancel_clicked
+            || actions
+                .iter()
+                .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
         {
             // If the modal was dismissed by clicking outside of it, we MUST NOT emit
             // a `CreateDidModalAction::Close` action, as that would cause
@@ -338,7 +341,7 @@ impl WidgetMatchEvent for CreateDidModal {
                             username: username.to_string(),
                             alias,
                             server,
-                            did_server
+                            did_server,
                         });
 
                         self.state = CreateDidModalState::WaitingForIdentityCreation;
@@ -360,10 +363,9 @@ impl WidgetMatchEvent for CreateDidModal {
                     needs_redraw = true;
                 }
 
-                _ => { }
+                _ => {}
             }
         }
-
 
         // If the user changes any of the input fields, clear the error message
         // and reset the accept button to its default state.
@@ -389,7 +391,7 @@ impl WidgetMatchEvent for CreateDidModal {
 
         for action in actions {
             match action.downcast_ref() {
-                Some(tsp::TspIdentityAction::DidCreationResult(Ok(did)))=> {
+                Some(tsp::TspIdentityAction::DidCreationResult(Ok(did))) => {
                     self.state = CreateDidModalState::IdentityCreated;
                     self.is_showing_error = false;
                     let message = format!("Successfully created and published DID: \"{}\"", did);
@@ -418,7 +420,7 @@ impl WidgetMatchEvent for CreateDidModal {
 
                 // Upon an error, update the status label and disable the accept button.
                 // Re-enable the input fields so the user can change the input values to try again.
-                Some(tsp::TspIdentityAction::DidCreationResult(Err(e)))=> {
+                Some(tsp::TspIdentityAction::DidCreationResult(Err(e))) => {
                     self.state = CreateDidModalState::IdentityCreationError;
                     self.is_showing_error = true;
                     let message = format!("Failed to create DID: {e}");
@@ -437,10 +439,10 @@ impl WidgetMatchEvent for CreateDidModal {
                     needs_redraw = true;
                 }
 
-                _ => { }
+                _ => {}
             }
         }
-        
+
         if needs_redraw {
             self.view.redraw(cx);
         }
@@ -461,19 +463,29 @@ impl CreateDidModal {
         accept_button.set_visible(cx, true);
         cancel_button.set_visible(cx, true);
         // TODO: return buttons to their default state/appearance
-        self.view.text_input(cx, ids!(username_input)).set_is_read_only(cx, false);
-        self.view.text_input(cx, ids!(alias_input)).set_is_read_only(cx, false);
-        self.view.text_input(cx, ids!(server_input)).set_is_read_only(cx, false);
-        self.view.text_input(cx, ids!(did_server_input)).set_is_read_only(cx, false);
+        self.view
+            .text_input(cx, ids!(username_input))
+            .set_is_read_only(cx, false);
+        self.view
+            .text_input(cx, ids!(alias_input))
+            .set_is_read_only(cx, false);
+        self.view
+            .text_input(cx, ids!(server_input))
+            .set_is_read_only(cx, false);
+        self.view
+            .text_input(cx, ids!(did_server_input))
+            .set_is_read_only(cx, false);
         self.view.label(cx, ids!(status_label)).set_text(cx, "");
         self.is_showing_error = false;
-        self.view.redraw(cx);        
+        self.view.redraw(cx);
     }
 }
 
 impl CreateDidModalRef {
     pub fn show(&self, cx: &mut Cx) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.show(cx);
     }
 }

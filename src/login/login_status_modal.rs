@@ -75,7 +75,8 @@ script_mod! {
 /// A modal dialog that displays the status of a login attempt.
 #[derive(Script, ScriptHook, Widget)]
 pub struct LoginStatusModal {
-    #[deref] view: View,
+    #[deref]
+    view: View,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -113,7 +114,7 @@ impl WidgetMatchEvent for LoginStatusModal {
             // a `LoginStatusModalAction::Close` action, as that would cause
             // an infinite action feedback loop.
             if !modal_dismissed {
-                cx.widget_action(widget_uid,  LoginStatusModalAction::Close);
+                cx.widget_action(widget_uid, LoginStatusModalAction::Close);
             }
         }
     }

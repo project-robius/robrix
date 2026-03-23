@@ -13,7 +13,13 @@ use matrix_sdk::{RoomDisplayName, RoomState};
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 
 use crate::{
-    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, room_filter_input_bar::RoomFilterAction}, utils::{self, RoomNameId}
+    home::navigation_tab_bar::{NavigationBarAction, SelectedTab},
+    room::{
+        FetchedRoomAvatar,
+        room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria},
+    },
+    shared::{avatar::AvatarWidgetRefExt, room_filter_input_bar::RoomFilterAction},
+    utils::{self, RoomNameId},
 };
 
 script_mod! {
@@ -197,7 +203,7 @@ script_mod! {
         width: Fill,
         spacing: 0.0
 
-        auto_tail: false, 
+        auto_tail: false,
         max_pull_down: 0.0,
         scroll_bar: ScrollBar {  // hide the scroll bar
             bar_size: 0.0,
@@ -216,7 +222,7 @@ script_mod! {
         Desktop := View {
             align: Align{x: 0.5, y: 0.5}
             padding: 0,
-            width: (NAVIGATION_TAB_BAR_SIZE), 
+            width: (NAVIGATION_TAB_BAR_SIZE),
             height: Fill
 
             CachedWidget {
@@ -237,7 +243,6 @@ script_mod! {
     }
 }
 
-
 /// Actions emitted by and handled by the SpacesBar widget (and its children).
 #[derive(Clone, Debug, Default)]
 pub enum SpacesBarAction {
@@ -249,14 +254,17 @@ pub enum SpacesBarAction {
     None,
 }
 
-
 #[derive(Script, ScriptHook, Widget, Animator)]
 pub struct SpacesBarEntry {
-    #[source] source: ScriptObjectRef,
-    #[deref] view: View,
-    #[apply_default] animator: Animator,
+    #[source]
+    source: ScriptObjectRef,
+    #[deref]
+    view: View,
+    #[apply_default]
+    animator: Animator,
 
-    #[rust] space_name_id: Option<RoomNameId>,
+    #[rust]
+    space_name_id: Option<RoomNameId>,
 }
 
 impl Widget for SpacesBarEntry {
@@ -269,13 +277,13 @@ impl Widget for SpacesBarEntry {
         let emit_hover_in_action = |this: &Self, cx: &mut Cx| {
             let is_desktop = cx.display_context.is_desktop();
             cx.widget_action(
-                this.widget_uid(), 
+                this.widget_uid(),
                 TooltipAction::HoverIn {
                     widget_rect: area.rect(cx),
-                    text: this.space_name_id.as_ref().map_or(
-                        String::from("Unknown Space Name"),
-                        |sni| sni.to_string(),
-                    ),
+                    text: this
+                        .space_name_id
+                        .as_ref()
+                        .map_or(String::from("Unknown Space Name"), |sni| sni.to_string()),
                     options: CalloutTooltipOptions {
                         position: if is_desktop {
                             TooltipPosition::Right
@@ -295,17 +303,14 @@ impl Widget for SpacesBarEntry {
             }
             Hit::FingerHoverOut(_) => {
                 self.animator_play(cx, ids!(hover.off));
-                cx.widget_action(
-                    self.widget_uid(), 
-                    TooltipAction::HoverOut,
-                );
+                cx.widget_action(self.widget_uid(), TooltipAction::HoverOut);
             }
             Hit::FingerDown(fe) => {
                 self.animator_play(cx, ids!(hover.down));
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                     if let Some(space_name_id) = self.space_name_id.clone() {
                         cx.widget_action(
-                            self.widget_uid(), 
+                            self.widget_uid(),
                             SpacesBarAction::ButtonSecondaryClicked { space_name_id },
                         );
                     }
@@ -316,7 +321,7 @@ impl Widget for SpacesBarEntry {
                 emit_hover_in_action(self, cx);
                 if let Some(space_name_id) = self.space_name_id.clone() {
                     cx.widget_action(
-                        self.widget_uid(), 
+                        self.widget_uid(),
                         SpacesBarAction::ButtonSecondaryClicked { space_name_id },
                     );
                 }
@@ -325,7 +330,7 @@ impl Widget for SpacesBarEntry {
                 self.animator_play(cx, ids!(hover.on));
                 if let Some(space_name_id) = self.space_name_id.clone() {
                     cx.widget_action(
-                        self.widget_uid(), 
+                        self.widget_uid(),
                         SpacesBarAction::ButtonClicked { space_name_id },
                     );
                 }
@@ -336,7 +341,7 @@ impl Widget for SpacesBarEntry {
             _ => {}
         }
     }
-    
+
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
     }
@@ -345,12 +350,20 @@ impl Widget for SpacesBarEntry {
 impl SpacesBarEntry {
     fn set_metadata(&mut self, cx: &mut Cx, space_name_id: RoomNameId, is_selected: bool) {
         self.space_name_id = Some(space_name_id);
-        self.animator_toggle(cx, is_selected, Animate::No, ids!(active.on), ids!(active.off));
+        self.animator_toggle(
+            cx,
+            is_selected,
+            Animate::No,
+            ids!(active.on),
+            ids!(active.off),
+        );
     }
 }
 impl SpacesBarEntryRef {
     pub fn set_metadata(&self, cx: &mut Cx, space_name_id: RoomNameId, is_selected: bool) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.set_metadata(cx, space_name_id, is_selected);
     }
 }
@@ -375,8 +388,6 @@ pub struct JoinedSpaceInfo {
     /// The number of children rooms this space has.
     pub children_count: u64,
 }
-
-
 
 /// The possible updates that should be displayed by the single list of all spaces.
 ///
@@ -443,7 +454,6 @@ pub enum SpacesListUpdate {
     ScrollToSpace(OwnedRoomId),
 }
 
-
 static PENDING_SPACE_UPDATES: SegQueue<SpacesListUpdate> = SegQueue::new();
 
 /// Enqueue a new room update for the list of all spaces
@@ -453,37 +463,42 @@ pub fn enqueue_spaces_list_update(update: SpacesListUpdate) {
     SignalToUI::set_ui_signal();
 }
 
-
 /// The tab bar with buttons that navigate through top-level app pages.
 ///
 /// * In the "desktop" (wide) layout, this is a vertical bar on the left.
 /// * In the "mobile" (narrow) layout, this is a horizontal bar on the bottom.
 #[derive(Script, ScriptHook, Widget)]
 pub struct SpacesBar {
-    #[deref] view: AdaptiveView,
+    #[deref]
+    view: AdaptiveView,
 
     /// The set of all joined spaces, keyed by the space ID.
-    #[rust] all_joined_spaces: HashMap<OwnedRoomId, JoinedSpaceInfo>,
+    #[rust]
+    all_joined_spaces: HashMap<OwnedRoomId, JoinedSpaceInfo>,
 
     /// The currently-active filter function for the list of spaces.
     ///
     /// Note: for performance reasons, this does not get automatically applied
     /// when its value changes. Instead, you must manually invoke it on the set of `all_joined_spaces`
     /// in order to update the set of `displayed_spaces` accordingly.
-    #[rust] display_filter: RoomDisplayFilter,
+    #[rust]
+    display_filter: RoomDisplayFilter,
 
     /// The list of spaces currently displayed in the UI, in order from top to bottom.
     /// This is a strict subset of the rooms in `all_joined_spaces`, and should be determined
     /// by applying the `display_filter` to the set of `all_joined_spaces`.
-    #[rust] displayed_spaces: Vec<OwnedRoomId>,
+    #[rust]
+    displayed_spaces: Vec<OwnedRoomId>,
 
     /// Whether the list of `displayed_spaces` is currently filtered:
     /// `true` if filtered, `false` if showing everything.
-    #[rust] is_filtered: bool,
+    #[rust]
+    is_filtered: bool,
 
     /// The ID of the currently-selected space in this SpacesBar.
     /// Only one space can be selected at once.
-    #[rust] selected_space: Option<OwnedRoomId>,
+    #[rust]
+    selected_space: Option<OwnedRoomId>,
 }
 
 impl Widget for SpacesBar {
@@ -504,7 +519,9 @@ impl Widget for SpacesBar {
                 }
 
                 // Update which space is currently selected.
-                if let SpacesBarAction::ButtonClicked { space_name_id } = action.as_widget_action().cast() {
+                if let SpacesBarAction::ButtonClicked { space_name_id } =
+                    action.as_widget_action().cast()
+                {
                     self.selected_space = Some(space_name_id.room_id().clone());
                     self.redraw(cx);
                     cx.action(NavigationBarAction::GoToSpace { space_name_id });
@@ -534,7 +551,9 @@ impl Widget for SpacesBar {
         while let Some(widget_to_draw) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = widget_to_draw.as_portal_list();
-            let Some(mut list) = portal_list_ref.borrow_mut() else { continue };
+            let Some(mut list) = portal_list_ref.borrow_mut() else {
+                continue;
+            };
 
             // AdaptiveView + CachedWidget does not properly handle DSL-level style overrides,
             // so we must manually apply the different style choices here when drawing it.
@@ -560,7 +579,7 @@ impl Widget for SpacesBar {
                                 "Found no\nmatching spaces."
                             } else {
                                 "Found no\njoined spaces."
-                            }
+                            },
                         );
                         item
                     } else {
@@ -568,11 +587,11 @@ impl Widget for SpacesBar {
                     };
                     item.draw_all(cx, scope);
                 }
-            }
-            else {
+            } else {
                 list.set_item_range(cx, 0, len + 1);
                 while let Some(portal_list_index) = list.next_visible_item(cx) {
-                    let item = if let Some(space) = self.displayed_spaces
+                    let item = if let Some(space) = self
+                        .displayed_spaces
                         .get(portal_list_index)
                         .and_then(|space_id| self.all_joined_spaces.get(space_id))
                     {
@@ -586,41 +605,38 @@ impl Widget for SpacesBar {
                                 avatar_ref.show_text(cx, None, None, text);
                             }
                             FetchedRoomAvatar::Image(image_data) => {
-                                let res = avatar_ref.show_image(
-                                    cx,
-                                    None,
-                                    |cx, img_ref| utils::load_png_or_jpg(&img_ref, cx, image_data),
-                                );
+                                let res = avatar_ref.show_image(cx, None, |cx, img_ref| {
+                                    utils::load_png_or_jpg(&img_ref, cx, image_data)
+                                });
                                 if res.is_err() {
-                                    avatar_ref.show_text(
-                                        cx,
-                                        None,
-                                        None,
-                                        &space_name,
-                                    );
+                                    avatar_ref.show_text(cx, None, None, &space_name);
                                 }
                             }
                         }
                         item.as_spaces_bar_entry().set_metadata(
                             cx,
                             space.space_name_id.clone(),
-                            self.selected_space.as_ref().is_some_and(|id| id == space.space_name_id.room_id()),
+                            self.selected_space
+                                .as_ref()
+                                .is_some_and(|id| id == space.space_name_id.room_id()),
                         );
                         item
-                    }
-                    else if portal_list_index == len {
+                    } else if portal_list_index == len {
                         let item = list.item(cx, portal_list_index, id!(StatusLabel));
-                        let descriptor = if self.is_filtered { "matching" } else { "joined" }; 
+                        let descriptor = if self.is_filtered {
+                            "matching"
+                        } else {
+                            "joined"
+                        };
                         let text = match len {
-                            0      => format!("Found no\n{descriptor} spaces."),
-                            1      => format!("Found 1\n{descriptor} space."),
+                            0 => format!("Found no\n{descriptor} spaces."),
+                            1 => format!("Found 1\n{descriptor} space."),
                             2..100 => format!("Found {len}\n{descriptor} spaces."),
-                            100..  => format!("Found 99+\n{descriptor} spaces."),
+                            100.. => format!("Found 99+\n{descriptor} spaces."),
                         };
                         item.label(cx, ids!(label)).set_text(cx, &text);
                         item
-                    }
-                    else {
+                    } else {
                         list.item(cx, portal_list_index, id!(BottomFiller))
                     };
                     item.draw_all(cx, scope);
@@ -633,9 +649,8 @@ impl Widget for SpacesBar {
 }
 
 impl SpacesBar {
-     /// Handle all pending updates to the spaces list.
+    /// Handle all pending updates to the spaces list.
     fn handle_spaces_list_updates(&mut self, cx: &mut Cx, _event: &Event, _scope: &mut Scope) {
-
         fn adjust_displayed_spaces(
             was_displayed: bool,
             should_display: bool,
@@ -644,10 +659,11 @@ impl SpacesBar {
         ) {
             match (was_displayed, should_display) {
                 // No need to update anything
-                (true, true) | (false, false) => { }
+                (true, true) | (false, false) => {}
                 // Space was displayed but should no longer be displayed.
                 (true, false) => {
-                    displayed_spaces.iter()
+                    displayed_spaces
+                        .iter()
                         .position(|s| s == &space_id)
                         .map(|index| displayed_spaces.remove(index));
                 }
@@ -658,7 +674,6 @@ impl SpacesBar {
             }
         }
 
-
         let mut num_updates: usize = 0;
         while let Some(update) = PENDING_SPACE_UPDATES.pop() {
             num_updates += 1;
@@ -666,26 +681,46 @@ impl SpacesBar {
                 SpacesListUpdate::AddJoinedSpace(joined_space) => {
                     let space_id = joined_space.space_name_id.room_id().clone();
                     let should_display = (self.display_filter)(&joined_space);
-                    let replaced = self.all_joined_spaces.insert(space_id.clone(), joined_space);
+                    let replaced = self
+                        .all_joined_spaces
+                        .insert(space_id.clone(), joined_space);
                     if replaced.is_none() {
-                        adjust_displayed_spaces(false, should_display, space_id, &mut self.displayed_spaces);
+                        adjust_displayed_spaces(
+                            false,
+                            should_display,
+                            space_id,
+                            &mut self.displayed_spaces,
+                        );
                     } else {
                         error!("BUG: Added joined space {space_id} that already existed");
                     }
                 }
 
-                SpacesListUpdate::UpdateCanonicalAlias { space_id, new_canonical_alias } => {
+                SpacesListUpdate::UpdateCanonicalAlias {
+                    space_id,
+                    new_canonical_alias,
+                } => {
                     if let Some(space) = self.all_joined_spaces.get_mut(&space_id) {
                         let was_displayed = (self.display_filter)(space);
                         space.canonical_alias = new_canonical_alias;
                         let should_display = (self.display_filter)(space);
-                        adjust_displayed_spaces(was_displayed, should_display, space_id, &mut self.displayed_spaces);
+                        adjust_displayed_spaces(
+                            was_displayed,
+                            should_display,
+                            space_id,
+                            &mut self.displayed_spaces,
+                        );
                     } else {
-                        error!("Error: couldn't find space {space_id} to update space canonical alias");
+                        error!(
+                            "Error: couldn't find space {space_id} to update space canonical alias"
+                        );
                     }
                 }
 
-                SpacesListUpdate::UpdateSpaceName { space_id, new_space_name } => {
+                SpacesListUpdate::UpdateSpaceName {
+                    space_id,
+                    new_space_name,
+                } => {
                     if let Some(space) = self.all_joined_spaces.get_mut(&space_id) {
                         let was_displayed = (self.display_filter)(space);
                         space.space_name_id = RoomNameId::new(
@@ -693,7 +728,12 @@ impl SpacesBar {
                             space_id.clone(),
                         );
                         let should_display = (self.display_filter)(space);
-                        adjust_displayed_spaces(was_displayed, should_display, space_id, &mut self.displayed_spaces);
+                        adjust_displayed_spaces(
+                            was_displayed,
+                            should_display,
+                            space_id,
+                            &mut self.displayed_spaces,
+                        );
                     } else {
                         error!("Error: couldn't find space {space_id} to update space name");
                     }
@@ -719,15 +759,23 @@ impl SpacesBar {
                     }
                 }
 
-                SpacesListUpdate::UpdateNumJoinedMembers { space_id, num_joined_members } => {
+                SpacesListUpdate::UpdateNumJoinedMembers {
+                    space_id,
+                    num_joined_members,
+                } => {
                     if let Some(space) = self.all_joined_spaces.get_mut(&space_id) {
                         space.num_joined_members = num_joined_members;
                     } else {
-                        error!("Error: couldn't find space {space_id} to update space num_joined_members");
+                        error!(
+                            "Error: couldn't find space {space_id} to update space num_joined_members"
+                        );
                     }
                 }
 
-                SpacesListUpdate::UpdateJoinRule { space_id, join_rule } => {
+                SpacesListUpdate::UpdateJoinRule {
+                    space_id,
+                    join_rule,
+                } => {
                     if let Some(space) = self.all_joined_spaces.get_mut(&space_id) {
                         space.join_rule = join_rule;
                     } else {
@@ -735,27 +783,42 @@ impl SpacesBar {
                     }
                 }
 
-                SpacesListUpdate::UpdateWorldReadable { space_id, world_readable } => {
+                SpacesListUpdate::UpdateWorldReadable {
+                    space_id,
+                    world_readable,
+                } => {
                     if let Some(space) = self.all_joined_spaces.get_mut(&space_id) {
                         space.world_readable = world_readable;
                     } else {
-                        error!("Error: couldn't find space {space_id} to update space world_readable");
+                        error!(
+                            "Error: couldn't find space {space_id} to update space world_readable"
+                        );
                     }
                 }
 
-                SpacesListUpdate::UpdateGuestCanJoin { space_id, guest_can_join } => {
+                SpacesListUpdate::UpdateGuestCanJoin {
+                    space_id,
+                    guest_can_join,
+                } => {
                     if let Some(space) = self.all_joined_spaces.get_mut(&space_id) {
                         space.guest_can_join = guest_can_join;
                     } else {
-                        error!("Error: couldn't find space {space_id} to update space guest_can_join");
+                        error!(
+                            "Error: couldn't find space {space_id} to update space guest_can_join"
+                        );
                     }
                 }
 
-                SpacesListUpdate::UpdateChildrenCount { space_id, children_count } => {
+                SpacesListUpdate::UpdateChildrenCount {
+                    space_id,
+                    children_count,
+                } => {
                     if let Some(space) = self.all_joined_spaces.get_mut(&space_id) {
                         space.children_count = children_count;
                     } else {
-                        error!("Error: couldn't find space {space_id} to update space children_count");
+                        error!(
+                            "Error: couldn't find space {space_id} to update space children_count"
+                        );
                     }
                 }
 
@@ -784,7 +847,6 @@ impl SpacesBar {
         }
     }
 
-
     /// Updates the lists of displayed spaces based on the current search filter.
     fn update_displayed_spaces(&mut self, cx: &mut Cx, keywords: &str) {
         let portal_list = self.view.portal_list(cx, ids!(spaces_list));
@@ -807,18 +869,22 @@ impl SpacesBar {
         self.display_filter = filter;
         self.is_filtered = true;
 
-        let filtered_spaces_iter = self.all_joined_spaces.iter()
+        let filtered_spaces_iter = self
+            .all_joined_spaces
+            .iter()
             .filter(|(_, space)| (self.display_filter)(*space));
 
         self.displayed_spaces = if let Some(sort_fn) = sort_fn {
-            let mut filtered_spaces = filtered_spaces_iter
-                .collect::<Vec<_>>();
+            let mut filtered_spaces = filtered_spaces_iter.collect::<Vec<_>>();
             filtered_spaces.sort_by(|(_, space_a), (_, space_b)| sort_fn(*space_a, *space_b));
             filtered_spaces
                 .into_iter()
-                .map(|(space_id, _)| space_id.clone()).collect()
+                .map(|(space_id, _)| space_id.clone())
+                .collect()
         } else {
-            filtered_spaces_iter.map(|(space_id, _)| space_id.clone()).collect()
+            filtered_spaces_iter
+                .map(|(space_id, _)| space_id.clone())
+                .collect()
         };
 
         portal_list.set_first_id_and_scroll(0, 0.0);

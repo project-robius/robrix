@@ -1,12 +1,22 @@
 use std::{
-    borrow::Cow, cmp::Ordering, collections::{BTreeMap, HashSet}, ops::Deref
+    borrow::Cow,
+    cmp::Ordering,
+    collections::{BTreeMap, HashSet},
+    ops::Deref,
 };
 use bitflags::bitflags;
-use matrix_sdk::{RoomDisplayName, ruma::{
-    OwnedRoomAliasId, RoomAliasId, RoomId, events::tag::{TagName, Tags}
-}};
+use matrix_sdk::{
+    RoomDisplayName,
+    ruma::{
+        OwnedRoomAliasId, RoomAliasId, RoomId,
+        events::tag::{TagName, Tags},
+    },
+};
 
-use crate::{home::rooms_list::{InvitedRoomInfo, JoinedRoomInfo}, home::spaces_bar::JoinedSpaceInfo};
+use crate::{
+    home::rooms_list::{InvitedRoomInfo, JoinedRoomInfo},
+    home::spaces_bar::JoinedSpaceInfo,
+};
 
 static EMPTY_TAGS: Tags = BTreeMap::new();
 
@@ -142,7 +152,6 @@ impl FilterableRoom for JoinedSpaceInfo {
     }
 }
 
-
 pub type RoomFilterFn = dyn Fn(&dyn FilterableRoom) -> bool;
 pub type SortFn = dyn Fn(&dyn FilterableRoom, &dyn FilterableRoom) -> Ordering;
 
@@ -245,18 +254,16 @@ impl RoomDisplayFilterBuilder {
     }
 
     fn matches_room_name(room: &dyn FilterableRoom, keywords: &str) -> bool {
-        room.room_name()
-            .to_lowercase()
-            .contains(keywords)
+        room.room_name().to_lowercase().contains(keywords)
     }
 
     fn matches_room_alias(room: &dyn FilterableRoom, keywords: &str) -> bool {
         room.canonical_alias()
             .is_some_and(|alias| alias.as_str().eq_ignore_ascii_case(keywords))
-        ||
-        room.alt_aliases()
-            .iter()
-            .any(|alias| alias.as_str().eq_ignore_ascii_case(keywords))
+            || room
+                .alt_aliases()
+                .iter()
+                .any(|alias| alias.as_str().eq_ignore_ascii_case(keywords))
     }
 
     fn matches_room_tags(room: &dyn FilterableRoom, search_tags: &HashSet<String>) -> bool {
@@ -267,10 +274,13 @@ impl RoomDisplayFilterBuilder {
                     ["low_priority", "low-priority", "lowpriority", "lowPriority"]
                         .contains(&search_tag)
                 }
-                TagName::ServerNotice => {
-                    ["server_notice", "server-notice", "servernotice", "serverNotice"]
-                        .contains(&search_tag)
-                }
+                TagName::ServerNotice => [
+                    "server_notice",
+                    "server-notice",
+                    "servernotice",
+                    "serverNotice",
+                ]
+                .contains(&search_tag),
                 TagName::User(user_tag) => user_tag.as_ref().eq_ignore_ascii_case(search_tag),
                 _ => false,
             }
@@ -316,10 +326,14 @@ impl RoomDisplayFilterBuilder {
                     RoomFilterCriteria::RoomId if criteria.contains(RoomFilterCriteria::RoomId) => {
                         Self::matches_room_id(room, &keywords)
                     }
-                    RoomFilterCriteria::RoomAlias if criteria.contains(RoomFilterCriteria::RoomAlias) => {
+                    RoomFilterCriteria::RoomAlias
+                        if criteria.contains(RoomFilterCriteria::RoomAlias) =>
+                    {
                         Self::matches_room_alias(room, &keywords)
                     }
-                    RoomFilterCriteria::RoomTags if criteria.contains(RoomFilterCriteria::RoomTags) => {
+                    RoomFilterCriteria::RoomTags
+                        if criteria.contains(RoomFilterCriteria::RoomTags) =>
+                    {
                         Self::matches_room_tags(room, &search_tags)
                     }
                     _ => false,

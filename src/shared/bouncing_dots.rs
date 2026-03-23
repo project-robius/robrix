@@ -22,20 +22,20 @@ script_mod! {
                 let center_y = self.rect_size.y * 0.5;
                 // Create three circle SDFs
                 sdf.circle(
-                    self.rect_size.x * 0.25, 
-                    amplitude * sin(self.anim_time * 2.0 * PI * self.freq) + center_y, 
+                    self.rect_size.x * 0.25,
+                    amplitude * sin(self.anim_time * 2.0 * PI * self.freq) + center_y,
                     self.dot_radius
                 );
                 sdf.fill(self.color);
                 sdf.circle(
-                    self.rect_size.x * 0.5, 
-                    amplitude * sin(self.anim_time * 2.0 * PI * self.freq + self.phase_offset) + center_y, 
+                    self.rect_size.x * 0.5,
+                    amplitude * sin(self.anim_time * 2.0 * PI * self.freq + self.phase_offset) + center_y,
                     self.dot_radius
                 );
                 sdf.fill(self.color);
                 sdf.circle(
-                    self.rect_size.x * 0.75, 
-                    amplitude * sin(self.anim_time * 2.0 * PI * self.freq + self.phase_offset * 2) + center_y, 
+                    self.rect_size.x * 0.75,
+                    amplitude * sin(self.anim_time * 2.0 * PI * self.freq + self.phase_offset * 2) + center_y,
                     self.dot_radius
                 );
                 sdf.fill(self.color);
@@ -62,15 +62,18 @@ script_mod! {
                 }
             }
         }
-        
+
     }
 }
 
 #[derive(Script, ScriptHook, Widget, Animator)]
 pub struct BouncingDots {
-    #[source] source: ScriptObjectRef,
-    #[deref] view: View,
-    #[apply_default] animator: Animator,
+    #[source]
+    source: ScriptObjectRef,
+    #[deref]
+    view: View,
+    #[apply_default]
+    animator: Animator,
 }
 impl Widget for BouncingDots {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
@@ -84,7 +87,6 @@ impl Widget for BouncingDots {
         self.view.draw_walk(cx, scope, walk)
     }
 }
-
 
 impl BouncingDotsRef {
     /// Starts animation of the bouncing dots.
