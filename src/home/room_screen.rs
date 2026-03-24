@@ -2386,13 +2386,13 @@ impl RoomScreen {
     /// Note: after calling this function, the widget's `tl_state` will be `None`.
     fn save_state(&mut self) {
         let Some(mut tl) = self.tl_state.take() else {
-            error!("Timeline::save_state(): skipping due to missing state, room {:?}", self.room_name_id);
+            error!("Timeline::save_state(): skipping due to missing state, room {:?}, {:?}", self.timeline_kind, self.room_name_id.as_ref().map(|r| r.display_name()));
             return;
         };
 
         let portal_list = self.child_by_path(ids!(timeline.list)).as_portal_list();
         let room_input_bar = self.child_by_path(ids!(room_input_bar)).as_room_input_bar();
-        log!("Saving state for room {:?}: first_id: {:?}, scroll: {}", self.room_name_id, portal_list.first_id(), portal_list.scroll_position());
+        log!("Saving state for room {:?}\n\t{:?}\n\tfirst_id: {:?}, scroll: {}", self.room_name_id.as_ref().map(|r| r.display_name()), self.timeline_kind, portal_list.first_id(), portal_list.scroll_position());
         let state = SavedState {
             first_index_and_scroll: Some((portal_list.first_id(), portal_list.scroll_position())),
             room_input_bar_state: room_input_bar.save_state(),
@@ -2422,8 +2422,12 @@ impl RoomScreen {
             portal_list.set_tail_range(false);
         } else {
             // If the first index is not set, then the timeline has not yet been scrolled by the user,
-            // so we set the portal list to "tail" (track) the bottom of the list.
+            // so we reset the portal list's scroll position and set it to "tail" (track) the bottom.
+            // The explicit reset is necessary when the same RoomScreen widget is reused for a
+            // different room (e.g., via stack navigation view alternation), otherwise the portal list
+            // would retain the previous room's scroll position which may be out of bounds.
             log!("Restoring state for room {:?}: first_id: None, scroll: None", self.room_name_id);
+            portal_list.set_first_id_and_scroll(0, 0.0);
             portal_list.set_tail_range(true);
         }
 

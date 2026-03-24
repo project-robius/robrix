@@ -12,8 +12,122 @@ script_mod! {
     // uses an Overlay view internally.
     mod.widgets.STACK_VIEW_HEADER_HEIGHT = 75
 
-    mod.widgets.StackNavigationWrapper = #(StackNavigationWrapper::register_widget(vm)) {
-        view_stack := StackNavigation {}
+    // A reusable base for StackNavigationView children in the mobile layout.
+    // Each specific content view (room, invite, space lobby) extends this
+    // and places its own screen widget inside the body.
+    mod.widgets.RobrixContentView = StackNavigationView {
+        width: Fill, height: Fill
+        draw_bg.color: (COLOR_PRIMARY)
+        header +: {
+            clip_x: false,
+            clip_y: false,
+            show_bg: true,
+            draw_bg +: {
+                color: instance((COLOR_PRIMARY_DARKER))
+                color_dither: uniform(1.0)
+                gradient_border_horizontal: uniform(0.0)
+                gradient_fill_horizontal: uniform(0.0)
+                color_2: instance(vec4(-1))
+
+                border_radius: uniform(4.0)
+                border_size: uniform(0.0)
+                border_color: instance(#0000)
+                border_color_2: instance(vec4(-1))
+
+                shadow_color: instance(#0005)
+                shadow_radius: uniform(9.0)
+                shadow_offset: uniform(vec2(1.0, 0.0))
+
+                rect_size2: varying(vec2(0))
+                rect_size3: varying(vec2(0))
+                rect_pos2: varying(vec2(0))
+                rect_shift: varying(vec2(0))
+                sdf_rect_pos: varying(vec2(0))
+                sdf_rect_size: varying(vec2(0))
+
+                vertex: fn() {
+                    let min_offset = min(self.shadow_offset vec2(0))
+                    self.rect_size2 = self.rect_size + 2.0*vec2(self.shadow_radius)
+                    self.rect_size3 = self.rect_size2 + abs(self.shadow_offset)
+                    self.rect_pos2 = self.rect_pos - vec2(self.shadow_radius) + min_offset
+                    self.sdf_rect_size = self.rect_size2 - vec2(self.shadow_radius * 2.0 + self.border_size * 2.0)
+                    self.sdf_rect_pos = -min_offset + vec2(self.border_size + self.shadow_radius)
+                    self.rect_shift = -min_offset
+
+                    return self.clip_and_transform_vertex(self.rect_pos2 self.rect_size3)
+                }
+
+                pixel: fn() {
+                    let sdf = Sdf2d.viewport(self.pos * self.rect_size3)
+
+                    let mut fill_color = self.color
+                    if self.color_2.x > -0.5 {
+                        let dither = Math.random_2d(self.pos.xy) * 0.04 * self.color_dither
+                        let dir = if self.gradient_fill_horizontal > 0.5 self.pos.x else self.pos.y
+                        fill_color = mix(self.color self.color_2 dir + dither)
+                    }
+
+                    let mut stroke_color = self.border_color
+                    if self.border_color_2.x > -0.5 {
+                        let dither = Math.random_2d(self.pos.xy) * 0.04 * self.color_dither
+                        let dir = if self.gradient_border_horizontal > 0.5 self.pos.x else self.pos.y
+                        stroke_color = mix(self.border_color self.border_color_2 dir + dither)
+                    }
+
+                    sdf.box(
+                        self.sdf_rect_pos.x
+                        self.sdf_rect_pos.y
+                        self.sdf_rect_size.x
+                        self.sdf_rect_size.y
+                        max(1.0 self.border_radius)
+                    )
+                    if sdf.shape > -1.0 {
+                        let m = self.shadow_radius
+                        let o = self.shadow_offset + self.rect_shift
+                        let v = GaussShadow.rounded_box_shadow(vec2(m) + o self.rect_size2+o self.pos * (self.rect_size3+vec2(m)) self.shadow_radius*0.5 self.border_radius*2.0)
+                        sdf.clear(self.shadow_color*v)
+                    }
+
+                    sdf.fill_keep(fill_color)
+
+                    if self.border_size > 0.0 {
+                        sdf.stroke(stroke_color self.border_size)
+                    }
+                    return sdf.result
+                }
+            }
+
+            padding: Inset{top: 30, bottom: 0}
+            height: (mod.widgets.STACK_VIEW_HEADER_HEIGHT),
+
+            content +: {
+                height: (mod.widgets.STACK_VIEW_HEADER_HEIGHT)
+                button_container +: {
+                    padding: 0,
+                    margin: 0
+                    left_button +: {
+                        width: Fit, height: Fit,
+                        padding: Inset{left: 20, right: 23, top: 10, bottom: 10}
+                        margin: Inset{left: 8, right: 0, top: 0, bottom: 0}
+                        draw_icon +: { color: (ROOM_NAME_TEXT_COLOR) }
+                        icon_walk: Walk{width: 13, height: Fit}
+                        spacing: 0
+                        text: ""
+                    }
+                }
+                title_container +: {
+                    padding: Inset{top: 8}
+                    title +: {
+                        draw_text +: {
+                            color: (ROOM_NAME_TEXT_COLOR)
+                        }
+                    }
+                }
+            }
+        }
+        body +: {
+            margin: Inset{top: (mod.widgets.STACK_VIEW_HEADER_HEIGHT)}
+        }
     }
 
     // A wrapper view around the SpacesBar that lets us show/hide it via animation.
@@ -144,8 +258,7 @@ script_mod! {
                 show_bg: true
                 draw_bg.color: (COLOR_PRIMARY)
 
-                mod.widgets.StackNavigationWrapper {
-                    view_stack := StackNavigation {
+                view_stack := StackNavigation {
                         root_view +: {
                             flow: Down
                             width: Fill, height: Fill
@@ -202,119 +315,36 @@ script_mod! {
                             }
                         }
 
-                        main_content_view := StackNavigationView {
-                            width: Fill, height: Fill
-                            draw_bg.color: (COLOR_PRIMARY)
-                            header +: {
-                                clip_x: false,
-                                clip_y: false,
-                                show_bg: true,
-                                draw_bg +: {
-                                    color: instance((COLOR_PRIMARY_DARKER))
-                                    color_dither: uniform(1.0)
-                                    gradient_border_horizontal: uniform(0.0)
-                                    gradient_fill_horizontal: uniform(0.0)
-                                    color_2: instance(vec4(-1))
+                        // Room views: multiple instances to support deep stacking
+                        // (e.g., room -> thread -> room -> thread -> ...).
+                        // Each stack depth gets its own dedicated view widget,
+                        // avoiding complex state save/restore when views are reused.
+                        room_view_0  := mod.widgets.RobrixContentView { body +: { room_screen_0  := mod.widgets.RoomScreen {} } }
+                        room_view_1  := mod.widgets.RobrixContentView { body +: { room_screen_1  := mod.widgets.RoomScreen {} } }
+                        room_view_2  := mod.widgets.RobrixContentView { body +: { room_screen_2  := mod.widgets.RoomScreen {} } }
+                        room_view_3  := mod.widgets.RobrixContentView { body +: { room_screen_3  := mod.widgets.RoomScreen {} } }
+                        room_view_4  := mod.widgets.RobrixContentView { body +: { room_screen_4  := mod.widgets.RoomScreen {} } }
+                        room_view_5  := mod.widgets.RobrixContentView { body +: { room_screen_5  := mod.widgets.RoomScreen {} } }
+                        room_view_6  := mod.widgets.RobrixContentView { body +: { room_screen_6  := mod.widgets.RoomScreen {} } }
+                        room_view_7  := mod.widgets.RobrixContentView { body +: { room_screen_7  := mod.widgets.RoomScreen {} } }
+                        room_view_8  := mod.widgets.RobrixContentView { body +: { room_screen_8  := mod.widgets.RoomScreen {} } }
+                        room_view_9  := mod.widgets.RobrixContentView { body +: { room_screen_9  := mod.widgets.RoomScreen {} } }
+                        room_view_10 := mod.widgets.RobrixContentView { body +: { room_screen_10 := mod.widgets.RoomScreen {} } }
+                        room_view_11 := mod.widgets.RobrixContentView { body +: { room_screen_11 := mod.widgets.RoomScreen {} } }
+                        room_view_12 := mod.widgets.RobrixContentView { body +: { room_screen_12 := mod.widgets.RoomScreen {} } }
+                        room_view_13 := mod.widgets.RobrixContentView { body +: { room_screen_13 := mod.widgets.RoomScreen {} } }
+                        room_view_14 := mod.widgets.RobrixContentView { body +: { room_screen_14 := mod.widgets.RoomScreen {} } }
+                        room_view_15 := mod.widgets.RobrixContentView { body +: { room_screen_15 := mod.widgets.RoomScreen {} } }
 
-                                    border_radius: uniform(4.0)
-                                    border_size: uniform(0.0)
-                                    border_color: instance(#0000)
-                                    border_color_2: instance(vec4(-1))
-
-                                    shadow_color: instance(#0005)
-                                    shadow_radius: uniform(9.0)
-                                    shadow_offset: uniform(vec2(1.0, 0.0))
-
-                                    rect_size2: varying(vec2(0))
-                                    rect_size3: varying(vec2(0))
-                                    rect_pos2: varying(vec2(0))
-                                    rect_shift: varying(vec2(0))
-                                    sdf_rect_pos: varying(vec2(0))
-                                    sdf_rect_size: varying(vec2(0))
-
-                                    vertex: fn() {
-                                        let min_offset = min(self.shadow_offset vec2(0))
-                                        self.rect_size2 = self.rect_size + 2.0*vec2(self.shadow_radius)
-                                        self.rect_size3 = self.rect_size2 + abs(self.shadow_offset)
-                                        self.rect_pos2 = self.rect_pos - vec2(self.shadow_radius) + min_offset
-                                        self.sdf_rect_size = self.rect_size2 - vec2(self.shadow_radius * 2.0 + self.border_size * 2.0)
-                                        self.sdf_rect_pos = -min_offset + vec2(self.border_size + self.shadow_radius)
-                                        self.rect_shift = -min_offset
-
-                                        return self.clip_and_transform_vertex(self.rect_pos2 self.rect_size3)
-                                    }
-
-                                    pixel: fn() {
-                                        let sdf = Sdf2d.viewport(self.pos * self.rect_size3)
-
-                                        let mut fill_color = self.color
-                                        if self.color_2.x > -0.5 {
-                                            let dither = Math.random_2d(self.pos.xy) * 0.04 * self.color_dither
-                                            let dir = if self.gradient_fill_horizontal > 0.5 self.pos.x else self.pos.y
-                                            fill_color = mix(self.color self.color_2 dir + dither)
-                                        }
-
-                                        let mut stroke_color = self.border_color
-                                        if self.border_color_2.x > -0.5 {
-                                            let dither = Math.random_2d(self.pos.xy) * 0.04 * self.color_dither
-                                            let dir = if self.gradient_border_horizontal > 0.5 self.pos.x else self.pos.y
-                                            stroke_color = mix(self.border_color self.border_color_2 dir + dither)
-                                        }
-
-                                        sdf.box(
-                                            self.sdf_rect_pos.x
-                                            self.sdf_rect_pos.y
-                                            self.sdf_rect_size.x
-                                            self.sdf_rect_size.y
-                                            max(1.0 self.border_radius)
-                                        )
-                                        if sdf.shape > -1.0 {
-                                            let m = self.shadow_radius
-                                            let o = self.shadow_offset + self.rect_shift
-                                            let v = GaussShadow.rounded_box_shadow(vec2(m) + o self.rect_size2+o self.pos * (self.rect_size3+vec2(m)) self.shadow_radius*0.5 self.border_radius*2.0)
-                                            sdf.clear(self.shadow_color*v)
-                                        }
-
-                                        sdf.fill_keep(fill_color)
-
-                                        if self.border_size > 0.0 {
-                                            sdf.stroke(stroke_color self.border_size)
-                                        }
-                                        return sdf.result
-                                    }
-                                }
-
-                                padding: Inset{top: 30, bottom: 0}
-                                height: (mod.widgets.STACK_VIEW_HEADER_HEIGHT),
-
-                                content +: {
-                                    height: (mod.widgets.STACK_VIEW_HEADER_HEIGHT)
-                                    button_container +: {
-                                        padding: 0,
-                                        margin: 0
-                                        left_button +: {
-                                            width: Fit, height: Fit,
-                                            padding: Inset{left: 20, right: 23, top: 10, bottom: 10}
-                                            margin: Inset{left: 8, right: 0, top: 0, bottom: 0}
-                                            draw_icon +: { color: (ROOM_NAME_TEXT_COLOR) }
-                                            icon_walk: Walk{width: 13, height: Fit}
-                                            spacing: 0
-                                            text: ""
-                                        }
-                                    }
-                                    title_container +: {
-                                        padding: Inset{top: 8}
-                                        title +: {
-                                            draw_text +: {
-                                                color: (ROOM_NAME_TEXT_COLOR)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                        invite_view := mod.widgets.RobrixContentView {
                             body +: {
-                                margin: Inset{top: (mod.widgets.STACK_VIEW_HEADER_HEIGHT)}
-                                main_content := mod.widgets.MainMobileUI {}
+                                invite_screen := mod.widgets.InviteScreen {}
+                            }
+                        }
+
+                        space_lobby_view := mod.widgets.RobrixContentView {
+                            body +: {
+                                space_lobby_screen := mod.widgets.SpaceLobbyScreen {}
                             }
                         }
                     }
@@ -322,7 +352,6 @@ script_mod! {
             }
         }
     }
-}
 
 
 /// A simple wrapper around the SpacesBar that allows us to animate showing or hiding it.
@@ -484,26 +513,3 @@ impl HomeScreen {
     }
 }
 
-/// A wrapper around the StackNavigation widget
-/// that simply forwards stack view actions to it.
-#[derive(Script, ScriptHook, Widget)]
-pub struct StackNavigationWrapper {
-    #[deref] view: View,
-}
-
-impl Widget for StackNavigationWrapper {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.match_event(cx, event);
-        self.view.handle_event(cx, event, scope);
-    }
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.view.draw_walk(cx, scope, walk)
-    }
-}
-
-impl MatchEvent for StackNavigationWrapper {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        self.stack_navigation(cx, ids!(view_stack))
-            .handle_stack_view_actions(cx, actions);
-    }
-}
