@@ -31,6 +31,7 @@ pub struct StreamingAnimState {
 impl StreamingAnimState {
     pub fn new(initial_text: &str, sender_user_id: OwnedUserId, detection: StreamDetection, was_at_end: bool) -> Self {
         let char_count = initial_text.chars().count();
+        let now = Instant::now();
         Self {
             target_text: initial_text.to_string(),
             target_char_count: char_count,
@@ -38,8 +39,8 @@ impl StreamingAnimState {
             displayed_byte_offset: 0,
             chars_per_frame: 1.0,
             fractional_chars: 0.0,
-            last_update_time: Instant::now(),
-            animation_start_time: Instant::now(),
+            last_update_time: now,
+            animation_start_time: now,
             chars_at_last_update: 0,
             display_buffer: String::with_capacity(initial_text.len() + 4),
             sender_stopped_typing: false,
@@ -53,6 +54,17 @@ impl StreamingAnimState {
         self.target_text.clear();
         self.target_text.push_str(new_text);
         self.target_char_count = new_text.chars().count();
+
+        // Clamp display pointers if the new text is shorter than what was already displayed.
+        if self.displayed_char_count > self.target_char_count {
+            self.displayed_char_count = self.target_char_count;
+            // Re-derive byte offset to stay on char boundary.
+            self.displayed_byte_offset = self.target_text
+                .char_indices()
+                .nth(self.target_char_count)
+                .map_or(self.target_text.len(), |(i, _)| i);
+        }
+
         self.chars_at_last_update = self.displayed_char_count;
         self.last_update_time = Instant::now();
         let remaining = self.target_char_count.saturating_sub(self.displayed_char_count);
@@ -60,8 +72,11 @@ impl StreamingAnimState {
             self.chars_per_frame = remaining as f64 / 60.0;
             if self.chars_per_frame < 0.5 { self.chars_per_frame = 0.5; }
         }
-        if self.display_buffer.capacity() < new_text.len() + 4 {
-            self.display_buffer.reserve(new_text.len() + 4 - self.display_buffer.capacity());
+        // Fix: reserve uses wrong base — reserve(n) guarantees capacity >= len + n,
+        // not capacity >= n.  Compare against capacity and reserve only the deficit.
+        let needed = new_text.len() + 4;
+        if self.display_buffer.capacity() < needed {
+            self.display_buffer.reserve(needed - self.display_buffer.len());
         }
     }
 
@@ -84,19 +99,27 @@ impl StreamingAnimState {
     pub fn tick(&mut self) -> bool {
         if self.displayed_char_count >= self.target_char_count { return false; }
         let gap = self.target_char_count - self.displayed_char_count;
+        let mut changed = false;
+
         let speed = if gap > 500 {
             let jump = gap - 50;
             self.advance_displayed(jump);
+            changed = true;
             self.chars_per_frame
         } else if gap > 200 {
             self.chars_per_frame * 3.0
         } else {
             self.chars_per_frame
         };
+
         self.fractional_chars += speed;
         let advance = self.fractional_chars.floor() as usize;
         self.fractional_chars -= advance as f64;
-        if advance > 0 { self.advance_displayed(advance); true } else { false }
+        if advance > 0 {
+            self.advance_displayed(advance);
+            changed = true;
+        }
+        changed
     }
 
     pub fn fill_display_buffer(&mut self) {
@@ -105,6 +128,12 @@ impl StreamingAnimState {
         self.display_buffer.push_str(" \u{25CF}");
     }
 
+    /// Check if streaming is complete.
+    ///
+    /// For `Heuristic` detection, completes when the sender stops typing and
+    /// all text has been revealed. For `Msc4357Live`, this always returns `false` —
+    /// completion is signaled externally when the server removes the live flag,
+    /// which causes the entry to be removed from `streaming_messages` directly.
     pub fn is_complete(&self) -> bool {
         if self.displayed_char_count < self.target_char_count { return false; }
         match self.detection {
