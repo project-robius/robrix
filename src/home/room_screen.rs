@@ -662,6 +662,7 @@ impl Widget for RoomScreen {
         // Streaming animation frame handler
         if let Some(_ne) = self.streaming_next_frame.is_event(event) {
             #[cfg(debug_assertions)]
+            #[allow(unused_variables)]
             let frame_start = std::time::Instant::now();
 
             if let Some(tl) = self.tl_state.as_mut() {
