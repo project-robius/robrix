@@ -18,11 +18,13 @@ script_mod! {
     mod.widgets.WalletEntry = #(WalletEntry::register_widget(vm)) {
         width: Fill, height: Fit
         flow: Down
+        align: Align { y: 0.5 }
 
         View {
             width: Fill, height: Fit
             flow: Flow.Right{wrap: true},
             padding: 10
+            align: Align { y: 0.5 }
 
             wallet_name := Label {
                 width: Fit, height: Fit
@@ -50,9 +52,11 @@ script_mod! {
                 visible: false,
                 width: Fit, height: Fit
                 margin: Inset{left: 20}
+                align: Align { y: 0.5 }
                 Label {
-                    margin: Inset{top: 2.9}
                     width: Fit, height: Fit
+                    margin: Inset{top: 3}
+                    align: Align { y: 0.5 }
                     flow: Right,
                     draw_text +: {
                         color: (COLOR_FG_ACCEPT_GREEN),
@@ -66,10 +70,12 @@ script_mod! {
                 visible: false,
                 width: Fit, height: Fit
                 margin: Inset{left: 20}
+                align: Align { y: 0.5 }
                 Label {
                     margin: Inset{top: 2.9}
                     width: Fit, height: Fit
                     flow: Right,
+                    align: Align { y: 0.5 }
                     draw_text +: {
                         color: (COLOR_FG_DANGER_RED),
                         text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
@@ -79,6 +85,7 @@ script_mod! {
             }
 
             set_default_wallet_button := RobrixIconButton {
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 20}
                 draw_icon.svg: (ICON_CHECKMARK)
@@ -87,6 +94,7 @@ script_mod! {
             }
 
             remove_wallet_button := RobrixNegativeIconButton {
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 20}
                 draw_icon.svg: (ICON_CLOSE)
@@ -95,6 +103,7 @@ script_mod! {
             }
 
             delete_wallet_button := RobrixNegativeIconButton {
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 20}
                 draw_icon.svg: (ICON_TRASH)

@@ -86,14 +86,17 @@ script_mod! {
                     width: Fit, height: Fit,
                     did_web := RadioButtonFlat {
                         text: "Web"
+                        draw_text +: { color: (COLOR_TEXT) }
                         animator: { active: { default: on } }
                     }
                     did_webvh := RadioButtonFlat {
                         text: "WebVH"
+                        draw_text +: { color: (COLOR_TEXT) }
                         animator: { disabled: { default: on } }
                     }
                     did_peer := RadioButtonFlat {
                         text: "Peer",
+                        draw_text +: { color: (COLOR_TEXT) }
                         animator: { disabled: { default: on } }
                     }
                 }
@@ -105,7 +108,7 @@ script_mod! {
                     server_input := RobrixTextInput {
                         width: Fill, height: Fit,
                         flow: Right, // do not wrap
-                        padding: Inset{top: 3, bottom: 3}
+                        padding: Inset { left: 10, right: 10, top: 5, bottom: 5 }
                         empty_text: "p.teaspoon.world",
                         draw_text +: {
                             text_style: REGULAR_TEXT {font_size: 10.0}
@@ -147,7 +150,7 @@ script_mod! {
                     did_server_input := RobrixTextInput {
                         width: Fill, height: Fit,
                         flow: Right, // do not wrap
-                        padding: Inset{top: 3, bottom: 3}
+                        padding: Inset { left: 10, right: 10, top: 5, bottom: 5 }
                         empty_text: "did.teaspoon.world",
                         draw_text +: {
                             text_style: REGULAR_TEXT {font_size: 10.0}

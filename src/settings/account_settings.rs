@@ -57,6 +57,7 @@ script_mod! {
 
                     upload_avatar_button := RobrixIconButton {
                         width: 140,
+                        height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                         padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                         margin: 0,
                         draw_icon.svg: (ICON_UPLOAD)
@@ -79,6 +80,7 @@ script_mod! {
 
                     delete_avatar_button := RobrixNegativeIconButton {
                         width: 140,
+                        height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                         padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                         margin: 0,
                         draw_icon.svg: (ICON_TRASH)
@@ -117,7 +119,8 @@ script_mod! {
             // their styles to RobrixNeutralIconButton / RobrixPositiveIconButton.
             cancel_display_name_button := RobrixNeutralIconButton {
                 enabled: false,
-                width: Fit, height: Fit,
+                width: Fit,
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: 10,
                 margin: Inset{left: 5},
                 draw_icon.svg: (ICON_FORBIDDEN)
@@ -127,10 +130,10 @@ script_mod! {
 
             accept_display_name_button := RobrixPositiveIconButton {
                 enabled: false,
-                width: Fit, height: Fit,
+                width: Fit, 
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: 10,
                 margin: Inset{left: 5},
-                draw_bg.border_radius: 5.0
                 draw_icon.svg: (ICON_CHECKMARK)
                 icon_walk: Walk{width: 16, height: 16, margin: 0}
                 text: "Save Name"
@@ -186,7 +189,8 @@ script_mod! {
             spacing: 10
 
             manage_account_button := RobrixIconButton {
-                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
+                padding: Inset{left: 12, right: 15}
                 margin: Inset{left: 5}
                 draw_icon.svg: (ICON_EXTERNAL_LINK)
                 icon_walk: Walk{width: 16, height: 16}
@@ -194,6 +198,7 @@ script_mod! {
             }
 
             logout_button := RobrixNegativeIconButton {
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 5}
                 draw_icon.svg: (ICON_LOGOUT)

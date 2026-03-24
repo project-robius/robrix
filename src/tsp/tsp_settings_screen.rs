@@ -3,14 +3,11 @@ use makepad_widgets::*;
 
 use crate::{shared::{popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
 
-const REPUBLISH_IDENTITY_BUTTON_TEXT: &str = "Republish Current Identity to DID Server";
-
 script_mod! {
     link tsp_enabled
 
     use mod.prelude.widgets.*
     use mod.widgets.*
-
 
     mod.widgets.REPUBLISH_IDENTITY_BUTTON_TEXT = "Republish Current Identity to DID Server"
 
@@ -43,7 +40,7 @@ script_mod! {
             current_identity_label := Label {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true},
-                margin: Inset{top: 10}
+                margin: Inset{top: 8}
                 draw_text +: {
                     text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
@@ -51,13 +48,13 @@ script_mod! {
         }
 
         republish_identity_button := RobrixIconButton {
-            width: Fit, height: Fit,
+            width: Fit,
+            height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
             padding: 10,
             margin: Inset{top: 8, bottom: 10, left: 5},
-            draw_bg.border_radius: 5.0
             draw_icon.svg: (ICON_UPLOAD)
             icon_walk: Walk{width: 16, height: 16}
-            text: (REPUBLISH_IDENTITY_BUTTON_TEXT)
+            text: mod.widgets.REPUBLISH_IDENTITY_BUTTON_TEXT
         }
 
 
@@ -111,36 +108,36 @@ script_mod! {
             spacing: 10
 
             create_did_button := RobrixPositiveIconButton {
-                width: Fit, height: Fit,
+                width: Fit,
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: 10,
                 margin: Inset{left: 5},
-                draw_bg.border_radius: 5.0
                 draw_icon.svg: (ICON_ADD_USER)
-                icon_walk: Walk{width: 21, height: Fit, margin: 0}
+                icon_walk: Walk{width: 19, height: Fit, margin: 0}
                 text: "Create New Identity (DID)"
             }
 
             create_wallet_button := RobrixPositiveIconButton {
-                width: Fit, height: Fit,
+                width: Fit,
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: 10,
                 margin: Inset{left: 5},
-                draw_bg.border_radius: 5.0
                 draw_icon.svg: (ICON_ADD_WALLET)
                 icon_walk: Walk{width: 21, height: Fit, margin: 0}
                 text: "Create New Wallet"
             }
 
             import_wallet_button := RobrixIconButton {
+                width: Fit,
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 5}
                 text: "Import Existing Wallet"
-                // TODO: fix this icon, or pick a different SVG
-                // draw_icon +: {
-                //     svg: (ICON_IMPORT)
-                //     color: (COLOR_PRIMARY)
-                // }
-                // icon_walk: Walk{width: 16, height: 16}
-                icon_walk: Walk{width: 0, height: 0}
+                draw_icon +: {
+                    svg: (ICON_IMPORT)
+                    color: (COLOR_PRIMARY)
+                }
+                icon_walk: Walk{width: 16, height: 16}
             }
         }
     }
@@ -381,7 +378,7 @@ impl MatchEvent for TspSettingsScreen {
                     // restore the republish button to its original state.
                     script_apply_eval!(cx, republish_identity_button, {
                         enabled: true,
-                        text: #(REPUBLISH_IDENTITY_BUTTON_TEXT),
+                        text: mod.widgets.REPUBLISH_IDENTITY_BUTTON_TEXT,
                     });
                     match result {
                         Ok(did) => {
