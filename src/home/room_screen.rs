@@ -2605,6 +2605,12 @@ impl RoomScreen {
             tl_state.user_power,
             tl_state.tombstone_info.as_ref(),
         );
+
+        // 3. If there are active streaming animations, re-request the NextFrame event
+        //    so the animation loop resumes (it stops when the room is hidden).
+        if !tl_state.streaming_messages.is_empty() {
+            self.streaming_next_frame = cx.new_next_frame();
+        }
     }
 
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
@@ -3726,12 +3732,12 @@ fn populate_message_view(
         item.timestamp(cx, ids!(profile.timestamp)).set_date_time(cx, dt);
     }
 
-    // Set the "edited" indicator if this message was edited.
-    if msg_like_content.as_message().is_some_and(|m| m.is_edited()) {
-        item.edited_indicator(cx, ids!(profile.edited_indicator)).set_latest_edit(
-            cx,
-            event_tl_item,
-        );
+    // Suppress "edited" indicator for actively streaming messages.
+    let is_streaming = event_tl_item.event_id()
+        .is_some_and(|eid| streaming_messages.contains_key(&eid.to_owned()));
+    if msg_like_content.as_message().is_some_and(|m| m.is_edited()) && !is_streaming {
+        item.edited_indicator(cx, ids!(profile.edited_indicator))
+            .set_latest_edit(cx, event_tl_item);
     }
 
     #[cfg(feature = "tsp")] {
