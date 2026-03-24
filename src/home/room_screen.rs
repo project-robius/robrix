@@ -1296,6 +1296,17 @@ impl RoomScreen {
         self.room_name_id.as_ref().map(|r| r.room_id())
     }
 
+    /// Extract the text body from a timeline item, if it's a text message.
+    fn extract_message_text_from_item(item: &Arc<TimelineItem>) -> Option<String> {
+        let TimelineItemKind::Event(event) = item.kind() else { return None };
+        let TimelineItemContent::MsgLike(msg_like) = event.content() else { return None };
+        let MsgLikeKind::Message(msg) = &msg_like.kind else { return None };
+        match msg.msgtype() {
+            MessageType::Text(text) => Some(text.body.clone()),
+            _ => None,
+        }
+    }
+
     /// Processes all pending background updates to the currently-shown timeline.
     ///
     /// Redraws this RoomScreen view if any updates were applied.
@@ -1440,6 +1451,71 @@ impl RoomScreen {
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
                         // log!("process_timeline_updates(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                     }
+
+                    // --- Streaming detection ---
+                    // Clear streaming state on timeline clear
+                    if clear_cache {
+                        tl.streaming_messages.clear();
+                    }
+
+                    // Compare old and new text for changed items to detect streaming
+                    if !new_items.is_empty() && !changed_indices.is_empty() {
+                        let current_uid = crate::sliding_sync::current_user_id();
+
+                        for idx in changed_indices.clone() {
+                            let Some(old_item) = tl.items.get(idx) else { continue };
+                            let Some(new_item) = new_items.get(idx) else { continue };
+
+                            let Some(old_text) = Self::extract_message_text_from_item(old_item) else { continue };
+                            let Some(new_text) = Self::extract_message_text_from_item(new_item) else { continue };
+                            if old_text == new_text { continue; }
+
+                            // Get event_id and sender from new item
+                            let TimelineItemKind::Event(new_evt) = new_item.kind() else { continue };
+                            let Some(event_id) = new_evt.event_id().map(|id| id.to_owned()) else { continue };
+                            let sender = new_evt.sender().to_owned();
+
+                            // If already tracking: just update target text
+                            if let Some(state) = tl.streaming_messages.get_mut(&event_id) {
+                                state.update_target(&new_text);
+                                self.streaming_next_frame = cx.new_next_frame();
+                                continue;
+                            }
+
+                            // Heuristic detection: prefix extension + recency + not self
+                            let is_prefix_extension = new_text.len() > old_text.len()
+                                && new_text.starts_with(&old_text);
+
+                            let is_recent = {
+                                let ts = new_evt.timestamp();
+                                let now_ms = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .map(|d| d.as_millis() as u64)
+                                    .unwrap_or(0);
+                                now_ms.saturating_sub(ts.0.into()) < 60_000
+                            };
+
+                            let is_not_self = current_uid.as_ref()
+                                .is_some_and(|uid| *uid != sender);
+
+                            if is_prefix_extension && is_recent && is_not_self {
+                                use crate::home::streaming_animation::*;
+                                let is_at_end = portal_list.is_at_end();
+                                tl.streaming_messages.insert(
+                                    event_id,
+                                    StreamingAnimState::new(
+                                        &new_text,
+                                        sender,
+                                        StreamDetection::Heuristic,
+                                        is_at_end,
+                                    ),
+                                );
+                                self.streaming_next_frame = cx.new_next_frame();
+                            }
+                        }
+                    }
+                    // --- End streaming detection ---
+
                     tl.items = new_items;
                     done_loading = true;
                 }
