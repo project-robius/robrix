@@ -622,6 +622,9 @@ pub struct RoomScreen {
     #[rust] is_loaded: bool,
     /// Whether or not all rooms have been loaded (received from the homeserver).
     #[rust] all_rooms_loaded: bool,
+    /// NextFrame subscription for driving streaming typewriter animation.
+    #[rust]
+    streaming_next_frame: NextFrame,
 }
 
 impl Drop for RoomScreen {
@@ -655,6 +658,64 @@ impl Widget for RoomScreen {
         let portal_list = self.portal_list(cx, ids!(timeline.list));
         let user_profile_sliding_pane = self.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane));
         let loading_pane = self.loading_pane(cx, ids!(loading_pane));
+
+        // Streaming animation frame handler
+        if let Some(_ne) = self.streaming_next_frame.is_event(event) {
+            if let Some(tl) = self.tl_state.as_mut() {
+                let mut any_active = false;
+                let mut completed_ids = Vec::new();
+
+                // Build event_id → index lookup for cache invalidation
+                let streaming_indices: Vec<(OwnedEventId, usize)> = tl.streaming_messages.keys()
+                    .filter_map(|eid| {
+                        tl.items.iter().enumerate().find_map(|(idx, item)| {
+                            if let TimelineItemKind::Event(evt) = item.kind() {
+                                if evt.event_id().is_some_and(|id| id == eid) {
+                                    return Some((eid.clone(), idx));
+                                }
+                            }
+                            None
+                        })
+                    })
+                    .collect();
+
+                for (event_id, state) in tl.streaming_messages.iter_mut() {
+                    if state.tick() {
+                        any_active = true;
+                        // Invalidate draw cache so item gets re-populated
+                        if let Some((_, idx)) = streaming_indices.iter().find(|(eid, _)| eid == event_id) {
+                            tl.content_drawn_since_last_update.remove(*idx..*idx + 1);
+                        }
+                    }
+
+                    if state.is_complete() || state.is_timed_out() {
+                        completed_ids.push(event_id.clone());
+                    }
+                }
+
+                for id in &completed_ids {
+                    tl.streaming_messages.remove(id);
+                }
+
+                // Safety cap: max 50 streaming entries
+                while tl.streaming_messages.len() > 50 {
+                    if let Some(oldest_id) = tl.streaming_messages.iter()
+                        .min_by_key(|(_, s)| s.animation_start_time)
+                        .map(|(id, _)| id.clone())
+                    {
+                        tl.streaming_messages.remove(&oldest_id);
+                    }
+                }
+
+                if any_active || !tl.streaming_messages.is_empty() {
+                    self.streaming_next_frame = cx.new_next_frame();
+                }
+
+                if any_active || !completed_ids.is_empty() {
+                    self.redraw(cx);
+                }
+            }
+        }
 
         // Handle actions here before processing timeline updates.
         // Normally (in most other widgets), the order of event handling doesn't matter much.
