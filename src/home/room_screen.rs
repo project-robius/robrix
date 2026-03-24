@@ -1179,6 +1179,7 @@ impl Widget for RoomScreen {
                                                 &self.pinned_events,
                                                 item_drawn_status,
                                                 room_screen_widget_uid,
+                                                &mut tl_state.streaming_messages,
                                             )
                                         },
                                         // TODO: properly implement `Poll` as a regular Message-like timeline item.
@@ -3130,6 +3131,7 @@ fn populate_message_view(
     pinned_events: &[OwnedEventId],
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
+    streaming_messages: &mut HashMap<OwnedEventId, super::streaming_animation::StreamingAnimState>,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
     let ts_millis = event_tl_item.timestamp();
@@ -3174,17 +3176,30 @@ fn populate_message_view(
                     } else {
                         let html_or_plaintext_ref =
                             item.html_or_plaintext(cx, ids!(content.message));
-                        let mut link_preview_ref =
-                            item.link_preview(cx, ids!(content.link_preview_view));
-                        new_drawn_status.content_drawn = populate_text_message_content(
-                            cx,
-                            &html_or_plaintext_ref,
-                            body,
-                            formatted.as_ref(),
-                            Some(&mut link_preview_ref),
-                            Some(media_cache),
-                            Some(link_preview_cache),
-                        );
+
+                        // Check if this message is being streamed
+                        let is_streaming = event_tl_item.event_id()
+                            .and_then(|eid| streaming_messages.get_mut(&eid.to_owned()));
+
+                        if let Some(state) = is_streaming {
+                            // STREAMING MODE: show partial plaintext with cursor
+                            state.fill_display_buffer();
+                            html_or_plaintext_ref.show_plaintext(cx, &state.display_buffer);
+                            new_drawn_status.content_drawn = false; // force re-render
+                        } else {
+                            // NORMAL MODE: existing logic
+                            let mut link_preview_ref =
+                                item.link_preview(cx, ids!(content.link_preview_view));
+                            new_drawn_status.content_drawn = populate_text_message_content(
+                                cx,
+                                &html_or_plaintext_ref,
+                                body,
+                                formatted.as_ref(),
+                                Some(&mut link_preview_ref),
+                                Some(media_cache),
+                                Some(link_preview_cache),
+                            );
+                        }
                         (item, false)
                     }
                 }
