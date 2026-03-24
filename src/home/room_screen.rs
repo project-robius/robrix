@@ -2249,6 +2249,7 @@ impl RoomScreen {
                 pending_thread_summary_fetches: HashSet::new(),
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
+                streaming_messages: HashMap::new(),
                 last_scrolled_index: usize::MAX,
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
@@ -2827,6 +2828,10 @@ struct TimelineUiState {
     /// Once the scrolling is started, the state becomes Pending.
     /// If the animation was triggered, the state goes back to Off.
     message_highlight_animation_state: MessageHighlightAnimationState,
+
+    /// Active streaming animations, keyed by event ID.
+    /// Stores the typewriter animation state for messages being streamed by bots.
+    streaming_messages: HashMap<OwnedEventId, super::streaming_animation::StreamingAnimState>,
 
     /// The index of the timeline item that was most recently scrolled up past it.
     /// This is used to detect when the user has scrolled up past the second visible item (index 1)
