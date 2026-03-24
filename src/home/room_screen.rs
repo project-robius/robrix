@@ -661,6 +661,9 @@ impl Widget for RoomScreen {
 
         // Streaming animation frame handler
         if let Some(_ne) = self.streaming_next_frame.is_event(event) {
+            #[cfg(debug_assertions)]
+            let frame_start = std::time::Instant::now();
+
             if let Some(tl) = self.tl_state.as_mut() {
                 let mut any_active = false;
                 let mut completed_ids = Vec::new();
@@ -713,6 +716,17 @@ impl Widget for RoomScreen {
 
                 if any_active || !completed_ids.is_empty() {
                     self.redraw(cx);
+                }
+            }
+
+            #[cfg(debug_assertions)]
+            {
+                if let Some(tl) = self.tl_state.as_ref() {
+                    let elapsed = frame_start.elapsed();
+                    if elapsed.as_millis() > 2 {
+                        log!("Streaming animation frame took {}ms ({} active streams)",
+                            elapsed.as_millis(), tl.streaming_messages.len());
+                    }
                 }
             }
         }
