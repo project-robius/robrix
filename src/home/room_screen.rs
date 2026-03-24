@@ -1690,7 +1690,18 @@ impl RoomScreen {
                     // Then, we "process" it later (by turning it into a string) after the
                     // update loop has completed, which avoids unnecessary expensive work
                     // if the list of typing users gets updated many times in a row.
-                    typing_users = Some(users);
+
+                    // Update streaming sender_stopped_typing latch
+                    {
+                        let typing_user_ids: Vec<&OwnedUserId> = users.iter().map(|(uid, _)| uid).collect();
+                        for state in tl.streaming_messages.values_mut() {
+                            if !typing_user_ids.contains(&&state.sender_user_id) {
+                                state.sender_stopped_typing = true;
+                            }
+                        }
+                    }
+                    // Extract display names for the typing notice widget
+                    typing_users = Some(users.iter().map(|(_, name)| name.clone()).collect::<Vec<String>>());
                 }
                 TimelineUpdate::PinnedEvents(pinned_events) => {
                     self.pinned_events = pinned_events;
@@ -2857,8 +2868,8 @@ pub enum TimelineUpdate {
     MediaFetched(MediaRequestParameters),
     /// A notice that one or more members of a this room are currently typing.
     TypingUsers {
-        /// The list of users (their displayable name) who are currently typing in this room.
-        users: Vec<String>,
+        /// The list of users (user_id, display_name) who are currently typing in this room.
+        users: Vec<(OwnedUserId, String)>,
     },
     /// The result of a pin/unpin request ([`MatrixRequest::PinEvent`]).
     PinResult {
