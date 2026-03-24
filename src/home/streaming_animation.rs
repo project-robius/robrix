@@ -154,3 +154,121 @@ impl StreamingAnimState {
         if target > self.displayed_char_count { self.advance_displayed(target - self.displayed_char_count); }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_state(text: &str) -> StreamingAnimState {
+        let user_id: OwnedUserId = "@bot:example.com".try_into().unwrap();
+        StreamingAnimState::new(text, user_id, StreamDetection::Heuristic, true)
+    }
+
+    #[test]
+    fn test_advance_ascii() {
+        let mut s = make_state("Hello, world!");
+        s.advance_displayed(5);
+        assert_eq!(s.displayed_char_count, 5);
+        assert_eq!(&s.target_text[..s.displayed_byte_offset], "Hello");
+    }
+
+    #[test]
+    fn test_advance_utf8_multibyte() {
+        let mut s = make_state("你好世界abcd");
+        s.advance_displayed(2);
+        assert_eq!(s.displayed_char_count, 2);
+        assert_eq!(&s.target_text[..s.displayed_byte_offset], "你好");
+    }
+
+    #[test]
+    fn test_advance_clamps_at_end() {
+        let mut s = make_state("abc");
+        s.advance_displayed(100);
+        assert_eq!(s.displayed_char_count, 3);
+        assert_eq!(s.displayed_byte_offset, 3);
+    }
+
+    #[test]
+    fn test_update_target_extends() {
+        let mut s = make_state("Hello");
+        s.advance_displayed(5);
+        assert_eq!(s.displayed_char_count, 5);
+        s.update_target("Hello, world!");
+        assert_eq!(s.target_char_count, 13);
+        assert_eq!(s.displayed_char_count, 5);
+        assert!(s.chars_per_frame > 0.0);
+    }
+
+    #[test]
+    fn test_update_target_shrinks_safely() {
+        let mut s = make_state("Hello, world!");
+        s.advance_displayed(10);
+        s.update_target("Hi");
+        assert_eq!(s.displayed_char_count, 2);
+        assert_eq!(s.displayed_byte_offset, 2);
+        // Should not panic
+        s.fill_display_buffer();
+        assert!(s.display_buffer.starts_with("Hi"));
+    }
+
+    #[test]
+    fn test_tick_advances() {
+        let mut s = make_state("Hello, world!");
+        s.chars_per_frame = 2.0;
+        let changed = s.tick();
+        assert!(changed);
+        assert_eq!(s.displayed_char_count, 2);
+    }
+
+    #[test]
+    fn test_tick_no_change_when_complete() {
+        let mut s = make_state("Hi");
+        s.advance_displayed(2);
+        let changed = s.tick();
+        assert!(!changed);
+    }
+
+    #[test]
+    fn test_tick_large_gap_returns_true() {
+        let mut s = make_state(&"a".repeat(1000));
+        s.chars_per_frame = 0.1; // very slow, fractional won't trigger
+        let changed = s.tick();
+        assert!(changed); // should still return true due to the jump
+        assert!(s.displayed_char_count > 900);
+    }
+
+    #[test]
+    fn test_fill_display_buffer() {
+        let mut s = make_state("Hello");
+        s.advance_displayed(3);
+        s.fill_display_buffer();
+        assert!(s.display_buffer.starts_with("Hel"));
+        assert!(s.display_buffer.contains('\u{25CF}') || s.display_buffer.contains('●'));
+    }
+
+    #[test]
+    fn test_is_complete_heuristic() {
+        let mut s = make_state("Hi");
+        s.advance_displayed(2);
+        assert!(!s.is_complete());
+        s.sender_stopped_typing = true;
+        assert!(s.is_complete());
+    }
+
+    #[test]
+    fn test_is_complete_msc4357_never_self_completes() {
+        let user_id: OwnedUserId = "@bot:example.com".try_into().unwrap();
+        let mut s = StreamingAnimState::new("Hi", user_id, StreamDetection::Msc4357Live, true);
+        s.advance_displayed(2);
+        s.sender_stopped_typing = true;
+        assert!(!s.is_complete()); // Msc4357Live never self-completes
+    }
+
+    #[test]
+    fn test_advance_zero_is_noop() {
+        let mut s = make_state("Hello");
+        s.advance_displayed(0);
+        assert_eq!(s.displayed_char_count, 0);
+        assert_eq!(s.displayed_byte_offset, 0);
+    }
+}
