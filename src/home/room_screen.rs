@@ -992,16 +992,13 @@ impl Widget for RoomScreen {
                     }
                 }
 
-                match action
+                if let MessageAction::ToggleAppServiceActions = action
                     .as_widget_action()
                     .widget_uid_eq(room_screen_widget_uid)
                     .cast_ref::<MessageAction>()
                 {
-                    MessageAction::ToggleAppServiceActions => {
-                        self.toggle_app_service_actions(cx);
-                        continue;
-                    }
-                    _ => {}
+                    self.toggle_app_service_actions(cx);
+                    continue;
                 }
 
                 match action

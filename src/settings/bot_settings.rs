@@ -155,10 +155,10 @@ impl BotSettings {
                 draw_bg +: {
                     color: mod.widgets.COLOR_ACTIVE_PRIMARY
                     color_hover: mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER
-                    color_down: #x0C5DAA
+                    color_down: #x0c5daa
                     border_color: mod.widgets.COLOR_ACTIVE_PRIMARY
                     border_color_hover: mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER
-                    border_color_down: #x0C5DAA
+                    border_color_down: #x0c5daa
                 }
                 draw_text +: {
                     color: mod.widgets.COLOR_PRIMARY
