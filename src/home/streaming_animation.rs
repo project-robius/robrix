@@ -5,6 +5,8 @@ use matrix_sdk::ruma::OwnedUserId;
 #[derive(Debug, Clone, PartialEq)]
 pub enum StreamDetection {
     /// Confirmed by MSC4357 live flag in event content.
+    /// Not yet implemented — placeholder for when crew-rs adds the live flag.
+    #[allow(dead_code)]
     Msc4357Live,
     /// Detected by heuristic: prefix match + recency + not self.
     Heuristic,
@@ -24,6 +26,9 @@ pub struct StreamingAnimState {
     pub display_buffer: String,
     pub sender_stopped_typing: bool,
     pub sender_user_id: OwnedUserId,
+    /// Whether user was at list bottom when streaming started.
+    /// Reserved for auto-scroll gating in a future iteration.
+    #[allow(dead_code)]
     pub was_at_end: bool,
     pub detection: StreamDetection,
 }
@@ -146,6 +151,9 @@ impl StreamingAnimState {
         self.last_update_time.elapsed().as_secs() > 30
     }
 
+    /// Wall-clock catch-up: compute where cursor should be based on elapsed time.
+    /// Reserved for use after room restore or scroll-back — not yet called.
+    #[allow(dead_code)]
     pub fn catch_up_to_wall_clock(&mut self) {
         let elapsed = self.last_update_time.elapsed();
         let elapsed_frames = elapsed.as_secs_f64() * 60.0;
