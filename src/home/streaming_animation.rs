@@ -4,10 +4,6 @@ use matrix_sdk::ruma::OwnedUserId;
 /// How a streaming session was detected.
 #[derive(Debug, Clone, PartialEq)]
 pub enum StreamDetection {
-    /// Confirmed by MSC4357 live flag in event content.
-    /// Not yet implemented — placeholder for when crew-rs adds the live flag.
-    #[allow(dead_code)]
-    Msc4357Live,
     /// Detected by heuristic: prefix match + recency + not self.
     Heuristic,
 }
@@ -26,15 +22,11 @@ pub struct StreamingAnimState {
     pub display_buffer: String,
     pub sender_stopped_typing: bool,
     pub sender_user_id: OwnedUserId,
-    /// Whether user was at list bottom when streaming started.
-    /// Reserved for auto-scroll gating in a future iteration.
-    #[allow(dead_code)]
-    pub was_at_end: bool,
     pub detection: StreamDetection,
 }
 
 impl StreamingAnimState {
-    pub fn new(initial_text: &str, sender_user_id: OwnedUserId, detection: StreamDetection, was_at_end: bool) -> Self {
+    pub fn new(initial_text: &str, sender_user_id: OwnedUserId, detection: StreamDetection) -> Self {
         let char_count = initial_text.chars().count();
         let now = Instant::now();
         Self {
@@ -50,7 +42,6 @@ impl StreamingAnimState {
             display_buffer: String::with_capacity(initial_text.len() + 4),
             sender_stopped_typing: false,
             sender_user_id,
-            was_at_end,
             detection,
         }
     }
@@ -134,33 +125,16 @@ impl StreamingAnimState {
     }
 
     /// Check if streaming is complete.
-    ///
-    /// For `Heuristic` detection, completes when the sender stops typing and
-    /// all text has been revealed. For `Msc4357Live`, this always returns `false` —
-    /// completion is signaled externally when the server removes the live flag,
-    /// which causes the entry to be removed from `streaming_messages` directly.
+    /// Completes when the sender stops typing and all text has been revealed.
     pub fn is_complete(&self) -> bool {
         if self.displayed_char_count < self.target_char_count { return false; }
-        match self.detection {
-            StreamDetection::Msc4357Live => false,
-            StreamDetection::Heuristic => self.sender_stopped_typing,
-        }
+        self.sender_stopped_typing
     }
 
     pub fn is_timed_out(&self) -> bool {
         self.last_update_time.elapsed().as_secs() > 30
     }
 
-    /// Wall-clock catch-up: compute where cursor should be based on elapsed time.
-    /// Reserved for use after room restore or scroll-back — not yet called.
-    #[allow(dead_code)]
-    pub fn catch_up_to_wall_clock(&mut self) {
-        let elapsed = self.last_update_time.elapsed();
-        let elapsed_frames = elapsed.as_secs_f64() * 60.0;
-        let expected = self.chars_at_last_update + (elapsed_frames * self.chars_per_frame) as usize;
-        let target = expected.min(self.target_char_count);
-        if target > self.displayed_char_count { self.advance_displayed(target - self.displayed_char_count); }
-    }
 }
 
 #[cfg(test)]
@@ -169,7 +143,7 @@ mod tests {
 
     fn make_state(text: &str) -> StreamingAnimState {
         let user_id: OwnedUserId = "@bot:example.com".try_into().unwrap();
-        StreamingAnimState::new(text, user_id, StreamDetection::Heuristic, true)
+        StreamingAnimState::new(text, user_id, StreamDetection::Heuristic)
     }
 
     #[test]
@@ -263,14 +237,6 @@ mod tests {
         assert!(s.is_complete());
     }
 
-    #[test]
-    fn test_is_complete_msc4357_never_self_completes() {
-        let user_id: OwnedUserId = "@bot:example.com".try_into().unwrap();
-        let mut s = StreamingAnimState::new("Hi", user_id, StreamDetection::Msc4357Live, true);
-        s.advance_displayed(2);
-        s.sender_stopped_typing = true;
-        assert!(!s.is_complete()); // Msc4357Live never self-completes
-    }
 
     #[test]
     fn test_advance_zero_is_noop() {

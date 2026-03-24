@@ -1516,14 +1516,12 @@ impl RoomScreen {
 
                             if is_prefix_extension && is_recent && is_not_self {
                                 use crate::home::streaming_animation::*;
-                                let is_at_end = portal_list.is_at_end();
                                 tl.streaming_messages.insert(
                                     event_id,
                                     StreamingAnimState::new(
                                         &new_text,
                                         sender,
                                         StreamDetection::Heuristic,
-                                        is_at_end,
                                     ),
                                 );
                                 self.streaming_next_frame = cx.new_next_frame();
