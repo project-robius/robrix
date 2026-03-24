@@ -357,15 +357,17 @@ impl MatchEvent for App {
                 continue;
             }
 
-            // A new room has been selected; push the appropriate view onto the stack.
+            // A new room has been selected; push the appropriate view onto the mobile
+            // StackNavigation and update the app state.
+            // In Desktop mode, MainDesktopUI also handles this action to manage dock tabs;
+            // the mobile push is harmless there (the view isn't drawn).
             match action.as_widget_action().cast() {
                 RoomsListAction::Selected(selected_room) => {
                     self.push_selected_room_view(cx, selected_room);
                     continue;
                 }
                 // An invite was accepted; upgrade the selected room from invite to joined.
-                // This is needed because MainMobileUI (which previously handled this)
-                // is no longer part of the mobile view hierarchy.
+                // In Desktop mode, MainDesktopUI also handles this (harmless duplicate).
                 RoomsListAction::InviteAccepted { room_name_id } => {
                     cx.action(AppStateAction::UpgradedInviteToJoinedRoom(room_name_id.room_id().clone()));
                     continue;
@@ -861,22 +863,27 @@ impl App {
     /// Pushes the appropriate StackNavigationView for the given `SelectedRoom`,
     /// configuring the view's content widget and header title.
     ///
-    /// Room and thread views alternate between two room view widgets,
-    /// allowing arbitrary stack depth (e.g., room → thread → room → thread → ...).
-    /// When a view is reused at a deeper level, the previous occupant's
-    /// `RoomScreen` state is automatically saved by `set_displayed_room`
-    /// (via `hide_timeline`), and restored when popping back.
+    /// Each stack depth gets its own dedicated room view widget,
+    /// supporting deep navigation (room → thread → room → thread → ...).
+    ///
+    /// In Desktop mode, the StackNavigation isn't drawn, so the push and
+    /// screen configuration are effectively no-ops — MainDesktopUI handles
+    /// room display via dock tabs instead.
     fn push_selected_room_view(&mut self, cx: &mut Cx, selected_room: SelectedRoom) {
         // Use the actual StackNavigation depth to pick the next room view slot.
         let new_depth = self.ui.stack_navigation(cx, ids!(view_stack)).depth();
 
-        // Determine which view to push and configure it.
+        // Determine which view to push and configure its content.
+        // The `set_displayed_room` / `set_displayed_invite` / `set_displayed_space` calls
+        // configure the screen widget inside the mobile StackNavigationView.
+        // In Desktop mode, these widgets exist but aren't drawn; the configuration
+        // consumes timeline endpoints, but Desktop's MainDesktopUI processes the same
+        // `RoomsListAction::Selected` in its own handler to set up dock tabs.
         let view_id = match &selected_room {
             SelectedRoom::JoinedRoom { room_name_id }
             | SelectedRoom::Thread { room_name_id, .. } => {
                 let (view_id, room_screen_id) = Self::room_ids_for_depth(new_depth);
 
-                // Configure the RoomScreen for this view.
                 let thread_root = if let SelectedRoom::Thread { thread_root_event_id, .. } = &selected_room {
                     Some(thread_root_event_id.clone())
                 } else {
@@ -902,8 +909,7 @@ impl App {
             }
         };
 
-        // Set the header title for the view being pushed,
-        // using the full path to the title label inside the StackNavigationView header.
+        // Set the header title for the view being pushed.
         let title_path = &[view_id, live_id!(header), live_id!(content), live_id!(title_container), live_id!(title)];
         self.ui.label(cx, title_path).set_text(cx, &selected_room.display_name());
 
@@ -911,10 +917,10 @@ impl App {
         if let Some(prev) = self.app_state.selected_room.take() {
             self.mobile_room_nav_stack.push(prev);
         }
-        // Update app state.
+        // Update app state (used by both Desktop and Mobile paths).
         self.app_state.selected_room = Some(selected_room);
 
-        // Push the view onto the navigation stack directly,
+        // Push the view onto the mobile navigation stack.
         self.ui.stack_navigation(cx, ids!(view_stack)).push(cx, view_id);
         self.ui.redraw(cx);
     }
