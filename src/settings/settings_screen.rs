@@ -1,3 +1,4 @@
+
 use makepad_widgets::*;
 
 use crate::{
@@ -92,11 +93,11 @@ script_mod! {
     }
 }
 
+
 /// The top-level widget showing all app and user settings/preferences.
 #[derive(Script, ScriptHook, Widget)]
 pub struct SettingsScreen {
-    #[deref]
-    view: View,
+    #[deref] view: View,
 }
 
 impl Widget for SettingsScreen {
@@ -113,15 +114,16 @@ impl Widget for SettingsScreen {
             matches!(
                 event,
                 Event::Actions(actions) if self.button(cx, ids!(close_button)).clicked(actions)
-            ) || event.back_pressed()
-                || match event.hits(cx, area) {
-                    Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
-                    Hit::FingerDown(_fde) => {
-                        cx.set_key_focus(area);
-                        false
-                    }
-                    _ => false,
+            )
+            || event.back_pressed()
+            || match event.hits(cx, area) {
+                Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
+                Hit::FingerDown(_fde) => {
+                    cx.set_key_focus(area);
+                    false
                 }
+                _ => false,
+            }
         };
         if close_pane {
             cx.action(NavigationBarAction::CloseSettings);
@@ -139,30 +141,26 @@ impl Widget for SettingsScreen {
                 match action.downcast_ref() {
                     Some(CreateWalletModalAction::Open) => {
                         use crate::tsp::create_wallet_modal::CreateWalletModalWidgetExt;
-                        self.view
-                            .create_wallet_modal(cx, ids!(create_wallet_modal_inner))
-                            .show(cx);
+                        self.view.create_wallet_modal(cx, ids!(create_wallet_modal_inner)).show(cx);
                         self.view.modal(cx, ids!(create_wallet_modal)).open(cx);
                     }
                     Some(CreateWalletModalAction::Close) => {
                         self.view.modal(cx, ids!(create_wallet_modal)).close(cx);
                     }
-                    None => {}
+                    None => { }
                 }
 
                 // Handle the create DID modal being opened or closed.
                 match action.downcast_ref() {
                     Some(CreateDidModalAction::Open) => {
                         use crate::tsp::create_did_modal::CreateDidModalWidgetExt;
-                        self.view
-                            .create_did_modal(cx, ids!(create_did_modal_inner))
-                            .show(cx);
+                        self.view.create_did_modal(cx, ids!(create_did_modal_inner)).show(cx);
                         self.view.modal(cx, ids!(create_did_modal)).open(cx);
                     }
                     Some(CreateDidModalAction::Close) => {
                         self.view.modal(cx, ids!(create_did_modal)).close(cx);
                     }
-                    None => {}
+                    None => { }
                 }
             }
         }
@@ -185,12 +183,8 @@ impl SettingsScreen {
             error!("Failed to get own profile for settings screen.");
             return;
         };
-        self.view
-            .account_settings(cx, ids!(account_settings))
-            .populate(cx, profile);
-        self.view
-            .bot_settings(cx, ids!(bot_settings))
-            .populate(cx, bot_settings);
+        self.view.account_settings(cx, ids!(account_settings)).populate(cx, profile);
+        self.view.bot_settings(cx, ids!(bot_settings)).populate(cx, bot_settings);
         self.view.button(cx, ids!(close_button)).reset_hover(cx);
         cx.set_key_focus(self.view.area());
         self.redraw(cx);
@@ -205,9 +199,7 @@ impl SettingsScreenRef {
         own_profile: Option<UserProfile>,
         bot_settings: &BotSettingsState,
     ) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
+        let Some(mut inner) = self.borrow_mut() else { return; };
         inner.populate(cx, own_profile, bot_settings);
     }
 }
