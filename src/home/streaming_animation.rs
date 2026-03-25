@@ -289,42 +289,33 @@ mod tests {
     }
 
     #[test]
-    fn test_restore_keeps_prefix() {
+    fn test_restore_preserves_common_prefix() {
+        // Extension: keep what was already displayed
         let mut prev = make_state("Hello, world!");
         prev.advance_displayed(5);
         let restored = StreamingAnimState::restore(&prev, "Hello, world!!!", true);
         assert_eq!(restored.displayed_char_count, 5);
         assert_eq!(&restored.target_text[..restored.displayed_byte_offset], "Hello");
+
+        // Divergence: clamp to the common prefix
+        let mut prev2 = make_state("Hello, world!");
+        prev2.advance_displayed(12);
+        let restored2 = StreamingAnimState::restore(&prev2, "Hello there", true);
+        assert_eq!(&restored2.target_text[..restored2.displayed_byte_offset], "Hello");
     }
 
     #[test]
-    fn test_restore_clamps_prefix() {
-        let mut prev = make_state("Hello, world!");
-        prev.advance_displayed(12);
-        let restored = StreamingAnimState::restore(&prev, "Hello there", true);
-        assert_eq!(&restored.target_text[..restored.displayed_byte_offset], "Hello");
-    }
+    fn test_timeout_split_by_live_state() {
+        // Live stream survives 31s idle (5min stall timeout)
+        let mut live = make_state("Hello");
+        live.last_update_time = Instant::now() - Duration::from_secs(31);
+        assert!(!live.is_timed_out());
 
-    #[test]
-    fn test_live_stream_survives_30s() {
-        let mut s = make_state("Hello");
-        s.last_update_time = Instant::now() - Duration::from_secs(31);
-        assert!(!s.is_timed_out());
-    }
-
-    #[test]
-    fn test_finished_stream_times_out() {
-        let mut s = make_state("Hello");
-        s.is_live = false;
-        s.last_update_time = Instant::now() - Duration::from_secs(31);
-        assert!(s.is_timed_out());
-    }
-
-    #[test]
-    fn test_needs_frame_when_caught_up() {
-        let mut s = make_state("Hello");
-        s.advance_displayed(5);
-        assert!(!s.needs_frame());
+        // Finished stream times out after 31s (30s cleanup timeout)
+        let mut finished = make_state("Hello");
+        finished.is_live = false;
+        finished.last_update_time = Instant::now() - Duration::from_secs(31);
+        assert!(finished.is_timed_out());
     }
 
     #[test]

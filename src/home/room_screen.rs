@@ -5085,24 +5085,14 @@ mod tests {
     }
 
     #[test]
-    fn test_scan_range_incremental() {
-        // changed_indices 5..MAX clamped to new_len=9 → 5..9 (covers appended items)
+    fn test_streaming_scan_range() {
+        // Incremental: clamp sentinel to new_len
         assert_eq!(streaming_scan_range(false, &(5..usize::MAX), 8, 9), 5..9);
-    }
-
-    #[test]
-    fn test_scan_range_append() {
-        // PushBack: old_len=8, new_len=9, changed_indices=8..9 → 8..9 (new item scanned)
+        // Append: new item at end is scanned
         assert_eq!(streaming_scan_range(false, &(8..9), 8, 9), 8..9);
-    }
-
-    #[test]
-    fn test_scan_range_empty_when_no_changes() {
+        // No changes: empty range
         assert_eq!(streaming_scan_range(false, &(8..8), 8, 8), 8..8);
-    }
-
-    #[test]
-    fn test_scan_range_clear_cache() {
+        // Clear cache: full scan
         assert_eq!(streaming_scan_range(true, &(5..usize::MAX), 8, 9), 0..9);
     }
 
