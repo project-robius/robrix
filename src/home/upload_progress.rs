@@ -71,7 +71,7 @@ live_design! {
             }
 
             retry_button = <RobrixIconButton> {
-                visible: false,
+                enabled: false,
                 align: {x: 0.5, y: 0.5}
                 padding: 15,
                 draw_icon: {
@@ -147,7 +147,7 @@ impl WidgetMatchEvent for UploadProgressView {
             {
                 log!("Retrying upload");
                 // Hide retry button
-                self.button(ids!(retry_button)).set_visible(cx, false);
+                self.button(ids!(retry_button)).set_enabled(cx, false);
                 // Reset to uploading state
                 self.view
                     .label(ids!(progress_label))
@@ -192,7 +192,7 @@ impl UploadProgressView {
     pub fn hide(&mut self, cx: &mut Cx) {
         self.state = UploadViewState::Normal;
         // Hide retry button
-        self.button(ids!(retry_button)).set_visible(cx, false);
+        self.button(ids!(retry_button)).set_enabled(cx, false);
         self.set_visible(cx, false);
         self.redraw(cx);
     }
@@ -208,7 +208,7 @@ impl UploadProgressView {
             .set_text(cx, &format!("Upload failed: {}", error));
 
         // Show the retry button
-        self.button(ids!(retry_button)).set_visible(cx, true);
+        self.button(ids!(retry_button)).set_enabled(cx, true);
 
         // Set progress bar to 0
         self.view.progress_bar(ids!(progress)).set_value(cx, 0.0);
