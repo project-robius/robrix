@@ -26,7 +26,11 @@ use matrix_sdk::{RoomState, ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch
 use crate::{
     app::{AppState, SelectedRoom},
     home::{
-        navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, rooms_list_entry::RoomsListEntryAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}
+        add_room::CreateRoomAction,
+        navigation_tab_bar::{NavigationBarAction, SelectedTab},
+        room_context_menu::RoomContextMenuDetails,
+        rooms_list_entry::RoomsListEntryAction,
+        space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt},
     },
     room::{
         FetchedRoomAvatar,
@@ -512,6 +516,66 @@ impl RoomsList {
         None
     }
 
+    fn upsert_created_room_placeholder(
+        &mut self,
+        cx: &mut Cx,
+        room_name_id: &RoomNameId,
+        parent_space_id: Option<&OwnedRoomId>,
+        should_link_into_space: bool,
+    ) {
+        let room_id = room_name_id.room_id().clone();
+        let room_avatar = FetchedRoomAvatar::Text(
+            room_name_id.name_for_avatar().unwrap_or("?").to_owned(),
+        );
+
+        match self.all_joined_rooms.entry(room_id.clone()) {
+            Entry::Occupied(mut occ) => {
+                occ.get_mut().room_name_id = room_name_id.clone();
+                occ.get_mut().room_avatar = room_avatar;
+            }
+            Entry::Vacant(vac) => {
+                vac.insert(JoinedRoomInfo {
+                    room_name_id: room_name_id.clone(),
+                    num_unread_messages: 0,
+                    num_unread_mentions: 0,
+                    is_marked_unread: false,
+                    canonical_alias: None,
+                    alt_aliases: Vec::new(),
+                    tags: Tags::default(),
+                    latest: None,
+                    room_avatar,
+                    has_been_paginated: false,
+                    is_selected: false,
+                    is_direct: false,
+                    is_tombstoned: false,
+                });
+            }
+        }
+
+        if should_link_into_space {
+            if let Some(parent_space_id) = parent_space_id {
+                match self.space_map.entry(parent_space_id.clone()) {
+                    Entry::Occupied(mut occ) => {
+                        let value = occ.get_mut();
+                        let mut direct_child_rooms = (*value.direct_child_rooms).clone();
+                        direct_child_rooms.insert(room_id.clone());
+                        value.direct_child_rooms = Arc::new(direct_child_rooms);
+                    }
+                    Entry::Vacant(vac) => {
+                        let mut direct_child_rooms = HashSet::new();
+                        direct_child_rooms.insert(room_id.clone());
+                        vac.insert(SpaceMapValue {
+                            direct_child_rooms: Arc::new(direct_child_rooms),
+                            ..Default::default()
+                        });
+                    }
+                }
+            }
+        }
+
+        self.update_displayed_rooms(cx, false);
+    }
+
     /// Handle all pending updates to the list of all rooms.
     fn handle_rooms_list_updates(&mut self, cx: &mut Cx, _event: &Event, _scope: &mut Scope) {
         let mut num_updates: usize = 0;
@@ -536,8 +600,10 @@ impl RoomsList {
                     let _replaced = self.all_joined_rooms.insert(room_id.clone(), joined_room);
                     if should_display {
                         if is_direct {
-                            self.displayed_direct_rooms.push(room_id.clone());
-                        } else {
+                            if !self.displayed_direct_rooms.contains(&room_id) {
+                                self.displayed_direct_rooms.push(room_id.clone());
+                            }
+                        } else if !self.displayed_regular_rooms.contains(&room_id) {
                             self.displayed_regular_rooms.push(room_id.clone());
                         }
                     }
@@ -970,15 +1036,30 @@ impl RoomsList {
         }
         // Otherwise, if no sort function was provided (default), use the `all_known_rooms_order`.
         else {
+            let mut seen_joined = HashSet::new();
+            let mut seen_invited = HashSet::new();
             for room_id in &self.all_known_rooms_order {
                 if let Some(jr) = self.all_joined_rooms.get(room_id) {
                     if should_display_room!(self, room_id, jr) {
+                        seen_joined.insert(room_id.clone());
                         push_joined_room(room_id, jr);
                     }
                 } else if let Some(ir) = invited_rooms_ref.get(room_id) {
                     if should_display_room!(self, room_id, ir) {
+                        seen_invited.insert(room_id.clone());
                         new_displayed_invited_rooms.push(room_id.clone());
                     }
+                }
+            }
+
+            for (room_id, jr) in &self.all_joined_rooms {
+                if !seen_joined.contains(room_id) && should_display_room!(self, room_id, jr) {
+                    push_joined_room(room_id, jr);
+                }
+            }
+            for (room_id, ir) in invited_rooms_ref.iter() {
+                if !seen_invited.contains(room_id) && should_display_room!(self, room_id, ir) {
+                    new_displayed_invited_rooms.push(room_id.clone());
                 }
             }
         }
@@ -1348,6 +1429,16 @@ impl Widget for RoomsList {
                         continue;
                     }
                     _ => {}
+                }
+
+                if let Some(CreateRoomAction::Created { room_name_id, parent_space_id, space_link_error, .. }) = action.downcast_ref() {
+                    self.upsert_created_room_placeholder(
+                        cx,
+                        room_name_id,
+                        parent_space_id.as_ref(),
+                        space_link_error.is_none(),
+                    );
+                    continue;
                 }
 
                 if let Some(space_room_list_action) = action.downcast_ref() {
