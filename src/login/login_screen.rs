@@ -49,17 +49,19 @@ script_mod! {
 
         width: Fill, height: Fill,
         align: Align{x: 0.5, y: 0.5}
-        show_bg: false,
+        show_bg: true,
         draw_bg +: {
-            color: COLOR_TRANSPARENT
+            color: COLOR_SECONDARY
+            // color: COLOR_PRIMARY // TODO: once Makepad supports `Fill {max: 375}`, change this back to COLOR_PRIMARY
         }
 
         ScrollYView {
             width: Fill, height: Fill,
             // Note: *do NOT* vertically center this, it will break scrolling.
             align: Align{x: 0.5}
-            show_bg: false,
-            draw_bg.color: (COLOR_TRANSPARENT)
+            show_bg: true,
+            draw_bg.color: (COLOR_SECONDARY)
+            // draw_bg.color: (COLOR_PRIMARY) // TODO: once Makepad supports `Fill {max: 375}`, change this back to COLOR_PRIMARY
 
             // allow the view to be scrollable but hide the actual scroll bar
             scroll_bars: {
@@ -70,19 +72,19 @@ script_mod! {
             }
 
             View {
-                margin: Inset{top: 32, bottom: 32}
-                width: 360
+                margin: Inset{top: 40, bottom: 40}
+                width: Fill // TODO: once Makepad supports it, use `Fill {max: 375}`
                 height: Fit
                 align: Align{x: 0.5, y: 0.5}
                 flow: Overlay,
 
                 View {
-                    width: 360
+                    width: Fill // TODO: once Makepad supports it, use `Fill {max: 375}`
                     height: Fit
                     flow: Down
                     align: Align{x: 0.5, y: 0.5}
-                    padding: Inset{top: 34, bottom: 30, left: 24, right: 24}
-                    margin: Inset{top: 12, bottom: 12}
+                    padding: Inset{top: 30, bottom: 30}
+                    margin: Inset{top: 40, bottom: 40}
                     spacing: 15.0
 
                     logo_image := Image {
