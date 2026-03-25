@@ -1453,9 +1453,10 @@ async fn matrix_worker_task(
                     while let Ok(user_ids) = typing_notice_receiver.recv().await {
                         // log!("Received typing notifications for room {room_id}: {user_ids:?}");
                         let users = join_all(user_ids.into_iter().map(|user_id| {
-                            let room = main_timeline.room().clone();
+                            let tl = main_timeline.clone();
                             async move {
-                                room.get_member_no_sync(&user_id).await.ok().flatten()
+                                tl.room().get_member_no_sync(&user_id).await
+                                    .ok().flatten()
                                     .and_then(|m| m.display_name().map(|d| d.to_owned()))
                                     .unwrap_or_else(|| user_id.to_string())
                             }
