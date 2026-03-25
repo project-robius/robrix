@@ -54,8 +54,6 @@ const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 100;
 
 /// The max size (width or height) of a blurhash image to decode.
 const BLURHASH_IMAGE_MAX_SIZE: u32 = 500;
-const STREAMING_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
-
 static UNNAMED_ROOM: &str = "Unnamed Room";
 
 /// #FFF4E5
@@ -63,14 +61,24 @@ const COLOR_THREAD_SUMMARY_BG: Vec4 = vec4(1.0, 0.957, 0.898, 1.0);
 /// #FFEACC
 const COLOR_THREAD_SUMMARY_BG_HOVER: Vec4 = vec4(1.0, 0.918, 0.8, 1.0);
 
-fn timeline_item_event_id(item: &Arc<TimelineItem>) -> Option<&EventId> {
+fn item_event_id(item: &Arc<TimelineItem>) -> Option<&EventId> {
     let TimelineItemKind::Event(event) = item.kind() else {
         return None;
     };
     event.event_id()
 }
 
-fn bounded_changed_indices(
+/// Check if an event carries the MSC4357 `org.matrix.msc4357.live` field,
+/// indicating that the message content is still being streamed.
+fn is_msc4357_live(event_tl_item: &EventTimelineItem) -> bool {
+    event_tl_item.latest_json()
+        .and_then(|raw| raw.get_field::<serde_json::Value>("content").ok())
+        .flatten()
+        .and_then(|content| content.get("org.matrix.msc4357.live").cloned())
+        .is_some()
+}
+
+fn clamp_indices(
     changed_indices: &Range<usize>,
     old_len: usize,
     new_len: usize,
@@ -80,7 +88,20 @@ fn bounded_changed_indices(
     start..end
 }
 
-fn refresh_streaming_message_indices<'a, I>(
+fn streaming_scan_range(
+    clear_cache: bool,
+    changed_indices: &Range<usize>,
+    old_len: usize,
+    new_len: usize,
+) -> Range<usize> {
+    if clear_cache {
+        0..new_len
+    } else {
+        clamp_indices(changed_indices, old_len, new_len)
+    }
+}
+
+fn refresh_stream_indices<'a, I>(
     event_ids: I,
     streaming_messages: &mut HashMap<OwnedEventId, super::streaming_animation::StreamingAnimState>,
 )
@@ -101,13 +122,12 @@ where
     }
 }
 
-fn next_streaming_timeout_duration<'a>(
+fn next_stream_timeout<'a>(
     states: impl IntoIterator<Item = &'a super::streaming_animation::StreamingAnimState>,
-    idle_timeout: Duration,
 ) -> Option<Duration> {
     states
         .into_iter()
-        .map(|state| idle_timeout.saturating_sub(state.last_update_time.elapsed()))
+        .map(|state| state.timeout_after().saturating_sub(state.last_update_time.elapsed()))
         .min()
 }
 
@@ -773,7 +793,7 @@ impl Widget for RoomScreen {
                 }
             }
 
-            self.schedule_streaming_timeout_if_needed(cx);
+            self.schedule_stream_timeout(cx);
         }
 
         if self.streaming_timeout_timer.is_event(event).is_some() {
@@ -799,7 +819,7 @@ impl Widget for RoomScreen {
                 }
             }
 
-            self.schedule_streaming_timeout_if_needed(cx);
+            self.schedule_stream_timeout(cx);
         }
 
         // Handle actions here before processing timeline updates.
@@ -1383,24 +1403,19 @@ impl RoomScreen {
     }
 
     /// Extract the text body from a timeline item, if it's a text message.
-    fn extract_message_text_from_item(item: &Arc<TimelineItem>) -> Option<String> {
+    fn extract_message_text(item: &Arc<TimelineItem>) -> Option<String> {
         let TimelineItemKind::Event(event) = item.kind() else { return None };
-        let TimelineItemContent::MsgLike(msg_like) = event.content() else { return None };
-        let MsgLikeKind::Message(msg) = &msg_like.kind else { return None };
-        match msg.msgtype() {
-            MessageType::Text(text) => Some(text.body.clone()),
-            _ => None,
-        }
+        let TimelineItemContent::MsgLike(_) = event.content() else { return None };
+        Some(plaintext_body_of_timeline_item(event))
     }
 
-    fn schedule_streaming_timeout_if_needed(&mut self, cx: &mut Cx) {
+    fn schedule_stream_timeout(&mut self, cx: &mut Cx) {
         cx.stop_timer(self.streaming_timeout_timer);
-        self.streaming_timeout_timer = next_streaming_timeout_duration(
+        self.streaming_timeout_timer = next_stream_timeout(
             self.tl_state
                 .as_ref()
                 .into_iter()
                 .flat_map(|tl| tl.streaming_messages.values()),
-            STREAMING_IDLE_TIMEOUT,
         )
         .map(|duration| cx.start_timeout(duration.as_secs_f64()))
         .unwrap_or_else(Timer::empty);
@@ -1433,8 +1448,8 @@ impl RoomScreen {
                     jump_to_bottom_button.update_visibility(cx, true);
 
                     tl.items = initial_items;
-                    refresh_streaming_message_indices(
-                        tl.items.iter().map(timeline_item_event_id),
+                    refresh_stream_indices(
+                        tl.items.iter().map(item_event_id),
                         &mut tl.streaming_messages,
                     );
                     done_loading = true;
@@ -1555,77 +1570,64 @@ impl RoomScreen {
                         // log!("process_timeline_updates(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                     }
 
-                    // --- Streaming detection ---
-                    // Clear streaming state on timeline clear
-                    if clear_cache {
-                        tl.streaming_messages.clear();
-                    }
+                    // --- MSC4357 streaming detection ---
+                    let previous_streaming_messages =
+                        clear_cache.then(|| std::mem::take(&mut tl.streaming_messages));
 
-                    // Compare old and new text for changed items to detect streaming
-                    if !new_items.is_empty() && !changed_indices.is_empty() {
-                        let current_uid = crate::sliding_sync::current_user_id();
-                        let changed_indices =
-                            bounded_changed_indices(&changed_indices, tl.items.len(), new_items.len());
+                    if !new_items.is_empty() {
+                        use crate::home::streaming_animation::StreamingAnimState;
 
-                        for idx in changed_indices {
-                            let Some(old_item) = tl.items.get(idx) else { continue };
+                        let mut should_schedule_frame = false;
+                        let scan_range = streaming_scan_range(
+                            clear_cache,
+                            &changed_indices,
+                            tl.items.len(),
+                            new_items.len(),
+                        );
+
+                        for idx in scan_range {
                             let Some(new_item) = new_items.get(idx) else { continue };
-                            if timeline_item_event_id(old_item) != timeline_item_event_id(new_item) {
-                                continue;
-                            }
-
-                            let Some(old_text) = Self::extract_message_text_from_item(old_item) else { continue };
-                            let Some(new_text) = Self::extract_message_text_from_item(new_item) else { continue };
-                            if old_text == new_text { continue; }
-
-                            // Get event_id and sender from new item
                             let TimelineItemKind::Event(new_evt) = new_item.kind() else { continue };
                             let Some(event_id) = new_evt.event_id().map(|id| id.to_owned()) else { continue };
-                            let sender = new_evt.sender().to_owned();
+                            let live = is_msc4357_live(new_evt);
+                            let Some(new_text) = Self::extract_message_text(new_item) else { continue };
 
-                            // If already tracking: just update target text
                             if let Some(state) = tl.streaming_messages.get_mut(&event_id) {
-                                state.update_target(&new_text);
-                                self.streaming_next_frame = cx.new_next_frame();
+                                state.update_target(&new_text, live);
+                                should_schedule_frame |= state.needs_frame();
                                 continue;
                             }
 
-                            // Heuristic detection: prefix extension + recency + not self
-                            let is_prefix_extension = new_text.len() > old_text.len()
-                                && new_text.starts_with(&old_text);
-
-                            let is_recent = {
-                                let ts = new_evt.timestamp();
-                                let now_ms = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .map(|d| d.as_millis() as u64)
-                                    .unwrap_or(0);
-                                now_ms.saturating_sub(ts.0.into()) < 60_000
-                            };
-
-                            let is_not_self = current_uid.as_ref()
-                                .is_some_and(|uid| *uid != sender);
-
-                            if is_prefix_extension && is_recent && is_not_self {
-                                use crate::home::streaming_animation::*;
-                                tl.streaming_messages.insert(
-                                    event_id,
-                                    StreamingAnimState::new_from_visible_prefix(
-                                        &old_text,
-                                        &new_text,
-                                        sender,
-                                        StreamDetection::Heuristic,
-                                    ),
-                                );
-                                self.streaming_next_frame = cx.new_next_frame();
+                            if let Some(previous_state) = previous_streaming_messages
+                                .as_ref()
+                                .and_then(|states| states.get(&event_id))
+                            {
+                                let restored =
+                                    StreamingAnimState::restore(previous_state, &new_text, live);
+                                let should_track = live || restored.needs_frame();
+                                should_schedule_frame |= restored.needs_frame();
+                                if should_track {
+                                    tl.streaming_messages.insert(event_id, restored);
+                                }
+                                continue;
                             }
+
+                            if live {
+                                let state = StreamingAnimState::new(&new_text, true);
+                                should_schedule_frame |= state.needs_frame();
+                                tl.streaming_messages.insert(event_id, state);
+                            }
+                        }
+
+                        if should_schedule_frame {
+                            self.streaming_next_frame = cx.new_next_frame();
                         }
                     }
                     // --- End streaming detection ---
 
                     tl.items = new_items;
-                    refresh_streaming_message_indices(
-                        tl.items.iter().map(timeline_item_event_id),
+                    refresh_stream_indices(
+                        tl.items.iter().map(item_event_id),
                         &mut tl.streaming_messages,
                     );
                     done_loading = true;
@@ -1801,20 +1803,7 @@ impl RoomScreen {
                     // update loop has completed, which avoids unnecessary expensive work
                     // if the list of typing users gets updated many times in a row.
 
-                    // Update streaming sender_stopped_typing latch
-                    {
-                        let typing_user_ids: HashSet<&OwnedUserId> =
-                            users.iter().map(|(uid, _)| uid).collect();
-                        for state in tl.streaming_messages.values_mut() {
-                            state.sender_stopped_typing =
-                                !typing_user_ids.contains(&state.sender_user_id);
-                        }
-                        if !tl.streaming_messages.is_empty() {
-                            self.streaming_next_frame = cx.new_next_frame();
-                        }
-                    }
-                    // Extract display names for the typing notice widget
-                    typing_users = Some(users.iter().map(|(_, name)| name.clone()).collect::<Vec<String>>());
+                    typing_users = Some(users);
                 }
                 TimelineUpdate::PinnedEvents(pinned_events) => {
                     self.pinned_events = pinned_events;
@@ -1870,7 +1859,7 @@ impl RoomScreen {
         }
 
         if num_updates > 0 {
-            self.schedule_streaming_timeout_if_needed(cx);
+            self.schedule_stream_timeout(cx);
             // log!("Applied {} timeline updates for room {}, redrawing with {} items...", num_updates, tl.kind.room_id(), tl.items.len());
             self.redraw(cx);
         }
@@ -2608,7 +2597,7 @@ impl RoomScreen {
         // Store the tl_state for this room into this RoomScreen widget,
         // such that it can be accessed in future functions like event/draw handlers.
         self.tl_state = Some(tl_state);
-        self.schedule_streaming_timeout_if_needed(cx);
+        self.schedule_stream_timeout(cx);
 
         // Now that we have restored the TimelineUiState into this RoomScreen widget,
         // we can proceed to processing pending background updates.
@@ -2708,8 +2697,8 @@ impl RoomScreen {
             tl_state.tombstone_info.as_ref(),
         );
 
-        refresh_streaming_message_indices(
-            tl_state.items.iter().map(timeline_item_event_id),
+        refresh_stream_indices(
+            tl_state.items.iter().map(item_event_id),
             &mut tl_state.streaming_messages,
         );
 
@@ -2995,8 +2984,8 @@ pub enum TimelineUpdate {
     MediaFetched(MediaRequestParameters),
     /// A notice that one or more members of a this room are currently typing.
     TypingUsers {
-        /// The list of users (user_id, display_name) who are currently typing in this room.
-        users: Vec<(OwnedUserId, String)>,
+        /// The list of display names of users who are currently typing in this room.
+        users: Vec<String>,
     },
     /// The result of a pin/unpin request ([`MatrixRequest::PinEvent`]).
     PinResult {
@@ -5095,18 +5084,27 @@ pub fn clear_timeline_states(_cx: &mut Cx) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::home::streaming_animation::{StreamDetection, StreamingAnimState};
+    use crate::home::streaming_animation::StreamingAnimState;
     use std::time::{Duration, Instant};
 
     fn make_state(text: &str) -> StreamingAnimState {
-        let user_id: OwnedUserId = "@bot:example.com".try_into().unwrap();
-        StreamingAnimState::new(text, user_id, StreamDetection::Heuristic)
+        StreamingAnimState::new(text, true)
     }
 
     #[test]
     fn test_bounded_indices_clamps_max() {
-        let bounded = bounded_changed_indices(&(1..usize::MAX), 3, 4);
+        let bounded = clamp_indices(&(1..usize::MAX), 3, 4);
         assert_eq!(bounded, 1..3);
+    }
+
+    #[test]
+    fn test_scan_range_incremental() {
+        assert_eq!(streaming_scan_range(false, &(5..usize::MAX), 8, 9), 5..8);
+    }
+
+    #[test]
+    fn test_scan_range_clear_cache() {
+        assert_eq!(streaming_scan_range(true, &(5..usize::MAX), 8, 9), 0..9);
     }
 
     #[test]
@@ -5120,7 +5118,7 @@ mod tests {
         streaming_messages.insert(missing_event_id.clone(), make_state("missing"));
 
         let event_ids = vec![None, Some(event_id_a.as_ref()), Some(event_id_b.as_ref())];
-        refresh_streaming_message_indices(event_ids.into_iter(), &mut streaming_messages);
+        refresh_stream_indices(event_ids.into_iter(), &mut streaming_messages);
 
         assert_eq!(streaming_messages[&event_id_a].timeline_index, Some(1));
         assert_eq!(streaming_messages[&missing_event_id].timeline_index, None);
@@ -5128,16 +5126,13 @@ mod tests {
 
     #[test]
     fn test_timeout_picks_earliest() {
-        let mut first = make_state("alpha");
-        first.last_update_time = Instant::now() - Duration::from_secs(10);
-        let mut second = make_state("beta");
-        second.last_update_time = Instant::now() - Duration::from_secs(29);
+        let mut live = make_state("alpha");
+        live.last_update_time = Instant::now() - Duration::from_secs(40);
+        let mut finished = make_state("beta");
+        finished.is_live = false;
+        finished.last_update_time = Instant::now() - Duration::from_secs(29);
 
-        let timeout = next_streaming_timeout_duration(
-            [&first, &second].into_iter(),
-            Duration::from_secs(30),
-        )
-        .unwrap();
+        let timeout = next_stream_timeout([&live, &finished].into_iter()).unwrap();
 
         assert!(timeout <= Duration::from_secs(1));
     }

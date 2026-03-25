@@ -1461,7 +1461,7 @@ async fn matrix_worker_task(
                                 .flatten()
                                 .and_then(|m| m.display_name().map(|d| d.to_owned()))
                                 .unwrap_or_else(|| user_id.to_string());
-                            users.push((user_id, display_name));
+                            users.push(display_name);
                         }
                         if let Err(e) = timeline_update_sender.send(TimelineUpdate::TypingUsers { users }) {
                             error!("Error: timeline update sender couldn't send the list of typing users: {e:?}");

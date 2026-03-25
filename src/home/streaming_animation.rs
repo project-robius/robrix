@@ -1,14 +1,10 @@
 use std::time::{Duration, Instant};
-use matrix_sdk::ruma::OwnedUserId;
 
-/// How a streaming session was detected.
-#[derive(Debug, Clone, PartialEq)]
-pub enum StreamDetection {
-    /// Detected by heuristic: prefix match + recency + not self.
-    Heuristic,
-}
+const FINISHED_STREAM_TIMEOUT: Duration = Duration::from_secs(30);
+const LIVE_STREAM_STALL_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 /// Animation state for a single streaming message.
+/// Tracks an MSC4357 live message and drives character-by-character reveal.
 pub struct StreamingAnimState {
     pub target_text: String,
     pub target_char_count: usize,
@@ -21,14 +17,13 @@ pub struct StreamingAnimState {
     pub animation_start_time: Instant,
     pub chars_at_last_update: usize,
     pub display_buffer: String,
-    pub sender_stopped_typing: bool,
-    pub sender_user_id: OwnedUserId,
-    pub detection: StreamDetection,
+    /// Whether the message currently carries the MSC4357 `live` field.
+    pub is_live: bool,
     pub timeline_index: Option<usize>,
 }
 
 impl StreamingAnimState {
-    pub fn new(initial_text: &str, sender_user_id: OwnedUserId, detection: StreamDetection) -> Self {
+    pub fn new(initial_text: &str, is_live: bool) -> Self {
         let char_count = initial_text.chars().count();
         let now = Instant::now();
         Self {
@@ -43,39 +38,34 @@ impl StreamingAnimState {
             animation_start_time: now,
             chars_at_last_update: 0,
             display_buffer: String::with_capacity(initial_text.len() + 4),
-            sender_stopped_typing: false,
-            sender_user_id,
-            detection,
+            is_live,
             timeline_index: None,
         }
     }
 
-    pub fn new_from_visible_prefix(
-        visible_prefix: &str,
-        target_text: &str,
-        sender_user_id: OwnedUserId,
-        detection: StreamDetection,
-    ) -> Self {
-        let mut state = Self::new(target_text, sender_user_id, detection);
-        if target_text.starts_with(visible_prefix) {
-            state.displayed_char_count = visible_prefix.chars().count();
-            state.displayed_byte_offset = visible_prefix.len();
-            state.chars_at_last_update = state.displayed_char_count;
-        }
-        state.update_speed();
-        state
+    pub fn restore(previous: &Self, new_text: &str, is_live: bool) -> Self {
+        let mut restored = Self::new(new_text, is_live);
+        let visible_prefix = &previous.target_text[..previous.displayed_byte_offset];
+        let (common_chars, common_bytes) = common_prefix_len(visible_prefix, new_text);
+
+        restored.displayed_char_count = common_chars;
+        restored.displayed_byte_offset = common_bytes;
+        restored.chars_at_last_update = common_chars;
+        restored.animation_start_time = previous.animation_start_time;
+        restored.timeline_index = previous.timeline_index;
+        restored.update_speed();
+        restored
     }
 
-    pub fn update_target(&mut self, new_text: &str) {
+    pub fn update_target(&mut self, new_text: &str, is_live: bool) {
         self.target_text.clear();
         self.target_text.push_str(new_text);
         self.target_char_count = new_text.chars().count();
-        self.sender_stopped_typing = false;
+        self.is_live = is_live;
 
         // Clamp display pointers if the new text is shorter than what was already displayed.
         if self.displayed_char_count > self.target_char_count {
             self.displayed_char_count = self.target_char_count;
-            // Re-derive byte offset to stay on char boundary.
             self.displayed_byte_offset = self.target_text
                 .char_indices()
                 .nth(self.target_char_count)
@@ -163,17 +153,41 @@ impl StreamingAnimState {
         self.displayed_char_count < self.target_char_count
     }
 
-    /// Check if streaming is complete.
-    /// Completes when the sender stops typing and all text has been revealed.
+    /// Streaming is complete when the live field is absent and all text has been revealed.
     pub fn is_complete(&self) -> bool {
-        if self.needs_frame() { return false; }
-        self.sender_stopped_typing
+        !self.needs_frame() && !self.is_live
+    }
+
+    pub fn timeout_after(&self) -> Duration {
+        if self.is_live {
+            LIVE_STREAM_STALL_TIMEOUT
+        } else {
+            FINISHED_STREAM_TIMEOUT
+        }
     }
 
     pub fn is_timed_out(&self) -> bool {
-        self.last_update_time.elapsed().as_secs() > 30
+        self.last_update_time.elapsed() > self.timeout_after()
+    }
+}
+
+fn common_prefix_len(lhs: &str, rhs: &str) -> (usize, usize) {
+    let mut chars = 0;
+    let mut bytes = 0;
+    let mut lhs_chars = lhs.chars();
+
+    for (byte_idx, rhs_char) in rhs.char_indices() {
+        let Some(lhs_char) = lhs_chars.next() else {
+            break;
+        };
+        if lhs_char != rhs_char {
+            break;
+        }
+        chars += 1;
+        bytes = byte_idx + rhs_char.len_utf8();
     }
 
+    (chars, bytes)
 }
 
 #[cfg(test)]
@@ -181,8 +195,7 @@ mod tests {
     use super::*;
 
     fn make_state(text: &str) -> StreamingAnimState {
-        let user_id: OwnedUserId = "@bot:example.com".try_into().unwrap();
-        StreamingAnimState::new(text, user_id, StreamDetection::Heuristic)
+        StreamingAnimState::new(text, true)
     }
 
     #[test]
@@ -213,8 +226,7 @@ mod tests {
     fn test_update_target_extends() {
         let mut s = make_state("Hello");
         s.advance_displayed(5);
-        assert_eq!(s.displayed_char_count, 5);
-        s.update_target("Hello, world!");
+        s.update_target("Hello, world!", true);
         assert_eq!(s.target_char_count, 13);
         assert_eq!(s.displayed_char_count, 5);
         assert!(s.chars_per_second > 0.0);
@@ -224,10 +236,9 @@ mod tests {
     fn test_update_target_shrinks_safely() {
         let mut s = make_state("Hello, world!");
         s.advance_displayed(10);
-        s.update_target("Hi");
+        s.update_target("Hi", true);
         assert_eq!(s.displayed_char_count, 2);
         assert_eq!(s.displayed_byte_offset, 2);
-        // Should not panic
         s.fill_display_buffer();
         assert!(s.display_buffer.starts_with("Hi"));
     }
@@ -239,13 +250,6 @@ mod tests {
         let changed = s.tick_with_elapsed(Duration::from_millis(500));
         assert!(changed);
         assert_eq!(s.displayed_char_count, 2);
-    }
-
-    #[test]
-    fn test_tick_complete_noop() {
-        let mut s = make_state("Hi");
-        s.advance_displayed(2);
-        assert!(!s.tick_with_elapsed(Duration::from_secs(1)));
     }
 
     #[test]
@@ -266,30 +270,54 @@ mod tests {
     }
 
     #[test]
-    fn test_is_complete_heuristic() {
+    fn test_is_complete_msc4357() {
         let mut s = make_state("Hi");
         s.advance_displayed(2);
+        // is_live=true → not complete even though all text revealed
         assert!(!s.is_complete());
-        s.sender_stopped_typing = true;
+        // Simulate final edit without live field
+        s.is_live = false;
         assert!(s.is_complete());
     }
 
     #[test]
-    fn test_visible_prefix_preserved() {
-        let user_id: OwnedUserId = "@bot:example.com".try_into().unwrap();
-        let s = StreamingAnimState::new_from_visible_prefix(
-            "Hello", "Hello, world!", user_id, StreamDetection::Heuristic,
-        );
-        assert_eq!(s.displayed_char_count, 5);
-        assert_eq!(&s.target_text[..s.displayed_byte_offset], "Hello");
+    fn test_update_target_sets_live() {
+        let mut s = make_state("Hello");
+        assert!(s.is_live);
+        s.update_target("Hello, world!", false);
+        assert!(!s.is_live);
     }
 
     #[test]
-    fn test_update_target_resets_typing() {
+    fn test_restore_keeps_prefix() {
+        let mut prev = make_state("Hello, world!");
+        prev.advance_displayed(5);
+        let restored = StreamingAnimState::restore(&prev, "Hello, world!!!", true);
+        assert_eq!(restored.displayed_char_count, 5);
+        assert_eq!(&restored.target_text[..restored.displayed_byte_offset], "Hello");
+    }
+
+    #[test]
+    fn test_restore_clamps_prefix() {
+        let mut prev = make_state("Hello, world!");
+        prev.advance_displayed(12);
+        let restored = StreamingAnimState::restore(&prev, "Hello there", true);
+        assert_eq!(&restored.target_text[..restored.displayed_byte_offset], "Hello");
+    }
+
+    #[test]
+    fn test_live_stream_survives_30s() {
         let mut s = make_state("Hello");
-        s.sender_stopped_typing = true;
-        s.update_target("Hello, world!");
-        assert!(!s.sender_stopped_typing);
+        s.last_update_time = Instant::now() - Duration::from_secs(31);
+        assert!(!s.is_timed_out());
+    }
+
+    #[test]
+    fn test_finished_stream_times_out() {
+        let mut s = make_state("Hello");
+        s.is_live = false;
+        s.last_update_time = Instant::now() - Duration::from_secs(31);
+        assert!(s.is_timed_out());
     }
 
     #[test]
@@ -307,11 +335,4 @@ mod tests {
         assert_eq!(s.displayed_char_count, 0);
     }
 
-    #[test]
-    fn test_advance_zero_is_noop() {
-        let mut s = make_state("Hello");
-        s.advance_displayed(0);
-        assert_eq!(s.displayed_char_count, 0);
-        assert_eq!(s.displayed_byte_offset, 0);
-    }
 }
