@@ -1,8 +1,8 @@
 //! Handles app persistence by saving and restoring client session data to/from the filesystem.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use anyhow::{anyhow, bail};
-use makepad_widgets::{log, Cx};
+use makepad_widgets::{log, warning, Cx};
 use matrix_sdk::{
     authentication::matrix::MatrixSession,
     ruma::{OwnedUserId, UserId},
@@ -255,6 +255,26 @@ pub async fn delete_latest_user_id() -> anyhow::Result<bool> {
     }
 }
 
+async fn delete_path_if_exists(path: &Path) -> anyhow::Result<bool> {
+    let metadata = match tokio::fs::metadata(path).await {
+        Ok(metadata) => metadata,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(anyhow!("Failed to inspect path {}: {e}", path.display())),
+    };
+
+    if metadata.is_dir() {
+        tokio::fs::remove_dir_all(path)
+            .await
+            .map_err(|e| anyhow!("Failed to remove directory {}: {e}", path.display()))?;
+    } else {
+        tokio::fs::remove_file(path)
+            .await
+            .map_err(|e| anyhow!("Failed to remove file {}: {e}", path.display()))?;
+    }
+
+    Ok(true)
+}
+
 /// Remove the persisted Matrix session file for the given user if it exists.
 ///
 /// Returns:
@@ -265,6 +285,37 @@ pub async fn delete_session(user_id: &UserId) -> anyhow::Result<bool> {
     let session_file = session_file_path(user_id);
 
     if session_file.exists() {
+        let persisted_db_path = match tokio::fs::read_to_string(&session_file).await {
+            Ok(serialized_session) => {
+                match serde_json::from_str::<FullSessionPersisted>(&serialized_session) {
+                    Ok(session) => Some(session.client_session.db_path),
+                    Err(e) => {
+                        warning!(
+                            "Failed to parse session file {} before cleanup: {e}",
+                            session_file.display()
+                        );
+                        None
+                    }
+                }
+            }
+            Err(e) => {
+                warning!(
+                    "Failed to read session file {} before cleanup: {e}",
+                    session_file.display()
+                );
+                None
+            }
+        };
+
+        if let Some(db_path) = persisted_db_path {
+            if let Err(e) = delete_path_if_exists(&db_path).await {
+                warning!(
+                    "Failed to remove persisted Matrix store {} for {user_id}: {e}",
+                    db_path.display()
+                );
+            }
+        }
+
         tokio::fs::remove_file(&session_file)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to remove session file {session_file:?}: {e}"))
