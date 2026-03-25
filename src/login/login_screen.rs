@@ -49,19 +49,17 @@ script_mod! {
 
         width: Fill, height: Fill,
         align: Align{x: 0.5, y: 0.5}
-        show_bg: true,
+        show_bg: false,
         draw_bg +: {
-            color: COLOR_SECONDARY
-            // color: COLOR_PRIMARY // TODO: once Makepad supports `Fill {max: 375}`, change this back to COLOR_PRIMARY
+            color: COLOR_TRANSPARENT
         }
 
         ScrollYView {
             width: Fill, height: Fill,
             // Note: *do NOT* vertically center this, it will break scrolling.
             align: Align{x: 0.5}
-            show_bg: true,
-            draw_bg.color: (COLOR_SECONDARY)
-            // draw_bg.color: (COLOR_PRIMARY) // TODO: once Makepad supports `Fill {max: 375}`, change this back to COLOR_PRIMARY
+            show_bg: false,
+            draw_bg.color: (COLOR_TRANSPARENT)
 
             // allow the view to be scrollable but hide the actual scroll bar
             scroll_bars: {
@@ -71,26 +69,20 @@ script_mod! {
                 }
             }
 
-            RoundedView {
-                margin: Inset{top: 40, bottom: 40}
-                width: Fill // TODO: once Makepad supports it, use `Fill {max: 375}`
+            View {
+                margin: Inset{top: 32, bottom: 32}
+                width: 360
                 height: Fit
                 align: Align{x: 0.5, y: 0.5}
                 flow: Overlay,
 
-                show_bg: true,
-                draw_bg +: {
-                    color: (COLOR_SECONDARY)
-                    border_radius: 6.0
-                }
-
                 View {
-                    width: Fill // TODO: once Makepad supports it, use `Fill {max: 375}`
+                    width: 360
                     height: Fit
                     flow: Down
                     align: Align{x: 0.5, y: 0.5}
-                    padding: Inset{top: 30, bottom: 30}
-                    margin: Inset{top: 40, bottom: 40}
+                    padding: Inset{top: 34, bottom: 30, left: 24, right: 24}
+                    margin: Inset{top: 12, bottom: 12}
                     spacing: 15.0
 
                     logo_image := Image {
