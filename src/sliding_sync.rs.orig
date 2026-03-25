@@ -1348,7 +1348,7 @@ async fn matrix_worker_task(
                                     .map(MatrixLinkAction::MatrixToUri)
                             }
                         };
-    
+
                         match result {
                             Ok(action) => Cx::post_action(action),
                             Err(e) => Cx::post_action(MatrixLinkAction::Error(e.to_string())),
@@ -1452,14 +1452,18 @@ async fn matrix_worker_task(
                 let _typing_notices_task = Handle::current().spawn(async move {
                     while let Ok(user_ids) = typing_notice_receiver.recv().await {
                         // log!("Received typing notifications for room {room_id}: {user_ids:?}");
-                        let users = join_all(user_ids.into_iter().map(|user_id| {
-                            let room = main_timeline.room().clone();
-                            async move {
-                                room.get_member_no_sync(&user_id).await.ok().flatten()
+                        let mut users = Vec::with_capacity(user_ids.len());
+                        for user_id in user_ids {
+                            users.push(
+                                main_timeline.room()
+                                    .get_member_no_sync(&user_id)
+                                    .await
+                                    .ok()
+                                    .flatten()
                                     .and_then(|m| m.display_name().map(|d| d.to_owned()))
                                     .unwrap_or_else(|| user_id.to_string())
-                            }
-                        })).await;
+                            );
+                        }
                         if let Err(e) = timeline_update_sender.send(TimelineUpdate::TypingUsers { users }) {
                             error!("Error: timeline update sender couldn't send the list of typing users: {e:?}");
                         }
@@ -1583,7 +1587,7 @@ async fn matrix_worker_task(
 
             MatrixRequest::FetchMedia { media_request, on_fetched, destination, update_sender } => {
                 let Some(client) = get_client() else { continue };
-                
+
                 let _fetch_task = Handle::current().spawn(async move {
                     // log!("Sending fetch media request for {media_request:?}...");
                     let res = client.media().get_media_content(&media_request, true).await;
@@ -1832,7 +1836,7 @@ async fn matrix_worker_task(
                             // error!("Matrix client not available for URL preview: {}", url);
                             UrlPreviewError::ClientNotAvailable
                         })?;
-                        
+
                         let token = client.access_token().ok_or_else(|| {
                             // error!("Access token not available for URL preview: {}", url);
                             UrlPreviewError::AccessTokenNotAvailable
@@ -1842,7 +1846,7 @@ async fn matrix_worker_task(
                         let endpoint_url = client.homeserver().join("/_matrix/client/v1/media/preview_url")
                             .map_err(UrlPreviewError::UrlParse)?;
                         // log!("Fetching URL preview from endpoint: {} for URL: {}", endpoint_url, url);
-                        
+
                         let response = client
                             .http_client()
                             .get(endpoint_url.clone())
@@ -1855,20 +1859,20 @@ async fn matrix_worker_task(
                                 // error!("HTTP request failed for URL preview {}: {}", url, e);
                                 UrlPreviewError::Request(e)
                             })?;
-                        
+
                         let status = response.status();
                         // log!("URL preview response status for {}: {}", url, status);
-                        
+
                         if !status.is_success() && status.as_u16() != 429 {
                             // error!("URL preview request failed with status {} for URL: {}", status, url);
                             return Err(UrlPreviewError::HttpStatus(status.as_u16()));
                         }
-                        
+
                         let text = response.text().await.map_err(|e| {
                             // error!("Failed to read response text for URL preview {}: {}", url, e);
                             UrlPreviewError::Request(e)
                         })?;
-                        
+
                         // log!("URL preview response body length for {}: {} bytes", url, text.len());
                         // if text.len() > MAX_LOG_RESPONSE_BODY_LENGTH {
                         //     log!("URL preview response body preview for {}: {}...", url, &text[..MAX_LOG_RESPONSE_BODY_LENGTH]);
@@ -1892,7 +1896,7 @@ async fn matrix_worker_task(
                                             destination: destination.clone(),
                                             update_sender: update_sender.clone(),
                                         });
-                                        
+
                                     }
                                 }
                                 Err(_e) => {
@@ -1916,7 +1920,7 @@ async fn matrix_worker_task(
 
                     // match &result {
                     //     Ok(preview_data) => {
-                    //         log!("Successfully fetched URL preview for {}: title: {:?}, site_name: {:?}", 
+                    //         log!("Successfully fetched URL preview for {}: title: {:?}, site_name: {:?}",
                     //              url, preview_data.title, preview_data.site_name);
                     //     }
                     //     Err(e) => {
@@ -2866,7 +2870,7 @@ async fn update_room(
         // Then, we check for changes to room data that is only relevant to joined rooms:
         // including the latest event, tags, unread counts, is_direct, tombstoned state, power levels, etc.
         // Invited or left rooms don't care about these details.
-        if matches!(new_room.state, RoomState::Joined) { 
+        if matches!(new_room.state, RoomState::Joined) {
             // For some reason, the latest event API does not reliably catch *all* changes
             // to the latest event in a given room, such as redactions.
             // Thus, we have to re-obtain the latest event on *every* update, regardless of timestamp.
@@ -3300,7 +3304,7 @@ fn handle_sync_indicator_subscriber(sync_service: &SyncService) {
             SYNC_INDICATOR_DELAY,
             SYNC_INDICATOR_HIDE_DELAY
         );
-    
+
     Handle::current().spawn(async move {
        let mut sync_indicator_stream = std::pin::pin!(sync_indicator_stream);
 
@@ -3574,7 +3578,7 @@ async fn get_latest_event_details(
             ).format_with(&sender_username, true);
             Some((*timestamp, latest_message_text))
         }
-    }    
+    }
 }
 
 /// Handles the given updated latest event for the given room.
@@ -4258,7 +4262,7 @@ pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
 
     let on_clear_appstate = Arc::new(Notify::new());
     Cx::post_action(LogoutAction::ClearAppState { on_clear_appstate: on_clear_appstate.clone() });
-    
+
     match tokio::time::timeout(config.app_state_cleanup_timeout, on_clear_appstate.notified()).await {
         Ok(_) => {
             log!("Received signal that UI-side app state was cleaned successfully");

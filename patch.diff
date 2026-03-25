@@ -1,0 +1,28 @@
+--- src/sliding_sync.rs
++++ src/sliding_sync.rs
+@@ -1452,17 +1452,13 @@
+                 let _typing_notices_task = Handle::current().spawn(async move {
+                     while let Ok(user_ids) = typing_notice_receiver.recv().await {
+                         // log!("Received typing notifications for room {room_id}: {user_ids:?}");
+-                        let mut users = Vec::with_capacity(user_ids.len());
+-                        for user_id in user_ids {
+-                            users.push(
+-                                main_timeline.room()
+-                                    .get_member_no_sync(&user_id)
+-                                    .await
+-                                    .ok()
+-                                    .flatten()
+-                                    .and_then(|m| m.display_name().map(|d| d.to_owned()))
+-                                    .unwrap_or_else(|| user_id.to_string())
+-                            );
+-                        }
++                        let users = join_all(user_ids.into_iter().map(|user_id| {
++                            let room = main_timeline.room().clone();
++                            async move {
++                                room.get_member_no_sync(&user_id).await.ok().flatten()
++                                    .and_then(|m| m.display_name().map(|d| d.to_owned()))
++                                    .unwrap_or_else(|| user_id.to_string())
++                            }
++                        })).await;
+                         if let Err(e) = timeline_update_sender.send(TimelineUpdate::TypingUsers { users }) {
+                             error!("Error: timeline update sender couldn't send the list of typing users: {e:?}");
