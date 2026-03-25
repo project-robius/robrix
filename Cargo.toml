@@ -14,9 +14,8 @@ version = "0.0.1-pre-alpha-4"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "windows-rs-build-fix", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "windows-rs-build-fix" }
-
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "final_fix_hybrid_from_codex", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "final_fix_hybrid_from_codex" }
 
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
