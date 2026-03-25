@@ -78,26 +78,18 @@ fn is_msc4357_live(event_tl_item: &EventTimelineItem) -> bool {
         .is_some()
 }
 
-fn clamp_indices(
-    changed_indices: &Range<usize>,
-    old_len: usize,
-    new_len: usize,
-) -> Range<usize> {
-    let end = changed_indices.end.min(old_len.min(new_len));
-    let start = changed_indices.start.min(end);
-    start..end
-}
-
 fn streaming_scan_range(
     clear_cache: bool,
     changed_indices: &Range<usize>,
-    old_len: usize,
+    _old_len: usize,
     new_len: usize,
 ) -> Range<usize> {
     if clear_cache {
         0..new_len
     } else {
-        clamp_indices(changed_indices, old_len, new_len)
+        let start = changed_indices.start.min(new_len);
+        let end = changed_indices.end.min(new_len);
+        start..end
     }
 }
 
@@ -1594,7 +1586,8 @@ impl RoomScreen {
 
                             if let Some(state) = tl.streaming_messages.get_mut(&event_id) {
                                 state.update_target(&new_text, live);
-                                should_schedule_frame |= state.needs_frame();
+                                // Schedule frame for animation OR for cleanup of just-completed state
+                                should_schedule_frame |= state.needs_frame() || state.is_complete();
                                 continue;
                             }
 
@@ -5092,14 +5085,20 @@ mod tests {
     }
 
     #[test]
-    fn test_bounded_indices_clamps_max() {
-        let bounded = clamp_indices(&(1..usize::MAX), 3, 4);
-        assert_eq!(bounded, 1..3);
+    fn test_scan_range_incremental() {
+        // changed_indices 5..MAX clamped to new_len=9 → 5..9 (covers appended items)
+        assert_eq!(streaming_scan_range(false, &(5..usize::MAX), 8, 9), 5..9);
     }
 
     #[test]
-    fn test_scan_range_incremental() {
-        assert_eq!(streaming_scan_range(false, &(5..usize::MAX), 8, 9), 5..8);
+    fn test_scan_range_append() {
+        // PushBack: old_len=8, new_len=9, changed_indices=8..9 → 8..9 (new item scanned)
+        assert_eq!(streaming_scan_range(false, &(8..9), 8, 9), 8..9);
+    }
+
+    #[test]
+    fn test_scan_range_empty_when_no_changes() {
+        assert_eq!(streaming_scan_range(false, &(8..8), 8, 8), 8..8);
     }
 
     #[test]
