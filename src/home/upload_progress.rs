@@ -84,7 +84,7 @@ script_mod! {
             }
 
             retry_button := RobrixPositiveIconButton {
-                visible: false,
+                enabled: false,
                 padding: Inset{top: 4, bottom: 4, left: 8, right: 8}
                 draw_text +: {
                     text_style: REGULAR_TEXT { font_size: 9 },
@@ -173,8 +173,8 @@ impl UploadProgressView {
 
         self.label(cx, ids!(file_name_label)).set_text(cx, file_name);
         self.label(cx, ids!(status_label)).set_text(cx, "Starting upload...");
-        self.button(cx, ids!(retry_button)).set_visible(cx, false);
-        self.button(cx, ids!(cancel_button)).set_visible(cx, true);
+        self.button(cx, ids!(retry_button)).set_enabled(cx, false);
+        self.button(cx, ids!(cancel_button)).set_enabled(cx, true);
 
         // Reset progress bar
         self.child_by_path(ids!(progress_bar)).as_progress_bar().set_progress(cx, 0.0);
@@ -229,8 +229,8 @@ impl UploadProgressView {
         // Update UI for error state
         self.label(cx, ids!(status_label))
             .set_text(cx, &format!("Error: {}", error));
-        self.button(cx, ids!(retry_button)).set_visible(cx, true);
-        self.button(cx, ids!(cancel_button)).set_visible(cx, true);
+        self.button(cx, ids!(retry_button)).set_enabled(cx, true);
+        self.button(cx, ids!(cancel_button)).set_enabled(cx, true);
 
         // Set progress bar to error color - no longer apply color change via script_apply_eval
         // The progress bar will use the default color for now

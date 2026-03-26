@@ -670,6 +670,7 @@ impl AppMain for App {
         crate::home::location_preview::script_mod(vm);
         crate::home::tombstone_footer::script_mod(vm);
         crate::home::editing_pane::script_mod(vm);
+        crate::home::upload_progress::script_mod(vm);
         crate::room::script_mod(vm);
         crate::join_leave_room_modal::script_mod(vm);
         crate::verification_modal::script_mod(vm);
