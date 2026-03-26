@@ -512,3 +512,4 @@ impl HomeScreen {
             )
     }
 }
+

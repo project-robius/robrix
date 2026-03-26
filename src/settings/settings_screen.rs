@@ -1,12 +1,7 @@
 
 use makepad_widgets::*;
 
-use crate::{
-    app::BotSettingsState,
-    home::navigation_tab_bar::{NavigationBarAction, get_own_profile},
-    profile::user_profile::UserProfile,
-    settings::{account_settings::AccountSettingsWidgetExt, bot_settings::BotSettingsWidgetExt},
-};
+use crate::{app::BotSettingsState, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, profile::user_profile::UserProfile, settings::{account_settings::AccountSettingsWidgetExt, bot_settings::BotSettingsWidgetExt}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -173,12 +168,7 @@ impl Widget for SettingsScreen {
 
 impl SettingsScreen {
     /// Fetches the current user's profile and uses it to populate the settings screen.
-    pub fn populate(
-        &mut self,
-        cx: &mut Cx,
-        own_profile: Option<UserProfile>,
-        bot_settings: &BotSettingsState,
-    ) {
+    pub fn populate(&mut self, cx: &mut Cx, own_profile: Option<UserProfile>, bot_settings: &BotSettingsState) {
         let Some(profile) = own_profile.or_else(|| get_own_profile(cx)) else {
             error!("Failed to get own profile for settings screen.");
             return;
@@ -193,12 +183,7 @@ impl SettingsScreen {
 
 impl SettingsScreenRef {
     /// See [`SettingsScreen::populate()`].
-    pub fn populate(
-        &self,
-        cx: &mut Cx,
-        own_profile: Option<UserProfile>,
-        bot_settings: &BotSettingsState,
-    ) {
+    pub fn populate(&self, cx: &mut Cx, own_profile: Option<UserProfile>, bot_settings: &BotSettingsState) {
         let Some(mut inner) = self.borrow_mut() else { return; };
         inner.populate(cx, own_profile, bot_settings);
     }

@@ -3,13 +3,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
-use crate::{
-    app::AppState,
-    home::invite_modal::InviteModalAction,
-    shared::popup_list::{PopupKind, enqueue_popup_notification},
-    sliding_sync::{MatrixRequest, current_user_id, submit_async_request},
-    utils::RoomNameId,
-};
+use crate::{app::AppState, home::invite_modal::InviteModalAction, shared::popup_list::{PopupKind, enqueue_popup_notification}, sliding_sync::{MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId};
 
 const BUTTON_HEIGHT: f64 = 35.0;
 const MENU_WIDTH: f64 = 215.0;
