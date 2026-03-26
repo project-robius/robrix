@@ -993,7 +993,7 @@ pub struct AppState {
     /// Whether a user is currently logged in to Robrix or not.
     pub logged_in: bool,
     /// Local configuration and UI state for bot-assisted room binding.
-    #[serde(default)]
+    #[serde(skip)]
     pub bot_settings: BotSettingsState,
 }
 
