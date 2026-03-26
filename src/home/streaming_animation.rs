@@ -63,14 +63,18 @@ impl StreamingAnimState {
         self.target_char_count = new_text.chars().count();
         self.is_live = is_live;
 
-        // Clamp display pointers if the new text is shorter than what was already displayed.
+        // Clamp char count if the new text is shorter than what was already displayed.
         if self.displayed_char_count > self.target_char_count {
             self.displayed_char_count = self.target_char_count;
-            self.displayed_byte_offset = self.target_text
-                .char_indices()
-                .nth(self.target_char_count)
-                .map_or(self.target_text.len(), |(i, _)| i);
         }
+
+        // Always recalculate byte offset: the new text may have different
+        // byte widths at already-displayed positions (e.g. markdown formatting
+        // changes between streaming updates).
+        self.displayed_byte_offset = self.target_text
+            .char_indices()
+            .nth(self.displayed_char_count)
+            .map_or(self.target_text.len(), |(i, _)| i);
 
         let now = Instant::now();
         self.chars_at_last_update = self.displayed_char_count;
@@ -241,6 +245,25 @@ mod tests {
         assert_eq!(s.displayed_byte_offset, 2);
         s.fill_display_buffer();
         assert!(s.display_buffer.starts_with("Hi"));
+    }
+
+    #[test]
+    fn test_update_target_recalculates_byte_offset_for_different_prefix() {
+        // Simulate: displayed 5 ASCII chars, then text replaced with CJK characters.
+        // Old byte offset (5) would be inside a multi-byte char in the new text.
+        let mut s = make_state("hello world");
+        s.advance_displayed(5);
+        assert_eq!(s.displayed_byte_offset, 5);
+
+        // New text has 5+ chars but first 5 chars are 3-byte CJK.
+        // Without the fix, displayed_byte_offset stays 5, crashing on slice.
+        s.update_target("你好世界测试数据", true);
+        assert_eq!(s.displayed_char_count, 5);
+        // 5 CJK chars × 3 bytes = 15
+        assert_eq!(s.displayed_byte_offset, 15);
+        // Must not panic:
+        s.fill_display_buffer();
+        assert!(s.display_buffer.starts_with("你好世界测"));
     }
 
     #[test]
