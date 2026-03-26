@@ -1769,6 +1769,7 @@ async fn matrix_worker_task(
                     match send_future.await {
                         Ok(_response) => {
                             log!("Successfully sent attachment to {timeline_kind}.");
+                            let _ = sender.send(TimelineUpdate::FileUploadComplete);
                         }
                         Err(e) => {
                             error!("Failed to send attachment to {timeline_kind}: {e:?}");

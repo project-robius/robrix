@@ -858,6 +858,44 @@ impl RoomInputBarRef {
             .as_upload_progress_view()
             .show_error(cx, error, file_data);
     }
+
+    /// Handles a confirmed file upload from the file upload modal.
+    ///
+    /// This method:
+    /// - Shows the upload progress view
+    /// - Gets and clears any "replying to" state
+    /// - Returns the reply metadata needed to submit the upload request
+    pub fn handle_file_upload_confirmed(&self, cx: &mut Cx, file_name: &str) -> Option<Option<Reply>> {
+        let mut inner = self.borrow_mut()?;
+
+        // Get the reply metadata if replying to a message
+        let replied_to = inner
+            .replying_to
+            .take()
+            .and_then(|(event_tl_item, _embedded_event)| {
+                event_tl_item.event_id().map(|event_id| Reply {
+                    event_id: event_id.to_owned(),
+                    enforce_thread: EnforceThread::MaybeThreaded,
+                })
+            });
+
+        // Show the upload progress view
+        inner.child_by_path(ids!(upload_progress_view))
+            .as_upload_progress_view()
+            .show(cx, file_name);
+
+        // Clear the replying-to state
+        inner.clear_replying_to(cx);
+
+        Some(replied_to)
+    }
+
+    /// Returns whether TSP signing is enabled.
+    #[cfg(feature = "tsp")]
+    pub fn is_tsp_signing_enabled(&self, cx: &mut Cx) -> bool {
+        let Some(inner) = self.borrow() else { return false };
+        inner.is_tsp_signing_enabled(cx)
+    }
 }
 
 /// The saved UI state of a `RoomInputBar` widget.

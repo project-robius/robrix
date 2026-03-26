@@ -1587,18 +1587,16 @@ impl RoomScreen {
                 }
                 TimelineUpdate::LinkPreviewFetched => {}
                 TimelineUpdate::FileUploadConfirmed(file_data) => {
-                    // Show upload progress view and start the upload
-                    self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .show_upload_progress(cx, &file_data.name);
-
-                    // Submit the upload request
-                    submit_async_request(MatrixRequest::SendAttachment {
-                        timeline_kind: tl.kind.clone(),
-                        file_data,
-                        replied_to: None, // TODO: support replying with attachments
-                        #[cfg(feature = "tsp")]
-                        sign_with_tsp: false,
-                    });
+                    let room_input_bar = self.view.room_input_bar(cx, ids!(room_input_bar));
+                    if let Some(replied_to) = room_input_bar.handle_file_upload_confirmed(cx, &file_data.name) {
+                        submit_async_request(MatrixRequest::SendAttachment {
+                            timeline_kind: tl.kind.clone(),
+                            file_data,
+                            replied_to,
+                            #[cfg(feature = "tsp")]
+                            sign_with_tsp: room_input_bar.is_tsp_signing_enabled(cx),
+                        });
+                    }
                 }
                 TimelineUpdate::FileUploadUpdate { current, total } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
@@ -1611,6 +1609,10 @@ impl RoomScreen {
                 TimelineUpdate::FileUploadError { error, file_data } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .show_upload_error(cx, &error, file_data);
+                }
+                TimelineUpdate::FileUploadComplete => {
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .hide_upload_progress(cx);
                 }
             }
         }
@@ -2778,6 +2780,8 @@ pub enum TimelineUpdate {
         error: String,
         file_data: crate::shared::file_upload_modal::FileData,
     },
+    /// File upload completed successfully.
+    FileUploadComplete,
 }
 
 thread_local! {

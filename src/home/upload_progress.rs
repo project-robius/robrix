@@ -142,7 +142,7 @@ impl Widget for UploadProgressView {
                 if let Some(handle) = self.abort_handle.take() {
                     handle.abort();
                 }
-                cx.action(UploadProgressViewAction::Cancelled);
+                cx.widget_action(self.widget_uid(), UploadProgressViewAction::Cancelled);
                 self.hide(cx);
             }
 
@@ -150,7 +150,7 @@ impl Widget for UploadProgressView {
             if self.button(cx, ids!(retry_button)).clicked(actions) {
                 if let UploadViewState::Error { file_data, .. } = &self.state {
                     let file_data = file_data.clone();
-                    cx.action(UploadProgressViewAction::Retry(file_data));
+                    cx.widget_action(self.widget_uid(), UploadProgressViewAction::Retry(file_data));
                     self.hide(cx);
                 }
             }
