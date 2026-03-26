@@ -1586,6 +1586,32 @@ impl RoomScreen {
                     tl.tombstone_info = Some(successor_room_details);
                 }
                 TimelineUpdate::LinkPreviewFetched => {}
+                TimelineUpdate::FileUploadConfirmed(file_data) => {
+                    // Show upload progress view and start the upload
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .show_upload_progress(cx, &file_data.name);
+
+                    // Submit the upload request
+                    submit_async_request(MatrixRequest::SendAttachment {
+                        timeline_kind: tl.kind.clone(),
+                        file_data,
+                        replied_to: None, // TODO: support replying with attachments
+                        #[cfg(feature = "tsp")]
+                        sign_with_tsp: false,
+                    });
+                }
+                TimelineUpdate::FileUploadUpdate { current, total } => {
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .set_upload_progress(cx, current, total);
+                }
+                TimelineUpdate::FileUploadAbortHandle(handle) => {
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .set_upload_abort_handle(handle);
+                }
+                TimelineUpdate::FileUploadError { error, file_data } => {
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .show_upload_error(cx, &error, file_data);
+                }
             }
         }
 
@@ -2738,6 +2764,20 @@ pub enum TimelineUpdate {
     Tombstoned(SuccessorRoomDetails),
     /// A notice that link preview data for a URL has been fetched and is now available.
     LinkPreviewFetched,
+    /// User confirmed a file upload via the file upload modal.
+    FileUploadConfirmed(crate::shared::file_upload_modal::FileData),
+    /// Progress update for an ongoing file upload.
+    FileUploadUpdate {
+        current: u64,
+        total: u64,
+    },
+    /// The abort handle for an in-progress file upload.
+    FileUploadAbortHandle(tokio::task::AbortHandle),
+    /// An error occurred during file upload.
+    FileUploadError {
+        error: String,
+        file_data: crate::shared::file_upload_modal::FileData,
+    },
 }
 
 thread_local! {

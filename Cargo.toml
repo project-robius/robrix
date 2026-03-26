@@ -44,6 +44,9 @@ hashbrown = { version = "0.16", features = ["raw-entry"] }
 htmlize = "1.0.5"
 indexmap = "2.6.0"
 imghdr = "0.7.0"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+mime = "0.3"
+mime_guess = "2.0"
 linkify = "0.10.0"
 matrix-sdk-base = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main" }
 matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [
@@ -102,6 +105,10 @@ reqwest = { version = "0.12", default-features = false, features = [
     "http2",
     "macos-system-configuration",
 ] }
+
+# Desktop-only file dialog (doesn't work on iOS/Android)
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+rfd = "0.15"
 
 
 [features]
