@@ -3,6 +3,15 @@ use std::time::{Duration, Instant};
 const FINISHED_STREAM_TIMEOUT: Duration = Duration::from_secs(30);
 const LIVE_STREAM_STALL_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
+/// Characters to reveal per amortized chunk, closer to Moly's small-block growth.
+const REVEAL_CHUNK_SIZE: usize = 2;
+/// Fixed cadence for releasing each chunk.
+const REVEAL_INTERVAL: Duration = Duration::from_millis(55);
+/// Characters to reveal immediately when new content arrives after the UI had caught up.
+const ARRIVAL_BURST: usize = 1;
+/// When the stream is finished and this few chars remain, snap to the end.
+const FINISH_SNAP_THRESHOLD: usize = 20;
+
 /// Animation state for a single streaming message.
 /// Tracks an MSC4357 live message and drives character-by-character reveal.
 pub struct StreamingAnimState {
@@ -10,12 +19,10 @@ pub struct StreamingAnimState {
     pub target_char_count: usize,
     pub displayed_char_count: usize,
     pub displayed_byte_offset: usize,
-    pub chars_per_second: f64,
-    pub fractional_chars: f64,
+    pub fractional_chunks: f64,
     pub last_update_time: Instant,
     pub last_tick_time: Instant,
     pub animation_start_time: Instant,
-    pub chars_at_last_update: usize,
     pub display_buffer: String,
     /// Whether the message currently carries the MSC4357 `live` field.
     pub is_live: bool,
@@ -31,12 +38,10 @@ impl StreamingAnimState {
             target_char_count: char_count,
             displayed_char_count: 0,
             displayed_byte_offset: 0,
-            chars_per_second: 1.0,
-            fractional_chars: 0.0,
+            fractional_chunks: 0.0,
             last_update_time: now,
             last_tick_time: now,
             animation_start_time: now,
-            chars_at_last_update: 0,
             display_buffer: String::with_capacity(initial_text.len() + 4),
             is_live,
             timeline_index: None,
@@ -50,14 +55,15 @@ impl StreamingAnimState {
 
         restored.displayed_char_count = common_chars;
         restored.displayed_byte_offset = common_bytes;
-        restored.chars_at_last_update = common_chars;
         restored.animation_start_time = previous.animation_start_time;
         restored.timeline_index = previous.timeline_index;
-        restored.update_speed();
         restored
     }
 
     pub fn update_target(&mut self, new_text: &str, is_live: bool) {
+        let prev_char_count = self.target_char_count;
+        let had_backlog = self.displayed_char_count < prev_char_count;
+
         self.target_text.clear();
         self.target_text.push_str(new_text);
         self.target_char_count = new_text.chars().count();
@@ -76,25 +82,25 @@ impl StreamingAnimState {
             .nth(self.displayed_char_count)
             .map_or(self.target_text.len(), |(i, _)| i);
 
+        // Arrival burst: only when we had fully caught up and were waiting
+        // for more text. If backlog already exists, stay on the amortized cadence.
+        let added_chars = self.target_char_count.saturating_sub(prev_char_count);
+        if added_chars > 0 && !had_backlog {
+            self.advance_displayed(added_chars.min(ARRIVAL_BURST));
+        }
+
         let now = Instant::now();
-        self.chars_at_last_update = self.displayed_char_count;
         self.last_update_time = now;
-        self.last_tick_time = now;
-        self.update_speed();
+        // If the animation had already caught up and was waiting for more text,
+        // restart the frame clock so idle time doesn't count as reveal time.
+        // If backlog already existed, keep the clock to preserve smooth cadence.
+        if !had_backlog {
+            self.last_tick_time = now;
+        }
         // Reserve only the deficit (reserve(n) guarantees capacity >= len + n).
         let needed = new_text.len() + 4;
         if self.display_buffer.capacity() < needed {
             self.display_buffer.reserve(needed - self.display_buffer.len());
-        }
-    }
-
-    fn update_speed(&mut self) {
-        let remaining = self.target_char_count.saturating_sub(self.displayed_char_count);
-        if remaining > 0 {
-            self.chars_per_second = remaining as f64;
-            if self.chars_per_second < 30.0 {
-                self.chars_per_second = 30.0;
-            }
         }
     }
 
@@ -123,28 +129,24 @@ impl StreamingAnimState {
 
     pub fn tick_with_elapsed(&mut self, elapsed: Duration) -> bool {
         if self.displayed_char_count >= self.target_char_count { return false; }
-        let gap = self.target_char_count - self.displayed_char_count;
-        let mut changed = false;
+        let remaining = self.target_char_count - self.displayed_char_count;
 
-        let speed = if gap > 500 {
-            let jump = gap - 50;
-            self.advance_displayed(jump);
-            changed = true;
-            self.chars_per_second
-        } else if gap > 200 {
-            self.chars_per_second * 3.0
-        } else {
-            self.chars_per_second
-        };
-
-        self.fractional_chars += speed * elapsed.as_secs_f64();
-        let advance = self.fractional_chars.floor() as usize;
-        self.fractional_chars -= advance as f64;
-        if advance > 0 {
-            self.advance_displayed(advance);
-            changed = true;
+        // Finish snap: when the stream is done and only a few chars remain, show them all.
+        if !self.is_live && remaining <= FINISH_SNAP_THRESHOLD {
+            self.advance_displayed(remaining);
+            return true;
         }
-        changed
+
+        // Moly-style amortization: reveal fixed-size chunks at a fixed cadence
+        // instead of accelerating as backlog grows.
+        self.fractional_chunks += elapsed.as_secs_f64() / REVEAL_INTERVAL.as_secs_f64();
+        let advance_chunks = self.fractional_chunks.floor() as usize;
+        self.fractional_chunks -= advance_chunks as f64;
+        if advance_chunks > 0 {
+            self.advance_displayed(advance_chunks * REVEAL_CHUNK_SIZE);
+            return true;
+        }
+        false
     }
 
     pub fn fill_display_buffer(&mut self) {
@@ -232,8 +234,26 @@ mod tests {
         s.advance_displayed(5);
         s.update_target("Hello, world!", true);
         assert_eq!(s.target_char_count, 13);
-        assert_eq!(s.displayed_char_count, 5);
-        assert!(s.chars_per_second > 0.0);
+        // Arrival burst reveals only the newly added chars, capped by ARRIVAL_BURST.
+        assert_eq!(s.displayed_char_count, 5 + ARRIVAL_BURST.min(8));
+    }
+
+    #[test]
+    fn test_update_target_uses_single_char_burst_when_waiting_for_new_text() {
+        let mut s = make_state("Hello");
+        s.advance_displayed(5);
+        s.update_target("Hello, world!", true);
+        assert_eq!(s.displayed_char_count, 6);
+    }
+
+    #[test]
+    fn test_update_target_does_not_burst_while_backlog_exists() {
+        let mut s = make_state("Hello");
+        s.advance_displayed(2);
+        s.update_target("Hello!", true);
+        // When backlog already exists, keep the amortized cadence instead of
+        // applying a fresh burst on every incoming update.
+        assert_eq!(s.displayed_char_count, 2);
     }
 
     #[test]
@@ -269,18 +289,25 @@ mod tests {
     #[test]
     fn test_tick_advances() {
         let mut s = make_state("Hello, world!");
-        s.chars_per_second = 4.0;
-        let changed = s.tick_with_elapsed(Duration::from_millis(500));
+        let changed = s.tick_with_elapsed(REVEAL_INTERVAL);
         assert!(changed);
-        assert_eq!(s.displayed_char_count, 2);
+        assert_eq!(s.displayed_char_count, REVEAL_CHUNK_SIZE);
     }
 
     #[test]
-    fn test_tick_large_gap() {
+    fn test_tick_waits_for_full_chunk_interval() {
+        let mut s = make_state("Hello, world!");
+        assert!(!s.tick_with_elapsed(REVEAL_INTERVAL / 2));
+        assert_eq!(s.displayed_char_count, 0);
+    }
+
+    #[test]
+    fn test_tick_large_gap_smooth() {
         let mut s = make_state(&"a".repeat(1000));
-        s.chars_per_second = 0.1;
+        // Even after a large elapsed gap, keep a steady amortized pace.
         assert!(s.tick_with_elapsed(Duration::from_secs(1)));
-        assert!(s.displayed_char_count > 900);
+        assert!(s.displayed_char_count >= 30);
+        assert!(s.displayed_char_count <= 40);
     }
 
     #[test]
@@ -344,9 +371,46 @@ mod tests {
     #[test]
     fn test_tick_zero_elapsed() {
         let mut s = make_state("Hello");
-        s.chars_per_second = 20.0;
         assert!(!s.tick_with_elapsed(Duration::ZERO));
         assert_eq!(s.displayed_char_count, 0);
+    }
+
+    #[test]
+    fn test_update_target_preserves_tick_clock_when_backlog_already_exists() {
+        let mut s = make_state("Hello, world!");
+        s.advance_displayed(3);
+        let before = Instant::now() - Duration::from_millis(120);
+        s.last_tick_time = before;
+
+        s.update_target("Hello, world!!!", true);
+
+        assert_eq!(s.last_tick_time, before);
+    }
+
+    #[test]
+    fn test_update_target_resets_tick_clock_when_waiting_for_new_text() {
+        let mut s = make_state("Hello");
+        s.advance_displayed(5);
+        let before = Instant::now() - Duration::from_secs(5);
+        s.last_tick_time = before;
+
+        s.update_target("Hello!", true);
+
+        assert!(s.last_tick_time > before);
+    }
+
+    #[test]
+    fn test_finish_snap() {
+        let mut s = make_state(&"a".repeat(30));
+        s.advance_displayed(20);
+        // 10 remaining but is_live=true → normal tick, no snap.
+        s.tick_with_elapsed(Duration::from_millis(16));
+        assert!(s.displayed_char_count < 30);
+
+        // Mark as finished → remaining <= FINISH_SNAP_THRESHOLD → snaps to end.
+        s.is_live = false;
+        assert!(s.tick_with_elapsed(Duration::from_millis(1)));
+        assert_eq!(s.displayed_char_count, 30);
     }
 
 }
