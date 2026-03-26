@@ -2,7 +2,9 @@ use makepad_widgets::*;
 
 use crate::{
     app::{AppState, BotSettingsState},
+    persistence,
     shared::popup_list::{PopupKind, enqueue_popup_notification},
+    sliding_sync::current_user_id,
 };
 
 script_mod! {
@@ -129,6 +131,7 @@ impl WidgetMatchEvent for BotSettings {
         if toggle_button.clicked(actions) {
             let enabled = !app_state.bot_settings.enabled;
             app_state.bot_settings.enabled = enabled;
+            persist_bot_settings(app_state);
             self.sync_ui(cx, &app_state.bot_settings);
             bot_details.set_visible(cx, enabled);
             self.view.redraw(cx);
@@ -136,6 +139,7 @@ impl WidgetMatchEvent for BotSettings {
 
         if save_button.clicked(actions) || bot_user_id_input.returned(actions).is_some() {
             app_state.bot_settings.botfather_user_id = bot_user_id_input.text().trim().to_string();
+            persist_bot_settings(app_state);
             enqueue_popup_notification(
                 "Saved Matrix app service settings.",
                 PopupKind::Success,
@@ -183,5 +187,13 @@ impl BotSettingsRef {
             return;
         };
         inner.populate(cx, bot_settings);
+    }
+}
+
+fn persist_bot_settings(app_state: &AppState) {
+    if let Some(user_id) = current_user_id() {
+        if let Err(e) = persistence::save_app_state(app_state.clone(), user_id) {
+            error!("Failed to persist bot settings. Error: {e}");
+        }
     }
 }

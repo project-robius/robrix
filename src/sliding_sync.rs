@@ -282,6 +282,12 @@ fn is_invalid_token_http_error(error: &matrix_sdk::HttpError) -> bool {
     )
 }
 
+fn is_invalid_batch_token_timeline_error(error: &matrix_sdk_ui::timeline::Error) -> bool {
+    let error_text = error.to_string().to_ascii_lowercase();
+    error_text.contains("invalid batch token")
+        || error_text.contains("must start with 's' or 't'")
+}
+
 
 /// Build a new client.
 async fn build_client(
@@ -994,6 +1000,7 @@ async fn matrix_worker_task(
                     log!("Skipping pagination request for unknown {timeline_kind}");
                     continue;
                 };
+                let client = get_client();
 
                 // Spawn a new async task that will make the actual pagination request.
                 let _paginate_task = Handle::current().spawn(async move {
@@ -1001,11 +1008,44 @@ async fn matrix_worker_task(
                     sender.send(TimelineUpdate::PaginationRunning(direction)).unwrap();
                     SignalToUI::set_ui_signal();
 
-                    let res = if direction == PaginationDirection::Forwards {
+                    let mut res = if direction == PaginationDirection::Forwards {
                         timeline.paginate_forwards(num_events).await
                     } else {
                         timeline.paginate_backwards(num_events).await
                     };
+
+                    if direction == PaginationDirection::Backwards
+                        && res
+                            .as_ref()
+                            .err()
+                            .is_some_and(is_invalid_batch_token_timeline_error)
+                    {
+                        warning!(
+                            "Detected an invalid cached batch token for {timeline_kind}; clearing the room event cache and retrying once."
+                        );
+                        let room_id = timeline_kind.room_id().clone();
+                        if let Some(room) = client.and_then(|client| client.get_room(&room_id)) {
+                            match room.event_cache().await {
+                                Ok((room_event_cache, _drop_handles)) => {
+                                    match room_event_cache.clear().await {
+                                        Ok(()) => {
+                                            res = timeline.paginate_backwards(num_events).await;
+                                        }
+                                        Err(clear_error) => {
+                                            warning!(
+                                                "Failed to clear event cache for room {room_id} after invalid batch token: {clear_error}"
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(event_cache_error) => {
+                                    warning!(
+                                        "Failed to access room event cache for room {room_id} after invalid batch token: {event_cache_error}"
+                                    );
+                                }
+                            }
+                        }
+                    }
 
                     match res {
                         Ok(fully_paginated) => {

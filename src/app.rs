@@ -419,7 +419,16 @@ impl MatchEvent for App {
                     bot_user_id,
                     warning,
                 }) => {
-                    self.app_state.bot_settings.set_room_bound(room_id.clone(), *bound);
+                    self.app_state.bot_settings.set_room_bound(
+                        room_id.clone(),
+                        bot_user_id.clone(),
+                        *bound,
+                    );
+                    if let Some(user_id) = current_user_id() {
+                        if let Err(e) = persistence::save_app_state(self.app_state.clone(), user_id) {
+                            error!("Failed to persist app state after updating BotFather room binding. Error: {e}");
+                        }
+                    }
                     let kind = if warning.is_some() {
                         PopupKind::Warning
                     } else {
@@ -993,7 +1002,6 @@ pub struct AppState {
     /// Whether a user is currently logged in to Robrix or not.
     pub logged_in: bool,
     /// Local configuration and UI state for bot-assisted room binding.
-    #[serde(skip)]
     pub bot_settings: BotSettingsState,
 }
 
@@ -1005,8 +1013,16 @@ pub struct BotSettingsState {
     pub enabled: bool,
     /// The configured botfather user, either as a full MXID or localpart.
     pub botfather_user_id: String,
-    /// Rooms that Robrix currently considers bound to BotFather.
-    pub bound_rooms: Vec<OwnedRoomId>,
+    /// Rooms that Robrix currently considers bound to BotFather,
+    /// paired with the exact BotFather MXID used for that room.
+    pub room_bindings: Vec<RoomBotBindingState>,
+}
+
+/// A persisted room-level BotFather binding.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RoomBotBindingState {
+    pub room_id: OwnedRoomId,
+    pub bot_user_id: OwnedUserId,
 }
 
 impl Default for BotSettingsState {
@@ -1014,7 +1030,7 @@ impl Default for BotSettingsState {
         Self {
             enabled: false,
             botfather_user_id: Self::DEFAULT_BOTFATHER_LOCALPART.to_string(),
-            bound_rooms: Vec::new(),
+            room_bindings: Vec::new(),
         }
     }
 }
@@ -1024,21 +1040,44 @@ impl BotSettingsState {
 
     /// Returns `true` if the given room is currently marked as bound locally.
     pub fn is_room_bound(&self, room_id: &RoomId) -> bool {
-        self.bound_rooms
+        self.room_bindings
             .iter()
-            .any(|bound_room_id| bound_room_id == room_id)
+            .any(|binding| binding.room_id == room_id)
+    }
+
+    /// Returns the persisted BotFather MXID for the given room, if any.
+    pub fn bound_bot_user_id(&self, room_id: &RoomId) -> Option<&UserId> {
+        self.room_bindings
+            .iter()
+            .find(|binding| binding.room_id == room_id)
+            .map(|binding| binding.bot_user_id.as_ref())
     }
 
     /// Updates the local bound/unbound state for the given room.
-    pub fn set_room_bound(&mut self, room_id: OwnedRoomId, bound: bool) {
+    pub fn set_room_bound(
+        &mut self,
+        room_id: OwnedRoomId,
+        bot_user_id: Option<OwnedUserId>,
+        bound: bool,
+    ) {
         if bound {
-            if !self.is_room_bound(&room_id) {
-                self.bound_rooms.push(room_id);
-                self.bound_rooms.sort_by(|lhs, rhs| lhs.as_str().cmp(rhs.as_str()));
+            let Some(bot_user_id) = bot_user_id else { return };
+            if let Some(existing_binding) = self
+                .room_bindings
+                .iter_mut()
+                .find(|binding| binding.room_id == room_id)
+            {
+                existing_binding.bot_user_id = bot_user_id;
+            } else {
+                self.room_bindings.push(RoomBotBindingState {
+                    room_id,
+                    bot_user_id,
+                });
+                self.room_bindings.sort_by(|lhs, rhs| lhs.room_id.as_str().cmp(rhs.room_id.as_str()));
             }
         } else {
-            self.bound_rooms
-                .retain(|existing_room_id| existing_room_id != &room_id);
+            self.room_bindings
+                .retain(|existing_binding| existing_binding.room_id != room_id);
         }
     }
 
@@ -1072,6 +1111,22 @@ impl BotSettingsState {
         UserId::parse(&full_user_id)
             .map(|user_id| user_id.to_owned())
             .map_err(|_| format!("Invalid bot user ID: {full_user_id}"))
+    }
+
+    /// Returns the BotFather MXID that should be used for a room action.
+    ///
+    /// If the room already has a persisted binding, that exact MXID wins.
+    /// Otherwise, the current global configuration is resolved.
+    pub fn resolved_bot_user_id_for_room(
+        &self,
+        room_id: &RoomId,
+        current_user_id: Option<&UserId>,
+    ) -> Result<OwnedUserId, String> {
+        if let Some(bot_user_id) = self.bound_bot_user_id(room_id) {
+            return Ok(bot_user_id.to_owned());
+        }
+
+        self.resolved_bot_user_id(current_user_id)
     }
 }
 

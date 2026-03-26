@@ -1177,7 +1177,7 @@ impl Widget for RoomScreen {
                     .map(|app_state| {
                         (
                             app_state.bot_settings.enabled,
-                            app_state.bot_settings.is_room_bound(&room_id),
+                            self.is_app_service_room_bound(app_state, &room_id),
                         )
                     })
                     .unwrap_or((false, false));
@@ -1346,7 +1346,10 @@ impl Widget for RoomScreen {
                             } else {
                                 match app_state
                                     .bot_settings
-                                    .resolved_bot_user_id(current_user_id().as_deref())
+                                    .resolved_bot_user_id_for_room(
+                                        room_props.room_name_id.room_id(),
+                                        current_user_id().as_deref(),
+                                    )
                                 {
                                     Ok(bot_user_id) => {
                                         submit_async_request(MatrixRequest::SetRoomBotBinding {
@@ -1776,6 +1779,28 @@ impl RoomScreen {
         self.close_delete_bot_modal(cx);
     }
 
+    fn is_app_service_room_bound(&self, app_state: &AppState, room_id: &OwnedRoomId) -> bool {
+        if app_state.bot_settings.is_room_bound(room_id) {
+            return true;
+        }
+
+        let Ok(bot_user_id) = app_state
+            .bot_settings
+            .resolved_bot_user_id_for_room(room_id, current_user_id().as_deref())
+        else {
+            return false;
+        };
+
+        self.tl_state
+            .as_ref()
+            .and_then(|tl| tl.room_members.as_ref())
+            .is_some_and(|room_members| {
+                room_members
+                    .iter()
+                    .any(|room_member| room_member.user_id() == bot_user_id)
+            })
+    }
+
     fn send_botfather_command(
         &mut self,
         cx: &mut Cx,
@@ -1806,7 +1831,7 @@ impl RoomScreen {
             );
             return;
         }
-        if !app_state.bot_settings.is_room_bound(&room_id) {
+        if !self.is_app_service_room_bound(app_state, &room_id) {
             enqueue_popup_notification(
                 "Bind BotFather to this room before using BotFather commands.",
                 PopupKind::Warning,
@@ -1858,7 +1883,7 @@ impl RoomScreen {
             );
             return;
         }
-        if !app_state.bot_settings.is_room_bound(&room_id) {
+        if !self.is_app_service_room_bound(app_state, &room_id) {
             enqueue_popup_notification(
                 "Bind BotFather to this room before creating a bot.",
                 PopupKind::Warning,

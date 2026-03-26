@@ -244,7 +244,10 @@ impl WidgetMatchEvent for RoomContextMenu {
         else if self.button(cx, ids!(bot_binding_button)).clicked(actions) {
             if let Some(app_state) = scope.data.get::<AppState>() {
                 let room_id = details.room_name_id.room_id().clone();
-                match app_state.bot_settings.resolved_bot_user_id(current_user_id().as_deref()) {
+                match app_state.bot_settings.resolved_bot_user_id_for_room(
+                    &room_id,
+                    current_user_id().as_deref(),
+                ) {
                     Ok(bot_user_id) => {
                         if details.is_bot_bound {
                             submit_async_request(MatrixRequest::SetRoomBotBinding {
