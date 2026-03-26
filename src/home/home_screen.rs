@@ -45,8 +45,8 @@ script_mod! {
                 border_color_2: instance(vec4(-1))
 
                 shadow_color: instance(#0005)
-                shadow_radius: uniform(9.0)
-                shadow_offset: uniform(vec2(1.0, 0.0))
+                shadow_radius: uniform(12.0)
+                shadow_offset: uniform(vec2(0.0, 0.0))
 
                 rect_size2: varying(vec2(0))
                 rect_size3: varying(vec2(0))
@@ -95,7 +95,11 @@ script_mod! {
                         let m = self.shadow_radius
                         let o = self.shadow_offset + self.rect_shift
                         let v = GaussShadow.rounded_box_shadow(vec2(m) + o self.rect_size2+o self.pos * (self.rect_size3+vec2(m)) self.shadow_radius*0.5 self.border_radius*2.0)
-                        sdf.clear(self.shadow_color*v)
+                        // Only draw shadow on the bottom half of the view
+                        let pixel_y = self.pos.y * self.rect_size3.y
+                        let mid_y = self.sdf_rect_pos.y + self.sdf_rect_size.y * 0.5
+                        let bottom_mask = smoothstep(mid_y - m * 0.3 mid_y + m * 0.3 pixel_y)
+                        sdf.clear(self.shadow_color * v * bottom_mask)
                     }
 
                     sdf.fill_keep(fill_color)

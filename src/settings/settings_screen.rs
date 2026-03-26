@@ -48,7 +48,7 @@ script_mod! {
             // Make sure the dividing line is aligned with the close_button
             LineH { padding: 10, margin: Inset{top: 10, right: 2} }
 
-            ScrollXYView {
+            ScrollYView {
                 width: Fill, height: Fill
                 flow: Down
 
