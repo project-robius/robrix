@@ -1219,11 +1219,14 @@ impl Widget for RoomsList {
                     error!("BUG: couldn't find right-clicked room details for room {room_id}");
                     continue;
                 };
+                let app_state = scope.data.get::<AppState>().unwrap();
                 let details = RoomContextMenuDetails {
                     room_name_id: jr.room_name_id.clone(),
                     is_favorite: jr.tags.contains_key(&TagName::Favorite),
                     is_low_priority: jr.tags.contains_key(&TagName::LowPriority),
                     is_marked_unread: jr.is_marked_unread,
+                    app_service_enabled: app_state.bot_settings.enabled,
+                    is_bot_bound: app_state.bot_settings.is_room_bound(&room_id),
                 };
                 cx.widget_action(
                     self.widget_uid(), 

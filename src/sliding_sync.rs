@@ -282,6 +282,12 @@ fn is_invalid_token_http_error(error: &matrix_sdk::HttpError) -> bool {
     )
 }
 
+fn is_invalid_batch_token_timeline_error(error: &matrix_sdk_ui::timeline::Error) -> bool {
+    let error_text = error.to_string().to_ascii_lowercase();
+    error_text.contains("invalid batch token")
+        || error_text.contains("must start with 's' or 't'")
+}
+
 
 /// Build a new client.
 async fn build_client(
@@ -673,6 +679,12 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         user_id: OwnedUserId,
     },
+    /// Request to bind or unbind the configured botfather for the given room.
+    SetRoomBotBinding {
+        room_id: OwnedRoomId,
+        bound: bool,
+        bot_user_id: OwnedUserId,
+    },
     /// Request to join the given room.
     JoinRoom {
         room_id: OwnedRoomId,
@@ -988,6 +1000,7 @@ async fn matrix_worker_task(
                     log!("Skipping pagination request for unknown {timeline_kind}");
                     continue;
                 };
+                let client = get_client();
 
                 // Spawn a new async task that will make the actual pagination request.
                 let _paginate_task = Handle::current().spawn(async move {
@@ -995,11 +1008,44 @@ async fn matrix_worker_task(
                     sender.send(TimelineUpdate::PaginationRunning(direction)).unwrap();
                     SignalToUI::set_ui_signal();
 
-                    let res = if direction == PaginationDirection::Forwards {
+                    let mut res = if direction == PaginationDirection::Forwards {
                         timeline.paginate_forwards(num_events).await
                     } else {
                         timeline.paginate_backwards(num_events).await
                     };
+
+                    if direction == PaginationDirection::Backwards
+                        && res
+                            .as_ref()
+                            .err()
+                            .is_some_and(is_invalid_batch_token_timeline_error)
+                    {
+                        warning!(
+                            "Detected an invalid cached batch token for {timeline_kind}; clearing the room event cache and retrying once."
+                        );
+                        let room_id = timeline_kind.room_id().clone();
+                        if let Some(room) = client.and_then(|client| client.get_room(&room_id)) {
+                            match room.event_cache().await {
+                                Ok((room_event_cache, _drop_handles)) => {
+                                    match room_event_cache.clear().await {
+                                        Ok(()) => {
+                                            res = timeline.paginate_backwards(num_events).await;
+                                        }
+                                        Err(clear_error) => {
+                                            warning!(
+                                                "Failed to clear event cache for room {room_id} after invalid batch token: {clear_error}"
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(event_cache_error) => {
+                                    warning!(
+                                        "Failed to access room event cache for room {room_id} after invalid batch token: {event_cache_error}"
+                                    );
+                                }
+                            }
+                        }
+                    }
 
                     match res {
                         Ok(fully_paginated) => {
@@ -1246,6 +1292,68 @@ async fn matrix_worker_task(
                             user_id,
                             error: matrix_sdk::Error::UnknownError("Room/Space not found in client's known list.".into()),
                         })
+                    }
+                });
+            }
+
+            MatrixRequest::SetRoomBotBinding {
+                room_id,
+                bound,
+                bot_user_id,
+            } => {
+                let Some(client) = get_client() else { continue };
+                let _bot_binding_task = Handle::current().spawn(async move {
+                    let Some(room) = client.get_room(&room_id) else {
+                        let error_message =
+                            format!("Room {room_id} was not found for the bot binding request.");
+                        error!("{error_message}");
+                        enqueue_popup_notification(error_message, PopupKind::Error, None);
+                        return;
+                    };
+
+                    let membership_result = if bound {
+                        room.invite_user_by_id(&bot_user_id).await
+                    } else {
+                        room.kick_user(&bot_user_id, Some("Robrix app service unbind")).await
+                    };
+
+                    match membership_result {
+                        Ok(()) => {
+                            Cx::post_action(AppStateAction::BotRoomBindingUpdated {
+                                room_id,
+                                bound,
+                                bot_user_id: Some(bot_user_id),
+                                warning: None,
+                            });
+                        }
+                        Err(error) => {
+                            let membership_exists =
+                                room.get_member_no_sync(&bot_user_id).await.ok().flatten().is_some();
+                            let should_mark_bound = if bound { membership_exists } else { false };
+
+                            if should_mark_bound != bound {
+                                error!(
+                                    "Failed to {} BotFather {bot_user_id} for room {room_id}: {error:?}",
+                                    if bound { "invite" } else { "remove" }
+                                );
+                                enqueue_popup_notification(
+                                    format!(
+                                        "Failed to {} BotFather {bot_user_id}: {error}",
+                                        if bound { "invite" } else { "remove" }
+                                    ),
+                                    PopupKind::Error,
+                                    None,
+                                );
+                                return;
+                            }
+
+                            Cx::post_action(AppStateAction::BotRoomBindingUpdated {
+                                room_id,
+                                bound,
+                                bot_user_id: Some(bot_user_id),
+                                warning: Some(error.to_string()),
+                            });
+                        }
                     }
                 });
             }

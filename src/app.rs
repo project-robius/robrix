@@ -4,7 +4,7 @@
 
 use std::{cell::RefCell, collections::HashMap};
 use makepad_widgets::*;
-use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, RoomId}};
+use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId}};
 use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::clear_avatar_cache, home::{
@@ -411,6 +411,82 @@ impl MatchEvent for App {
                     self.app_state = app_state.clone();
                     self.app_state.logged_in = logged_in_actual;
                     cx.action(MainDesktopUiAction::LoadDockFromAppState);
+                    continue;
+                }
+                Some(AppStateAction::BotRoomBindingUpdated {
+                    room_id,
+                    bound,
+                    bot_user_id,
+                    warning,
+                }) => {
+                    self.app_state.bot_settings.set_room_bound(
+                        room_id.clone(),
+                        bot_user_id.clone(),
+                        *bound,
+                    );
+                    if let Some(user_id) = current_user_id() {
+                        if let Err(e) = persistence::save_app_state(self.app_state.clone(), user_id) {
+                            error!("Failed to persist app state after updating BotFather room binding. Error: {e}");
+                        }
+                    }
+                    let kind = if warning.is_some() {
+                        PopupKind::Warning
+                    } else {
+                        PopupKind::Success
+                    };
+                    let message = match (*bound, bot_user_id.as_ref(), warning.as_deref()) {
+                        (true, Some(bot_user_id), Some(warning)) => {
+                            format!("BotFather {bot_user_id} is available for room {room_id}, but inviting it reported a warning: {warning}")
+                        }
+                        (true, Some(bot_user_id), None) => {
+                            format!("Bound room {room_id} to BotFather {bot_user_id}.")
+                        }
+                        (false, Some(bot_user_id), Some(warning)) => {
+                            format!("Unbound BotFather {bot_user_id} from room {room_id}, with warning: {warning}")
+                        }
+                        (false, Some(bot_user_id), None) => {
+                            format!("Unbound BotFather {bot_user_id} from room {room_id}.")
+                        }
+                        (false, None, Some(warning)) => {
+                            format!("Unbound room {room_id} from BotFather, with warning: {warning}")
+                        }
+                        (false, None, None) => {
+                            format!("Unbound room {room_id} from BotFather.")
+                        }
+                        (true, None, Some(warning)) => {
+                            format!("BotFather is available for room {room_id}, with warning: {warning}")
+                        }
+                        (true, None, None) => {
+                            format!("Bound room {room_id} to BotFather.")
+                        }
+                    };
+                    enqueue_popup_notification(message, kind, Some(5.0));
+                    self.ui.redraw(cx);
+                    continue;
+                }
+                Some(AppStateAction::BotRoomBindingDetected {
+                    room_id,
+                    bot_user_id,
+                }) => {
+                    if self
+                        .app_state
+                        .bot_settings
+                        .bound_bot_user_id(room_id.as_ref())
+                        .is_some_and(|existing_bot_user_id| existing_bot_user_id.as_str() == bot_user_id.as_str())
+                    {
+                        continue;
+                    }
+                    self.app_state.bot_settings.set_room_bound(
+                        room_id.clone(),
+                        Some(bot_user_id.clone()),
+                        true,
+                    );
+                    if let Some(user_id) = current_user_id() {
+                        if let Err(e) = persistence::save_app_state(self.app_state.clone(), user_id) {
+                            error!("Failed to persist detected BotFather room binding. Error: {e}");
+                        }
+                    }
+                    self.ui.redraw(cx);
                     continue;
                 }
                 Some(AppStateAction::NavigateToRoom { room_to_close, destination_room }) => {
@@ -950,6 +1026,134 @@ pub struct AppState {
     pub saved_dock_state_per_space: HashMap<OwnedRoomId, SavedDockState>,
     /// Whether a user is currently logged in to Robrix or not.
     pub logged_in: bool,
+    /// Local configuration and UI state for bot-assisted room binding.
+    pub bot_settings: BotSettingsState,
+}
+
+/// Local bot integration settings persisted per Matrix account.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct BotSettingsState {
+    /// Whether bot-assisted room binding is enabled in the UI.
+    pub enabled: bool,
+    /// The configured botfather user, either as a full MXID or localpart.
+    pub botfather_user_id: String,
+    /// Rooms that Robrix currently considers bound to BotFather,
+    /// paired with the exact BotFather MXID used for that room.
+    pub room_bindings: Vec<RoomBotBindingState>,
+}
+
+/// A persisted room-level BotFather binding.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RoomBotBindingState {
+    pub room_id: OwnedRoomId,
+    pub bot_user_id: OwnedUserId,
+}
+
+impl Default for BotSettingsState {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            botfather_user_id: Self::DEFAULT_BOTFATHER_LOCALPART.to_string(),
+            room_bindings: Vec::new(),
+        }
+    }
+}
+
+impl BotSettingsState {
+    pub const DEFAULT_BOTFATHER_LOCALPART: &'static str = "bot";
+
+    fn room_binding_index(&self, room_id: &RoomId) -> Result<usize, usize> {
+        self.room_bindings
+            .binary_search_by(|binding| binding.room_id.as_str().cmp(room_id.as_str()))
+    }
+
+    /// Returns `true` if the given room is currently marked as bound locally.
+    pub fn is_room_bound(&self, room_id: &RoomId) -> bool {
+        self.room_binding_index(room_id).is_ok()
+    }
+
+    /// Returns the persisted BotFather MXID for the given room, if any.
+    pub fn bound_bot_user_id(&self, room_id: &RoomId) -> Option<&UserId> {
+        self.room_binding_index(room_id)
+            .ok()
+            .map(|index| self.room_bindings[index].bot_user_id.as_ref())
+    }
+
+    /// Updates the local bound/unbound state for the given room.
+    pub fn set_room_bound(
+        &mut self,
+        room_id: OwnedRoomId,
+        bot_user_id: Option<OwnedUserId>,
+        bound: bool,
+    ) {
+        if bound {
+            let Some(bot_user_id) = bot_user_id else { return };
+            match self.room_binding_index(room_id.as_ref()) {
+                Ok(existing_index) => {
+                    self.room_bindings[existing_index].bot_user_id = bot_user_id;
+                }
+                Err(insert_index) => {
+                    self.room_bindings.insert(insert_index, RoomBotBindingState {
+                        room_id,
+                        bot_user_id,
+                    });
+                }
+            }
+        } else {
+            if let Ok(existing_index) = self.room_binding_index(room_id.as_ref()) {
+                self.room_bindings.remove(existing_index);
+            }
+        }
+    }
+
+    /// Returns the configured botfather user ID, resolving a localpart against
+    /// the current user's homeserver when needed.
+    pub fn resolved_bot_user_id(&self, current_user_id: Option<&UserId>) -> Result<OwnedUserId, String> {
+        let raw = self.botfather_user_id.trim();
+        if raw.starts_with('@') || raw.contains(':') {
+            let full_user_id = if raw.starts_with('@') {
+                raw.to_string()
+            } else {
+                format!("@{raw}")
+            };
+            return UserId::parse(&full_user_id)
+                .map(|user_id| user_id.to_owned())
+                .map_err(|_| format!("Invalid bot user ID: {full_user_id}"));
+        }
+
+        let Some(current_user_id) = current_user_id else {
+            return Err(
+                "Current user ID is unavailable, so the bot homeserver cannot be resolved.".into(),
+            );
+        };
+
+        let localpart = if raw.is_empty() {
+            Self::DEFAULT_BOTFATHER_LOCALPART
+        } else {
+            raw
+        };
+        let full_user_id = format!("@{localpart}:{}", current_user_id.server_name());
+        UserId::parse(&full_user_id)
+            .map(|user_id| user_id.to_owned())
+            .map_err(|_| format!("Invalid bot user ID: {full_user_id}"))
+    }
+
+    /// Returns the BotFather MXID that should be used for a room action.
+    ///
+    /// If the room already has a persisted binding, that exact MXID wins.
+    /// Otherwise, the current global configuration is resolved.
+    pub fn resolved_bot_user_id_for_room(
+        &self,
+        room_id: &RoomId,
+        current_user_id: Option<&UserId>,
+    ) -> Result<OwnedUserId, String> {
+        if let Some(bot_user_id) = self.bound_bot_user_id(room_id) {
+            return Ok(bot_user_id.to_owned());
+        }
+
+        self.resolved_bot_user_id(current_user_id)
+    }
 }
 
 /// A snapshot of the main dock: all state needed to restore the dock tabs/layout.
@@ -1093,6 +1297,18 @@ pub enum AppStateAction {
     /// The given app state was loaded from persistent storage
     /// and is ready to be restored.
     RestoreAppStateFromPersistentState(AppState),
+    /// A room-level BotFather bind or unbind action completed.
+    BotRoomBindingUpdated {
+        room_id: OwnedRoomId,
+        bound: bool,
+        bot_user_id: Option<OwnedUserId>,
+        warning: Option<String>,
+    },
+    /// A room's member list indicates that the configured BotFather is already present.
+    BotRoomBindingDetected {
+        room_id: OwnedRoomId,
+        bot_user_id: OwnedUserId,
+    },
     /// The given room was successfully loaded from the homeserver
     /// and is now known to our client.
     ///
