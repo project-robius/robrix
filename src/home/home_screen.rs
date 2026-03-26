@@ -45,8 +45,8 @@ script_mod! {
                 border_color_2: instance(vec4(-1))
 
                 shadow_color: instance(#0005)
-                shadow_radius: uniform(9.0)
-                shadow_offset: uniform(vec2(1.0, 0.0))
+                shadow_radius: uniform(8.0)
+                shadow_offset: uniform(vec2(0.0, 10.0))
 
                 rect_size2: varying(vec2(0))
                 rect_size3: varying(vec2(0))

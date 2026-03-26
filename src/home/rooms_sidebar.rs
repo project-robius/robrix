@@ -47,8 +47,8 @@ script_mod! {
                     border_radius: 4.0
                     border_size: 0.0
                     shadow_color: #0005
-                    shadow_radius: 15.0
-                    shadow_offset: vec2(1.0, 0.0)
+                    shadow_radius: 8.0
+                    shadow_offset: vec2(0.0, 10.0)
                 }
 
                 View { height: 23 }
