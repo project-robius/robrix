@@ -1452,18 +1452,15 @@ async fn matrix_worker_task(
                 let _typing_notices_task = Handle::current().spawn(async move {
                     while let Ok(user_ids) = typing_notice_receiver.recv().await {
                         // log!("Received typing notifications for room {room_id}: {user_ids:?}");
-                        let mut users = Vec::with_capacity(user_ids.len());
-                        for user_id in user_ids {
-                            users.push(
-                                main_timeline.room()
-                                    .get_member_no_sync(&user_id)
-                                    .await
-                                    .ok()
-                                    .flatten()
+                        let users = join_all(user_ids.into_iter().map(|user_id| {
+                            let tl = main_timeline.clone();
+                            async move {
+                                tl.room().get_member_no_sync(&user_id).await
+                                    .ok().flatten()
                                     .and_then(|m| m.display_name().map(|d| d.to_owned()))
                                     .unwrap_or_else(|| user_id.to_string())
-                            );
-                        }
+                            }
+                        })).await;
                         if let Err(e) = timeline_update_sender.send(TimelineUpdate::TypingUsers { users }) {
                             error!("Error: timeline update sender couldn't send the list of typing users: {e:?}");
                         }
