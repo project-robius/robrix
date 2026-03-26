@@ -464,6 +464,31 @@ impl MatchEvent for App {
                     self.ui.redraw(cx);
                     continue;
                 }
+                Some(AppStateAction::BotRoomBindingDetected {
+                    room_id,
+                    bot_user_id,
+                }) => {
+                    if self
+                        .app_state
+                        .bot_settings
+                        .bound_bot_user_id(room_id.as_ref())
+                        .is_some_and(|existing_bot_user_id| existing_bot_user_id.as_str() == bot_user_id.as_str())
+                    {
+                        continue;
+                    }
+                    self.app_state.bot_settings.set_room_bound(
+                        room_id.clone(),
+                        Some(bot_user_id.clone()),
+                        true,
+                    );
+                    if let Some(user_id) = current_user_id() {
+                        if let Err(e) = persistence::save_app_state(self.app_state.clone(), user_id) {
+                            error!("Failed to persist detected BotFather room binding. Error: {e}");
+                        }
+                    }
+                    self.ui.redraw(cx);
+                    continue;
+                }
                 Some(AppStateAction::NavigateToRoom { room_to_close, destination_room }) => {
                     self.navigate_to_room(cx, room_to_close.as_ref(), destination_room);
                     continue;
@@ -1278,6 +1303,11 @@ pub enum AppStateAction {
         bound: bool,
         bot_user_id: Option<OwnedUserId>,
         warning: Option<String>,
+    },
+    /// A room's member list indicates that the configured BotFather is already present.
+    BotRoomBindingDetected {
+        room_id: OwnedRoomId,
+        bot_user_id: OwnedUserId,
     },
     /// The given room was successfully loaded from the homeserver
     /// and is now known to our client.

@@ -184,8 +184,6 @@ pub struct CreateBotModal {
     #[deref]
     view: View,
     #[rust]
-    room_name_id: Option<RoomNameId>,
-    #[rust]
     is_showing_error: bool,
 }
 
@@ -260,7 +258,6 @@ impl WidgetMatchEvent for CreateBotModal {
 
 impl CreateBotModal {
     pub fn show(&mut self, cx: &mut Cx, room_name_id: RoomNameId) {
-        self.room_name_id = Some(room_name_id.clone());
         self.is_showing_error = false;
 
         self.view

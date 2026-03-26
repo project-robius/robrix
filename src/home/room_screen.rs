@@ -8,7 +8,7 @@ use hashbrown::{HashMap, HashSet};
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    OwnedServerName, RoomDisplayName, media::{MediaFormat, MediaRequestParameters}, room::RoomMember, ruma::{
+    OwnedServerName, media::{MediaFormat, MediaRequestParameters}, room::RoomMember, ruma::{
         EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId, events::{
             receipt::Receipt,
             room::{
@@ -117,6 +117,28 @@ fn resolve_delete_bot_user_id(
     UserId::parse(&full_user_id)
         .map(|user_id| user_id.to_owned())
         .map_err(|_| format!("Invalid Matrix user ID: {full_user_id}"))
+}
+
+fn detected_bot_binding_for_members(
+    app_state: &AppState,
+    room_id: &OwnedRoomId,
+    members: &[RoomMember],
+) -> Option<OwnedUserId> {
+    if app_state.bot_settings.is_room_bound(room_id) {
+        return None;
+    }
+
+    let Ok(bot_user_id) = app_state
+        .bot_settings
+        .resolved_bot_user_id_for_room(room_id, current_user_id().as_deref())
+    else {
+        return None;
+    };
+
+    members
+        .iter()
+        .any(|room_member| room_member.user_id() == bot_user_id)
+        .then_some(bot_user_id)
 }
 
 
@@ -868,6 +890,8 @@ pub struct RoomScreen {
 
     /// The name and ID of the currently-shown room, if any.
     #[rust] room_name_id: Option<RoomNameId>,
+    /// The avatar URL of the currently-shown room, if any.
+    #[rust] room_avatar_url: Option<OwnedMxcUri>,
     /// The timeline currently displayed by this RoomScreen, if any.
     #[rust] timeline_kind: Option<TimelineKind>,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
@@ -1126,7 +1150,7 @@ impl Widget for RoomScreen {
                 self.show_timeline(cx);
             }
 
-            self.process_timeline_updates(cx, &portal_list);
+            self.process_timeline_updates(cx, &portal_list, scope.data.get::<AppState>());
 
             // Ideally we would do this elsewhere on the main thread, because it's not room-specific,
             // but it doesn't hurt to do it here.
@@ -1182,21 +1206,12 @@ impl Widget for RoomScreen {
                     })
                     .unwrap_or((false, false));
 
-                // Fetch room data once to avoid duplicate expensive lookups
-                let (room_display_name, room_avatar_url) = get_client()
-                    .and_then(|client| client.get_room(&room_id))
-                    .map(|room| (
-                        room.cached_display_name().unwrap_or(RoomDisplayName::Empty),
-                        room.avatar_url()
-                    ))
-                    .unwrap_or((RoomDisplayName::Empty, None));
-
                 RoomScreenProps {
                     room_screen_widget_uid,
-                    room_name_id: RoomNameId::new(room_display_name, room_id),
+                    room_name_id: self.room_name_id.clone().unwrap_or_else(|| RoomNameId::empty(room_id)),
                     timeline_kind: tl.kind.clone(),
                     room_members,
-                    room_avatar_url,
+                    room_avatar_url: self.room_avatar_url.clone(),
                     app_service_enabled,
                     app_service_room_bound,
                 }
@@ -1435,36 +1450,33 @@ impl Widget for RoomScreen {
                     None => {}
                 }
 
-                match action
+                if let MessageAction::ToggleAppServiceActions = action
                     .as_widget_action()
                     .widget_uid_eq(room_screen_widget_uid)
                     .cast()
                 {
-                    MessageAction::ToggleAppServiceActions => {
-                        if room_props.timeline_kind.thread_root_event_id().is_some() {
-                            enqueue_popup_notification(
-                                "Bot commands are only supported in the main room timeline.",
-                                PopupKind::Warning,
-                                Some(4.0),
-                            );
-                        } else if !room_props.app_service_enabled {
-                            enqueue_popup_notification(
-                                "Enable App Service in Settings before using /bot.",
-                                PopupKind::Warning,
-                                Some(4.0),
-                            );
-                        } else if !room_props.app_service_room_bound {
-                            enqueue_popup_notification(
-                                "Bind BotFather to this room before using /bot.",
-                                PopupKind::Warning,
-                                Some(4.0),
-                            );
-                        } else {
-                            self.toggle_app_service_actions(cx);
-                        }
-                        return false;
+                    if room_props.timeline_kind.thread_root_event_id().is_some() {
+                        enqueue_popup_notification(
+                            "Bot commands are only supported in the main room timeline.",
+                            PopupKind::Warning,
+                            Some(4.0),
+                        );
+                    } else if !room_props.app_service_enabled {
+                        enqueue_popup_notification(
+                            "Enable App Service in Settings before using /bot.",
+                            PopupKind::Warning,
+                            Some(4.0),
+                        );
+                    } else if !room_props.app_service_room_bound {
+                        enqueue_popup_notification(
+                            "Bind BotFather to this room before using /bot.",
+                            PopupKind::Warning,
+                            Some(4.0),
+                        );
+                    } else {
+                        self.toggle_app_service_actions(cx);
                     }
-                    _ => {}
+                    return false;
                 }
 
                 // Handle the action that requests to show the user profile sliding pane.
@@ -1780,25 +1792,7 @@ impl RoomScreen {
     }
 
     fn is_app_service_room_bound(&self, app_state: &AppState, room_id: &OwnedRoomId) -> bool {
-        if app_state.bot_settings.is_room_bound(room_id) {
-            return true;
-        }
-
-        let Ok(bot_user_id) = app_state
-            .bot_settings
-            .resolved_bot_user_id_for_room(room_id, current_user_id().as_deref())
-        else {
-            return false;
-        };
-
-        self.tl_state
-            .as_ref()
-            .and_then(|tl| tl.room_members.as_ref())
-            .is_some_and(|room_members| {
-                room_members
-                    .iter()
-                    .any(|room_member| room_member.user_id() == bot_user_id)
-            })
+        app_state.bot_settings.is_room_bound(room_id)
     }
 
     fn send_botfather_command(
@@ -1807,9 +1801,9 @@ impl RoomScreen {
         app_state: &AppState,
         command: &str,
         success_message: &str,
-    ) {
+    ) -> bool {
         let Some(timeline_kind) = self.timeline_kind.clone() else {
-            return;
+            return false;
         };
         if timeline_kind.thread_root_event_id().is_some() {
             enqueue_popup_notification(
@@ -1817,11 +1811,11 @@ impl RoomScreen {
                 PopupKind::Warning,
                 Some(4.0),
             );
-            return;
+            return false;
         }
 
         let Some(room_id) = self.room_id().cloned() else {
-            return;
+            return false;
         };
         if !app_state.bot_settings.enabled {
             enqueue_popup_notification(
@@ -1829,7 +1823,7 @@ impl RoomScreen {
                 PopupKind::Warning,
                 Some(4.0),
             );
-            return;
+            return false;
         }
         if !self.is_app_service_room_bound(app_state, &room_id) {
             enqueue_popup_notification(
@@ -1837,7 +1831,7 @@ impl RoomScreen {
                 PopupKind::Warning,
                 Some(4.0),
             );
-            return;
+            return false;
         }
 
         submit_async_request(MatrixRequest::SendMessage {
@@ -1850,6 +1844,7 @@ impl RoomScreen {
 
         enqueue_popup_notification(success_message.to_string(), PopupKind::Info, Some(4.0));
         self.set_app_service_actions_visible(cx, false);
+        true
     }
 
     fn send_create_bot_command(
@@ -1893,20 +1888,14 @@ impl RoomScreen {
         }
 
         let command = format_create_bot_command(username, display_name, system_prompt);
-        submit_async_request(MatrixRequest::SendMessage {
-            timeline_kind,
-            message: RoomMessageEventContent::text_plain(command),
-            replied_to: None,
-            #[cfg(feature = "tsp")]
-            sign_with_tsp: false,
-        });
-
-        enqueue_popup_notification(
-            format!("Sent `/createbot` for `{username}` to BotFather."),
-            PopupKind::Info,
-            Some(4.0),
-        );
-        self.close_create_bot_modal(cx);
+        if self.send_botfather_command(
+            cx,
+            app_state,
+            &command,
+            &format!("Sent `/createbot` for `{username}` to BotFather."),
+        ) {
+            self.close_create_bot_modal(cx);
+        }
     }
 
     fn send_delete_bot_command(
@@ -1925,19 +1914,25 @@ impl RoomScreen {
             };
 
         let command = format_delete_bot_command(matrix_user_id.as_ref());
-        self.send_botfather_command(
+        if self.send_botfather_command(
             cx,
             app_state,
             &command,
             &format!("Sent `/deletebot` for {matrix_user_id} to BotFather."),
-        );
-        self.close_delete_bot_modal(cx);
+        ) {
+            self.close_delete_bot_modal(cx);
+        }
     }
 
     /// Processes all pending background updates to the currently-shown timeline.
     ///
     /// Redraws this RoomScreen view if any updates were applied.
-    fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
+    fn process_timeline_updates(
+        &mut self,
+        cx: &mut Cx,
+        portal_list: &PortalListRef,
+        app_state: Option<&AppState>,
+    ) {
         let top_space = self.view(cx, ids!(top_space));
         let jump_to_bottom_button = self.jump_to_bottom_button(cx, ids!(jump_to_bottom_button));
         let curr_first_id = portal_list.first_id();
@@ -2209,8 +2204,21 @@ impl RoomScreen {
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
                 TimelineUpdate::RoomMembersListFetched { members } => {
-                    // Store room members directly in TimelineUiState
-                    tl.room_members = Some(Arc::new(members));
+                    let members = Arc::new(members);
+                    if let Some(app_state) = app_state {
+                        let room_id = tl.kind.room_id().clone();
+                        if let Some(bot_user_id) = detected_bot_binding_for_members(
+                            app_state,
+                            &room_id,
+                            members.as_ref(),
+                        ) {
+                            Cx::post_action(AppStateAction::BotRoomBindingDetected {
+                                room_id,
+                                bot_user_id,
+                            });
+                        }
+                    }
+                    tl.room_members = Some(members);
                 },
                 TimelineUpdate::MediaFetched(request) => {
                     log!("process_timeline_updates(): media fetched for room {}", tl.kind.room_id());
@@ -3047,7 +3055,7 @@ impl RoomScreen {
 
         // Now that we have restored the TimelineUiState into this RoomScreen widget,
         // we can proceed to processing pending background updates.
-        self.process_timeline_updates(cx, &self.portal_list(cx, ids!(list)));
+        self.process_timeline_updates(cx, &self.portal_list(cx, ids!(list)), None);
 
         self.redraw(cx);
     }
@@ -3078,6 +3086,7 @@ impl RoomScreen {
             timeline_kind,
             subscribe: false,
         });
+        self.room_avatar_url = None;
     }
 
     /// Removes the current room's visual UI state from this widget
@@ -3165,6 +3174,9 @@ impl RoomScreen {
         // but we do need update the `room_name_id` in case it has changed, or it has been cleared.
         if self.timeline_kind.as_ref().is_some_and(|kind| kind == &timeline_kind) {
             self.room_name_id = Some(room_name_id.clone());
+            self.room_avatar_url = get_client()
+                .and_then(|client| client.get_room(room_name_id.room_id()))
+                .and_then(|room| room.avatar_url());
             return;
         }
 
@@ -3174,6 +3186,9 @@ impl RoomScreen {
         self.loading_pane(cx, ids!(loading_pane)).take_state();
 
         self.room_name_id = Some(room_name_id.clone());
+        self.room_avatar_url = get_client()
+            .and_then(|client| client.get_room(room_name_id.room_id()))
+            .and_then(|room| room.avatar_url());
         self.timeline_kind = Some(timeline_kind.clone());
 
         // We initially tell every MentionableTextInput widget that the current user
