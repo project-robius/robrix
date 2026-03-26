@@ -116,6 +116,11 @@ script_mod! {
                 text: "Reply"
             }
 
+            thread_button := mod.widgets.NewMessageContextMenuButton {
+                draw_icon +: { svg: crate_resource("self://resources/icons/double_chat.svg") }
+                text: ""
+            }
+
             divider_after_react_reply := LineH {
                 margin: Inset{top: 3, bottom: 3}
                 width: Fill,
@@ -272,6 +277,8 @@ pub struct MessageDetails {
     pub thread_root_event_id: Option<OwnedEventId>,
     /// The widget ID of the RoomScreen that contains this message.
     pub room_screen_widget_uid: WidgetUid,
+    /// Whether this message is currently being shown in a thread-focused timeline.
+    pub is_thread_timeline: bool,
     /// Whether this message should be highlighted, i.e.,
     /// if it mentions the room/current user or is a reply to the current user.
     pub should_be_highlighted: bool,
@@ -380,6 +387,15 @@ impl WidgetMatchEvent for NewMessageContextMenu {
                 details.room_screen_widget_uid, 
                 MessageAction::Reply(details.clone()),
             );
+            close_menu = true;
+        }
+        else if self.button(cx, ids!(thread_button)).clicked(actions) {
+            if let Some(thread_root_event_id) = details.thread_root_event_id.as_ref().or_else(|| details.event_id()) {
+                cx.widget_action(
+                    details.room_screen_widget_uid,
+                    MessageAction::OpenThread(thread_root_event_id.clone()),
+                );
+            }
             close_menu = true;
         }
         else if self.button(cx, ids!(edit_message_button)).clicked(actions) {
@@ -497,6 +513,7 @@ impl NewMessageContextMenu {
 
         let react_button = self.view.button(cx, ids!(react_button));
         let reply_button = self.view.button(cx, ids!(reply_button));
+        let thread_button = self.view.button(cx, ids!(thread_button));
         let edit_button = self.view.button(cx, ids!(edit_message_button));
         let pin_button = self.view.button(cx, ids!(pin_button));
         let copy_text_button = self.view.button(cx, ids!(copy_text_button));
@@ -512,7 +529,8 @@ impl NewMessageContextMenu {
         // `copy_text_button`, `copy_link_to_message_button`, and `view_source_button`
         let show_react = details.abilities.contains(MessageAbilities::CanReact);
         let show_reply_to = details.abilities.contains(MessageAbilities::CanReplyTo);
-        let show_divider_after_react_reply = show_react || show_reply_to;
+        let show_thread = !details.is_thread_timeline && details.event_id().is_some();
+        let show_divider_after_react_reply = show_react || show_reply_to || show_thread;
         let show_edit = details.abilities.contains(MessageAbilities::CanEdit);
         let show_pin: bool;
         let show_copy_text = true;
@@ -528,8 +546,14 @@ impl NewMessageContextMenu {
         self.view.view(cx, ids!(react_view)).set_visible(cx, show_react);
         react_button.set_visible(cx, show_react);
         reply_button.set_visible(cx, show_reply_to);
+        thread_button.set_visible(cx, show_thread);
         self.view.view(cx, ids!(divider_after_react_reply)).set_visible(cx, show_divider_after_react_reply);
         edit_button.set_visible(cx, show_edit);
+        if details.thread_root_event_id.is_some() {
+            thread_button.set_text(cx, "Open Thread");
+        } else {
+            thread_button.set_text(cx, "Reply in Thread");
+        }
         if details.abilities.contains(MessageAbilities::CanPin) {
             pin_button.set_text(cx, "Pin Message");
             show_pin = true;
@@ -549,6 +573,7 @@ impl NewMessageContextMenu {
         // Reset the hover state of each button.
         react_button.reset_hover(cx);
         reply_button.reset_hover(cx);
+        thread_button.reset_hover(cx);
         edit_button.reset_hover(cx);
         pin_button.reset_hover(cx);
         copy_text_button.reset_hover(cx);
@@ -568,6 +593,7 @@ impl NewMessageContextMenu {
         let num_visible_buttons =
             show_react as u8
             + show_reply_to as u8
+            + show_thread as u8
             + show_edit as u8
             + show_pin as u8
             + show_copy_text as u8

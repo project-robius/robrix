@@ -3477,6 +3477,7 @@ fn populate_message_view(
         item_id,
         related_event_id: msg_like_content.in_reply_to.as_ref().map(|r| r.event_id.clone()),
         room_screen_widget_uid,
+        is_thread_timeline: timeline_kind.thread_root_event_id().is_some(),
         abilities: MessageAbilities::from_user_power_and_event(
             user_power_levels,
             event_tl_item,
