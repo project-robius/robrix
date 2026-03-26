@@ -1038,19 +1038,21 @@ impl Default for BotSettingsState {
 impl BotSettingsState {
     pub const DEFAULT_BOTFATHER_LOCALPART: &'static str = "bot";
 
+    fn room_binding_index(&self, room_id: &RoomId) -> Result<usize, usize> {
+        self.room_bindings
+            .binary_search_by(|binding| binding.room_id.as_str().cmp(room_id.as_str()))
+    }
+
     /// Returns `true` if the given room is currently marked as bound locally.
     pub fn is_room_bound(&self, room_id: &RoomId) -> bool {
-        self.room_bindings
-            .iter()
-            .any(|binding| binding.room_id == room_id)
+        self.room_binding_index(room_id).is_ok()
     }
 
     /// Returns the persisted BotFather MXID for the given room, if any.
     pub fn bound_bot_user_id(&self, room_id: &RoomId) -> Option<&UserId> {
-        self.room_bindings
-            .iter()
-            .find(|binding| binding.room_id == room_id)
-            .map(|binding| binding.bot_user_id.as_ref())
+        self.room_binding_index(room_id)
+            .ok()
+            .map(|index| self.room_bindings[index].bot_user_id.as_ref())
     }
 
     /// Updates the local bound/unbound state for the given room.
@@ -1062,22 +1064,21 @@ impl BotSettingsState {
     ) {
         if bound {
             let Some(bot_user_id) = bot_user_id else { return };
-            if let Some(existing_binding) = self
-                .room_bindings
-                .iter_mut()
-                .find(|binding| binding.room_id == room_id)
-            {
-                existing_binding.bot_user_id = bot_user_id;
-            } else {
-                self.room_bindings.push(RoomBotBindingState {
-                    room_id,
-                    bot_user_id,
-                });
-                self.room_bindings.sort_by(|lhs, rhs| lhs.room_id.as_str().cmp(rhs.room_id.as_str()));
+            match self.room_binding_index(room_id.as_ref()) {
+                Ok(existing_index) => {
+                    self.room_bindings[existing_index].bot_user_id = bot_user_id;
+                }
+                Err(insert_index) => {
+                    self.room_bindings.insert(insert_index, RoomBotBindingState {
+                        room_id,
+                        bot_user_id,
+                    });
+                }
             }
         } else {
-            self.room_bindings
-                .retain(|existing_binding| existing_binding.room_id != room_id);
+            if let Ok(existing_index) = self.room_binding_index(room_id.as_ref()) {
+                self.room_bindings.remove(existing_index);
+            }
         }
     }
 
