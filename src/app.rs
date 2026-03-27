@@ -4,14 +4,15 @@
 
 use std::{cell::RefCell, collections::HashMap};
 use makepad_widgets::*;
+use makepad_widgets::SignalToUI;
 use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, RoomId}};
 use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::clear_avatar_cache, home::{
-        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
+        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, TimelineUpdate, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, file_upload_modal::{FilePreviewerAction, FileUploadModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, current_user_id, get_timeline_update_sender, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -145,6 +146,15 @@ script_mod! {
                         delete_confirmation_modal := Modal {
                             content +: {
                                 delete_confirmation_modal_inner := NegativeConfirmationModal { }
+                            }
+                        }
+
+                        // A modal to preview and confirm file uploads.
+                        file_upload_modal := Modal {
+                            content +: {
+                                width: Fit, height: Fit,
+                                align: Align{x: 0.5, y: 0.5},
+                                file_upload_modal_inner := FileUploadModal {}
                             }
                         }
 
@@ -306,6 +316,36 @@ impl MatchEvent for App {
                     self.ui.redraw(cx);
                 }
                 continue;
+            }
+
+            // Handle file upload modal actions
+            match action.downcast_ref() {
+                Some(FilePreviewerAction::Show(file_data)) => {
+                    self.ui.file_upload_modal(cx, ids!(file_upload_modal_inner))
+                        .set_file_data(cx, file_data.clone());
+                    self.ui.modal(cx, ids!(file_upload_modal)).open(cx);
+                    continue;
+                }
+                Some(FilePreviewerAction::Hide) => {
+                    self.ui.modal(cx, ids!(file_upload_modal)).close(cx);
+                    continue;
+                }
+                Some(FilePreviewerAction::UploadConfirmed(file_data)) => {
+                    // Send the file upload request to the currently selected room
+                    if let Some(selected_room) = &self.app_state.selected_room {
+                        if let Some(timeline_kind) = selected_room.timeline_kind() {
+                            if let Some(sender) = get_timeline_update_sender(&timeline_kind) {
+                                let _ = sender.send(TimelineUpdate::FileUploadConfirmed(file_data.clone()));
+                                SignalToUI::set_ui_signal();
+                            }
+                        }
+                    }
+                    continue;
+                }
+                Some(FilePreviewerAction::Cancelled) => {
+                    continue;
+                }
+                _ => {}
             }
 
             // Handle an action requesting to open the new message context menu.
@@ -630,6 +670,7 @@ impl AppMain for App {
         crate::home::location_preview::script_mod(vm);
         crate::home::tombstone_footer::script_mod(vm);
         crate::home::editing_pane::script_mod(vm);
+        crate::home::upload_progress::script_mod(vm);
         crate::room::script_mod(vm);
         crate::join_leave_room_modal::script_mod(vm);
         crate::verification_modal::script_mod(vm);
@@ -923,6 +964,26 @@ impl SelectedRoom {
             SelectedRoom::InvitedRoom { room_name_id } => room_name_id.to_string(),
             SelectedRoom::Space { space_name_id } => format!("[Space] {space_name_id}"),
             SelectedRoom::Thread { room_name_id, .. } => format!("[Thread] {room_name_id}"),
+        }
+    }
+
+    /// Returns the `TimelineKind` for this selected room.
+    ///
+    /// Returns `None` for `InvitedRoom` and `Space` variants, as they don't have timelines.
+    pub fn timeline_kind(&self) -> Option<crate::sliding_sync::TimelineKind> {
+        match self {
+            SelectedRoom::JoinedRoom { room_name_id } => {
+                Some(crate::sliding_sync::TimelineKind::MainRoom {
+                    room_id: room_name_id.room_id().clone(),
+                })
+            }
+            SelectedRoom::Thread { room_name_id, thread_root_event_id } => {
+                Some(crate::sliding_sync::TimelineKind::Thread {
+                    room_id: room_name_id.room_id().clone(),
+                    thread_root_event_id: thread_root_event_id.clone(),
+                })
+            }
+            SelectedRoom::InvitedRoom { .. } | SelectedRoom::Space { .. } => None,
         }
     }
 }
