@@ -636,7 +636,7 @@ impl RoomInputBar {
             let mime_clone = mime.clone();
             cx.spawn_thread(move || {
                 // Generate thumbnail for images
-                let (thumbnail, dimensions) = if crate::image_utils::is_displayable_image(&mime_clone.as_ref()) {
+                let (thumbnail, dimensions) = if crate::image_utils::is_displayable_image(mime_clone.as_ref()) {
                     match std::fs::read(&path_clone) {
                         Ok(data) => {
                             match crate::image_utils::generate_thumbnail(&data) {
