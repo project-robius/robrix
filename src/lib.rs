@@ -78,6 +78,8 @@ pub mod media_cache;
 pub mod verification;
 
 pub mod utils;
+/// Multi-account management for supporting multiple Matrix accounts simultaneously.
+pub mod account_manager;
 pub mod temp_storage;
 pub mod location;
 
