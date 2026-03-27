@@ -70,12 +70,29 @@ fn item_event_id(item: &Arc<TimelineItem>) -> Option<&EventId> {
 
 /// Check if an event carries the MSC4357 `org.matrix.msc4357.live` field,
 /// indicating that the message content is still being streamed.
+///
+/// For edit events (`m.replace`), the live field lives inside `m.new_content`
+/// rather than at the top level of `content`, so we check both locations.
+fn content_has_msc4357_live_marker(content: &serde_json::Value) -> bool {
+    let effective = content.get("m.new_content").unwrap_or(content);
+    match effective.get("org.matrix.msc4357.live") {
+        Some(serde_json::Value::Bool(value)) => *value,
+        Some(_) => true,
+        None => false,
+    }
+}
+
 fn is_msc4357_live(event_tl_item: &EventTimelineItem) -> bool {
-    event_tl_item.latest_json()
+    let message_is_edited = event_tl_item
+        .content()
+        .as_message()
+        .is_some_and(|message| message.is_edited());
+    event_tl_item.latest_edit_json()
+        .or_else(|| (!message_is_edited).then(|| event_tl_item.original_json()).flatten())
         .and_then(|raw| raw.get_field::<serde_json::Value>("content").ok())
         .flatten()
-        .and_then(|content| content.get("org.matrix.msc4357.live").cloned())
-        .is_some()
+        .map(|content| content_has_msc4357_live_marker(&content))
+        .unwrap_or(false)
 }
 
 fn streaming_scan_range(
@@ -112,6 +129,53 @@ where
             state.timeline_index = Some(idx);
         }
     }
+}
+
+fn streaming_candidates_from_items<'a>(
+    items: &'a Vector<Arc<TimelineItem>>,
+) -> impl Iterator<Item = (OwnedEventId, String, bool)> + 'a {
+    items.iter().filter_map(|item| {
+        let TimelineItemKind::Event(event) = item.kind() else {
+            return None;
+        };
+        let event_id = event.event_id()?.to_owned();
+        let text = RoomScreen::extract_message_text(item)?;
+        Some((event_id, text, is_msc4357_live(event)))
+    })
+}
+
+fn rebuild_streaming_messages_for_full_snapshot<I>(
+    items: I,
+    previous_streaming_messages: Option<&HashMap<OwnedEventId, super::streaming_animation::StreamingAnimState>>,
+) -> (HashMap<OwnedEventId, super::streaming_animation::StreamingAnimState>, bool)
+where
+    I: IntoIterator<Item = (OwnedEventId, String, bool)>,
+{
+    use crate::home::streaming_animation::StreamingAnimState;
+
+    let mut rebuilt = HashMap::new();
+    let mut should_schedule_frame = false;
+
+    for (event_id, new_text, live) in items {
+        if !live {
+            continue;
+        }
+
+        // Only restore animations that were already tracked before the
+        // snapshot reset.  Never create brand-new animations here — during
+        // initial/reconnect loads the SDK may not have aggregated edits yet,
+        // so completed messages can still appear as `live`.  Genuinely new
+        // streams will be picked up on the next live sync update.
+        if let Some(previous_state) = previous_streaming_messages
+            .and_then(|states| states.get(&event_id))
+        {
+            let state = StreamingAnimState::restore(previous_state, &new_text, true);
+            should_schedule_frame |= state.needs_frame();
+            rebuilt.insert(event_id, state);
+        }
+    }
+
+    (rebuilt, should_schedule_frame)
 }
 
 fn next_stream_timeout<'a>(
@@ -2133,11 +2197,22 @@ impl RoomScreen {
                     portal_list.set_tail_range(true);
                     jump_to_bottom_button.update_visibility(cx, true);
 
+                    let previous_streaming_messages = std::mem::take(&mut tl.streaming_messages);
+                    let (rebuilt_streaming_messages, should_schedule_frame) =
+                        rebuild_streaming_messages_for_full_snapshot(
+                            streaming_candidates_from_items(&initial_items),
+                            Some(&previous_streaming_messages),
+                        );
+
                     tl.items = initial_items;
+                    tl.streaming_messages = rebuilt_streaming_messages;
                     refresh_stream_indices(
                         tl.items.iter().map(item_event_id),
                         &mut tl.streaming_messages,
                     );
+                    if should_schedule_frame {
+                        self.streaming_next_frame = cx.new_next_frame();
+                    }
                     done_loading = true;
                 }
                 TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
@@ -2257,10 +2332,18 @@ impl RoomScreen {
                     }
 
                     // --- MSC4357 streaming detection ---
-                    let previous_streaming_messages =
-                        clear_cache.then(|| std::mem::take(&mut tl.streaming_messages));
-
-                    if !new_items.is_empty() {
+                    if clear_cache {
+                        let previous_streaming_messages = std::mem::take(&mut tl.streaming_messages);
+                        let (rebuilt_streaming_messages, should_schedule_frame) =
+                            rebuild_streaming_messages_for_full_snapshot(
+                                streaming_candidates_from_items(&new_items),
+                                Some(&previous_streaming_messages),
+                            );
+                        tl.streaming_messages = rebuilt_streaming_messages;
+                        if should_schedule_frame {
+                            self.streaming_next_frame = cx.new_next_frame();
+                        }
+                    } else if !new_items.is_empty() {
                         use crate::home::streaming_animation::StreamingAnimState;
 
                         let mut should_schedule_frame = false;
@@ -2270,6 +2353,10 @@ impl RoomScreen {
                             tl.items.len(),
                             new_items.len(),
                         );
+
+                        let old_event_ids: HashSet<&EventId> = tl.items.iter()
+                            .filter_map(|item| item_event_id(item))
+                            .collect();
 
                         for idx in scan_range {
                             let Some(new_item) = new_items.get(idx) else { continue };
@@ -2285,21 +2372,7 @@ impl RoomScreen {
                                 continue;
                             }
 
-                            if let Some(previous_state) = previous_streaming_messages
-                                .as_ref()
-                                .and_then(|states| states.get(&event_id))
-                            {
-                                let restored =
-                                    StreamingAnimState::restore(previous_state, &new_text, live);
-                                let should_track = live || restored.needs_frame();
-                                should_schedule_frame |= restored.needs_frame();
-                                if should_track {
-                                    tl.streaming_messages.insert(event_id, restored);
-                                }
-                                continue;
-                            }
-
-                            if live {
+                            if live && !old_event_ids.contains(&*event_id) {
                                 let state = StreamingAnimState::new(&new_text, true);
                                 should_schedule_frame |= state.needs_frame();
                                 tl.streaming_messages.insert(event_id, state);
@@ -5952,5 +6025,57 @@ mod tests {
         let timeout = next_stream_timeout([&live, &finished].into_iter()).unwrap();
 
         assert!(timeout <= Duration::from_secs(1));
+    }
+
+    #[test]
+    fn test_full_snapshot_rebuild_drops_finished_cached_streams() {
+        let event_id: OwnedEventId = "$event-live:example.com".try_into().unwrap();
+        let mut previous = HashMap::new();
+        let mut previous_state = make_state("hello live");
+        previous_state.advance_displayed(4);
+        previous.insert(event_id.clone(), previous_state);
+
+        let (rebuilt, should_schedule_frame) = rebuild_streaming_messages_for_full_snapshot(
+            [(event_id, String::from("hello final"), false)],
+            Some(&previous),
+        );
+
+        assert!(rebuilt.is_empty());
+        assert!(!should_schedule_frame);
+    }
+
+    #[test]
+    fn test_full_snapshot_rebuild_restores_live_cached_streams() {
+        let event_id: OwnedEventId = "$event-live:example.com".try_into().unwrap();
+        let mut previous = HashMap::new();
+        let mut previous_state = make_state("hello");
+        previous_state.advance_displayed(3);
+        previous.insert(event_id.clone(), previous_state);
+
+        let (rebuilt, should_schedule_frame) = rebuild_streaming_messages_for_full_snapshot(
+            [(event_id.clone(), String::from("hello world"), true)],
+            Some(&previous),
+        );
+
+        let restored = rebuilt.get(&event_id).unwrap();
+        assert_eq!(restored.displayed_char_count, 3);
+        assert!(restored.is_live);
+        assert!(should_schedule_frame);
+    }
+
+    #[test]
+    fn test_full_snapshot_rebuild_skips_live_without_cached_state() {
+        // Without previous state, full-snapshot rebuild must NOT create new
+        // animations — the SDK may not have aggregated edits yet, so
+        // completed messages can still appear as `live`.
+        let event_id: OwnedEventId = "$event-live:example.com".try_into().unwrap();
+
+        let (rebuilt, should_schedule_frame) = rebuild_streaming_messages_for_full_snapshot(
+            [(event_id.clone(), String::from("hello world"), true)],
+            None,
+        );
+
+        assert!(rebuilt.is_empty());
+        assert!(!should_schedule_frame);
     }
 }
