@@ -195,7 +195,9 @@ impl ScriptHook for App {
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
         // only init logging/tracing once
-        let _ = tracing_subscriber::fmt::try_init();
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing_subscriber::filter::LevelFilter::ERROR)
+            .try_init();
 
         // Override Makepad's new default-JSON logger. We just want regular formatting.
         fn regular_log(file_name: &str, line_start: u32, column_start: u32, _line_end: u32, _column_end: u32, message: String, level: LogLevel) {

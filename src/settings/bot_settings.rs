@@ -16,7 +16,6 @@ script_mod! {
         height: Fit
         margin: Inset{left: 5, top: 2, bottom: 2}
         draw_text +: {
-            wrap: Word
             color: (MESSAGE_TEXT_COLOR)
             text_style: REGULAR_TEXT { font_size: 10.5 }
         }
