@@ -6,12 +6,13 @@ use std::{cell::RefCell, collections::HashMap};
 use makepad_widgets::*;
 use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId}};
 use serde::{Deserialize, Serialize};
+use tokio::runtime::Handle;
 use crate::{
     avatar_cache::clear_avatar_cache, home::{
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, invite_screen::InviteScreenWidgetRefExt, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, RoomScreenWidgetRefExt, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, space_lobby::SpaceLobbyScreenWidgetRefExt
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, current_user_id, get_sync_service, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -779,7 +780,35 @@ impl AppMain for App {
                 }
             }
         }
-        
+
+        if let Event::Pause = event {
+            // App is being paused (e.g., on mobile when another app comes to foreground)
+            // Stop the sync service to save battery and network resources
+            log!("App paused - stopping sync service");
+            if let Some(sync_service) = get_sync_service() {
+                if let Ok(handle) = Handle::try_current() {
+                    handle.spawn(async move {
+                        sync_service.stop().await;
+                        log!("Sync service stopped due to app pause");
+                    });
+                }
+            }
+        }
+
+        if let Event::Resume = event {
+            // App is resuming from a paused state
+            // Restart the sync service to resume real-time updates
+            log!("App resumed - restarting sync service");
+            if let Some(sync_service) = get_sync_service() {
+                if let Ok(handle) = Handle::try_current() {
+                    handle.spawn(async move {
+                        sync_service.start().await;
+                        log!("Sync service restarted due to app resume");
+                    });
+                }
+            }
+        }
+
         // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
