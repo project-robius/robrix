@@ -647,7 +647,7 @@ impl LinkPreviewCache {
 
                 LinkPreviewCacheEntry::Requested
             }
-            Entry::Occupied(occupied) => occupied.get().lock().unwrap().entry.clone(),
+            Entry::Occupied(occupied) => occupied.get().lock().unwrap_or_else(|e| e.into_inner()).entry.clone(),
         }
     }
 

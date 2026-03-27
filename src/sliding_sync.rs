@@ -33,7 +33,7 @@ use hashbrown::{HashMap, HashSet};
 use crate::{
     account_manager::{self, Account},
     app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
-        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{InviteResultAction, TimelineUpdate, TypingUser}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
+        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
@@ -559,15 +559,6 @@ pub enum MatrixRequest {
         /// * If `None`, the avatar will be removed.
         avatar_url: Option<OwnedMxcUri>,
     },
-    /// Request to upload and set a new avatar for the current user's account.
-    UploadAvatar {
-        /// The file name of the avatar image.
-        file_name: String,
-        /// The MIME type of the avatar image (e.g., "image/png", "image/jpeg").
-        mime_type: String,
-        /// The raw bytes of the avatar image.
-        data: Vec<u8>,
-    },
     /// Request to set or remove the display name of the current user's account.
     SetDisplayName {
         /// * If `Some`, the display name will be set to the given value.
@@ -609,16 +600,6 @@ pub enum MatrixRequest {
         replied_to: Option<Reply>,
         #[cfg(feature = "tsp")]
         sign_with_tsp: bool,
-    },
-    /// Request to send a file attachment to the given room.
-    SendAttachment {
-        room_id: OwnedRoomId,
-        file_name: String,
-        mime_type: String,
-        data: Vec<u8>,
-        /// Optional sender for progress updates. If provided, the upload will send
-        /// progress notifications through this channel.
-        timeline_update_sender: Option<crossbeam_channel::Sender<crate::home::room_screen::TimelineUpdate>>,
     },
     /// Sends a notice to the given room that the current user is or is not typing.
     ///
@@ -715,67 +696,16 @@ pub enum MatrixRequest {
         destination: Arc<Mutex<crate::home::link_preview::TimestampedCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
-
-    // ==================== Call-related requests ====================
-
-    /// Request to start a new call in a room.
-    StartCall {
-        room_id: OwnedRoomId,
-        /// Whether this is a video call (vs audio-only).
-        is_video_call: bool,
-    },
-    /// Request to join an existing call in a room.
-    JoinCall {
-        room_id: OwnedRoomId,
-    },
-    /// Request to leave an ongoing call.
-    LeaveCall {
-        room_id: OwnedRoomId,
-    },
-    /// Request to send a MatrixRTC call membership state event.
-    SendCallMembershipEvent {
-        room_id: OwnedRoomId,
-        /// The serialized membership event content.
-        membership_content: String,
-    },
-    /// Toggle audio mute for the current call.
-    ToggleCallAudio {
-        room_id: OwnedRoomId,
-    },
-    /// Toggle video for the current call.
-    ToggleCallVideo {
-        room_id: OwnedRoomId,
-    },
-    /// Fetch the TURN server configuration from the homeserver.
-    GetTurnServers,
-    /// Fetch the RTC foci configuration from the homeserver's well-known endpoint.
-    /// This retrieves the LiveKit service URL from `org.matrix.msc4143.rtc_foci`.
-    FetchRtcWellKnown,
-    /// Fetch a LiveKit SFU JWT token for joining a call.
-    FetchLiveKitSfuToken {
-        room_id: OwnedRoomId,
-        /// The device ID of the local user.
-        device_id: String,
-    },
-    /// Request to search room members in the background.
-    /// Used to avoid blocking the UI thread for large rooms.
-    SearchRoomMembers {
-        /// Unique ID to identify this search and discard stale results.
-        search_id: u64,
-        /// The search query string.
-        query: String,
-        /// The room ID this search is for.
-        room_id: OwnedRoomId,
-        /// The list of members to search through.
-        members: std::sync::Arc<Vec<crate::home::members_panel::DisplayedMember>>,
-    },
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
 pub fn submit_async_request(req: MatrixRequest) {
-    if let Some(sender) = REQUEST_SENDER.lock().unwrap().as_ref() {
-        sender.send(req)
-            .expect("BUG: matrix worker task receiver has died!");
+    if let Some(sender) = REQUEST_SENDER.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        if let Err(_e) = sender.send(req) {
+            // The receiver has been dropped, likely due to account switching or logout.
+            // This is expected during transitions, so we silently ignore the error.
+            log!("Note: matrix worker task receiver unavailable, request dropped (likely during account switch)");
+        }
     }
 }
 
@@ -1056,7 +986,7 @@ async fn matrix_worker_task(
 
             MatrixRequest::CreateThreadTimeline { room_id, thread_root_event_id } => {
                 let main_room_timeline = {
-                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap_or_else(|e| e.into_inner());
                     let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                         error!("BUG: room info not found for create thread timeline request, room {room_id}");
                         continue;
@@ -1084,7 +1014,7 @@ async fn matrix_worker_task(
 
                     match build_result {
                         Ok(thread_timeline) => {
-                            let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                            let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap_or_else(|e| e.into_inner());
                             let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                                 return;
                             };
@@ -1120,7 +1050,7 @@ async fn matrix_worker_task(
                         }
                         Err(error) => {
                             error!("Failed to create thread-focused timeline for room {room_id}, thread {thread_root_event_id}: {error}");
-                            let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                            let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap_or_else(|e| e.into_inner());
                             if let Some(room_info) = all_joined_rooms.get_mut(&room_id) {
                                 room_info
                                     .pending_thread_timelines
@@ -1283,7 +1213,7 @@ async fn matrix_worker_task(
             MatrixRequest::GetSuccessorRoomDetails { tombstoned_room_id } => {
                 let Some(client) = get_client() else { continue };
                 let (sender, successor_room) = {
-                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap_or_else(|e| e.into_inner());
                     let Some(room_info) = all_joined_rooms.get(&tombstoned_room_id) else {
                         error!("BUG: tombstoned room {tombstoned_room_id} info not found for get successor room details request");
                         continue;
@@ -1491,48 +1421,6 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::UploadAvatar { file_name, mime_type, data } => {
-                let Some(client) = get_client() else { continue };
-                let _upload_avatar_task = Handle::current().spawn(async move {
-                    log!("Uploading avatar {} ({}, {} bytes)...", file_name, mime_type, data.len());
-
-                    // Parse the MIME type
-                    let content_type: mime::Mime = mime_type.parse().unwrap_or(mime::IMAGE_PNG);
-
-                    // Upload the media to the server
-                    match client.media().upload(&content_type, data, None).await {
-                        Ok(response) => {
-                            let mxc_uri = response.content_uri;
-                            log!("Successfully uploaded avatar, got MXC URI: {}", mxc_uri);
-
-                            // Now set the avatar URL
-                            match client.account().set_avatar_url(Some(&mxc_uri)).await {
-                                Ok(_) => {
-                                    log!("Successfully set avatar to {}", mxc_uri);
-                                    Cx::post_action(AccountDataAction::AvatarChanged(Some(mxc_uri)));
-                                    enqueue_popup_notification(
-                                        "Avatar updated successfully!",
-                                        PopupKind::Info,
-                                        Some(3.0),
-                                    );
-                                }
-                                Err(e) => {
-                                    let err_msg = format!("Failed to set avatar URL: {e}");
-                                    error!("{}", err_msg);
-                                    Cx::post_action(AccountDataAction::AvatarChangeFailed(err_msg));
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            let err_msg = format!("Failed to upload avatar: {e}");
-                            error!("{}", err_msg);
-                            Cx::post_action(AccountDataAction::AvatarChangeFailed(err_msg));
-                        }
-                    }
-                    SignalToUI::set_ui_signal();
-                });
-            }
-
             MatrixRequest::SetDisplayName { new_display_name } => {
                 let Some(client) = get_client() else { continue };
                 let _set_display_name_task = Handle::current().spawn(async move {
@@ -1654,7 +1542,7 @@ async fn matrix_worker_task(
 
             MatrixRequest::SubscribeToTypingNotices { room_id, subscribe } => {
                 let (main_timeline, timeline_update_sender, mut typing_notice_receiver) = {
-                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap_or_else(|e| e.into_inner());
                     let Some(jrd) = all_joined_rooms.get_mut(&room_id) else {
                         log!("BUG: room info not found for subscribe to typing notices request, room {room_id}");
                         continue;
@@ -1690,13 +1578,7 @@ async fn matrix_worker_task(
                             let display_name = member.as_ref()
                                 .and_then(|m| m.display_name().map(|d| d.to_owned()))
                                 .unwrap_or_else(|| user_id.to_string());
-                            let avatar_url = member.as_ref()
-                                .and_then(|m| m.avatar_url().map(|u| u.to_owned()));
-                            users.push(TypingUser {
-                                user_id: user_id.clone(),
-                                display_name,
-                                avatar_url,
-                            });
+                            users.push(display_name);
                         }
                         if let Err(e) = timeline_update_sender.send(TimelineUpdate::TypingUsers { users }) {
                             error!("Error: timeline update sender couldn't send the list of typing users: {e:?}");
@@ -1968,68 +1850,6 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::SendAttachment { room_id, file_name, mime_type, data, timeline_update_sender } => {
-                let Some(client) = get_client() else { continue };
-                let Some(room) = client.get_room(&room_id) else {
-                    error!("BUG: room {room_id} not found for send attachment request");
-                    enqueue_popup_notification(
-                        "Failed to send attachment: room not found.",
-                        PopupKind::Error,
-                        None,
-                    );
-                    continue;
-                };
-
-                let _send_attachment_task = Handle::current().spawn(async move {
-                    use crate::home::room_screen::TimelineUpdate;
-
-                    let data_len = data.len() as u64;
-                    log!("Sending attachment {} ({}, {} bytes) to room {}", file_name, mime_type, data_len, room_id);
-
-                    // Send initial progress update (0%)
-                    if let Some(ref sender) = timeline_update_sender {
-                        let _ = sender.send(TimelineUpdate::FileUploadProgress { current: 0, total: data_len });
-                        SignalToUI::set_ui_signal();
-                    }
-
-                    // Parse the MIME type
-                    let content_type: mime::Mime = mime_type.parse().unwrap_or(mime::APPLICATION_OCTET_STREAM);
-
-                    // Create attachment config
-                    let config = matrix_sdk::attachment::AttachmentConfig::new();
-
-                    // Send the attachment
-                    match room.send_attachment(&file_name, &content_type, data, config).await {
-                        Ok(_response) => {
-                            log!("Successfully sent attachment {} to room {}", file_name, room_id);
-                            // Send completion progress update (100%)
-                            if let Some(ref sender) = timeline_update_sender {
-                                let _ = sender.send(TimelineUpdate::FileUploadProgress { current: data_len, total: data_len });
-                                SignalToUI::set_ui_signal();
-                            }
-                            enqueue_popup_notification(
-                                format!("Sent: {}", file_name),
-                                PopupKind::Info,
-                                Some(3.0),
-                            );
-                        }
-                        Err(e) => {
-                            error!("Failed to send attachment {} to room {}: {:?}", file_name, room_id, e);
-                            if let Some(ref sender) = timeline_update_sender {
-                                let _ = sender.send(TimelineUpdate::FileUploadError(format!("{}", e)));
-                                SignalToUI::set_ui_signal();
-                            }
-                            enqueue_popup_notification(
-                                format!("Failed to send attachment: {}", e),
-                                PopupKind::Error,
-                                None,
-                            );
-                        }
-                    }
-                    SignalToUI::set_ui_signal();
-                });
-            }
-
             MatrixRequest::ReadReceipt { timeline_kind, event_id, receipt_type } => {
                 let Some(timeline) = get_timeline(&timeline_kind) else {
                     log!("BUG: {timeline_kind} not found when sending read receipt, {event_id}");
@@ -2270,474 +2090,12 @@ async fn matrix_worker_task(
                     SignalToUI::set_ui_signal();
                 });
             }
-
-            MatrixRequest::SearchRoomMembers { search_id, query, room_id, members } => {
-                // Perform the search in a background task to avoid blocking the worker.
-                Handle::current().spawn(async move {
-                    let query_lower = query.to_lowercase();
-                    let matched_indices: Vec<usize> = members
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, m)| {
-                            m.displayable_name().to_lowercase().contains(&query_lower)
-                                || m.user_id.as_str().to_lowercase().contains(&query_lower)
-                        })
-                        .map(|(i, _)| i)
-                        .collect();
-
-                    crate::home::members_panel::enqueue_member_search_result(
-                        crate::home::members_panel::MemberSearchResult {
-                            search_id,
-                            room_id,
-                            query,
-                            matched_indices,
-                        }
-                    );
-                });
-            }
-
-            // ==================== Call-related request handlers ====================
-            MatrixRequest::StartCall { room_id, is_video_call } => {
-                log!("StartCall request received for room {} (video: {})", room_id, is_video_call);
-                let Some(client) = get_client() else { continue };
-                let manager = crate::call::webrtc_manager::webrtc_manager();
-
-                let _task = Handle::current().spawn(async move {
-                    let Some(user_id) = client.user_id().map(|u| u.to_owned()) else {
-                        error!("StartCall: user_id not available");
-                        return;
-                    };
-                    let Some(device_id) = client.device_id().map(|d| d.to_owned()) else {
-                        error!("StartCall: device_id not available");
-                        return;
-                    };
-                    let config = crate::call::webrtc_session::WebRTCSessionConfig::default();
-
-                    match manager.start_call(room_id.clone(), user_id.clone(), device_id.clone(), is_video_call, config).await {
-                        Ok(membership) => {
-                            // Serialize membership directly (not wrapped in MatrixRTCMemberEvent)
-                            match serde_json::to_value(&membership) {
-                                Ok(content) => {
-                                    if let Some(room) = client.get_room(&room_id) {
-                                        // Use correct state key format: _@user:server_deviceId_m.call
-                                        let state_key = crate::call::matrixrtc::MatrixRTCMembership::state_key(
-                                            user_id.as_str(),
-                                            device_id.as_str(),
-                                        );
-                                        match room.send_state_event_raw(
-                                            crate::call::matrixrtc::MATRIXRTC_MEMBER_EVENT_TYPE,
-                                            &state_key,
-                                            content,
-                                        ).await {
-                                            Ok(_) => log!("Successfully sent call membership event for room {}", room_id),
-                                            Err(e) => error!("Failed to send call membership event: {}", e),
-                                        }
-                                    } else {
-                                        error!("StartCall: room {} not found", room_id);
-                                    }
-                                }
-                                Err(e) => error!("Failed to serialize membership event: {}", e),
-                            }
-                        }
-                        Err(e) => error!("Failed to start call: {}", e),
-                    }
-                });
-            }
-            MatrixRequest::JoinCall { room_id } => {
-                log!("JoinCall request received for room {}", room_id);
-                let Some(client) = get_client() else { continue };
-
-                // Check if LiveKit service URL is available
-                let Some(livekit_service_url) = get_livekit_service_url() else {
-                    error!("JoinCall: No LiveKit service URL available. Call joining requires LiveKit.");
-                    Cx::post_action(crate::call::call_state::CallAction::MediaError {
-                        error: "LiveKit service not configured for this homeserver".to_string(),
-                    });
-                    continue;
-                };
-
-                let room_id_clone = room_id.clone();
-                let livekit_url_clone = livekit_service_url.clone();
-                let _task = Handle::current().spawn(async move {
-                    let Some(user_id) = client.user_id().map(|u| u.to_owned()) else {
-                        error!("JoinCall: user_id not available");
-                        return;
-                    };
-                    let Some(device_id) = client.device_id().map(|d| d.to_owned()) else {
-                        error!("JoinCall: device_id not available");
-                        return;
-                    };
-
-                    // Step 1: Get OpenID token for authentication with LiveKit service
-                    log!("JoinCall: Step 1 - Getting OpenID token");
-                    let openid_token = match crate::call::matrixrtc::get_openid_token(&client).await {
-                        Ok(token) => {
-                            log!("JoinCall: OpenID token obtained successfully");
-                            token
-                        }
-                        Err(e) => {
-                            error!("JoinCall: Failed to get OpenID token: {}", e);
-                            Cx::post_action(crate::call::call_state::CallAction::MediaError {
-                                error: format!("Failed to authenticate: {}", e),
-                            });
-                            SignalToUI::set_ui_signal();
-                            return;
-                        }
-                    };
-
-                    // Step 2: Send call membership state event to the room (BEFORE getting SFU token)
-                    // This matches Element's flow where membership event is sent first
-                    log!("JoinCall: Step 2 - Sending call membership state event");
-                    let start_time_ms = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_millis() as u64)
-                        .unwrap_or(0);
-
-                    // Create membership content matching Element's format
-                    let mut membership = crate::call::matrixrtc::MatrixRTCMembership::new(device_id.clone())
-                        .with_focus_active(crate::call::matrixrtc::FocusActive::livekit())
-                        .with_call_intent("video");
-
-                    // Add LiveKit focus info with room_id as alias (matching Element)
-                    let livekit_alias = room_id_clone.to_string();
-                    membership.add_preferred_focus(
-                        crate::call::matrixrtc::FocusInfo::livekit(livekit_url_clone.clone(), livekit_alias.clone())
-                    );
-                    // Add second focus entry (Element sends two identical entries)
-                    membership.add_preferred_focus(
-                        crate::call::matrixrtc::FocusInfo::livekit(livekit_url_clone.clone(), livekit_alias)
-                    );
-
-                    // Serialize membership directly (not wrapped in MatrixRTCMemberEvent)
-                    if let Ok(content) = serde_json::to_value(&membership) {
-                        if let Some(room) = client.get_room(&room_id_clone) {
-                            // State key format: _@user:server_deviceId_m.call
-                            let state_key = crate::call::matrixrtc::MatrixRTCMembership::state_key(
-                                user_id.as_str(),
-                                device_id.as_str(),
-                            );
-                            log!("JoinCall: Sending membership with state_key: {}", state_key);
-
-                            match room.send_state_event_raw(
-                                crate::call::matrixrtc::MATRIXRTC_MEMBER_EVENT_TYPE,
-                                &state_key,
-                                content,
-                            ).await {
-                                Ok(_) => log!("JoinCall: Membership state event sent successfully"),
-                                Err(e) => {
-                                    error!("JoinCall: Failed to send membership event: {}", e);
-                                    Cx::post_action(crate::call::call_state::CallAction::MediaError {
-                                        error: format!("Failed to join room call: {}", e),
-                                    });
-                                    SignalToUI::set_ui_signal();
-                                    return;
-                                }
-                            }
-                        }
-                    }
-
-                    // Step 3: Fetch SFU token from LiveKit service (AFTER sending membership)
-                    log!("JoinCall: Step 3 - Fetching SFU token from {}", livekit_url_clone);
-                    let sfu_response = match crate::call::matrixrtc::fetch_livekit_sfu_token(
-                        &livekit_url_clone,
-                        room_id_clone.as_str(),
-                        &openid_token,
-                        device_id.as_str(),
-                    ).await {
-                        Ok(response) => {
-                            log!("JoinCall: SFU token received successfully");
-                            response
-                        }
-                        Err(e) => {
-                            error!("JoinCall: Failed to get SFU token: {}", e);
-                            Cx::post_action(crate::call::call_state::CallAction::MediaError {
-                                error: format!("Failed to get call token: {}", e),
-                            });
-                            SignalToUI::set_ui_signal();
-                            return;
-                        }
-                    };
-
-                    let (jwt, livekit_url) = match (sfu_response.jwt, sfu_response.url) {
-                        (Some(jwt), Some(url)) => (jwt, url),
-                        _ => {
-                            error!("JoinCall: SFU response missing jwt or url");
-                            Cx::post_action(crate::call::call_state::CallAction::MediaError {
-                                error: "Invalid response from call service".to_string(),
-                            });
-                            SignalToUI::set_ui_signal();
-                            return;
-                        }
-                    };
-
-                    // Step 4: Post action with LiveKit token to connect
-                    log!("JoinCall: Step 4 - Posting LiveKitTokenReceived action (url: {})", livekit_url);
-                    Cx::post_action(crate::call::call_state::CallAction::LiveKitTokenReceived {
-                        room_id: room_id_clone.clone(),
-                        jwt,
-                        livekit_url,
-                    });
-
-                    // Update call state to connected
-                    let local_participant = crate::call::call_state::CallParticipant::new(
-                        user_id.clone(),
-                        device_id.clone(),
-                    );
-                    Cx::post_action(crate::call::call_state::CallAction::StateChanged {
-                        room_id: room_id_clone.clone(),
-                        new_state: crate::call::call_state::CallState::Connected {
-                            room_id: room_id_clone,
-                            participants: Vec::new(),
-                            local_participant,
-                            is_video_call: true,
-                            start_time_ms,
-                        },
-                    });
-                    SignalToUI::set_ui_signal();
-                });
-            }
-            MatrixRequest::LeaveCall { room_id } => {
-                log!("LeaveCall request received for room {}", room_id);
-                let Some(client) = get_client() else { continue };
-                let manager = crate::call::webrtc_manager::webrtc_manager();
-
-                let _task = Handle::current().spawn(async move {
-                    let _ = manager.leave_call(&room_id).await;
-
-                    // Send empty membership to signal leaving
-                    if let Some(room) = client.get_room(&room_id) {
-                        if let (Some(user_id), Some(device_id)) = (client.user_id(), client.device_id()) {
-                            // Use correct state key format: _@user:server_deviceId_m.call
-                            let state_key = crate::call::matrixrtc::MatrixRTCMembership::state_key(
-                                user_id.as_str(),
-                                device_id.as_str(),
-                            );
-                            // Send empty object to clear membership
-                            let empty = serde_json::json!({});
-                            let _ = room.send_state_event_raw(
-                                crate::call::matrixrtc::MATRIXRTC_MEMBER_EVENT_TYPE,
-                                &state_key,
-                                empty,
-                            ).await;
-                        }
-                    }
-
-                    Cx::post_action(crate::call::call_state::CallAction::StateChanged {
-                        room_id: room_id.clone(),
-                        new_state: crate::call::call_state::CallState::Idle,
-                    });
-                    SignalToUI::set_ui_signal();
-                });
-            }
-            MatrixRequest::SendCallMembershipEvent { room_id, membership_content } => {
-                log!("SendCallMembershipEvent request for room {}", room_id);
-                let Some(client) = get_client() else { continue };
-
-                let _task = Handle::current().spawn(async move {
-                    if let Some(room) = client.get_room(&room_id) {
-                        if let Some(user_id) = client.user_id() {
-                            match serde_json::from_str::<serde_json::Value>(&membership_content) {
-                                Ok(content) => {
-                                    let _ = room.send_state_event_raw(
-                                        crate::call::matrixrtc::MATRIXRTC_MEMBER_EVENT_TYPE,
-                                        user_id.as_str(),
-                                        content,
-                                    ).await;
-                                }
-                                Err(e) => error!("Failed to parse membership content: {}", e),
-                            }
-                        }
-                    }
-                });
-            }
-            MatrixRequest::ToggleCallAudio { room_id } => {
-                log!("ToggleCallAudio request for room {}", room_id);
-                let manager = crate::call::webrtc_manager::webrtc_manager();
-                let _task = Handle::current().spawn(async move {
-                    let _ = manager.toggle_audio(&room_id).await;
-                    SignalToUI::set_ui_signal();
-                });
-            }
-            MatrixRequest::ToggleCallVideo { room_id } => {
-                log!("ToggleCallVideo request for room {}", room_id);
-                let manager = crate::call::webrtc_manager::webrtc_manager();
-                let _task = Handle::current().spawn(async move {
-                    let _ = manager.toggle_video(&room_id).await;
-                    SignalToUI::set_ui_signal();
-                });
-            }
-            MatrixRequest::GetTurnServers => {
-                log!("GetTurnServers request received");
-                // TURN server configuration is typically handled by the WebRTC session setup
-                // For now, we use the default STUN servers in WebRTCSessionConfig
-            }
-            MatrixRequest::FetchRtcWellKnown => {
-                log!("FetchRtcWellKnown request received");
-                let Some(client) = get_client() else {
-                    error!("FetchRtcWellKnown: No client available");
-                    continue;
-                };
-
-                // Use the server name from the user ID to construct the well-known URL.
-                // This is important because client.homeserver() returns the resolved
-                // homeserver API URL (e.g., https://matrix-client.matrix.org), but the
-                // well-known file is served from the original domain (e.g., https://matrix.org).
-                let well_known_url = if let Some(user_id) = client.user_id() {
-                    let server_name = user_id.server_name().as_str();
-                    match Url::parse(&format!("https://{}/.well-known/matrix/client", server_name)) {
-                        Ok(url) => url,
-                        Err(e) => {
-                            error!("FetchRtcWellKnown: Failed to build well-known URL from server name: {}", e);
-                            // Fall back to homeserver URL
-                            match client.homeserver().join("/.well-known/matrix/client") {
-                                Ok(url) => url,
-                                Err(e) => {
-                                    error!("FetchRtcWellKnown: Failed to build well-known URL: {}", e);
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    // No user ID available, fall back to homeserver URL
-                    match client.homeserver().join("/.well-known/matrix/client") {
-                        Ok(url) => url,
-                        Err(e) => {
-                            error!("FetchRtcWellKnown: Failed to build well-known URL: {}", e);
-                            continue;
-                        }
-                    }
-                };
-                log!("FetchRtcWellKnown: Fetching from {}", well_known_url);
-
-                let _task = Handle::current().spawn(async move {
-                    match fetch_rtc_well_known(well_known_url).await {
-                        Ok(Some(livekit_url)) => {
-                            log!("FetchRtcWellKnown: Found LiveKit service URL: {}", livekit_url);
-                            set_livekit_service_url(Some(livekit_url));
-                        }
-                        Ok(None) => {
-                            log!("FetchRtcWellKnown: No LiveKit service URL found in well-known");
-                            set_livekit_service_url(None);
-                        }
-                        Err(e) => {
-                            error!("FetchRtcWellKnown: Failed to fetch well-known: {}", e);
-                            set_livekit_service_url(None);
-                        }
-                    }
-                    SignalToUI::set_ui_signal();
-                });
-            }
-            MatrixRequest::FetchLiveKitSfuToken { room_id, device_id } => {
-                log!("FetchLiveKitSfuToken request for room {}", room_id);
-
-                let Some(client) = get_client() else {
-                    error!("FetchLiveKitSfuToken: No client available");
-                    Cx::post_action(crate::call::call_state::CallAction::MediaError {
-                        error: "Not logged in".to_string(),
-                    });
-                    continue;
-                };
-
-                let Some(livekit_service_url) = get_livekit_service_url() else {
-                    error!("FetchLiveKitSfuToken: No LiveKit service URL available");
-                    Cx::post_action(crate::call::call_state::CallAction::MediaError {
-                        error: "LiveKit service not configured for this homeserver".to_string(),
-                    });
-                    continue;
-                };
-
-                let room_id_clone = room_id.clone();
-                let _task = Handle::current().spawn(async move {
-                    // First, get an OpenID token for authentication
-                    let openid_token = match crate::call::matrixrtc::get_openid_token(&client).await {
-                        Ok(token) => token,
-                        Err(e) => {
-                            error!("FetchLiveKitSfuToken: Failed to get OpenID token: {}", e);
-                            Cx::post_action(crate::call::call_state::CallAction::MediaError {
-                                error: format!("Failed to get authentication token: {}", e),
-                            });
-                            SignalToUI::set_ui_signal();
-                            return;
-                        }
-                    };
-
-                    // Fetch the SFU token
-                    match crate::call::matrixrtc::fetch_livekit_sfu_token(
-                        &livekit_service_url,
-                        room_id_clone.as_str(),
-                        &openid_token,
-                        &device_id,
-                    ).await {
-                        Ok(sfu_response) => {
-                            if let (Some(jwt), Some(url)) = (sfu_response.jwt, sfu_response.url) {
-                                log!("FetchLiveKitSfuToken: Successfully obtained JWT for LiveKit");
-                                Cx::post_action(crate::call::call_state::CallAction::LiveKitTokenReceived {
-                                    room_id: room_id_clone,
-                                    jwt,
-                                    livekit_url: url,
-                                });
-                            } else {
-                                error!("FetchLiveKitSfuToken: SFU response missing jwt or url");
-                                Cx::post_action(crate::call::call_state::CallAction::MediaError {
-                                    error: "Invalid SFU response".to_string(),
-                                });
-                            }
-                        }
-                        Err(e) => {
-                            error!("FetchLiveKitSfuToken: Failed to fetch SFU token: {}", e);
-                            Cx::post_action(crate::call::call_state::CallAction::MediaError {
-                                error: format!("Failed to get call token: {}", e),
-                            });
-                        }
-                    }
-                    SignalToUI::set_ui_signal();
-                });
-            }
         }
     }
 
     error!("matrix_worker_task task ended unexpectedly");
     bail!("matrix_worker_task task ended unexpectedly")
 }
-
-/// Fetches the RTC foci configuration from the homeserver's well-known endpoint.
-/// Returns the LiveKit service URL if found.
-async fn fetch_rtc_well_known(well_known_url: url::Url) -> Result<Option<String>, anyhow::Error> {
-    use serde_json::Value;
-
-    let response = reqwest::get(well_known_url).await?;
-
-    if !response.status().is_success() {
-        anyhow::bail!("Well-known request failed with status: {}", response.status());
-    }
-
-    let json: Value = response.json().await?;
-
-    // Look for org.matrix.msc4143.rtc_foci array
-    let rtc_foci = match json.get("org.matrix.msc4143.rtc_foci") {
-        Some(Value::Array(arr)) => arr,
-        _ => {
-            log!("fetch_rtc_well_known: No org.matrix.msc4143.rtc_foci found");
-            return Ok(None);
-        }
-    };
-
-    // Find the livekit entry
-    for focus in rtc_foci {
-        if let Some(focus_type) = focus.get("type").and_then(|t| t.as_str()) {
-            if focus_type == "livekit" {
-                if let Some(url) = focus.get("livekit_service_url").and_then(|u| u.as_str()) {
-                    return Ok(Some(url.to_string()));
-                }
-            }
-        }
-    }
-
-    log!("fetch_rtc_well_known: No livekit entry found in rtc_foci");
-    Ok(None)
-}
-
 
 /// The single global Tokio runtime that is used by all async tasks.
 static TOKIO_RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
@@ -2762,7 +2120,7 @@ pub fn block_on_async_with_timeout<T>(
     timeout: Option<Duration>,
     async_future: impl Future<Output = T>,
 ) -> Result<T, Elapsed> {
-    let rt = TOKIO_RUNTIME.lock().unwrap().get_or_insert_with(||
+    let rt = TOKIO_RUNTIME.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(||
         tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
     ).handle().clone();
 
@@ -2782,7 +2140,7 @@ pub fn block_on_async_with_timeout<T>(
 /// Returns a handle to the Tokio runtime that is used to run async background tasks.
 pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
-    let rt_handle = TOKIO_RUNTIME.lock().unwrap().get_or_insert_with(|| {
+    let rt_handle = TOKIO_RUNTIME.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(|| {
         tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
     }).handle().clone();
 
@@ -2791,7 +2149,7 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
     rt_handle.spawn(async move {
         match build_client(&Cli::default(), app_data_dir()).await {
             Ok(client_and_session) => {
-                DEFAULT_SSO_CLIENT.lock().unwrap()
+                DEFAULT_SSO_CLIENT.lock().unwrap_or_else(|e| e.into_inner())
                     .get_or_insert(client_and_session);
             }
             Err(e) => error!("Error: could not create DEFAULT_SSO_CLIENT object: {e}"),
@@ -2897,19 +2255,19 @@ fn get_per_timeline_details<'a>(
 
 /// Obtains the lock on `ALL_JOINED_ROOMS` and returns the timeline for the given timeline kind.
 fn get_timeline(kind: &TimelineKind) -> Option<Arc<Timeline>> {
-    get_per_timeline_details(ALL_JOINED_ROOMS.lock().unwrap().deref_mut(), kind)
+    get_per_timeline_details(ALL_JOINED_ROOMS.lock().unwrap_or_else(|e| e.into_inner()).deref_mut(), kind)
         .map(|details| details.timeline.clone())
 }
 
 /// Obtains the lock on `ALL_JOINED_ROOMS` and returns the timeline and timeline update sender for the given timeline kind.
 fn get_timeline_and_sender(kind: &TimelineKind) -> Option<(Arc<Timeline>, crossbeam_channel::Sender<TimelineUpdate>)> {
-    get_per_timeline_details(ALL_JOINED_ROOMS.lock().unwrap().deref_mut(), kind)
+    get_per_timeline_details(ALL_JOINED_ROOMS.lock().unwrap_or_else(|e| e.into_inner()).deref_mut(), kind)
         .map(|details| (details.timeline.clone(), details.timeline_update_sender.clone()))
 }
 
 /// Obtains the lock on `ALL_JOINED_ROOMS` and returns the main timeline for the given room.
 fn get_room_timeline(room_id: &RoomId) -> Option<Arc<Timeline>> {
-    ALL_JOINED_ROOMS.lock().unwrap()
+    ALL_JOINED_ROOMS.lock().unwrap_or_else(|e| e.into_inner())
         .get(room_id)
         .map(|jrd| jrd.main_timeline.timeline.clone())
 }
@@ -2918,26 +2276,12 @@ fn get_room_timeline(room_id: &RoomId) -> Option<Arc<Timeline>> {
 static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
 
 pub fn get_client() -> Option<Client> {
-    CLIENT.lock().unwrap().clone()
-}
-
-/// The LiveKit service URL fetched from the homeserver's well-known configuration.
-/// This is used for MatrixRTC calls via LiveKit SFU.
-static LIVEKIT_SERVICE_URL: Mutex<Option<String>> = Mutex::new(None);
-
-/// Returns the LiveKit service URL if it has been fetched from the homeserver.
-pub fn get_livekit_service_url() -> Option<String> {
-    LIVEKIT_SERVICE_URL.lock().unwrap().clone()
-}
-
-/// Sets the LiveKit service URL.
-fn set_livekit_service_url(url: Option<String>) {
-    *LIVEKIT_SERVICE_URL.lock().unwrap() = url;
+    CLIENT.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 /// Returns the user ID of the currently logged-in user, if any.
 pub fn current_user_id() -> Option<OwnedUserId> {
-    CLIENT.lock().unwrap().as_ref().and_then(|c|
+    CLIENT.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|c|
         c.session_meta().map(|m| m.user_id.clone())
     )
 }
@@ -2974,12 +2318,12 @@ static IGNORED_USERS: Mutex<HashSet<OwnedUserId, ConstHasher>> = Mutex::new(Hash
 
 /// Returns a deep clone of the current list of ignored users.
 pub fn get_ignored_users() -> HashSet<OwnedUserId, ConstHasher> {
-    IGNORED_USERS.lock().unwrap().clone()
+    IGNORED_USERS.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 /// Returns whether the given user ID is currently being ignored.
 pub fn is_user_ignored(user_id: &UserId) -> bool {
-    IGNORED_USERS.lock().unwrap().contains(user_id)
+    IGNORED_USERS.lock().unwrap_or_else(|e| e.into_inner()).contains(user_id)
 }
 
 
@@ -2992,7 +2336,7 @@ pub fn is_user_ignored(user_id: &UserId) -> bool {
 /// This will only succeed once per room (or once per room thread),
 /// as only a single channel receiver can exist.
 pub fn take_timeline_endpoints(kind: &TimelineKind) -> Option<TimelineEndpoints> {
-    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap_or_else(|e| e.into_inner());
     let jrd = all_joined_rooms.get_mut(kind.room_id())?;
     let details = match kind {
         TimelineKind::MainRoom { .. } => &mut jrd.main_timeline,
@@ -3096,7 +2440,7 @@ impl RoomListServiceRoomInfo {
 async fn start_matrix_client_login_and_sync(rt: Handle) {
     // Create a channel for sending requests from the main UI thread to a background worker task.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
-    REQUEST_SENDER.lock().unwrap().replace(sender);
+    REQUEST_SENDER.lock().unwrap_or_else(|e| e.into_inner()).replace(sender);
 
     let (login_sender, mut login_receiver) = tokio::sync::mpsc::channel(1);
 
@@ -3131,7 +2475,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             specified_username.as_ref().or(most_recent_user_id.as_ref())
         );
         match persistence::restore_session(specified_username).await {
-            Ok(session) => Some(session),
+            Ok((client, sync_token, session)) => Some((client, sync_token, session)),
             Err(e) => {
                 let status_err = "Could not restore previous user session.\n\nPlease login again.";
                 log!("{status_err} Error: {e:?}");
@@ -3144,7 +2488,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                         homeserver: cli.homeserver.clone(),
                     });
                     match login(cli, LoginRequest::LoginByCli).await {
-                        Ok((client, sync_token, _is_add_account, _session)) => Some((client, sync_token)),
+                        Ok((client, sync_token, _is_add_account, session)) => Some((client, sync_token, session)),
                         Err(e) => {
                             error!("CLI-based login failed: {e:?}");
                             Cx::post_action(LoginAction::LoginFailure(
@@ -3171,7 +2515,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
     let mut initial_client_opt = new_login_opt;
 
     let (client, sync_service, logged_in_user_id) = 'login_loop: loop {
-        let (client, _sync_token) = match initial_client_opt.take() {
+        let (client, _sync_token, session) = match initial_client_opt.take() {
             Some(login) => login,
             None => {
                 loop {
@@ -3179,7 +2523,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                     match login_receiver.recv().await {
                         Some(login_request) => {
                             match login(&cli, login_request).await {
-                                Ok((client, sync_token, ..)) => break (client, sync_token),
+                                Ok((client, sync_token, _is_add_account, session)) => break (client, sync_token, session),
                                 Err(e) => {
                                     error!("Login failed: {e:?}");
                                     Cx::post_action(LoginAction::LoginFailure(format!("{e}")));
@@ -3214,8 +2558,19 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
         enqueue_rooms_list_update(RoomsListUpdate::Status { status });
 
+        // Add the account to the AccountManager
+        let account = account_manager::Account {
+            client: client.clone(),
+            user_id: logged_in_user_id.clone(),
+            session,
+            display_name: None,
+            avatar_url: None,
+        };
+        let is_new = account_manager::add_account(account);
+        log!("Added account {} to AccountManager. New account: {}", logged_in_user_id, is_new);
+
         // Store this active client in our global Client state so that other tasks can access it.
-        if let Some(_existing) = CLIENT.lock().unwrap().replace(client.clone()) {
+        if let Some(_existing) = CLIENT.lock().unwrap_or_else(|e| e.into_inner()).replace(client.clone()) {
             error!("BUG: unexpectedly replaced an existing client when initializing the matrix client.");
         }
 
@@ -3250,7 +2605,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                 enqueue_rooms_list_update(RoomsListUpdate::Status { status: err_msg });
                 // Clear the stored client so the next login attempt doesn't trigger the
                 // "unexpectedly replaced an existing client" warning.
-                let _ = CLIENT.lock().unwrap().take();
+                let _ = CLIENT.lock().unwrap_or_else(|e| e.into_inner()).take();
                 continue 'login_loop;
             }
         };
@@ -3272,7 +2627,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
 
     let room_list_service = sync_service.room_list_service();
 
-    if let Some(_existing) = SYNC_SERVICE.lock().unwrap().replace(Arc::new(sync_service)) {
+    if let Some(_existing) = SYNC_SERVICE.lock().unwrap_or_else(|e| e.into_inner()).replace(Arc::new(sync_service)) {
         error!("BUG: unexpectedly replaced an existing sync service when initializing the matrix client.");
     }
 
@@ -3368,10 +2723,10 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         log!("Account switch detected, restarting with user: {}", switch_user_id);
 
         // Clear all backend state
-        CLIENT.lock().unwrap().take();
-        SYNC_SERVICE.lock().unwrap().take();
-        ALL_JOINED_ROOMS.lock().unwrap().clear();
-        IGNORED_USERS.lock().unwrap().clear();
+        CLIENT.lock().unwrap_or_else(|e| e.into_inner()).take();
+        SYNC_SERVICE.lock().unwrap_or_else(|e| e.into_inner()).take();
+        ALL_JOINED_ROOMS.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        IGNORED_USERS.lock().unwrap_or_else(|e| e.into_inner()).clear();
 
         // Clear the rooms list UI
         enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
@@ -3385,15 +2740,14 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
 
         // Restore session for the switched account
         match persistence::restore_session(Some(switch_user_id.clone())).await {
-            Ok((client, _sync_token)) => {
+            Ok((client, _sync_token, _session)) => {
                 log!("Successfully restored session for {}", switch_user_id);
 
                 // Store the client
-                CLIENT.lock().unwrap().replace(client.clone());
+                CLIENT.lock().unwrap_or_else(|e| e.into_inner()).replace(client.clone());
 
                 // Set up the new client
                 add_verification_event_handlers_and_sync_client(client.clone());
-                crate::call::matrixrtc::add_matrixrtc_event_handlers(client.clone());
                 handle_ignore_user_list_subscriber(client.clone());
 
                 // Create new sync service
@@ -3417,11 +2771,11 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                 sync_service.start().await;
                 let room_list_service = sync_service.room_list_service();
 
-                SYNC_SERVICE.lock().unwrap().replace(Arc::new(sync_service));
+                SYNC_SERVICE.lock().unwrap_or_else(|e| e.into_inner()).replace(Arc::new(sync_service));
 
                 // Recreate worker task and service loops
                 let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
-                REQUEST_SENDER.lock().unwrap().replace(sender);
+                REQUEST_SENDER.lock().unwrap_or_else(|e| e.into_inner()).replace(sender);
                 let (login_sender, _login_receiver) = tokio::sync::mpsc::channel(1);
 
                 let mut matrix_worker_task_handle = rt.spawn(matrix_worker_task(receiver, login_sender));
@@ -3530,7 +2884,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                         }
                         // ALL_JOINED_ROOMS should already be empty due to successive calls to `remove_room()`,
                         // so this is just a sanity check.
-                        ALL_JOINED_ROOMS.lock().unwrap().clear();
+                        ALL_JOINED_ROOMS.lock().unwrap_or_else(|e| e.into_inner()).clear();
                         enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
                         enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(VecDiff::Clear));
                     } else {
@@ -3570,7 +2924,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                 VectorDiff::Clear => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Clear"); }
                     all_known_rooms.clear();
-                    ALL_JOINED_ROOMS.lock().unwrap().clear();
+                    ALL_JOINED_ROOMS.lock().unwrap_or_else(|e| e.into_inner()).clear();
                     enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(VecDiff::Clear));
                     enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
                 }
@@ -3878,7 +3232,7 @@ async fn update_room(
             let mut __timeline_update_sender_opt = None;
             let mut get_timeline_update_sender = |room_id| {
                 if __timeline_update_sender_opt.is_none() {
-                    if let Some(jrd) = ALL_JOINED_ROOMS.lock().unwrap().get(room_id) {
+                    if let Some(jrd) = ALL_JOINED_ROOMS.lock().unwrap_or_else(|e| e.into_inner()).get(room_id) {
                         __timeline_update_sender_opt = Some(jrd.main_timeline.timeline_update_sender.clone());
                     }
                 }
@@ -3929,7 +3283,7 @@ async fn update_room(
 
 /// Invoked when the room list service has received an update to remove an existing room.
 fn remove_room(room: &RoomListServiceRoomInfo) {
-    ALL_JOINED_ROOMS.lock().unwrap().remove(&room.room_id);
+    ALL_JOINED_ROOMS.lock().unwrap_or_else(|e| e.into_inner()).remove(&room.room_id);
     enqueue_rooms_list_update(
         RoomsListUpdate::RemoveRoom {
             room_id: room.room_id.clone(),
@@ -3991,8 +3345,6 @@ async fn add_new_room(
                 alt_aliases: new_room.room.alt_aliases(),
                 // we don't actually display the latest event for Invited rooms, so don't bother.
                 latest: None,
-                // TODO: fetch the invite timestamp from the invite event
-                invite_timestamp: None,
                 invite_state: Default::default(),
                 is_selected: false,
                 is_direct: new_room.is_direct,
@@ -4039,7 +3391,7 @@ async fn add_new_room(
     // an `AddJoinedRoom` update to the RoomsList widget, because that widget might
     // immediately issue a `MatrixRequest` that relies on that room being in `ALL_JOINED_ROOMS`.
     log!("Adding new joined room {}, name: {:?}", new_room.room_id, new_room.display_name);
-    ALL_JOINED_ROOMS.lock().unwrap().insert(
+    ALL_JOINED_ROOMS.lock().unwrap_or_else(|e| e.into_inner()).insert(
         new_room.room_id.clone(),
         JoinedRoomDetails {
             room_id: new_room.room_id.clone(),
@@ -4116,7 +3468,7 @@ fn handle_ignore_user_list_subscriber(client: Client) {
                 .collect::<HashSet<_, ConstHasher>>();
 
             // TODO: when we support persistent state, don't forget to update `IGNORED_USERS` upon app boot.
-            let mut ignored_users_old = IGNORED_USERS.lock().unwrap();
+            let mut ignored_users_old = IGNORED_USERS.lock().unwrap_or_else(|e| e.into_inner());
             let has_changed = *ignored_users_old != ignored_users_new;
             *ignored_users_old = ignored_users_new;
 
@@ -4942,7 +4294,7 @@ async fn spawn_sso_server(
     // We do not clone it because a Client cannot be re-used again
     // once it has been used for a login attempt, so this forces us to create a new one
     // if that occurs.
-    let client_and_session_opt = DEFAULT_SSO_CLIENT.lock().unwrap().take();
+    let client_and_session_opt = DEFAULT_SSO_CLIENT.lock().unwrap_or_else(|e| e.into_inner()).take();
 
     Handle::current().spawn(async move {
         // Try to use the DEFAULT_SSO_CLIENT that we proactively created
@@ -5201,7 +4553,7 @@ impl UserPowerLevels {
 
 /// Shuts down the current Tokio runtime completely and takes ownership to ensure proper cleanup.
 pub fn shutdown_background_tasks() {
-    if let Some(runtime) = TOKIO_RUNTIME.lock().unwrap().take() {
+    if let Some(runtime) = TOKIO_RUNTIME.lock().unwrap_or_else(|e| e.into_inner()).take() {
         runtime.shutdown_background();
     }
 }
@@ -5209,11 +4561,11 @@ pub fn shutdown_background_tasks() {
 pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
     // Clear resources normally, allowing them to be properly dropped
     // This prevents memory leaks when users logout and login again without closing the app
-    CLIENT.lock().unwrap().take();
-    SYNC_SERVICE.lock().unwrap().take();
-    REQUEST_SENDER.lock().unwrap().take();
-    IGNORED_USERS.lock().unwrap().clear();
-    ALL_JOINED_ROOMS.lock().unwrap().clear();
+    CLIENT.lock().unwrap_or_else(|e| e.into_inner()).take();
+    SYNC_SERVICE.lock().unwrap_or_else(|e| e.into_inner()).take();
+    REQUEST_SENDER.lock().unwrap_or_else(|e| e.into_inner()).take();
+    IGNORED_USERS.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    ALL_JOINED_ROOMS.lock().unwrap_or_else(|e| e.into_inner()).clear();
 
     let on_clear_appstate = Arc::new(Notify::new());
     Cx::post_action(LogoutAction::ClearAppState { on_clear_appstate: on_clear_appstate.clone() });

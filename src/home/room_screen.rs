@@ -1367,16 +1367,12 @@ impl Widget for RoomScreen {
                                     )
                                 {
                                     Ok(bot_user_id) => {
-                                        submit_async_request(MatrixRequest::SetRoomBotBinding {
-                                            room_id: room_props.room_name_id.room_id().clone(),
-                                            bound: false,
-                                            bot_user_id: bot_user_id.clone(),
-                                        });
+                                        // TODO: implement SetRoomBotBinding request
                                         enqueue_popup_notification(
                                             format!(
-                                                "Removing BotFather {bot_user_id} from this room..."
+                                                "BotFather binding feature is not yet implemented for {bot_user_id}"
                                             ),
-                                            PopupKind::Info,
+                                            PopupKind::Warning,
                                             Some(4.0),
                                         );
                                     }

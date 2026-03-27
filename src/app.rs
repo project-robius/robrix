@@ -819,7 +819,7 @@ impl AppMain for App {
             }
             #[cfg(feature = "tsp")] {
                 // Save the TSP wallet state, if it exists, with a 3-second timeout.
-                let tsp_state = std::mem::take(&mut *crate::tsp::tsp_state_ref().lock().unwrap());
+                let tsp_state = std::mem::take(&mut *crate::tsp::tsp_state_ref().lock().unwrap_or_else(|e| e.into_inner()));
                 let res = crate::sliding_sync::block_on_async_with_timeout(
                     Some(std::time::Duration::from_secs(3)),
                     async move {

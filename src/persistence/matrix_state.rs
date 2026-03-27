@@ -140,7 +140,7 @@ async fn save_latest_user_id(user_id: &UserId) -> anyhow::Result<()> {
 /// is retrieved from the filesystem.
 pub async fn restore_session(
     user_id: Option<OwnedUserId>
-) -> anyhow::Result<(Client, Option<String>)> {
+) -> anyhow::Result<(Client, Option<String>, ClientSessionPersisted)> {
     let user_id = if let Some(user_id) = user_id {
         Some(user_id)
     } else {
@@ -179,8 +179,8 @@ pub async fn restore_session(
     });
     // Build the client with the previous settings from the session.
     let client = Client::builder()
-        .homeserver_url(client_session.homeserver)
-        .sqlite_store(client_session.db_path, Some(&client_session.passphrase))
+        .homeserver_url(client_session.homeserver.clone())
+        .sqlite_store(client_session.db_path.clone(), Some(&client_session.passphrase))
         .with_threading_support(matrix_sdk::ThreadingSupport::Enabled {
             with_subscriptions: true,
         })
@@ -200,7 +200,7 @@ pub async fn restore_session(
     client.restore_session(user_session).await?;
     save_latest_user_id(&user_id).await?;
 
-    Ok((client, sync_token))
+    Ok((client, sync_token, client_session))
 }
 
 /// Persist a logged-in client session to the filesystem for later use.

@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use makepad_widgets::{text::selection::Cursor, *};
 
 use matrix_sdk::ruma::OwnedUserId;
-use crate::{account_manager, app::ConfirmDeleteAction, avatar_cache::{self}, home::navigation_tab_bar::get_own_profile, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, AccountSwitchAction, MatrixRequest, submit_async_request}, utils};
+use crate::{account_manager, app::ConfirmDeleteAction, avatar_cache::{self}, home::navigation_tab_bar::get_own_profile, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::{user_profile::UserProfile, user_profile_cache}, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, AccountSwitchAction, MatrixRequest, submit_async_request}, utils};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -375,13 +375,34 @@ impl Widget for AccountSettings {
 
 impl MatchEvent for AccountSettings {
     fn handle_signal(&mut self, cx: &mut Cx) {
-        if self.own_profile.is_none() {
-            return;
-        }
+        // Process avatar updates from the cache
         avatar_cache::process_avatar_updates(cx);
 
+        // If we don't have a profile yet, try to get it
+        if self.own_profile.is_none() {
+            user_profile_cache::process_user_profile_updates(cx);
+            if let Some(new_profile) = get_own_profile(cx) {
+                self.own_profile = Some(new_profile.clone());
+                self.view.label(cx, ids!(user_id))
+                    .set_text(cx, new_profile.user_id.as_str());
+                self.view.text_input(cx, ids!(display_name_input))
+                    .set_text(cx, new_profile.username.as_deref().unwrap_or_default());
+                self.populate_avatar_views(cx);
+                self.populate_account_list(cx);
+                self.view.redraw(cx);
+            }
+            return;
+        }
+
+        // Update avatar from cache if we have a profile
         if let Some(profile) = self.own_profile.as_mut() {
-            profile.avatar_state.update_from_cache(cx);
+            if profile.avatar_state.uri().is_some() {
+                let new_data = profile.avatar_state.update_from_cache(cx);
+                if new_data.is_some() {
+                    self.populate_avatar_views(cx);
+                    self.view.redraw(cx);
+                }
+            }
         }
     }
 
@@ -495,70 +516,11 @@ impl MatchEvent for AccountSettings {
         let Some(own_profile) = &self.own_profile else { return };
 
         if upload_avatar_button.clicked(actions) {
-            Self::enable_upload_avatar_button(cx, false, &upload_avatar_button);
-            Self::enable_delete_avatar_button(cx, false, &delete_avatar_button);
-
-            // Use rfd directly on the main thread (modal dialog blocks until selection)
-            let file_dialog = rfd::FileDialog::new()
-                .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp"])
-                .set_title("Select Avatar Image");
-
-            if let Some(path) = file_dialog.pick_file() {
-                // Read the file data
-                match std::fs::read(&path) {
-                    Ok(data) => {
-                        if data.is_empty() {
-                            enqueue_popup_notification(
-                                "Cannot upload empty file.",
-                                PopupKind::Error,
-                                None,
-                            );
-                            Self::enable_upload_avatar_button(cx, true, &upload_avatar_button);
-                            Self::enable_delete_avatar_button(cx, true, &delete_avatar_button);
-                        } else {
-                            let file_name = path.file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or("avatar")
-                                .to_string();
-
-                            // Determine MIME type from extension
-                            let mime_type = mime_guess::from_path(&path)
-                                .first_or(mime_guess::mime::IMAGE_PNG)
-                                .to_string();
-
-                            log!("Avatar file selected: {} ({}, {} bytes)", file_name, mime_type, data.len());
-
-                            // Submit the avatar upload request
-                            submit_async_request(MatrixRequest::UploadAvatar {
-                                file_name,
-                                mime_type,
-                                data,
-                            });
-
-                            enqueue_popup_notification(
-                                "Uploading avatar...",
-                                PopupKind::Info,
-                                Some(3.0),
-                            );
-                            Cx::post_action(AccountSettingsAction::AvatarUploadStarted);
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to read avatar file: {:?}", e);
-                        enqueue_popup_notification(
-                            format!("Failed to read file: {}", e),
-                            PopupKind::Error,
-                            None,
-                        );
-                        Self::enable_upload_avatar_button(cx, true, &upload_avatar_button);
-                        Self::enable_delete_avatar_button(cx, true, &delete_avatar_button);
-                    }
-                }
-            } else {
-                // User cancelled - re-enable buttons
-                Self::enable_upload_avatar_button(cx, true, &upload_avatar_button);
-                Self::enable_delete_avatar_button(cx, true, &delete_avatar_button);
-            }
+            enqueue_popup_notification(
+                "Avatar upload is not yet implemented.",
+                PopupKind::Info,
+                Some(3.0),
+            );
         }
 
         if delete_avatar_button.clicked(actions) {
@@ -668,6 +630,14 @@ impl MatchEvent for AccountSettings {
                     self.view.text_input(cx, ids!(display_name_input))
                         .set_text(cx, new_profile.username.as_deref().unwrap_or_default());
                     self.populate_avatar_views(cx);
+                } else {
+                    // Profile not yet available, at least update the user_id label
+                    self.view.label(cx, ids!(user_id))
+                        .set_text(cx, new_user_id.as_str());
+                    self.view.text_input(cx, ids!(display_name_input))
+                        .set_text(cx, "");
+                    // Clear the old avatar
+                    self.own_profile = None;
                 }
                 // Refresh the account list to show new active account
                 self.populate_account_list(cx);
@@ -676,6 +646,20 @@ impl MatchEvent for AccountSettings {
             // Refresh account list when a new account is added
             if let Some(LoginAction::AddAccountSuccess) = action.downcast_ref() {
                 log!("New account added, refreshing account list");
+                self.populate_account_list(cx);
+                self.view.redraw(cx);
+            }
+            // Refresh profile and account list after login success
+            if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
+                log!("Login success, refreshing profile and account list");
+                if let Some(new_profile) = get_own_profile(cx) {
+                    self.own_profile = Some(new_profile.clone());
+                    self.view.label(cx, ids!(user_id))
+                        .set_text(cx, new_profile.user_id.as_str());
+                    self.view.text_input(cx, ids!(display_name_input))
+                        .set_text(cx, new_profile.username.as_deref().unwrap_or_default());
+                    self.populate_avatar_views(cx);
+                }
                 self.populate_account_list(cx);
                 self.view.redraw(cx);
             }
@@ -753,7 +737,9 @@ impl AccountSettings {
     /// Populate the account list with logged-in accounts from the AccountManager.
     fn populate_account_list(&mut self, cx: &mut Cx) {
         let count = account_manager::account_count();
-        let label_text = if count == 1 {
+        let label_text = if count == 0 {
+            "No accounts logged in".to_string()
+        } else if count == 1 {
             "1 account logged in".to_string()
         } else {
             format!("{} accounts logged in", count)
@@ -762,6 +748,10 @@ impl AccountSettings {
 
         // Get the active account
         let active_user_id = account_manager::get_active_user_id();
+
+        // Show/hide active account view based on whether there's an active account
+        let has_active = active_user_id.is_some();
+        self.view.view(cx, ids!(active_account_view)).set_visible(cx, has_active);
 
         // Show the active account
         if let Some(ref active_id) = active_user_id {

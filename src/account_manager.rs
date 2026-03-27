@@ -185,42 +185,42 @@ fn account_manager() -> &'static Mutex<AccountManager> {
 
 /// Adds an account to the global account manager.
 pub fn add_account(account: Account) -> bool {
-    account_manager().lock().unwrap().add_account(account)
+    account_manager().lock().unwrap_or_else(|e| e.into_inner()).add_account(account)
 }
 
 /// Removes an account from the global account manager.
 pub fn remove_account(user_id: &OwnedUserId) -> Option<Account> {
-    account_manager().lock().unwrap().remove_account(user_id)
+    account_manager().lock().unwrap_or_else(|e| e.into_inner()).remove_account(user_id)
 }
 
 /// Sets the active account in the global account manager.
 pub fn set_active_account(user_id: &OwnedUserId) -> bool {
-    account_manager().lock().unwrap().set_active_account(user_id)
+    account_manager().lock().unwrap_or_else(|e| e.into_inner()).set_active_account(user_id)
 }
 
 /// Gets the client for the currently active account.
 pub fn get_active_client() -> Option<Client> {
-    account_manager().lock().unwrap().active_client()
+    account_manager().lock().unwrap_or_else(|e| e.into_inner()).active_client()
 }
 
 /// Gets the user_id of the currently active account.
 pub fn get_active_user_id() -> Option<OwnedUserId> {
-    account_manager().lock().unwrap().active_user_id().cloned()
+    account_manager().lock().unwrap_or_else(|e| e.into_inner()).active_user_id().cloned()
 }
 
 /// Gets a client by user_id.
 pub fn get_client_for_user(user_id: &OwnedUserId) -> Option<Client> {
-    account_manager().lock().unwrap().get_client(user_id)
+    account_manager().lock().unwrap_or_else(|e| e.into_inner()).get_client(user_id)
 }
 
 /// Returns the number of logged-in accounts.
 pub fn account_count() -> usize {
-    account_manager().lock().unwrap().account_count()
+    account_manager().lock().unwrap_or_else(|e| e.into_inner()).account_count()
 }
 
 /// Returns all user IDs of logged-in accounts.
 pub fn get_all_user_ids() -> Vec<OwnedUserId> {
-    account_manager().lock().unwrap().user_ids()
+    account_manager().lock().unwrap_or_else(|e| e.into_inner()).user_ids()
 }
 
 /// Executes a closure with access to the account manager.
@@ -228,7 +228,7 @@ pub fn with_account_manager<F, R>(f: F) -> R
 where
     F: FnOnce(&AccountManager) -> R,
 {
-    let manager = account_manager().lock().unwrap();
+    let manager = account_manager().lock().unwrap_or_else(|e| e.into_inner());
     f(&manager)
 }
 
@@ -237,14 +237,14 @@ pub fn with_account_manager_mut<F, R>(f: F) -> R
 where
     F: FnOnce(&mut AccountManager) -> R,
 {
-    let mut manager = account_manager().lock().unwrap();
+    let mut manager = account_manager().lock().unwrap_or_else(|e| e.into_inner());
     f(&mut manager)
 }
 
 /// Clears all accounts from the global account manager.
 /// This should only be used during logout of all accounts.
 pub fn clear_all_accounts() {
-    let mut manager = account_manager().lock().unwrap();
+    let mut manager = account_manager().lock().unwrap_or_else(|e| e.into_inner());
     manager.accounts.clear();
     manager.active_account_id = None;
 }

@@ -29,7 +29,7 @@ static LATEST_LOCATION: Mutex<Option<LocationUpdate>> = Mutex::new(None);
 /// Note that this function is guaranteed to return `None` if
 /// [`init_location_subscriber`] has not been called yet.
 pub fn get_latest_location() -> Option<LocationUpdate> {
-    *(LATEST_LOCATION.lock().unwrap())
+    *(LATEST_LOCATION.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
 
@@ -46,7 +46,7 @@ impl robius_location::Handler for LocationHandler {
                     time: location.time().ok(),
                 };
                 Cx::post_action(LocationAction::Update(update));
-                *LATEST_LOCATION.lock().unwrap() = Some(update);
+                *LATEST_LOCATION.lock().unwrap_or_else(|e| e.into_inner()) = Some(update);
             }
             Err(e) => {
                 error!("Error getting coordinates from location update: {e:?}");
@@ -98,7 +98,7 @@ static LOCATION_REQUEST_SENDER: Mutex<Option<Sender<LocationRequest>>> = Mutex::
 
 /// Submits a request to start, stop, or get a single new location update(s).
 pub fn request_location_update(request: LocationRequest) {
-    if let Some(sender) = LOCATION_REQUEST_SENDER.lock().unwrap().as_ref() {
+    if let Some(sender) = LOCATION_REQUEST_SENDER.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
         if let Err(err) = sender.send(request) {
             error!("Error sending location request: {err:?}");
         }
@@ -120,7 +120,7 @@ pub fn request_location_update(request: LocationRequest) {
 /// which isn't used, but acts as a guarantee that this function
 /// must only be called by the main UI thread.
 pub fn init_location_subscriber(_cx: &mut Cx) -> Result<(), robius_location::Error> {
-    let mut lrs = LOCATION_REQUEST_SENDER.lock().unwrap();
+    let mut lrs = LOCATION_REQUEST_SENDER.lock().unwrap_or_else(|e| e.into_inner());
     if lrs.is_some() {
         log!("Location subscriber already initialized.");
         return Ok(());
