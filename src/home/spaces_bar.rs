@@ -825,3 +825,26 @@ impl SpacesBar {
         self.redraw(cx);
     }
 }
+
+impl SpacesBarRef {
+    /// Returns local spaces matching `keywords`, up to `max_results`.
+    pub fn get_matching_space_items(&self, keywords: &str, max_results: usize) -> Vec<(RoomNameId, FetchedRoomAvatar)> {
+        let Some(inner) = self.borrow() else { return Vec::new(); };
+        let keywords = keywords.trim().to_lowercase();
+        if keywords.is_empty() {
+            return Vec::new();
+        }
+        let mut items = Vec::new();
+        for space in inner.all_joined_spaces.values() {
+            let name = space.space_name_id.to_string();
+            let space_id = space.space_name_id.room_id().to_string();
+            if name.to_lowercase().contains(&keywords) || space_id.to_lowercase().contains(&keywords) {
+                items.push((space.space_name_id.clone(), space.space_avatar.clone()));
+                if items.len() >= max_results {
+                    break;
+                }
+            }
+        }
+        items
+    }
+}

@@ -1582,6 +1582,39 @@ impl RoomsListRef {
             .get(space_id)
             .map(|smv| smv.parent_chain.clone())
     }
+
+    /// Returns local room results matching `keywords`, up to `max_results`.
+    pub fn get_matching_room_items(&self, keywords: &str, max_results: usize) -> Vec<(RoomNameId, FetchedRoomAvatar)> {
+        let Some(inner) = self.borrow() else { return Vec::new(); };
+        let keywords = keywords.trim().to_lowercase();
+        if keywords.is_empty() {
+            return Vec::new();
+        }
+        let mut items = Vec::new();
+        let invited_rooms = inner.invited_rooms.borrow();
+        for ir in invited_rooms.values() {
+            let name = ir.room_name_id.to_string();
+            let room_id = ir.room_name_id.room_id().to_string();
+            if name.to_lowercase().contains(&keywords) || room_id.to_lowercase().contains(&keywords) {
+                items.push((ir.room_name_id.clone(), ir.room_avatar.clone()));
+                if items.len() >= max_results {
+                    return items;
+                }
+            }
+        }
+        drop(invited_rooms);
+        for jr in inner.all_joined_rooms.values() {
+            let name = jr.room_name_id.to_string();
+            let room_id = jr.room_name_id.room_id().to_string();
+            if name.to_lowercase().contains(&keywords) || room_id.to_lowercase().contains(&keywords) {
+                items.push((jr.room_name_id.clone(), jr.room_avatar.clone()));
+                if items.len() >= max_results {
+                    return items;
+                }
+            }
+        }
+        items
+    }
 }
 
 pub struct RoomsListScopeProps {

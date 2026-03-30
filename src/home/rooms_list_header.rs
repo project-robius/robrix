@@ -41,6 +41,40 @@ script_mod! {
             }
         },
 
+        open_room_filter_modal_button := Button {
+            width: Fit,
+            height: Fit
+            padding: Inset{top: 6, bottom: 6, left: 6, right: 6}
+            margin: Inset{bottom: 2}
+            spacing: 0,
+            text: ""
+            draw_bg +: {
+                color: #0000
+                color_hover: #0000
+                color_down: #0000
+                border_color: #0000
+                border_color_hover: #0000
+                border_color_down: #0000
+                border_color_focus: #0000
+                border_size: 0.0
+                border_radius: 0.0
+            }
+            draw_text +: {
+                color: #0000
+                color_hover: #0000
+                color_down: #0000
+                color_focus: #0000
+            }
+            draw_icon +: {
+                svg: (ICON_SEARCH)
+                color: (COLOR_TEXT)
+                color_hover: (COLOR_TEXT)
+                color_down: (COLOR_TEXT)
+                color_focus: (COLOR_TEXT)
+            }
+            icon_walk: Walk{width: 16, height: Fit, margin: Inset{bottom: 2}}
+        }
+
         View {
             width: Fit, height: Fit,
             margin: Inset{right: 3}
@@ -93,6 +127,10 @@ pub struct RoomsListHeader {
 impl Widget for RoomsListHeader {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
+            if self.view.button(cx, ids!(open_room_filter_modal_button)).clicked(actions) {
+                cx.action(RoomsListHeaderAction::OpenRoomFilterModal);
+            }
+
             for action in actions {
                 match action.downcast_ref() {
                     Some(RoomsListHeaderAction::SetSyncStatus(is_syncing)) => {
@@ -186,6 +224,8 @@ impl Widget for RoomsListHeader {
 /// Actions that can be handled by the `RoomsListHeader`.
 #[derive(Debug)]
 pub enum RoomsListHeaderAction {
+    /// Open the rooms/spaces filter modal.
+    OpenRoomFilterModal,
     /// An action received by the RoomsListHeader that will show or hide
     /// its sync status indicator (and loading spinner) based on the given boolean.
     SetSyncStatus(bool),
