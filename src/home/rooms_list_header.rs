@@ -26,13 +26,14 @@ script_mod! {
         height: Fit,
         padding: Inset{bottom: 4}
         flow: Right,
+        align: Align{y: 0.5}
         spacing: 3,
 
         header_title := Label {
             width: Fill,
             height: Fit,
             padding: 0
-            margin: Inset{left: 5, top: -1}
+            margin: Inset{left: 5}
             flow: Right, // do not wrap
             text: "All Rooms"
             draw_text +: {
@@ -41,38 +42,45 @@ script_mod! {
             }
         },
 
-        open_room_filter_modal_button := Button {
+        open_room_filter_modal_button := View {
             width: Fit,
             height: Fit
-            padding: Inset{top: 6, bottom: 6, left: 6, right: 6}
-            margin: Inset{bottom: 2}
-            spacing: 0,
-            text: ""
-            draw_bg +: {
-                color: #0000
-                color_hover: #0000
-                color_down: #0000
-                border_color: #0000
-                border_color_hover: #0000
-                border_color_down: #0000
-                border_color_focus: #0000
-                border_size: 0.0
-                border_radius: 0.0
+            margin: Inset{right: 1}
+            flow: Overlay,
+
+            Icon {
+                draw_icon +: {
+                    svg: (ICON_SEARCH)
+                    color: (COLOR_TEXT)
+                }
+                icon_walk: Walk{width: 18, height: Fit, margin: Inset{bottom: 2}}
             }
-            draw_text +: {
-                color: #0000
-                color_hover: #0000
-                color_down: #0000
-                color_focus: #0000
+
+            click_area := Button {
+                width: Fill,
+                height: Fill
+                padding: Inset{top: 6, bottom: 6, left: 6, right: 6}
+                spacing: 0,
+                text: ""
+                draw_bg +: {
+                    color: #0000
+                    color_hover: #0000
+                    color_down: #0000
+                    border_color: #0000
+                    border_color_hover: #0000
+                    border_color_down: #0000
+                    border_color_focus: #0000
+                    border_size: 0.0
+                    border_radius: 0.0
+                }
+                draw_text +: {
+                    color: #0000
+                    color_hover: #0000
+                    color_down: #0000
+                    color_focus: #0000
+                }
+                icon_walk: Walk{width: 0, height: 0}
             }
-            draw_icon +: {
-                svg: (ICON_SEARCH)
-                color: (COLOR_TEXT)
-                color_hover: (COLOR_TEXT)
-                color_down: (COLOR_TEXT)
-                color_focus: (COLOR_TEXT)
-            }
-            icon_walk: Walk{width: 16, height: Fit, margin: Inset{bottom: 2}}
         }
 
         View {
@@ -127,7 +135,7 @@ pub struct RoomsListHeader {
 impl Widget for RoomsListHeader {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
-            if self.view.button(cx, ids!(open_room_filter_modal_button)).clicked(actions) {
+            if self.view.button(cx, ids!(open_room_filter_modal_button.click_area)).clicked(actions) {
                 cx.action(RoomsListHeaderAction::OpenRoomFilterModal);
             }
 

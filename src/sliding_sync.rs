@@ -39,7 +39,7 @@ use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
     app::{AppStateAction, RoomFilterRemoteSearchAction}, app_data_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
-        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
+        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, build_room_search_text, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
@@ -938,8 +938,14 @@ pub enum RemoteDirectorySearchKind {
 #[derive(Clone, Debug)]
 pub enum RemoteDirectorySearchResult {
     User(UserProfile),
-    Room(RoomNameId),
-    Space(RoomNameId),
+    Room {
+        room_name_id: RoomNameId,
+        avatar_uri: Option<OwnedMxcUri>,
+    },
+    Space {
+        space_name_id: RoomNameId,
+        avatar_uri: Option<OwnedMxcUri>,
+    },
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -1525,10 +1531,16 @@ async fn matrix_worker_task(
                                             );
                                             match &kind {
                                                 RemoteDirectorySearchKind::Spaces => {
-                                                    RemoteDirectorySearchResult::Space(room_name_id)
+                                                    RemoteDirectorySearchResult::Space {
+                                                        space_name_id: room_name_id,
+                                                        avatar_uri: room.avatar_url,
+                                                    }
                                                 }
                                                 _ => {
-                                                    RemoteDirectorySearchResult::Room(room_name_id)
+                                                    RemoteDirectorySearchResult::Room {
+                                                        room_name_id,
+                                                        avatar_uri: room.avatar_url,
+                                                    }
                                                 }
                                             }
                                         })
@@ -3552,6 +3564,11 @@ async fn add_new_room(
             };
             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddInvitedRoom(InvitedRoomInfo {
                 room_name_id: room_name_id.clone(),
+                search_text: build_room_search_text(
+                    &room_name_id,
+                    &new_room.room.canonical_alias(),
+                    &new_room.room.alt_aliases(),
+                ),
                 inviter_info,
                 room_avatar,
                 canonical_alias: new_room.room.canonical_alias(),
@@ -3636,6 +3653,11 @@ async fn add_new_room(
         is_marked_unread: new_room.is_marked_unread,
         room_avatar,
         room_name_id: room_name_id.clone(),
+        search_text: build_room_search_text(
+            &room_name_id,
+            &new_room.room.canonical_alias(),
+            &new_room.room.alt_aliases(),
+        ),
         canonical_alias: new_room.room.canonical_alias(),
         alt_aliases: new_room.room.alt_aliases(),
         has_been_paginated: false,

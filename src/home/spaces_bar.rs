@@ -358,6 +358,8 @@ impl SpacesBarEntryRef {
 pub struct JoinedSpaceInfo {
     /// The display name and ID of the space.
     pub space_name_id: RoomNameId,
+    /// Lowercased searchable text cached for fast local search.
+    pub search_text: String,
     /// The canonical alias of the space, if any.
     pub canonical_alias: Option<OwnedRoomAliasId>,
     /// The topic of the space, if any.
@@ -374,6 +376,27 @@ pub struct JoinedSpaceInfo {
     pub guest_can_join: bool,
     /// The number of children rooms this space has.
     pub children_count: u64,
+}
+
+pub fn build_space_search_text(
+    space_name_id: &RoomNameId,
+    canonical_alias: &Option<OwnedRoomAliasId>,
+    topic: &Option<String>,
+) -> String {
+    let mut search_text = format!(
+        "{} {}",
+        space_name_id.to_string().to_lowercase(),
+        space_name_id.room_id().as_str().to_lowercase(),
+    );
+    if let Some(alias) = canonical_alias {
+        search_text.push(' ');
+        search_text.push_str(&alias.as_str().to_lowercase());
+    }
+    if let Some(topic) = topic {
+        search_text.push(' ');
+        search_text.push_str(&topic.to_lowercase());
+    }
+    search_text
 }
 
 
@@ -678,6 +701,7 @@ impl SpacesBar {
                     if let Some(space) = self.all_joined_spaces.get_mut(&space_id) {
                         let was_displayed = (self.display_filter)(space);
                         space.canonical_alias = new_canonical_alias;
+                        space.search_text = build_space_search_text(&space.space_name_id, &space.canonical_alias, &space.topic);
                         let should_display = (self.display_filter)(space);
                         adjust_displayed_spaces(was_displayed, should_display, space_id, &mut self.displayed_spaces);
                     } else {
@@ -692,6 +716,7 @@ impl SpacesBar {
                             RoomDisplayName::Named(new_space_name),
                             space_id.clone(),
                         );
+                        space.search_text = build_space_search_text(&space.space_name_id, &space.canonical_alias, &space.topic);
                         let should_display = (self.display_filter)(space);
                         adjust_displayed_spaces(was_displayed, should_display, space_id, &mut self.displayed_spaces);
                     } else {
@@ -704,6 +729,7 @@ impl SpacesBar {
                         // We don't currently support filtering by topic.
                         // let was_displayed = (self.display_filter)(space);
                         space.topic = topic;
+                        space.search_text = build_space_search_text(&space.space_name_id, &space.canonical_alias, &space.topic);
                         // let should_display = (self.display_filter)(space);
                         // adjust_displayed_spaces(was_displayed, should_display, space_id, &mut self.displayed_spaces);
                     } else {
@@ -836,9 +862,7 @@ impl SpacesBarRef {
         }
         let mut items = Vec::new();
         for space in inner.all_joined_spaces.values() {
-            let name = space.space_name_id.to_string();
-            let space_id = space.space_name_id.room_id().to_string();
-            if name.to_lowercase().contains(&keywords) || space_id.to_lowercase().contains(&keywords) {
+            if space.search_text.contains(&keywords) {
                 items.push((space.space_name_id.clone(), space.space_avatar.clone()));
                 if items.len() >= max_results {
                     break;
