@@ -34,7 +34,7 @@ use crate::{
     avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, profile::{
         user_profile::UserProfile,
         user_profile_cache::{self, UserProfileUpdate},
-    }, shared::{
+    }, home::spaces_bar::SpacesBarWidgetExt, shared::{
         avatar::{AvatarState, AvatarWidgetExt}, styles::*, verification_badge::VerificationBadgeWidgetExt
     }, sliding_sync::{current_user_id, AccountDataAction}, utils::{self, RoomNameId}
 };
@@ -425,6 +425,7 @@ impl ScriptHook for NavigationTabBar {
             if let Some(mut rb) = self.view.radio_button(cx, ids!(home_button)).borrow_mut() {
                 rb.animator_play(cx, ids!(active.on));
             }
+            cx.set_global(self.view.spaces_bar(cx, ids!(root_spaces_bar)));
         });
     }
 }
