@@ -2,6 +2,8 @@
 //!
 //! See `handle_startup()` for the first code that runs on app startup.
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use std::{fs::{File, OpenOptions}, io::Write, sync::Mutex};
 use std::{cell::RefCell, collections::HashMap};
 use makepad_widgets::*;
 use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId}};
@@ -192,11 +194,221 @@ impl ScriptHook for App {
     }
 }
 
+// =============================================================================
+// File Logging for Packaged Builds (non-mobile platforms)
+// =============================================================================
+
+/// Global log file handle for packaged builds.
+/// Only used on desktop platforms when running as a packaged application.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+static LOG_FILE: std::sync::OnceLock<Option<Mutex<File>>> = std::sync::OnceLock::new();
+
+/// Detects if the application is running as a packaged build (not via `cargo run`).
+///
+/// Detection methods per platform:
+/// - macOS: Check if executable is inside a `.app/Contents/MacOS/` bundle
+/// - Windows: Check if executable is in `Program Files` or similar installation directory
+/// - Linux: Check if executable is in `/usr`, `/opt`, or is an AppImage
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn is_packaged_build() -> bool {
+    let Ok(exe_path) = std::env::current_exe() else {
+        return false;
+    };
+    let exe_path_str = exe_path.to_string_lossy();
+
+    #[cfg(target_os = "macos")]
+    {
+        // Check if running from a .app bundle
+        exe_path_str.contains(".app/Contents/MacOS/")
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Check if running from Program Files or a typical installation directory
+        let exe_lower = exe_path_str.to_lowercase();
+        exe_lower.contains("program files")
+            || exe_lower.contains("programfiles")
+            || exe_lower.contains("appdata\\local\\programs")
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // Check if running from system directories or AppImage
+        exe_path_str.starts_with("/usr/")
+            || exe_path_str.starts_with("/opt/")
+            || exe_path_str.contains(".AppImage")
+            || std::env::var("APPIMAGE").is_ok()
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        false
+    }
+}
+
+/// Initializes file logging for packaged builds.
+/// Creates a log file in the app data directory with timestamp.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn init_file_logging() -> Option<()> {
+    if !is_packaged_build() {
+        LOG_FILE.get_or_init(|| None);
+        return None;
+    }
+
+    // Get platform-specific logs directory
+    let logs_dir = logs_dir();
+    std::fs::create_dir_all(&logs_dir).ok()?;
+
+    // Create log file with timestamp
+    let now = chrono::Local::now();
+    let log_filename = format!("robrix_{}.log", now.format("%Y-%m-%d_%H-%M-%S"));
+    let log_path = logs_dir.join(&log_filename);
+
+    // Also create/update a symlink to the latest log file for convenience
+    let latest_log_path = logs_dir.join("robrix_latest.log");
+
+    // Remove old symlink if it exists (ignore errors)
+    #[cfg(unix)]
+    {
+        let _ = std::fs::remove_file(&latest_log_path);
+        let _ = std::os::unix::fs::symlink(&log_filename, &latest_log_path);
+    }
+
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .ok()?;
+
+    LOG_FILE.get_or_init(|| Some(Mutex::new(file)));
+
+    // Print to stderr so user knows where logs are going
+    eprintln!("[Robrix] Logging to file: {}", log_path.display());
+
+    Some(())
+}
+
+/// Writes a log message to the log file (if file logging is enabled).
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn write_to_log_file(message: &str) {
+    if let Some(Some(file_mutex)) = LOG_FILE.get() {
+        if let Ok(mut file) = file_mutex.lock() {
+            let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+            let _ = writeln!(file, "[{}] {}", timestamp, message);
+            let _ = file.flush();
+        }
+    }
+}
+
+/// Returns the path to the logs directory using platform-standard locations.
+///
+/// Platform-specific paths:
+/// - macOS: `~/Library/Logs/Robrix/`
+/// - Windows: `%APPDATA%/Robrix/logs/`
+/// - Linux: `~/.local/share/robrix/logs/` (or `$XDG_DATA_HOME/robrix/logs/`)
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub fn logs_dir() -> std::path::PathBuf {
+    use std::path::PathBuf;
+
+    #[cfg(target_os = "macos")]
+    {
+        // macOS standard log location: ~/Library/Logs/Robrix/
+        if let Ok(home) = std::env::var("HOME") {
+            return PathBuf::from(home)
+                .join("Library")
+                .join("Logs")
+                .join("Robrix");
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Windows: %APPDATA%/Robrix/logs/
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            return PathBuf::from(appdata).join("Robrix").join("logs");
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // Linux: Use XDG_DATA_HOME if set, otherwise ~/.local/share/
+        if let Ok(xdg_data) = std::env::var("XDG_DATA_HOME") {
+            return PathBuf::from(xdg_data).join("robrix").join("logs");
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            return PathBuf::from(home)
+                .join(".local")
+                .join("share")
+                .join("robrix")
+                .join("logs");
+        }
+    }
+
+    // Fallback to app data directory
+    crate::app_data_dir().join("logs")
+}
+
+/// Cleans up old log files, keeping only the most recent N log files.
+/// This should be called periodically to prevent disk space issues.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub fn cleanup_old_logs(max_logs_to_keep: usize) {
+    let logs_dir = logs_dir();
+    if !logs_dir.exists() {
+        return;
+    }
+
+    // Collect all log files (excluding the symlink)
+    let mut log_files: Vec<_> = match std::fs::read_dir(&logs_dir) {
+        Ok(entries) => entries
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let name = e.file_name();
+                let name_str = name.to_string_lossy();
+                name_str.starts_with("robrix_")
+                    && name_str.ends_with(".log")
+                    && name_str != "robrix_latest.log"
+            })
+            .collect(),
+        Err(_) => return,
+    };
+
+    // Sort by modification time (oldest first)
+    log_files.sort_by(|a, b| {
+        let a_time = a.metadata().and_then(|m| m.modified()).ok();
+        let b_time = b.metadata().and_then(|m| m.modified()).ok();
+        a_time.cmp(&b_time)
+    });
+
+    // Remove old log files
+    if log_files.len() > max_logs_to_keep {
+        let files_to_remove = log_files.len() - max_logs_to_keep;
+        for entry in log_files.into_iter().take(files_to_remove) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
+/// Maximum number of log files to keep
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+const MAX_LOG_FILES_TO_KEEP: usize = 10;
+
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
         // only init logging/tracing once
         let _ = tracing_subscriber::fmt::try_init();
+        // Initialize the project directory here from the main UI thread
+        // such that background threads/tasks will be able to access it.
+        // This must be done before initializing file logging.
+        let _app_data_dir = crate::app_data_dir();
 
+        // Initialize file logging for packaged builds (non-mobile platforms).
+        // This must be done before setting up the log handler.
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            init_file_logging();
+            // Clean up old log files to prevent disk space issues
+            cleanup_old_logs(MAX_LOG_FILES_TO_KEEP);
+        }
         // Override Makepad's new default-JSON logger. We just want regular formatting.
         fn regular_log(file_name: &str, line_start: u32, column_start: u32, _line_end: u32, _column_end: u32, message: String, level: LogLevel) {
             let l = match level {
