@@ -47,11 +47,52 @@ script_mod! {
                     border_radius: 4.0
                     border_size: 0.0
                     shadow_color: #0005
-                    shadow_radius: 15.0
-                    shadow_offset: vec2(1.0, 0.0)
-                }
+                    shadow_radius: 12.0
+                    shadow_offset: vec2(0.0, 0.0)
 
-                View { height: 23 }
+                    pixel: fn() {
+                        let sdf = Sdf2d.viewport(self.pos * self.rect_size3)
+
+                        let mut fill_color = self.color
+                        if self.color_2.x > -0.5 {
+                            let dither = Math.random_2d(self.pos.xy) * 0.04 * self.color_dither
+                            let dir = if self.gradient_fill_horizontal > 0.5 self.pos.x else self.pos.y
+                            fill_color = mix(self.color self.color_2 dir + dither)
+                        }
+
+                        let mut stroke_color = self.border_color
+                        if self.border_color_2.x > -0.5 {
+                            let dither = Math.random_2d(self.pos.xy) * 0.04 * self.color_dither
+                            let dir = if self.gradient_border_horizontal > 0.5 self.pos.x else self.pos.y
+                            stroke_color = mix(self.border_color self.border_color_2 dir + dither)
+                        }
+
+                        sdf.box(
+                            self.sdf_rect_pos.x
+                            self.sdf_rect_pos.y
+                            self.sdf_rect_size.x
+                            self.sdf_rect_size.y
+                            max(1.0 self.border_radius)
+                        )
+                        if sdf.shape > -1.0 {
+                            let m = self.shadow_radius
+                            let o = self.shadow_offset + self.rect_shift
+                            let v = GaussShadow.rounded_box_shadow(vec2(m) + o self.rect_size2+o self.pos * (self.rect_size3+vec2(m)) self.shadow_radius*0.5 self.border_radius*2.0)
+                            // Only draw shadow on the bottom half of the view
+                            let pixel_y = self.pos.y * self.rect_size3.y
+                            let mid_y = self.sdf_rect_pos.y + self.sdf_rect_size.y * 0.5
+                            let bottom_mask = smoothstep(mid_y - m * 0.3 mid_y + m * 0.3 pixel_y)
+                            sdf.clear(self.shadow_color * v * bottom_mask)
+                        }
+
+                        sdf.fill_keep(fill_color)
+
+                        if self.border_size > 0.0 {
+                            sdf.stroke(stroke_color self.border_size)
+                        }
+                        return sdf.result
+                    }
+                }
 
                 CachedWidget {
                     rooms_list_header := RoomsListHeader {}
