@@ -167,6 +167,30 @@ impl MediaCache {
         post_request_retval
     }
 
+    /// Removes all `Requested` and `Failed` entries from the media cache,
+    /// allowing them to be re-fetched.
+    ///
+    /// This should be called when the app transitions from offline back to online,
+    /// because any in-flight requests that were submitted while offline have likely
+    /// failed, leaving stale entries that permanently block re-fetching.
+    pub fn clear_all_pending_and_failed_requests(&mut self) {
+        self.cache.retain(|_, value| {
+            // Remove `Requested`/`Failed` sub-entries, keeping `Loaded` ones.
+            if let Some(ref entry_ref) = value.full_file {
+                if !matches!(*entry_ref.lock().unwrap(), MediaCacheEntry::Loaded(_)) {
+                    value.full_file = None;
+                }
+            }
+            if let Some((ref entry_ref, _)) = value.thumbnail {
+                if !matches!(*entry_ref.lock().unwrap(), MediaCacheEntry::Loaded(_)) {
+                    value.thumbnail = None;
+                }
+            }
+            // Keep the top-level entry only if at least one sub-entry remains.
+            value.full_file.is_some() || value.thumbnail.is_some()
+        });
+    }
+
     /// Removes a specific media format from the cache for the given MXC URI.
     /// If `format` is None, removes the entire cache entry for the URI.
     /// Returns the removed cache entry if found, None otherwise.
