@@ -54,6 +54,11 @@ const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 100;
 
 /// The max size (width or height) of a blurhash image to decode.
 const BLURHASH_IMAGE_MAX_SIZE: u32 = 500;
+
+/// Use a larger batch when we are trying to fill the initial viewport,
+/// otherwise many short messages can trigger a long chain of tiny paginations.
+const VIEWPORT_FILL_PAGINATION_SIZE: u16 = 150;
+
 static UNNAMED_ROOM: &str = "Unnamed Room";
 
 /// #FFF4E5
@@ -796,7 +801,6 @@ script_mod! {
                 draw_text +: {
                     text_style: REGULAR_TEXT { font_size: 10.5 }
                     color: (COLOR_TEXT)
-                    wrap: Word
                 }
                 text: "Create a bot through BotFather. Robrix only sends the matching slash command."
             }
@@ -1785,10 +1789,7 @@ impl Widget for RoomScreen {
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // Here, we only need to handle drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
-            let Some(mut list_ref) = portal_list_ref.borrow_mut() else {
-                error!("!!! RoomScreen::draw_walk(): BUG: expected a PortalList widget, but got something else");
-                continue;
-            };
+            let Some(mut list_ref) = portal_list_ref.borrow_mut() else { continue };
             let Some(tl_state) = self.tl_state.as_mut() else {
                 return DrawStep::done();
             };
@@ -1951,11 +1952,15 @@ impl Widget for RoomScreen {
 
             // If the list is not filling the viewport, we need to back paginate the timeline
             // until we have enough events items to fill the viewport.
-            if !tl_state.fully_paginated && !list.is_filling_viewport() {
+            if !tl_state.fully_paginated
+                && !tl_state.backwards_pagination_in_flight
+                && !list.is_filling_viewport()
+            {
+                tl_state.backwards_pagination_in_flight = true;
                 log!("Automatically paginating timeline to fill viewport for room {:?}", self.room_name_id);
                 submit_async_request(MatrixRequest::PaginateTimeline {
                     timeline_kind: tl_state.kind.clone(),
-                    num_events: 50,
+                    num_events: VIEWPORT_FILL_PAGINATION_SIZE,
                     direction: PaginationDirection::Backwards,
                 });
             }
@@ -2453,6 +2458,7 @@ impl RoomScreen {
                 }
                 TimelineUpdate::PaginationRunning(direction) => {
                     if direction == PaginationDirection::Backwards {
+                        tl.backwards_pagination_in_flight = true;
                         top_space.set_visible(cx, true);
                         done_loading = false;
                     } else {
@@ -2460,6 +2466,9 @@ impl RoomScreen {
                     }
                 }
                 TimelineUpdate::PaginationError { error, direction } => {
+                    if direction == PaginationDirection::Backwards {
+                        tl.backwards_pagination_in_flight = false;
+                    }
                     error!("Pagination error ({direction}) in {:?}: {error:?}", self.room_name_id);
                     let room_name = self.room_name_id.as_ref().map(|r| r.to_string());
                     enqueue_popup_notification(
@@ -2471,6 +2480,7 @@ impl RoomScreen {
                 }
                 TimelineUpdate::PaginationIdle { fully_paginated, direction } => {
                     if direction == PaginationDirection::Backwards {
+                        tl.backwards_pagination_in_flight = false;
                         // Don't set `done_loading` to `true` here, because we want to keep the top space visible
                         // (with the "loading" message) until the corresponding `NewItems` update is received.
                         tl.fully_paginated = fully_paginated;
@@ -2614,9 +2624,10 @@ impl RoomScreen {
         }
 
         if should_continue_backwards_pagination {
+            tl.backwards_pagination_in_flight = true;
             submit_async_request(MatrixRequest::PaginateTimeline {
                 timeline_kind: tl.kind.clone(),
-                num_events: 50,
+                num_events: VIEWPORT_FILL_PAGINATION_SIZE,
                 direction: PaginationDirection::Backwards,
             });
         }
@@ -3264,6 +3275,7 @@ impl RoomScreen {
                 room_members: None,
                 // We assume timelines being viewed for the first time haven't been fully paginated.
                 fully_paginated: false,
+                backwards_pagination_in_flight: false,
                 items: Vector::new(),
                 content_drawn_since_last_update: RangeSet::new(),
                 profile_drawn_since_last_update: RangeSet::new(),
@@ -3312,10 +3324,11 @@ impl RoomScreen {
         // when they first open the room, and there might not be any messages yet.
         if is_first_time_being_loaded {
             if !tl_state.fully_paginated {
+                tl_state.backwards_pagination_in_flight = true;
                 log!("Sending a first-time backwards pagination request for {}", tl_state.kind);
                 submit_async_request(MatrixRequest::PaginateTimeline {
                     timeline_kind: tl_state.kind.clone(),
-                    num_events: 50,
+                    num_events: VIEWPORT_FILL_PAGINATION_SIZE,
                     direction: PaginationDirection::Backwards,
                 });
             }
@@ -3622,7 +3635,8 @@ impl RoomScreen {
         if !portal_list.scrolled(actions) { return };
 
         let first_index = portal_list.first_id();
-        if first_index == 0 && tl.last_scrolled_index > 0 {
+        if first_index == 0 && tl.last_scrolled_index > 0 && !tl.backwards_pagination_in_flight {
+            tl.backwards_pagination_in_flight = true;
             log!("Scrolled up from item {} --> 0, sending back pagination request for room {}",
                 tl.last_scrolled_index, tl.kind,
             );
@@ -3820,6 +3834,10 @@ struct TimelineUiState {
     ///
     /// This must be reset to `false` whenever the timeline is fully cleared.
     fully_paginated: bool,
+
+    /// Whether a backwards pagination request has already been submitted
+    /// and is still in flight.
+    backwards_pagination_in_flight: bool,
 
     /// The list of items (events) in this room's timeline that our client currently knows about.
     items: Vector<Arc<TimelineItem>>,

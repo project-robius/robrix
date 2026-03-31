@@ -14,7 +14,6 @@ script_mod! {
         draw_text +: {
             text_style: REGULAR_TEXT { font_size: 10.5 }
             color: #333
-            wrap: Word
         }
         text: ""
     }
@@ -43,7 +42,6 @@ script_mod! {
                 draw_text +: {
                     text_style: TITLE_TEXT { font_size: 13 }
                     color: #000
-                    wrap: Word
                 }
                 text: "Delete Bot"
             }
@@ -95,7 +93,6 @@ script_mod! {
                 draw_text +: {
                     text_style: REGULAR_TEXT { font_size: 10.5 }
                     color: #000
-                    wrap: Word
                 }
                 text: ""
             }

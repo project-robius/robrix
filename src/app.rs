@@ -571,7 +571,9 @@ const MAX_LOG_FILES_TO_KEEP: usize = 10;
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
         // only init logging/tracing once
-        let _ = tracing_subscriber::fmt::try_init();
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing_subscriber::filter::LevelFilter::ERROR)
+            .try_init();
         // Initialize the project directory here from the main UI thread
         // such that background threads/tasks will be able to access it.
         // This must be done before initializing file logging.

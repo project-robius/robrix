@@ -479,6 +479,9 @@ pub struct RoomsList {
     /// The latest status message that should be displayed in the bottom status label.
     #[rust] status: String,
 
+    /// Whether the cached portal-list indexes need to be recalculated before drawing.
+    #[rust(true)] indexes_dirty: bool,
+
     /// The currently-selected room.
     #[rust] current_active_room: Option<SelectedRoom>,
 
@@ -806,7 +809,10 @@ impl RoomsList {
                 }
                 RoomsListUpdate::ScrollToRoom(room_id) => {
                     // Ensure indexes are fresh in case rooms were added/removed in this batch of updates.
-                    self.recalculate_indexes();
+                    if self.indexes_dirty {
+                        self.recalculate_indexes();
+                        self.indexes_dirty = false;
+                    }
                     let portal_list = self.view.portal_list(cx, ids!(list));
                     let speed = 50.0;
                     let portal_list_index = if let Some(regular_index) = self.displayed_regular_rooms.iter().position(|r| r == &room_id) {
@@ -887,6 +893,7 @@ impl RoomsList {
             }
         }
         if num_updates > 0 {
+            self.indexes_dirty = true;
             self.redraw(cx);
         }
     }
@@ -943,6 +950,7 @@ impl RoomsList {
         self.displayed_invited_rooms = invited;
         self.displayed_regular_rooms = regular;
         self.displayed_direct_rooms = direct;
+        self.indexes_dirty = true;
 
         self.update_status();
 
@@ -1286,6 +1294,7 @@ impl Widget for RoomsList {
                     }
                     _todo => todo!("Handle other header categories"),
                 }
+                self.indexes_dirty = true;
                 self.redraw(cx);
             }
         }
@@ -1395,7 +1404,10 @@ impl Widget for RoomsList {
 
         // Based on the various displayed room lists and is_expanded state of each room header,
         // calculate the indexes in the PortalList where the headers and rooms should be drawn.
-        self.recalculate_indexes();
+        if self.indexes_dirty {
+            self.recalculate_indexes();
+            self.indexes_dirty = false;
+        }
 
         let status_label_id = self.regular_rooms_indexes.after_rooms_index;
         // Add one for the status label
