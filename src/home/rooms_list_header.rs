@@ -9,7 +9,9 @@ use makepad_widgets::*;
 use matrix_sdk_ui::sync_service::State;
 
 use crate::{
+    avatar_cache,
     home::navigation_tab_bar::{NavigationBarAction, SelectedTab},
+    profile::user_profile_cache,
     shared::{
         image_viewer::{ImageViewerAction, ImageViewerError, LoadState},
         popup_list::{PopupKind, enqueue_popup_notification},
@@ -129,6 +131,13 @@ impl Widget for RoomsListHeader {
                             self.view.view(cx, ids!(synced_icon)).set_visible(cx, false);
                             self.view.view(cx, ids!(offline_icon)).set_visible(cx, false);
 
+                            // Clear stale `Requested`/`Failed` entries from global caches,
+                            // as any requests submitted while offline have likely failed,
+                            // leaving entries that permanently block re-fetching.
+                            // Note: per-room caches (media, link preview) are cleared
+                            // by RoomScreen in response to the StateUpdate action.
+                            user_profile_cache::clear_all_pending_requests();
+                            avatar_cache::clear_all_pending_and_failed_requests();
                             // Now that we're no longer offline, we also need to tell the
                             // ProfileIcon to refresh itself and fetch our own user's profile again.
                             SignalToUI::set_ui_signal();
