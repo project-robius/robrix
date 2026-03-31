@@ -1,19 +1,19 @@
 //! The `RoomScreen` widget is the UI view that displays a single room or thread's timeline
 //! of events (messages，state changes, etc.), along with an input bar at the bottom.
 
-use std::{borrow::Cow, cell::RefCell, ops::{DerefMut, Range}, sync::Arc};
+use std::{borrow::Cow, cell::RefCell, ops::{DerefMut, Range}, sync::Arc, time::Duration};
 
 use bytesize::ByteSize;
 use hashbrown::{HashMap, HashSet};
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    OwnedServerName, RoomDisplayName, media::{MediaFormat, MediaRequestParameters}, room::RoomMember, ruma::{
+    OwnedServerName, media::{MediaFormat, MediaRequestParameters}, room::RoomMember, ruma::{
         EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId, events::{
             receipt::Receipt,
             room::{
                 ImageInfo, MediaSource, message::{
-                    AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
+                    AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent, VideoMessageEventContent
                 }
             },
             sticker::{StickerEventContent, StickerMediaSource},
@@ -26,7 +26,7 @@ use matrix_sdk_ui::timeline::{
 use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}, owned_room_id};
 
 use crate::{
-    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::{RoomsListAction, RoomsListRef}, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppState, AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{create_bot_modal::{CreateBotModalAction, CreateBotModalWidgetExt}, delete_bot_modal::{DeleteBotModalAction, DeleteBotModalWidgetExt}, edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::{RoomsListAction, RoomsListRef}, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
@@ -34,7 +34,7 @@ use crate::{
     shared::{
         avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
-    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
+    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, current_user_id, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -55,6 +55,10 @@ const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 100;
 /// The max size (width or height) of a blurhash image to decode.
 const BLURHASH_IMAGE_MAX_SIZE: u32 = 500;
 
+/// Use a larger batch when we are trying to fill the initial viewport,
+/// otherwise many short messages can trigger a long chain of tiny paginations.
+const VIEWPORT_FILL_PAGINATION_SIZE: u16 = 150;
+
 static UNNAMED_ROOM: &str = "Unnamed Room";
 
 /// #FFF4E5
@@ -62,6 +66,210 @@ const COLOR_THREAD_SUMMARY_BG: Vec4 = vec4(1.0, 0.957, 0.898, 1.0);
 /// #FFEACC
 const COLOR_THREAD_SUMMARY_BG_HOVER: Vec4 = vec4(1.0, 0.918, 0.8, 1.0);
 
+fn item_event_id(item: &Arc<TimelineItem>) -> Option<&EventId> {
+    let TimelineItemKind::Event(event) = item.kind() else {
+        return None;
+    };
+    event.event_id()
+}
+
+/// Check if an event carries the MSC4357 `org.matrix.msc4357.live` field,
+/// indicating that the message content is still being streamed.
+///
+/// For edit events (`m.replace`), the live field lives inside `m.new_content`
+/// rather than at the top level of `content`, so we check both locations.
+fn content_has_msc4357_live_marker(content: &serde_json::Value) -> bool {
+    let effective = content.get("m.new_content").unwrap_or(content);
+    match effective.get("org.matrix.msc4357.live") {
+        Some(serde_json::Value::Bool(value)) => *value,
+        Some(_) => true,
+        None => false,
+    }
+}
+
+fn is_msc4357_live(event_tl_item: &EventTimelineItem) -> bool {
+    let message_is_edited = event_tl_item
+        .content()
+        .as_message()
+        .is_some_and(|message| message.is_edited());
+    event_tl_item.latest_edit_json()
+        .or_else(|| (!message_is_edited).then(|| event_tl_item.original_json()).flatten())
+        .and_then(|raw| raw.get_field::<serde_json::Value>("content").ok())
+        .flatten()
+        .map(|content| content_has_msc4357_live_marker(&content))
+        .unwrap_or(false)
+}
+
+fn streaming_scan_range(
+    clear_cache: bool,
+    changed_indices: &Range<usize>,
+    _old_len: usize,
+    new_len: usize,
+) -> Range<usize> {
+    if clear_cache {
+        0..new_len
+    } else {
+        let start = changed_indices.start.min(new_len);
+        let end = changed_indices.end.min(new_len);
+        start..end
+    }
+}
+
+fn refresh_stream_indices<'a, I>(
+    event_ids: I,
+    streaming_messages: &mut HashMap<OwnedEventId, super::streaming_animation::StreamingAnimState>,
+)
+where
+    I: IntoIterator<Item = Option<&'a EventId>>,
+{
+    for state in streaming_messages.values_mut() {
+        state.timeline_index = None;
+    }
+
+    for (idx, event_id) in event_ids.into_iter().enumerate() {
+        let Some(event_id) = event_id else {
+            continue;
+        };
+        if let Some(state) = streaming_messages.get_mut(event_id) {
+            state.timeline_index = Some(idx);
+        }
+    }
+}
+
+fn streaming_candidates_from_items<'a>(
+    items: &'a Vector<Arc<TimelineItem>>,
+) -> impl Iterator<Item = (OwnedEventId, String, bool)> + 'a {
+    items.iter().filter_map(|item| {
+        let TimelineItemKind::Event(event) = item.kind() else {
+            return None;
+        };
+        let event_id = event.event_id()?.to_owned();
+        let text = RoomScreen::extract_message_text(item)?;
+        Some((event_id, text, is_msc4357_live(event)))
+    })
+}
+
+fn rebuild_streaming_messages_for_full_snapshot<I>(
+    items: I,
+    previous_streaming_messages: Option<&HashMap<OwnedEventId, super::streaming_animation::StreamingAnimState>>,
+) -> (HashMap<OwnedEventId, super::streaming_animation::StreamingAnimState>, bool)
+where
+    I: IntoIterator<Item = (OwnedEventId, String, bool)>,
+{
+    use crate::home::streaming_animation::StreamingAnimState;
+
+    let mut rebuilt = HashMap::new();
+    let mut should_schedule_frame = false;
+
+    for (event_id, new_text, live) in items {
+        if !live {
+            continue;
+        }
+
+        // Only restore animations that were already tracked before the
+        // snapshot reset.  Never create brand-new animations here — during
+        // initial/reconnect loads the SDK may not have aggregated edits yet,
+        // so completed messages can still appear as `live`.  Genuinely new
+        // streams will be picked up on the next live sync update.
+        if let Some(previous_state) = previous_streaming_messages
+            .and_then(|states| states.get(&event_id))
+        {
+            let state = StreamingAnimState::restore(previous_state, &new_text, true);
+            should_schedule_frame |= state.needs_frame();
+            rebuilt.insert(event_id, state);
+        }
+    }
+
+    (rebuilt, should_schedule_frame)
+}
+
+fn next_stream_timeout<'a>(
+    states: impl IntoIterator<Item = &'a super::streaming_animation::StreamingAnimState>,
+) -> Option<Duration> {
+    states
+        .into_iter()
+        .map(|state| state.timeout_after().saturating_sub(state.last_update_time.elapsed()))
+        .min()
+}
+
+fn escape_slash_command_arg(value: &str) -> String {
+    value.trim().replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn format_create_bot_command(
+    username: &str,
+    display_name: &str,
+    system_prompt: Option<&str>,
+) -> String {
+    let mut command = format!("/createbot {} {}", username.trim(), display_name.trim());
+    if let Some(system_prompt) = system_prompt
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        command.push_str(" --prompt \"");
+        command.push_str(&escape_slash_command_arg(system_prompt));
+        command.push('"');
+    }
+    command
+}
+
+fn format_delete_bot_command(matrix_user_id: &UserId) -> String {
+    format!("/deletebot {matrix_user_id}")
+}
+
+fn resolve_delete_bot_user_id(
+    user_id_or_localpart: &str,
+    current_user_id: Option<&UserId>,
+) -> Result<OwnedUserId, String> {
+    let raw = user_id_or_localpart.trim();
+    if raw.is_empty() {
+        return Err("Please enter the bot Matrix user ID to delete.".into());
+    }
+
+    if raw.starts_with('@') || raw.contains(':') {
+        let full_user_id = if raw.starts_with('@') {
+            raw.to_string()
+        } else {
+            format!("@{raw}")
+        };
+        return UserId::parse(&full_user_id)
+            .map(|user_id| user_id.to_owned())
+            .map_err(|_| format!("Invalid Matrix user ID: {full_user_id}"));
+    }
+
+    let Some(current_user_id) = current_user_id else {
+        return Err(
+            "Current user ID is unavailable, so the bot homeserver cannot be resolved.".into(),
+        );
+    };
+
+    let full_user_id = format!("@{raw}:{}", current_user_id.server_name());
+    UserId::parse(&full_user_id)
+        .map(|user_id| user_id.to_owned())
+        .map_err(|_| format!("Invalid Matrix user ID: {full_user_id}"))
+}
+
+fn detected_bot_binding_for_members(
+    app_state: &AppState,
+    room_id: &OwnedRoomId,
+    members: &[RoomMember],
+) -> Option<OwnedUserId> {
+    if app_state.bot_settings.is_room_bound(room_id) {
+        return None;
+    }
+
+    let Ok(bot_user_id) = app_state
+        .bot_settings
+        .resolved_bot_user_id_for_room(room_id, current_user_id().as_deref())
+    else {
+        return None;
+    };
+
+    members
+        .iter()
+        .any(|room_member| room_member.user_id() == bot_user_id)
+        .then_some(bot_user_id)
+}
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -504,6 +712,191 @@ script_mod! {
         }
     }
 
+    mod.widgets.AppServicePanel = #(AppServicePanel::register_widget(vm)) {
+        width: Fill
+        height: Fit
+        margin: Inset{left: 14, right: 54, top: 10, bottom: 16}
+        flow: Down
+        align: Align{x: 0.0, y: 0.0}
+        spacing: 8
+
+        sender_row := View {
+            width: Fit
+            height: Fit
+            flow: Right
+            spacing: 6
+
+            sender_name := Label {
+                width: Fit
+                height: Fit
+                draw_text +: {
+                    text_style: USERNAME_TEXT_STYLE { font_size: 10.8 }
+                    color: (COLOR_ACTIVE_PRIMARY)
+                }
+                text: "BotFather"
+            }
+
+            sender_tag := Label {
+                width: Fit
+                height: Fit
+                draw_text +: {
+                    text_style: REGULAR_TEXT { font_size: 9.5 }
+                    color: #8A8A8A
+                }
+                text: "bot"
+            }
+        }
+
+        bubble := RoundedView {
+            width: 408
+            height: Fit
+            flow: Down
+            spacing: 8
+            padding: Inset{top: 14, right: 14, bottom: 12, left: 14}
+
+            show_bg: true
+            draw_bg +: {
+                color: (COLOR_PRIMARY)
+                border_radius: 0.0
+                border_size: 1.0
+                border_color: (COLOR_SECONDARY_DARKER)
+            }
+
+            header := View {
+                width: Fill
+                height: Fit
+                flow: Right
+                align: Align{y: 0.5}
+
+                title := Label {
+                    width: Fit
+                    height: Fit
+                    draw_text +: {
+                        text_style: USERNAME_TEXT_STYLE { font_size: 11.2 }
+                        color: #1F1F1F
+                    }
+                    text: "App Service Actions"
+                }
+
+                spacer := View {
+                    width: Fill
+                    height: Fit
+                }
+
+                dismiss_button := RobrixNeutralIconButton {
+                    width: 28
+                    height: 24
+                    align: Align{x: 0.5, y: 0.5}
+                    spacing: 0
+                    padding: 0
+                    draw_icon.svg: (ICON_CLOSE)
+                    icon_walk: Walk{width: 12, height: 12}
+                    text: ""
+                }
+            }
+
+            subtitle := Label {
+                width: Fill
+                height: Fit
+                draw_text +: {
+                    text_style: REGULAR_TEXT { font_size: 10.5 }
+                    color: (COLOR_TEXT)
+                }
+                text: "Create a bot through BotFather. Robrix only sends the matching slash command."
+            }
+
+            footer := View {
+                width: Fill
+                height: Fit
+                flow: Right
+                align: Align{x: 1.0, y: 0.5}
+
+                timestamp := Label {
+                    width: Fit
+                    height: Fit
+                    draw_text +: {
+                        text_style: REGULAR_TEXT { font_size: 8.8 }
+                        color: #9A9A9A
+                    }
+                    text: "now"
+                }
+            }
+        }
+
+        keyboard := View {
+            width: Fit
+            height: Fit
+            flow: Down
+            spacing: 8
+
+            first_row := View {
+                width: Fit
+                height: Fit
+                flow: Right
+                spacing: 8
+
+                create_button := RobrixPositiveIconButton {
+                    width: 156
+                    height: 46
+                    padding: 10
+                    draw_icon.svg: (ICON_CHECKMARK)
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
+                    text: "Create Bot"
+                }
+
+                list_button := RobrixNeutralIconButton {
+                    width: 156
+                    height: 46
+                    padding: 10
+                    draw_icon.svg: (ICON_SEARCH)
+                    icon_walk: Walk{width: 14, height: 14, margin: Inset{left: -2, right: -1}}
+                    text: "List Bots"
+                }
+            }
+
+            second_row := View {
+                width: Fit
+                height: Fit
+                flow: Right
+                spacing: 8
+
+                delete_button := RobrixNegativeIconButton {
+                    width: 156
+                    height: 46
+                    padding: 10
+                    draw_icon.svg: (ICON_CLOSE)
+                    icon_walk: Walk{width: 14, height: 14, margin: Inset{left: -2, right: -1}}
+                    text: "Delete Bot"
+                }
+
+                help_button := RobrixNeutralIconButton {
+                    width: 156
+                    height: 46
+                    padding: 10
+                    draw_icon.svg: (ICON_INFO)
+                    icon_walk: Walk{width: 14, height: 14, margin: Inset{left: -2, right: -1}}
+                    text: "Bot Help"
+                }
+            }
+
+            third_row := View {
+                width: Fit
+                height: Fit
+                flow: Right
+                spacing: 8
+
+                unbind_button := RobrixNeutralIconButton {
+                    width: 156
+                    height: 46
+                    padding: 10
+                    draw_icon.svg: (ICON_CLOSE)
+                    icon_walk: Walk{width: 14, height: 14, margin: Inset{left: -2, right: -1}}
+                    text: "Unbind"
+                }
+            }
+        }
+    }
+
     mod.widgets.Timeline = View {
         width: Fill,
         height: Fill,
@@ -527,6 +920,7 @@ script_mod! {
             Empty := mod.widgets.Empty {}
             DateDivider := mod.widgets.DateDivider {}
             ReadMarker := mod.widgets.ReadMarker {}
+            AppServicePanel := mod.widgets.AppServicePanel {}
         }
 
         // A jump to bottom button (with an unread message badge) that is shown
@@ -582,6 +976,18 @@ script_mod! {
             // to finish loading, e.g., when loading an older replied-to message.
             loading_pane := LoadingPane { }
 
+            create_bot_modal := Modal {
+                content +: {
+                    create_bot_modal_inner := mod.widgets.CreateBotModal {}
+                }
+            }
+
+            delete_bot_modal := Modal {
+                content +: {
+                    delete_bot_modal_inner := mod.widgets.DeleteBotModal {}
+                }
+            }
+
 
             /*
              * TODO: add the action bar back in as a series of floating buttons.
@@ -612,6 +1018,8 @@ pub struct RoomScreen {
 
     /// The name and ID of the currently-shown room, if any.
     #[rust] room_name_id: Option<RoomNameId>,
+    /// The avatar URL of the currently-shown room, if any.
+    #[rust] room_avatar_url: Option<OwnedMxcUri>,
     /// The timeline currently displayed by this RoomScreen, if any.
     #[rust] timeline_kind: Option<TimelineKind>,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
@@ -622,6 +1030,14 @@ pub struct RoomScreen {
     #[rust] is_loaded: bool,
     /// Whether or not all rooms have been loaded (received from the homeserver).
     #[rust] all_rooms_loaded: bool,
+    /// NextFrame subscription for driving streaming typewriter animation.
+    #[rust]
+    streaming_next_frame: NextFrame,
+    /// Timeout used to evict stalled streaming states without per-frame polling.
+    #[rust]
+    streaming_timeout_timer: Timer,
+    /// Whether the in-room app service quick actions card is currently visible.
+    #[rust] show_app_service_actions: bool,
 }
 
 impl Drop for RoomScreen {
@@ -655,6 +1071,98 @@ impl Widget for RoomScreen {
         let portal_list = self.portal_list(cx, ids!(timeline.list));
         let user_profile_sliding_pane = self.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane));
         let loading_pane = self.loading_pane(cx, ids!(loading_pane));
+
+        // Streaming animation frame handler
+        if let Some(_ne) = self.streaming_next_frame.is_event(event) {
+            #[cfg(debug_assertions)]
+            #[allow(unused_variables)]
+            let frame_start = std::time::Instant::now();
+
+            if let Some(tl) = self.tl_state.as_mut() {
+                let mut any_active = false;
+                let mut needs_another_frame = false;
+                let mut completed_ids = Vec::new();
+
+                for (event_id, state) in tl.streaming_messages.iter_mut() {
+                    if state.needs_frame() {
+                        if state.tick() {
+                            any_active = true;
+                            // Invalidate draw cache so item gets re-populated
+                            if let Some(idx) = state.timeline_index {
+                                tl.content_drawn_since_last_update.remove(idx..idx + 1);
+                            }
+                        }
+                        needs_another_frame |= state.needs_frame();
+                    }
+
+                    if state.is_complete() || state.is_timed_out() {
+                        completed_ids.push(event_id.clone());
+                    }
+                }
+
+                for id in &completed_ids {
+                    tl.streaming_messages.remove(id);
+                }
+
+                // Safety cap: max 50 streaming entries
+                while tl.streaming_messages.len() > 50 {
+                    if let Some(oldest_id) = tl.streaming_messages.iter()
+                        .min_by_key(|(_, s)| s.animation_start_time)
+                        .map(|(id, _)| id.clone())
+                    {
+                        tl.streaming_messages.remove(&oldest_id);
+                        any_active = true;
+                    }
+                }
+
+                if needs_another_frame {
+                    self.streaming_next_frame = cx.new_next_frame();
+                }
+
+                if any_active || !completed_ids.is_empty() {
+                    self.redraw(cx);
+                }
+            }
+
+            #[cfg(debug_assertions)]
+            {
+                if let Some(tl) = self.tl_state.as_ref() {
+                    let elapsed = frame_start.elapsed();
+                    if elapsed.as_millis() > 2 {
+                        log!("Streaming animation frame took {}ms ({} active streams)",
+                            elapsed.as_millis(), tl.streaming_messages.len());
+                    }
+                }
+            }
+
+            self.schedule_stream_timeout(cx);
+        }
+
+        if self.streaming_timeout_timer.is_event(event).is_some() {
+            if let Some(tl) = self.tl_state.as_mut() {
+                let timed_out_ids: Vec<OwnedEventId> = tl
+                    .streaming_messages
+                    .iter()
+                    .filter_map(|(event_id, state)| {
+                        if state.is_timed_out() || state.is_complete() {
+                            Some(event_id.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                for event_id in &timed_out_ids {
+                    tl.streaming_messages.remove(event_id);
+                }
+
+                if !timed_out_ids.is_empty() {
+                    self.redraw(cx);
+                }
+            }
+
+            self.schedule_stream_timeout(cx);
+        }
 
         // Handle actions here before processing timeline updates.
         // Normally (in most other widgets), the order of event handling doesn't matter much.
@@ -868,7 +1376,7 @@ impl Widget for RoomScreen {
                 self.show_timeline(cx);
             }
 
-            self.process_timeline_updates(cx, &portal_list);
+            self.process_timeline_updates(cx, &portal_list, scope.data.get::<AppState>());
 
             // Ideally we would do this elsewhere on the main thread, because it's not room-specific,
             // but it doesn't hurt to do it here.
@@ -913,22 +1421,25 @@ impl Widget for RoomScreen {
             let room_props = if let Some(tl) = self.tl_state.as_ref() {
                 let room_id = tl.kind.room_id().clone();
                 let room_members = tl.room_members.clone();
-
-                // Fetch room data once to avoid duplicate expensive lookups
-                let (room_display_name, room_avatar_url) = get_client()
-                    .and_then(|client| client.get_room(&room_id))
-                    .map(|room| (
-                        room.cached_display_name().unwrap_or(RoomDisplayName::Empty),
-                        room.avatar_url()
-                    ))
-                    .unwrap_or((RoomDisplayName::Empty, None));
+                let (app_service_enabled, app_service_room_bound) = scope
+                    .data
+                    .get::<AppState>()
+                    .map(|app_state| {
+                        (
+                            app_state.bot_settings.enabled,
+                            self.is_app_service_room_bound(app_state, &room_id),
+                        )
+                    })
+                    .unwrap_or((false, false));
 
                 RoomScreenProps {
                     room_screen_widget_uid,
-                    room_name_id: RoomNameId::new(room_display_name, room_id),
+                    room_name_id: self.room_name_id.clone().unwrap_or_else(|| RoomNameId::empty(room_id)),
                     timeline_kind: tl.kind.clone(),
                     room_members,
-                    room_avatar_url,
+                    room_avatar_url: self.room_avatar_url.clone(),
+                    app_service_enabled,
+                    app_service_room_bound,
                 }
             } else if let Some(room_name) = &self.room_name_id {
                 // Fallback case: we have a room_name but no tl_state yet
@@ -939,6 +1450,8 @@ impl Widget for RoomScreen {
                         .expect("BUG: room_name_id was set but timeline_kind was missing"),
                     room_members: None,
                     room_avatar_url: None,
+                    app_service_enabled: false,
+                    app_service_room_bound: false,
                 }
             } else {
                 // No room selected yet, skip event handling that requires room context
@@ -954,6 +1467,8 @@ impl Widget for RoomScreen {
                     timeline_kind: TimelineKind::MainRoom { room_id },
                     room_members: None,
                     room_avatar_url: None,
+                    app_service_enabled: false,
+                    app_service_room_bound: false,
                 }
             };
             let mut room_scope = Scope::with_props(&room_props);
@@ -969,6 +1484,224 @@ impl Widget for RoomScreen {
             // Removing the handled actions ensures they are not mistakenly handled by other RoomScreen widget instances.
             actions_generated_within_this_room_screen.retain(|action| {
                 if self.handle_link_clicked(cx, action, &user_profile_sliding_pane) {
+                    return false;
+                }
+
+                match action
+                    .as_widget_action()
+                    .widget_uid_eq(room_screen_widget_uid)
+                    .cast()
+                {
+                    AppServicePanelAction::Dismiss => {
+                        self.set_app_service_actions_visible(cx, false);
+                        return false;
+                    }
+                    AppServicePanelAction::OpenCreateBotModal => {
+                        if let Some(app_state) = scope.data.get::<AppState>() {
+                            if !app_state.bot_settings.enabled {
+                                enqueue_popup_notification(
+                                    "Enable App Service before creating bots in a room.",
+                                    PopupKind::Warning,
+                                    Some(4.0),
+                                );
+                                self.set_app_service_actions_visible(cx, false);
+                            } else if !room_props.app_service_room_bound {
+                                enqueue_popup_notification(
+                                    "Bind BotFather to this room before creating a bot.",
+                                    PopupKind::Warning,
+                                    Some(4.0),
+                                );
+                                self.set_app_service_actions_visible(cx, false);
+                            } else {
+                                self.open_create_bot_modal(cx);
+                            }
+                        } else {
+                            enqueue_popup_notification(
+                                "App state is unavailable, so bot creation is temporarily unavailable.",
+                                PopupKind::Error,
+                                Some(4.0),
+                            );
+                            self.set_app_service_actions_visible(cx, false);
+                        }
+                        return false;
+                    }
+                    AppServicePanelAction::OpenDeleteBotModal => {
+                        if let Some(app_state) = scope.data.get::<AppState>() {
+                            if !app_state.bot_settings.enabled {
+                                enqueue_popup_notification(
+                                    "Enable App Service before deleting bots in a room.",
+                                    PopupKind::Warning,
+                                    Some(4.0),
+                                );
+                                self.set_app_service_actions_visible(cx, false);
+                            } else if !room_props.app_service_room_bound {
+                                enqueue_popup_notification(
+                                    "Bind BotFather to this room before deleting a bot.",
+                                    PopupKind::Warning,
+                                    Some(4.0),
+                                );
+                                self.set_app_service_actions_visible(cx, false);
+                            } else {
+                                self.open_delete_bot_modal(cx);
+                            }
+                        } else {
+                            enqueue_popup_notification(
+                                "App state is unavailable, so bot deletion is temporarily unavailable.",
+                                PopupKind::Error,
+                                Some(4.0),
+                            );
+                            self.set_app_service_actions_visible(cx, false);
+                        }
+                        return false;
+                    }
+                    AppServicePanelAction::SendListBots => {
+                        if let Some(app_state) = scope.data.get::<AppState>() {
+                            self.send_botfather_command(
+                                cx,
+                                app_state,
+                                "/listbots",
+                                "Sent `/listbots` to BotFather.",
+                            );
+                        }
+                        return false;
+                    }
+                    AppServicePanelAction::SendBotHelp => {
+                        if let Some(app_state) = scope.data.get::<AppState>() {
+                            self.send_botfather_command(
+                                cx,
+                                app_state,
+                                "/bothelp",
+                                "Sent `/bothelp` to BotFather.",
+                            );
+                        }
+                        return false;
+                    }
+                    AppServicePanelAction::Unbind => {
+                        if let Some(app_state) = scope.data.get::<AppState>() {
+                            if !room_props.app_service_room_bound {
+                                enqueue_popup_notification(
+                                    "This room is not currently bound to BotFather.",
+                                    PopupKind::Warning,
+                                    Some(4.0),
+                                );
+                            } else {
+                                match app_state
+                                    .bot_settings
+                                    .resolved_bot_user_id_for_room(
+                                        room_props.room_name_id.room_id(),
+                                        current_user_id().as_deref(),
+                                    )
+                                {
+                                    Ok(bot_user_id) => {
+                                        submit_async_request(MatrixRequest::SetRoomBotBinding {
+                                            room_id: room_props.room_name_id.room_id().clone(),
+                                            bound: false,
+                                            bot_user_id: bot_user_id.clone(),
+                                        });
+                                        enqueue_popup_notification(
+                                            format!(
+                                                "Removing BotFather {bot_user_id} from this room..."
+                                            ),
+                                            PopupKind::Info,
+                                            Some(4.0),
+                                        );
+                                    }
+                                    Err(error) => {
+                                        enqueue_popup_notification(
+                                            error,
+                                            PopupKind::Error,
+                                            Some(4.0),
+                                        );
+                                    }
+                                }
+                            }
+                        } else {
+                            enqueue_popup_notification(
+                                "App state is unavailable, so BotFather could not be removed from this room.",
+                                PopupKind::Error,
+                                Some(4.0),
+                            );
+                        }
+                        self.set_app_service_actions_visible(cx, false);
+                        return false;
+                    }
+                    _ => {}
+                }
+
+                match action.downcast_ref::<CreateBotModalAction>() {
+                    Some(CreateBotModalAction::Close) => {
+                        self.close_create_bot_modal(cx);
+                        return false;
+                    }
+                    Some(CreateBotModalAction::Submit(request)) => {
+                        let Some(app_state) = scope.data.get::<AppState>() else {
+                            enqueue_popup_notification(
+                                "App state is unavailable, so the create-bot command was not sent.",
+                                PopupKind::Error,
+                                Some(4.0),
+                            );
+                            self.close_create_bot_modal(cx);
+                            return false;
+                        };
+                        self.send_create_bot_command(
+                            cx,
+                            app_state,
+                            &request.username,
+                            &request.display_name,
+                            request.system_prompt.as_deref(),
+                        );
+                        return false;
+                    }
+                    None => {}
+                }
+
+                match action.downcast_ref::<DeleteBotModalAction>() {
+                    Some(DeleteBotModalAction::Close) => {
+                        self.close_delete_bot_modal(cx);
+                        return false;
+                    }
+                    Some(DeleteBotModalAction::Submit(request)) => {
+                        let Some(app_state) = scope.data.get::<AppState>() else {
+                            enqueue_popup_notification(
+                                "App state is unavailable, so the delete-bot command was not sent.",
+                                PopupKind::Error,
+                                Some(4.0),
+                            );
+                            self.close_delete_bot_modal(cx);
+                            return false;
+                        };
+                        self.send_delete_bot_command(cx, app_state, &request.user_id_or_localpart);
+                        return false;
+                    }
+                    None => {}
+                }
+
+                if let MessageAction::ToggleAppServiceActions = action
+                    .as_widget_action()
+                    .widget_uid_eq(room_screen_widget_uid)
+                    .cast()
+                {
+                    if room_props.timeline_kind.thread_root_event_id().is_some() {
+                        enqueue_popup_notification(
+                            "Bot commands are only supported in the main room timeline.",
+                            PopupKind::Warning,
+                            Some(4.0),
+                        );
+                    } else if !room_props.app_service_enabled {
+                        enqueue_popup_notification(
+                            "Enable App Service in Settings before using /bot.",
+                            PopupKind::Warning,
+                            Some(4.0),
+                        );
+                    } else if !room_props.app_service_room_bound {
+                        enqueue_popup_notification(
+                            "Bind BotFather to this room before using /bot.",
+                            PopupKind::Warning,
+                            Some(4.0),
+                        );
+                    } else {
+                        self.toggle_app_service_actions(cx);
+                    }
                     return false;
                 }
 
@@ -1056,17 +1789,14 @@ impl Widget for RoomScreen {
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // Here, we only need to handle drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
-            let Some(mut list_ref) = portal_list_ref.borrow_mut() else {
-                error!("!!! RoomScreen::draw_walk(): BUG: expected a PortalList widget, but got something else");
-                continue;
-            };
+            let Some(mut list_ref) = portal_list_ref.borrow_mut() else { continue };
             let Some(tl_state) = self.tl_state.as_mut() else {
                 return DrawStep::done();
             };
 
             // Set the portal list's range based on the number of timeline items.
             let tl_items = &tl_state.items;
-            let last_item_id = tl_items.len();
+            let last_item_id = tl_items.len() + usize::from(self.show_app_service_actions);
 
             let list = list_ref.deref_mut();
             list.set_item_range(cx, 0, last_item_id);
@@ -1074,6 +1804,9 @@ impl Widget for RoomScreen {
             while let Some(item_id) = list.next_visible_item(cx) {
                 let item = {
                     let tl_idx = item_id;
+                    if self.show_app_service_actions && tl_idx == tl_items.len() {
+                        list.item(cx, item_id, id!(AppServicePanel))
+                    } else {
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                         // but we can always safely fill the item with an empty widget that takes up no space.
@@ -1118,6 +1851,7 @@ impl Widget for RoomScreen {
                                                 &self.pinned_events,
                                                 item_drawn_status,
                                                 room_screen_widget_uid,
+                                                &mut tl_state.streaming_messages,
                                             )
                                         },
                                         // TODO: properly implement `Poll` as a regular Message-like timeline item.
@@ -1211,17 +1945,22 @@ impl Widget for RoomScreen {
                         tl_state.profile_drawn_since_last_update.insert(tl_idx .. tl_idx + 1);
                     }
                     item
+                    }
                 };
                 item.draw_all(cx, scope);
             }
 
             // If the list is not filling the viewport, we need to back paginate the timeline
             // until we have enough events items to fill the viewport.
-            if !tl_state.fully_paginated && !list.is_filling_viewport() {
+            if !tl_state.fully_paginated
+                && !tl_state.backwards_pagination_in_flight
+                && !list.is_filling_viewport()
+            {
+                tl_state.backwards_pagination_in_flight = true;
                 log!("Automatically paginating timeline to fill viewport for room {:?}", self.room_name_id);
                 submit_async_request(MatrixRequest::PaginateTimeline {
                     timeline_kind: tl_state.kind.clone(),
-                    num_events: 50,
+                    num_events: VIEWPORT_FILL_PAGINATION_SIZE,
                     direction: PaginationDirection::Backwards,
                 });
             }
@@ -1235,10 +1974,212 @@ impl RoomScreen {
         self.room_name_id.as_ref().map(|r| r.room_id())
     }
 
+    /// Extract the text body from a timeline item, if it's a text message.
+    fn extract_message_text(item: &Arc<TimelineItem>) -> Option<String> {
+        let TimelineItemKind::Event(event) = item.kind() else { return None };
+        let TimelineItemContent::MsgLike(_) = event.content() else { return None };
+        Some(plaintext_body_of_timeline_item(event))
+    }
+
+    fn schedule_stream_timeout(&mut self, cx: &mut Cx) {
+        cx.stop_timer(self.streaming_timeout_timer);
+        self.streaming_timeout_timer = next_stream_timeout(
+            self.tl_state
+                .as_ref()
+                .into_iter()
+                .flat_map(|tl| tl.streaming_messages.values()),
+        )
+        .map(|duration| cx.start_timeout(duration.as_secs_f64()))
+        .unwrap_or_else(Timer::empty);
+    }
+
+    fn set_app_service_actions_visible(&mut self, cx: &mut Cx, visible: bool) {
+        self.show_app_service_actions = visible;
+        self.redraw(cx);
+    }
+
+    fn toggle_app_service_actions(&mut self, cx: &mut Cx) {
+        self.set_app_service_actions_visible(cx, !self.show_app_service_actions);
+    }
+
+    fn close_create_bot_modal(&self, cx: &mut Cx) {
+        self.view.modal(cx, ids!(create_bot_modal)).close(cx);
+    }
+
+    fn close_delete_bot_modal(&self, cx: &mut Cx) {
+        self.view.modal(cx, ids!(delete_bot_modal)).close(cx);
+    }
+
+    fn open_create_bot_modal(&mut self, cx: &mut Cx) {
+        let Some(room_name_id) = self.room_name_id.clone() else {
+            return;
+        };
+        self.set_app_service_actions_visible(cx, false);
+        self.view
+            .create_bot_modal(cx, ids!(create_bot_modal_inner))
+            .show(cx, room_name_id);
+        self.view.modal(cx, ids!(create_bot_modal)).open(cx);
+    }
+
+    fn open_delete_bot_modal(&mut self, cx: &mut Cx) {
+        let Some(room_name_id) = self.room_name_id.clone() else {
+            return;
+        };
+        self.set_app_service_actions_visible(cx, false);
+        self.view
+            .delete_bot_modal(cx, ids!(delete_bot_modal_inner))
+            .show(cx, room_name_id);
+        self.view.modal(cx, ids!(delete_bot_modal)).open(cx);
+    }
+
+    fn reset_app_service_ui(&mut self, cx: &mut Cx) {
+        self.set_app_service_actions_visible(cx, false);
+        self.close_create_bot_modal(cx);
+        self.close_delete_bot_modal(cx);
+    }
+
+    fn is_app_service_room_bound(&self, app_state: &AppState, room_id: &OwnedRoomId) -> bool {
+        app_state.bot_settings.is_room_bound(room_id)
+    }
+
+    fn send_botfather_command(
+        &mut self,
+        cx: &mut Cx,
+        app_state: &AppState,
+        command: &str,
+        success_message: &str,
+    ) -> bool {
+        let Some(timeline_kind) = self.timeline_kind.clone() else {
+            return false;
+        };
+        if timeline_kind.thread_root_event_id().is_some() {
+            enqueue_popup_notification(
+                "Bot commands are only supported in the main room timeline.",
+                PopupKind::Warning,
+                Some(4.0),
+            );
+            return false;
+        }
+
+        let Some(room_id) = self.room_id().cloned() else {
+            return false;
+        };
+        if !app_state.bot_settings.enabled {
+            enqueue_popup_notification(
+                "Enable App Service before using BotFather commands in a room.",
+                PopupKind::Warning,
+                Some(4.0),
+            );
+            return false;
+        }
+        if !self.is_app_service_room_bound(app_state, &room_id) {
+            enqueue_popup_notification(
+                "Bind BotFather to this room before using BotFather commands.",
+                PopupKind::Warning,
+                Some(4.0),
+            );
+            return false;
+        }
+
+        submit_async_request(MatrixRequest::SendMessage {
+            timeline_kind,
+            message: RoomMessageEventContent::text_plain(command),
+            replied_to: None,
+            #[cfg(feature = "tsp")]
+            sign_with_tsp: false,
+        });
+
+        enqueue_popup_notification(success_message.to_string(), PopupKind::Info, Some(4.0));
+        self.set_app_service_actions_visible(cx, false);
+        true
+    }
+
+    fn send_create_bot_command(
+        &mut self,
+        cx: &mut Cx,
+        app_state: &AppState,
+        username: &str,
+        display_name: &str,
+        system_prompt: Option<&str>,
+    ) {
+        let Some(timeline_kind) = self.timeline_kind.clone() else {
+            return;
+        };
+        if timeline_kind.thread_root_event_id().is_some() {
+            enqueue_popup_notification(
+                "Bot creation commands are only supported in the main room timeline.",
+                PopupKind::Warning,
+                Some(4.0),
+            );
+            return;
+        }
+
+        let Some(room_id) = self.room_id().cloned() else {
+            return;
+        };
+        if !app_state.bot_settings.enabled {
+            enqueue_popup_notification(
+                "Enable App Service before creating bots in a room.",
+                PopupKind::Warning,
+                Some(4.0),
+            );
+            return;
+        }
+        if !self.is_app_service_room_bound(app_state, &room_id) {
+            enqueue_popup_notification(
+                "Bind BotFather to this room before creating a bot.",
+                PopupKind::Warning,
+                Some(4.0),
+            );
+            return;
+        }
+
+        let command = format_create_bot_command(username, display_name, system_prompt);
+        if self.send_botfather_command(
+            cx,
+            app_state,
+            &command,
+            &format!("Sent `/createbot` for `{username}` to BotFather."),
+        ) {
+            self.close_create_bot_modal(cx);
+        }
+    }
+
+    fn send_delete_bot_command(
+        &mut self,
+        cx: &mut Cx,
+        app_state: &AppState,
+        user_id_or_localpart: &str,
+    ) {
+        let matrix_user_id =
+            match resolve_delete_bot_user_id(user_id_or_localpart, current_user_id().as_deref()) {
+                Ok(user_id) => user_id,
+                Err(error) => {
+                    enqueue_popup_notification(error, PopupKind::Error, Some(4.0));
+                    return;
+                }
+            };
+
+        let command = format_delete_bot_command(matrix_user_id.as_ref());
+        if self.send_botfather_command(
+            cx,
+            app_state,
+            &command,
+            &format!("Sent `/deletebot` for {matrix_user_id} to BotFather."),
+        ) {
+            self.close_delete_bot_modal(cx);
+        }
+    }
+
     /// Processes all pending background updates to the currently-shown timeline.
     ///
     /// Redraws this RoomScreen view if any updates were applied.
-    fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
+    fn process_timeline_updates(
+        &mut self,
+        cx: &mut Cx,
+        portal_list: &PortalListRef,
+        app_state: Option<&AppState>,
+    ) {
         let top_space = self.view(cx, ids!(top_space));
         let jump_to_bottom_button = self.jump_to_bottom_button(cx, ids!(jump_to_bottom_button));
         let curr_first_id = portal_list.first_id();
@@ -1261,7 +2202,22 @@ impl RoomScreen {
                     portal_list.set_tail_range(true);
                     jump_to_bottom_button.update_visibility(cx, true);
 
+                    let previous_streaming_messages = std::mem::take(&mut tl.streaming_messages);
+                    let (rebuilt_streaming_messages, should_schedule_frame) =
+                        rebuild_streaming_messages_for_full_snapshot(
+                            streaming_candidates_from_items(&initial_items),
+                            Some(&previous_streaming_messages),
+                        );
+
                     tl.items = initial_items;
+                    tl.streaming_messages = rebuilt_streaming_messages;
+                    refresh_stream_indices(
+                        tl.items.iter().map(item_event_id),
+                        &mut tl.streaming_messages,
+                    );
+                    if should_schedule_frame {
+                        self.streaming_next_frame = cx.new_next_frame();
+                    }
                     done_loading = true;
                 }
                 TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
@@ -1379,7 +2335,66 @@ impl RoomScreen {
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
                         // log!("process_timeline_updates(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                     }
+
+                    // --- MSC4357 streaming detection ---
+                    if clear_cache {
+                        let previous_streaming_messages = std::mem::take(&mut tl.streaming_messages);
+                        let (rebuilt_streaming_messages, should_schedule_frame) =
+                            rebuild_streaming_messages_for_full_snapshot(
+                                streaming_candidates_from_items(&new_items),
+                                Some(&previous_streaming_messages),
+                            );
+                        tl.streaming_messages = rebuilt_streaming_messages;
+                        if should_schedule_frame {
+                            self.streaming_next_frame = cx.new_next_frame();
+                        }
+                    } else if !new_items.is_empty() {
+                        use crate::home::streaming_animation::StreamingAnimState;
+
+                        let mut should_schedule_frame = false;
+                        let scan_range = streaming_scan_range(
+                            clear_cache,
+                            &changed_indices,
+                            tl.items.len(),
+                            new_items.len(),
+                        );
+
+                        let old_event_ids: HashSet<&EventId> = tl.items.iter()
+                            .filter_map(|item| item_event_id(item))
+                            .collect();
+
+                        for idx in scan_range {
+                            let Some(new_item) = new_items.get(idx) else { continue };
+                            let TimelineItemKind::Event(new_evt) = new_item.kind() else { continue };
+                            let Some(event_id) = new_evt.event_id().map(|id| id.to_owned()) else { continue };
+                            let live = is_msc4357_live(new_evt);
+                            let Some(new_text) = Self::extract_message_text(new_item) else { continue };
+
+                            if let Some(state) = tl.streaming_messages.get_mut(&event_id) {
+                                state.update_target(&new_text, live);
+                                // Schedule frame for animation OR for cleanup of just-completed state
+                                should_schedule_frame |= state.needs_frame() || state.is_complete();
+                                continue;
+                            }
+
+                            if live && !old_event_ids.contains(&*event_id) {
+                                let state = StreamingAnimState::new(&new_text, true);
+                                should_schedule_frame |= state.needs_frame();
+                                tl.streaming_messages.insert(event_id, state);
+                            }
+                        }
+
+                        if should_schedule_frame {
+                            self.streaming_next_frame = cx.new_next_frame();
+                        }
+                    }
+                    // --- End streaming detection ---
+
                     tl.items = new_items;
+                    refresh_stream_indices(
+                        tl.items.iter().map(item_event_id),
+                        &mut tl.streaming_messages,
+                    );
                     done_loading = true;
                 }
                 TimelineUpdate::NewUnreadMessagesCount(unread_messages_count) => {
@@ -1443,6 +2458,7 @@ impl RoomScreen {
                 }
                 TimelineUpdate::PaginationRunning(direction) => {
                     if direction == PaginationDirection::Backwards {
+                        tl.backwards_pagination_in_flight = true;
                         top_space.set_visible(cx, true);
                         done_loading = false;
                     } else {
@@ -1450,6 +2466,9 @@ impl RoomScreen {
                     }
                 }
                 TimelineUpdate::PaginationError { error, direction } => {
+                    if direction == PaginationDirection::Backwards {
+                        tl.backwards_pagination_in_flight = false;
+                    }
                     error!("Pagination error ({direction}) in {:?}: {error:?}", self.room_name_id);
                     let room_name = self.room_name_id.as_ref().map(|r| r.to_string());
                     enqueue_popup_notification(
@@ -1461,6 +2480,7 @@ impl RoomScreen {
                 }
                 TimelineUpdate::PaginationIdle { fully_paginated, direction } => {
                     if direction == PaginationDirection::Backwards {
+                        tl.backwards_pagination_in_flight = false;
                         // Don't set `done_loading` to `true` here, because we want to keep the top space visible
                         // (with the "loading" message) until the corresponding `NewItems` update is received.
                         tl.fully_paginated = fully_paginated;
@@ -1510,8 +2530,21 @@ impl RoomScreen {
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
                 TimelineUpdate::RoomMembersListFetched { members } => {
-                    // Store room members directly in TimelineUiState
-                    tl.room_members = Some(Arc::new(members));
+                    let members = Arc::new(members);
+                    if let Some(app_state) = app_state {
+                        let room_id = tl.kind.room_id().clone();
+                        if let Some(bot_user_id) = detected_bot_binding_for_members(
+                            app_state,
+                            &room_id,
+                            members.as_ref(),
+                        ) {
+                            Cx::post_action(AppStateAction::BotRoomBindingDetected {
+                                room_id,
+                                bot_user_id,
+                            });
+                        }
+                    }
+                    tl.room_members = Some(members);
                 },
                 TimelineUpdate::MediaFetched(request) => {
                     log!("process_timeline_updates(): media fetched for room {}", tl.kind.room_id());
@@ -1552,6 +2585,7 @@ impl RoomScreen {
                     // Then, we "process" it later (by turning it into a string) after the
                     // update loop has completed, which avoids unnecessary expensive work
                     // if the list of typing users gets updated many times in a row.
+
                     typing_users = Some(users);
                 }
                 TimelineUpdate::PinnedEvents(pinned_events) => {
@@ -1590,9 +2624,10 @@ impl RoomScreen {
         }
 
         if should_continue_backwards_pagination {
+            tl.backwards_pagination_in_flight = true;
             submit_async_request(MatrixRequest::PaginateTimeline {
                 timeline_kind: tl.kind.clone(),
-                num_events: 50,
+                num_events: VIEWPORT_FILL_PAGINATION_SIZE,
                 direction: PaginationDirection::Backwards,
             });
         }
@@ -1608,6 +2643,7 @@ impl RoomScreen {
         }
 
         if num_updates > 0 {
+            self.schedule_stream_timeout(cx);
             // log!("Applied {} timeline updates for room {}, redrawing with {} items...", num_updates, tl.kind.room_id(), tl.items.len());
             self.redraw(cx);
         }
@@ -2082,6 +3118,7 @@ impl RoomScreen {
                 MessageAction::ActionBarOpen { .. } => { }
                 // This isn't yet handled, as we need to completely redesign it.
                 MessageAction::ActionBarClose => { }
+                MessageAction::ToggleAppServiceActions => { }
                 MessageAction::None => { }
             }
         }
@@ -2238,6 +3275,7 @@ impl RoomScreen {
                 room_members: None,
                 // We assume timelines being viewed for the first time haven't been fully paginated.
                 fully_paginated: false,
+                backwards_pagination_in_flight: false,
                 items: Vector::new(),
                 content_drawn_since_last_update: RangeSet::new(),
                 profile_drawn_since_last_update: RangeSet::new(),
@@ -2249,6 +3287,7 @@ impl RoomScreen {
                 pending_thread_summary_fetches: HashSet::new(),
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
+                streaming_messages: HashMap::new(),
                 last_scrolled_index: usize::MAX,
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
@@ -2285,10 +3324,11 @@ impl RoomScreen {
         // when they first open the room, and there might not be any messages yet.
         if is_first_time_being_loaded {
             if !tl_state.fully_paginated {
+                tl_state.backwards_pagination_in_flight = true;
                 log!("Sending a first-time backwards pagination request for {}", tl_state.kind);
                 submit_async_request(MatrixRequest::PaginateTimeline {
                     timeline_kind: tl_state.kind.clone(),
-                    num_events: 50,
+                    num_events: VIEWPORT_FILL_PAGINATION_SIZE,
                     direction: PaginationDirection::Backwards,
                 });
             }
@@ -2344,10 +3384,11 @@ impl RoomScreen {
         // Store the tl_state for this room into this RoomScreen widget,
         // such that it can be accessed in future functions like event/draw handlers.
         self.tl_state = Some(tl_state);
+        self.schedule_stream_timeout(cx);
 
         // Now that we have restored the TimelineUiState into this RoomScreen widget,
         // we can proceed to processing pending background updates.
-        self.process_timeline_updates(cx, &self.portal_list(cx, ids!(list)));
+        self.process_timeline_updates(cx, &self.portal_list(cx, ids!(list)), None);
 
         self.redraw(cx);
     }
@@ -2355,6 +3396,7 @@ impl RoomScreen {
     /// Invoke this when this RoomScreen/timeline is being hidden or no longer being shown.
     fn hide_timeline(&mut self) {
         let Some(timeline_kind) = self.timeline_kind.clone() else { return };
+        self.streaming_timeout_timer = Timer::empty();
 
         self.save_state();
 
@@ -2378,6 +3420,7 @@ impl RoomScreen {
             timeline_kind,
             subscribe: false,
         });
+        self.room_avatar_url = None;
     }
 
     /// Removes the current room's visual UI state from this widget
@@ -2441,6 +3484,17 @@ impl RoomScreen {
             tl_state.user_power,
             tl_state.tombstone_info.as_ref(),
         );
+
+        refresh_stream_indices(
+            tl_state.items.iter().map(item_event_id),
+            &mut tl_state.streaming_messages,
+        );
+
+        // 3. If there are active streaming animations that can still reveal text,
+        //    re-request the NextFrame event so the animation loop resumes.
+        if tl_state.streaming_messages.values().any(|state| state.needs_frame()) {
+            self.streaming_next_frame = cx.new_next_frame();
+        }
     }
 
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
@@ -2465,14 +3519,21 @@ impl RoomScreen {
         // but we do need update the `room_name_id` in case it has changed, or it has been cleared.
         if self.timeline_kind.as_ref().is_some_and(|kind| kind == &timeline_kind) {
             self.room_name_id = Some(room_name_id.clone());
+            self.room_avatar_url = get_client()
+                .and_then(|client| client.get_room(room_name_id.room_id()))
+                .and_then(|room| room.avatar_url());
             return;
         }
 
         self.hide_timeline();
+        self.reset_app_service_ui(cx);
         // Reset the the state of the inner loading pane.
         self.loading_pane(cx, ids!(loading_pane)).take_state();
 
         self.room_name_id = Some(room_name_id.clone());
+        self.room_avatar_url = get_client()
+            .and_then(|client| client.get_room(room_name_id.room_id()))
+            .and_then(|room| room.avatar_url());
         self.timeline_kind = Some(timeline_kind.clone());
 
         // We initially tell every MentionableTextInput widget that the current user
@@ -2574,7 +3635,8 @@ impl RoomScreen {
         if !portal_list.scrolled(actions) { return };
 
         let first_index = portal_list.first_id();
-        if first_index == 0 && tl.last_scrolled_index > 0 {
+        if first_index == 0 && tl.last_scrolled_index > 0 && !tl.backwards_pagination_in_flight {
+            tl.backwards_pagination_in_flight = true;
             log!("Scrolled up from item {} --> 0, sending back pagination request for room {}",
                 tl.last_scrolled_index, tl.kind,
             );
@@ -2609,6 +3671,8 @@ pub struct RoomScreenProps {
     pub timeline_kind: TimelineKind,
     pub room_members: Option<Arc<Vec<RoomMember>>>,
     pub room_avatar_url: Option<OwnedMxcUri>,
+    pub app_service_enabled: bool,
+    pub app_service_room_bound: bool,
 }
 
 
@@ -2718,7 +3782,7 @@ pub enum TimelineUpdate {
     MediaFetched(MediaRequestParameters),
     /// A notice that one or more members of a this room are currently typing.
     TypingUsers {
-        /// The list of users (their displayable name) who are currently typing in this room.
+        /// The list of display names of users who are currently typing in this room.
         users: Vec<String>,
     },
     /// The result of a pin/unpin request ([`MatrixRequest::PinEvent`]).
@@ -2770,6 +3834,10 @@ struct TimelineUiState {
     ///
     /// This must be reset to `false` whenever the timeline is fully cleared.
     fully_paginated: bool,
+
+    /// Whether a backwards pagination request has already been submitted
+    /// and is still in flight.
+    backwards_pagination_in_flight: bool,
 
     /// The list of items (events) in this room's timeline that our client currently knows about.
     items: Vector<Arc<TimelineItem>>,
@@ -2827,6 +3895,10 @@ struct TimelineUiState {
     /// Once the scrolling is started, the state becomes Pending.
     /// If the animation was triggered, the state goes back to Off.
     message_highlight_animation_state: MessageHighlightAnimationState,
+
+    /// Active streaming animations, keyed by event ID.
+    /// Stores the typewriter animation state for messages being streamed by bots.
+    streaming_messages: HashMap<OwnedEventId, super::streaming_animation::StreamingAnimState>,
 
     /// The index of the timeline item that was most recently scrolled up past it.
     /// This is used to detect when the user has scrolled up past the second visible item (index 1)
@@ -2988,6 +4060,7 @@ fn populate_message_view(
     pinned_events: &[OwnedEventId],
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
+    streaming_messages: &mut HashMap<OwnedEventId, super::streaming_animation::StreamingAnimState>,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
     let ts_millis = event_tl_item.timestamp();
@@ -3032,17 +4105,30 @@ fn populate_message_view(
                     } else {
                         let html_or_plaintext_ref =
                             item.html_or_plaintext(cx, ids!(content.message));
-                        let mut link_preview_ref =
-                            item.link_preview(cx, ids!(content.link_preview_view));
-                        new_drawn_status.content_drawn = populate_text_message_content(
-                            cx,
-                            &html_or_plaintext_ref,
-                            body,
-                            formatted.as_ref(),
-                            Some(&mut link_preview_ref),
-                            Some(media_cache),
-                            Some(link_preview_cache),
-                        );
+
+                        // Check if this message is being streamed
+                        let is_streaming = event_tl_item.event_id()
+                            .and_then(|eid| streaming_messages.get_mut(&eid.to_owned()));
+
+                        if let Some(state) = is_streaming {
+                            // STREAMING MODE: show partial plaintext with cursor
+                            state.fill_display_buffer();
+                            html_or_plaintext_ref.show_plaintext(cx, &state.display_buffer);
+                            new_drawn_status.content_drawn = false; // force re-render
+                        } else {
+                            // NORMAL MODE: existing logic
+                            let mut link_preview_ref =
+                                item.link_preview(cx, ids!(content.link_preview_view));
+                            new_drawn_status.content_drawn = populate_text_message_content(
+                                cx,
+                                &html_or_plaintext_ref,
+                                body,
+                                formatted.as_ref(),
+                                Some(&mut link_preview_ref),
+                                Some(media_cache),
+                                Some(link_preview_cache),
+                            );
+                        }
                         (item, false)
                     }
                 }
@@ -3477,6 +4563,7 @@ fn populate_message_view(
         item_id,
         related_event_id: msg_like_content.in_reply_to.as_ref().map(|r| r.event_id.clone()),
         room_screen_widget_uid,
+        is_thread_timeline: timeline_kind.thread_root_event_id().is_some(),
         abilities: MessageAbilities::from_user_power_and_event(
             user_power_levels,
             event_tl_item,
@@ -3544,12 +4631,12 @@ fn populate_message_view(
         item.timestamp(cx, ids!(profile.timestamp)).set_date_time(cx, dt);
     }
 
-    // Set the "edited" indicator if this message was edited.
-    if msg_like_content.as_message().is_some_and(|m| m.is_edited()) {
-        item.edited_indicator(cx, ids!(profile.edited_indicator)).set_latest_edit(
-            cx,
-            event_tl_item,
-        );
+    // Suppress "edited" indicator for actively streaming messages.
+    let is_streaming = event_tl_item.event_id()
+        .is_some_and(|eid| streaming_messages.contains_key(&eid.to_owned()));
+    if msg_like_content.as_message().is_some_and(|m| m.is_edited()) && !is_streaming {
+        item.edited_indicator(cx, ids!(profile.edited_indicator))
+            .set_latest_edit(cx, event_tl_item);
     }
 
     #[cfg(feature = "tsp")] {
@@ -4583,6 +5670,8 @@ pub enum MessageAction {
     },
     /// The user requested closing the message action bar
     ActionBarClose,
+    /// The user requested toggling the in-room app service quick actions card.
+    ToggleAppServiceActions,
     #[default]
     None,
 }
@@ -4591,6 +5680,113 @@ impl ActionDefaultRef for MessageAction {
     fn default_ref() -> &'static Self {
         static DEFAULT: MessageAction = MessageAction::None;
         &DEFAULT
+    }
+}
+
+#[derive(Clone, Default, Debug)]
+pub enum AppServicePanelAction {
+    Dismiss,
+    OpenCreateBotModal,
+    OpenDeleteBotModal,
+    SendListBots,
+    SendBotHelp,
+    Unbind,
+    #[default]
+    None,
+}
+
+impl ActionDefaultRef for AppServicePanelAction {
+    fn default_ref() -> &'static Self {
+        static DEFAULT: AppServicePanelAction = AppServicePanelAction::None;
+        &DEFAULT
+    }
+}
+
+#[derive(Script, ScriptHook, Widget)]
+pub struct AppServicePanel {
+    #[deref] view: View,
+}
+
+impl Widget for AppServicePanel {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+
+        let room_screen_props = scope
+            .props
+            .get::<RoomScreenProps>()
+            .expect("BUG: RoomScreenProps should be available in Scope::props for AppServicePanel");
+
+        if let Event::Actions(actions) = event {
+            if self
+                .view
+                .button(cx, ids!(bubble.header.dismiss_button))
+                .clicked(actions)
+            {
+                cx.widget_action(
+                    room_screen_props.room_screen_widget_uid,
+                    AppServicePanelAction::Dismiss,
+                );
+            }
+
+            if self
+                .view
+                .button(cx, ids!(keyboard.first_row.create_button))
+                .clicked(actions)
+            {
+                cx.widget_action(
+                    room_screen_props.room_screen_widget_uid,
+                    AppServicePanelAction::OpenCreateBotModal,
+                );
+            }
+
+            if self
+                .view
+                .button(cx, ids!(keyboard.first_row.list_button))
+                .clicked(actions)
+            {
+                cx.widget_action(
+                    room_screen_props.room_screen_widget_uid,
+                    AppServicePanelAction::SendListBots,
+                );
+            }
+
+            if self
+                .view
+                .button(cx, ids!(keyboard.second_row.delete_button))
+                .clicked(actions)
+            {
+                cx.widget_action(
+                    room_screen_props.room_screen_widget_uid,
+                    AppServicePanelAction::OpenDeleteBotModal,
+                );
+            }
+
+            if self
+                .view
+                .button(cx, ids!(keyboard.second_row.help_button))
+                .clicked(actions)
+            {
+                cx.widget_action(
+                    room_screen_props.room_screen_widget_uid,
+                    AppServicePanelAction::SendBotHelp,
+                );
+            }
+
+            if self
+                .view
+                .button(cx, ids!(keyboard.third_row.unbind_button))
+                .clicked(actions)
+            {
+                cx.widget_action(
+                    room_screen_props.room_screen_widget_uid,
+                    AppServicePanelAction::Unbind,
+                );
+            }
+        }
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
     }
 }
 
@@ -4795,4 +5991,109 @@ pub fn clear_timeline_states(_cx: &mut Cx) {
     TIMELINE_STATES.with_borrow_mut(|states| {
         states.clear();
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::home::streaming_animation::StreamingAnimState;
+    use std::time::{Duration, Instant};
+
+    fn make_state(text: &str) -> StreamingAnimState {
+        StreamingAnimState::new(text, true)
+    }
+
+    #[test]
+    fn test_streaming_scan_range() {
+        // Incremental: clamp sentinel to new_len
+        assert_eq!(streaming_scan_range(false, &(5..usize::MAX), 8, 9), 5..9);
+        // Append: new item at end is scanned
+        assert_eq!(streaming_scan_range(false, &(8..9), 8, 9), 8..9);
+        // No changes: empty range
+        assert_eq!(streaming_scan_range(false, &(8..8), 8, 8), 8..8);
+        // Clear cache: full scan
+        assert_eq!(streaming_scan_range(true, &(5..usize::MAX), 8, 9), 0..9);
+    }
+
+    #[test]
+    fn test_refresh_stream_indices() {
+        let event_id_a: OwnedEventId = "$event-a:example.com".try_into().unwrap();
+        let event_id_b: OwnedEventId = "$event-b:example.com".try_into().unwrap();
+        let missing_event_id: OwnedEventId = "$missing:example.com".try_into().unwrap();
+
+        let mut streaming_messages = HashMap::new();
+        streaming_messages.insert(event_id_a.clone(), make_state("alpha"));
+        streaming_messages.insert(missing_event_id.clone(), make_state("missing"));
+
+        let event_ids = vec![None, Some(event_id_a.as_ref()), Some(event_id_b.as_ref())];
+        refresh_stream_indices(event_ids.into_iter(), &mut streaming_messages);
+
+        assert_eq!(streaming_messages[&event_id_a].timeline_index, Some(1));
+        assert_eq!(streaming_messages[&missing_event_id].timeline_index, None);
+    }
+
+    #[test]
+    fn test_timeout_picks_earliest() {
+        let mut live = make_state("alpha");
+        live.last_update_time = Instant::now() - Duration::from_secs(40);
+        let mut finished = make_state("beta");
+        finished.is_live = false;
+        finished.last_update_time = Instant::now() - Duration::from_secs(29);
+
+        let timeout = next_stream_timeout([&live, &finished].into_iter()).unwrap();
+
+        assert!(timeout <= Duration::from_secs(1));
+    }
+
+    #[test]
+    fn test_full_snapshot_rebuild_drops_finished_cached_streams() {
+        let event_id: OwnedEventId = "$event-live:example.com".try_into().unwrap();
+        let mut previous = HashMap::new();
+        let mut previous_state = make_state("hello live");
+        previous_state.advance_displayed(4);
+        previous.insert(event_id.clone(), previous_state);
+
+        let (rebuilt, should_schedule_frame) = rebuild_streaming_messages_for_full_snapshot(
+            [(event_id, String::from("hello final"), false)],
+            Some(&previous),
+        );
+
+        assert!(rebuilt.is_empty());
+        assert!(!should_schedule_frame);
+    }
+
+    #[test]
+    fn test_full_snapshot_rebuild_restores_live_cached_streams() {
+        let event_id: OwnedEventId = "$event-live:example.com".try_into().unwrap();
+        let mut previous = HashMap::new();
+        let mut previous_state = make_state("hello");
+        previous_state.advance_displayed(3);
+        previous.insert(event_id.clone(), previous_state);
+
+        let (rebuilt, should_schedule_frame) = rebuild_streaming_messages_for_full_snapshot(
+            [(event_id.clone(), String::from("hello world"), true)],
+            Some(&previous),
+        );
+
+        let restored = rebuilt.get(&event_id).unwrap();
+        assert_eq!(restored.displayed_char_count, 3);
+        assert!(restored.is_live);
+        assert!(should_schedule_frame);
+    }
+
+    #[test]
+    fn test_full_snapshot_rebuild_skips_live_without_cached_state() {
+        // Without previous state, full-snapshot rebuild must NOT create new
+        // animations — the SDK may not have aggregated edits yet, so
+        // completed messages can still appear as `live`.
+        let event_id: OwnedEventId = "$event-live:example.com".try_into().unwrap();
+
+        let (rebuilt, should_schedule_frame) = rebuild_streaming_messages_for_full_snapshot(
+            [(event_id.clone(), String::from("hello world"), true)],
+            None,
+        );
+
+        assert!(rebuilt.is_empty());
+        assert!(!should_schedule_frame);
+    }
 }

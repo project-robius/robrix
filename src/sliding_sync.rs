@@ -12,11 +12,12 @@ use matrix_sdk::{
         api::{Direction, client::{
             account::register::v3::Request as RegistrationRequest,
             room::create_room::v3::{Request as CreateRoomRequest, RoomPreset},
+            directory::get_public_rooms_filtered,
             error::ErrorKind,
             profile::{AvatarUrl, DisplayName},
             receipt::create_receipt::v3::ReceiptType,
             uiaa::{AuthData, AuthType, Dummy},
-        }}, events::{
+        }}, directory::{Filter as PublicRoomsFilter, RoomTypeFilter}, events::{
             relation::RelationType,
             room::{
                 encryption::RoomEncryptionEventContent, message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
@@ -40,8 +41,8 @@ use std::{borrow::Cow, cmp::{max, min}, future::Future, hash::{BuildHasherDefaul
 use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
-    app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
-        add_room::{CreatableSpacesAction, CreateRoomAction, CreateRoomContext, KnockResultAction}, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
+    app::{AppStateAction, RoomFilterRemoteSearchAction}, app_data_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
+        add_room::{CreatableSpacesAction, CreateRoomAction, CreateRoomContext, KnockResultAction}, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, build_room_search_text, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
@@ -283,6 +284,12 @@ fn is_invalid_token_http_error(error: &matrix_sdk::HttpError) -> bool {
         error.client_api_error_kind(),
         Some(ErrorKind::UnknownToken { .. } | ErrorKind::MissingToken)
     )
+}
+
+fn is_invalid_batch_token_timeline_error(error: &matrix_sdk_ui::timeline::Error) -> bool {
+    let error_text = error.to_string().to_ascii_lowercase();
+    error_text.contains("invalid batch token")
+        || error_text.contains("must start with 's' or 't'")
 }
 
 
@@ -676,6 +683,12 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         user_id: OwnedUserId,
     },
+    /// Request to bind or unbind the configured botfather for the given room.
+    SetRoomBotBinding {
+        room_id: OwnedRoomId,
+        bound: bool,
+        bot_user_id: OwnedUserId,
+    },
     /// Request to join the given room.
     JoinRoom {
         room_id: OwnedRoomId,
@@ -704,6 +717,12 @@ pub enum MatrixRequest {
     GetRoomPreview {
         room_or_alias_id: OwnedRoomOrAliasId,
         via: Vec<OwnedServerName>,
+    },
+    /// Request to search server-side directory for users, rooms, or spaces.
+    SearchDirectory {
+        query: String,
+        kind: RemoteDirectorySearchKind,
+        limit: u64,
     },
     /// Request to fetch the full details (the room preview) of a tombstoned room.
     GetSuccessorRoomDetails {
@@ -920,6 +939,26 @@ pub enum MatrixRequest {
     },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RemoteDirectorySearchKind {
+    People,
+    Rooms,
+    Spaces,
+}
+
+#[derive(Clone, Debug)]
+pub enum RemoteDirectorySearchResult {
+    User(UserProfile),
+    Room {
+        room_name_id: RoomNameId,
+        avatar_uri: Option<OwnedMxcUri>,
+    },
+    Space {
+        space_name_id: RoomNameId,
+        avatar_uri: Option<OwnedMxcUri>,
+    },
+}
+
 /// Submits a request to the worker thread to be executed asynchronously.
 pub fn submit_async_request(req: MatrixRequest) {
     if let Some(sender) = REQUEST_SENDER.lock().unwrap().as_ref() {
@@ -999,6 +1038,7 @@ async fn matrix_worker_task(
                     log!("Skipping pagination request for unknown {timeline_kind}");
                     continue;
                 };
+                let client = get_client();
 
                 // Spawn a new async task that will make the actual pagination request.
                 let _paginate_task = Handle::current().spawn(async move {
@@ -1006,11 +1046,44 @@ async fn matrix_worker_task(
                     sender.send(TimelineUpdate::PaginationRunning(direction)).unwrap();
                     SignalToUI::set_ui_signal();
 
-                    let res = if direction == PaginationDirection::Forwards {
+                    let mut res = if direction == PaginationDirection::Forwards {
                         timeline.paginate_forwards(num_events).await
                     } else {
                         timeline.paginate_backwards(num_events).await
                     };
+
+                    if direction == PaginationDirection::Backwards
+                        && res
+                            .as_ref()
+                            .err()
+                            .is_some_and(is_invalid_batch_token_timeline_error)
+                    {
+                        warning!(
+                            "Detected an invalid cached batch token for {timeline_kind}; clearing the room event cache and retrying once."
+                        );
+                        let room_id = timeline_kind.room_id().clone();
+                        if let Some(room) = client.and_then(|client| client.get_room(&room_id)) {
+                            match room.event_cache().await {
+                                Ok((room_event_cache, _drop_handles)) => {
+                                    match room_event_cache.clear().await {
+                                        Ok(()) => {
+                                            res = timeline.paginate_backwards(num_events).await;
+                                        }
+                                        Err(clear_error) => {
+                                            warning!(
+                                                "Failed to clear event cache for room {room_id} after invalid batch token: {clear_error}"
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(event_cache_error) => {
+                                    warning!(
+                                        "Failed to access room event cache for room {room_id} after invalid batch token: {event_cache_error}"
+                                    );
+                                }
+                            }
+                        }
+                    }
 
                     match res {
                         Ok(fully_paginated) => {
@@ -1261,6 +1334,68 @@ async fn matrix_worker_task(
                 });
             }
 
+            MatrixRequest::SetRoomBotBinding {
+                room_id,
+                bound,
+                bot_user_id,
+            } => {
+                let Some(client) = get_client() else { continue };
+                let _bot_binding_task = Handle::current().spawn(async move {
+                    let Some(room) = client.get_room(&room_id) else {
+                        let error_message =
+                            format!("Room {room_id} was not found for the bot binding request.");
+                        error!("{error_message}");
+                        enqueue_popup_notification(error_message, PopupKind::Error, None);
+                        return;
+                    };
+
+                    let membership_result = if bound {
+                        room.invite_user_by_id(&bot_user_id).await
+                    } else {
+                        room.kick_user(&bot_user_id, Some("Robrix app service unbind")).await
+                    };
+
+                    match membership_result {
+                        Ok(()) => {
+                            Cx::post_action(AppStateAction::BotRoomBindingUpdated {
+                                room_id,
+                                bound,
+                                bot_user_id: Some(bot_user_id),
+                                warning: None,
+                            });
+                        }
+                        Err(error) => {
+                            let membership_exists =
+                                room.get_member_no_sync(&bot_user_id).await.ok().flatten().is_some();
+                            let should_mark_bound = if bound { membership_exists } else { false };
+
+                            if should_mark_bound != bound {
+                                error!(
+                                    "Failed to {} BotFather {bot_user_id} for room {room_id}: {error:?}",
+                                    if bound { "invite" } else { "remove" }
+                                );
+                                enqueue_popup_notification(
+                                    format!(
+                                        "Failed to {} BotFather {bot_user_id}: {error}",
+                                        if bound { "invite" } else { "remove" }
+                                    ),
+                                    PopupKind::Error,
+                                    None,
+                                );
+                                return;
+                            }
+
+                            Cx::post_action(AppStateAction::BotRoomBindingUpdated {
+                                room_id,
+                                bound,
+                                bot_user_id: Some(bot_user_id),
+                                warning: Some(error.to_string()),
+                            });
+                        }
+                    }
+                });
+            }
+
             MatrixRequest::JoinRoom { room_id } => {
                 let Some(client) = get_client() else { continue };
                 let _join_room_task = Handle::current().spawn(async move {
@@ -1350,6 +1485,98 @@ async fn matrix_worker_task(
                 let _fetch_task = Handle::current().spawn(async move {
                     let res = fetch_room_preview_with_avatar(&client, &room_or_alias_id, via).await;
                     Cx::post_action(RoomPreviewAction::Fetched(res));
+                });
+            }
+
+            MatrixRequest::SearchDirectory { query, kind, limit } => {
+                let Some(client) = get_client() else { continue };
+                let _search_task = Handle::current().spawn(async move {
+                    let query = query.trim().to_owned();
+                    let action_kind = kind.clone();
+                    if query.is_empty() {
+                        Cx::post_action(RoomFilterRemoteSearchAction::Results {
+                            query,
+                            kind: action_kind,
+                            results: Vec::new(),
+                        });
+                        return;
+                    }
+
+                    let result = match &kind {
+                        RemoteDirectorySearchKind::People => {
+                            client.search_users(&query, limit).await
+                                .map(|response| {
+                                    response.results.into_iter()
+                                        .map(|user| {
+                                            RemoteDirectorySearchResult::User(UserProfile {
+                                                username: user.display_name,
+                                                user_id: user.user_id,
+                                                avatar_state: AvatarState::Known(user.avatar_url),
+                                            })
+                                        })
+                                        .collect::<Vec<_>>()
+                                })
+                                .map_err(|e| e.to_string())
+                        }
+                        RemoteDirectorySearchKind::Rooms | RemoteDirectorySearchKind::Spaces => {
+                            let mut filter = PublicRoomsFilter::new();
+                            filter.generic_search_term = Some(query.clone());
+                            filter.room_types = match &kind {
+                                RemoteDirectorySearchKind::Rooms => vec![RoomTypeFilter::Default],
+                                RemoteDirectorySearchKind::Spaces => vec![RoomTypeFilter::Space],
+                                RemoteDirectorySearchKind::People => Vec::new(),
+                            };
+                            let mut request = get_public_rooms_filtered::v3::Request::new();
+                            request.filter = filter;
+                            client.public_rooms_filtered(request).await
+                                .map(|response| {
+                                    response.chunk.into_iter()
+                                        .take(limit as usize)
+                                        .map(|room| {
+                                            let display_name = room.name
+                                                .or_else(|| room.canonical_alias.as_ref().map(ToString::to_string))
+                                                .unwrap_or_else(|| room.room_id.to_string());
+                                            let room_name_id = RoomNameId::new(
+                                                RoomDisplayName::Named(display_name),
+                                                room.room_id.clone(),
+                                            );
+                                            match &kind {
+                                                RemoteDirectorySearchKind::Spaces => {
+                                                    RemoteDirectorySearchResult::Space {
+                                                        space_name_id: room_name_id,
+                                                        avatar_uri: room.avatar_url,
+                                                    }
+                                                }
+                                                _ => {
+                                                    RemoteDirectorySearchResult::Room {
+                                                        room_name_id,
+                                                        avatar_uri: room.avatar_url,
+                                                    }
+                                                }
+                                            }
+                                        })
+                                        .collect::<Vec<_>>()
+                                })
+                                .map_err(|e| e.to_string())
+                        }
+                    };
+
+                    match result {
+                        Ok(results) => {
+                            Cx::post_action(RoomFilterRemoteSearchAction::Results {
+                                query,
+                                kind: action_kind,
+                                results,
+                            });
+                        }
+                        Err(error) => {
+                            Cx::post_action(RoomFilterRemoteSearchAction::Failed {
+                                query,
+                                kind: action_kind,
+                                error,
+                            });
+                        }
+                    }
                 });
             }
 
@@ -1781,15 +2008,14 @@ async fn matrix_worker_task(
                         // log!("Received typing notifications for room {room_id}: {user_ids:?}");
                         let mut users = Vec::with_capacity(user_ids.len());
                         for user_id in user_ids {
-                            users.push(
-                                main_timeline.room()
-                                    .get_member_no_sync(&user_id)
-                                    .await
-                                    .ok()
-                                    .flatten()
-                                    .and_then(|m| m.display_name().map(|d| d.to_owned()))
-                                    .unwrap_or_else(|| user_id.to_string())
-                            );
+                            let display_name = main_timeline.room()
+                                .get_member_no_sync(&user_id)
+                                .await
+                                .ok()
+                                .flatten()
+                                .and_then(|m| m.display_name().map(|d| d.to_owned()))
+                                .unwrap_or_else(|| user_id.to_string());
+                            users.push(display_name);
                         }
                         if let Err(e) = timeline_update_sender.send(TimelineUpdate::TypingUsers { users }) {
                             error!("Error: timeline update sender couldn't send the list of typing users: {e:?}");
@@ -3449,6 +3675,11 @@ async fn add_new_room(
             };
             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddInvitedRoom(InvitedRoomInfo {
                 room_name_id: room_name_id.clone(),
+                search_text: build_room_search_text(
+                    &room_name_id,
+                    &new_room.room.canonical_alias(),
+                    &new_room.room.alt_aliases(),
+                ),
                 inviter_info,
                 room_avatar,
                 canonical_alias: new_room.room.canonical_alias(),
@@ -3533,6 +3764,11 @@ async fn add_new_room(
         is_marked_unread: new_room.is_marked_unread,
         room_avatar,
         room_name_id: room_name_id.clone(),
+        search_text: build_room_search_text(
+            &room_name_id,
+            &new_room.room.canonical_alias(),
+            &new_room.room.alt_aliases(),
+        ),
         canonical_alias: new_room.room.canonical_alias(),
         alt_aliases: new_room.room.alt_aliases(),
         has_been_paginated: false,

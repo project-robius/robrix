@@ -224,10 +224,16 @@ impl RoomsListEntry {
     fn set_adaptive_variant_selector(&self, cx: &mut Cx) {
         self.view
             .adaptive_view(cx, ids!(adaptive_preview))
-            .set_variant_selector(|_cx, parent_size| match parent_size.x {
-                width if width <= 70.0 => id!(OnlyIcon),
-                width if width <= 200.0 => id!(IconAndName),
-                _ => id!(FullPreview),
+            .set_variant_selector(|cx, parent_size| {
+                if cx.display_context.is_desktop() {
+                    id!(FullPreview)
+                } else {
+                    match parent_size.x {
+                        width if width <= 70.0 => id!(OnlyIcon),
+                        width if width <= 200.0 => id!(IconAndName),
+                        _ => id!(FullPreview),
+                    }
+                }
             });
     }
 }

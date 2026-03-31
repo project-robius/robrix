@@ -206,26 +206,6 @@ script_mod! {
                         width: Fill, height: Fill
                         flow: Down
 
-                        View {
-                            width: Fill,
-                            height: 39,
-                            flow: Right
-                            padding: Inset{top: 2, bottom: 2}
-                            margin: Inset{right: 2}
-                            spacing: 2
-                            align: Align{y: 0.5}
-
-                            CachedWidget {
-                                room_filter_input_bar := RoomFilterInputBar {}
-                            }
-
-                            search_messages_button := SearchMessagesButton {
-                                // make this button match/align with the RoomFilterInputBar
-                                height: 32.5,
-                                margin: Inset{right: 2}
-                            }
-                        }
-
                         mod.widgets.MainDesktopUI {}
                     }
 
@@ -451,7 +431,7 @@ impl Widget for HomeScreen {
                             if let Some(settings_page) = self.update_active_page_from_selection(cx, app_state) {
                                 settings_page
                                     .settings_screen(cx, ids!(settings_screen))
-                                    .populate(cx, None);
+                                    .populate(cx, None, &app_state.bot_settings);
                                 self.view.redraw(cx);
                             } else {
                                 error!("BUG: failed to set active page to show settings screen.");
@@ -512,4 +492,3 @@ impl HomeScreen {
             )
     }
 }
-
