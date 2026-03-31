@@ -54,7 +54,11 @@ script_mod! {
                 View { height: 23 }
 
                 CachedWidget {
-                    rooms_list_header := RoomsListHeader {}
+                    rooms_list_header := RoomsListHeader {
+                        open_room_filter_modal_button +: {
+                            visible: false
+                        }
+                    }
                 }
 
                 View {

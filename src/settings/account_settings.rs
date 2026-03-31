@@ -368,6 +368,11 @@ impl MatchEvent for AccountSettings {
             }
         }
 
+        if self.view.button(cx, ids!(logout_button)).clicked(actions) {
+            cx.action(LogoutConfirmModalAction::Open);
+            return;
+        }
+
         let Some(own_profile) = &self.own_profile else { return };
 
         if upload_avatar_button.clicked(actions) {
@@ -456,9 +461,6 @@ impl MatchEvent for AccountSettings {
             );
         }
 
-        if self.view.button(cx, ids!(logout_button)).clicked(actions) {
-            cx.action(LogoutConfirmModalAction::Open);
-        }
     }
 }
 

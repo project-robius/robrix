@@ -268,6 +268,8 @@ impl ActionDefaultRef for RoomsListAction {
 pub struct JoinedRoomInfo {
     /// The displayable name of this room (includes room ID for fallback).
     pub room_name_id: RoomNameId,
+    /// Lowercased searchable text cached for fast local search.
+    pub search_text: String,
     /// The number of unread messages in this room.
     pub num_unread_messages: u64,
     /// The number of unread mentions in this room.
@@ -310,6 +312,8 @@ pub struct JoinedRoomInfo {
 pub struct InvitedRoomInfo {
     /// The displayable name of this room (includes room ID for fallback).
     pub room_name_id: RoomNameId,
+    /// Lowercased searchable text cached for fast local search.
+    pub search_text: String,
     /// The canonical alias for this room, if any.
     pub canonical_alias: Option<OwnedRoomAliasId>,
     /// The alternative aliases for this room, if any.
@@ -339,6 +343,27 @@ pub struct InviterInfo {
     pub user_id: OwnedUserId,
     pub display_name: Option<String>,
     pub avatar: Option<Arc<[u8]>>,
+}
+
+pub fn build_room_search_text(
+    room_name_id: &RoomNameId,
+    canonical_alias: &Option<OwnedRoomAliasId>,
+    alt_aliases: &[OwnedRoomAliasId],
+) -> String {
+    let mut search_text = format!(
+        "{} {}",
+        room_name_id.to_string().to_lowercase(),
+        room_name_id.room_id().as_str().to_lowercase(),
+    );
+    if let Some(alias) = canonical_alias {
+        search_text.push(' ');
+        search_text.push_str(&alias.as_str().to_lowercase());
+    }
+    for alias in alt_aliases {
+        search_text.push(' ');
+        search_text.push_str(&alias.as_str().to_lowercase());
+    }
+    search_text
 }
 impl std::fmt::Debug for InviterInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -606,6 +631,7 @@ impl RoomsList {
                     // Try to update joined room first
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         room.room_name_id = new_room_name;
+                        room.search_text = build_room_search_text(&room.room_name_id, &room.canonical_alias, &room.alt_aliases);
                         let is_direct = room.is_direct;
                         let should_display = should_display_room!(self, &room_id, room);
                         let (pos_in_list, displayed_list) = if is_direct {
@@ -632,6 +658,7 @@ impl RoomsList {
                         let mut invited_rooms = self.invited_rooms.borrow_mut();
                         if let Some(invited_room) = invited_rooms.get_mut(&room_id) {
                             invited_room.room_name_id = new_room_name;
+                            invited_room.search_text = build_room_search_text(&invited_room.room_name_id, &invited_room.canonical_alias, &invited_room.alt_aliases);
                             let should_display = should_display_room!(self, &room_id, invited_room);
                             let pos_in_list = self.displayed_invited_rooms.iter()
                                 .position(|r| r == &room_id);
@@ -1593,6 +1620,35 @@ impl RoomsListRef {
             .space_map
             .get(space_id)
             .map(|smv| smv.parent_chain.clone())
+    }
+
+    /// Returns local room results matching `keywords`, up to `max_results`.
+    pub fn get_matching_room_items(&self, keywords: &str, max_results: usize) -> Vec<(RoomNameId, FetchedRoomAvatar)> {
+        let Some(inner) = self.borrow() else { return Vec::new(); };
+        let keywords = keywords.trim().to_lowercase();
+        if keywords.is_empty() {
+            return Vec::new();
+        }
+        let mut items = Vec::new();
+        let invited_rooms = inner.invited_rooms.borrow();
+        for ir in invited_rooms.values() {
+            if ir.search_text.contains(&keywords) {
+                items.push((ir.room_name_id.clone(), ir.room_avatar.clone()));
+                if items.len() >= max_results {
+                    return items;
+                }
+            }
+        }
+        drop(invited_rooms);
+        for jr in inner.all_joined_rooms.values() {
+            if jr.search_text.contains(&keywords) {
+                items.push((jr.room_name_id.clone(), jr.room_avatar.clone()));
+                if items.len() >= max_results {
+                    return items;
+                }
+            }
+        }
+        items
     }
 }
 
