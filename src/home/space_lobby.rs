@@ -22,6 +22,7 @@ use crate::{
     app::AppStateAction,
     avatar_cache::{self, AvatarCacheEntry},
     home::{
+        add_room::{CreateRoomAction, CreateRoomModalAction},
         invite_modal::InviteModalAction,
         rooms_list::RoomsListRef,
     },
@@ -482,6 +483,16 @@ script_mod! {
                     text: ""
                 }
 
+                create_room_button := RobrixPositiveIconButton {
+                    width: Fit
+                    align: Align{x: 0.5, y: 0.5}
+                    margin: Inset{left: 6}
+                    padding: 12,
+                    draw_icon.svg: (ICON_ADD)
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                    text: "New Room"
+                }
+
                 invite_button := RobrixPositiveIconButton {
                     width: Fit
                     align: Align{x: 0.5, y: 0.5}
@@ -921,6 +932,14 @@ impl Widget for SpaceLobbyScreen {
                     _ => { }
                 }
 
+                if let Some(CreateRoomAction::Created { room_name_id, parent_space_id, space_link_error, .. }) = action.downcast_ref() {
+                    if space_link_error.is_none()
+                        && parent_space_id.as_ref() == self.space_name_id.as_ref().map(RoomNameId::room_id)
+                    {
+                        self.insert_created_room_placeholder(cx, room_name_id);
+                    }
+                }
+
                 // Handle SubspaceEntry clicks
                 match action.as_widget_action().cast_ref() {
                     SubspaceEntryAction::SpaceClicked { space_id } => {
@@ -966,6 +985,14 @@ impl Widget for SpaceLobbyScreen {
                         });
                     }
                     SubspaceEntryAction::None => { }
+                }
+            }
+
+            if self.view.button(cx, ids!(header.parent_space_row.create_room_button)).clicked(actions) {
+                if let Some(space_name_id) = self.space_name_id.as_ref() {
+                    cx.action(CreateRoomModalAction::Open {
+                        parent_space_id: Some(space_name_id.room_id().clone()),
+                    });
                 }
             }
 
@@ -1200,6 +1227,49 @@ impl SpaceLobbyScreen {
             .map(|name| RoomNameId::new(RoomDisplayName::Named(name), room_id.clone()))
             .unwrap_or_else(|| RoomNameId::empty(room_id.clone()));
         BasicRoomDetails::Name(room_name_id)
+    }
+
+    fn insert_created_room_placeholder(&mut self, cx: &mut Cx, room_name_id: &RoomNameId) {
+        let Some(space_id) = self.space_name_id.as_ref().map(|space| space.room_id().clone()) else {
+            return;
+        };
+        let room_id = room_name_id.room_id().clone();
+        let display_name = room_name_id.to_string();
+        let mut children = self.children_cache.get(&space_id).cloned().unwrap_or_default();
+
+        if let Some(existing_index) = children.iter().position(|child| child.room_id == room_id) {
+            if let Some(existing_child) = children.get_mut(existing_index) {
+                existing_child.name = Some(display_name.clone());
+                existing_child.display_name = display_name;
+                existing_child.state = Some(RoomState::Joined);
+                existing_child.num_joined_members = existing_child.num_joined_members.max(1);
+            }
+        } else {
+            children.push_back(SpaceRoom {
+                room_id,
+                canonical_alias: None,
+                name: Some(display_name.clone()),
+                display_name,
+                topic: None,
+                avatar_url: None,
+                room_type: None,
+                num_joined_members: 1,
+                join_rule: None,
+                world_readable: None,
+                guest_can_join: false,
+                is_direct: Some(false),
+                children_count: 0,
+                state: Some(RoomState::Joined),
+                heroes: None,
+                via: Vec::new(),
+            });
+        }
+
+        self.children_cache.insert(space_id.clone(), children);
+        self.is_loading = false;
+        self.expanded_spaces.insert(space_id);
+        self.rebuild_tree_entries();
+        self.redraw(cx);
     }
 
     /// Handle receiving detailed children for a space.

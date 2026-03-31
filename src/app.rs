@@ -10,6 +10,7 @@ use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedMxcUri, OwnedRoomId, Owned
 use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::{self, AvatarCacheEntry, clear_avatar_cache}, home::{
+        add_room::{CreateRoomModalAction, CreateRoomModalWidgetRefExt},
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, invite_screen::InviteScreenWidgetRefExt, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, RoomScreenWidgetRefExt, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, space_lobby::SpaceLobbyScreenWidgetRefExt, spaces_bar::SpacesBarRef
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
@@ -254,6 +255,12 @@ script_mod! {
                                         }
                                     }
                                 }
+                            }
+                        }
+
+                        create_room_modal := Modal {
+                            content +: {
+                                create_room_modal_inner := CreateRoomModal {}
                             }
                         }
 
@@ -1164,6 +1171,19 @@ impl MatchEvent for App {
                 }
                 Some(InviteModalAction::Close) => {
                     self.ui.modal(cx, ids!(invite_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
+            }
+
+            match action.downcast_ref() {
+                Some(CreateRoomModalAction::Open { parent_space_id }) => {
+                    self.ui.create_room_modal(cx, ids!(create_room_modal_inner)).show(cx, parent_space_id.clone());
+                    self.ui.modal(cx, ids!(create_room_modal)).open(cx);
+                    continue;
+                }
+                Some(CreateRoomModalAction::Close) => {
+                    self.ui.modal(cx, ids!(create_room_modal)).close(cx);
                     continue;
                 }
                 _ => {}
