@@ -161,7 +161,7 @@ script_mod! {
         Desktop := RoundedView {
             flow: Down,
             align: Align{x: 0.5}
-            padding: Inset{top: 40., bottom: 8}
+            padding: Inset{top: 8., bottom: 8}
             width: (NAVIGATION_TAB_BAR_SIZE), 
             height: Fill
 

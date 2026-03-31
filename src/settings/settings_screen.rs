@@ -19,14 +19,14 @@ script_mod! {
             // The settings header shows a title, with a close button to the right.
             settings_header := View {
                 flow: Right,
-                align: Align{x: 1.0, y: 0.5},
                 width: Fill, height: Fit
-                margin: Inset{left: 5, right: 5}
+                margin: Inset{top: 5, left: 5, right: 5}
                 spacing: 10,
 
                 settings_header_title := TitleLabel {
-                    margin: Inset{top: 4} // line up with the close button
-                    text: "All Settings"
+                    padding: 0,
+                    margin: Inset{ left: 1, top: 11 },
+                    text: "Add/Explore Rooms"
                     draw_text +: {
                         text_style: theme.font_regular {font_size: 18},
                     }
@@ -36,9 +36,8 @@ script_mod! {
                 close_button := RobrixNeutralIconButton {
                     width: Fit,
                     height: Fit,
-                    align: Align{x: 1.0, y: 0.0},
                     spacing: 0,
-                    margin: Inset{top: 4.5} // vertically align with the title
+                    margin: 0,
                     padding: 15,
                     draw_icon.svg: (ICON_CLOSE)
                     icon_walk: Walk{width: 14, height: 14}
@@ -48,7 +47,7 @@ script_mod! {
             // Make sure the dividing line is aligned with the close_button
             LineH { padding: 10, margin: Inset{top: 10, right: 2} }
 
-            ScrollXYView {
+            ScrollYView {
                 width: Fill, height: Fill
                 flow: Down
 
