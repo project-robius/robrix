@@ -20,7 +20,7 @@ script_mod! {
     // Defines the total height of the StackNavigationView's header.
     // This has to be set in multiple places because of how StackNavigation
     // uses an Overlay view internally.
-    mod.widgets.STACK_VIEW_HEADER_HEIGHT = 75
+    mod.widgets.STACK_VIEW_HEADER_HEIGHT = 45
 
     // A reusable base for StackNavigationView children in the mobile layout.
     // Each specific content view (room, invite, space lobby) extends this
@@ -29,6 +29,11 @@ script_mod! {
         width: Fill, height: Fill
         draw_bg.color: (COLOR_PRIMARY)
         header +: {
+            height: (mod.widgets.STACK_VIEW_HEADER_HEIGHT),
+            padding: 0
+            align: Align{y: 0.5}
+
+            // Below is a shader to draw a shadow under the bottom half of the header
             clip_x: false,
             clip_y: false,
             show_bg: true,
@@ -111,11 +116,9 @@ script_mod! {
                 }
             }
 
-            padding: Inset{top: 30, bottom: 0}
-            height: (mod.widgets.STACK_VIEW_HEADER_HEIGHT),
-
             content +: {
                 height: (mod.widgets.STACK_VIEW_HEADER_HEIGHT)
+                align: Align{y: 0.5}
                 button_container +: {
                     padding: 0,
                     margin: 0
@@ -130,7 +133,7 @@ script_mod! {
                     }
                 }
                 title_container +: {
-                    padding: Inset{top: 8}
+                    // padding: Inset{top: 8}
                     title +: {
                         draw_text +: {
                             color: (ROOM_NAME_TEXT_COLOR)
@@ -273,99 +276,97 @@ script_mod! {
                 draw_bg.color: (COLOR_PRIMARY)
 
                 view_stack := StackNavigation {
-                        root_view +: {
-                            flow: Down
+                    root_view +: {
+                        flow: Down
+                        width: Fill, height: Fill
+
+                        // At the top of the root view, we use the PageFlip widget to show either
+                        // the main list of rooms or the settings screen.
+                        home_screen_page_flip := PageFlip {
                             width: Fill, height: Fill
 
-                            // At the top of the root view, we use the PageFlip widget to show either
-                            // the main list of rooms or the settings screen.
-                            home_screen_page_flip := PageFlip {
+                            lazy_init: true,
+                            active_page: @home_page
+
+                            home_page := View {
+                                width: Fill, height: Fill
+                                // Note: while the other page views have top padding, we do NOT add that here
+                                // because it is added in the `RoomsSideBar`'s `RoundedShadowView` itself.
+                                flow: Down
+
+                                mod.widgets.RoomsSideBar {}
+                            }
+
+                            settings_page := View {
                                 width: Fill, height: Fill
 
-                                lazy_init: true,
-                                active_page: @home_page
-
-                                home_page := View {
-                                    width: Fill, height: Fill
-                                    // Note: while the other page views have top padding, we do NOT add that here
-                                    // because it is added in the `RoomsSideBar`'s `RoundedShadowView` itself.
-                                    flow: Down
-
-                                    mod.widgets.RoomsSideBar {}
-                                }
-
-                                settings_page := View {
-                                    width: Fill, height: Fill
-                                    padding: Inset{top: 20}
-
-                                    CachedWidget {
-                                        settings_screen := mod.widgets.SettingsScreen {}
-                                    }
-                                }
-
-                                add_room_page := View {
-                                    width: Fill, height: Fill
-                                    padding: Inset{top: 20}
-
-                                    CachedWidget {
-                                        add_room_screen := mod.widgets.AddRoomScreen {}
-                                    }
+                                CachedWidget {
+                                    settings_screen := mod.widgets.SettingsScreen {}
                                 }
                             }
 
-                            // Show the SpacesBar right above the navigation tab bar.
-                            // We wrap it in the SpacesBarWrapper in order to animate it in or out,
-                            // and wrap *that* in a CachedWidget in order to maintain its shown/hidden state
-                            // across AdaptiveView transitions between Mobile view mode and Desktop view mode.
-                            // 
-                            // ... Then we wrap *that* in a ... <https://www.youtube.com/watch?v=evUWersr7pc>
-                            CachedWidget {
-                                spaces_bar_wrapper := mod.widgets.SpacesBarWrapper {}
-                            }
+                            add_room_page := View {
+                                width: Fill, height: Fill
 
-                            // At the bottom of the root view, show the navigation tab bar horizontally.
-                            CachedWidget {
-                                navigation_tab_bar := mod.widgets.NavigationTabBar {}
+                                CachedWidget {
+                                    add_room_screen := mod.widgets.AddRoomScreen {}
+                                }
                             }
                         }
 
-                        // Room views: multiple instances to support deep stacking
-                        // (e.g., room -> thread -> room -> thread -> ...).
-                        // Each stack depth gets its own dedicated view widget,
-                        // avoiding complex state save/restore when views are reused.
-                        room_view_0  := mod.widgets.RobrixContentView { body +: { room_screen_0  := mod.widgets.RoomScreen {} } }
-                        room_view_1  := mod.widgets.RobrixContentView { body +: { room_screen_1  := mod.widgets.RoomScreen {} } }
-                        room_view_2  := mod.widgets.RobrixContentView { body +: { room_screen_2  := mod.widgets.RoomScreen {} } }
-                        room_view_3  := mod.widgets.RobrixContentView { body +: { room_screen_3  := mod.widgets.RoomScreen {} } }
-                        room_view_4  := mod.widgets.RobrixContentView { body +: { room_screen_4  := mod.widgets.RoomScreen {} } }
-                        room_view_5  := mod.widgets.RobrixContentView { body +: { room_screen_5  := mod.widgets.RoomScreen {} } }
-                        room_view_6  := mod.widgets.RobrixContentView { body +: { room_screen_6  := mod.widgets.RoomScreen {} } }
-                        room_view_7  := mod.widgets.RobrixContentView { body +: { room_screen_7  := mod.widgets.RoomScreen {} } }
-                        room_view_8  := mod.widgets.RobrixContentView { body +: { room_screen_8  := mod.widgets.RoomScreen {} } }
-                        room_view_9  := mod.widgets.RobrixContentView { body +: { room_screen_9  := mod.widgets.RoomScreen {} } }
-                        room_view_10 := mod.widgets.RobrixContentView { body +: { room_screen_10 := mod.widgets.RoomScreen {} } }
-                        room_view_11 := mod.widgets.RobrixContentView { body +: { room_screen_11 := mod.widgets.RoomScreen {} } }
-                        room_view_12 := mod.widgets.RobrixContentView { body +: { room_screen_12 := mod.widgets.RoomScreen {} } }
-                        room_view_13 := mod.widgets.RobrixContentView { body +: { room_screen_13 := mod.widgets.RoomScreen {} } }
-                        room_view_14 := mod.widgets.RobrixContentView { body +: { room_screen_14 := mod.widgets.RoomScreen {} } }
-                        room_view_15 := mod.widgets.RobrixContentView { body +: { room_screen_15 := mod.widgets.RoomScreen {} } }
-
-                        invite_view := mod.widgets.RobrixContentView {
-                            body +: {
-                                invite_screen := mod.widgets.InviteScreen {}
-                            }
+                        // Show the SpacesBar right above the navigation tab bar.
+                        // We wrap it in the SpacesBarWrapper in order to animate it in or out,
+                        // and wrap *that* in a CachedWidget in order to maintain its shown/hidden state
+                        // across AdaptiveView transitions between Mobile view mode and Desktop view mode.
+                        //
+                        // ... Then we wrap *that* in a ... <https://www.youtube.com/watch?v=evUWersr7pc>
+                        CachedWidget {
+                            spaces_bar_wrapper := mod.widgets.SpacesBarWrapper {}
                         }
 
-                        space_lobby_view := mod.widgets.RobrixContentView {
-                            body +: {
-                                space_lobby_screen := mod.widgets.SpaceLobbyScreen {}
-                            }
+                        // At the bottom of the root view, show the navigation tab bar horizontally.
+                        CachedWidget {
+                            navigation_tab_bar := mod.widgets.NavigationTabBar {}
+                        }
+                    }
+
+                    // Room views: multiple instances to support deep stacking
+                    // (e.g., room -> thread -> room -> thread -> ...).
+                    // Each stack depth gets its own dedicated view widget,
+                    // avoiding complex state save/restore when views are reused.
+                    room_view_0  := mod.widgets.RobrixContentView { body +: { room_screen_0  := mod.widgets.RoomScreen {} } }
+                    room_view_1  := mod.widgets.RobrixContentView { body +: { room_screen_1  := mod.widgets.RoomScreen {} } }
+                    room_view_2  := mod.widgets.RobrixContentView { body +: { room_screen_2  := mod.widgets.RoomScreen {} } }
+                    room_view_3  := mod.widgets.RobrixContentView { body +: { room_screen_3  := mod.widgets.RoomScreen {} } }
+                    room_view_4  := mod.widgets.RobrixContentView { body +: { room_screen_4  := mod.widgets.RoomScreen {} } }
+                    room_view_5  := mod.widgets.RobrixContentView { body +: { room_screen_5  := mod.widgets.RoomScreen {} } }
+                    room_view_6  := mod.widgets.RobrixContentView { body +: { room_screen_6  := mod.widgets.RoomScreen {} } }
+                    room_view_7  := mod.widgets.RobrixContentView { body +: { room_screen_7  := mod.widgets.RoomScreen {} } }
+                    room_view_8  := mod.widgets.RobrixContentView { body +: { room_screen_8  := mod.widgets.RoomScreen {} } }
+                    room_view_9  := mod.widgets.RobrixContentView { body +: { room_screen_9  := mod.widgets.RoomScreen {} } }
+                    room_view_10 := mod.widgets.RobrixContentView { body +: { room_screen_10 := mod.widgets.RoomScreen {} } }
+                    room_view_11 := mod.widgets.RobrixContentView { body +: { room_screen_11 := mod.widgets.RoomScreen {} } }
+                    room_view_12 := mod.widgets.RobrixContentView { body +: { room_screen_12 := mod.widgets.RoomScreen {} } }
+                    room_view_13 := mod.widgets.RobrixContentView { body +: { room_screen_13 := mod.widgets.RoomScreen {} } }
+                    room_view_14 := mod.widgets.RobrixContentView { body +: { room_screen_14 := mod.widgets.RoomScreen {} } }
+                    room_view_15 := mod.widgets.RobrixContentView { body +: { room_screen_15 := mod.widgets.RoomScreen {} } }
+
+                    invite_view := mod.widgets.RobrixContentView {
+                        body +: {
+                            invite_screen := mod.widgets.InviteScreen {}
+                        }
+                    }
+
+                    space_lobby_view := mod.widgets.RobrixContentView {
+                        body +: {
+                            space_lobby_screen := mod.widgets.SpaceLobbyScreen {}
                         }
                     }
                 }
             }
         }
     }
+}
 
 
 /// A simple wrapper around the SpacesBar that allows us to animate showing or hiding it.

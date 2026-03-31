@@ -54,7 +54,12 @@ script_mod! {
             
 
                 body +: {
-                    padding: 0,
+                    padding: Inset{
+                        top: (mod.widgets.SAFE_INSET_PAD_TOP),
+                        bottom: (mod.widgets.SAFE_INSET_PAD_BOTTOM),
+                        left: (mod.widgets.SAFE_INSET_PAD_LEFT),
+                        right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
+                    }
 
                     View {
                         width: Fill, height: Fill,
@@ -216,13 +221,28 @@ impl MatchEvent for App {
             error!("Failed to load window state: {}", e);
         }
 
-        // Hide the caption bar on macOS and Linux, which use native window chrome.
+        // On Linux, hide the caption bar because it uses native window chrome.
         // On Windows (with custom chrome), the caption bar is needed.
-        if matches!(cx.os_type(), OsType::Macos | OsType::LinuxWindow(_) | OsType::LinuxDirect) {
-            let mut window = self.ui.window(cx, ids!(main_window));
-            script_apply_eval!(cx, window, {
-                show_caption_bar: false
-            });
+        // On macOS, we currently show the caption bar to make spacing easy, but it's not technically needed.
+        // If we remove it on macOS, we'd need to add a bit of padding in its place.
+        match cx.os_type() {
+            OsType::LinuxWindow(_) | OsType::LinuxDirect => {
+                let mut window = self.ui.window(cx, ids!(main_window));
+                script_apply_eval!(cx, window, {
+                    show_caption_bar: false
+                });
+            }
+            OsType::Macos => {
+                // Newer macOS versions have a larger traffic light button layout,
+                // so we make the title bar larger to make the buttons vertically centered.
+                // TODO: upstream this into Makepad by querying the actual size of 
+                //       the traffic light buttons on macOS and setting the caption bar height accordingly.
+                let mut caption_bar = self.ui.view(cx, ids!(main_window.caption_bar));
+                script_apply_eval!(cx, caption_bar, {
+                    height: 34.0
+                });
+            }
+            _ => {}
         }
 
         self.update_login_visibility(cx);
@@ -305,7 +325,8 @@ impl MatchEvent for App {
                     self.update_login_visibility(cx);
                     self.ui.redraw(cx);
                 }
-                continue;
+                // Do NOT continue here — let the action propagate to the LoginScreen widget,
+                // which will open the login_status_modal to show the failure message.
             }
 
             // Handle an action requesting to open the new message context menu.

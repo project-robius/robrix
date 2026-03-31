@@ -94,8 +94,6 @@ script_mod! {
                     }
                 }
 
-                View { height: 23 }
-
                 CachedWidget {
                     rooms_list_header := RoomsListHeader {}
                 }

@@ -64,7 +64,7 @@ script_mod! {
                         svg: (ICON_CLOUD_OFFLINE),
                         color: (COLOR_FG_DANGER_RED),
                     }
-                    icon_walk: Walk{width: 35, height: Fit, margin: Inset{left: -5, bottom: 4}}
+                    icon_walk: Walk{width: 25, height: Fit, margin: Inset{left: 1, bottom: 1}}
                 }
             }
 
@@ -118,10 +118,20 @@ impl Widget for RoomsListHeader {
                             enqueue_popup_notification(
                                 "Cannot reach the Matrix homeserver. Please check your connection.",
                                 PopupKind::Error,
-                                None,
+                                Some(4.0),
                             );
                             // Since there is no timeout for fetching media, send an action to ImageViewer when syncing is offline.
                             cx.action(ImageViewerAction::Show(LoadState::Error(ImageViewerError::Offline)));
+                        } else if matches!(self.sync_state, State::Offline) {
+                            // Transitioning away from Offline: reset to the default
+                            // loading state so the sync indicator can take over again.
+                            self.view.view(cx, ids!(loading_spinner)).set_visible(cx, true);
+                            self.view.view(cx, ids!(synced_icon)).set_visible(cx, false);
+                            self.view.view(cx, ids!(offline_icon)).set_visible(cx, false);
+
+                            // Now that we're no longer offline, we also need to tell the
+                            // ProfileIcon to refresh itself and fetch our own user's profile again.
+                            SignalToUI::set_ui_signal();
                         }
                         self.sync_state = new_state.clone();
                         self.redraw(cx);
