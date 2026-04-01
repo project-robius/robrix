@@ -101,7 +101,7 @@ script_mod! {
                     wallet_file_name_input := RobrixTextInput {
                         width: Fill, height: Fit,
                         flow: Right, // do not wrap
-                        padding: Inset { left: 10, right: 10, top: 5, bottom: 5 }
+                        padding: Inset{top: 3, bottom: 3}
                         empty_text: "my_wallet_file",
                         draw_text +: {
                             text_style: REGULAR_TEXT {font_size: 10.0}

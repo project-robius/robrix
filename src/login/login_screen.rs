@@ -123,6 +123,19 @@ script_mod! {
                         is_password: true,
                     }
 
+                    confirm_password_wrapper := View {
+                        width: 275, height: Fit,
+                        visible: false,
+
+                        confirm_password_input := RobrixTextInput {
+                            width: 275, height: Fit
+                            flow: Right, // do not wrap
+                            padding: 10,
+                            empty_text: "Confirm password"
+                            is_password: true,
+                        }
+                    }
+
                     View {
                         width: 275, height: Fit,
                         flow: Down,

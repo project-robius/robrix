@@ -323,11 +323,6 @@ impl MatchEvent for App {
                     self.app_state.selected_room = None;
                     // Clear saved dock state so tabs will be closed
                     self.app_state.saved_dock_state_home = Default::default();
-                    enqueue_popup_notification(
-                        format!("Switching to account {}...", user_id),
-                        PopupKind::Info,
-                        Some(3.0),
-                    );
                     self.ui.redraw(cx);
                     continue;
                 }
@@ -335,8 +330,8 @@ impl MatchEvent for App {
                     log!("Account switch completed to: {}", user_id);
                     enqueue_popup_notification(
                         format!("Switched to account {}", user_id),
-                        PopupKind::Info,
-                        Some(5.0),
+                        PopupKind::Success,
+                        Some(3.0),
                     );
                     self.ui.redraw(cx);
                     continue;

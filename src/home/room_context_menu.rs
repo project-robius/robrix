@@ -249,13 +249,29 @@ impl WidgetMatchEvent for RoomContextMenu {
                     current_user_id().as_deref(),
                 ) {
                     Ok(bot_user_id) => {
-                        // TODO: implement SetRoomBotBinding request
-                        let _ = (room_id, bot_user_id);
-                        enqueue_popup_notification(
-                            "BotFather binding feature is not yet implemented.",
-                            PopupKind::Warning,
-                            Some(4.0),
-                        );
+                        if details.is_bot_bound {
+                            submit_async_request(MatrixRequest::SetRoomBotBinding {
+                                room_id,
+                                bound: false,
+                                bot_user_id: bot_user_id.clone(),
+                            });
+                            enqueue_popup_notification(
+                                format!("Removing BotFather {bot_user_id} from this room..."),
+                                PopupKind::Info,
+                                Some(4.0),
+                            );
+                        } else {
+                            submit_async_request(MatrixRequest::SetRoomBotBinding {
+                                room_id,
+                                bound: true,
+                                bot_user_id: bot_user_id.clone(),
+                            });
+                            enqueue_popup_notification(
+                                format!("Inviting BotFather {bot_user_id} into this room..."),
+                                PopupKind::Info,
+                                Some(5.0),
+                            );
+                        }
                     }
                     Err(error) => {
                         enqueue_popup_notification(error, PopupKind::Error, Some(5.0));

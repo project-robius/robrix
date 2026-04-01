@@ -95,7 +95,7 @@ impl MediaCache {
                     MediaFormat::Thumbnail(ref requested_mts) => {
                         if let Some((entry_ref, existing_mts)) = value.thumbnail.as_ref() {
                             return (
-                                entry_ref.lock().unwrap_or_else(|e| e.into_inner()).deref().clone(),
+                                entry_ref.lock().unwrap().deref().clone(),
                                 MediaFormat::Thumbnail(existing_mts.clone()),
                             );
                         } else {
@@ -104,7 +104,7 @@ impl MediaCache {
                             value.thumbnail = Some((Arc::clone(&entry_ref), requested_mts.clone()));
                             // If a full-size image is already loaded, return it.
                             if let Some(existing_file) = value.full_file.as_ref() {
-                                if let MediaCacheEntry::Loaded(d) = existing_file.lock().unwrap_or_else(|e| e.into_inner()).deref() {
+                                if let MediaCacheEntry::Loaded(d) = existing_file.lock().unwrap().deref() {
                                     post_request_retval = (
                                         MediaCacheEntry::Loaded(Arc::clone(d)),
                                         MediaFormat::File,
@@ -117,7 +117,7 @@ impl MediaCache {
                     MediaFormat::File => {
                         if let Some(entry_ref) = value.full_file.as_ref() {
                             return (
-                                entry_ref.lock().unwrap_or_else(|e| e.into_inner()).deref().clone(),
+                                entry_ref.lock().unwrap().deref().clone(),
                                 MediaFormat::File,
                             );
                         } else {
@@ -126,7 +126,7 @@ impl MediaCache {
                             value.full_file = Some(entry_ref.clone());
                             // If a thumbnail is already loaded, return it.
                             if let Some((existing_thumbnail, existing_mts)) = value.thumbnail.as_ref() {
-                                if let MediaCacheEntry::Loaded(d) = existing_thumbnail.lock().unwrap_or_else(|e| e.into_inner()).deref() {
+                                if let MediaCacheEntry::Loaded(d) = existing_thumbnail.lock().unwrap().deref() {
                                     post_request_retval = (
                                         MediaCacheEntry::Loaded(Arc::clone(d)),
                                         MediaFormat::Thumbnail(existing_mts.clone()),
@@ -272,7 +272,7 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
         Err(e) => error_to_media_cache_entry(e, &request)
     };
 
-    *value_ref.lock().unwrap_or_else(|e| e.into_inner()) = new_value;
+    *value_ref.lock().unwrap() = new_value;
 
     if let Some(sender) = update_sender {
         let _ = sender.send(TimelineUpdate::MediaFetched(request));

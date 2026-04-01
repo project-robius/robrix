@@ -9,7 +9,13 @@ use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
     config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::{MediaFormat, MediaRequestParameters}, room::{edit::EditedContent, reply::Reply, IncludeRelations, RelationsOptions, RoomMember}, ruma::{
-        api::{Direction, client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}}, events::{
+        api::{Direction, client::{
+            account::register::v3::Request as RegistrationRequest,
+            error::ErrorKind,
+            profile::{AvatarUrl, DisplayName},
+            receipt::create_receipt::v3::ReceiptType,
+            uiaa::{AuthData, AuthType, Dummy},
+        }}, events::{
             relation::RelationType,
             room::{
                 message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
@@ -85,14 +91,203 @@ impl std::fmt::Debug for Cli {
 impl From<LoginByPassword> for Cli {
     fn from(login: LoginByPassword) -> Self {
         Self {
-            user_id: login.user_id,
+            user_id: login.user_id.trim().to_owned(),
             password: login.password,
-            homeserver: login.homeserver,
+            homeserver: login.homeserver
+                .map(|homeserver| homeserver.trim().to_owned())
+                .filter(|homeserver| !homeserver.is_empty()),
             proxy: None,
             login_screen: false,
             verbose: false,
         }
     }
+}
+
+impl From<RegisterAccount> for Cli {
+    fn from(registration: RegisterAccount) -> Self {
+        Self {
+            user_id: registration.user_id.trim().to_owned(),
+            password: registration.password,
+            homeserver: registration.homeserver
+                .map(|homeserver| homeserver.trim().to_owned())
+                .filter(|homeserver| !homeserver.is_empty()),
+            proxy: None,
+            login_screen: false,
+            verbose: false,
+        }
+    }
+}
+
+fn infer_homeserver_from_user_id(user_id: &str) -> Option<String> {
+    let user_id: OwnedUserId = user_id.trim().try_into().ok()?;
+    Some(user_id.server_name().to_string())
+}
+
+async fn finalize_authenticated_client(
+    client: Client,
+    client_session: ClientSessionPersisted,
+    fallback_user_id: &str,
+    is_add_account: bool,
+) -> Result<(Client, Option<String>, bool, ClientSessionPersisted)> {
+    if client.matrix_auth().logged_in() {
+        let logged_in_user_id = client.user_id()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| fallback_user_id.to_owned());
+        log!("Logged in successfully.");
+        let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
+        enqueue_rooms_list_update(RoomsListUpdate::Status { status });
+        if let Err(e) = persistence::save_session(&client, client_session.clone()).await {
+            let err_msg = format!("Failed to save session state to storage: {e}");
+            error!("{err_msg}");
+            enqueue_popup_notification(err_msg, PopupKind::Error, None);
+        }
+        Ok((client, None, is_add_account, client_session))
+    } else {
+        let err_msg = format!(
+            "Authentication succeeded for {fallback_user_id}, but the homeserver did not return a login session."
+        );
+        enqueue_popup_notification(err_msg.clone(), PopupKind::Error, None);
+        enqueue_rooms_list_update(RoomsListUpdate::Status { status: err_msg.clone() });
+        bail!(err_msg);
+    }
+}
+
+fn registration_localpart(user_id: &str) -> Result<String> {
+    let trimmed = user_id.trim();
+    if trimmed.is_empty() {
+        bail!("Please enter a valid username or Matrix user ID.");
+    }
+
+    if let Ok(full_user_id) = <OwnedUserId as TryFrom<&str>>::try_from(trimmed) {
+        return Ok(full_user_id.localpart().to_owned());
+    }
+
+    let localpart = trimmed.trim_start_matches('@');
+    if localpart.is_empty() || localpart.contains(':') || localpart.chars().any(char::is_whitespace) {
+        bail!("Please enter a valid username or full Matrix user ID.");
+    }
+
+    Ok(localpart.to_owned())
+}
+
+fn registration_request(
+    username: &str,
+    password: &str,
+    session: Option<String>,
+) -> RegistrationRequest {
+    let mut request = RegistrationRequest::new();
+    request.username = Some(username.to_owned());
+    request.password = Some(password.to_owned());
+    request.initial_device_display_name = Some("robrix-un-pw".to_owned());
+    request.refresh_token = true;
+    if let Some(session) = session {
+        let mut dummy = Dummy::new();
+        dummy.session = Some(session);
+        request.auth = Some(AuthData::Dummy(dummy));
+    }
+    request
+}
+
+fn registration_uiaa_error_message(error: &matrix_sdk::Error) -> String {
+    if let matrix_sdk::Error::Http(http_error) = error {
+        match http_error.client_api_error_kind() {
+            Some(ErrorKind::UserInUse) => {
+                return "That user ID is already taken. Please choose another one.".to_owned();
+            }
+            Some(ErrorKind::InvalidUsername) => {
+                return "That user ID is invalid. Use a username like `alice` or a full Matrix ID like `@alice:matrix.org`.".to_owned();
+            }
+            Some(ErrorKind::WeakPassword) => {
+                return "That password is too weak. Please choose a stronger password.".to_owned();
+            }
+            Some(ErrorKind::Forbidden { .. }) => {
+                return "This homeserver does not allow open registration.".to_owned();
+            }
+            Some(ErrorKind::LimitExceeded { .. }) => {
+                return "The homeserver is rate limiting account creation right now. Please try again shortly.".to_owned();
+            }
+            _ => {}
+        }
+    }
+
+    format!("Could not create account: {error}")
+}
+
+fn unsupported_registration_flow_message(
+    flows: &[matrix_sdk::ruma::api::client::uiaa::AuthFlow],
+) -> String {
+    let supports_registration_token = flows.iter().any(|flow| {
+        flow.stages
+            .iter()
+            .any(|stage| matches!(stage, AuthType::RegistrationToken))
+    });
+    if supports_registration_token {
+        return "This homeserver requires a registration token. Robrix does not support token-based registration yet.".to_owned();
+    }
+
+    let supports_terms = flows.iter().any(|flow| {
+        flow.stages
+            .iter()
+            .any(|stage| matches!(stage, AuthType::Terms))
+    });
+    if supports_terms {
+        return "This homeserver requires an interactive terms-of-service step. Robrix does not support that registration flow yet.".to_owned();
+    }
+
+    "This homeserver requires an unsupported registration flow. Please try another homeserver or register with a different client.".to_owned()
+}
+
+async fn clear_persisted_session(user_id: Option<&UserId>) {
+    let Some(user_id) = user_id else {
+        return;
+    };
+
+    if let Err(e) = persistence::delete_session(user_id).await {
+        warning!("Failed to delete persisted session for {user_id}: {e}");
+    }
+
+    let latest_user_id = persistence::most_recent_user_id().await;
+    if latest_user_id.as_deref() == Some(user_id) {
+        if let Err(e) = persistence::delete_latest_user_id().await {
+            warning!("Failed to delete latest user id for {user_id}: {e}");
+        }
+    }
+}
+
+enum SessionResetAction {
+    Reauthenticate { message: String },
+}
+
+async fn reset_runtime_state_for_relogin() {
+    let sync_service = { SYNC_SERVICE.lock().unwrap().take() };
+    if let Some(sync_service) = sync_service {
+        sync_service.stop().await;
+    }
+
+    CLIENT.lock().unwrap().take();
+    DEFAULT_SSO_CLIENT.lock().unwrap().take();
+    IGNORED_USERS.lock().unwrap().clear();
+    ALL_JOINED_ROOMS.lock().unwrap().clear();
+
+    let on_clear_appstate = Arc::new(Notify::new());
+    Cx::post_action(LogoutAction::ClearAppState { on_clear_appstate: on_clear_appstate.clone() });
+
+    if tokio::time::timeout(Duration::from_secs(5), on_clear_appstate.notified()).await.is_err() {
+        warning!("Timed out waiting for UI-side app state cleanup during re-login reset");
+    }
+}
+
+fn is_invalid_token_http_error(error: &matrix_sdk::HttpError) -> bool {
+    matches!(
+        error.client_api_error_kind(),
+        Some(ErrorKind::UnknownToken { .. } | ErrorKind::MissingToken)
+    )
+}
+
+fn is_invalid_batch_token_timeline_error(error: &matrix_sdk_ui::timeline::Error) -> bool {
+    let error_text = error.to_string().to_ascii_lowercase();
+    error_text.contains("invalid batch token")
+        || error_text.contains("must start with 's' or 't'")
 }
 
 
@@ -117,7 +312,10 @@ async fn build_client(
             .collect()
     };
 
+    let inferred_homeserver = infer_homeserver_from_user_id(&cli.user_id);
     let homeserver_url = cli.homeserver.as_deref()
+        .filter(|homeserver| !homeserver.trim().is_empty())
+        .or(inferred_homeserver.as_deref())
         .unwrap_or("https://matrix-client.matrix.org/");
         // .unwrap_or("https://matrix.org/");
 
@@ -179,9 +377,9 @@ async fn login(
         LoginRequest::LoginByCli | LoginRequest::LoginByPassword(_) => {
             let (cli, is_add_account) = if let LoginRequest::LoginByPassword(login_by_password) = login_request {
                 let is_add_account = login_by_password.is_add_account;
-                (Cli::from(login_by_password), is_add_account)
+                (&Cli::from(login_by_password), is_add_account)
             } else {
-                ((*cli).clone(), false)
+                (cli, false)
             };
             let (client, client_session) = build_client(&cli, app_data_dir()).await?;
             Cx::post_action(LoginAction::Status {
@@ -205,13 +403,71 @@ async fn login(
                     error!("{err_msg}");
                     enqueue_popup_notification(err_msg, PopupKind::Error, None);
                 }
-                Ok((client, None, is_add_account, client_session))
             } else {
                 let err_msg = format!("Failed to login as {}: {:?}", cli.user_id, login_result);
                 enqueue_popup_notification(err_msg.clone(), PopupKind::Error, None);
                 enqueue_rooms_list_update(RoomsListUpdate::Status { status: err_msg.clone() });
                 bail!(err_msg);
             }
+            finalize_authenticated_client(client, client_session, &cli.user_id, is_add_account).await
+        }
+
+        LoginRequest::Register(registration) => {
+            let cli = Cli::from(RegisterAccount {
+                user_id: registration.user_id.clone(),
+                password: registration.password.clone(),
+                homeserver: registration.homeserver.clone(),
+            });
+            let localpart = registration_localpart(&registration.user_id)?;
+            let (client, client_session) = build_client(&cli, app_data_dir()).await?;
+            Cx::post_action(LoginAction::Status {
+                title: "Creating account".into(),
+                status: format!("Creating account {localpart}..."),
+            });
+
+            let auth = client.matrix_auth();
+            let initial_request = registration_request(&localpart, &registration.password, None);
+            let register_result = match auth.register(initial_request).await {
+                Ok(response) => Ok(response),
+                Err(error) => {
+                    if let Some(uiaa_info) = error.as_uiaa_response() {
+                        let supports_dummy = uiaa_info.flows.iter().any(|flow| {
+                            flow.stages
+                                .iter()
+                                .any(|stage| matches!(stage, AuthType::Dummy))
+                        });
+                        if supports_dummy {
+                            Cx::post_action(LoginAction::Status {
+                                title: "Completing sign up".into(),
+                                status: "Confirming registration with the homeserver...".into(),
+                            });
+                            auth.register(registration_request(
+                                &localpart,
+                                &registration.password,
+                                uiaa_info.session.clone(),
+                            ))
+                            .await
+                        } else {
+                            bail!(unsupported_registration_flow_message(&uiaa_info.flows));
+                        }
+                    } else {
+                        bail!(registration_uiaa_error_message(&error));
+                    }
+                }
+            }?;
+
+            if !client.matrix_auth().logged_in() {
+                let err_msg = format!(
+                    "Account {} was created, but the homeserver did not return a login session. Please log in manually.",
+                    register_result.user_id,
+                );
+                enqueue_popup_notification(err_msg.clone(), PopupKind::Error, None);
+                enqueue_rooms_list_update(RoomsListUpdate::Status { status: err_msg.clone() });
+                bail!(err_msg);
+            }
+
+            finalize_authenticated_client(client, client_session, register_result.user_id.as_str(), false)
+                .await
         }
 
         LoginRequest::LoginBySSOSuccess(client, client_session, is_add_account) => {
@@ -452,6 +708,12 @@ pub enum MatrixRequest {
     InviteUser {
         room_id: OwnedRoomId,
         user_id: OwnedUserId,
+    },
+    /// Request to bind or unbind the configured botfather for the given room.
+    SetRoomBotBinding {
+        room_id: OwnedRoomId,
+        bound: bool,
+        bot_user_id: OwnedUserId,
     },
     /// Request to join the given room.
     JoinRoom {
@@ -712,6 +974,7 @@ pub fn submit_async_request(req: MatrixRequest) {
 /// Details of a login request that get submitted within [`MatrixRequest::Login`].
 pub enum LoginRequest{
     LoginByPassword(LoginByPassword),
+    Register(RegisterAccount),
     LoginBySSOSuccess(Client, ClientSessionPersisted, bool),
     LoginByCli,
     HomeserverLoginTypesQuery(String),
@@ -724,6 +987,14 @@ pub struct LoginByPassword {
     pub homeserver: Option<String>,
     /// Whether this login is for adding another account (multi-account mode).
     pub is_add_account: bool,
+}
+
+/// Information needed to register a new account on a Matrix homeserver.
+#[derive(Clone)]
+pub struct RegisterAccount {
+    pub user_id: String,
+    pub password: String,
+    pub homeserver: Option<String>,
 }
 
 
@@ -803,13 +1074,8 @@ async fn matrix_worker_task(
                     // Set the target account for switch
                     set_account_switch_target(user_id.clone());
 
-                    // Notify UI that switch is starting
+                    // Notify UI that switch is starting (app.rs handles the popup notification)
                     Cx::post_action(AccountSwitchAction::Starting(user_id.clone()));
-                    enqueue_popup_notification(
-                        format!("Switching to {}...", user_id),
-                        PopupKind::Info,
-                        Some(2.0),
-                    );
 
                     // Stop the sync service - this will cause the main loop to restart
                     if let Some(sync_service) = get_sync_service() {
@@ -854,6 +1120,7 @@ async fn matrix_worker_task(
                     log!("Skipping pagination request for unknown {timeline_kind}");
                     continue;
                 };
+                let client = get_client();
 
                 // Spawn a new async task that will make the actual pagination request.
                 let _paginate_task = Handle::current().spawn(async move {
@@ -861,11 +1128,44 @@ async fn matrix_worker_task(
                     sender.send(TimelineUpdate::PaginationRunning(direction)).unwrap();
                     SignalToUI::set_ui_signal();
 
-                    let res = if direction == PaginationDirection::Forwards {
+                    let mut res = if direction == PaginationDirection::Forwards {
                         timeline.paginate_forwards(num_events).await
                     } else {
                         timeline.paginate_backwards(num_events).await
                     };
+
+                    if direction == PaginationDirection::Backwards
+                        && res
+                            .as_ref()
+                            .err()
+                            .is_some_and(is_invalid_batch_token_timeline_error)
+                    {
+                        warning!(
+                            "Detected an invalid cached batch token for {timeline_kind}; clearing the room event cache and retrying once."
+                        );
+                        let room_id = timeline_kind.room_id().clone();
+                        if let Some(room) = client.and_then(|client| client.get_room(&room_id)) {
+                            match room.event_cache().await {
+                                Ok((room_event_cache, _drop_handles)) => {
+                                    match room_event_cache.clear().await {
+                                        Ok(()) => {
+                                            res = timeline.paginate_backwards(num_events).await;
+                                        }
+                                        Err(clear_error) => {
+                                            warning!(
+                                                "Failed to clear event cache for room {room_id} after invalid batch token: {clear_error}"
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(event_cache_error) => {
+                                    warning!(
+                                        "Failed to access room event cache for room {room_id} after invalid batch token: {event_cache_error}"
+                                    );
+                                }
+                            }
+                        }
+                    }
 
                     match res {
                         Ok(fully_paginated) => {
@@ -1112,6 +1412,68 @@ async fn matrix_worker_task(
                             user_id,
                             error: matrix_sdk::Error::UnknownError("Room/Space not found in client's known list.".into()),
                         })
+                    }
+                });
+            }
+
+            MatrixRequest::SetRoomBotBinding {
+                room_id,
+                bound,
+                bot_user_id,
+            } => {
+                let Some(client) = get_client() else { continue };
+                let _bot_binding_task = Handle::current().spawn(async move {
+                    let Some(room) = client.get_room(&room_id) else {
+                        let error_message =
+                            format!("Room {room_id} was not found for the bot binding request.");
+                        error!("{error_message}");
+                        enqueue_popup_notification(error_message, PopupKind::Error, None);
+                        return;
+                    };
+
+                    let membership_result = if bound {
+                        room.invite_user_by_id(&bot_user_id).await
+                    } else {
+                        room.kick_user(&bot_user_id, Some("Robrix app service unbind")).await
+                    };
+
+                    match membership_result {
+                        Ok(()) => {
+                            Cx::post_action(AppStateAction::BotRoomBindingUpdated {
+                                room_id,
+                                bound,
+                                bot_user_id: Some(bot_user_id),
+                                warning: None,
+                            });
+                        }
+                        Err(error) => {
+                            let membership_exists =
+                                room.get_member_no_sync(&bot_user_id).await.ok().flatten().is_some();
+                            let should_mark_bound = if bound { membership_exists } else { false };
+
+                            if should_mark_bound != bound {
+                                error!(
+                                    "Failed to {} BotFather {bot_user_id} for room {room_id}: {error:?}",
+                                    if bound { "invite" } else { "remove" }
+                                );
+                                enqueue_popup_notification(
+                                    format!(
+                                        "Failed to {} BotFather {bot_user_id}: {error}",
+                                        if bound { "invite" } else { "remove" }
+                                    ),
+                                    PopupKind::Error,
+                                    None,
+                                );
+                                return;
+                            }
+
+                            Cx::post_action(AppStateAction::BotRoomBindingUpdated {
+                                room_id,
+                                bound,
+                                bot_user_id: Some(bot_user_id),
+                                warning: Some(error.to_string()),
+                            });
+                        }
                     }
                 });
             }
@@ -1568,15 +1930,18 @@ async fn matrix_worker_task(
                 let _typing_notices_task = Handle::current().spawn(async move {
                     while let Ok(user_ids) = typing_notice_receiver.recv().await {
                         // log!("Received typing notifications for room {room_id}: {user_ids:?}");
-                        let users = join_all(user_ids.into_iter().map(|user_id| {
-                            let tl = main_timeline.clone();
-                            async move {
-                                tl.room().get_member_no_sync(&user_id).await
-                                    .ok().flatten()
+                        let mut users = Vec::with_capacity(user_ids.len());
+                        for user_id in user_ids {
+                            users.push(
+                                main_timeline.room()
+                                    .get_member_no_sync(&user_id)
+                                    .await
+                                    .ok()
+                                    .flatten()
                                     .and_then(|m| m.display_name().map(|d| d.to_owned()))
                                     .unwrap_or_else(|| user_id.to_string())
-                            }
-                        })).await;
+                            );
+                        }
                         if let Err(e) = timeline_update_sender.send(TimelineUpdate::TypingUsers { users }) {
                             error!("Error: timeline update sender couldn't send the list of typing users: {e:?}");
                         }
@@ -1700,7 +2065,6 @@ async fn matrix_worker_task(
 
             MatrixRequest::FetchMedia { media_request, on_fetched, destination, update_sender } => {
                 let Some(client) = get_client() else { continue };
-
                 let _fetch_task = Handle::current().spawn(async move {
                     // log!("Sending fetch media request for {media_request:?}...");
                     let res = client.media().get_media_content(&media_request, true).await;
@@ -2094,6 +2458,7 @@ async fn matrix_worker_task(
     bail!("matrix_worker_task task ended unexpectedly")
 }
 
+
 /// The single global Tokio runtime that is used by all async tasks.
 static TOKIO_RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
 
@@ -2471,11 +2836,17 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         log!("Trying to restore session for user: {:?}",
             specified_username.as_ref().or(most_recent_user_id.as_ref())
         );
-        match persistence::restore_session(specified_username).await {
-            Ok((client, sync_token, session)) => Some((client, sync_token, session)),
+        match persistence::restore_session(specified_username.clone()).await {
+            Ok((client, sync_token, session)) => Some((client, sync_token, true, session)),
             Err(e) => {
                 let status_err = "Could not restore previous user session.\n\nPlease login again.";
                 log!("{status_err} Error: {e:?}");
+                clear_persisted_session(
+                    specified_username
+                        .as_deref()
+                        .or(most_recent_user_id.as_deref()),
+                )
+                .await;
                 Cx::post_action(LoginAction::LoginFailure(status_err.to_string()));
 
                 if let Ok(cli) = &cli_parse_result {
@@ -2485,7 +2856,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                         homeserver: cli.homeserver.clone(),
                     });
                     match login(cli, LoginRequest::LoginByCli).await {
-                        Ok((client, sync_token, _is_add_account, session)) => Some((client, sync_token, session)),
+                        Ok((client, sync_token, _is_add_account, session)) => Some((client, sync_token, false, session)),
                         Err(e) => {
                             error!("CLI-based login failed: {e:?}");
                             Cx::post_action(LoginAction::LoginFailure(
@@ -2510,9 +2881,8 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
     // On subsequent iterations of the login loop (after a post-auth setup failure), it is `None`,
     // which causes the loop to wait for the user to submit a new manual login request.
     let mut initial_client_opt = new_login_opt;
-
     let (client, sync_service, logged_in_user_id) = 'login_loop: loop {
-        let (client, _sync_token, session) = match initial_client_opt.take() {
+        let (client, _sync_token, validate_session, session) = match initial_client_opt.take() {
             Some(login) => login,
             None => {
                 loop {
@@ -2520,7 +2890,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                     match login_receiver.recv().await {
                         Some(login_request) => {
                             match login(&cli, login_request).await {
-                                Ok((client, sync_token, _is_add_account, session)) => break (client, sync_token, session),
+                                Ok((client, sync_token, _is_add_account, session)) => break (client, sync_token, false, session),
                                 Err(e) => {
                                     error!("Login failed: {e:?}");
                                     Cx::post_action(LoginAction::LoginFailure(format!("{e}")));
@@ -2543,6 +2913,24 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                 }
             }
         };
+
+        if validate_session {
+            match client.whoami().await {
+                Ok(_) => {}
+                Err(e) if is_invalid_token_http_error(&e) => {
+                    clear_persisted_session(client.user_id()).await;
+                    let err_msg = "Your login token is no longer valid.\n\nPlease log in again.";
+                    Cx::post_action(LoginAction::LoginFailure(err_msg.to_string()));
+                    enqueue_rooms_list_update(RoomsListUpdate::Status {
+                        status: err_msg.to_string(),
+                    });
+                    continue 'login_loop;
+                }
+                Err(e) => {
+                    warning!("Session validation via whoami failed, but the error was not an invalid token; continuing startup: {e}");
+                }
+            }
+        }
 
         // Deallocate the default SSO client after a successful login.
         if let Ok(mut client_opt) = DEFAULT_SSO_CLIENT.lock() {
@@ -2577,9 +2965,6 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         // Listen for updates to the ignored user list.
         handle_ignore_user_list_subscriber(client.clone());
 
-        // Listen for session changes, e.g., when the access token becomes invalid.
-        handle_session_changes(client.clone());
-
         Cx::post_action(LoginAction::Status {
             title: "Connecting".into(),
             status: "Setting up sync service...".into(),
@@ -2597,6 +2982,9 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                 } else {
                     format!("Please restart Robrix.\n\nFailed to create Matrix sync service: {e}.")
                 };
+                if is_invalid_token_error(&e) {
+                    clear_persisted_session(client.user_id()).await;
+                }
                 Cx::post_action(LoginAction::LoginFailure(err_msg.clone()));
                 enqueue_popup_notification(err_msg.clone(), PopupKind::Error, None);
                 enqueue_rooms_list_update(RoomsListUpdate::Status { status: err_msg });
@@ -2609,6 +2997,12 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
 
         break 'login_loop (client, sync_service, logged_in_user_id);
     };
+
+    let (session_reset_sender, mut session_reset_receiver) =
+        tokio::sync::mpsc::unbounded_channel::<SessionResetAction>();
+    // Listen for session changes, e.g., when the access token becomes invalid.
+    let session_change_handler_task =
+        handle_session_changes(client.clone(), session_reset_sender);
 
     // Signal login success now that SyncService::build() has already succeeded (inside
     // 'login_loop), which is the only step that can fail with an invalid/expired token.
@@ -2634,9 +3028,21 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
     // Now, this task becomes an infinite loop that monitors the state of the
     // three core matrix-related background tasks that we just spawned above.
     #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
-    loop {
+    let reauth_message = loop {
         tokio::select! {
+            session_reset = session_reset_receiver.recv() => {
+                match session_reset {
+                    Some(SessionResetAction::Reauthenticate { message }) => {
+                        break message;
+                    }
+                    None => {
+                        warning!("Session reset receiver closed unexpectedly.");
+                        continue;
+                    }
+                }
+            }
             result = &mut matrix_worker_task_handle => {
+                session_change_handler_task.abort();
                 match result {
                     Ok(Ok(())) => {
                         // Check if this is due to logout
@@ -2666,9 +3072,10 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                         error!("BUG: failed to join matrix worker task: {e:?}");
                     }
                 }
-                break;
+                return;
             }
             result = &mut room_list_service_task => {
+                session_change_handler_task.abort();
                 match result {
                     Ok(Ok(())) => {
                         error!("BUG: room list service loop task ended unexpectedly!");
@@ -2688,9 +3095,10 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                         error!("BUG: failed to join room list service loop task: {e:?}");
                     }
                 }
-                break;
+                return;
             }
             result = &mut space_service_task => {
+                session_change_handler_task.abort();
                 match result {
                     Ok(Ok(())) => {
                         error!("BUG: space service loop task ended unexpectedly!");
@@ -2710,10 +3118,10 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                         error!("BUG: failed to join space service loop task: {e:?}");
                     }
                 }
-                break;
+                return;
             }
         }
-    }
+    };
 
     // Check if we need to restart for an account switch
     if let Some(switch_user_id) = get_account_switch_target() {
@@ -2779,13 +3187,8 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                 let mut room_list_service_task = rt.spawn(room_list_service_loop(room_list_service));
                 let mut space_service_task = rt.spawn(space_service_loop(client.clone()));
 
-                // Notify UI that switch is complete
+                // Notify UI that switch is complete (app.rs handles the popup notification)
                 Cx::post_action(AccountSwitchAction::Switched(switch_user_id.clone()));
-                enqueue_popup_notification(
-                    format!("Switched to {}", switch_user_id),
-                    PopupKind::Success,
-                    Some(3.0),
-                );
 
                 // Re-enter the main monitoring loop
                 loop {
@@ -2836,6 +3239,16 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             }
         }
     }
+    session_change_handler_task.abort();
+    room_list_service_task.abort();
+    space_service_task.abort();
+
+    reset_runtime_state_for_relogin().await;
+    Cx::post_action(LoginAction::LoginFailure(reauth_message.clone()));
+    enqueue_rooms_list_update(RoomsListUpdate::Status {
+        status: reauth_message,
+    });
+    initial_client_opt = None;
 }
 
 
@@ -3541,7 +3954,10 @@ fn is_invalid_token_error(e: &sync_service::Error) -> bool {
 /// When the homeserver rejects the access token with a 401 `M_UNKNOWN_TOKEN` error
 /// (e.g., the token was revoked or expired), this emits a [`LoginAction::LoginFailure`]
 /// so the user is prompted to log in again.
-fn handle_session_changes(client: Client) {
+fn handle_session_changes(
+    client: Client,
+    session_reset_sender: UnboundedSender<SessionResetAction>,
+) -> JoinHandle<()> {
     let mut receiver = client.subscribe_to_session_changes();
     Handle::current().spawn(async move {
         loop {
@@ -3554,6 +3970,11 @@ fn handle_session_changes(client: Client) {
                     };
                     error!("Session token is no longer valid (soft_logout: {soft_logout}). Prompting re-login.");
                     Cx::post_action(LoginAction::LoginFailure(msg.to_string()));
+                    clear_persisted_session(client.user_id()).await;
+                    let _ = session_reset_sender.send(SessionResetAction::Reauthenticate {
+                        message: msg.to_string(),
+                    });
+                    break;
                 }
                 Ok(SessionChange::TokensRefreshed) => {}
                 Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -3564,7 +3985,7 @@ fn handle_session_changes(client: Client) {
                 }
             }
         }
-    });
+    })
 }
 
 fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service::State>) {

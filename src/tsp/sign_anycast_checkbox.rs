@@ -13,10 +13,5 @@ script_mod! {
     mod.widgets.TspSignAnycastCheckbox = CheckBoxFlat {
         text: "TSP",
         active: false,
-        draw_text +: {
-            color: COLOR_TEXT,
-            text_style: theme.font_regular {font_size: 11},
-            mark_color_active: COLOR_TEXT,
-        }
     }
 }
