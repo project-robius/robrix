@@ -107,7 +107,7 @@ script_mod! {
                 padding: 13,
                 spacing: 0,
                 margin: Inset{left: 5, right: 0},
-                draw_bg.border_radius: 5.0
+                draw_bg.border_radius: 4.0
                 draw_icon.svg: (ICON_CLOSE)
                 icon_walk: Walk{width: 16, height: 16, margin: 0}
             }

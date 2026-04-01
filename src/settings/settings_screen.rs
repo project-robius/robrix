@@ -7,7 +7,6 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-
     // The main, top-level settings screen widget.
     mod.widgets.SettingsScreen = #(SettingsScreen::register_widget(vm)) {
         width: Fill, height: Fill,

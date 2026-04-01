@@ -7,7 +7,7 @@ script_mod! {
 
     mod.widgets.ICON_ADD              = crate_resource("self://resources/icons/add.svg")
     mod.widgets.ICON_ADD_REACTION     = crate_resource("self://resources/icons/add_reaction.svg")
-    mod.widgets.ICON_ADD_USER         = crate_resource("self://resources/icons/add_user.svg") // TODO: FIX
+    mod.widgets.ICON_ADD_USER         = crate_resource("self://resources/icons/add_user.svg")
     mod.widgets.ICON_ADD_WALLET       = crate_resource("self://resources/icons/add_wallet.svg")
     mod.widgets.ICON_FORBIDDEN        = crate_resource("self://resources/icons/forbidden.svg")
     mod.widgets.ICON_CHECKMARK        = crate_resource("self://resources/icons/checkmark.svg")
@@ -19,7 +19,7 @@ script_mod! {
     mod.widgets.ICON_COPY             = crate_resource("self://resources/icons/copy.svg")
     mod.widgets.ICON_EDIT             = crate_resource("self://resources/icons/edit.svg")
     mod.widgets.ICON_EXTERNAL_LINK    = crate_resource("self://resources/icons/external_link.svg")
-    mod.widgets.ICON_IMPORT           = crate_resource("self://resources/icons/import.svg") // TODO: FIX
+    mod.widgets.ICON_IMPORT           = crate_resource("self://resources/icons/import.svg")
     mod.widgets.ICON_HIERARCHY        = crate_resource("self://resources/icons/hierarchy.svg")
     mod.widgets.ICON_HOME             = crate_resource("self://resources/icons/home.svg")
     mod.widgets.ICON_HTML_FILE        = crate_resource("self://resources/icons/html_file.svg")
@@ -186,6 +186,10 @@ script_mod! {
     mod.widgets.COLOR_IMAGE_VIEWER_BACKGROUND = #333333CC // 80% Opacity
 
     mod.widgets.COLOR_IMAGE_VIEWER_META_BACKGROUND = #E8E8E8
+
+    // Ensure all settings buttons have a consistent height
+    mod.widgets.SETTINGS_BUTTON_HEIGHT = 40
+
 
     // A text input widget styled for Robrix.
     mod.widgets.RobrixTextInput = TextInput {
