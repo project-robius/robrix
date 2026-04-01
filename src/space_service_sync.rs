@@ -10,7 +10,7 @@ use matrix_sdk::{Client, RoomState, media::MediaRequestParameters};
 use matrix_sdk_ui::spaces::{SpaceRoom, SpaceRoomList, SpaceService, room_list::SpaceRoomListPaginationState};
 use ruma::{OwnedMxcUri, OwnedRoomId, events::room::MediaSource, room::RoomType};
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}, task::JoinHandle};
-use crate::{home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}}, room::FetchedRoomAvatar, utils::{self, RoomNameId}};
+use crate::{home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, build_space_search_text, enqueue_spaces_list_update}}, room::FetchedRoomAvatar, utils::{self, RoomNameId}};
 
 /// Whether to enable verbose logging of all spaces service diff updates.
 const LOG_SPACE_SERVICE_DIFFS: bool = cfg!(feature = "log_space_service_diffs");
@@ -349,6 +349,14 @@ async fn add_new_space(space: &SpaceRoom, client: &Client) {
         space_name_id: RoomNameId::new(
             matrix_sdk::RoomDisplayName::Named(space.display_name.clone()),
             space.room_id.clone(),
+        ),
+        search_text: build_space_search_text(
+            &RoomNameId::new(
+                matrix_sdk::RoomDisplayName::Named(space.display_name.clone()),
+                space.room_id.clone(),
+            ),
+            &space.canonical_alias,
+            &space.topic,
         ),
         canonical_alias: space.canonical_alias.clone(),
         topic: space.topic.clone(),

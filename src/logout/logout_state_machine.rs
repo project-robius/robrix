@@ -348,6 +348,20 @@ impl LogoutStateMachine {
                     if let Err(e) = delete_latest_user_id().await {
                         log!("Warning: Failed to delete latest user ID: {}", e);
                     }
+                } else if should_continue_local_logout_without_server(&e) {
+                    log!("Homeserver appears unavailable, continuing with local logout: {}", e);
+                    self.point_of_no_return.store(true, Ordering::Release);
+                    set_logout_point_of_no_return(true);
+                    self.transition_to(
+                        LogoutState::PointOfNoReturn,
+                        "Homeserver unavailable, continuing with local logout".to_string(),
+                        50
+                    ).await?;
+
+                    // Same delete operation as in the success case above
+                    if let Err(e) = delete_latest_user_id().await {
+                        log!("Warning: Failed to delete latest user ID: {}", e);
+                    }
                 } else {
                     // Restart sync service since we haven't reached point of no return
                     if let Some(sync_service) = get_sync_service() {
@@ -550,6 +564,33 @@ impl LogoutStateMachine {
                 Cx::post_action(LogoutAction::LogoutFailure(error.to_string()));
             }
         }
+    }
+}
+
+fn should_continue_local_logout_without_server(error: &LogoutError) -> bool {
+    match error {
+        LogoutError::Recoverable(RecoverableError::Timeout(_)) => true,
+        LogoutError::Recoverable(RecoverableError::ServerLogoutFailed(msg)) => {
+            let msg_lower = msg.to_ascii_lowercase();
+            msg_lower.contains("timeout")
+                || msg_lower.contains("timed out")
+                || msg_lower.contains("service unavailable")
+                || msg_lower.contains("bad gateway")
+                || msg_lower.contains("gateway timeout")
+                || msg_lower.contains("too many requests")
+                || msg_lower.contains("error sending request")
+                || msg_lower.contains("connection")
+                || msg_lower.contains("connect")
+                || msg_lower.contains("network")
+                || msg_lower.contains("dns")
+                || msg_lower.contains("i/o")
+                || msg_lower.contains("tls")
+                || msg_lower.contains("status code: 429")
+                || msg_lower.contains("status code: 502")
+                || msg_lower.contains("status code: 503")
+                || msg_lower.contains("status code: 504")
+        }
+        _ => false,
     }
 }
 

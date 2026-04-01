@@ -26,7 +26,11 @@ use matrix_sdk::{RoomState, ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch
 use crate::{
     app::{AppState, SelectedRoom},
     home::{
-        navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, rooms_list_entry::RoomsListEntryAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}
+        add_room::CreateRoomAction,
+        navigation_tab_bar::{NavigationBarAction, SelectedTab},
+        room_context_menu::RoomContextMenuDetails,
+        rooms_list_entry::RoomsListEntryAction,
+        space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt},
     },
     room::{
         FetchedRoomAvatar,
@@ -268,6 +272,8 @@ impl ActionDefaultRef for RoomsListAction {
 pub struct JoinedRoomInfo {
     /// The displayable name of this room (includes room ID for fallback).
     pub room_name_id: RoomNameId,
+    /// Lowercased searchable text cached for fast local search.
+    pub search_text: String,
     /// The number of unread messages in this room.
     pub num_unread_messages: u64,
     /// The number of unread mentions in this room.
@@ -310,6 +316,8 @@ pub struct JoinedRoomInfo {
 pub struct InvitedRoomInfo {
     /// The displayable name of this room (includes room ID for fallback).
     pub room_name_id: RoomNameId,
+    /// Lowercased searchable text cached for fast local search.
+    pub search_text: String,
     /// The canonical alias for this room, if any.
     pub canonical_alias: Option<OwnedRoomAliasId>,
     /// The alternative aliases for this room, if any.
@@ -339,6 +347,27 @@ pub struct InviterInfo {
     pub user_id: OwnedUserId,
     pub display_name: Option<String>,
     pub avatar: Option<Arc<[u8]>>,
+}
+
+pub fn build_room_search_text(
+    room_name_id: &RoomNameId,
+    canonical_alias: &Option<OwnedRoomAliasId>,
+    alt_aliases: &[OwnedRoomAliasId],
+) -> String {
+    let mut search_text = format!(
+        "{} {}",
+        room_name_id.to_string().to_lowercase(),
+        room_name_id.room_id().as_str().to_lowercase(),
+    );
+    if let Some(alias) = canonical_alias {
+        search_text.push(' ');
+        search_text.push_str(&alias.as_str().to_lowercase());
+    }
+    for alias in alt_aliases {
+        search_text.push(' ');
+        search_text.push_str(&alias.as_str().to_lowercase());
+    }
+    search_text
 }
 impl std::fmt::Debug for InviterInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -454,6 +483,9 @@ pub struct RoomsList {
     /// The latest status message that should be displayed in the bottom status label.
     #[rust] status: String,
 
+    /// Whether the cached portal-list indexes need to be recalculated before drawing.
+    #[rust(true)] indexes_dirty: bool,
+
     /// The currently-selected room.
     #[rust] current_active_room: Option<SelectedRoom>,
 
@@ -512,6 +544,67 @@ impl RoomsList {
         None
     }
 
+    fn upsert_created_room_placeholder(
+        &mut self,
+        cx: &mut Cx,
+        room_name_id: &RoomNameId,
+        parent_space_id: Option<&OwnedRoomId>,
+        should_link_into_space: bool,
+    ) {
+        let room_id = room_name_id.room_id().clone();
+        let room_avatar = FetchedRoomAvatar::Text(
+            room_name_id.name_for_avatar().unwrap_or("?").to_owned(),
+        );
+
+        match self.all_joined_rooms.entry(room_id.clone()) {
+            Entry::Occupied(mut occ) => {
+                occ.get_mut().room_name_id = room_name_id.clone();
+                occ.get_mut().room_avatar = room_avatar;
+            }
+            Entry::Vacant(vac) => {
+                vac.insert(JoinedRoomInfo {
+                    room_name_id: room_name_id.clone(),
+                    search_text: build_room_search_text(room_name_id, &None, &[]),
+                    num_unread_messages: 0,
+                    num_unread_mentions: 0,
+                    is_marked_unread: false,
+                    canonical_alias: None,
+                    alt_aliases: Vec::new(),
+                    tags: Tags::default(),
+                    latest: None,
+                    room_avatar,
+                    has_been_paginated: false,
+                    is_selected: false,
+                    is_direct: false,
+                    is_tombstoned: false,
+                });
+            }
+        }
+
+        if should_link_into_space {
+            if let Some(parent_space_id) = parent_space_id {
+                match self.space_map.entry(parent_space_id.clone()) {
+                    Entry::Occupied(mut occ) => {
+                        let value = occ.get_mut();
+                        let mut direct_child_rooms = (*value.direct_child_rooms).clone();
+                        direct_child_rooms.insert(room_id.clone());
+                        value.direct_child_rooms = Arc::new(direct_child_rooms);
+                    }
+                    Entry::Vacant(vac) => {
+                        let mut direct_child_rooms = HashSet::new();
+                        direct_child_rooms.insert(room_id.clone());
+                        vac.insert(SpaceMapValue {
+                            direct_child_rooms: Arc::new(direct_child_rooms),
+                            ..Default::default()
+                        });
+                    }
+                }
+            }
+        }
+
+        self.update_displayed_rooms(cx, false);
+    }
+
     /// Handle all pending updates to the list of all rooms.
     fn handle_rooms_list_updates(&mut self, cx: &mut Cx, _event: &Event, _scope: &mut Scope) {
         let mut num_updates: usize = 0;
@@ -536,8 +629,10 @@ impl RoomsList {
                     let _replaced = self.all_joined_rooms.insert(room_id.clone(), joined_room);
                     if should_display {
                         if is_direct {
-                            self.displayed_direct_rooms.push(room_id.clone());
-                        } else {
+                            if !self.displayed_direct_rooms.contains(&room_id) {
+                                self.displayed_direct_rooms.push(room_id.clone());
+                            }
+                        } else if !self.displayed_regular_rooms.contains(&room_id) {
                             self.displayed_regular_rooms.push(room_id.clone());
                         }
                     }
@@ -603,6 +698,7 @@ impl RoomsList {
                     // Try to update joined room first
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         room.room_name_id = new_room_name;
+                        room.search_text = build_room_search_text(&room.room_name_id, &room.canonical_alias, &room.alt_aliases);
                         let is_direct = room.is_direct;
                         let should_display = should_display_room!(self, &room_id, room);
                         let (pos_in_list, displayed_list) = if is_direct {
@@ -629,6 +725,7 @@ impl RoomsList {
                         let mut invited_rooms = self.invited_rooms.borrow_mut();
                         if let Some(invited_room) = invited_rooms.get_mut(&room_id) {
                             invited_room.room_name_id = new_room_name;
+                            invited_room.search_text = build_room_search_text(&invited_room.room_name_id, &invited_room.canonical_alias, &invited_room.alt_aliases);
                             let should_display = should_display_room!(self, &room_id, invited_room);
                             let pos_in_list = self.displayed_invited_rooms.iter()
                                 .position(|r| r == &room_id);
@@ -779,7 +876,10 @@ impl RoomsList {
                 }
                 RoomsListUpdate::ScrollToRoom(room_id) => {
                     // Ensure indexes are fresh in case rooms were added/removed in this batch of updates.
-                    self.recalculate_indexes();
+                    if self.indexes_dirty {
+                        self.recalculate_indexes();
+                        self.indexes_dirty = false;
+                    }
                     let portal_list = self.view.portal_list(cx, ids!(list));
                     let speed = 50.0;
                     let portal_list_index = if let Some(regular_index) = self.displayed_regular_rooms.iter().position(|r| r == &room_id) {
@@ -860,6 +960,7 @@ impl RoomsList {
             }
         }
         if num_updates > 0 {
+            self.indexes_dirty = true;
             self.redraw(cx);
         }
     }
@@ -916,6 +1017,7 @@ impl RoomsList {
         self.displayed_invited_rooms = invited;
         self.displayed_regular_rooms = regular;
         self.displayed_direct_rooms = direct;
+        self.indexes_dirty = true;
 
         self.update_status();
 
@@ -970,15 +1072,30 @@ impl RoomsList {
         }
         // Otherwise, if no sort function was provided (default), use the `all_known_rooms_order`.
         else {
+            let mut seen_joined = HashSet::new();
+            let mut seen_invited = HashSet::new();
             for room_id in &self.all_known_rooms_order {
                 if let Some(jr) = self.all_joined_rooms.get(room_id) {
                     if should_display_room!(self, room_id, jr) {
+                        seen_joined.insert(room_id.clone());
                         push_joined_room(room_id, jr);
                     }
                 } else if let Some(ir) = invited_rooms_ref.get(room_id) {
                     if should_display_room!(self, room_id, ir) {
+                        seen_invited.insert(room_id.clone());
                         new_displayed_invited_rooms.push(room_id.clone());
                     }
+                }
+            }
+
+            for (room_id, jr) in &self.all_joined_rooms {
+                if !seen_joined.contains(room_id) && should_display_room!(self, room_id, jr) {
+                    push_joined_room(room_id, jr);
+                }
+            }
+            for (room_id, ir) in invited_rooms_ref.iter() {
+                if !seen_invited.contains(room_id) && should_display_room!(self, room_id, ir) {
+                    new_displayed_invited_rooms.push(room_id.clone());
                 }
             }
         }
@@ -1259,6 +1376,7 @@ impl Widget for RoomsList {
                     }
                     _todo => todo!("Handle other header categories"),
                 }
+                self.indexes_dirty = true;
                 self.redraw(cx);
             }
         }
@@ -1353,6 +1471,16 @@ impl Widget for RoomsList {
                     _ => {}
                 }
 
+                if let Some(CreateRoomAction::Created { room_name_id, parent_space_id, space_link_error, .. }) = action.downcast_ref() {
+                    self.upsert_created_room_placeholder(
+                        cx,
+                        room_name_id,
+                        parent_space_id.as_ref(),
+                        space_link_error.is_none(),
+                    );
+                    continue;
+                }
+
                 if let Some(space_room_list_action) = action.downcast_ref() {
                     self.handle_space_room_list_action(cx, space_room_list_action);
                     continue;
@@ -1368,7 +1496,10 @@ impl Widget for RoomsList {
 
         // Based on the various displayed room lists and is_expanded state of each room header,
         // calculate the indexes in the PortalList where the headers and rooms should be drawn.
-        self.recalculate_indexes();
+        if self.indexes_dirty {
+            self.recalculate_indexes();
+            self.indexes_dirty = false;
+        }
 
         let status_label_id = self.regular_rooms_indexes.after_rooms_index;
         // Add one for the status label
@@ -1581,6 +1712,35 @@ impl RoomsListRef {
             .space_map
             .get(space_id)
             .map(|smv| smv.parent_chain.clone())
+    }
+
+    /// Returns local room results matching `keywords`, up to `max_results`.
+    pub fn get_matching_room_items(&self, keywords: &str, max_results: usize) -> Vec<(RoomNameId, FetchedRoomAvatar)> {
+        let Some(inner) = self.borrow() else { return Vec::new(); };
+        let keywords = keywords.trim().to_lowercase();
+        if keywords.is_empty() {
+            return Vec::new();
+        }
+        let mut items = Vec::new();
+        let invited_rooms = inner.invited_rooms.borrow();
+        for ir in invited_rooms.values() {
+            if ir.search_text.contains(&keywords) {
+                items.push((ir.room_name_id.clone(), ir.room_avatar.clone()));
+                if items.len() >= max_results {
+                    return items;
+                }
+            }
+        }
+        drop(invited_rooms);
+        for jr in inner.all_joined_rooms.values() {
+            if jr.search_text.contains(&keywords) {
+                items.push((jr.room_name_id.clone(), jr.room_avatar.clone()));
+                if items.len() >= max_results {
+                    return items;
+                }
+            }
+        }
+        items
     }
 }
 

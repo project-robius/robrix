@@ -1,7 +1,7 @@
 //! The `RoomScreen` widget is the UI view that displays a single room or thread's timeline
 //! of events (messages，state changes, etc.), along with an input bar at the bottom.
 
-use std::{borrow::Cow, cell::RefCell, ops::{DerefMut, Range}, sync::Arc};
+use std::{borrow::Cow, cell::RefCell, ops::{DerefMut, Range}, sync::Arc, time::Duration};
 
 use bytesize::ByteSize;
 use hashbrown::{HashMap, HashSet};
@@ -55,12 +55,142 @@ const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 100;
 /// The max size (width or height) of a blurhash image to decode.
 const BLURHASH_IMAGE_MAX_SIZE: u32 = 500;
 
+/// Use a larger batch when we are trying to fill the initial viewport,
+/// otherwise many short messages can trigger a long chain of tiny paginations.
+const VIEWPORT_FILL_PAGINATION_SIZE: u16 = 150;
+
 static UNNAMED_ROOM: &str = "Unnamed Room";
 
 /// #FFF4E5
 const COLOR_THREAD_SUMMARY_BG: Vec4 = vec4(1.0, 0.957, 0.898, 1.0);
 /// #FFEACC
 const COLOR_THREAD_SUMMARY_BG_HOVER: Vec4 = vec4(1.0, 0.918, 0.8, 1.0);
+
+fn item_event_id(item: &Arc<TimelineItem>) -> Option<&EventId> {
+    let TimelineItemKind::Event(event) = item.kind() else {
+        return None;
+    };
+    event.event_id()
+}
+
+/// Check if an event carries the MSC4357 `org.matrix.msc4357.live` field,
+/// indicating that the message content is still being streamed.
+///
+/// For edit events (`m.replace`), the live field lives inside `m.new_content`
+/// rather than at the top level of `content`, so we check both locations.
+fn content_has_msc4357_live_marker(content: &serde_json::Value) -> bool {
+    let effective = content.get("m.new_content").unwrap_or(content);
+    match effective.get("org.matrix.msc4357.live") {
+        Some(serde_json::Value::Bool(value)) => *value,
+        Some(_) => true,
+        None => false,
+    }
+}
+
+fn is_msc4357_live(event_tl_item: &EventTimelineItem) -> bool {
+    let message_is_edited = event_tl_item
+        .content()
+        .as_message()
+        .is_some_and(|message| message.is_edited());
+    event_tl_item.latest_edit_json()
+        .or_else(|| (!message_is_edited).then(|| event_tl_item.original_json()).flatten())
+        .and_then(|raw| raw.get_field::<serde_json::Value>("content").ok())
+        .flatten()
+        .map(|content| content_has_msc4357_live_marker(&content))
+        .unwrap_or(false)
+}
+
+fn streaming_scan_range(
+    clear_cache: bool,
+    changed_indices: &Range<usize>,
+    _old_len: usize,
+    new_len: usize,
+) -> Range<usize> {
+    if clear_cache {
+        0..new_len
+    } else {
+        let start = changed_indices.start.min(new_len);
+        let end = changed_indices.end.min(new_len);
+        start..end
+    }
+}
+
+fn refresh_stream_indices<'a, I>(
+    event_ids: I,
+    streaming_messages: &mut HashMap<OwnedEventId, super::streaming_animation::StreamingAnimState>,
+)
+where
+    I: IntoIterator<Item = Option<&'a EventId>>,
+{
+    for state in streaming_messages.values_mut() {
+        state.timeline_index = None;
+    }
+
+    for (idx, event_id) in event_ids.into_iter().enumerate() {
+        let Some(event_id) = event_id else {
+            continue;
+        };
+        if let Some(state) = streaming_messages.get_mut(event_id) {
+            state.timeline_index = Some(idx);
+        }
+    }
+}
+
+fn streaming_candidates_from_items<'a>(
+    items: &'a Vector<Arc<TimelineItem>>,
+) -> impl Iterator<Item = (OwnedEventId, String, bool)> + 'a {
+    items.iter().filter_map(|item| {
+        let TimelineItemKind::Event(event) = item.kind() else {
+            return None;
+        };
+        let event_id = event.event_id()?.to_owned();
+        let text = RoomScreen::extract_message_text(item)?;
+        Some((event_id, text, is_msc4357_live(event)))
+    })
+}
+
+fn rebuild_streaming_messages_for_full_snapshot<I>(
+    items: I,
+    previous_streaming_messages: Option<&HashMap<OwnedEventId, super::streaming_animation::StreamingAnimState>>,
+) -> (HashMap<OwnedEventId, super::streaming_animation::StreamingAnimState>, bool)
+where
+    I: IntoIterator<Item = (OwnedEventId, String, bool)>,
+{
+    use crate::home::streaming_animation::StreamingAnimState;
+
+    let mut rebuilt = HashMap::new();
+    let mut should_schedule_frame = false;
+
+    for (event_id, new_text, live) in items {
+        if !live {
+            continue;
+        }
+
+        // Only restore animations that were already tracked before the
+        // snapshot reset.  Never create brand-new animations here — during
+        // initial/reconnect loads the SDK may not have aggregated edits yet,
+        // so completed messages can still appear as `live`.  Genuinely new
+        // streams will be picked up on the next live sync update.
+        if let Some(previous_state) = previous_streaming_messages
+            .and_then(|states| states.get(&event_id))
+        {
+            let state = StreamingAnimState::restore(previous_state, &new_text, true);
+            should_schedule_frame |= state.needs_frame();
+            rebuilt.insert(event_id, state);
+        }
+    }
+
+    (rebuilt, should_schedule_frame)
+}
+
+fn next_stream_timeout<'a>(
+    states: impl IntoIterator<Item = &'a super::streaming_animation::StreamingAnimState>,
+) -> Option<Duration> {
+    states
+        .into_iter()
+        .map(|state| state.timeout_after().saturating_sub(state.last_update_time.elapsed()))
+        .min()
+}
 
 fn escape_slash_command_arg(value: &str) -> String {
     value.trim().replace('\\', "\\\\").replace('"', "\\\"")
@@ -140,7 +270,6 @@ fn detected_bot_binding_for_members(
         .any(|room_member| room_member.user_id() == bot_user_id)
         .then_some(bot_user_id)
 }
-
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -672,7 +801,6 @@ script_mod! {
                 draw_text +: {
                     text_style: REGULAR_TEXT { font_size: 10.5 }
                     color: (COLOR_TEXT)
-                    wrap: Word
                 }
                 text: "Create a bot through BotFather. Robrix only sends the matching slash command."
             }
@@ -902,6 +1030,12 @@ pub struct RoomScreen {
     #[rust] is_loaded: bool,
     /// Whether or not all rooms have been loaded (received from the homeserver).
     #[rust] all_rooms_loaded: bool,
+    /// NextFrame subscription for driving streaming typewriter animation.
+    #[rust]
+    streaming_next_frame: NextFrame,
+    /// Timeout used to evict stalled streaming states without per-frame polling.
+    #[rust]
+    streaming_timeout_timer: Timer,
     /// Whether the in-room app service quick actions card is currently visible.
     #[rust] show_app_service_actions: bool,
 }
@@ -937,6 +1071,98 @@ impl Widget for RoomScreen {
         let portal_list = self.portal_list(cx, ids!(timeline.list));
         let user_profile_sliding_pane = self.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane));
         let loading_pane = self.loading_pane(cx, ids!(loading_pane));
+
+        // Streaming animation frame handler
+        if let Some(_ne) = self.streaming_next_frame.is_event(event) {
+            #[cfg(debug_assertions)]
+            #[allow(unused_variables)]
+            let frame_start = std::time::Instant::now();
+
+            if let Some(tl) = self.tl_state.as_mut() {
+                let mut any_active = false;
+                let mut needs_another_frame = false;
+                let mut completed_ids = Vec::new();
+
+                for (event_id, state) in tl.streaming_messages.iter_mut() {
+                    if state.needs_frame() {
+                        if state.tick() {
+                            any_active = true;
+                            // Invalidate draw cache so item gets re-populated
+                            if let Some(idx) = state.timeline_index {
+                                tl.content_drawn_since_last_update.remove(idx..idx + 1);
+                            }
+                        }
+                        needs_another_frame |= state.needs_frame();
+                    }
+
+                    if state.is_complete() || state.is_timed_out() {
+                        completed_ids.push(event_id.clone());
+                    }
+                }
+
+                for id in &completed_ids {
+                    tl.streaming_messages.remove(id);
+                }
+
+                // Safety cap: max 50 streaming entries
+                while tl.streaming_messages.len() > 50 {
+                    if let Some(oldest_id) = tl.streaming_messages.iter()
+                        .min_by_key(|(_, s)| s.animation_start_time)
+                        .map(|(id, _)| id.clone())
+                    {
+                        tl.streaming_messages.remove(&oldest_id);
+                        any_active = true;
+                    }
+                }
+
+                if needs_another_frame {
+                    self.streaming_next_frame = cx.new_next_frame();
+                }
+
+                if any_active || !completed_ids.is_empty() {
+                    self.redraw(cx);
+                }
+            }
+
+            #[cfg(debug_assertions)]
+            {
+                if let Some(tl) = self.tl_state.as_ref() {
+                    let elapsed = frame_start.elapsed();
+                    if elapsed.as_millis() > 2 {
+                        log!("Streaming animation frame took {}ms ({} active streams)",
+                            elapsed.as_millis(), tl.streaming_messages.len());
+                    }
+                }
+            }
+
+            self.schedule_stream_timeout(cx);
+        }
+
+        if self.streaming_timeout_timer.is_event(event).is_some() {
+            if let Some(tl) = self.tl_state.as_mut() {
+                let timed_out_ids: Vec<OwnedEventId> = tl
+                    .streaming_messages
+                    .iter()
+                    .filter_map(|(event_id, state)| {
+                        if state.is_timed_out() || state.is_complete() {
+                            Some(event_id.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                for event_id in &timed_out_ids {
+                    tl.streaming_messages.remove(event_id);
+                }
+
+                if !timed_out_ids.is_empty() {
+                    self.redraw(cx);
+                }
+            }
+
+            self.schedule_stream_timeout(cx);
+        }
 
         // Handle actions here before processing timeline updates.
         // Normally (in most other widgets), the order of event handling doesn't matter much.
@@ -1563,10 +1789,7 @@ impl Widget for RoomScreen {
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // Here, we only need to handle drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
-            let Some(mut list_ref) = portal_list_ref.borrow_mut() else {
-                error!("!!! RoomScreen::draw_walk(): BUG: expected a PortalList widget, but got something else");
-                continue;
-            };
+            let Some(mut list_ref) = portal_list_ref.borrow_mut() else { continue };
             let Some(tl_state) = self.tl_state.as_mut() else {
                 return DrawStep::done();
             };
@@ -1628,6 +1851,7 @@ impl Widget for RoomScreen {
                                                 &self.pinned_events,
                                                 item_drawn_status,
                                                 room_screen_widget_uid,
+                                                &mut tl_state.streaming_messages,
                                             )
                                         },
                                         // TODO: properly implement `Poll` as a regular Message-like timeline item.
@@ -1728,11 +1952,15 @@ impl Widget for RoomScreen {
 
             // If the list is not filling the viewport, we need to back paginate the timeline
             // until we have enough events items to fill the viewport.
-            if !tl_state.fully_paginated && !list.is_filling_viewport() {
+            if !tl_state.fully_paginated
+                && !tl_state.backwards_pagination_in_flight
+                && !list.is_filling_viewport()
+            {
+                tl_state.backwards_pagination_in_flight = true;
                 log!("Automatically paginating timeline to fill viewport for room {:?}", self.room_name_id);
                 submit_async_request(MatrixRequest::PaginateTimeline {
                     timeline_kind: tl_state.kind.clone(),
-                    num_events: 50,
+                    num_events: VIEWPORT_FILL_PAGINATION_SIZE,
                     direction: PaginationDirection::Backwards,
                 });
             }
@@ -1744,6 +1972,25 @@ impl Widget for RoomScreen {
 impl RoomScreen {
     fn room_id(&self) -> Option<&OwnedRoomId> {
         self.room_name_id.as_ref().map(|r| r.room_id())
+    }
+
+    /// Extract the text body from a timeline item, if it's a text message.
+    fn extract_message_text(item: &Arc<TimelineItem>) -> Option<String> {
+        let TimelineItemKind::Event(event) = item.kind() else { return None };
+        let TimelineItemContent::MsgLike(_) = event.content() else { return None };
+        Some(plaintext_body_of_timeline_item(event))
+    }
+
+    fn schedule_stream_timeout(&mut self, cx: &mut Cx) {
+        cx.stop_timer(self.streaming_timeout_timer);
+        self.streaming_timeout_timer = next_stream_timeout(
+            self.tl_state
+                .as_ref()
+                .into_iter()
+                .flat_map(|tl| tl.streaming_messages.values()),
+        )
+        .map(|duration| cx.start_timeout(duration.as_secs_f64()))
+        .unwrap_or_else(Timer::empty);
     }
 
     fn set_app_service_actions_visible(&mut self, cx: &mut Cx, visible: bool) {
@@ -1955,7 +2202,22 @@ impl RoomScreen {
                     portal_list.set_tail_range(true);
                     jump_to_bottom_button.update_visibility(cx, true);
 
+                    let previous_streaming_messages = std::mem::take(&mut tl.streaming_messages);
+                    let (rebuilt_streaming_messages, should_schedule_frame) =
+                        rebuild_streaming_messages_for_full_snapshot(
+                            streaming_candidates_from_items(&initial_items),
+                            Some(&previous_streaming_messages),
+                        );
+
                     tl.items = initial_items;
+                    tl.streaming_messages = rebuilt_streaming_messages;
+                    refresh_stream_indices(
+                        tl.items.iter().map(item_event_id),
+                        &mut tl.streaming_messages,
+                    );
+                    if should_schedule_frame {
+                        self.streaming_next_frame = cx.new_next_frame();
+                    }
                     done_loading = true;
                 }
                 TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
@@ -2073,7 +2335,66 @@ impl RoomScreen {
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
                         // log!("process_timeline_updates(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                     }
+
+                    // --- MSC4357 streaming detection ---
+                    if clear_cache {
+                        let previous_streaming_messages = std::mem::take(&mut tl.streaming_messages);
+                        let (rebuilt_streaming_messages, should_schedule_frame) =
+                            rebuild_streaming_messages_for_full_snapshot(
+                                streaming_candidates_from_items(&new_items),
+                                Some(&previous_streaming_messages),
+                            );
+                        tl.streaming_messages = rebuilt_streaming_messages;
+                        if should_schedule_frame {
+                            self.streaming_next_frame = cx.new_next_frame();
+                        }
+                    } else if !new_items.is_empty() {
+                        use crate::home::streaming_animation::StreamingAnimState;
+
+                        let mut should_schedule_frame = false;
+                        let scan_range = streaming_scan_range(
+                            clear_cache,
+                            &changed_indices,
+                            tl.items.len(),
+                            new_items.len(),
+                        );
+
+                        let old_event_ids: HashSet<&EventId> = tl.items.iter()
+                            .filter_map(|item| item_event_id(item))
+                            .collect();
+
+                        for idx in scan_range {
+                            let Some(new_item) = new_items.get(idx) else { continue };
+                            let TimelineItemKind::Event(new_evt) = new_item.kind() else { continue };
+                            let Some(event_id) = new_evt.event_id().map(|id| id.to_owned()) else { continue };
+                            let live = is_msc4357_live(new_evt);
+                            let Some(new_text) = Self::extract_message_text(new_item) else { continue };
+
+                            if let Some(state) = tl.streaming_messages.get_mut(&event_id) {
+                                state.update_target(&new_text, live);
+                                // Schedule frame for animation OR for cleanup of just-completed state
+                                should_schedule_frame |= state.needs_frame() || state.is_complete();
+                                continue;
+                            }
+
+                            if live && !old_event_ids.contains(&*event_id) {
+                                let state = StreamingAnimState::new(&new_text, true);
+                                should_schedule_frame |= state.needs_frame();
+                                tl.streaming_messages.insert(event_id, state);
+                            }
+                        }
+
+                        if should_schedule_frame {
+                            self.streaming_next_frame = cx.new_next_frame();
+                        }
+                    }
+                    // --- End streaming detection ---
+
                     tl.items = new_items;
+                    refresh_stream_indices(
+                        tl.items.iter().map(item_event_id),
+                        &mut tl.streaming_messages,
+                    );
                     done_loading = true;
                 }
                 TimelineUpdate::NewUnreadMessagesCount(unread_messages_count) => {
@@ -2137,6 +2458,7 @@ impl RoomScreen {
                 }
                 TimelineUpdate::PaginationRunning(direction) => {
                     if direction == PaginationDirection::Backwards {
+                        tl.backwards_pagination_in_flight = true;
                         top_space.set_visible(cx, true);
                         done_loading = false;
                     } else {
@@ -2144,6 +2466,9 @@ impl RoomScreen {
                     }
                 }
                 TimelineUpdate::PaginationError { error, direction } => {
+                    if direction == PaginationDirection::Backwards {
+                        tl.backwards_pagination_in_flight = false;
+                    }
                     error!("Pagination error ({direction}) in {:?}: {error:?}", self.room_name_id);
                     let room_name = self.room_name_id.as_ref().map(|r| r.to_string());
                     enqueue_popup_notification(
@@ -2155,6 +2480,7 @@ impl RoomScreen {
                 }
                 TimelineUpdate::PaginationIdle { fully_paginated, direction } => {
                     if direction == PaginationDirection::Backwards {
+                        tl.backwards_pagination_in_flight = false;
                         // Don't set `done_loading` to `true` here, because we want to keep the top space visible
                         // (with the "loading" message) until the corresponding `NewItems` update is received.
                         tl.fully_paginated = fully_paginated;
@@ -2259,6 +2585,7 @@ impl RoomScreen {
                     // Then, we "process" it later (by turning it into a string) after the
                     // update loop has completed, which avoids unnecessary expensive work
                     // if the list of typing users gets updated many times in a row.
+
                     typing_users = Some(users);
                 }
                 TimelineUpdate::PinnedEvents(pinned_events) => {
@@ -2297,9 +2624,10 @@ impl RoomScreen {
         }
 
         if should_continue_backwards_pagination {
+            tl.backwards_pagination_in_flight = true;
             submit_async_request(MatrixRequest::PaginateTimeline {
                 timeline_kind: tl.kind.clone(),
-                num_events: 50,
+                num_events: VIEWPORT_FILL_PAGINATION_SIZE,
                 direction: PaginationDirection::Backwards,
             });
         }
@@ -2315,6 +2643,7 @@ impl RoomScreen {
         }
 
         if num_updates > 0 {
+            self.schedule_stream_timeout(cx);
             // log!("Applied {} timeline updates for room {}, redrawing with {} items...", num_updates, tl.kind.room_id(), tl.items.len());
             self.redraw(cx);
         }
@@ -2946,6 +3275,7 @@ impl RoomScreen {
                 room_members: None,
                 // We assume timelines being viewed for the first time haven't been fully paginated.
                 fully_paginated: false,
+                backwards_pagination_in_flight: false,
                 items: Vector::new(),
                 content_drawn_since_last_update: RangeSet::new(),
                 profile_drawn_since_last_update: RangeSet::new(),
@@ -2957,6 +3287,7 @@ impl RoomScreen {
                 pending_thread_summary_fetches: HashSet::new(),
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
+                streaming_messages: HashMap::new(),
                 last_scrolled_index: usize::MAX,
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
@@ -2993,10 +3324,11 @@ impl RoomScreen {
         // when they first open the room, and there might not be any messages yet.
         if is_first_time_being_loaded {
             if !tl_state.fully_paginated {
+                tl_state.backwards_pagination_in_flight = true;
                 log!("Sending a first-time backwards pagination request for {}", tl_state.kind);
                 submit_async_request(MatrixRequest::PaginateTimeline {
                     timeline_kind: tl_state.kind.clone(),
-                    num_events: 50,
+                    num_events: VIEWPORT_FILL_PAGINATION_SIZE,
                     direction: PaginationDirection::Backwards,
                 });
             }
@@ -3052,6 +3384,7 @@ impl RoomScreen {
         // Store the tl_state for this room into this RoomScreen widget,
         // such that it can be accessed in future functions like event/draw handlers.
         self.tl_state = Some(tl_state);
+        self.schedule_stream_timeout(cx);
 
         // Now that we have restored the TimelineUiState into this RoomScreen widget,
         // we can proceed to processing pending background updates.
@@ -3063,6 +3396,7 @@ impl RoomScreen {
     /// Invoke this when this RoomScreen/timeline is being hidden or no longer being shown.
     fn hide_timeline(&mut self) {
         let Some(timeline_kind) = self.timeline_kind.clone() else { return };
+        self.streaming_timeout_timer = Timer::empty();
 
         self.save_state();
 
@@ -3150,6 +3484,17 @@ impl RoomScreen {
             tl_state.user_power,
             tl_state.tombstone_info.as_ref(),
         );
+
+        refresh_stream_indices(
+            tl_state.items.iter().map(item_event_id),
+            &mut tl_state.streaming_messages,
+        );
+
+        // 3. If there are active streaming animations that can still reveal text,
+        //    re-request the NextFrame event so the animation loop resumes.
+        if tl_state.streaming_messages.values().any(|state| state.needs_frame()) {
+            self.streaming_next_frame = cx.new_next_frame();
+        }
     }
 
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
@@ -3290,7 +3635,8 @@ impl RoomScreen {
         if !portal_list.scrolled(actions) { return };
 
         let first_index = portal_list.first_id();
-        if first_index == 0 && tl.last_scrolled_index > 0 {
+        if first_index == 0 && tl.last_scrolled_index > 0 && !tl.backwards_pagination_in_flight {
+            tl.backwards_pagination_in_flight = true;
             log!("Scrolled up from item {} --> 0, sending back pagination request for room {}",
                 tl.last_scrolled_index, tl.kind,
             );
@@ -3436,7 +3782,7 @@ pub enum TimelineUpdate {
     MediaFetched(MediaRequestParameters),
     /// A notice that one or more members of a this room are currently typing.
     TypingUsers {
-        /// The list of users (their displayable name) who are currently typing in this room.
+        /// The list of display names of users who are currently typing in this room.
         users: Vec<String>,
     },
     /// The result of a pin/unpin request ([`MatrixRequest::PinEvent`]).
@@ -3488,6 +3834,10 @@ struct TimelineUiState {
     ///
     /// This must be reset to `false` whenever the timeline is fully cleared.
     fully_paginated: bool,
+
+    /// Whether a backwards pagination request has already been submitted
+    /// and is still in flight.
+    backwards_pagination_in_flight: bool,
 
     /// The list of items (events) in this room's timeline that our client currently knows about.
     items: Vector<Arc<TimelineItem>>,
@@ -3545,6 +3895,10 @@ struct TimelineUiState {
     /// Once the scrolling is started, the state becomes Pending.
     /// If the animation was triggered, the state goes back to Off.
     message_highlight_animation_state: MessageHighlightAnimationState,
+
+    /// Active streaming animations, keyed by event ID.
+    /// Stores the typewriter animation state for messages being streamed by bots.
+    streaming_messages: HashMap<OwnedEventId, super::streaming_animation::StreamingAnimState>,
 
     /// The index of the timeline item that was most recently scrolled up past it.
     /// This is used to detect when the user has scrolled up past the second visible item (index 1)
@@ -3706,6 +4060,7 @@ fn populate_message_view(
     pinned_events: &[OwnedEventId],
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
+    streaming_messages: &mut HashMap<OwnedEventId, super::streaming_animation::StreamingAnimState>,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
     let ts_millis = event_tl_item.timestamp();
@@ -3750,17 +4105,30 @@ fn populate_message_view(
                     } else {
                         let html_or_plaintext_ref =
                             item.html_or_plaintext(cx, ids!(content.message));
-                        let mut link_preview_ref =
-                            item.link_preview(cx, ids!(content.link_preview_view));
-                        new_drawn_status.content_drawn = populate_text_message_content(
-                            cx,
-                            &html_or_plaintext_ref,
-                            body,
-                            formatted.as_ref(),
-                            Some(&mut link_preview_ref),
-                            Some(media_cache),
-                            Some(link_preview_cache),
-                        );
+
+                        // Check if this message is being streamed
+                        let is_streaming = event_tl_item.event_id()
+                            .and_then(|eid| streaming_messages.get_mut(&eid.to_owned()));
+
+                        if let Some(state) = is_streaming {
+                            // STREAMING MODE: show partial plaintext with cursor
+                            state.fill_display_buffer();
+                            html_or_plaintext_ref.show_plaintext(cx, &state.display_buffer);
+                            new_drawn_status.content_drawn = false; // force re-render
+                        } else {
+                            // NORMAL MODE: existing logic
+                            let mut link_preview_ref =
+                                item.link_preview(cx, ids!(content.link_preview_view));
+                            new_drawn_status.content_drawn = populate_text_message_content(
+                                cx,
+                                &html_or_plaintext_ref,
+                                body,
+                                formatted.as_ref(),
+                                Some(&mut link_preview_ref),
+                                Some(media_cache),
+                                Some(link_preview_cache),
+                            );
+                        }
                         (item, false)
                     }
                 }
@@ -4263,12 +4631,12 @@ fn populate_message_view(
         item.timestamp(cx, ids!(profile.timestamp)).set_date_time(cx, dt);
     }
 
-    // Set the "edited" indicator if this message was edited.
-    if msg_like_content.as_message().is_some_and(|m| m.is_edited()) {
-        item.edited_indicator(cx, ids!(profile.edited_indicator)).set_latest_edit(
-            cx,
-            event_tl_item,
-        );
+    // Suppress "edited" indicator for actively streaming messages.
+    let is_streaming = event_tl_item.event_id()
+        .is_some_and(|eid| streaming_messages.contains_key(&eid.to_owned()));
+    if msg_like_content.as_message().is_some_and(|m| m.is_edited()) && !is_streaming {
+        item.edited_indicator(cx, ids!(profile.edited_indicator))
+            .set_latest_edit(cx, event_tl_item);
     }
 
     #[cfg(feature = "tsp")] {
@@ -5623,4 +5991,109 @@ pub fn clear_timeline_states(_cx: &mut Cx) {
     TIMELINE_STATES.with_borrow_mut(|states| {
         states.clear();
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::home::streaming_animation::StreamingAnimState;
+    use std::time::{Duration, Instant};
+
+    fn make_state(text: &str) -> StreamingAnimState {
+        StreamingAnimState::new(text, true)
+    }
+
+    #[test]
+    fn test_streaming_scan_range() {
+        // Incremental: clamp sentinel to new_len
+        assert_eq!(streaming_scan_range(false, &(5..usize::MAX), 8, 9), 5..9);
+        // Append: new item at end is scanned
+        assert_eq!(streaming_scan_range(false, &(8..9), 8, 9), 8..9);
+        // No changes: empty range
+        assert_eq!(streaming_scan_range(false, &(8..8), 8, 8), 8..8);
+        // Clear cache: full scan
+        assert_eq!(streaming_scan_range(true, &(5..usize::MAX), 8, 9), 0..9);
+    }
+
+    #[test]
+    fn test_refresh_stream_indices() {
+        let event_id_a: OwnedEventId = "$event-a:example.com".try_into().unwrap();
+        let event_id_b: OwnedEventId = "$event-b:example.com".try_into().unwrap();
+        let missing_event_id: OwnedEventId = "$missing:example.com".try_into().unwrap();
+
+        let mut streaming_messages = HashMap::new();
+        streaming_messages.insert(event_id_a.clone(), make_state("alpha"));
+        streaming_messages.insert(missing_event_id.clone(), make_state("missing"));
+
+        let event_ids = vec![None, Some(event_id_a.as_ref()), Some(event_id_b.as_ref())];
+        refresh_stream_indices(event_ids.into_iter(), &mut streaming_messages);
+
+        assert_eq!(streaming_messages[&event_id_a].timeline_index, Some(1));
+        assert_eq!(streaming_messages[&missing_event_id].timeline_index, None);
+    }
+
+    #[test]
+    fn test_timeout_picks_earliest() {
+        let mut live = make_state("alpha");
+        live.last_update_time = Instant::now() - Duration::from_secs(40);
+        let mut finished = make_state("beta");
+        finished.is_live = false;
+        finished.last_update_time = Instant::now() - Duration::from_secs(29);
+
+        let timeout = next_stream_timeout([&live, &finished].into_iter()).unwrap();
+
+        assert!(timeout <= Duration::from_secs(1));
+    }
+
+    #[test]
+    fn test_full_snapshot_rebuild_drops_finished_cached_streams() {
+        let event_id: OwnedEventId = "$event-live:example.com".try_into().unwrap();
+        let mut previous = HashMap::new();
+        let mut previous_state = make_state("hello live");
+        previous_state.advance_displayed(4);
+        previous.insert(event_id.clone(), previous_state);
+
+        let (rebuilt, should_schedule_frame) = rebuild_streaming_messages_for_full_snapshot(
+            [(event_id, String::from("hello final"), false)],
+            Some(&previous),
+        );
+
+        assert!(rebuilt.is_empty());
+        assert!(!should_schedule_frame);
+    }
+
+    #[test]
+    fn test_full_snapshot_rebuild_restores_live_cached_streams() {
+        let event_id: OwnedEventId = "$event-live:example.com".try_into().unwrap();
+        let mut previous = HashMap::new();
+        let mut previous_state = make_state("hello");
+        previous_state.advance_displayed(3);
+        previous.insert(event_id.clone(), previous_state);
+
+        let (rebuilt, should_schedule_frame) = rebuild_streaming_messages_for_full_snapshot(
+            [(event_id.clone(), String::from("hello world"), true)],
+            Some(&previous),
+        );
+
+        let restored = rebuilt.get(&event_id).unwrap();
+        assert_eq!(restored.displayed_char_count, 3);
+        assert!(restored.is_live);
+        assert!(should_schedule_frame);
+    }
+
+    #[test]
+    fn test_full_snapshot_rebuild_skips_live_without_cached_state() {
+        // Without previous state, full-snapshot rebuild must NOT create new
+        // animations — the SDK may not have aggregated edits yet, so
+        // completed messages can still appear as `live`.
+        let event_id: OwnedEventId = "$event-live:example.com".try_into().unwrap();
+
+        let (rebuilt, should_schedule_frame) = rebuild_streaming_messages_for_full_snapshot(
+            [(event_id.clone(), String::from("hello world"), true)],
+            None,
+        );
+
+        assert!(rebuilt.is_empty());
+        assert!(!should_schedule_frame);
+    }
 }

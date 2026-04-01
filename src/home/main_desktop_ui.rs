@@ -131,7 +131,17 @@ impl Widget for MainDesktopUI {
             // We must set `selected_space` first before the load operation occurs, in order for
             // the proper space-specific instance of the saved dock UI layout/state to be selected.
             self.selected_space = cx.get_global::<RoomsListRef>().get_selected_space_id();
-            cx.action(MainDesktopUiAction::LoadDockFromAppState);
+            let app_state = scope.data.get::<AppState>().unwrap();
+            let has_saved_dock_state = if let Some(space_id) = self.selected_space.as_ref() {
+                app_state.saved_dock_state_per_space
+                    .get(space_id)
+                    .is_some_and(|saved| !saved.open_rooms.is_empty())
+            } else {
+                !app_state.saved_dock_state_home.open_rooms.is_empty()
+            };
+            if has_saved_dock_state {
+                cx.action(MainDesktopUiAction::LoadDockFromAppState);
+            }
             self.drawn_previously = true;
         }
         self.view.draw_walk(cx, scope, walk)
@@ -139,6 +149,37 @@ impl Widget for MainDesktopUI {
 }
 
 impl MainDesktopUI {
+    fn sync_tab_widget(cx: &mut Cx, widget: &WidgetRef, room: &SelectedRoom) {
+        match room {
+            SelectedRoom::JoinedRoom { room_name_id } => {
+                widget.as_room_screen().set_displayed_room(
+                    cx,
+                    room_name_id,
+                    None,
+                );
+            }
+            SelectedRoom::Thread { room_name_id, thread_root_event_id } => {
+                widget.as_room_screen().set_displayed_room(
+                    cx,
+                    room_name_id,
+                    Some(thread_root_event_id.clone()),
+                );
+            }
+            SelectedRoom::InvitedRoom { room_name_id } => {
+                widget.as_invite_screen().set_displayed_invite(
+                    cx,
+                    room_name_id,
+                );
+            }
+            SelectedRoom::Space { space_name_id } => {
+                widget.as_space_lobby_screen().set_displayed_space(
+                    cx,
+                    space_name_id,
+                );
+            }
+        }
+    }
+
     /// Focuses on a room if it is already open, otherwise creates a new tab for the room.
     fn focus_or_create_tab(&mut self, cx: &mut Cx, room: SelectedRoom) {
         // Do nothing if the room to select is already created and focused.
@@ -151,6 +192,11 @@ impl MainDesktopUI {
         // If the room is already open, select (jump to) its existing tab
         let room_tab_id = room.tab_id();
         if self.open_rooms.contains_key(&room_tab_id) {
+            if let Some(mut dock_inner) = dock.borrow_mut() {
+                if let Some((_, widget)) = dock_inner.items().get(&room_tab_id) {
+                    Self::sync_tab_widget(cx, widget, &room);
+                }
+            }
             dock.select_tab(cx, room_tab_id);
             self.most_recently_selected_room = Some(room);
             return;
@@ -183,34 +229,7 @@ impl MainDesktopUI {
         // if the tab was created, set the room screen and add the room to the room order
         if let Some(new_widget) = new_tab_widget {
             self.room_order.push(room.clone());
-            match &room {
-                SelectedRoom::JoinedRoom { room_name_id }  => {
-                    new_widget.as_room_screen().set_displayed_room(
-                        cx,
-                        room_name_id,
-                        None,
-                    );
-                }
-                SelectedRoom::Thread { room_name_id, thread_root_event_id } => {
-                    new_widget.as_room_screen().set_displayed_room(
-                        cx,
-                        room_name_id,
-                        Some(thread_root_event_id.clone()),
-                    );
-                }
-                SelectedRoom::InvitedRoom { room_name_id } => {
-                    new_widget.as_invite_screen().set_displayed_invite(
-                        cx,
-                        room_name_id,
-                    );
-                }
-                SelectedRoom::Space { space_name_id } => {
-                    new_widget.as_space_lobby_screen().set_displayed_space(
-                        cx,
-                        space_name_id,
-                    );
-                }
-            }
+            Self::sync_tab_widget(cx, &new_widget, &room);
             cx.action(MainDesktopUiAction::SaveDockIntoAppState);
         } else {
             error!("BUG: failed to create tab for {room:?}");
@@ -359,38 +378,11 @@ impl MainDesktopUI {
 
         if let Some(mut dock) = dock.borrow_mut() {
             dock.load_state(cx, dock_items.clone());
-            // Populate the content within each restored dock tab.
-            if !self.open_rooms.is_empty() {
-                for (head_live_id, (_, widget)) in dock.items().iter() {
-                    match self.open_rooms.get(head_live_id) {
-                        Some(SelectedRoom::JoinedRoom { room_name_id }) => {
-                            widget.as_room_screen().set_displayed_room(
-                                cx,
-                                room_name_id,
-                                None,
-                            );
-                        }
-                        Some(SelectedRoom::InvitedRoom { room_name_id }) => {
-                            widget.as_invite_screen().set_displayed_invite(
-                                cx,
-                                room_name_id,
-                            );
-                        }
-                        Some(SelectedRoom::Space { space_name_id }) => {
-                            widget.as_space_lobby_screen().set_displayed_space(
-                                cx,
-                                space_name_id,
-                            );
-                        }
-                        Some(SelectedRoom::Thread { room_name_id, thread_root_event_id }) => {
-                            widget.as_room_screen().set_displayed_room(
-                                cx,
-                                room_name_id,
-                                Some(thread_root_event_id.clone()),
-                            );
-                        }
-                        None => { }
-                    }
+            // Only populate the currently-selected tab immediately.
+            // Background tabs will be initialized lazily when they are focused.
+            if let Some(selected_room) = selected_room.as_ref() {
+                if let Some((_, widget)) = dock.items().get(&selected_room.tab_id()) {
+                    Self::sync_tab_widget(cx, widget, selected_room);
                 }
             }
         } else {
@@ -456,6 +448,11 @@ impl WidgetMatchEvent for MainDesktopUI {
                         self.most_recently_selected_room = None;
                     }
                     else if let Some(selected_room) = self.open_rooms.get(&tab_id) {
+                        if let Some(mut dock) = self.view.dock(cx, ids!(dock)).borrow_mut() {
+                            if let Some((_, widget)) = dock.items().get(&tab_id) {
+                                Self::sync_tab_widget(cx, widget, selected_room);
+                            }
+                        }
                         cx.action(AppStateAction::RoomFocused(selected_room.clone()));
                         self.most_recently_selected_room = Some(selected_room.clone());
                     }
