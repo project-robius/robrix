@@ -694,6 +694,7 @@ impl AppMain for App {
         crate::profile::script_mod(vm);
         crate::home::script_mod(vm);
         crate::login::script_mod(vm);
+        crate::register::script_mod(vm);
         crate::logout::script_mod(vm);
 
         self::script_mod(vm)

@@ -80,6 +80,25 @@ script_mod! {
         }
     }
 
+    mod.widgets.HomeserverAddressInput = RobrixTextInput {
+        width: Fill, height: Fit
+        flow: Right, // do not wrap
+        padding: Inset{top: 6, bottom: 6, left: 10, right: 10}
+        empty_text: "https://your-server.com"
+        draw_bg +: {
+            border_radius: 6.0
+            border_size: 0.5
+            border_color: (COLOR_SECONDARY_DARKER)
+            border_color_hover: (COLOR_ACTIVE_PRIMARY)
+            border_color_focus: (COLOR_ACTIVE_PRIMARY)
+            border_color_down: (COLOR_ACTIVE_PRIMARY_DARKER)
+            border_color_empty: (COLOR_SECONDARY_DARKER)
+        }
+        draw_text +: {
+            text_style: TITLE_TEXT {font_size: 10.0}
+        }
+    }
+
     mod.widgets.RegisterScreen = set_type_default() do #(RegisterScreen::register_widget(vm)) {
         ..mod.widgets.SolidView
 
@@ -98,20 +117,20 @@ script_mod! {
             draw_bg.color: (COLOR_SECONDARY)
 
             View {
-                margin: Inset{top: 40, bottom: 40}
+                margin: Inset{top: 20, bottom: 20}
                 width: Fill
                 height: Fit
-                align: Align{x: 0.5, y: 0.5}
+                align: Align{x: 0.5}
                 flow: Overlay,
 
                 View {
                     width: Fill
                     height: Fit
                     flow: Down
-                    align: Align{x: 0.5, y: 0.5}
-                    padding: Inset{top: 30, bottom: 30}
-                    margin: Inset{top: 40, bottom: 40}
-                    spacing: 15.0
+                    align: Align{x: 0.5}
+                    padding: Inset{top: 20, bottom: 20}
+                    margin: Inset{top: 20, bottom: 20}
+                    spacing: 12.0
 
                     logo_image := Image {
                         fit: ImageFit.Smallest,
@@ -134,28 +153,14 @@ script_mod! {
                     View {
                         width: 275, height: Fit
                         flow: Down
-                        spacing: 5
-
-                        Label {
-                            width: Fit, height: Fit
-                            draw_text +: {
-                                color: (COLOR_TEXT)
-                                text_style: REGULAR_TEXT {font_size: 11}
-                            }
-                            text: "Host account on"
-                        }
+                        spacing: 3
 
                         homeserver_selector := View {
                             width: Fill, height: Fit
                             flow: Right
                             align: Align{x: 0.0, y: 0.5}
-                            padding: Inset{left: 10, right: 10, top: 8, bottom: 8}
+                            padding: Inset{left: 10, right: 10, top: 5, bottom: 5}
                             spacing: 5
-
-                            show_bg: true
-                            draw_bg +: {
-                                color: (COLOR_SECONDARY)
-                            }
 
                             selected_homeserver := Label {
                                 width: Fill, height: Fit
@@ -169,21 +174,30 @@ script_mod! {
                             edit_button := RobrixIconButton {
                                 width: Fit, height: Fit
                                 padding: Inset{left: 8, right: 8, top: 4, bottom: 4}
-                                draw_text +: {
-                                    color: (COLOR_PRIMARY)
-                                    text_style: REGULAR_TEXT {font_size: 10}
-                                }
                                 text: "Edit"
                             }
                         }
 
-                        homeserver_description := Label {
-                            width: Fill, height: Fit
-                            draw_text +: {
-                                color: (COLOR_TEXT)
-                                text_style: REGULAR_TEXT {font_size: 9}
+                        View {
+                            width: 275, height: Fit,
+                            flow: Right,
+                            padding: Inset{top: 3, left: 2, right: 2}
+                            spacing: 0.0,
+                            align: Align{x: 0.5, y: 0.5}
+
+                            LineH { draw_bg.color: (COLOR_SECONDARY_DARKER) }
+
+                            homeserver_description := Label {
+                                width: Fit, height: Fit
+                                padding: 0
+                                draw_text +: {
+                                    color: (COLOR_FG_DISABLED)
+                                    text_style: REGULAR_TEXT {font_size: 9}
+                                }
+                                text: "Homeserver (optional)"
                             }
-                            text: "Join millions for free on the largest public server"
+
+                            LineH { draw_bg.color: (COLOR_SECONDARY_DARKER) }
                         }
                     }
 
@@ -191,19 +205,14 @@ script_mod! {
                     homeserver_options := View {
                         width: 275, height: Fit
                         flow: Down
-                        spacing: 10
+                        spacing: 5
                         visible: false
-
-                        show_bg: true
-                        draw_bg +: {
-                            color: (COLOR_SECONDARY)
-                        }
-                        padding: 10
+                        padding: Inset{left: 5, right: 5, top: 4, bottom: 4}
 
                         Label {
                             width: Fill, height: Fit
                             draw_text +: {
-                                color: (COLOR_TEXT)
+                                color: (COLOR_FG_DISABLED)
                                 text_style: REGULAR_TEXT {font_size: 10}
                             }
                             text: "Select a homeserver:"
@@ -211,32 +220,43 @@ script_mod! {
 
                         matrix_option := RobrixIconButton {
                             width: Fill, height: Fit
-                            padding: Inset{left: 10, right: 10, top: 8, bottom: 8}
+                            padding: Inset{left: 10, right: 10, top: 6, bottom: 6}
+                            draw_bg +: {
+                                color: (COLOR_TRANSPARENT)
+                                color_hover: (COLOR_BG_DISABLED)
+                                border_size: 0.5
+                                border_color: (COLOR_SECONDARY_DARKER)
+                            }
                             draw_text +: {
                                 color: (COLOR_TEXT)
                                 text_style: REGULAR_TEXT {font_size: 11}
                             }
-                            text: "● matrix.org"
+                            text: "[*] matrix.org"
                         }
 
                         other_option := RobrixIconButton {
                             width: Fill, height: Fit
-                            padding: Inset{left: 10, right: 10, top: 8, bottom: 8}
+                            padding: Inset{left: 10, right: 10, top: 6, bottom: 6}
+                            draw_bg +: {
+                                color: (COLOR_TRANSPARENT)
+                                color_hover: (COLOR_BG_DISABLED)
+                                border_size: 0.5
+                                border_color: (COLOR_SECONDARY_DARKER)
+                            }
                             draw_text +: {
                                 color: (COLOR_TEXT)
                                 text_style: REGULAR_TEXT {font_size: 11}
                             }
-                            text: "○ Other homeserver"
+                            text: "[ ] Other homeserver"
                         }
 
                         custom_homeserver := View {
-                            width: Fill, height: Fit
+                            width: 275, height: Fit
                             visible: false
+                            margin: Inset{top: 2}
 
-                            custom_homeserver_input := RobrixTextInput {
-                                width: Fill, height: Fit
-                                padding: Inset{top: 5, bottom: 5}
-                                empty_text: "your-server.com"
+                            custom_homeserver_input := mod.widgets.HomeserverAddressInput {
+                                width: 275, height: Fit
                             }
                         }
                     }
@@ -317,19 +337,11 @@ script_mod! {
                             }
                         }
 
-                        register_button := MaskableButton {
+                        register_button := RobrixIconButton {
                             width: Fill, height: 40
                             padding: 10
                             margin: Inset{top: 5, bottom: 10}
                             align: Align{x: 0.5, y: 0.5}
-                            draw_bg +: {
-                                color: (COLOR_ACTIVE_PRIMARY)
-                                mask: 0.0
-                            }
-                            draw_text +: {
-                                color: (COLOR_PRIMARY)
-                                text_style: REGULAR_TEXT {}
-                            }
                             text: "Register"
                         }
                     }
@@ -342,21 +354,21 @@ script_mod! {
                         align: Align{x: 0.5, y: 0.5}
 
                         left_line := LineH {
-                            draw_bg.color: #C8C8C8
+                            draw_bg.color: (COLOR_SECONDARY_DARKER)
                         }
 
                         Label {
                             width: Fit, height: Fit
                             padding: Inset{left: 1, right: 1, top: 0, bottom: 0}
                             draw_text +: {
-                                color: (COLOR_TEXT)
+                                color: (COLOR_FG_DISABLED)
                                 text_style: REGULAR_TEXT {}
                             }
                             text: "Already have an account?"
                         }
 
                         right_line := LineH {
-                            draw_bg.color: #C8C8C8
+                            draw_bg.color: (COLOR_SECONDARY_DARKER)
                         }
                     }
 
@@ -420,11 +432,11 @@ impl RegisterScreen {
         let matrix_btn = self.view.button(cx, ids!(matrix_option));
         let other_btn = self.view.button(cx, ids!(other_option));
         if is_matrix_org {
-            matrix_btn.set_text(cx, "● matrix.org");
-            other_btn.set_text(cx, "○ Other homeserver");
+            matrix_btn.set_text(cx, "[*] matrix.org");
+            other_btn.set_text(cx, "[ ] Other homeserver");
         } else {
-            matrix_btn.set_text(cx, "○ matrix.org");
-            other_btn.set_text(cx, "● Other homeserver");
+            matrix_btn.set_text(cx, "[ ] matrix.org");
+            other_btn.set_text(cx, "[*] Other homeserver");
         }
     }
 
@@ -452,10 +464,9 @@ impl RegisterScreen {
     }
 
     fn reset_modal_state(&mut self, cx: &mut Cx) {
-        let mut register_button = self.view.button(cx, ids!(register_button));
+        let register_button = self.view.button(cx, ids!(register_button));
         register_button.set_enabled(cx, true);
         register_button.reset_hover(cx);
-        self.update_button_mask(&mut register_button, cx, 0.0);
         self.redraw(cx);
     }
 
@@ -518,10 +529,9 @@ impl RegisterScreen {
             .set_text(cx, "");
 
         // Reset button states
-        let mut register_button = self.view.button(cx, ids!(register_button));
+        let register_button = self.view.button(cx, ids!(register_button));
         register_button.set_enabled(cx, true);
         register_button.reset_hover(cx);
-        self.update_button_mask(&mut register_button, cx, 0.0);
 
         let mut sso_button = self.view.button(cx, ids!(sso_button));
         sso_button.set_enabled(cx, true);
@@ -652,7 +662,7 @@ impl MatchEvent for RegisterScreen {
         }
 
         // Handle password-based registration
-        let mut register_button = self.view.button(cx, ids!(register_button));
+        let register_button = self.view.button(cx, ids!(register_button));
         let username_input = self.view.text_input(cx, ids!(username_input));
         let password_input = self.view.text_input(cx, ids!(password_input));
         let confirm_password_input = self.view.text_input(cx, ids!(confirm_password_input));
@@ -713,7 +723,6 @@ impl MatchEvent for RegisterScreen {
 
             // Disable register button to prevent duplicate submissions
             register_button.set_enabled(cx, false);
-            self.update_button_mask(&mut register_button, cx, 1.0);
 
             // Show registration status modal with appropriate text for password registration
             self.view.label(cx, ids!(status_modal_inner.status))
