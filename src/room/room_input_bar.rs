@@ -19,7 +19,7 @@
 use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
-use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedRoomId};
+use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedRoomId, OwnedUserId};
 use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 
 script_mod! {
@@ -169,6 +169,8 @@ pub struct RoomInputBar {
     #[rust] was_replying_preview_visible: bool,
     /// Info about the message event that the user is currently replying to, if any.
     #[rust] replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
+    /// The most recently selected explicit bot target for this room.
+    #[rust] active_target_user_id: Option<OwnedUserId>,
 }
 
 impl Widget for RoomInputBar {
@@ -212,6 +214,23 @@ impl Widget for RoomInputBar {
 }
 
 impl RoomInputBar {
+    fn resolve_target_user_id(
+        &mut self,
+        explicit_target_user_id: Option<OwnedUserId>,
+        reply_target_user_id: Option<OwnedUserId>,
+        fallback_target_user_id: Option<OwnedUserId>,
+    ) -> Option<OwnedUserId> {
+        if let Some(explicit_target_user_id) = explicit_target_user_id {
+            self.active_target_user_id = Some(explicit_target_user_id.clone());
+            Some(explicit_target_user_id)
+        } else if let Some(reply_target_user_id) = reply_target_user_id {
+            self.active_target_user_id = Some(reply_target_user_id.clone());
+            Some(reply_target_user_id)
+        } else {
+            self.active_target_user_id.clone().or(fallback_target_user_id)
+        }
+    }
+
     fn handle_actions(
         &mut self,
         cx: &mut Cx,
@@ -255,6 +274,10 @@ impl RoomInputBar {
                         LocationMessageEventContent::new(geo_uri.clone(), geo_uri)
                     )
                 );
+                let reply_target_user_id = self
+                    .replying_to
+                    .as_ref()
+                    .map(|(event_tl_item, _emb)| event_tl_item.sender().to_owned());
                 let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
                     event_tl_item.event_id().map(|event_id| {
                         let enforce_thread = if room_screen_props.timeline_kind.thread_root_event_id().is_some() {
@@ -279,6 +302,11 @@ impl RoomInputBar {
                     timeline_kind: room_screen_props.timeline_kind.clone(),
                     message,
                     replied_to,
+                    target_user_id: self.resolve_target_user_id(
+                        None,
+                        reply_target_user_id,
+                        room_screen_props.bound_bot_user_id.clone(),
+                    ),
                     #[cfg(feature = "tsp")]
                     sign_with_tsp: self.is_tsp_signing_enabled(cx),
                 });
@@ -306,6 +334,10 @@ impl RoomInputBar {
                     self.redraw(cx);
                     return;
                 }
+                let reply_target_user_id = self
+                    .replying_to
+                    .as_ref()
+                    .map(|(event_tl_item, _emb)| event_tl_item.sender().to_owned());
                 let message = mentionable_text_input.create_message_with_mentions(&entered_text);
                 let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
                     event_tl_item.event_id().map(|event_id| {
@@ -331,6 +363,11 @@ impl RoomInputBar {
                     timeline_kind: room_screen_props.timeline_kind.clone(),
                     message,
                     replied_to,
+                    target_user_id: self.resolve_target_user_id(
+                        None,
+                        reply_target_user_id,
+                        room_screen_props.bound_bot_user_id.clone(),
+                    ),
                     #[cfg(feature = "tsp")]
                     sign_with_tsp: self.is_tsp_signing_enabled(cx),
                 });
@@ -664,6 +701,7 @@ impl RoomInputBarRef {
         RoomInputBarState {
             was_replying_preview_visible: inner.was_replying_preview_visible,
             replying_to: inner.replying_to.clone(),
+            active_target_user_id: inner.active_target_user_id.clone(),
             editing_pane_state: inner.child_by_path(ids!(editing_pane)).as_editing_pane().save_state(),
             text_input_state: inner.child_by_path(ids!(input_bar.mentionable_text_input.text_input)).as_text_input().save_state(),
         }
@@ -683,6 +721,7 @@ impl RoomInputBarRef {
             was_replying_preview_visible,
             text_input_state,
             replying_to,
+            active_target_user_id,
             editing_pane_state,
         } = saved_state;
 
@@ -704,6 +743,7 @@ impl RoomInputBarRef {
             inner.clear_replying_to(cx);
         }
         inner.was_replying_preview_visible = was_replying_preview_visible;
+        inner.active_target_user_id = active_target_user_id;
 
         // 3. Restore the state of the editing pane.
         if let Some(editing_pane_state) = editing_pane_state {
@@ -732,6 +772,8 @@ pub struct RoomInputBarState {
     text_input_state: TextInputState,
     /// The event that the user is currently replying to, if any.
     replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
+    /// The most recently selected explicit bot target for this room.
+    active_target_user_id: Option<OwnedUserId>,
     /// The state of the `EditingPane`, if any message was being edited.
     editing_pane_state: Option<EditingPaneState>,
 }

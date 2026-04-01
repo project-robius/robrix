@@ -6,7 +6,7 @@
 use std::{fs::{File, OpenOptions}, io::Write, sync::Mutex};
 use std::{cell::RefCell, collections::HashMap};
 use makepad_widgets::*;
-use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedUserId, RoomId, UserId}};
+use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedUserId, RoomId, UserId, events::room::message::RoomMessageEventContent}};
 use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::{self, AvatarCacheEntry, clear_avatar_cache}, home::{
@@ -14,7 +14,7 @@ use crate::{
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, invite_screen::InviteScreenWidgetRefExt, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, RoomScreenWidgetRefExt, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, space_lobby::SpaceLobbyScreenWidgetRefExt, spaces_bar::SpacesBarRef
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::{user_profile::UserProfile, user_profile_cache::clear_user_profile_cache}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, room_filter_input_bar::RoomFilterAction}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RemoteDirectorySearchKind, RemoteDirectorySearchResult, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::{user_profile::UserProfile, user_profile_cache::clear_user_profile_cache}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, room_filter_input_bar::RoomFilterAction}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RemoteDirectorySearchKind, RemoteDirectorySearchResult, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -972,11 +972,6 @@ impl MatchEvent for App {
                             error!("Failed to persist app state after updating BotFather room binding. Error: {e}");
                         }
                     }
-                    let kind = if warning.is_some() {
-                        PopupKind::Warning
-                    } else {
-                        PopupKind::Success
-                    };
                     let message = match (*bound, bot_user_id.as_ref(), warning.as_deref()) {
                         (true, Some(bot_user_id), Some(warning)) => {
                             format!("BotFather {bot_user_id} is available for room {room_id}, but inviting it reported a warning: {warning}")
@@ -1003,7 +998,14 @@ impl MatchEvent for App {
                             format!("Bound room {room_id} to BotFather.")
                         }
                     };
-                    enqueue_popup_notification(message, kind, Some(5.0));
+                    submit_async_request(MatrixRequest::SendMessage {
+                        timeline_kind: TimelineKind::MainRoom { room_id: room_id.clone() },
+                        message: RoomMessageEventContent::notice_plain(format!("[App Service] {message}")),
+                        replied_to: None,
+                        target_user_id: None,
+                        #[cfg(feature = "tsp")]
+                        sign_with_tsp: false,
+                    });
                     self.ui.redraw(cx);
                     continue;
                 }
