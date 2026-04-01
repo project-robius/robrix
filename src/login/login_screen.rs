@@ -137,7 +137,6 @@ script_mod! {
                             show_password_button := Button {
                                 width: 36, height: 36,
                                 padding: 6,
-                                cursor: MouseCursor.Hand,
                                 draw_bg +: {
                                     color: #0000
                                     color_hover: #0000
@@ -156,7 +155,6 @@ script_mod! {
                                 visible: false,
                                 width: 36, height: 36,
                                 padding: 6,
-                                cursor: MouseCursor.Hand,
                                 draw_bg +: {
                                     color: #0000
                                     color_hover: #0000
