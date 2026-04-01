@@ -383,6 +383,7 @@ script_mod! {
 
                 // Modal for registration status (both password and SSO)
                 status_modal := Modal {
+                    can_dismiss: false,
                     content +: {
                         status_modal_inner := RegisterStatusModal {}
                     }
