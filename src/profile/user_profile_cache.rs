@@ -27,6 +27,18 @@ enum UserProfileCacheEntry {
     },
 }
 
+/// Removes all `Requested` entries from the cache, allowing them to be re-fetched.
+///
+/// This should be called when the app transitions from offline back to online,
+/// because any in-flight requests that were submitted while offline have likely
+/// failed without updating the cache, leaving stale `Requested` entries that
+/// permanently block re-fetching.
+pub fn clear_all_pending_requests() {
+    USER_PROFILE_CACHE.with_borrow_mut(|cache| {
+        cache.retain(|_, entry| !matches!(entry, UserProfileCacheEntry::Requested));
+    });
+}
+
 /// The queue of user profile updates waiting to be processed by the UI thread's event handler.
 static PENDING_USER_PROFILE_UPDATES: SegQueue<UserProfileUpdate> = SegQueue::new();
 
@@ -240,12 +252,12 @@ where
 /// which isn't used, but acts as a guarantee that this function
 /// must only be called by the main UI thread.
 pub fn get_user_display_name_for_room(
-    _cx: &mut Cx,
+    cx: &mut Cx,
     user_id: OwnedUserId,
     room_id: Option<&OwnedRoomId>,
     fetch_if_missing: bool,
 ) -> CachedName {
-    let opt = with_user_profile(_cx, user_id, room_id, fetch_if_missing, |profile, rooms| {
+    let opt = with_user_profile(cx, user_id, room_id, fetch_if_missing, |profile, rooms| {
         room_id.and_then(|id| rooms.get(id)).map_or_else(
             || CachedName::FoundInProfile(profile.username.clone()),
             |rm| CachedName::FoundInRoom(rm.display_name().map(|n| n.to_owned())),

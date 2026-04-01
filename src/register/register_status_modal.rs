@@ -1,81 +1,73 @@
 use makepad_widgets::*;
 
-live_design! {
-    use link::theme::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::shared::icon_button::RobrixIconButton;
 
     // A modal dialog that displays registration progress
     // Note: Matrix SDK's register function has a built-in 60s timeout
-    pub RegisterStatusModal = {{RegisterStatusModal}} {
+    mod.widgets.RegisterStatusModal = #(RegisterStatusModal::register_widget(vm)) {
         width: Fit,
         height: Fit,
-        align: {x: 0.5}
+        align: Align{x: 0.5}
 
-        <RoundedView> {
+        RoundedView {
             // Keep parity with LoginStatusModal width by averaging both legacy widths.
             width: ((320+250)/2),
             height: Fit,
             flow: Down,
-            align: {x: 0.5}
+            align: Align{x: 0.5}
             padding: 25,
             spacing: 10,
 
             show_bg: true
-            draw_bg: {
+            draw_bg +: {
                 color: #CCC
                 border_radius: 3.0
             }
 
-            <View> {
+            View {
                 width: Fill,
                 height: Fit,
                 flow: Right
-                padding: {top: 0, bottom: 10}
-                align: {x: 0.5, y: 0.0}
+                padding: Inset{top: 0, bottom: 10}
+                align: Align{x: 0.5, y: 0.0}
 
-                title = <Label> {
+                title := Label {
                     text: "Registration Status"
-                    draw_text: {
-                        text_style: <TITLE_TEXT>{font_size: 13},
+                    draw_text +: {
+                        text_style: TITLE_TEXT {font_size: 13},
                         color: #000
                     }
                 }
             }
 
-            status = <Label> {
+            status := Label {
                 width: Fill
-                margin: {top: 5, bottom: 5}
-                draw_text: {
-                    text_style: <REGULAR_TEXT>{
+                margin: Inset{top: 5, bottom: 5}
+                align: Align{x: 0.5, y: 0.0}
+                flow: Flow.Right{wrap: true}
+                draw_text +: {
+                    text_style: REGULAR_TEXT {
                         font_size: 11.5,
                     },
                     color: #000
-                    wrap: Word
                 },
                 text: "Registering account, please wait..."
             }
 
-            <View> {
+            View {
                 width: Fill,
                 height: Fit,
                 flow: Right
-                align: {x: 1.0}
-                margin: {top: 10}
+                align: Align{x: 1.0}
+                margin: Inset{top: 10}
 
-                cancel_button = <RobrixIconButton> {
-                    align: {x: 0.5, y: 0.5}
+                cancel_button := RobrixIconButton {
+                    align: Align{x: 0.5, y: 0.5}
                     width: Fit, height: Fit
                     padding: 12
-                    draw_bg: {
-                        color: (COLOR_ACTIVE_PRIMARY)
-                    }
-                    draw_text: {
-                        color: (COLOR_PRIMARY)
-                        text_style: <REGULAR_TEXT> {}
-                    }
                     text: "Cancel"
                 }
             }
@@ -83,7 +75,7 @@ live_design! {
     }
 }
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct RegisterStatusModal {
     #[deref] view: View,
 }
@@ -108,7 +100,7 @@ impl MatchEvent for RegisterStatusModal {
             .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
 
         // Check if Abort button was clicked
-        let abort_clicked = self.view.button(ids!(cancel_button)).clicked(actions);
+        let abort_clicked = self.view.button(cx, ids!(cancel_button)).clicked(actions);
 
         if abort_clicked || modal_dismissed {
             // Send action to close the modal with appropriate was_internal flag
@@ -120,7 +112,7 @@ impl MatchEvent for RegisterStatusModal {
     }
 }
 
-#[derive(Clone, DefaultNone, Debug)]
+#[derive(Clone, Default, Debug)]
 pub enum RegisterStatusModalAction {
     /// The modal requested to be closed
     Close {
@@ -128,5 +120,6 @@ pub enum RegisterStatusModalAction {
         /// or being dismissed externally (ESC or click outside)
         was_internal: bool,
     },
+    #[default]
     None,
 }

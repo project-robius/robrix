@@ -10,11 +10,13 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use imbl::Vector;
 use makepad_widgets::*;
+use makepad_widgets::animator::Animate;
 use matrix_sdk::{RoomDisplayName, RoomState, ruma::OwnedRoomId};
 use matrix_sdk_ui::spaces::SpaceRoom;
 use ruma::room::JoinRuleSummary;
 use tokio::sync::mpsc::UnboundedSender;
 use crate::shared::avatar::AvatarState;
+use crate::shared::expand_arrow::ExpandArrow;
 use crate::utils::replace_linebreaks_separators;
 use crate::{
     app::AppStateAction,
@@ -31,44 +33,37 @@ use crate::{
 };
 
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::shared::helpers::*;
-    use crate::shared::avatar::*;
-    use crate::shared::icon_button::RobrixIconButton;
-
-    ICON_COLLAPSE = dep("crate://self/resources/icons/triangle_fill.svg")
 
     // An entry in the RoomsList that will show the SpaceLobby when clicked.
-    pub SpaceLobbyEntry = {{SpaceLobbyEntry}}<RoundedView> {
+    mod.widgets.SpaceLobbyEntry = #(SpaceLobbyEntry::register_widget(vm)) {
         visible: false, // only visible when a space is selected
         width: Fill,
-        height: 35, // same as CollapsibleHeader
+        height: Fit,
         flow: Right,
-        align: {y: 0.5}
+        align: Align{y: 0.5}
         padding: 5,
-        margin: {top: 10, bottom: 0}
-        cursor: Hand
+        margin: Inset{top: 10, bottom: 0}
+        spacing: 5
+        cursor: MouseCursor.Hand
 
         show_bg: true
-        draw_bg: {
-            instance hover: 0.0
-            instance active: 0.0
+        draw_bg +: {
+            hover: instance(0.0)
+            active: instance(0.0)
 
-            color: (COLOR_NAVIGATION_TAB_BG)
-            uniform color_hover: (COLOR_NAVIGATION_TAB_BG_HOVER)
-            uniform color_active: (COLOR_ACTIVE_PRIMARY)
+            color: instance(COLOR_NAVIGATION_TAB_BG)
+            color_hover: instance(COLOR_NAVIGATION_TAB_BG_HOVER)
+            color_active: instance(COLOR_ACTIVE_PRIMARY)
+            border_size: uniform(0.0)
+            border_color: instance(#0000)
+            border_radius: uniform(4.0)
+            border_inset: uniform(vec4(0.0))
 
-            border_size: 0.0
-            border_color: #0000
-            uniform inset: vec4(0.0, 0.0, 0.0, 0.0)
-            border_radius: 4.0
-
-            fn get_color(self) -> vec4 {
+            get_color: fn() -> vec4 {
                 return mix(
                     mix(
                         self.color,
@@ -80,44 +75,40 @@ live_design! {
                 )
             }
 
-            fn get_border_color(self) -> vec4 {
-                return self.border_color
-            }
-
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.box(
-                    self.inset.x + self.border_size,
-                    self.inset.y + self.border_size,
-                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
-                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
+                    self.border_inset.x + self.border_size,
+                    self.border_inset.y + self.border_size,
+                    self.rect_size.x - (self.border_inset.x + self.border_inset.z + self.border_size * 2.0),
+                    self.rect_size.y - (self.border_inset.y + self.border_inset.w + self.border_size * 2.0),
                     max(1.0, self.border_radius)
                 )
                 sdf.fill_keep(self.get_color())
                 if self.border_size > 0.0 {
-                    sdf.stroke(self.get_border_color(), self.border_size)
+                    sdf.stroke(self.border_color, self.border_size)
                 }
                 return sdf.result;
             }
         }
 
-        icon = <Icon> {
+        icon := Icon {
             width: 25,
             height: 25,
-            margin: {left: 5, right: 3}
-            align: {x: 0.5, y: 0.5}
-            draw_icon: {
-                svg_file: (ICON_HIERARCHY)
+            margin: Inset{left: 5, right: 3}
+            align: Align{x: 0.5, y: 0.5}
+            draw_icon +: {
+                svg: (ICON_HIERARCHY)
 
-                instance active: 0.0
-                instance hover: 0.0
-                instance down: 0.0
+                active: instance(0.0)
+                hover: instance(0.0)
+                down: instance(0.0)
 
                 color: (COLOR_TEXT)
-                uniform color_hover: (COLOR_TEXT)
-                uniform color_active: (COLOR_PRIMARY)
+                color_hover: instance(COLOR_TEXT)
+                color_active: instance(COLOR_TEXT)
 
-                fn get_color(self) -> vec4 {
+                get_color: fn() -> vec4 {
                     return mix(
                         mix(
                             self.color,
@@ -129,27 +120,26 @@ live_design! {
                     )
                 }
             }
-            icon_walk: { width: 25, height: 20, margin: {left: 0, bottom: 0} }
+            icon_walk: Walk{ width: 25, height: 20, margin: Inset{top: 2} }
         }
 
-        space_lobby_label = <Label> {
+        space_lobby_label := Label {
             width: Fill, height: Fit
             flow: Right,
             padding: 0,
 
-            draw_text: {
-                instance active: 0.0
-                instance hover: 0.0
-                instance down: 0.0
+            draw_text +: {
+                active: instance(0.0)
+                hover: instance(0.0)
+                down: instance(0.0)
 
                 color: (COLOR_TEXT)
-                uniform color_hover: (COLOR_TEXT)
-                uniform color_active: (COLOR_PRIMARY)
+                color_hover: instance(COLOR_TEXT)
+                color_active: instance(COLOR_TEXT)
 
-                text_style: <REGULAR_TEXT>{font_size: 11},
-                wrap: Ellipsis,
+                text_style: REGULAR_TEXT {font_size: 11},
 
-                fn get_color(self) -> vec4 {
+                get_color: fn() -> vec4 {
                     return mix(
                         mix(
                             self.color,
@@ -164,31 +154,31 @@ live_design! {
             text: "Explore this Space"
         }
 
-        animator: {
-            hover = {
-                default: off
-                off = {
+        animator: Animator{
+            hover: {
+                default: @off
+                off: AnimatorState{
                     from: {all: Forward {duration: 0.15}}
                     apply: {
                         draw_bg: {down: [{time: 0.0, value: 0.0}], hover: 0.0}
-                        space_lobby_label = { draw_text: {down: [{time: 0.0, value: 0.0}], hover: 0.0} }
-                        icon = { draw_icon: {down: [{time: 0.0, value: 0.0}], hover: 0.0} }
+                        space_lobby_label: { draw_text: {down: [{time: 0.0, value: 0.0}], hover: 0.0} }
+                        icon: { draw_icon: {down: [{time: 0.0, value: 0.0}], hover: 0.0} }
                     }
                 }
-                on = {
+                on: AnimatorState{
                     from: {all: Snap}
                     apply: {
                         draw_bg: {down: [{time: 0.0, value: 0.0}], hover: 1.0}
-                        space_lobby_label = { draw_text: {down: [{time: 0.0, value: 0.0}], hover: 1.0} }
-                        icon = { draw_icon: {down: [{time: 0.0, value: 0.0}], hover: 1.0} }
+                        space_lobby_label: { draw_text: {down: [{time: 0.0, value: 0.0}], hover: 1.0} }
+                        icon: { draw_icon: {down: [{time: 0.0, value: 0.0}], hover: 1.0} }
                     }
                 }
-                down = {
+                down: AnimatorState{
                     from: {all: Forward {duration: 0.2}}
                     apply: {
                         draw_bg: {down: [{time: 0.0, value: 1.0}], hover: 1.0,}
-                        space_lobby_label = { draw_text: {down: [{time: 0.0, value: 1.0}], hover: 1.0,} }
-                        icon = { draw_icon: {down: [{time: 0.0, value: 1.0}], hover: 1.0,} }
+                        space_lobby_label: { draw_text: {down: [{time: 0.0, value: 1.0}], hover: 1.0,} }
+                        icon: { draw_icon: {down: [{time: 0.0, value: 1.0}], hover: 1.0,} }
                     }
                 }
             }
@@ -196,17 +186,20 @@ live_design! {
     }
 
     // A view that draws the hierarchical tree structure lines.
-    DrawTreeLine = {{DrawTreeLine}} { }
+    let DrawTreeLine = set_type_default() do #(DrawTreeLine::script_shader(vm)){
+        ..mod.draw.DrawQuad
+    }
 
-    TreeLines = {{TreeLines}} {
+    mod.widgets.TreeLines = #(TreeLines::register_widget(vm)) {
         width: 0, height: Fill
-        draw_bg: {
+
+        draw_bg: DrawTreeLine {
             indent_width: 44.0
             level: 0.0
             is_last: 0.0
             parent_mask: 0.0
 
-            fn pixel(self) -> vec4 {
+            pixel: fn() {
                 let pos = self.pos * self.rect_size;
                 let indent = self.indent_width;
                 // Yes, this should be 0.5, but 0.6 makes it line up nicely
@@ -215,33 +208,39 @@ live_design! {
                 let line_width = 1.0;
                 let half_line = 0.5;
 
-                let c = vec4(0.0);
+                let mut c = vec4(0.0);
 
                 // Dumb approach, but it works.
                 for i in 0..20 {
-                    if float(i) > self.level { break; }
+                    if f32(i) > self.level { break; }
                     
-                    if float(i) < self.level {
+                    if f32(i) < self.level {
                         // Check mask for parent levels
-                        let mask_bit = mod(floor(self.parent_mask / pow(2.0, float(i))), 2.0);
+                        let mask_bit = modf(floor(self.parent_mask / pow(2.0, f32(i))), 2.0);
                         if mask_bit > 0.5 {
-                             // Draw full vertical line
-                             if abs(pos.x - (float(i) * indent + half_indent)) < half_line && pos.y < self.rect_size.y {
-                                  return vec4(0.8, 0.8, 0.8, 1.0);
-                             }
+                            // Draw full vertical line
+                            if abs(pos.x - (f32(i) * indent + half_indent)) < half_line && pos.y < self.rect_size.y {
+                                c = vec4(0.8, 0.8, 0.8, 1.0);
+                                break;
+                            }
                         }
                     } else {
                         // Current level: connection to self
                         
-                        // Horizontal line to content
-                        let hy = self.rect_size.y * 0.5;
-                        if abs(pos.y - hy) < half_line && pos.x > (float(i) * indent + half_indent) {
-                             return vec4(0.8, 0.8, 0.8, 1.0);
+                        // Horizontal line to content.
+                        // Snap hy to the nearest pixel center (floor(y) + 0.5) so the
+                        // strict abs() < 0.5 check always hits exactly one pixel regardless
+                        // of whether rect_size.y is even or odd.
+                        let hy = floor(self.rect_size.y * 0.5) + 0.5;
+                        if abs(pos.y - hy) < half_line && pos.x > (f32(i) * indent + half_indent) {
+                            c = vec4(0.8, 0.8, 0.8, 1.0);
+                            break;
                         }
                         
                         // Vertical line (L shape)
-                        if abs(pos.x - (float(i) * indent + half_indent)) < half_line && pos.y < (self.rect_size.y * (1.0 - 0.5 * self.is_last)) {
-                              return vec4(0.8, 0.8, 0.8, 1.0);
+                        if abs(pos.x - (f32(i) * indent + half_indent)) < half_line && pos.y < (self.rect_size.y * (1.0 - 0.5 * self.is_last)) {
+                            c = vec4(0.8, 0.8, 0.8, 1.0);
+                            break;
                         }
                     }
                 }
@@ -251,197 +250,173 @@ live_design! {
     }
 
     // Entry for a child subspace (can be expanded)
-    pub SubspaceEntry = {{SubspaceEntry}} {
+    mod.widgets.SubspaceEntry = #(SubspaceEntry::register_widget(vm)) {
+
         width: Fill,
         height: 44,
         flow: Right,
-        align: {y: 0.5}
-        padding: {left: 8, right: 12}
-        cursor: Hand
+        align: Align{y: 0.5}
+        padding: Inset{left: 8, right: 12}
+        cursor: MouseCursor.Hand
 
         show_bg: true
-        draw_bg: {
-            instance hover: 0.0
-            color: #fff
-            uniform color_hover: #f5f5f5
-            fn pixel(self) -> vec4 {
+        draw_bg +: {
+            hover: instance(0.0)
+            color: instance(#fff)
+            color_hover: instance(#f5f5f5)
+            pixel: fn() {
                 return mix(self.color, self.color_hover, self.hover);
             }
         }
 
         // The connecting hierarchical lines on the left.
-        tree_lines = <TreeLines> {}
+        tree_lines := mod.widgets.TreeLines {}
 
-        // Expand/collapse icon
-        expand_icon = <IconRotated> {
+        // Expand/collapse arrow (animated triangle)
+        expand_icon := mod.widgets.ExpandArrow {
             width: 16,
             height: 16,
-            margin: { top: 7, left: -8, right: 2 }
-            draw_icon: {
-                svg_file: (ICON_COLLAPSE)
-                rotation_angle: 90.0
-                color: #888
-            }
-            icon_walk: { width: 10, height: 10 }
+            margin: Inset{ left: -6, right: 4 }
+            draw_bg.border_radius: 1.5 // less rounded
         }
 
-        avatar = <Avatar> { width: 32, height: 32, margin: {right: 8} }
+        avatar := Avatar { width: 32, height: 32, margin: Inset{right: 8} }
 
-        content = <View> {
+        content := View {
             width: Fill
             height: Fit
             flow: Down
+            align: Align { y: 0.5 }
             spacing: 5,
-            name_label = <Label> {
+
+            name_label := Label {
                 width: Fill, height: Fit,
                 flow: Right
                 margin: 0
                 padding: 0
-                draw_text: { text_style: <REGULAR_TEXT>{font_size: 10.5}, color: #1a1a1a, wrap: Ellipsis }
+                flow: Flow.Right{wrap: false}
+                draw_text +: { text_style: REGULAR_TEXT {font_size: 10.5}, color: #1a1a1a }
             }
-            info_label = <Label> {
-                width: Fit, height: Fit,
+            info_label := Label {
+                width: Fill, height: Fit,
                 flow: Right
                 margin: 0
                 padding: 0
-                draw_text: { text_style: <REGULAR_TEXT>{font_size: 8.5}, color: #737373, wrap: Ellipsis }
+                flow: Flow.Right{wrap: false}
+                draw_text +: { text_style: REGULAR_TEXT {font_size: 8.5}, color: #737373 }
             }
         }
 
-        buttons_view = <View> {
+        buttons_view := View {
             width: Fit,
             height: Fit,
             flow: Right,
             spacing: 8,
-            align: {x: 1.0, y: 0.5}
-            margin: {left: 8}
+            align: Align{x: 1.0, y: 0.5}
+            margin: Inset{left: 8}
             visible: false
 
-            join_button = <RobrixIconButton> {
+            join_button := RobrixPositiveIconButton {
                 width: Fit,
                 padding: 8
                 spacing: 0
-                icon_walk: {width: 0, height: 0}
-                draw_bg: {
-                    border_size: 0.75
-                    border_color: (COLOR_FG_ACCEPT_GREEN)
-                    color: (COLOR_BG_ACCEPT_GREEN)
-                }
-                draw_text: {
-                    text_style: <REGULAR_TEXT>{font_size: 9.5},
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
+                icon_walk: Walk{width: 0, height: 0}
+                draw_text.text_style: REGULAR_TEXT {font_size: 9.5}
                 text: "Join"
             }
 
-            view_button = <RobrixIconButton> {
+            view_button := RobrixIconButton {
                 width: Fit,
                 padding: 8
                 spacing: 0
-                icon_walk: {width: 0, height: 0}
-                draw_bg: {
-                    border_size: 0.0
-                    color: (COLOR_ACTIVE_PRIMARY)
-                }
-                draw_text: {
-                    text_style: <REGULAR_TEXT>{font_size: 9.5},
-                    color: (COLOR_PRIMARY),
-                }
+                icon_walk: Walk{width: 0, height: 0}
+                draw_text.text_style: REGULAR_TEXT {font_size: 9.5}
                 text: "View"
             }
 
-            leave_button = <RobrixIconButton> {
+            leave_button := RobrixNegativeIconButton {
                 width: Fit,
                 padding: 8
                 spacing: 0
-                icon_walk: {width: 0, height: 0}
-                draw_bg: {
-                    border_size: 0.75
-                    border_color: (COLOR_FG_DANGER_RED)
-                    color: (COLOR_BG_DANGER_RED)
-                }
-                draw_text: {
-                    text_style: <REGULAR_TEXT>{font_size: 9.5},
-                    color: (COLOR_FG_DANGER_RED),
-                }
+                icon_walk: Walk{width: 0, height: 0}
+                draw_text.text_style: REGULAR_TEXT {font_size: 9.5}
                 text: "Leave"
             }
         }
 
 
-        animator: {
-            hover = {
-                default: off
-                off = { from: {all: Forward {duration: 0.1}}, apply: { draw_bg: {hover: 0.0} } }
-                on = { from: {all: Snap}, apply: { draw_bg: {hover: 1.0} } }
+        animator: Animator{
+            hover: {
+                default: @off
+                off: AnimatorState{ from: {all: Forward {duration: 0.1}}, apply: { draw_bg: {hover: 0.0} } }
+                on: AnimatorState{ from: {all: Snap}, apply: { draw_bg: {hover: 1.0} } }
             }
         }
     }
 
     // Entry for a child room within a space, which cannot be expanded.
-    pub RoomEntry = <SubspaceEntry> {
-        cursor: Default
+    mod.widgets.RoomEntry = mod.widgets.SubspaceEntry {
+        cursor: MouseCursor.Default
 
-        expand_icon = <View> {
+        expand_icon := View {
             width: 10
             height: 16
         }
     }
 
-    StatusLabel = <View> {
+    mod.widgets.SpaceLobbyStatusLabel = View {
         width: Fill, height: Fit,
         flow: Right,
-        align: { x: 0.5, y: 0.5 }
+        align: Align{ x: 0.5, y: 0.5 }
         padding: 20.0,
 
-        loading_spinner = <LoadingSpinner> {
+        loading_spinner := LoadingSpinner {
             width: 18,
             height: 18,
-            draw_bg: {
+            draw_bg +: {
                 color: (COLOR_ACTIVE_PRIMARY)
-                border_size: 2.5,
+                border_size: 2.5
             }
         }
 
-        label = <Label> {
-            padding: {left: 10}
+        label := Label {
+            padding: Inset{left: 10}
             width: Fit,
-            flow: RightWrap,
-            align: { x: 0.5, y: 0.5 }
-            draw_text: {
-                wrap: Word,
+            flow: Flow.Right{wrap: true},
+            align: Align{ x: 0.5, y: 0.5 }
+            draw_text +: {
                 color: #737373,
-                text_style: <REGULAR_TEXT>{font_size: 10}
+                text_style: REGULAR_TEXT {font_size: 10}
             }
             text: "Loading rooms and spaces..."
         }
     }
 
     // Small loading indicator shown inline when loading subspace children
-    SubspaceLoadingEntry = <View> {
+    mod.widgets.SubspaceLoadingEntry = View {
         width: Fill, height: 36,
         flow: Right,
-        align: { y: 0.5 }
-        padding: {left: 8, right: 12}
+        align: Align{ y: 0.5 }
+        padding: Inset{left: 8, right: 12}
 
         // Tree lines replace the spacer
-        tree_lines = <TreeLines> {}
+        tree_lines := mod.widgets.TreeLines {}
 
-        loading_spinner = <LoadingSpinner> {
+        loading_spinner := LoadingSpinner {
             width: 14,
             height: 14,
-            margin: {left: 8, right: 10}
-            draw_bg: {
+            margin: Inset{left: 8, right: 10}
+            draw_bg +: {
                 color: (COLOR_ACTIVE_PRIMARY)
-                border_size: 2.0,
+                border_size: 2.0
             }
         }
 
-        label = <Label> {
+        label := Label {
             width: Fit,
             height: Fit,
-            draw_text: {
-                text_style: <REGULAR_TEXT>{font_size: 9},
+            draw_text +: {
+                text_style: REGULAR_TEXT {font_size: 9},
                 color: #888,
             }
             text: "Loading..."
@@ -449,90 +424,78 @@ live_design! {
     }
 
     // The main view that shows the lobby (homepage) for a space.
-    pub SpaceLobbyScreen = {{SpaceLobbyScreen}} {
+    mod.widgets.SpaceLobbyScreen = set_type_default() do #(SpaceLobbyScreen::register_widget(vm)) {
+        ..mod.widgets.SolidView
+
         width: Fill, height: Fill,
         flow: Down,
 
         show_bg: true
-        draw_bg: {
-            color: #fff
+        draw_bg +: {
+            color: COLOR_PRIMARY
         }
 
         // Header with parent space info
-        header = <View> {
+        header := SolidView {
             width: Fill,
             height: Fit,
             flow: Down,
-            padding: {left: 16, right: 16, top: 16, bottom: 8}
+            padding: Inset{left: 16, right: 16, top: 16, bottom: 8}
 
             show_bg: true,
-            draw_bg: {
-                color: (COLOR_BG_PREVIEW)
-            }
+            draw_bg.color: (COLOR_BG_PREVIEW)
 
-            space_info_label = <Label> {
+            space_info_label := Label {
                 width: Fill,
                 height: Fit,
-                margin: {left: 2}
-                draw_text: {
-                    text_style: <REGULAR_TEXT>{font_size: 10},
+                flow: Right, // do not wrap
+                margin: Inset{left: 2}
+                draw_text +: {
+                    text_style: REGULAR_TEXT {font_size: 10},
                     color: #737373,
-                    wrap: Ellipsis,
                 }
                 text: "Welcome to the space:"
             }
             
-            parent_space_row = <View> {
+            parent_space_row := View {
                 width: Fill,
                 height: Fit,
                 flow: Right,
-                align: { y: 0.5 }
-                padding: { top: 8 }
+                align: Align{ y: 0.5 }
+                padding: Inset{ top: 8 }
                 
-                parent_avatar = <Avatar> {
+                parent_avatar := Avatar {
                     width: 36,
                     height: 36,
-                    margin: { right: 12 }
+                    margin: Inset{ right: 12 }
                 }
                 
-                parent_name = <Label> {
+                parent_name := Label {
                     width: Fill,
                     height: Fit,
-                    margin: {top: 4} // vertically center-align with the avatar
-                    draw_text: {
-                        text_style: <TITLE_TEXT>{font_size: 14},
+                    flow: Right, // do not wrap
+                    margin: Inset{top: 4} // vertically center-align with the avatar
+                    draw_text +: {
+                        text_style: TITLE_TEXT {font_size: 14},
                         color: #1a1a1a,
-                        wrap: Ellipsis,
                     }
                     text: ""
                 }
 
-                invite_button = <RobrixIconButton> {
+                invite_button := RobrixPositiveIconButton {
                     width: Fit
-                    align: {x: 0.5, y: 0.5}
-                    margin: {left: 6}
+                    align: Align{x: 0.5, y: 0.5}
+                    margin: Inset{left: 6}
                     padding: 12,
-                    draw_icon: {
-                        svg_file: (ICON_ADD_USER)
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
-                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
-
-                    draw_bg: {
-                        border_size: 0.75
-                        border_color: (COLOR_FG_ACCEPT_GREEN),
-                        color: (COLOR_BG_ACCEPT_GREEN)
-                    }
+                    draw_icon.svg: (ICON_ADD_USER)
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                     text: "Invite"
-                    draw_text:{
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
                 }
             }
         }
 
         // The hierarchical tree list
-        tree_list = <PortalList> {
+        tree_list := PortalList {
             keep_invisible: false,
             max_pull_down: 0.0,
             auto_tail: false,
@@ -540,11 +503,11 @@ live_design! {
             flow: Down,
             spacing: 0.0
 
-            subspace_entry = <SubspaceEntry> {}
-            room_entry = <RoomEntry> {}
-            subspace_loading = <SubspaceLoadingEntry> {}
-            status_label = <StatusLabel> {}
-            bottom_filler = <View> {
+            subspace_entry := mod.widgets.SubspaceEntry {}
+            room_entry := mod.widgets.RoomEntry {}
+            subspace_loading := mod.widgets.SubspaceLoadingEntry {}
+            status_label := mod.widgets.SpaceLobbyStatusLabel {}
+            bottom_filler := View {
                 width: Fill,
                 height: 80.0,
             }
@@ -570,10 +533,11 @@ struct SpaceLobbyUiState {
 
 
 /// A clickable entry shown in the RoomsList that will show the space lobby when clicked.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget, Animator)]
 pub struct SpaceLobbyEntry {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
-    #[animator] animator: Animator,
+    #[apply_default] animator: Animator,
 }
 
 impl Widget for SpaceLobbyEntry {
@@ -619,7 +583,7 @@ pub enum SpaceLobbyAction {
     SpaceLobbyEntryClicked,
 }
 
-#[derive(Live, LiveHook, LiveRegister)]
+#[derive(Script, ScriptHook)]
 #[repr(C)]
 pub struct DrawTreeLine {
     #[deref] draw_super: DrawQuad,
@@ -629,8 +593,9 @@ pub struct DrawTreeLine {
     #[live] parent_mask: f32,
 }
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct TreeLines {
+    #[uid] uid: WidgetUid,
     #[redraw] #[live] draw_bg: DrawTreeLine,
     #[walk] walk: Walk,
 }
@@ -648,27 +613,38 @@ impl Widget for TreeLines {
     }
 }
 
+
 /// A clickable entry for a child subspace.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget, Animator)]
 pub struct SubspaceEntry {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
-    #[animator] animator: Animator,
+    #[apply_default] animator: Animator,
     #[rust] room_id: Option<OwnedRoomId>,
     #[rust] is_space: bool,
     #[rust] show_buttons_view: bool,
+    #[rust] is_expanded: bool,
 }
 
 /// Actions emitted when a `SubspaceEntry` or its buttons are clicked.
 ///
 /// These *are* all widget actions.
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Clone, Debug, Default)]
 pub enum SubspaceEntryAction {
     SpaceClicked { space_id: OwnedRoomId },
     RoomClicked  { room_id: OwnedRoomId },
     JoinClicked  { room_id: OwnedRoomId, is_space: bool },
     LeaveClicked { room_id: OwnedRoomId, is_space: bool },
     ViewClicked  { room_id: OwnedRoomId },
+    #[default]
     None,
+}
+
+impl ActionDefaultRef for SubspaceEntryAction {
+    fn default_ref() -> &'static Self {
+        static DEFAULT: SubspaceEntryAction = SubspaceEntryAction::None;
+        &DEFAULT
+    }
 }
 
 impl Widget for SubspaceEntry {
@@ -677,7 +653,11 @@ impl Widget for SubspaceEntry {
             self.redraw(cx);
         }
 
-        let buttons_view_rect = self.view.view(ids!(buttons_view)).area().rect(cx);
+        // NOTE: Use child_by_path instead of widget tree-based lookups
+        //       (e.g., self.view.view(), self.view.button()) because these
+        //       fail for portal list items.
+        let buttons_view_ref = self.view.child_by_path(ids!(buttons_view));
+        let buttons_view_rect = buttons_view_ref.area().rect(cx);
         let are_buttons_visible = self.show_buttons_view;
         match event.hits_with_test(cx, self.view.area(), |abs, rect, _| {
             rect.contains(abs) && !(are_buttons_visible && buttons_view_rect.contains(abs))
@@ -686,7 +666,7 @@ impl Widget for SubspaceEntry {
                 self.animator_play(cx, ids!(hover.on));
                 if !self.show_buttons_view {
                     self.show_buttons_view = true;
-                    self.view.view(ids!(buttons_view)).set_visible(cx, true);
+                    self.view.child_by_path(ids!(buttons_view)).set_visible(cx, true);
                     self.redraw(cx);
                 }
             }
@@ -695,7 +675,7 @@ impl Widget for SubspaceEntry {
             Hit::FingerHoverOver(_) if !self.show_buttons_view => {
                 self.animator_play(cx, ids!(hover.on));
                 self.show_buttons_view = true;
-                self.view.view(ids!(buttons_view)).set_visible(cx, true);
+                self.view.child_by_path(ids!(buttons_view)).set_visible(cx, true);
                 self.redraw(cx);
             }
             Hit::FingerHoverOut(fe) => {
@@ -707,7 +687,7 @@ impl Widget for SubspaceEntry {
                 if !entry_rect.contains(fe.abs) && !is_over_buttons_view {
                     self.animator_play(cx, ids!(hover.off));
                     self.show_buttons_view = false;
-                    self.view.view(ids!(buttons_view)).set_visible(cx, false);
+                    self.view.child_by_path(ids!(buttons_view)).set_visible(cx, false);
                     self.redraw(cx);
                 }
             }
@@ -716,18 +696,25 @@ impl Widget for SubspaceEntry {
             }
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
                 let is_within_buttons_view = self.show_buttons_view
-                    && self.view.view(ids!(buttons_view)).area().rect(cx).contains(fe.abs);
+                    && self.view.child_by_path(ids!(buttons_view)).area().rect(cx).contains(fe.abs);
                 if !is_within_buttons_view {
                     if let Some(room_id) = self.room_id.as_ref() {
-                        cx.widget_action(
-                            self.widget_uid(),
-                            &scope.path, 
-                            if self.is_space {
-                                SubspaceEntryAction::SpaceClicked { space_id: room_id.clone() }
-                            } else {
-                                SubspaceEntryAction::RoomClicked { room_id: room_id.clone() }
+                        if self.is_space {
+                            // Toggle expansion and animate the arrow
+                            self.is_expanded = !self.is_expanded;
+                            if let Some(mut arrow) = self.view.child_by_path(ids!(expand_icon)).borrow_mut::<ExpandArrow>() {
+                                arrow.set_is_open(cx, self.is_expanded, Animate::Yes);
                             }
-                        );
+                            cx.widget_action(
+                                self.widget_uid(),
+                                SubspaceEntryAction::SpaceClicked { space_id: room_id.clone() },
+                            );
+                        } else {
+                            cx.widget_action(
+                                self.widget_uid(),
+                                SubspaceEntryAction::RoomClicked { room_id: room_id.clone() },
+                            );
+                        }
                     }
                 }
             }
@@ -737,16 +724,15 @@ impl Widget for SubspaceEntry {
         self.view.handle_event(cx, event, scope);
 
         if let Event::Actions(actions) = event {
-            let join_button = self.view.button(ids!(buttons_view.join_button));
-            let leave_button = self.view.button(ids!(buttons_view.leave_button));
-            let view_button = self.view.button(ids!(buttons_view.view_button));
+            let join_button = self.view.child_by_path(ids!(buttons_view.join_button)).as_button();
+            let leave_button = self.view.child_by_path(ids!(buttons_view.leave_button)).as_button();
+            let view_button = self.view.child_by_path(ids!(buttons_view.view_button)).as_button();
 
             if join_button.clicked(actions) {
                 if let Some(room_id) = self.room_id.clone() {
                     join_button.reset_hover(cx);
                     cx.widget_action(
                         self.widget_uid(),
-                        &scope.path,
                         SubspaceEntryAction::JoinClicked { room_id, is_space: self.is_space },
                     );
                 }
@@ -756,7 +742,6 @@ impl Widget for SubspaceEntry {
                     leave_button.reset_hover(cx);
                     cx.widget_action(
                         self.widget_uid(),
-                        &scope.path,
                         SubspaceEntryAction::LeaveClicked { room_id, is_space: self.is_space },
                     );
                 }
@@ -766,7 +751,6 @@ impl Widget for SubspaceEntry {
                     view_button.reset_hover(cx);
                     cx.widget_action(
                         self.widget_uid(),
-                        &scope.path,
                         SubspaceEntryAction::ViewClicked { room_id },
                     );
                 }
@@ -780,6 +764,7 @@ impl Widget for SubspaceEntry {
 }
 
 /// The subset of info in [`SpaceRoom`] that we display for each room/space.
+#[derive(Debug)]
 struct SpaceRoomInfo {
     id: OwnedRoomId,
     name: String,
@@ -854,12 +839,14 @@ enum TreeEntry {
 }
 
 /// The view showing the lobby/homepage for a given space.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct SpaceLobbyScreen {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
 
     /// The space that is currently being displayed.
     #[rust] space_name_id: Option<RoomNameId>,
+    #[rust] space_avatar_state: AvatarState,
 
     /// The sender channel to submit space requests to the background service.
     #[rust] space_request_sender: Option<UnboundedSender<SpaceRequest>>,
@@ -902,7 +889,9 @@ impl Widget for SpaceLobbyScreen {
                     // Handle receiving top-level space details (join rule, member count).
                     Some(SpaceRoomListAction::TopLevelSpaceDetails(sr)) => {
                         if self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == &sr.room_id) {
-                            self.view.label(ids!(header.space_info_label)).set_text(cx, &format!(
+                            self.space_avatar_state = AvatarState::Known(sr.avatar_url.clone());
+                            self.space_avatar_state.update_from_cache(cx); // prefetch the avatar image
+                            self.view.label(cx, ids!(header.space_info_label)).set_text(cx, &format!(
                                 "{}  ·  {} {}",
                                 match sr.join_rule {
                                     Some(JoinRuleSummary::Public) => "🌐  Public space",
@@ -981,7 +970,7 @@ impl Widget for SpaceLobbyScreen {
             }
 
             // Handle the invite button being clicked in the header.
-            if self.view.button(ids!(header.parent_space_row.invite_button)).clicked(actions) {
+            if self.view.button(cx, ids!(header.parent_space_row.invite_button)).clicked(actions) {
                 if let Some(space_name_id) = self.space_name_id.as_ref() {
                     cx.action(InviteModalAction::Open(space_name_id.clone()));
                 }
@@ -990,6 +979,20 @@ impl Widget for SpaceLobbyScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // Draw parent avatar from the SpaceRoom's avatar URL, or show initials.
+        let parent_avatar_ref = self.view.avatar(cx, ids!(parent_avatar));
+        if self.space_avatar_state.update_from_cache(cx).is_none_or(|data| {
+            parent_avatar_ref.show_image(
+                cx,
+                None,
+                |cx, img| utils::load_png_or_jpg(&img, cx, data),
+            ).is_err()
+        }) {
+            let first_char = self.space_name_id.as_ref().and_then(|sni| sni.name_for_avatar())
+                .and_then(|name| utils::user_name_first_letter(name));
+            parent_avatar_ref.show_text(cx, None, None, first_char.unwrap_or("S"));
+        }
+        
         while let Some(widget_to_draw) = self.view.draw_walk(cx, scope, walk).step() {
             let portal_list_ref = widget_to_draw.as_portal_list();
             let Some(mut list) = portal_list_ref.borrow_mut() else { continue };
@@ -1004,17 +1007,21 @@ impl Widget for SpaceLobbyScreen {
             list.set_item_range(cx, 0, total_count);
 
             while let Some(item_id) = list.next_visible_item(cx) {
+                // NOTE: Use child_by_path instead of widget tree-based lookups
+                //       (e.g., item.label(), item.avatar(), item.widget())
+                //       because WidgetRef::widget() fails for portal list items.
+
                 // Draw loading indicator
                 let item = if self.is_loading && item_id == 0 {
                     let item = list.item(cx, item_id, id!(status_label));
-                    item.label(ids!(label)).set_text(cx, "Loading rooms and spaces...");
+                    item.child_by_path(ids!(label)).as_label().set_text(cx, "Loading rooms and spaces...");
                     item
                 }
                 // No entries found
                 else if entry_count == 0 && item_id == 0 {
                     let item = list.item(cx, item_id, id!(status_label));
-                    item.label(ids!(label)).set_text(cx, "No rooms or spaces found.");
-                    item.view(ids!(loading_spinner)).apply_over(cx, live! { visible: false });
+                    item.child_by_path(ids!(label)).as_label().set_text(cx, "No rooms or spaces found.");
+                    item.child_by_path(ids!(loading_spinner)).set_visible(cx, false);
                     item
                 }
                 // Draw a regular entry
@@ -1026,23 +1033,28 @@ impl Widget for SpaceLobbyScreen {
                             let show_view_button = show_leave_button && !info.is_space();
                             let item = if info.is_space() {
                                 let item = list.item(cx, item_id, id!(subspace_entry));
+                                let is_expanded = self.expanded_spaces.contains(&info.id);
                                 let mut show_buttons_view = false;
+                                let mut need_snap = false;
                                 if let Some(mut inner) = item.borrow_mut::<SubspaceEntry>() {
                                     let id_changed = inner.room_id.as_ref() != Some(&info.id);
+                                    need_snap = id_changed || inner.is_expanded != is_expanded;
                                     inner.room_id = Some(info.id.clone());
                                     inner.is_space = true;
+                                    inner.is_expanded = is_expanded;
                                     if id_changed {
                                         inner.show_buttons_view = false;
                                     }
                                     show_buttons_view = inner.show_buttons_view;
                                 }
-                                item.view(ids!(buttons_view)).set_visible(cx, show_buttons_view);
-                                // Expand icon
-                                let is_expanded = self.expanded_spaces.contains(&info.id);
-                                let angle = if is_expanded { 180.0 } else { 90.0 };
-                                item.icon(ids!(expand_icon)).apply_over(cx, live! {
-                                    draw_icon: { rotation_angle: (angle) }
-                                });
+                                item.child_by_path(ids!(buttons_view)).set_visible(cx, show_buttons_view);
+                                // Snap expand arrow to correct state without animation
+                                // when item is reused or state changed externally
+                                if need_snap {
+                                    if let Some(mut arrow) = item.child_by_path(ids!(expand_icon)).borrow_mut::<ExpandArrow>() {
+                                        arrow.set_is_open(cx, is_expanded, Animate::No);
+                                    }
+                                }
                                 item
                             } else {
                                 let item = list.item(cx, item_id, id!(room_entry));
@@ -1056,19 +1068,19 @@ impl Widget for SpaceLobbyScreen {
                                     }
                                     show_buttons_view = inner.show_buttons_view;
                                 }
-                                item.view(ids!(buttons_view)).set_visible(cx, show_buttons_view);
+                                item.child_by_path(ids!(buttons_view)).set_visible(cx, show_buttons_view);
                                 item
                             };
 
-                            item.button(ids!(buttons_view.join_button)).set_visible(cx, show_join_button);
-                            item.button(ids!(buttons_view.leave_button)).set_visible(cx, show_leave_button);
-                            item.button(ids!(buttons_view.view_button)).set_visible(cx, show_view_button);
+                            item.child_by_path(ids!(buttons_view.join_button)).set_visible(cx, show_join_button);
+                            item.child_by_path(ids!(buttons_view.leave_button)).set_visible(cx, show_leave_button);
+                            item.child_by_path(ids!(buttons_view.view_button)).set_visible(cx, show_view_button);
 
                             // Below, draw things that are common to child rooms and subspaces.
-                            item.label(ids!(content.name_label)).set_text(cx, &info.name);
+                            item.child_by_path(ids!(content.name_label)).as_label().set_text(cx, &info.name);
 
                             // Display avatar from stored data, or fetch from cache, or show initials
-                            let avatar_ref = item.avatar(ids!(avatar));
+                            let avatar_ref = item.child_by_path(ids!(avatar)).as_avatar();
                             let first_char = utils::user_name_first_letter(&info.name);
                             let mut drew_avatar = false;
 
@@ -1103,16 +1115,16 @@ impl Widget for SpaceLobbyScreen {
                                 avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
                             }
 
-                            if let Some(mut lines) = item.widget(ids!(tree_lines)).borrow_mut::<TreeLines>() {
+                            if let Some(mut lines) = item.child_by_path(ids!(tree_lines)).borrow_mut::<TreeLines>() {
                                 lines.draw_bg.level = *level as f32;
                                 lines.draw_bg.is_last = if *is_last { 1.0 } else { 0.0 };
                                 lines.draw_bg.parent_mask = *parent_mask as f32;
-                                lines.draw_bg.indent_width = 44.0; // Hardcoded to match
+                                lines.draw_bg.indent_width = 44.0;
                             }
 
                             // Build the info label with join status, member count, and topic
                             // Note: Public/Private is intentionally not shown per-item to reduce clutter
-                            let info_label = item.label(ids!(content.info_label));
+                            let info_label = item.child_by_path(ids!(content.info_label)).as_label();
                             let mut info_parts = Vec::new();
 
                             // Add join status for rooms we haven't joined
@@ -1144,7 +1156,7 @@ impl Widget for SpaceLobbyScreen {
                                 }
                             }
 
-                            // Add topic if available (Label handles truncation via wrap: Ellipsis)
+                            // Add topic if available (Label handles truncation via flow: Flow.Right{wrap: false})
                             if let Some(topic) = &info.topic {
                                 info_parts.push(topic.to_string());
                             }
@@ -1157,9 +1169,9 @@ impl Widget for SpaceLobbyScreen {
                             // Draw loading indicator for subspace
                             let item = list.item(cx, item_id, id!(subspace_loading));
                             // Configure tree lines
-                            if let Some(mut lines) = item.widget(ids!(tree_lines)).borrow_mut::<TreeLines>() {
+                            if let Some(mut lines) = item.child_by_path(ids!(tree_lines)).borrow_mut::<TreeLines>() {
                                 lines.draw_bg.level = *level as f32;
-                                lines.draw_bg.is_last = 1.0; 
+                                lines.draw_bg.is_last = 1.0;
                                 lines.draw_bg.parent_mask = *parent_mask as f32;
                                 lines.draw_bg.indent_width = 44.0;
                             }
@@ -1339,7 +1351,7 @@ impl SpaceLobbyScreen {
 
     pub fn set_displayed_space(&mut self, cx: &mut Cx, space_name_id: &RoomNameId) {
         let space_name = space_name_id.to_string();
-        let parent_name = self.view.label(ids!(header.parent_space_row.parent_name));
+        let parent_name = self.view.label(cx, ids!(header.parent_space_row.parent_name));
         parent_name.set_text(cx, &space_name);
 
         // If this space is already being displayed, then the only thing we may need to do
@@ -1368,7 +1380,7 @@ impl SpaceLobbyScreen {
 
         // Clear the main content until we receive the async space info responses.
         self.tree_entries.clear();
-        self.view.label(ids!(header.space_info_label)).set_text(cx, "");
+        self.view.label(cx, ids!(header.space_info_label)).set_text(cx, "");
         self.is_loading = true;
 
         // Restore UI state if we've viewed this space before, otherwise start fresh
@@ -1381,7 +1393,7 @@ impl SpaceLobbyScreen {
 
         // TODO: move avatar setting to `draw_walk()`
         // Set parent avatar
-        let avatar_ref = self.view.avatar(ids!(header.parent_space_row.parent_avatar));
+        let avatar_ref = self.view.avatar(cx, ids!(header.parent_space_row.parent_avatar));
         let first_char = utils::user_name_first_letter(&space_name);
         avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
 

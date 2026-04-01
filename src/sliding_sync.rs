@@ -15,19 +15,19 @@ use matrix_sdk::{
                 message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
             }, MessageLikeEventType, StateEventType
         }, matrix_uri::MatrixId, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, uint
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SuccessorRoom
+    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
 };
 use matrix_sdk_ui::{
-    RoomListService, Timeline, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{LatestEventValue, RoomExt, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
+    RoomListService, Timeline, encryption_sync_service, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{LatestEventValue, RoomExt, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
 };
 use robius_open::Uri;
 use ruma::{OwnedRoomOrAliasId, RoomId, api::client::{error::ErrorKind, uiaa::{AuthData, AuthType, Dummy, RegistrationToken, UiaaInfo}}, events::tag::Tags};
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
+    sync::{broadcast, mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
 };
 use url::Url;
-use std::{borrow::Cow, cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, DerefMut, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
+use std::{borrow::Cow, cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, DerefMut, Not}, path:: Path, sync::{Arc, LazyLock, Mutex, atomic::{AtomicBool, Ordering}}, time::Duration};
 use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
@@ -208,6 +208,10 @@ async fn login(
                 cli
             };
             let (client, client_session) = build_client(cli, app_data_dir()).await?;
+            Cx::post_action(LoginAction::Status {
+                title: "Authenticating".into(),
+                status: format!("Logging in as {}...", cli.user_id),
+            });
             // Attempt to login using the CLI-provided username & password.
             let login_result = client
                 .matrix_auth()
@@ -936,7 +940,7 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::Logout { is_desktop } => {
-                log!("Received MatrixRequest::Logout, is_desktop={}", is_desktop);
+                log!("Received MatrixRequest::Logout, is_desktop: {}", is_desktop);
                 let _logout_task = Handle::current().spawn(async move {
                     log!("Starting logout task");
                     // Use the state machine implementation
@@ -1668,18 +1672,15 @@ async fn matrix_worker_task(
                 let _typing_notices_task = Handle::current().spawn(async move {
                     while let Ok(user_ids) = typing_notice_receiver.recv().await {
                         // log!("Received typing notifications for room {room_id}: {user_ids:?}");
-                        let mut users = Vec::with_capacity(user_ids.len());
-                        for user_id in user_ids {
-                            users.push(
-                                main_timeline.room()
-                                    .get_member_no_sync(&user_id)
-                                    .await
-                                    .ok()
-                                    .flatten()
+                        let users = join_all(user_ids.into_iter().map(|user_id| {
+                            let tl = main_timeline.clone();
+                            async move {
+                                tl.room().get_member_no_sync(&user_id).await
+                                    .ok().flatten()
                                     .and_then(|m| m.display_name().map(|d| d.to_owned()))
                                     .unwrap_or_else(|| user_id.to_string())
-                            );
-                        }
+                            }
+                        })).await;
                         if let Err(e) = timeline_update_sender.send(TimelineUpdate::TypingUsers { users }) {
                             error!("Error: timeline update sender couldn't send the list of typing users: {e:?}");
                         }
@@ -2136,7 +2137,7 @@ async fn matrix_worker_task(
 
                     // match &result {
                     //     Ok(preview_data) => {
-                    //         log!("Successfully fetched URL preview for {}: title={:?}, site_name={:?}", 
+                    //         log!("Successfully fetched URL preview for {}: title: {:?}, site_name: {:?}", 
                     //              url, preview_data.title, preview_data.site_name);
                     //     }
                     //     Err(e) => {
@@ -2348,6 +2349,12 @@ pub fn current_user_id() -> Option<OwnedUserId> {
 /// The singleton sync service.
 static SYNC_SERVICE: Mutex<Option<Arc<SyncService>>> = Mutex::new(None);
 
+/// Set to `true` when the access token has been rejected by the homeserver,
+/// signaling the main task to tear down the current session and wait for re-login.
+static TOKEN_EXPIRED: AtomicBool = AtomicBool::new(false);
+/// Notifies the main monitoring loop to wake up and check `TOKEN_EXPIRED`.
+static TOKEN_EXPIRED_NOTIFY: LazyLock<Notify> = LazyLock::new(Notify::new);
+
 
 /// Get a reference to the current sync service, if available.
 pub fn get_sync_service() -> Option<Arc<SyncService>> {
@@ -2552,178 +2559,223 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         None
     };
     let cli: Cli = cli_parse_result.unwrap_or(Cli::default());
-    let (client, _sync_token) = match new_login_opt {
-        Some(new_login) => new_login,
-        None => {
-            loop {
-                log!("Waiting for login request...");
-                match login_receiver.recv().await {
-                    Some(login_request) => {
-                        match login(&cli, login_request).await {
-                            Ok((client, sync_token)) => {
-                                break (client, sync_token);
+    // `initial_client_opt` holds the client obtained from the session restore or CLI auto-login.
+    // On subsequent iterations of the login loop (after a post-auth setup failure), it is `None`,
+    // which causes the loop to wait for the user to submit a new manual login request.
+    let mut initial_client_opt = new_login_opt;
+
+    'login_loop: loop {
+        let (client, _sync_token) = match initial_client_opt.take() {
+            Some(login) => login,
+            None => {
+                loop {
+                    log!("Waiting for login request...");
+                    match login_receiver.recv().await {
+                        Some(login_request) => {
+                            match login(&cli, login_request).await {
+                                Ok((client, sync_token)) => break (client, sync_token),
+                                Err(e) => {
+                                    error!("Login failed: {e:?}");
+                                    Cx::post_action(LoginAction::LoginFailure(format!("{e}")));
+                                    enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                        status: format!("Login failed: {e}"),
+                                    });
+                                }
                             }
-                            Err(e) => {
-                                error!("Login failed: {e:?}");
-                                Cx::post_action(LoginAction::LoginFailure(format!("{e}")));
-                                enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                    status: format!("Login failed: {e}"),
-                                });
-                            }
+                        },
+                        None => {
+                            error!("BUG: login_receiver hung up unexpectedly");
+                            let err = String::from("Please restart Robrix.\n\nUnable to listen for login requests.");
+                            Cx::post_action(LoginAction::LoginFailure(err.clone()));
+                            enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                status: err,
+                            });
+                            return;
                         }
-                    },
-                    None => {
-                        error!("BUG: login_receiver hung up unexpectedly");
-                        let err = String::from("Please restart Robrix.\n\nUnable to listen for login requests.");
-                        Cx::post_action(LoginAction::LoginFailure(err.clone()));
-                        enqueue_rooms_list_update(RoomsListUpdate::Status {
-                            status: err,
-                        });
-                        return;
                     }
                 }
             }
+        };
+
+        // Deallocate the default SSO client after a successful login.
+        if let Ok(mut client_opt) = DEFAULT_SSO_CLIENT.lock() {
+            let _ = client_opt.take();
         }
-    };
 
-    Cx::post_action(LoginAction::LoginSuccess);
+        let logged_in_user_id: OwnedUserId = client.user_id()
+            .expect("BUG: Client::user_id() returned None after successful login!")
+            .to_owned();
+        let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
+        enqueue_rooms_list_update(RoomsListUpdate::Status { status });
 
-    // Deallocate the default SSO client after a successful login.
-    if let Ok(mut client_opt) = DEFAULT_SSO_CLIENT.lock() {
-        let _ = client_opt.take();
-    }
-
-    let logged_in_user_id = client.user_id()
-        .expect("BUG: client.user_id() returned None after successful login!");
-    let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
-    enqueue_rooms_list_update(RoomsListUpdate::Status { status });
-
-    // Store this active client in our global Client state so that other tasks can access it.
-    if let Some(_existing) = CLIENT.lock().unwrap().replace(client.clone()) {
-        error!("BUG: unexpectedly replaced an existing client when initializing the matrix client.");
-    }
-
-    // Listen for changes to our verification status and incoming verification requests.
-    add_verification_event_handlers_and_sync_client(client.clone());
-
-    // Listen for updates to the ignored user list.
-    handle_ignore_user_list_subscriber(client.clone());
-
-    let sync_service = match SyncService::builder(client.clone())
-        .with_offline_mode()
-        .build()
-        .await
-    {
-        Ok(ss) => ss,
-        Err(e) => {
-            error!("BUG: failed to create SyncService: {e:?}");
-            let err = format!("Please restart Robrix.\n\nFailed to create Matrix sync service: {e}.");
-            enqueue_popup_notification(
-                err.clone(),
-                PopupKind::Error,
-                None,
-            );
-            enqueue_rooms_list_update(RoomsListUpdate::Status { status: err });
-            return;
+        // Store this active client in our global Client state so that other tasks can access it.
+        if let Some(_existing) = CLIENT.lock().unwrap().replace(client.clone()) {
+            error!("BUG: unexpectedly replaced an existing client when initializing the matrix client.");
         }
-    };
 
-    // Attempt to load the previously-saved app state.
-    handle_load_app_state(logged_in_user_id.to_owned());
-    handle_sync_indicator_subscriber(&sync_service);
-    handle_sync_service_state_subscriber(sync_service.state());
-    sync_service.start().await;
-    let room_list_service = sync_service.room_list_service();
+        // Listen for changes to our verification status and incoming verification requests.
+        add_verification_event_handlers_and_sync_client(client.clone());
 
-    if let Some(_existing) = SYNC_SERVICE.lock().unwrap().replace(Arc::new(sync_service)) {
-        error!("BUG: unexpectedly replaced an existing sync service when initializing the matrix client.");
-    }
+        // Listen for updates to the ignored user list.
+        handle_ignore_user_list_subscriber(client.clone());
 
-    let mut room_list_service_task = rt.spawn(room_list_service_loop(room_list_service));
-    let mut space_service_task = rt.spawn(space_service_loop(client));
+        // Listen for session changes, e.g., when the access token becomes invalid.
+        handle_session_changes(client.clone());
 
-    // Now, this task becomes an infinite loop that monitors the state of the
-    // three core matrix-related background tasks that we just spawned above.
-    #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
-    loop {
-        tokio::select! {
-            result = &mut matrix_worker_task_handle => {
-                match result {
-                    Ok(Ok(())) => {
-                        // Check if this is due to logout
-                        if is_logout_in_progress() {
-                            log!("matrix worker task ended due to logout");
-                        } else {
-                            error!("BUG: matrix worker task ended unexpectedly!");
+        Cx::post_action(LoginAction::Status {
+            title: "Connecting".into(),
+            status: "Setting up sync service...".into(),
+        });
+        let sync_service = match SyncService::builder(client.clone())
+            .with_offline_mode()
+            .build()
+            .await
+        {
+            Ok(ss) => ss,
+            Err(e) => {
+                error!("Failed to create SyncService: {e:?}");
+                let err_msg = if is_invalid_token_error(&e) {
+                    "Your login token is no longer valid.\n\nPlease log in again.".to_string()
+                } else {
+                    format!("Please restart Robrix.\n\nFailed to create Matrix sync service: {e}.")
+                };
+                Cx::post_action(LoginAction::LoginFailure(err_msg.clone()));
+                enqueue_popup_notification(err_msg.clone(), PopupKind::Error, None);
+                enqueue_rooms_list_update(RoomsListUpdate::Status { status: err_msg });
+                // Clear the stored client so the next login attempt doesn't trigger the
+                // "unexpectedly replaced an existing client" warning.
+                let _ = CLIENT.lock().unwrap().take();
+                continue 'login_loop;
+            }
+        };
+
+        // Signal login success now that SyncService::build() has already succeeded,
+        // which is the only step that can fail with an invalid/expired token.
+        // Doing this before sync_service.start() lets the UI transition to the home screen
+        // without waiting for the sync loop to begin.
+        TOKEN_EXPIRED.store(false, Ordering::Release);
+        Cx::post_action(LoginAction::LoginSuccess);
+
+        // Attempt to load the previously-saved app state.
+        handle_load_app_state(logged_in_user_id.to_owned());
+        handle_sync_indicator_subscriber(&sync_service);
+        handle_sync_service_state_subscriber(sync_service.state());
+        sync_service.start().await;
+
+        let room_list_service = sync_service.room_list_service();
+
+        if let Some(_existing) = SYNC_SERVICE.lock().unwrap().replace(Arc::new(sync_service)) {
+            error!("BUG: unexpectedly replaced an existing sync service when initializing the matrix client.");
+        }
+
+        let mut room_list_service_task = rt.spawn(room_list_service_loop(room_list_service));
+        let mut space_service_task = rt.spawn(space_service_loop(client));
+
+        // Now, this task becomes an infinite loop that monitors the state of the
+        // three core matrix-related background tasks that we just spawned above.
+        // If the access token expires (TOKEN_EXPIRED is set), this loop will break
+        // and we'll clean up and `continue 'login_loop` to wait for re-login.
+        #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
+        loop {
+            tokio::select! {
+                // Wake up immediately when the access token has been rejected,
+                // so we can tear down this session and wait for re-login.
+                _ = TOKEN_EXPIRED_NOTIFY.notified() => {
+                    break;
+                }
+                result = &mut matrix_worker_task_handle => {
+                    match result {
+                        Ok(Ok(())) => {
+                            // Check if this is due to logout
+                            if is_logout_in_progress() {
+                                log!("matrix worker task ended due to logout");
+                            } else {
+                                error!("BUG: matrix worker task ended unexpectedly!");
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            // Check if this is due to logout
+                            if is_logout_in_progress() {
+                                log!("matrix worker task ended with error due to logout: {e:?}");
+                            } else {
+                                error!("Error: matrix worker task ended:\n\t{e:?}");
+                                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                    status: e.to_string(),
+                                });
+                                enqueue_popup_notification(
+                                    format!("Rooms list update error: {e}"),
+                                    PopupKind::Error,
+                                    None,
+                                );
+                            }
+                        },
+                        Err(e) => {
+                            error!("BUG: failed to join matrix worker task: {e:?}");
                         }
                     }
-                    Ok(Err(e)) => {
-                        // Check if this is due to logout
-                        if is_logout_in_progress() {
-                            log!("matrix worker task ended with error due to logout: {e:?}");
-                        } else {
-                            error!("Error: matrix worker task ended:\n\t{e:?}");
+                    break;
+                }
+                result = &mut room_list_service_task => {
+                    match result {
+                        Ok(Ok(())) => {
+                            error!("BUG: room list service loop task ended unexpectedly!");
+                        }
+                        Ok(Err(e)) => {
+                            error!("Error: room list service loop task ended:\n\t{e:?}");
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
                             });
                             enqueue_popup_notification(
-                                format!("Rooms list update error: {e}"),
+                                format!("Room list service  error: {e}"),
                                 PopupKind::Error,
                                 None,
                             );
+                        },
+                        Err(e) => {
+                            error!("BUG: failed to join room list service loop task: {e:?}");
                         }
-                    },
-                    Err(e) => {
-                        error!("BUG: failed to join matrix worker task: {e:?}");
                     }
+                    break;
                 }
-                break;
-            }
-            result = &mut room_list_service_task => {
-                match result {
-                    Ok(Ok(())) => {
-                        error!("BUG: room list service loop task ended unexpectedly!");
+                result = &mut space_service_task => {
+                    match result {
+                        Ok(Ok(())) => {
+                            error!("BUG: space service loop task ended unexpectedly!");
+                        }
+                        Ok(Err(e)) => {
+                            error!("Error: space service loop task ended:\n\t{e:?}");
+                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                status: e.to_string(),
+                            });
+                            enqueue_popup_notification(
+                                format!("Space service error: {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
+                        },
+                        Err(e) => {
+                            error!("BUG: failed to join space service loop task: {e:?}");
+                        }
                     }
-                    Ok(Err(e)) => {
-                        error!("Error: room list service loop task ended:\n\t{e:?}");
-                        rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                            status: e.to_string(),
-                        });
-                        enqueue_popup_notification(
-                            format!("Room list service  error: {e}"),
-                            PopupKind::Error,
-                            None,
-                        );
-                    },
-                    Err(e) => {
-                        error!("BUG: failed to join room list service loop task: {e:?}");
-                    }
+                    break;
                 }
-                break;
-            }
-            result = &mut space_service_task => {
-                match result {
-                    Ok(Ok(())) => {
-                        error!("BUG: space service loop task ended unexpectedly!");
-                    }
-                    Ok(Err(e)) => {
-                        error!("Error: space service loop task ended:\n\t{e:?}");
-                        rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                            status: e.to_string(),
-                        });
-                        enqueue_popup_notification(
-                            format!("Space service error: {e}"),
-                            PopupKind::Error,
-                            None,
-                        );
-                    },
-                    Err(e) => {
-                        error!("BUG: failed to join space service loop task: {e:?}");
-                    }
-                }
-                break;
             }
         }
+
+        // If the monitoring loop broke because the access token expired,
+        // clean up the current session state and loop back to wait for re-login.
+        if TOKEN_EXPIRED.load(Ordering::Acquire) {
+            log!("Token expired; cleaning up session state and waiting for re-login.");
+            // Abort the background tasks that depend on the now-invalid session.
+            room_list_service_task.abort();
+            space_service_task.abort();
+            // Clear the stored client and sync service so re-login starts fresh.
+            let _ = CLIENT.lock().unwrap().take();
+            let _ = SYNC_SERVICE.lock().unwrap().take();
+            continue 'login_loop;
+        }
+        // For non-token-related breaks (logout, fatal errors), exit the function.
+        return;
     }
 }
 
@@ -3208,7 +3260,7 @@ async fn add_new_room(
             let invite_details = new_room.room.invite_details().await.ok();
             let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
             // Start with a basic text avatar; the avatar image will be fetched asynchronously below.
-            let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar().as_deref());
+            let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar());
             let inviter_info = if let Some(inviter) = invite_details.and_then(|d| d.inviter) {
                 Some(InviterInfo {
                     user_id: inviter.user_id().to_owned(),
@@ -3300,7 +3352,7 @@ async fn add_new_room(
     ).await;
     let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
     // Start with a basic text avatar; the avatar image will be fetched asynchronously below.
-    let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar().as_deref());
+    let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar());
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddJoinedRoom(JoinedRoomInfo {
         latest,
         tags: new_room.tags.clone().unwrap_or_default(),
@@ -3407,6 +3459,60 @@ fn handle_load_app_state(user_id: OwnedUserId) {
     });
 }
 
+/// Returns `true` if the given sync service error is due to an invalid/expired access token.
+fn is_invalid_token_error(e: &sync_service::Error) -> bool {
+    use matrix_sdk::ruma::api::client::error::ErrorKind;
+    let sdk_error = match e {
+        sync_service::Error::RoomList(
+            matrix_sdk_ui::room_list_service::Error::SlidingSync(err)
+        ) => err,
+        sync_service::Error::EncryptionSync(
+            encryption_sync_service::Error::SlidingSync(err)
+        ) => err,
+        _ => return false,
+    };
+    matches!(
+        sdk_error.client_api_error_kind(),
+        Some(ErrorKind::UnknownToken { .. } | ErrorKind::MissingToken)
+    )
+}
+
+/// Subscribes to session change notifications from the Matrix client.
+///
+/// When the homeserver rejects the access token with a 401 `M_UNKNOWN_TOKEN` error
+/// (e.g., the token was revoked or expired), this emits a [`LoginAction::LoginFailure`]
+/// so the user is prompted to log in again.
+fn handle_session_changes(client: Client) {
+    let mut receiver = client.subscribe_to_session_changes();
+    Handle::current().spawn(async move {
+        loop {
+            match receiver.recv().await {
+                Ok(SessionChange::UnknownToken { soft_logout }) => {
+                    let msg = if soft_logout {
+                        "Your login session has expired.\n\nPlease log in again."
+                    } else {
+                        "Your login token is no longer valid.\n\nPlease log in again."
+                    };
+                    error!("Session token is no longer valid (soft_logout: {soft_logout}). Prompting re-login.");
+                    TOKEN_EXPIRED.store(true, Ordering::Release);
+                    TOKEN_EXPIRED_NOTIFY.notify_one();
+                    Cx::post_action(LoginAction::LoginFailure(msg.to_string()));
+                    // Only prompt once — the SDK will keep emitting UnknownToken
+                    // for every rejected request, but one re-login prompt suffices.
+                    break;
+                }
+                Ok(SessionChange::TokensRefreshed) => {}
+                Err(broadcast::error::RecvError::Lagged(n)) => {
+                    warning!("Session change receiver lagged, missed {n} messages.");
+                }
+                Err(broadcast::error::RecvError::Closed) => {
+                    break;
+                }
+            }
+        }
+    });
+}
+
 fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service::State>) {
     log!("Initial sync service state is {:?}", subscriber.get());
     Handle::current().spawn(async move {
@@ -3414,16 +3520,37 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
             log!("Received a sync service state update: {state:?}");
             match state {
                 sync_service::State::Error(e) => {
-                    log!("Restarting sync service due to error: {e}.");
-                    if let Some(ss) = get_sync_service() {
-                        ss.start().await;
+                    if is_invalid_token_error(&e) {
+                        // The access token is invalid; `handle_session_changes` will have
+                        // already posted a LoginAction::LoginFailure, so just log here.
+                        // Stop the sync service and exit this loop to prevent further
+                        // state transitions (e.g., Offline) from triggering misleading
+                        // "cannot reach homeserver" notifications.
+                        // Setting TOKEN_EXPIRED signals the main monitoring loop to
+                        // tear down the current session and wait for re-login.
+                        error!("Sync service stopped due to invalid/expired access token: {e}.");
+                        TOKEN_EXPIRED.store(true, Ordering::Release);
+                        TOKEN_EXPIRED_NOTIFY.notify_one();
+                        if let Some(ss) = get_sync_service() {
+                            ss.stop().await;
+                        }
+                        break;
                     } else {
-                        enqueue_popup_notification(
-                            "Unable to restart the Matrix sync service.\n\nPlease quit and restart Robrix.",
-                            PopupKind::Error,
-                            None,
-                        );
+                        log!("Restarting sync service due to error: {e}.");
+                        if let Some(ss) = get_sync_service() {
+                            ss.start().await;
+                        } else {
+                            enqueue_popup_notification(
+                                "Unable to restart the Matrix sync service.\n\nPlease quit and restart Robrix.",
+                                PopupKind::Error,
+                                None,
+                            );
+                        }
                     }
+                }
+                _other if TOKEN_EXPIRED.load(Ordering::Acquire) => {
+                    log!("Ignoring sync service state update after token expiration.");
+                    break;
                 }
                 other => Cx::post_action(RoomsListHeaderAction::StateUpdate(other)),
             }
@@ -4092,7 +4219,7 @@ async fn room_avatar(room: &Room, room_name_id: &RoomNameId) -> FetchedRoomAvata
                     }
                 }
             }
-            utils::avatar_from_room_name(room_name_id.name_for_avatar().as_deref())
+            utils::avatar_from_room_name(room_name_id.name_for_avatar())
         }
     }
 }

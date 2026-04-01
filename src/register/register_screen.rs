@@ -53,6 +53,7 @@
 
 use makepad_widgets::*;
 use url::Url;
+use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
 use crate::sliding_sync::{submit_async_request, MatrixRequest, RegisterRequest};
 use crate::login::login_screen::LoginAction;
 use super::{
@@ -63,22 +64,17 @@ use super::{
     },
 };
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::helpers::*;
-    use crate::shared::styles::*;
-    use crate::shared::icon_button::*;
-    use crate::register::register_status_modal::RegisterStatusModal;
 
-    IMG_APP_LOGO = dep("crate://self/resources/robrix_logo_alpha.png")
+    mod.widgets.IMG_APP_LOGO = crate_resource("self://resources/robrix_logo_alpha.png")
 
-    MaskableButton = <RobrixIconButton> {
-        draw_bg: {
-            instance mask: 0.0
-            fn pixel(self) -> vec4 {
+    mod.widgets.MaskableButton = RobrixIconButton {
+        draw_bg +: {
+            mask: instance(0.0)
+            pixel: fn() {
                 let base_color = mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover);
                 let gray = dot(base_color.rgb, vec3(0.299, 0.587, 0.114));
                 return mix(base_color, vec4(gray, gray, gray, base_color.a), self.mask);
@@ -86,221 +82,211 @@ live_design! {
         }
     }
 
-    pub RegisterScreen = {{RegisterScreen}} {
+    mod.widgets.RegisterScreen = set_type_default() do #(RegisterScreen::register_widget(vm)) {
+        ..mod.widgets.SolidView
+
         width: Fill, height: Fill,
-        align: {x: 0.5, y: 0.5}
+        align: Align{x: 0.5, y: 0.5}
         show_bg: true,
-        draw_bg: {
+        draw_bg +: {
             color: #FFF
         }
 
-        <ScrollYView> {
+        ScrollYView {
             width: Fit, height: Fill,
             // Note: *do NOT* vertically center this, it will break scrolling.
-            align: {x: 0.5}
+            align: Align{x: 0.5}
             show_bg: true,
-            draw_bg: {
+            draw_bg +: {
                 color: (COLOR_PRIMARY)
             }
 
-            <RoundedView> {
+            RoundedView {
                 margin: 40
                 width: Fit, height: Fit
-                align: {x: 0.5, y: 0.5}
+                align: Align{x: 0.5, y: 0.5}
                 flow: Overlay,
 
                 show_bg: true,
-                draw_bg: {
+                draw_bg +: {
                     color: (COLOR_SECONDARY)
                     border_radius: 6.0
                 }
 
-                <View> {
+                View {
                     width: Fit, height: Fit
                     flow: Down
-                    align: {x: 0.5, y: 0.5}
+                    align: Align{x: 0.5, y: 0.5}
                     padding: 30
                     margin: 40
                     spacing: 15.0
 
-                    logo_image = <Image> {
-                        fit: Smallest,
+                    logo_image := Image {
+                        fit: ImageFit.Smallest,
                         width: 80
-                        source: (IMG_APP_LOGO),
+                        src: (mod.widgets.IMG_APP_LOGO),
                     }
 
-                    title = <Label> {
+                    title := Label {
                         width: Fit, height: Fit
-                        margin: { bottom: 5 }
+                        margin: Inset{ bottom: 5 }
                         padding: 0,
-                        draw_text: {
+                        draw_text +: {
                             color: (COLOR_TEXT)
-                            text_style: <TITLE_TEXT>{font_size: 16.0}
+                            text_style: TITLE_TEXT {font_size: 16.0}
                         }
                         text: "Create account"
                     }
 
                     // Homeserver selection area
-                    <View> {
+                    View {
                         width: 250, height: Fit
                         flow: Down
                         spacing: 5
 
-                        <Label> {
+                        Label {
                             width: Fit, height: Fit
-                            draw_text: {
+                            draw_text +: {
                                 color: (COLOR_TEXT)
-                                text_style: <REGULAR_TEXT>{font_size: 11}
+                                text_style: REGULAR_TEXT {font_size: 11}
                             }
                             text: "Host account on"
                         }
 
-                        homeserver_selector = <View> {
+                        homeserver_selector := View {
                             width: Fill, height: Fit
                             flow: Right
-                            align: {x: 0.0, y: 0.5}
-                            padding: {left: 10, right: 10, top: 8, bottom: 8}
+                            align: Align{x: 0.0, y: 0.5}
+                            padding: Inset{left: 10, right: 10, top: 8, bottom: 8}
                             spacing: 5
 
                             show_bg: true
-                            draw_bg: {
+                            draw_bg +: {
                                 color: (COLOR_SECONDARY)
                             }
 
-                            selected_homeserver = <Label> {
+                            selected_homeserver := Label {
                                 width: Fill, height: Fit
-                                draw_text: {
+                                draw_text +: {
                                     color: (COLOR_TEXT)
-                                    text_style: <REGULAR_TEXT>{font_size: 12}
+                                    text_style: REGULAR_TEXT {font_size: 12}
                                 }
                                 text: "matrix.org"
                             }
 
-                            edit_button = <RobrixIconButton> {
+                            edit_button := RobrixIconButton {
                                 width: Fit, height: Fit
-                                padding: {left: 8, right: 8, top: 4, bottom: 4}
-                                draw_bg: {
-                                    color: (COLOR_ACTIVE_PRIMARY)
-                                }
-                                draw_text: {
+                                padding: Inset{left: 8, right: 8, top: 4, bottom: 4}
+                                draw_text +: {
                                     color: (COLOR_PRIMARY)
-                                    text_style: <REGULAR_TEXT>{font_size: 10}
+                                    text_style: REGULAR_TEXT {font_size: 10}
                                 }
                                 text: "Edit"
                             }
                         }
 
-                        homeserver_description = <Label> {
+                        homeserver_description := Label {
                             width: Fill, height: Fit
-                            draw_text: {
+                            draw_text +: {
                                 color: (COLOR_TEXT)
-                                text_style: <REGULAR_TEXT>{font_size: 9}
+                                text_style: REGULAR_TEXT {font_size: 9}
                             }
                             text: "Join millions for free on the largest public server"
                         }
                     }
 
                     // Homeserver selection options (initially hidden)
-                    homeserver_options = <View> {
+                    homeserver_options := View {
                         width: 250, height: Fit
                         flow: Down
                         spacing: 10
                         visible: false
 
                         show_bg: true
-                        draw_bg: {
+                        draw_bg +: {
                             color: (COLOR_SECONDARY)
                         }
                         padding: 10
 
-                        <Label> {
+                        Label {
                             width: Fill, height: Fit
-                            draw_text: {
+                            draw_text +: {
                                 color: (COLOR_TEXT)
-                                text_style: <REGULAR_TEXT>{font_size: 10}
+                                text_style: REGULAR_TEXT {font_size: 10}
                             }
                             text: "Select a homeserver:"
                         }
 
-                        matrix_option = <RobrixIconButton> {
+                        matrix_option := RobrixIconButton {
                             width: Fill, height: Fit
-                            padding: {left: 10, right: 10, top: 8, bottom: 8}
-                            draw_bg: {
-                                color: (COLOR_BG_DISABLED)
-                            }
-                            draw_text: {
+                            padding: Inset{left: 10, right: 10, top: 8, bottom: 8}
+                            draw_text +: {
                                 color: (COLOR_TEXT)
-                                text_style: <REGULAR_TEXT>{font_size: 11}
+                                text_style: REGULAR_TEXT {font_size: 11}
                             }
                             text: "● matrix.org"
                         }
 
-                        other_option = <RobrixIconButton> {
+                        other_option := RobrixIconButton {
                             width: Fill, height: Fit
-                            padding: {left: 10, right: 10, top: 8, bottom: 8}
-                            draw_bg: {
-                                color: (COLOR_SECONDARY)
-                            }
-                            draw_text: {
+                            padding: Inset{left: 10, right: 10, top: 8, bottom: 8}
+                            draw_text +: {
                                 color: (COLOR_TEXT)
-                                text_style: <REGULAR_TEXT>{font_size: 11}
+                                text_style: REGULAR_TEXT {font_size: 11}
                             }
                             text: "○ Other homeserver"
                         }
 
-                        custom_homeserver = <View> {
+                        custom_homeserver := View {
                             width: Fill, height: Fit
                             visible: false
 
-                            custom_homeserver_input = <RobrixTextInput> {
+                            custom_homeserver_input := RobrixTextInput {
                                 width: Fill, height: Fit
-                                padding: {top: 5, bottom: 5}
+                                padding: Inset{top: 5, bottom: 5}
                                 empty_text: "your-server.com"
-                                draw_text: {
-                                    text_style: <REGULAR_TEXT>{font_size: 10}
-                                }
                             }
                         }
                     }
 
                     // Dynamic registration area
-                    sso_area = <View> {
+                    sso_area := View {
                         width: 250, height: Fit
                         flow: Down
                         spacing: 10
                         visible: true
 
-                        sso_button = <MaskableButton> {
+                        sso_button := MaskableButton {
                             width: Fill, height: 40
                             padding: 10
-                            margin: {top: 10}
-                            align: {x: 0.5, y: 0.5}
-                            draw_bg: {
+                            margin: Inset{top: 10}
+                            align: Align{x: 0.5, y: 0.5}
+                            draw_bg +: {
                                 color: (COLOR_ACTIVE_PRIMARY)
                                 mask: 0.0
                             }
-                            draw_text: {
+                            draw_text +: {
                                 color: (COLOR_PRIMARY)
-                                text_style: <REGULAR_TEXT> {}
+                                text_style: REGULAR_TEXT {}
                             }
                             text: "Continue with SSO"
                         }
                     }
 
-                    password_area = <View> {
+                    password_area := View {
                         width: 250, height: Fit
                         flow: Down
                         spacing: 10
                         visible: false
 
-                        username_input = <RobrixTextInput> {
+                        username_input := RobrixTextInput {
                             width: Fill, height: Fit
                             flow: Right,
                             padding: 10,
                             empty_text: "Username"
                         }
 
-                        password_input = <RobrixTextInput> {
+                        password_input := RobrixTextInput {
                             width: Fill, height: Fit
                             flow: Right,
                             padding: 10,
@@ -308,7 +294,7 @@ live_design! {
                             is_password: true,
                         }
 
-                        confirm_password_input = <RobrixTextInput> {
+                        confirm_password_input := RobrixTextInput {
                             width: Fill, height: Fit
                             flow: Right,
                             padding: 10,
@@ -316,22 +302,22 @@ live_design! {
                             is_password: true,
                         }
 
-                        registration_token_area = <View> {
+                        registration_token_area := View {
                             width: Fill, height: Fit
                             flow: Down
                             spacing: 4
                             visible: false
 
-                            <Label> {
+                            Label {
                                 width: Fill, height: Fit
-                                draw_text: {
+                                draw_text +: {
                                     color: (COLOR_TEXT)
-                                    text_style: <REGULAR_TEXT>{font_size: 10}
+                                    text_style: REGULAR_TEXT {font_size: 10}
                                 }
                                 text: "This server requires a registration token from the administrator."
                             }
 
-                            registration_token_input = <RobrixTextInput> {
+                            registration_token_input := RobrixTextInput {
                                 width: Fill, height: Fit
                                 padding: 10,
                                 empty_text: "Registration token"
@@ -339,69 +325,62 @@ live_design! {
                             }
                         }
 
-                        register_button = <MaskableButton> {
+                        register_button := MaskableButton {
                             width: Fill, height: 40
                             padding: 10
-                            margin: {top: 5, bottom: 10}
-                            align: {x: 0.5, y: 0.5}
-                            draw_bg: {
+                            margin: Inset{top: 5, bottom: 10}
+                            align: Align{x: 0.5, y: 0.5}
+                            draw_bg +: {
                                 color: (COLOR_ACTIVE_PRIMARY)
                                 mask: 0.0
                             }
-                            draw_text: {
+                            draw_text +: {
                                 color: (COLOR_PRIMARY)
-                                text_style: <REGULAR_TEXT> {}
+                                text_style: REGULAR_TEXT {}
                             }
                             text: "Register"
                         }
                     }
 
-                    <View> {
+                    View {
                         width: 250,
                         height: Fit,
                         flow: Right,
                         spacing: 0.0,
-                        align: {x: 0.5, y: 0.5}
+                        align: Align{x: 0.5, y: 0.5}
 
-                        left_line = <LineH> {
-                            draw_bg: { color: (COLOR_DIVIDER) }
+                        left_line := LineH {
+                            draw_bg +: { color: (COLOR_DIVIDER) }
                         }
 
-                        <Label> {
+                        Label {
                             width: Fit, height: Fit
-                            padding: {left: 1, right: 1, top: 0, bottom: 0}
-                            draw_text: {
+                            padding: Inset{left: 1, right: 1, top: 0, bottom: 0}
+                            draw_text +: {
                                 color: (COLOR_TEXT)
-                                text_style: <REGULAR_TEXT>{}
+                                text_style: REGULAR_TEXT {}
                             }
                             text: "Already have an account?"
                         }
 
-                        right_line = <LineH> {
-                            draw_bg: { color: (COLOR_DIVIDER) }
+                        right_line := LineH {
+                            draw_bg +: { color: (COLOR_DIVIDER) }
                         }
                     }
 
-                    login_button = <RobrixIconButton> {
+                    login_button := RobrixIconButton {
                         width: Fit, height: Fit
-                        padding: {left: 15, right: 15, top: 10, bottom: 10}
-                        margin: {bottom: 5}
-                        align: {x: 0.5, y: 0.5}
-                        draw_bg: {
-                            color: (COLOR_ACTIVE_PRIMARY)
-                        }
-                        draw_text: {
-                            color: (COLOR_PRIMARY)
-                            text_style: <REGULAR_TEXT> {}
-                        }
+                        padding: Inset{left: 15, right: 15, top: 10, bottom: 10}
+                        margin: Inset{bottom: 5}
+                        align: Align{x: 0.5, y: 0.5}
                         text: "Back to Login"
                     }
                 }
 
                 // Modal for registration status (both password and SSO)
-                status_modal = <Modal> {
-                    content: {
-                        status_modal_inner = <RegisterStatusModal> {}
+                status_modal := Modal {
+                    content +: {
+                        status_modal_inner := RegisterStatusModal {}
                     }
                 }
             }
@@ -409,8 +388,9 @@ live_design! {
     }
 }
 
-#[derive(Live, Widget)]
+#[derive(Script, Widget)]
 pub struct RegisterScreen {
+    #[source] source: ScriptObjectRef,
     #[deref]
     view: View,
     #[rust]
@@ -427,8 +407,8 @@ pub struct RegisterScreen {
     registration_token_required: bool,
 }
 
-impl LiveHook for RegisterScreen {
-    fn after_new_from_doc(&mut self, _cx: &mut Cx) {
+impl ScriptHook for RegisterScreen {
+    fn on_after_new(&mut self, _vm: &mut ScriptVm) {
         self.selected_homeserver = "matrix.org".to_string();
     }
 }
@@ -437,7 +417,7 @@ impl RegisterScreen {
     fn toggle_homeserver_options(&mut self, cx: &mut Cx) {
         self.is_homeserver_editing = !self.is_homeserver_editing;
         self.view
-            .view(ids!(homeserver_options))
+            .view(cx, ids!(homeserver_options))
             .set_visible(cx, self.is_homeserver_editing);
         self.redraw(cx);
     }
@@ -445,8 +425,8 @@ impl RegisterScreen {
     /// Updates the radio-style homeserver option buttons to reflect the current selection.
     fn update_homeserver_option_buttons(&self, cx: &mut Cx) {
         let is_matrix_org = !self.pending_custom_homeserver;
-        let matrix_btn = self.view.button(ids!(matrix_option));
-        let other_btn = self.view.button(ids!(other_option));
+        let matrix_btn = self.view.button(cx, ids!(matrix_option));
+        let other_btn = self.view.button(cx, ids!(other_option));
         if is_matrix_org {
             matrix_btn.set_text(cx, "● matrix.org");
             other_btn.set_text(cx, "○ Other homeserver");
@@ -457,37 +437,33 @@ impl RegisterScreen {
     }
 
     fn show_warning(&self, message: &str) {
-        use crate::shared::popup_list::{enqueue_popup_notification, PopupKind};
         enqueue_popup_notification(message.to_string(), PopupKind::Warning, Some(3.0));
     }
 
-    fn update_button_mask(&self, button: &ButtonRef, cx: &mut Cx, mask: f32) {
-        button.apply_over(
-            cx,
-            live! {
-                draw_bg: { mask: (mask) }
-            },
-        );
+    fn update_button_mask(&self, button: &mut ButtonRef, cx: &mut Cx, mask: f32) {
+        script_apply_eval!(cx, button, {
+            draw_bg: { mask: #(mask) }
+        });
     }
 
     fn set_registration_token_required(&mut self, cx: &mut Cx, required: bool) {
         self.registration_token_required = required;
         self.view
-            .view(ids!(registration_token_area))
+            .view(cx, ids!(registration_token_area))
             .set_visible(cx, required);
         if !required {
             self.view
-                .text_input(ids!(registration_token_input))
+                .text_input(cx, ids!(registration_token_input))
                 .set_text(cx, "");
         }
         self.redraw(cx);
     }
 
     fn reset_modal_state(&mut self, cx: &mut Cx) {
-        let register_button = self.view.button(ids!(register_button));
+        let mut register_button = self.view.button(cx, ids!(register_button));
         register_button.set_enabled(cx, true);
         register_button.reset_hover(cx);
-        self.update_button_mask(&register_button, cx, 0.0);
+        self.update_button_mask(&mut register_button, cx, 0.0);
         self.redraw(cx);
     }
 
@@ -497,14 +473,14 @@ impl RegisterScreen {
 
         // Update UI based on homeserver selection
         self.view
-            .view(ids!(sso_area))
+            .view(cx, ids!(sso_area))
             .set_visible(cx, is_matrix_org);
         self.view
-            .view(ids!(password_area))
+            .view(cx, ids!(password_area))
             .set_visible(cx, !is_matrix_org);
 
         // Update description text
-        let desc_label = self.view.label(ids!(homeserver_description));
+        let desc_label = self.view.label(cx, ids!(homeserver_description));
         if is_matrix_org {
             desc_label.set_text(cx, "Join millions for free on the largest public server");
         } else {
@@ -527,41 +503,41 @@ impl RegisterScreen {
 
         // Reset homeserver selection UI
         self.view
-            .view(ids!(homeserver_options))
+            .view(cx, ids!(homeserver_options))
             .set_visible(cx, false);
         self.view
-            .label(ids!(selected_homeserver))
+            .label(cx, ids!(selected_homeserver))
             .set_text(cx, "matrix.org");
         self.view
-            .view(ids!(custom_homeserver))
+            .view(cx, ids!(custom_homeserver))
             .set_visible(cx, false);
 
         // Reset homeserver option buttons
         self.update_homeserver_option_buttons(cx);
 
         // Clear input fields
-        self.view.text_input(ids!(username_input)).set_text(cx, "");
-        self.view.text_input(ids!(password_input)).set_text(cx, "");
+        self.view.text_input(cx, ids!(username_input)).set_text(cx, "");
+        self.view.text_input(cx, ids!(password_input)).set_text(cx, "");
         self.view
-            .text_input(ids!(confirm_password_input))
+            .text_input(cx, ids!(confirm_password_input))
             .set_text(cx, "");
         self.view
-            .text_input(ids!(custom_homeserver_input))
+            .text_input(cx, ids!(custom_homeserver_input))
             .set_text(cx, "");
 
         // Reset button states
-        let register_button = self.view.button(ids!(register_button));
+        let mut register_button = self.view.button(cx, ids!(register_button));
         register_button.set_enabled(cx, true);
         register_button.reset_hover(cx);
-        self.update_button_mask(&register_button, cx, 0.0);
+        self.update_button_mask(&mut register_button, cx, 0.0);
 
-        let sso_button = self.view.button(ids!(sso_button));
+        let mut sso_button = self.view.button(cx, ids!(sso_button));
         sso_button.set_enabled(cx, true);
         sso_button.reset_hover(cx);
-        self.update_button_mask(&sso_button, cx, 0.0);
+        self.update_button_mask(&mut sso_button, cx, 0.0);
 
         // Close any open modals
-        self.view.modal(ids!(status_modal)).close(cx);
+        self.view.modal(cx, ids!(status_modal)).close(cx);
 
         // Update registration mode to show correct UI for matrix.org
         self.update_registration_mode(cx);
@@ -583,9 +559,9 @@ impl Widget for RegisterScreen {
 
 impl MatchEvent for RegisterScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        let login_button = self.view.button(ids!(login_button));
-        let edit_button = self.view.button(ids!(edit_button));
-        let sso_button = self.view.button(ids!(sso_button));
+        let login_button = self.view.button(cx, ids!(login_button));
+        let edit_button = self.view.button(cx, ids!(edit_button));
+        let mut sso_button = self.view.button(cx, ids!(sso_button));
 
         if login_button.clicked(actions) {
             cx.action(RegisterAction::NavigateToLogin);
@@ -600,14 +576,14 @@ impl MatchEvent for RegisterScreen {
         if sso_button.clicked(actions) && !self.sso_pending {
             // Mark SSO as pending for this screen
             self.sso_pending = true;
-            self.update_button_mask(&sso_button, cx, 1.0);
+            self.update_button_mask(&mut sso_button, cx, 1.0);
 
             // Show SSO registration modal immediately
-            self.view.label(ids!(status_modal_inner.status))
+            self.view.label(cx, ids!(status_modal_inner.status))
                 .set_text(cx, "Opening your browser...\n\nPlease complete registration in your browser, then return to Robrix.");
-            self.view.button(ids!(status_modal_inner.cancel_button))
+            self.view.button(cx, ids!(status_modal_inner.cancel_button))
                 .set_text(cx, "Cancel");
-            self.view.modal(ids!(status_modal)).open(cx);
+            self.view.modal(cx, ids!(status_modal)).open(cx);
             self.redraw(cx);
 
             // Use the same SSO flow as login screen - spawn SSO server with Google provider
@@ -622,17 +598,17 @@ impl MatchEvent for RegisterScreen {
         }
 
         // Handle homeserver selection buttons
-        let matrix_option_button = self.view.button(ids!(matrix_option));
-        let other_option_button = self.view.button(ids!(other_option));
+        let matrix_option_button = self.view.button(cx, ids!(matrix_option));
+        let other_option_button = self.view.button(cx, ids!(other_option));
 
         if matrix_option_button.clicked(actions) {
             self.selected_homeserver = "matrix.org".to_string();
             self.pending_custom_homeserver = false;
             self.view
-                .label(ids!(selected_homeserver))
+                .label(cx, ids!(selected_homeserver))
                 .set_text(cx, "matrix.org");
             self.view
-                .view(ids!(custom_homeserver))
+                .view(cx, ids!(custom_homeserver))
                 .set_visible(cx, false);
 
             // Update button styles to show selection
@@ -640,7 +616,7 @@ impl MatchEvent for RegisterScreen {
 
             self.is_homeserver_editing = false;
             self.view
-                .view(ids!(homeserver_options))
+                .view(cx, ids!(homeserver_options))
                 .set_visible(cx, false);
             self.update_registration_mode(cx);
         }
@@ -649,10 +625,10 @@ impl MatchEvent for RegisterScreen {
             self.pending_custom_homeserver = true;
             self.selected_homeserver.clear();
             self.view
-                .view(ids!(custom_homeserver))
+                .view(cx, ids!(custom_homeserver))
                 .set_visible(cx, true);
             self.view
-                .label(ids!(selected_homeserver))
+                .label(cx, ids!(selected_homeserver))
                 .set_text(cx, "Custom homeserver (required)");
 
             // Update button styles to show selection
@@ -663,20 +639,20 @@ impl MatchEvent for RegisterScreen {
         // Handle custom homeserver input
         if let Some(text_event) = self
             .view
-            .text_input(ids!(custom_homeserver_input))
+            .text_input(cx, ids!(custom_homeserver_input))
             .changed(actions)
         {
             if let Some(normalized) = normalize_custom_homeserver(&text_event) {
                 self.selected_homeserver = normalized.clone();
                 self.pending_custom_homeserver = false;
                 self.view
-                    .label(ids!(selected_homeserver))
+                    .label(cx, ids!(selected_homeserver))
                     .set_text(cx, &normalized);
             } else {
                 self.pending_custom_homeserver = true;
                 self.selected_homeserver.clear();
                 self.view
-                    .label(ids!(selected_homeserver))
+                    .label(cx, ids!(selected_homeserver))
                     .set_text(cx, "Custom homeserver (required)");
             }
 
@@ -684,11 +660,11 @@ impl MatchEvent for RegisterScreen {
         }
 
         // Handle password-based registration
-        let register_button = self.view.button(ids!(register_button));
-        let username_input = self.view.text_input(ids!(username_input));
-        let password_input = self.view.text_input(ids!(password_input));
-        let confirm_password_input = self.view.text_input(ids!(confirm_password_input));
-        let registration_token_input = self.view.text_input(ids!(registration_token_input));
+        let mut register_button = self.view.button(cx, ids!(register_button));
+        let username_input = self.view.text_input(cx, ids!(username_input));
+        let password_input = self.view.text_input(cx, ids!(password_input));
+        let confirm_password_input = self.view.text_input(cx, ids!(confirm_password_input));
+        let registration_token_input = self.view.text_input(cx, ids!(registration_token_input));
 
         if register_button.clicked(actions)
             || username_input.returned(actions).is_some()
@@ -745,16 +721,16 @@ impl MatchEvent for RegisterScreen {
 
             // Disable register button to prevent duplicate submissions
             register_button.set_enabled(cx, false);
-            self.update_button_mask(&register_button, cx, 1.0);
+            self.update_button_mask(&mut register_button, cx, 1.0);
 
             // Show registration status modal with appropriate text for password registration
-            self.view.label(ids!(status_modal_inner.status))
+            self.view.label(cx, ids!(status_modal_inner.status))
                 .set_text(cx, "Registering account, please wait...");
-            self.view.label(ids!(status_modal_inner.title))
+            self.view.label(cx, ids!(status_modal_inner.title))
                 .set_text(cx, "Registration Status");
-            self.view.button(ids!(status_modal_inner.cancel_button))
+            self.view.button(cx, ids!(status_modal_inner.cancel_button))
                 .set_text(cx, "Cancel");
-            self.view.modal(ids!(status_modal)).open(cx);
+            self.view.modal(cx, ids!(status_modal)).open(cx);
             self.redraw(cx);
 
             // Submit registration request
@@ -780,7 +756,7 @@ impl MatchEvent for RegisterScreen {
                 action.downcast_ref::<RegisterStatusModalAction>()
             {
                 if *was_internal {
-                    self.view.modal(ids!(status_modal)).close(cx);
+                    self.view.modal(cx, ids!(status_modal)).close(cx);
                 }
                 if self.sso_pending {
                     // SSO flow canceled/dismissed - re-enable SSO button so user can retry
@@ -794,7 +770,7 @@ impl MatchEvent for RegisterScreen {
                     }
                     self.sso_pending = false;
                     self.sso_redirect_url = None;
-                    self.update_button_mask(&sso_button, cx, 0.0);
+                    self.update_button_mask(&mut sso_button, cx, 0.0);
                 } else {
                     // Password registration - reset register button
                     self.reset_modal_state(cx);
@@ -819,17 +795,17 @@ impl MatchEvent for RegisterScreen {
                             // SSO ended
                             self.sso_pending = false;
                             self.sso_redirect_url = None;
-                            self.update_button_mask(&sso_button, cx, 0.0);
-                            self.view.modal(ids!(status_modal)).close(cx);
+                            self.update_button_mask(&mut sso_button, cx, 0.0);
+                            self.view.modal(cx, ids!(status_modal)).close(cx);
                         }
                         self.redraw(cx);
                     }
                     RegisterAction::SsoRegistrationStatus { status } => {
                         // Update SSO status in modal (only if our modal is already open)
                         if self.sso_pending {
-                            self.view.label(ids!(status_modal_inner.status))
+                            self.view.label(cx, ids!(status_modal_inner.status))
                                 .set_text(cx, status);
-                            self.view.button(ids!(status_modal_inner.cancel_button))
+                            self.view.button(cx, ids!(status_modal_inner.cancel_button))
                                 .set_text(cx, "Cancel");
                             self.redraw(cx);
                         }
@@ -838,7 +814,7 @@ impl MatchEvent for RegisterScreen {
                         if !self.registration_token_required {
                             self.set_registration_token_required(cx, true);
                             self.view
-                                .text_input(ids!(registration_token_input))
+                                .text_input(cx, ids!(registration_token_input))
                                 .set_key_focus(cx);
                         }
                     }
@@ -847,11 +823,11 @@ impl MatchEvent for RegisterScreen {
                     }
                     RegisterAction::RegistrationSuccess => {
                         // Close modal and let app.rs handle screen transition
-                        self.view.modal(ids!(status_modal)).close(cx);
+                        self.view.modal(cx, ids!(status_modal)).close(cx);
                         if self.sso_pending {
                             self.sso_pending = false;
                             self.sso_redirect_url = None;
-                            self.update_button_mask(&sso_button, cx, 0.0);
+                            self.update_button_mask(&mut sso_button, cx, 0.0);
                         }
                         self.redraw(cx);
                     }
@@ -861,9 +837,9 @@ impl MatchEvent for RegisterScreen {
                             self.show_warning(error);
                             self.sso_pending = false;
                             self.sso_redirect_url = None;
-                            self.update_button_mask(&sso_button, cx, 0.0);
+                            self.update_button_mask(&mut sso_button, cx, 0.0);
                         }
-                        self.view.modal(ids!(status_modal)).close(cx);
+                        self.view.modal(cx, ids!(status_modal)).close(cx);
                         self.reset_modal_state(cx);
                     }
                     _ => {}
@@ -878,7 +854,7 @@ impl MatchEvent for RegisterScreen {
 /// These actions handle both password-based and SSO registration flows.
 /// SSO actions are completely independent from LoginAction to ensure
 /// no interference between login and register screens.
-#[derive(Clone, DefaultNone, Debug)]
+#[derive(Clone, Default, Debug)]
 pub enum RegisterAction {
     /// User requested to go back to the login screen
     NavigateToLogin,
@@ -898,6 +874,7 @@ pub enum RegisterAction {
     SsoSetRedirectUrl(Url),
     /// Password registration flow needs a server-provided token
     RegistrationTokenRequired,
+    #[default]
     None,
 }
 

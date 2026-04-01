@@ -29,252 +29,195 @@
 //!
 
 use makepad_widgets::*;
+use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, profile::{
         user_profile::UserProfile,
         user_profile_cache::{self, UserProfileUpdate},
     }, shared::{
-        avatar::{AvatarState, AvatarWidgetExt}, callout_tooltip::{CalloutTooltipOptions, TooltipAction, TooltipPosition}, styles::*, verification_badge::VerificationBadgeWidgetExt
+        avatar::{AvatarState, AvatarWidgetExt}, styles::*, verification_badge::VerificationBadgeWidgetExt
     }, sliding_sync::{current_user_id, AccountDataAction}, utils::{self, RoomNameId}
 };
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::shared::helpers::*;
-    use crate::shared::verification_badge::*;
-    use crate::shared::avatar::*;
-    use crate::shared::icon_button::*;
-    use crate::home::spaces_bar::*;
 
     // A RadioButton styled to fit within our NavigationTabBar.
-    pub NavigationTabButton = <RadioButton> {
+    // Use RadioButtonTab as the base to stay aligned with current widgets/studio behavior.
+    mod.widgets.NavigationTabButton = RadioButtonTab {
         width: Fill,
         height: (NAVIGATION_TAB_BAR_SIZE - 5),
         padding: 5,
-        margin: 3, 
-        align: {x: 0.5, y: 0.5}
+        margin: 3,
+        align: Align{x: 0.5, y: 0.5}
         flow: Down,
-        
-        icon_walk: {margin: 0, width: (NAVIGATION_TAB_BAR_SIZE/2.2), height: Fit}
+        text: "",
+
+        icon_walk: Walk{
+            margin: 0,
+            width: (NAVIGATION_TAB_BAR_SIZE / 2.2),
+            height: (NAVIGATION_TAB_BAR_SIZE / 2.2)
+        }
         // Fully hide the text with zero size, zero margin, and zero spacing
-        label_walk: {margin: 0, width: 0, height: 0}
+        label_walk: Walk{margin: 0, width: 0, height: 0}
         spacing: 0,
 
-        draw_bg: {
-            radio_type: Tab,
-
+        draw_bg +: {
             color: (COLOR_NAVIGATION_TAB_BG)
             color_hover: (COLOR_NAVIGATION_TAB_BG_HOVER)
+            color_down: (COLOR_NAVIGATION_TAB_BG_HOVER)
             color_active: (COLOR_NAVIGATION_TAB_BG_ACTIVE)
+            color_focus: (COLOR_NAVIGATION_TAB_BG_ACTIVE)
 
             border_size: 0.0
-            border_color: #0000
-            uniform inset: vec4(0.0, 0.0, 0.0, 0.0)
             border_radius: 4.0
-
-            fn get_color(self) -> vec4 {
-                return mix(
-                    mix(
-                        self.color,
-                        self.color_hover,
-                        self.hover
-                    ),
-                    self.color_active,
-                    self.active
-                )
-            }
-
-            fn get_border_color(self) -> vec4 {
-                return self.border_color
-            }
-
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
-                sdf.box(
-                    self.inset.x + self.border_size,
-                    self.inset.y + self.border_size,
-                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
-                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
-                    max(1.0, self.border_radius)
-                )
-                sdf.fill_keep(self.get_color())
-                if self.border_size > 0.0 {
-                    sdf.stroke(self.get_border_color(), self.border_size)
-                }
-                return sdf.result;
-            }
+            border_color: #0000
+            border_color_hover: #0000
+            border_color_down: #0000
+            border_color_active: #0000
+            border_color_focus: #0000
         }
 
-        draw_text: {
-            instance hover: 0.0
-            instance active: 0.0
+        draw_text +: {
             color: (COLOR_NAVIGATION_TAB_FG)
             color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
+            color_down: (COLOR_NAVIGATION_TAB_FG_HOVER)
             color_active: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
+            color_focus: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
 
-            text_style: <THEME_FONT_BOLD>{font_size: 9}
-
-            fn get_color(self) -> vec4 {
-                return mix(
-                    mix(
-                        self.color,
-                        self.color_hover,
-                        self.hover
-                    ),
-                    self.color_active,
-                    self.active
-                )
-            }
+            text_style: theme.font_bold {font_size: 9}
         }
 
-        draw_icon: {
-            instance hover: 0.0
-            instance active: 0.0
-            uniform color: (COLOR_NAVIGATION_TAB_FG)
-            uniform color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
-            uniform color_active: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
-            fn get_color(self) -> vec4 {
-                return mix(
-                    mix(
-                        self.color,
-                        self.color_hover,
-                        self.focus
-                    ),
-                    self.color_active,
-                    self.active
-                )
-            }
+        draw_icon +: {
+            color: (COLOR_NAVIGATION_TAB_FG)
+            color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
+            color_down: (COLOR_NAVIGATION_TAB_FG_HOVER)
+            color_active: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
+            color_focus: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
         }
     }
 
-    ProfileIcon = {{ProfileIcon}}<RoundedView> {
+    mod.widgets.ProfileIcon = #(ProfileIcon::register_widget(vm)) {
         width: Fill,
         height: (NAVIGATION_TAB_BAR_SIZE - 8)
         flow: Overlay
-        align: { x: 0.5, y: 0.5 }
-        cursor: Default,
+        align: Align{ x: 0.5, y: 0.5 }
 
-        our_own_avatar = <Avatar> {
-            width: 45, height: 45
+        our_own_avatar := Avatar {
+            width: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE
+            height: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE
             // If no avatar picture, use white text on a dark background.
-            text_view = {
-                draw_bg: {
-                    background_color: (COLOR_FG_DISABLED),
+            text_view +: {
+                draw_bg.color: (COLOR_FG_DISABLED),
+                text +: {
+                    draw_text +: {
+                        text_style: theme.font_regular { font_size: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_FONT_SIZE },
+                        color: (COLOR_PRIMARY),
+                    }
                 }
-                text = { draw_text: {
-                    text_style: { font_size: 16.0 },
-                    color: (COLOR_PRIMARY),
-                } }
             }
         }
 
-        <View> {
-            align: { x: 0.5, y: 0.0 }
-            margin: { left: 42 }
-            verification_badge = <VerificationBadge> {}
+        View {
+            align: Align { x: 0.5, y: 0.0 }
+            margin: Inset{ left: (mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE * 0.9) }
+            verification_badge := VerificationBadge {}
         }
     }
 
-    HomeButton = <NavigationTabButton> {
-        draw_icon: { svg_file: (ICON_HOME) }
-        animator: { active = { default: on } }
+    mod.widgets.HomeButton = mod.widgets.NavigationTabButton {
+        draw_icon +: { svg: (ICON_HOME) }
     }
 
-    ToggleSpacesBarButton = <RobrixIconButton> {
+    mod.widgets.ToggleSpacesBarButton = RobrixNeutralIconButton {
         width: Fill,
         padding: 16
         spacing: 0,
-        align: {x: 0.5, y: 0.5}
-        draw_bg: {
-            color: (COLOR_SECONDARY)
-        }
-        draw_icon: {
-            svg_file: (ICON_SQUARES)
+        align: Align{x: 0.5, y: 0.5}
+        draw_icon +: {
+            svg: (ICON_SQUARES)
             color: (COLOR_NAVIGATION_TAB_FG)
         }
-        icon_walk: {width: (NAVIGATION_TAB_BAR_SIZE/2.2), height: Fit, margin: 0 }
+        icon_walk: Walk{
+            width: (NAVIGATION_TAB_BAR_SIZE / 2.2),
+            height: (NAVIGATION_TAB_BAR_SIZE / 2.2),
+            margin: 0
+        }
     }
 
-    SettingsButton = <NavigationTabButton> {
-        draw_icon: { svg_file: (ICON_SETTINGS) }
+    mod.widgets.SettingsButton = mod.widgets.NavigationTabButton {
+        draw_icon +: { svg: (ICON_SETTINGS) }
     }
 
-    AddRoomButton = <NavigationTabButton> {
-        draw_icon: { svg_file: (ICON_ADD) }
+    mod.widgets.AddRoomButton = mod.widgets.NavigationTabButton {
+        draw_icon +: { svg: (ICON_ADD) }
     }
 
-    Separator = <LineH> { margin: 8 }
+    mod.widgets.Separator = LineH { margin: 8 }
 
-    pub NavigationTabBar = {{NavigationTabBar}}<AdaptiveView> {
-        Desktop = {
+    mod.widgets.NavigationTabBar = #(NavigationTabBar::register_widget(vm)) {
+        Desktop := RoundedView {
             flow: Down,
-            align: {x: 0.5}
-            padding: {top: 40., bottom: 8}
+            align: Align{x: 0.5}
+            padding: Inset{top: 8., bottom: 8}
             width: (NAVIGATION_TAB_BAR_SIZE), 
             height: Fill
 
-            show_bg: true
-            draw_bg: {
-                color: (COLOR_SECONDARY)
-            }
-
-            <CachedWidget> {
-                profile_icon = <ProfileIcon> {}
-            }
-
-            <CachedWidget> {
-                home_button = <HomeButton> {}
-            }
-
-            <CachedWidget> {
-                add_room_button = <AddRoomButton> {}
-            }
-
-            <Separator> {}
-
-            <CachedWidget> {
-                root_spaces_bar = <SpacesBar> {}
-            }
-
-            <Separator> {}
-            
-            <CachedWidget> {
-                settings_button = <SettingsButton> {}
-            }
-        }
-
-        Mobile = <RoundedView> {
-            flow: Right
-            align: {x: 0.5, y: 0.5}
-            width: Fill,
-            height: (NAVIGATION_TAB_BAR_SIZE)
-
-            show_bg: true
-            draw_bg: {
+            draw_bg +: {
                 color: (COLOR_SECONDARY)
                 border_radius: 4.0
             }
 
-            <CachedWidget> {
-                home_button = <HomeButton> {}
+            CachedWidget {
+                profile_icon := mod.widgets.ProfileIcon {}
+            }
+            CachedWidget {
+                home_button := mod.widgets.HomeButton {}
+            }
+            CachedWidget {
+                add_room_button := mod.widgets.AddRoomButton {}
             }
 
-            <CachedWidget> {
-                add_room_button = <AddRoomButton> {}
+            mod.widgets.Separator {}
+
+            CachedWidget {
+                root_spaces_bar := mod.widgets.SpacesBar {}
             }
 
-            toggle_spaces_bar_button = <ToggleSpacesBarButton> {}
+            mod.widgets.Separator {}
 
-            <CachedWidget> {
-                settings_button = <SettingsButton> {}
+            CachedWidget {
+                settings_button := mod.widgets.SettingsButton {}
+            }
+        }
+
+        Mobile := RoundedView {
+            flow: Right
+            align: Align{x: 0.5, y: 0.5}
+            width: Fill,
+            height: (NAVIGATION_TAB_BAR_SIZE)
+
+            draw_bg +: {
+                color: (COLOR_SECONDARY)
+                border_radius: 4.0
             }
 
-            <CachedWidget> {
-                profile_icon = <ProfileIcon> {}
+            CachedWidget {
+                home_button := mod.widgets.HomeButton {}
+            }
+            CachedWidget {
+                add_room_button := mod.widgets.AddRoomButton {}
+            }
+
+            toggle_spaces_bar_button := mod.widgets.ToggleSpacesBarButton {}
+
+            CachedWidget {
+                settings_button := mod.widgets.SettingsButton {}
+            }
+            CachedWidget {
+                profile_icon := mod.widgets.ProfileIcon {}
             }
         }
     }
@@ -283,22 +226,28 @@ live_design! {
 /// The icon in the NavigationTabBar that show the user's avatar.
 ///
 /// Clicking on this icon will open the settings screen.
-#[derive(Live, Widget)]
+#[derive(Script, Widget)]
 pub struct ProfileIcon {
     #[deref] view: View,
     #[rust] own_profile: Option<UserProfile>,
 }
 
-impl LiveHook for ProfileIcon {
-    fn after_update_from_doc(&mut self, cx: &mut Cx) {
-        if self.own_profile.is_none() {
-            self.own_profile = get_own_profile(cx);
-        }
+impl ScriptHook for ProfileIcon {
+    fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            if self.own_profile.is_none() {
+                self.own_profile = get_own_profile(cx);
+            }
+        });
     }
 }
 
 impl Widget for ProfileIcon {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if self.own_profile.is_none() {
+            self.own_profile = get_own_profile(cx);
+        }
+
         // A UI Signal indicates that a user profile or avatar may have been updated.
         if let Event::Signal = event {
             let mut needs_redraw = false;
@@ -391,7 +340,7 @@ impl Widget for ProfileIcon {
         match event.hits(cx, area) {
             Hit::FingerLongPress(_) | Hit::FingerHoverIn(_) => {
                 let (verification_str, bg_color) = self.view
-                    .verification_badge(ids!(verification_badge))
+                    .verification_badge(cx, ids!(verification_badge))
                     .tooltip_content();
                 let text = self.own_profile.as_ref().map_or_else(
                     || format!("Not logged in.\n\n{}", verification_str),
@@ -405,8 +354,7 @@ impl Widget for ProfileIcon {
                     options.bg_color = c;
                 }
                 cx.widget_action(
-                    self.widget_uid(),
-                    &scope.path,
+                    self.widget_uid(), 
                     TooltipAction::HoverIn {
                         text,
                         widget_rect: area.rect(cx),
@@ -415,7 +363,7 @@ impl Widget for ProfileIcon {
                 );
             }
             Hit::FingerHoverOut(_) => {
-                cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
+                cx.widget_action(self.widget_uid(),  TooltipAction::HoverOut);
             }
             _ => { }
         };
@@ -424,7 +372,7 @@ impl Widget for ProfileIcon {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let our_own_avatar = self.view.avatar(ids!(our_own_avatar));
+        let our_own_avatar = self.view.avatar(cx, ids!(our_own_avatar));
         let Some(own_profile) = self.own_profile.as_ref() else {
             // If we don't have a profile, default to an unknown avatar.
             our_own_avatar.show_text(
@@ -462,11 +410,23 @@ impl Widget for ProfileIcon {
 ///
 /// * In the "desktop" (wide) layout, this is a vertical bar on the left.
 /// * In the "mobile" (narrow) layout, this is a horizontal bar on the bottom.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, Widget)]
 pub struct NavigationTabBar {
     #[deref] view: AdaptiveView,
 
     #[rust] is_spaces_bar_shown: bool,
+}
+
+impl ScriptHook for NavigationTabBar {
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            // Programmatically select the Home button as active on startup,
+            // because animator default overrides in the DSL don't take effect.
+            if let Some(mut rb) = self.view.radio_button(cx, ids!(home_button)).borrow_mut() {
+                rb.animator_play(cx, ids!(active.on));
+            }
+        });
+    }
 }
 
 impl Widget for NavigationTabBar {
@@ -475,7 +435,7 @@ impl Widget for NavigationTabBar {
 
         if let Event::Actions(actions) = event {
             // Handle one of the radio buttons being clicked (selected).
-            let radio_button_set = self.view.radio_button_set(ids_array!(
+            let radio_button_set = self.view.radio_button_set(cx, ids_array!(
                 home_button,
                 add_room_button,
                 settings_button,
@@ -487,7 +447,7 @@ impl Widget for NavigationTabBar {
                 _ => { }
             }
 
-            if self.view.button(ids!(toggle_spaces_bar_button)).clicked(actions) {
+            if self.view.button(cx, ids!(toggle_spaces_bar_button)).clicked(actions) {
                 self.is_spaces_bar_shown = !self.is_spaces_bar_shown;
                 cx.action(NavigationBarAction::ToggleSpacesBar);
             }
@@ -497,9 +457,9 @@ impl Widget for NavigationTabBar {
                 // update our radio buttons accordingly.
                 if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
                     match tab {
-                        SelectedTab::Home     => self.view.radio_button(ids!(home_button)).select(cx, scope),
-                        SelectedTab::AddRoom  => self.view.radio_button(ids!(add_room_button)).select(cx, scope),
-                        SelectedTab::Settings => self.view.radio_button(ids!(settings_button)).select(cx, scope),
+                        SelectedTab::Home     => self.view.radio_button(cx, ids!(home_button)).select(cx, scope),
+                        SelectedTab::AddRoom  => self.view.radio_button(cx, ids!(add_room_button)).select(cx, scope),
+                        SelectedTab::Settings => self.view.radio_button(cx, ids!(settings_button)).select(cx, scope),
                         SelectedTab::Space { .. } => {
                             for rb in radio_button_set.iter() {
                                 if let Some(mut rb_inner) = rb.borrow_mut() {
@@ -521,7 +481,7 @@ impl Widget for NavigationTabBar {
 
 
 /// Which top-level view is currently shown, and which navigation tab is selected.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SelectedTab {
     #[default]
     Home,
