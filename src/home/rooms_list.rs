@@ -1490,9 +1490,10 @@ impl Widget for RoomsList {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let app_state = scope.data.get_mut::<AppState>().unwrap();
+        let app_state = scope.data.get::<AppState>().unwrap();
         // Update the currently-selected room from the AppState data.
         self.current_active_room = app_state.selected_room.clone();
+        let mut app_state_for_item_scope = app_state.clone();
 
         // Based on the various displayed room lists and is_expanded state of each room header,
         // calculate the indexes in the PortalList where the headers and rooms should be drawn.
@@ -1541,8 +1542,7 @@ impl Widget for RoomsList {
             list.set_item_range(cx, 0, total_count);
 
             while let Some(portal_list_index) = list.next_visible_item(cx) {
-                let mut scope = Scope::empty();
-
+                let mut item_scope = Scope::with_data(&mut app_state_for_item_scope);
                 if self.invited_rooms_indexes.header_index == Some(portal_list_index) {
                     let item = list.item(cx, portal_list_index, id!(collapsible_header));
                     item.as_collapsible_header().set_details(
@@ -1551,7 +1551,7 @@ impl Widget for RoomsList {
                         HeaderCategory::Invites,
                         self.displayed_invited_rooms.len() as u64,
                     );
-                    item.draw_all(cx, &mut scope);
+                    item.draw_all(cx, &mut item_scope);
                 }
                 else if let Some(invited_room_id) = get_invited_room_id(portal_list_index) {
                     let mut invited_rooms_mut = self.invited_rooms.borrow_mut();
@@ -1560,11 +1560,12 @@ impl Widget for RoomsList {
                         invited_room.is_selected = self.current_active_room.as_ref()
                             .is_some_and(|sel_room| sel_room.room_id() == invited_room_id);
                         // Pass the room info down to the RoomsListEntry widget via Scope.
-                        scope = Scope::with_props(&*invited_room);
-                        item.draw_all(cx, &mut scope);
+                        item_scope.override_props(&*invited_room, |scope| {
+                            item.draw_all(cx, scope);
+                        });
                     } else {
                         list.item(cx, portal_list_index, id!(empty))
-                            .draw_all(cx, &mut scope);
+                            .draw_all(cx, &mut item_scope);
                     }
                 }
                 else if self.direct_rooms_indexes.header_index == Some(portal_list_index) {
@@ -1577,7 +1578,7 @@ impl Widget for RoomsList {
                         // TODO: sum up all the unread mentions in rooms
                         // NOTE: this might be really slow, so we should maintain a running total of mentions in this struct
                     );
-                    item.draw_all(cx, &mut scope);
+                    item.draw_all(cx, &mut item_scope);
                 }
                 else if let Some(direct_room_id) = get_direct_room_id(portal_list_index) {
                     if let Some(direct_room) = self.all_joined_rooms.get_mut(direct_room_id) {
@@ -1597,11 +1598,12 @@ impl Widget for RoomsList {
                             });
                         }
                         // Pass the room info down to the RoomsListEntry widget via Scope.
-                        scope = Scope::with_props(&*direct_room);
-                        item.draw_all(cx, &mut scope);
+                        item_scope.override_props(&*direct_room, |scope| {
+                            item.draw_all(cx, scope);
+                        });
                     } else {
                         list.item(cx, portal_list_index, id!(empty))
-                            .draw_all(cx, &mut scope);
+                            .draw_all(cx, &mut item_scope);
                     }
                 }
                 else if self.regular_rooms_indexes.header_index == Some(portal_list_index) {
@@ -1614,7 +1616,7 @@ impl Widget for RoomsList {
                         // TODO: sum up all the unread mentions in rooms.
                         // NOTE: this might be really slow, so we should maintain a running total of mentions in this struct
                     );
-                    item.draw_all(cx, &mut scope);
+                    item.draw_all(cx, &mut item_scope);
                 }
                 else if let Some(regular_room_id) = get_regular_room_id(portal_list_index) {
                     if let Some(regular_room) = self.all_joined_rooms.get_mut(regular_room_id) {
@@ -1634,22 +1636,23 @@ impl Widget for RoomsList {
                             });
                         }
                         // Pass the room info down to the RoomsListEntry widget via Scope.
-                        scope = Scope::with_props(&*regular_room);
-                        item.draw_all(cx, &mut scope);
+                        item_scope.override_props(&*regular_room, |scope| {
+                            item.draw_all(cx, scope);
+                        });
                     } else {
-                        list.item(cx, portal_list_index, id!(empty)).draw_all(cx, &mut scope);
+                        list.item(cx, portal_list_index, id!(empty)).draw_all(cx, &mut item_scope);
                     }
                 }
                 // Draw the status label as the bottom entry.
                 else if portal_list_index == status_label_id {
                     let item = list.item(cx, portal_list_index, id!(status_label));
                     item.label(cx, ids!(label)).set_text(cx, &self.status);
-                    item.draw_all(cx, &mut scope);
+                    item.draw_all(cx, &mut item_scope);
                 }
                 // Draw a filler entry to take up space at the bottom of the portal list.
                 else {
                     list.item(cx, portal_list_index, id!(bottom_filler))
-                        .draw_all(cx, &mut scope);
+                        .draw_all(cx, &mut item_scope);
                 }
             }
         }

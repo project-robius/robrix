@@ -12,7 +12,7 @@ use crate::{
     avatar_cache::{self, AvatarCacheEntry, clear_avatar_cache}, home::{
         add_room::{CreateRoomModalAction, CreateRoomModalWidgetRefExt},
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, invite_screen::InviteScreenWidgetRefExt, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, RoomScreenWidgetRefExt, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, space_lobby::SpaceLobbyScreenWidgetRefExt, spaces_bar::SpacesBarRef
-    }, join_leave_room_modal::{
+    }, i18n::{AppLanguage, tr_fmt, tr_key}, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::{user_profile::UserProfile, user_profile_cache::clear_user_profile_cache}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, room_filter_input_bar::RoomFilterAction}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RemoteDirectorySearchKind, RemoteDirectorySearchResult, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
@@ -186,7 +186,7 @@ script_mod! {
                                         width: Fill,
                                         height: Fit,
                                         margin: Inset{left: 4, top: 2}
-                                        text: "Search Results"
+                                        text: ""
                                         draw_text +: {
                                             color: (COLOR_TEXT_INPUT_IDLE)
                                             text_style: REGULAR_TEXT {font_size: 10}
@@ -208,7 +208,7 @@ script_mod! {
                                                 width: Fill,
                                                 height: Fit,
                                                 flow: Flow.Right{wrap: true},
-                                                text: "Type to search rooms and spaces..."
+                                                text: ""
                                                 draw_text +: {
                                                     color: (COLOR_TEXT)
                                                     text_style: REGULAR_TEXT {font_size: 10}
@@ -225,15 +225,15 @@ script_mod! {
 
                                                 remote_search_people_button := RobrixNeutralIconButton {
                                                     width: Fit,
-                                                    text: "People"
+                                                    text: ""
                                                 }
                                                 remote_search_rooms_button := RobrixNeutralIconButton {
                                                     width: Fit,
-                                                    text: "Rooms"
+                                                    text: ""
                                                 }
                                                 remote_search_spaces_button := RobrixNeutralIconButton {
                                                     width: Fit,
-                                                    text: "Spaces"
+                                                    text: ""
                                                 }
                                             }
 
@@ -626,6 +626,7 @@ impl MatchEvent for App {
         }
 
         self.update_login_visibility(cx);
+        self.sync_app_language(cx);
 
         log!("App::Startup: starting matrix sdk loop");
         let _tokio_rt_handle = crate::sliding_sync::start_matrix_tokio().unwrap();
@@ -650,6 +651,8 @@ impl MatchEvent for App {
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        self.sync_app_language(cx);
+
         let invite_confirmation_modal_inner = self.ui.confirmation_modal(cx, ids!(invite_confirmation_modal_inner));
         if let Some(_accepted) = invite_confirmation_modal_inner.closed(actions) {
             self.ui.modal(cx, ids!(invite_confirmation_modal)).close(cx);
@@ -707,13 +710,14 @@ impl MatchEvent for App {
             let query = room_filter_input.text().trim().to_owned();
             if !query.is_empty() {
                 let kind_text = match &kind {
-                    RemoteDirectorySearchKind::People => "people",
-                    RemoteDirectorySearchKind::Rooms => "rooms",
-                    RemoteDirectorySearchKind::Spaces => "spaces",
+                    RemoteDirectorySearchKind::People => tr_key(self.app_state.app_language, "app.room_filter.remote.kind.people"),
+                    RemoteDirectorySearchKind::Rooms => tr_key(self.app_state.app_language, "app.room_filter.remote.kind.rooms"),
+                    RemoteDirectorySearchKind::Spaces => tr_key(self.app_state.app_language, "app.room_filter.remote.kind.spaces"),
                 };
+                let searching_text = tr_fmt(self.app_state.app_language, "app.room_filter.searching_remote", &[("kind", kind_text)]);
                 self.set_room_filter_modal_empty_state(
                     cx,
-                    &format!("Searching {} on server...", kind_text),
+                    &searching_text,
                     false,
                 );
                 submit_async_request(MatrixRequest::SearchDirectory {
@@ -881,7 +885,7 @@ impl MatchEvent for App {
             if let RoomsListAction::OpenRoomContextMenu { details, pos } = action.as_widget_action().cast() {
                 self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
                 let room_context_menu = self.ui.room_context_menu(cx, ids!(room_context_menu));
-                let expected_dimensions = room_context_menu.show(cx, details);
+                let expected_dimensions = room_context_menu.show(cx, details, self.app_state.app_language);
                 // Ensure the context menu does not spill over the window's bounds.
                 let rect = self.ui.window(cx, ids!(main_window)).area().rect(cx);
                 let pos_x = min(pos.x, rect.size.x - expected_dimensions.x);
@@ -1165,7 +1169,7 @@ impl MatchEvent for App {
             // Handle InviteModalAction to open/close the invite modal.
             match action.downcast_ref() {
                 Some(InviteModalAction::Open(room_name_id)) => {
-                    self.ui.invite_modal(cx, ids!(invite_modal_inner)).show(cx, room_name_id.clone());
+                    self.ui.invite_modal(cx, ids!(invite_modal_inner)).show(cx, room_name_id.clone(), self.app_state.app_language);
                     self.ui.modal(cx, ids!(invite_modal)).open(cx); 
                     continue;
                 }
@@ -1383,6 +1387,20 @@ impl App {
         live_id!(result_item_6), live_id!(result_item_7),
     ];
 
+    fn sync_app_language(&self, cx: &mut Cx) {
+        let app_language = self.app_state.app_language;
+        self.ui.label(cx, ids!(room_filter_modal_inner.search_results_title))
+            .set_text(cx, tr_key(app_language, "app.room_filter.search_results_title"));
+        self.ui.label(cx, ids!(room_filter_modal_inner.search_results_scroll.search_results.search_results_empty))
+            .set_text(cx, tr_key(app_language, "app.room_filter.empty_hint"));
+        self.ui.button(cx, ids!(room_filter_modal_inner.search_results_scroll.search_results.remote_search_options.remote_search_people_button))
+            .set_text(cx, tr_key(app_language, "app.room_filter.remote.people"));
+        self.ui.button(cx, ids!(room_filter_modal_inner.search_results_scroll.search_results.remote_search_options.remote_search_rooms_button))
+            .set_text(cx, tr_key(app_language, "app.room_filter.remote.rooms"));
+        self.ui.button(cx, ids!(room_filter_modal_inner.search_results_scroll.search_results.remote_search_options.remote_search_spaces_button))
+            .set_text(cx, tr_key(app_language, "app.room_filter.remote.spaces"));
+    }
+
     fn open_join_from_search_result(
         &mut self,
         cx: &mut Cx,
@@ -1597,13 +1615,17 @@ impl App {
         if keywords.is_empty() {
             self.set_room_filter_modal_empty_state(
                 cx,
-                "Type to search rooms and spaces...",
+                tr_key(self.app_state.app_language, "app.room_filter.empty_hint"),
                 false,
             );
         } else if self.room_filter_modal_results.is_empty() {
             self.set_room_filter_modal_empty_state(
                 cx,
-                &format!("No local results for \"{}\". Choose a type below to search server.", keywords),
+                &tr_fmt(
+                    self.app_state.app_language,
+                    "app.room_filter.no_local_results",
+                    &[("keywords", keywords)],
+                ),
                 true,
             );
         } else {
@@ -1788,6 +1810,7 @@ impl App {
 /// App-wide state that is stored persistently across multiple app runs
 /// and shared/updated across various parts of the app.
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AppState {
     /// The currently-selected room, which is highlighted (selected) in the RoomsList
     /// and considered "active" in the main rooms screen.
@@ -1808,6 +1831,8 @@ pub struct AppState {
     pub saved_dock_state_per_space: HashMap<OwnedRoomId, SavedDockState>,
     /// Whether a user is currently logged in to Robrix or not.
     pub logged_in: bool,
+    /// The preferred app language.
+    pub app_language: AppLanguage,
     /// Local configuration and UI state for bot-assisted room binding.
     pub bot_settings: BotSettingsState,
 }

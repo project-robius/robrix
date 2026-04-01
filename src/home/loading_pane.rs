@@ -1,7 +1,7 @@
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedEventId;
 
-use crate::sliding_sync::TimelineRequestSender;
+use crate::{app::AppState, i18n::{AppLanguage, tr_fmt, tr_key}, sliding_sync::TimelineRequestSender};
 
 
 script_mod! {
@@ -115,6 +115,7 @@ pub enum LoadingPaneState {
 pub struct LoadingPane {
     #[deref] view: View,
     #[rust] state: LoadingPaneState,
+    #[rust] app_language: AppLanguage,
 }
 impl Drop for LoadingPane {
     fn drop(&mut self) {
@@ -134,6 +135,12 @@ impl Drop for LoadingPane {
 
 impl Widget for LoadingPane {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         self.visible = true;
         if matches!(self.state, LoadingPaneState::None) {
             self.visible = false;
@@ -144,6 +151,12 @@ impl Widget for LoadingPane {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         if !self.visible { return; }
         self.view.handle_event(cx, event, scope);
 
@@ -196,6 +209,49 @@ impl Widget for LoadingPane {
 
 
 impl LoadingPane {
+    fn set_app_language(&mut self, cx: &mut Cx, app_language: AppLanguage) {
+        self.app_language = app_language;
+        self.sync_state_text(cx);
+        self.view.redraw(cx);
+    }
+
+    fn sync_state_text(&mut self, cx: &mut Cx) {
+        let (title, status, cancel_text) = match &self.state {
+            LoadingPaneState::BackwardsPaginateUntilEvent {
+                target_event_id,
+                events_paginated,
+                ..
+            } => {
+                let events_paginated_str = events_paginated.to_string();
+                (
+                    tr_key(self.app_language, "loading_pane.title.searching_older").to_string(),
+                    Some(tr_fmt(self.app_language, "loading_pane.status.searching_event", &[
+                        ("target_event_id", target_event_id.as_str()),
+                        ("events_paginated", events_paginated_str.as_str()),
+                    ])),
+                    tr_key(self.app_language, "loading_pane.button.cancel").to_string(),
+                )
+            }
+            LoadingPaneState::Error(error_message) => (
+                tr_key(self.app_language, "loading_pane.title.error").to_string(),
+                Some(error_message.clone()),
+                tr_key(self.app_language, "loading_pane.button.okay").to_string(),
+            ),
+            LoadingPaneState::None => (
+                tr_key(self.app_language, "loading_pane.title.default").to_string(),
+                None,
+                tr_key(self.app_language, "loading_pane.button.cancel").to_string(),
+            ),
+        };
+
+        self.set_title(cx, &title);
+        if let Some(status) = status {
+            self.set_status(cx, &status);
+        }
+        let cancel_button = self.button(cx, ids!(cancel_button));
+        cancel_button.set_text(cx, &cancel_text);
+    }
+
     /// Returns `true` if this pane is currently being shown.
     pub fn is_currently_shown(&self, _cx: &mut Cx) -> bool {
         self.visible
@@ -208,29 +264,8 @@ impl LoadingPane {
     }
 
     pub fn set_state(&mut self, cx: &mut Cx, state: LoadingPaneState) {
-        let cancel_button = self.button(cx, ids!(cancel_button));
-        match &state {
-            LoadingPaneState::BackwardsPaginateUntilEvent {
-                target_event_id,
-                events_paginated,
-                ..
-            } => {
-                self.set_title(cx, "Searching older messages...");
-                self.set_status(cx, &format!(
-                    "Looking for event {target_event_id}\n\n\
-                    Fetched {events_paginated} messages so far...",
-                ));
-                cancel_button.set_text(cx, "Cancel");
-            }
-            LoadingPaneState::Error(error_message) => {
-                self.set_title(cx, "Error loading content");
-                self.set_status(cx, error_message);
-                cancel_button.set_text(cx, "Okay");
-            }
-            LoadingPaneState::None => { }
-        }
-
         self.state = state;
+        self.sync_state_text(cx);
         self.redraw(cx);
     }
 

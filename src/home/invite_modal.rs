@@ -3,6 +3,8 @@
 use makepad_widgets::*;
 use ruma::OwnedUserId;
 
+use crate::app::AppState;
+use crate::i18n::{AppLanguage, tr_fmt, tr_key};
 use crate::home::room_screen::InviteResultAction;
 use crate::sliding_sync::{MatrixRequest, submit_async_request};
 use crate::utils::RoomNameId;
@@ -45,7 +47,7 @@ script_mod! {
                         text_style: TITLE_TEXT {font_size: 13},
                         color: #000
                     }
-                    text: "Invite to Room"
+                    text: ""
                 }
             }
 
@@ -54,7 +56,7 @@ script_mod! {
                     text_style: REGULAR_TEXT {font_size: 11},
                     color: #000
                 }
-                empty_text: "@user:example.org",
+                empty_text: "",
             }
 
             View {
@@ -70,7 +72,7 @@ script_mod! {
                     padding: 12,
                     draw_icon.svg: (ICON_FORBIDDEN)
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                    text: "Cancel"
+                    text: ""
                 }
 
                 confirm_button := RobrixPositiveIconButton {
@@ -79,7 +81,7 @@ script_mod! {
                     padding: 12,
                     draw_icon.svg: (ICON_ADD_USER)
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                    text: "Invite"
+                    text: ""
                 }
 
                 okay_button := RobrixIconButton {
@@ -89,7 +91,7 @@ script_mod! {
                     padding: 12,
                     draw_icon.svg: (ICON_CHECKMARK)
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                    text: "Okay"
+                    text: ""
                 }
             }
 
@@ -144,10 +146,20 @@ pub struct InviteModal {
     #[deref] view: View,
     #[rust] state: InviteModalState,
     #[rust] room_name_id: Option<RoomNameId>,
+    #[rust] app_language: AppLanguage,
 }
 
 impl Widget for InviteModal {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if let Some(app_state) = scope.data.get::<AppState>()
+            && self.app_language != app_state.app_language
+        {
+            self.app_language = app_state.app_language;
+            self.update_static_texts(cx);
+            if let Some(room_name_id) = self.room_name_id.clone() {
+                self.set_invite_title(cx, &room_name_id);
+            }
+        }
         self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
     }
@@ -195,7 +207,7 @@ impl WidgetMatchEvent for InviteModal {
             // Validate the user ID
             if user_id_str.is_empty() {
                 script_apply_eval!(cx, status_label, {
-                    text: "Please enter a user ID.",
+                    text: #(tr_key(self.app_language, "invite_modal.status.enter_user_id")),
                     draw_text +: {
                         color: mod.widgets.COLOR_FG_DANGER_RED,
                     },
@@ -215,7 +227,7 @@ impl WidgetMatchEvent for InviteModal {
                         });
                         self.state = InviteModalState::WaitingForInvite(user_id.to_owned());
                         script_apply_eval!(cx, status_label, {
-                            text: "Sending invite...",
+                            text: #(tr_key(self.app_language, "invite_modal.status.sending")),
                             draw_text +: {
                                 color: mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER,
                             },
@@ -227,7 +239,7 @@ impl WidgetMatchEvent for InviteModal {
                 }
                 Err(_) => {
                     script_apply_eval!(cx, status_label, {
-                        text: "Invalid User ID. Expected format: @user:server.xyz",
+                        text: #(tr_key(self.app_language, "invite_modal.status.invalid_user_id")),
                         draw_text +: {
                             color: mod.widgets.COLOR_FG_DANGER_RED,
                         },
@@ -247,7 +259,11 @@ impl WidgetMatchEvent for InviteModal {
                         if self.room_name_id.as_ref().is_some_and(|rni| rni.room_id() == room_id)
                             && invited_user_id == user_id
                     => {
-                        let status = format!("Successfully invited {user_id}!");
+                        let status = tr_fmt(
+                            self.app_language,
+                            "invite_modal.status.success_invited",
+                            &[("user_id", user_id.as_str())],
+                        );
                         script_apply_eval!(cx, status_label, {
                             text: #(status),
                             draw_text +: {
@@ -264,7 +280,12 @@ impl WidgetMatchEvent for InviteModal {
                         if self.room_name_id.as_ref().is_some_and(|rni| rni.room_id() == room_id)
                             && invited_user_id == user_id
                     => {
-                        let status = format!("Failed to send invite: {error}");
+                        let error_text = error.to_string();
+                        let status = tr_fmt(
+                            self.app_language,
+                            "invite_modal.status.send_failed",
+                            &[("error", error_text.as_str())],
+                        );
                         script_apply_eval!(cx, status_label, {
                             text: #(status),
                             draw_text +: {
@@ -290,11 +311,31 @@ impl WidgetMatchEvent for InviteModal {
 }
 
 impl InviteModal {
-    pub fn show(&mut self, cx: &mut Cx, room_name_id: RoomNameId) {
-        self.view.label(cx, ids!(title)).set_text(
-            cx,
-            &format!("Invite to {room_name_id}"),
+    fn set_invite_title(&mut self, cx: &mut Cx, room_name_id: &RoomNameId) {
+        let room_name = room_name_id.to_string();
+        let title = tr_fmt(
+            self.app_language,
+            "invite_modal.title.invite_to_room_name",
+            &[("room_name", room_name.as_str())],
         );
+        self.view.label(cx, ids!(title)).set_text(cx, &title);
+    }
+
+    fn update_static_texts(&mut self, cx: &mut Cx) {
+        self.view.button(cx, ids!(cancel_button))
+            .set_text(cx, tr_key(self.app_language, "invite_modal.button.cancel"));
+        self.view.button(cx, ids!(confirm_button))
+            .set_text(cx, tr_key(self.app_language, "invite_modal.button.invite"));
+        self.view.button(cx, ids!(okay_button))
+            .set_text(cx, tr_key(self.app_language, "invite_modal.button.okay"));
+        self.view.text_input(cx, ids!(user_id_input))
+            .set_empty_text(cx, tr_key(self.app_language, "invite_modal.input.placeholder").to_string());
+    }
+
+    pub fn show(&mut self, cx: &mut Cx, room_name_id: RoomNameId, app_language: AppLanguage) {
+        self.app_language = app_language;
+        self.set_invite_title(cx, &room_name_id);
+        self.update_static_texts(cx);
         self.state = InviteModalState::WaitingForUserInput;
         self.room_name_id = Some(room_name_id);
 
@@ -321,8 +362,8 @@ impl InviteModal {
 }
 
 impl InviteModalRef {
-    pub fn show(&self, cx: &mut Cx, room_name_id: RoomNameId) {
+    pub fn show(&self, cx: &mut Cx, room_name_id: RoomNameId, app_language: AppLanguage) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.show(cx, room_name_id);
+        inner.show(cx, room_name_id, app_language);
     }
 }

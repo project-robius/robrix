@@ -5,6 +5,7 @@ use makepad_widgets::*;
 
 use crate::{
     app::ConfirmDeleteAction,
+    i18n::{AppLanguage, tr_fmt, tr_key},
     shared::{confirmation_modal::ConfirmationModalContent, popup_list::{enqueue_popup_notification, PopupKind}},
     tsp::{submit_tsp_request, tsp_settings_screen::{WalletStatus, WalletStatusAndDefault}, TspRequest, TspWalletMetadata}
 };
@@ -32,7 +33,7 @@ script_mod! {
                     color: (MESSAGE_TEXT_COLOR),
                     text_style: theme.font_bold { font_size: 12 },
                 }
-                text: "[Wallet Name]"
+                text: ""
             }
 
             wallet_path := Label {
@@ -43,14 +44,14 @@ script_mod! {
                     color: (MESSAGE_TEXT_COLOR),
                     text_style: theme.font_regular { font_size: 11 },
                 }
-                text: "[Wallet Path/URL]"
+                text: ""
             }
 
             is_default_label_view := View {
                 visible: false,
                 width: Fit, height: Fit
                 margin: Inset{left: 20}
-                Label {
+                is_default_label := Label {
                     margin: Inset{top: 2.9}
                     width: Fit, height: Fit
                     flow: Right,
@@ -58,7 +59,7 @@ script_mod! {
                         color: (COLOR_FG_ACCEPT_GREEN),
                         text_style: theme.font_bold { font_size: 11 },
                     }
-                    text: "✅ Default"
+                    text: ""
                 }
             }
 
@@ -66,7 +67,7 @@ script_mod! {
                 visible: false,
                 width: Fit, height: Fit
                 margin: Inset{left: 20}
-                Label {
+                not_found_label := Label {
                     margin: Inset{top: 2.9}
                     width: Fit, height: Fit
                     flow: Right,
@@ -74,7 +75,7 @@ script_mod! {
                         color: (COLOR_FG_DANGER_RED),
                         text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                     }
-                    text: "Wallet not found!"
+                    text: ""
                 }
             }
 
@@ -83,7 +84,7 @@ script_mod! {
                 margin: Inset{left: 20}
                 draw_icon.svg: (ICON_CHECKMARK)
                 icon_walk: Walk{width: 16, height: 16}
-                text: "Set As Default"
+                text: ""
             }
 
             remove_wallet_button := RobrixNegativeIconButton {
@@ -91,7 +92,7 @@ script_mod! {
                 margin: Inset{left: 20}
                 draw_icon.svg: (ICON_CLOSE)
                 icon_walk: Walk{ width: 16, height: 16 }
-                text: "Remove From List"
+                text: ""
             }
 
             delete_wallet_button := RobrixNegativeIconButton {
@@ -99,7 +100,7 @@ script_mod! {
                 margin: Inset{left: 20}
                 draw_icon.svg: (ICON_TRASH)
                 icon_walk: Walk{ width: 16, height: 16 }
-                text: "Delete Wallet"
+                text: ""
             }
         }
 
@@ -115,6 +116,7 @@ pub struct WalletEntry {
     #[deref] view: View,
 
     #[rust] metadata: Option<TspWalletMetadata>,
+    #[rust] app_language: AppLanguage,
 }
 
 impl Widget for WalletEntry {
@@ -130,13 +132,11 @@ impl Widget for WalletEntry {
             if self.view.button(cx, ids!(remove_wallet_button)).clicked(actions) {
                 let metadata_clone = metadata.clone();
                 let content = ConfirmationModalContent {
-                    title_text: "Remove Wallet".into(),
-                    body_text: format!(
-                        "Are you sure you want to remove the wallet \"{}\" \
-                        from the list?\n\nThis won't delete the actual wallet file.",
-                        metadata.wallet_name
-                    ).into(),
-                    accept_button_text: Some("Remove".into()),
+                    title_text: tr_key(self.app_language, "tsp.wallet_entry.modal.remove.title").into(),
+                    body_text: tr_fmt(self.app_language, "tsp.wallet_entry.modal.remove.body", &[
+                        ("wallet_name", metadata.wallet_name.as_str()),
+                    ]).into(),
+                    accept_button_text: Some(tr_key(self.app_language, "tsp.wallet_entry.modal.remove.accept").into()),
                     on_accept_clicked: Some(Box::new(move |_cx| {
                         submit_tsp_request(TspRequest::RemoveWallet(metadata_clone));
                     })),
@@ -148,7 +148,7 @@ impl Widget for WalletEntry {
             if self.view.button(cx, ids!(delete_wallet_button)).clicked(actions) {
                 // TODO: Implement the delete wallet feature.
                 enqueue_popup_notification(
-                    "Delete wallet feature is not yet implemented.",
+                    tr_key(self.app_language, "tsp.wallet_entry.popup.delete_not_implemented"),
                     PopupKind::Warning,
                     None,
                 );
@@ -164,6 +164,7 @@ impl Widget for WalletEntry {
         if self.metadata.as_ref().is_none_or(|m| m != metadata) {
             self.metadata = Some(metadata.clone());
         }
+        self.app_language = sd.app_language;
 
         self.label(cx, ids!(wallet_name)).set_text(
             cx,
@@ -172,6 +173,26 @@ impl Widget for WalletEntry {
         self.label(cx, ids!(wallet_path)).set_text(
             cx,
             metadata.url.as_url_unencoded()
+        );
+        self.label(cx, ids!(is_default_label_view.is_default_label)).set_text(
+            cx,
+            tr_key(self.app_language, "tsp.wallet_entry.default_label"),
+        );
+        self.label(cx, ids!(not_found_label_view.not_found_label)).set_text(
+            cx,
+            tr_key(self.app_language, "tsp.wallet_entry.not_found"),
+        );
+        self.button(cx, ids!(set_default_wallet_button)).set_text(
+            cx,
+            tr_key(self.app_language, "tsp.wallet_entry.button.set_default"),
+        );
+        self.button(cx, ids!(remove_wallet_button)).set_text(
+            cx,
+            tr_key(self.app_language, "tsp.wallet_entry.button.remove"),
+        );
+        self.button(cx, ids!(delete_wallet_button)).set_text(
+            cx,
+            tr_key(self.app_language, "tsp.wallet_entry.button.delete"),
         );
         // There is a weird makepad bug where if we re-style one instance of the
         // `set_default_wallet_button` in one WalletEntry, all other instances of that button

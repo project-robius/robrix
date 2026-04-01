@@ -6,8 +6,9 @@ use matrix_sdk::RoomState;
 use ruma::{IdParseError, MatrixToUri, MatrixUri, OwnedRoomId, OwnedRoomOrAliasId, OwnedServerName, OwnedUserId, matrix_uri::MatrixId, room::{JoinRuleSummary, RoomType}};
 
 use crate::{
-    app::AppStateAction,
+    app::{AppState, AppStateAction},
     home::{invite_screen::JoinRoomResultAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef},
+    i18n::{AppLanguage, tr_fmt, tr_key},
     profile::user_profile::UserProfile,
     room::{BasicRoomDetails, FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction},
     shared::{
@@ -158,7 +159,7 @@ script_mod! {
         
         LineH { padding: 10, margin: Inset{top: 10, right: 2} }
 
-        SubsectionLabel {
+        create_new_room_label := SubsectionLabel {
             margin: Inset{top: 8}
             text: "Create a new room:"
         }
@@ -167,7 +168,7 @@ script_mod! {
 
         LineH { padding: 10, margin: Inset{right: 2} }
 
-        SubsectionLabel {
+        add_friend_label := SubsectionLabel {
             margin: Inset{top: 4}
             text: "Add a friend:"
         }
@@ -210,7 +211,7 @@ script_mod! {
 
         LineH { padding: 10, margin: Inset{right: 2} }
 
-        SubsectionLabel {
+        join_existing_label := SubsectionLabel {
             text: "Join an existing room or space:"
         }
 
@@ -513,6 +514,7 @@ pub struct AddRoomScreen {
     /// The function to perform when the user clicks the `join_room_button`.
     #[rust(JoinButtonFunction::None)] join_function: JoinButtonFunction,
     #[rust(false)] adding_friend: bool,
+    #[rust] app_language: AppLanguage,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -615,10 +617,17 @@ pub struct CreateRoomForm {
     #[rust(Vec::new())] creatable_spaces: Vec<RoomNameId>,
     #[rust(None)] preferred_parent_space_id: Option<OwnedRoomId>,
     #[rust(None)] fixed_parent_space_id: Option<OwnedRoomId>,
+    #[rust] app_language: AppLanguage,
 }
 
 impl Widget for CreateRoomForm {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
     }
@@ -641,6 +650,7 @@ impl Widget for CreateRoomForm {
             &create_room_space_hint,
             &self.creatable_spaces,
             selected_space_id.as_ref(),
+            self.app_language,
         );
 
         self.sync_mode_views(cx);
@@ -671,6 +681,7 @@ impl WidgetMatchEvent for CreateRoomForm {
                 &create_room_space_hint,
                 &self.creatable_spaces,
                 self.preferred_parent_space_id.as_ref(),
+                self.app_language,
             );
             self.view.redraw(cx);
         }
@@ -695,11 +706,14 @@ impl WidgetMatchEvent for CreateRoomForm {
                             refresh_space_children(cx, space_id);
                         }
 
-                        let mut popup_message = format!("Successfully created room \"{}\".", room_name_id);
+                        let room_name_text = room_name_id.to_string();
+                        let mut popup_message = tr_fmt(self.app_language, "add_room.popup.created_room_success", &[
+                            ("room_name", room_name_text.as_str()),
+                        ]);
                         let popup_kind = if let Some(link_error) = space_link_error {
-                            popup_message.push_str(&format!(
-                                "\n\nThe room was created, but it could not be linked into the selected space.\nError: {link_error}"
-                            ));
+                            popup_message.push_str(&tr_fmt(self.app_language, "add_room.popup.created_room_space_link_suffix", &[
+                                ("error", link_error.as_str()),
+                            ]));
                             PopupKind::Warning
                         } else {
                             PopupKind::Success
@@ -720,9 +734,9 @@ impl WidgetMatchEvent for CreateRoomForm {
                         } else {
                             self.pending_created_room = Some(room_name_id.clone());
                             let feedback_text = match (parent_space_id.as_ref(), space_link_error.as_ref()) {
-                                (Some(_), None) => "Room created. Syncing it into the space...",
-                                (Some(_), Some(_)) => "Room created, but linking it into the space failed. Opening the room...",
-                                (None, _) => "Room created. Opening the room...",
+                                (Some(_), None) => tr_key(self.app_language, "add_room.feedback.room_created_syncing"),
+                                (Some(_), Some(_)) => tr_key(self.app_language, "add_room.feedback.room_created_link_failed_opening"),
+                                (None, _) => tr_key(self.app_language, "add_room.feedback.room_created_opening"),
                             };
                             self.set_feedback(cx, feedback_text, true, false);
                         }
@@ -736,12 +750,23 @@ impl WidgetMatchEvent for CreateRoomForm {
                         create_room_button.set_enabled(cx, !create_room_name_input.text().trim().is_empty());
                         self.set_feedback(
                             cx,
-                            &format!("Failed to create room: {error}"),
+                            &{
+                                let error_text = error.to_string();
+                                tr_fmt(self.app_language, "add_room.feedback.create_room_failed", &[
+                                    ("error", error_text.as_str()),
+                                ])
+                            },
                             false,
                             true,
                         );
                         enqueue_popup_notification(
-                            format!("Failed to create room \"{room_name}\".\n\nError: {error}"),
+                            {
+                                let error_text = error.to_string();
+                                tr_fmt(self.app_language, "add_room.popup.create_room_failed", &[
+                                    ("room_name", room_name.as_str()),
+                                    ("error", error_text.as_str()),
+                                ])
+                            },
                             PopupKind::Error,
                             None,
                         );
@@ -759,6 +784,7 @@ impl WidgetMatchEvent for CreateRoomForm {
                     &create_room_space_hint,
                     &self.creatable_spaces,
                     self.preferred_parent_space_id.as_ref(),
+                    self.app_language,
                 );
                 self.sync_mode_views(cx);
                 self.view.redraw(cx);
@@ -793,6 +819,15 @@ impl CreateRoomForm {
 
     fn is_busy(&self) -> bool {
         self.creating_room || self.pending_created_room.is_some()
+    }
+
+    fn set_app_language(&mut self, cx: &mut Cx, app_language: AppLanguage) {
+        self.app_language = app_language;
+        self.view.text_input(cx, ids!(create_room_name_input))
+            .set_empty_text(cx, tr_key(self.app_language, "add_room.create_room.input.placeholder").to_string());
+        self.view.button(cx, ids!(create_room_button))
+            .set_text(cx, tr_key(self.app_language, "add_room.create_room.button.create"));
+        self.sync_mode_views(cx);
     }
 
     fn set_feedback(&mut self, cx: &mut Cx, text: &str, show_spinner: bool, is_error: bool) {
@@ -831,7 +866,7 @@ impl CreateRoomForm {
         );
 
         self.creating_room = true;
-        self.set_feedback(cx, "Creating room...", true, false);
+        self.set_feedback(cx, tr_key(self.app_language, "add_room.feedback.creating_room"), true, false);
         submit_async_request(MatrixRequest::CreateRoom {
             room_name: room_name.to_owned(),
             parent_space_id,
@@ -866,7 +901,7 @@ impl CreateRoomForm {
         }
         self.clear_feedback(cx);
         create_room_button.set_enabled(cx, !create_room_name_input.text().trim().is_empty());
-        create_room_button.set_text(cx, "Create room");
+        create_room_button.set_text(cx, tr_key(self.app_language, "add_room.create_room.button.create"));
         create_room_button.reset_hover(cx);
 
         sync_space_dropdown(
@@ -875,6 +910,7 @@ impl CreateRoomForm {
             &create_room_space_hint,
             &self.creatable_spaces,
             self.preferred_parent_space_id.as_ref(),
+            self.app_language,
         );
         self.sync_mode_views(cx);
 
@@ -900,15 +936,20 @@ impl CreateRoomForm {
         self.view.view(cx, ids!(create_room_button_row)).set_visible(cx, !show_fixed_parent);
 
         let help_text = if show_fixed_parent {
-            "Enter a room name. It will be created directly in this space."
+            tr_key(self.app_language, "add_room.create_room.help.fixed_parent")
         } else {
-            "Create a standalone room, or attach it under a space where you can create child rooms."
+            tr_key(self.app_language, "add_room.create_room.help.default")
         };
         self.view.label(cx, ids!(create_room_help)).set_text(cx, help_text);
     }
 }
 
 impl CreateRoomFormRef {
+    pub fn set_app_language(&self, cx: &mut Cx, app_language: AppLanguage) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_app_language(cx, app_language);
+    }
+
     pub fn can_submit(&self, cx: &mut Cx) -> bool {
         self.borrow().is_some_and(|inner| inner.can_submit(cx))
     }
@@ -941,21 +982,38 @@ impl CreateRoomFormRef {
 #[derive(Script, ScriptHook, Widget)]
 pub struct CreateRoomModal {
     #[deref] view: View,
+    #[rust] app_language: AppLanguage,
 }
 
 impl Widget for CreateRoomModal {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         let create_room_form = self.view.create_room_form(cx, ids!(create_room_form));
         let is_busy = create_room_form.is_busy();
         let create_button = self.view.button(cx, ids!(create_button));
         let can_submit = create_room_form.can_submit(cx);
         create_button.set_enabled(cx, can_submit);
-        create_button.set_text(cx, if is_busy { "Syncing..." } else { "Create room" });
+        create_button.set_text(cx, if is_busy {
+            tr_key(self.app_language, "add_room.create_room.button.syncing")
+        } else {
+            tr_key(self.app_language, "add_room.create_room.button.create")
+        });
         self.view.button(cx, ids!(cancel_button)).set_enabled(cx, !is_busy);
         self.view.draw_walk(cx, scope, walk)
     }
@@ -981,14 +1039,32 @@ impl WidgetMatchEvent for CreateRoomModal {
 }
 
 impl CreateRoomModal {
+    fn set_app_language(&mut self, cx: &mut Cx, app_language: AppLanguage) {
+        self.app_language = app_language;
+        self.view.label(cx, ids!(title))
+            .set_text(cx, tr_key(self.app_language, "add_room.create_room.modal.title"));
+        self.view.label(cx, ids!(subtitle))
+            .set_text(cx, tr_key(self.app_language, "add_room.create_room.modal.subtitle"));
+        self.view.button(cx, ids!(create_button))
+            .set_text(cx, tr_key(self.app_language, "add_room.create_room.button.create"));
+        self.view.button(cx, ids!(cancel_button))
+            .set_text(cx, tr_key(self.app_language, "add_room.button.cancel"));
+        self.view.create_room_form(cx, ids!(create_room_form))
+            .set_app_language(cx, app_language);
+        self.view.redraw(cx);
+    }
+
     pub fn show(&mut self, cx: &mut Cx, preferred_parent_space_id: Option<OwnedRoomId>) {
+        self.view.create_room_form(cx, ids!(create_room_form))
+            .set_app_language(cx, self.app_language);
         self.view.create_room_form(cx, ids!(create_room_form)).prepare(
             cx,
             preferred_parent_space_id,
             CreateRoomContext::SpaceLobbyModal,
             true,
         );
-        self.view.button(cx, ids!(create_button)).set_text(cx, "Create room");
+        self.view.button(cx, ids!(create_button))
+            .set_text(cx, tr_key(self.app_language, "add_room.create_room.button.create"));
         self.view.button(cx, ids!(create_button)).reset_hover(cx);
         self.view.button(cx, ids!(cancel_button)).reset_hover(cx);
         self.view.redraw(cx);
@@ -1002,8 +1078,45 @@ impl CreateRoomModalRef {
     }
 }
 
+impl AddRoomScreen {
+    fn set_app_language(&mut self, cx: &mut Cx, app_language: AppLanguage) {
+        self.app_language = app_language;
+        self.view.label(cx, ids!(title))
+            .set_text(cx, tr_key(self.app_language, "add_room.title"));
+        self.view.label(cx, ids!(create_new_room_label))
+            .set_text(cx, tr_key(self.app_language, "add_room.section.create_new_room"));
+        self.view.label(cx, ids!(add_friend_label))
+            .set_text(cx, tr_key(self.app_language, "add_room.section.add_friend"));
+        self.view.label(cx, ids!(join_existing_label))
+            .set_text(cx, tr_key(self.app_language, "add_room.section.join_existing"));
+        self.view.label(cx, ids!(add_friend_help))
+            .set_text(cx, tr_key(self.app_language, "add_room.add_friend.help"));
+        self.view.html(cx, ids!(help_info))
+            .set_text(cx, tr_key(self.app_language, "add_room.join.help_html"));
+        self.view.text_input(cx, ids!(friend_user_id_input))
+            .set_empty_text(cx, tr_key(self.app_language, "add_room.add_friend.input.placeholder").to_string());
+        self.view.text_input(cx, ids!(room_alias_id_input))
+            .set_empty_text(cx, tr_key(self.app_language, "add_room.join.input.placeholder").to_string());
+        self.view.button(cx, ids!(add_friend_button))
+            .set_text(cx, tr_key(self.app_language, "add_room.add_friend.button"));
+        self.view.button(cx, ids!(search_for_room_button))
+            .set_text(cx, tr_key(self.app_language, "add_room.join.button.go"));
+        self.view.button(cx, ids!(fetched_room_summary.buttons_view.cancel_button))
+            .set_text(cx, tr_key(self.app_language, "add_room.button.cancel"));
+        self.view.create_room_form(cx, ids!(create_room_form))
+            .set_app_language(cx, app_language);
+        self.view.redraw(cx);
+    }
+}
+
 impl Widget for AddRoomScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         self.view.handle_event(cx, event, scope);
         
         if let Event::Actions(actions) = event {
@@ -1032,7 +1145,7 @@ impl Widget for AddRoomScreen {
                         Ok(user_id) => {
                             if current_user_id().as_ref().is_some_and(|current| current == &user_id) {
                                 enqueue_popup_notification(
-                                    "You cannot add yourself as a friend.".to_string(),
+                                    tr_key(self.app_language, "add_room.popup.cannot_add_self").to_string(),
                                     PopupKind::Warning,
                                     Some(4.0),
                                 );
@@ -1050,8 +1163,11 @@ impl Widget for AddRoomScreen {
                             }
                         }
                         Err(e) => {
+                            let error_text = e.to_string();
                             enqueue_popup_notification(
-                                format!("Invalid Matrix user ID.\n\nError: {e}"),
+                                tr_fmt(self.app_language, "add_room.popup.invalid_user_id", &[
+                                    ("error", error_text.as_str()),
+                                ]),
                                 PopupKind::Error,
                                 None,
                             );
@@ -1112,7 +1228,10 @@ impl Widget for AddRoomScreen {
                         submit_async_request(MatrixRequest::GetRoomPreview { room_or_alias_id, via });
                     }
                     Err(e) => {
-                        let err_str = format!("Could not parse the text as a valid room address.\nError: {e}.");
+                        let error_text = e.to_string();
+                        let err_str = tr_fmt(self.app_language, "add_room.popup.parse_error", &[
+                            ("error", error_text.as_str()),
+                        ]);
                         enqueue_popup_notification(
                             err_str.clone(),
                             PopupKind::Error,
@@ -1145,7 +1264,10 @@ impl Widget for AddRoomScreen {
                             break;
                         }
                         Some(RoomPreviewAction::Fetched(Err(e))) => {
-                            let err_str = format!("Failed to fetch room info.\n\nError: {e}.");
+                            let error_text = e.to_string();
+                            let err_str = tr_fmt(self.app_language, "add_room.popup.fetch_error", &[
+                                ("error", error_text.as_str()),
+                            ]);
                             enqueue_popup_notification(
                                 err_str.clone(),
                                 PopupKind::Error,
@@ -1170,11 +1292,15 @@ impl Widget for AddRoomScreen {
                     match action.downcast_ref() {
                         Some(KnockResultAction::Knocked { room, .. }) if room.room_id() == frp.room_name_id.room_id() => {
                             let room_type = match room.room_type() {
-                                Some(RoomType::Space) => "space",
-                                _ => "room",
+                                Some(RoomType::Space) => tr_key(self.app_language, "add_room.word.space_lc"),
+                                _ => tr_key(self.app_language, "add_room.word.room_lc"),
                             };
+                            let room_name_text = frp.room_name_id.to_string();
                             enqueue_popup_notification(
-                                format!("Successfully knocked on {room_type} {}.", frp.room_name_id),
+                                tr_fmt(self.app_language, "add_room.popup.knock_success", &[
+                                    ("room_type", room_type),
+                                    ("room_name", room_name_text.as_str()),
+                                ]),
                                 PopupKind::Success,
                                 Some(4.0),
                             );
@@ -1182,8 +1308,11 @@ impl Widget for AddRoomScreen {
                             break;
                         }
                         Some(KnockResultAction::Failed { error, room_or_alias_id: roai }) if room_or_alias_id == roai => {
+                            let error_text = error.to_string();
                             enqueue_popup_notification(
-                                format!("Failed to knock on room.\n\nError: {error}."),
+                                tr_fmt(self.app_language, "add_room.popup.knock_failed", &[
+                                    ("error", error_text.as_str()),
+                                ]),
                                 PopupKind::Error,
                                 None,
                             );
@@ -1195,11 +1324,15 @@ impl Widget for AddRoomScreen {
                     match action.downcast_ref() {
                         Some(JoinRoomResultAction::Joined { room_id }) if room_id == frp.room_name_id.room_id() => {
                             let room_type = match &frp.room_type {
-                                Some(RoomType::Space) => "space",
-                                _ => "room",
+                                Some(RoomType::Space) => tr_key(self.app_language, "add_room.word.space_lc"),
+                                _ => tr_key(self.app_language, "add_room.word.room_lc"),
                             };
+                            let room_name_text = frp.room_name_id.to_string();
                             enqueue_popup_notification(
-                                format!("Successfully joined {room_type} {}.", frp.room_name_id),
+                                tr_fmt(self.app_language, "add_room.popup.join_success", &[
+                                    ("room_type", room_type),
+                                    ("room_name", room_name_text.as_str()),
+                                ]),
                                 PopupKind::Success,
                                 Some(4.0),
                             );
@@ -1207,8 +1340,11 @@ impl Widget for AddRoomScreen {
                             break;
                         }
                         Some(JoinRoomResultAction::Failed { room_id, error }) if room_id == frp.room_name_id.room_id() => {
+                            let error_text = error.to_string();
                             enqueue_popup_notification(
-                                format!("Failed to join room.\n\nError: {error}."),
+                                tr_fmt(self.app_language, "add_room.popup.join_failed", &[
+                                    ("error", error_text.as_str()),
+                                ]),
                                 PopupKind::Error,
                                 None,
                             );
@@ -1261,6 +1397,13 @@ impl Widget for AddRoomScreen {
 
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
+
         let add_friend_text_is_empty = self.view
             .text_input(cx, ids!(friend_user_id_input))
             .text()
@@ -1289,7 +1432,9 @@ impl Widget for AddRoomScreen {
                 loading_room_view.set_visible(cx, true);
                 loading_room_view.label(cx, ids!(loading_text)).set_text(
                     cx,
-                    &format!("Fetching {room_or_alias_id}..."),
+                    &tr_fmt(self.app_language, "add_room.loading.fetching", &[
+                        ("target", room_or_alias_id.as_str()),
+                    ]),
                 );
                 fetched_room_summary.set_visible(cx, false); 
                 error_view.set_visible(cx, false);
@@ -1326,81 +1471,113 @@ impl Widget for AddRoomScreen {
                 }
 
                 let (room_or_space_lc, room_or_space_uc) = match &frp.room_type {
-                    Some(RoomType::Space) => ("space", "Space"),
-                    _ => ("room", "Room"),
+                    Some(RoomType::Space) => (
+                        tr_key(self.app_language, "add_room.word.space_lc"),
+                        tr_key(self.app_language, "add_room.word.space_uc"),
+                    ),
+                    _ => (
+                        tr_key(self.app_language, "add_room.word.room_lc"),
+                        tr_key(self.app_language, "add_room.word.room_uc"),
+                    ),
                 };
                 let room_name = fetched_room_summary.label(cx, ids!(room_name));
                 match frp.room_name_id.name_for_avatar() {
                     Some(n) => room_name.set_text(cx, n),
-                    _ => room_name.set_text(cx, &format!("Unnamed {room_or_space_uc}, ID: {}", frp.room_name_id.room_id())),
+                    _ => room_name.set_text(cx, &tr_fmt(self.app_language, "add_room.fetched.room_name.unnamed", &[
+                        ("room_or_space_uc", room_or_space_uc),
+                        ("room_id", frp.room_name_id.room_id().as_str()),
+                    ])),
                 }
 
                 fetched_room_summary.label(cx, ids!(subsection_alias_id)).set_text(
                     cx,
-                    &format!("Main {room_or_space_uc} Alias and ID"),
+                    &tr_fmt(self.app_language, "add_room.fetched.main_alias_and_id", &[
+                        ("room_or_space_uc", room_or_space_uc),
+                    ]),
                 );
                 fetched_room_summary.label(cx, ids!(room_alias)).set_text(
                     cx,
-                    &format!("Alias: {}", frp.canonical_alias.as_ref().map_or("not set", |a| a.as_str())),
+                    &tr_fmt(self.app_language, "add_room.fetched.alias", &[
+                        ("alias", frp.canonical_alias.as_ref().map_or(
+                            tr_key(self.app_language, "add_room.fetched.alias.not_set"),
+                            |a| a.as_str()
+                        )),
+                    ]),
                 );
                 fetched_room_summary.label(cx, ids!(room_id)).set_text(
                     cx,
-                    &format!("ID: {}", frp.room_name_id.room_id().as_str()),
+                    &tr_fmt(self.app_language, "add_room.fetched.id", &[
+                        ("room_id", frp.room_name_id.room_id().as_str()),
+                    ]),
                 );
                 fetched_room_summary.label(cx, ids!(subsection_topic)).set_text(
                     cx,
-                    &format!("{room_or_space_uc} Topic"),
+                    &tr_fmt(self.app_language, "add_room.fetched.topic_title", &[
+                        ("room_or_space_uc", room_or_space_uc),
+                    ]),
                 );
                 fetched_room_summary.html(cx, ids!(room_topic)).set_text(
                     cx,
-                    frp.topic.as_deref().unwrap_or("<i>No topic set</i>"),
+                    frp.topic.as_deref().unwrap_or(tr_key(self.app_language, "add_room.fetched.topic.not_set_html")),
                 );
 
                 let room_summary = fetched_room_summary.label(cx, ids!(room_summary));
                 let join_room_button = fetched_room_summary.button(cx, ids!(join_room_button));
                 let join_function = match (&frp.state, &frp.join_rule) {
                     (Some(RoomState::Joined), _) => {
-                        room_summary.set_text(cx, &format!("You have already joined this {room_or_space_lc}."));
-                        join_room_button.set_text(cx, &format!("Go to {room_or_space_lc}"));
+                        room_summary.set_text(cx, &tr_fmt(self.app_language, "add_room.summary.already_joined", &[
+                            ("room_or_space_lc", room_or_space_lc),
+                        ]));
+                        join_room_button.set_text(cx, &tr_fmt(self.app_language, "add_room.button.go_to", &[
+                            ("room_or_space_lc", room_or_space_lc),
+                        ]));
                         JoinButtonFunction::NavigateOrJoin
                     }
                     (Some(RoomState::Banned), _) => {
-                        room_summary.set_text(cx, &format!("You have been banned from this {room_or_space_lc}."));
-                        join_room_button.set_text(cx, "Cannot join until un-banned");
+                        room_summary.set_text(cx, &tr_fmt(self.app_language, "add_room.summary.banned", &[
+                            ("room_or_space_lc", room_or_space_lc),
+                        ]));
+                        join_room_button.set_text(cx, tr_key(self.app_language, "add_room.button.cannot_join_until_unbanned"));
                         JoinButtonFunction::None
                     }
                     (Some(RoomState::Invited), _) => {
-                        room_summary.set_text(cx, &format!("You have already been invited to this {room_or_space_lc}."));
-                        join_room_button.set_text(cx, "Go to invitation");
+                        room_summary.set_text(cx, &tr_fmt(self.app_language, "add_room.summary.already_invited", &[
+                            ("room_or_space_lc", room_or_space_lc),
+                        ]));
+                        join_room_button.set_text(cx, tr_key(self.app_language, "add_room.button.go_to_invitation"));
                         JoinButtonFunction::NavigateOrJoin
                     }
                     (Some(RoomState::Knocked), _) => {
-                        room_summary.set_text(cx, &format!("You have already knocked on this {room_or_space_lc}."));
-                        join_room_button.set_text(cx, "Knock again (be nice!)");
+                        room_summary.set_text(cx, &tr_fmt(self.app_language, "add_room.summary.already_knocked", &[
+                            ("room_or_space_lc", room_or_space_lc),
+                        ]));
+                        join_room_button.set_text(cx, tr_key(self.app_language, "add_room.button.knock_again"));
                         JoinButtonFunction::Knock
                     }
                     (Some(RoomState::Left), join_rule) => {
-                        room_summary.set_text(cx, &format!("You previously left this {room_or_space_lc}."));
+                        room_summary.set_text(cx, &tr_fmt(self.app_language, "add_room.summary.previously_left", &[
+                            ("room_or_space_lc", room_or_space_lc),
+                        ]));
                         let (join_room_text, join_function) = match join_rule {
                             Some(JoinRuleSummary::Public) => (
-                                format!("Re-join this {room_or_space_lc}"),
+                                tr_fmt(self.app_language, "add_room.button.rejoin", &[("room_or_space_lc", room_or_space_lc)]),
                                 JoinButtonFunction::NavigateOrJoin,
                             ),
                             Some(JoinRuleSummary::Invite) => (
-                                format!("Re-joining {room_or_space_lc} requires an invite"),
+                                tr_fmt(self.app_language, "add_room.button.rejoin_requires_invite", &[("room_or_space_lc", room_or_space_lc)]),
                                 JoinButtonFunction::None,
                             ),
                             Some(JoinRuleSummary::Knock | JoinRuleSummary::KnockRestricted(_)) => (
-                                format!("Knock to re-join {room_or_space_lc}"),
+                                tr_fmt(self.app_language, "add_room.button.knock_to_rejoin", &[("room_or_space_lc", room_or_space_lc)]),
                                 JoinButtonFunction::Knock,
                             ),
                             // TODO: handle this after we update matrix-sdk to the new `JoinRule` enum.
                             Some(JoinRuleSummary::Restricted(_)) => (
-                                format!("Re-joining {room_or_space_lc} requires an invite or other room membership"),
+                                tr_fmt(self.app_language, "add_room.button.rejoin_requires_other_membership", &[("room_or_space_lc", room_or_space_lc)]),
                                 JoinButtonFunction::None,
                             ),
                             _ => (
-                                format!("Not allowed to re-join this {room_or_space_lc}"),
+                                tr_fmt(self.app_language, "add_room.button.not_allowed_to_rejoin", &[("room_or_space_lc", room_or_space_lc)]),
                                 JoinButtonFunction::None,
                             ),
                         };
@@ -1409,36 +1586,43 @@ impl Widget for AddRoomScreen {
                     }
                     // This room is not yet known to the user.
                     (None, join_rule) => {
-                        let direct = if frp.is_direct == Some(true) { "direct" } else { "regular" }; 
-                        room_summary.set_text(cx, &format!(
-                            "This is a {direct} {room_or_space_lc} with {} {}.",
-                            frp.num_joined_members,
-                            match frp.num_joined_members {
-                                1 => "member",
-                                _ => "members",
-                            },
-                        ));
+                        let directness = if frp.is_direct == Some(true) {
+                            tr_key(self.app_language, "add_room.word.direct")
+                        } else {
+                            tr_key(self.app_language, "add_room.word.regular")
+                        };
+                        let num_members = frp.num_joined_members.to_string();
+                        let member_word = match frp.num_joined_members {
+                            1 => tr_key(self.app_language, "add_room.word.member"),
+                            _ => tr_key(self.app_language, "add_room.word.members"),
+                        };
+                        room_summary.set_text(cx, &tr_fmt(self.app_language, "add_room.summary.member_count", &[
+                            ("directness", directness),
+                            ("room_or_space_lc", room_or_space_lc),
+                            ("num_members", num_members.as_str()),
+                            ("member_word", member_word),
+                        ]));
 
                         let (join_room_text, join_function) = match join_rule {
                             Some(JoinRuleSummary::Public) => (
-                                format!("Join this {room_or_space_lc}"),
+                                tr_fmt(self.app_language, "add_room.button.join", &[("room_or_space_lc", room_or_space_lc)]),
                                 JoinButtonFunction::NavigateOrJoin,
                             ),
                             Some(JoinRuleSummary::Invite) => (
-                                format!("Joining {room_or_space_lc} requires an invite"),
+                                tr_fmt(self.app_language, "add_room.button.join_requires_invite", &[("room_or_space_lc", room_or_space_lc)]),
                                 JoinButtonFunction::None,
                             ),
                             Some(JoinRuleSummary::Knock | JoinRuleSummary::KnockRestricted(_)) => (
-                                format!("Knock to join {room_or_space_lc}"),
+                                tr_fmt(self.app_language, "add_room.button.knock_to_join", &[("room_or_space_lc", room_or_space_lc)]),
                                 JoinButtonFunction::Knock,
                             ),
                             // TODO: handle this after we update matrix-sdk to the new `JoinRule` enum.
                             Some(JoinRuleSummary::Restricted(_)) => (
-                                format!("Joining {room_or_space_lc} requires an invite or other room membership"),
+                                tr_fmt(self.app_language, "add_room.button.join_requires_other_membership", &[("room_or_space_lc", room_or_space_lc)]),
                                 JoinButtonFunction::None,
                             ),
                             _ => ( 
-                                format!("Not allowed to join this {room_or_space_lc}"),
+                                tr_fmt(self.app_language, "add_room.button.not_allowed_to_join", &[("room_or_space_lc", room_or_space_lc)]),
                                 JoinButtonFunction::None,
                             ),
                         };
@@ -1453,20 +1637,38 @@ impl Widget for AddRoomScreen {
                         self.join_function = join_function;
                     }
                     AddRoomState::Knocked { .. } => {
-                        room_summary.set_text(cx, &format!("You have knocked on this {room_or_space_lc} and must now wait for someone to invite you in."));
-                        join_room_button.set_text(cx, "Successfully knocked!");
+                        room_summary.set_text(cx, &tr_fmt(self.app_language, "add_room.summary.knocked_waiting", &[
+                            ("room_or_space_lc", room_or_space_lc),
+                        ]));
+                        join_room_button.set_text(cx, tr_key(self.app_language, "add_room.button.successfully_knocked"));
                         join_room_button.set_enabled(cx, false);
                     }
                     AddRoomState::Joined { .. } => {
-                        room_summary.set_text(cx, &format!("You have joined this {room_or_space_lc}. It is now being loaded from the homeserver; please wait..."));
-                        join_room_button.set_text(cx, "Successfully joined!");
+                        room_summary.set_text(cx, &tr_fmt(self.app_language, "add_room.summary.joined_loading", &[
+                            ("room_or_space_lc", room_or_space_lc),
+                        ]));
+                        join_room_button.set_text(cx, tr_key(self.app_language, "add_room.button.successfully_joined"));
                         join_room_button.set_enabled(cx, false);
                     }
                     AddRoomState::Loaded { is_invite, .. } => {
-                        let verb = if *is_invite { "been invited to" } else { "fully joined" };
-                        room_summary.set_text(cx, &format!("You have {verb} this {room_or_space_lc}."));
-                        let adj = if *is_invite { "invited" } else { "joined" };
-                        join_room_button.set_text(cx, &format!("Go to {adj} {room_or_space_lc}"));
+                        let verb = if *is_invite {
+                            tr_key(self.app_language, "add_room.word.verb.invited")
+                        } else {
+                            tr_key(self.app_language, "add_room.word.verb.joined")
+                        };
+                        room_summary.set_text(cx, &tr_fmt(self.app_language, "add_room.summary.loaded", &[
+                            ("verb", verb),
+                            ("room_or_space_lc", room_or_space_lc),
+                        ]));
+                        let adj = if *is_invite {
+                            tr_key(self.app_language, "add_room.word.adj.invited")
+                        } else {
+                            tr_key(self.app_language, "add_room.word.adj.joined")
+                        };
+                        join_room_button.set_text(cx, &tr_fmt(self.app_language, "add_room.button.go_to_loaded", &[
+                            ("adj", adj),
+                            ("room_or_space_lc", room_or_space_lc),
+                        ]));
                         join_room_button.set_enabled(cx, true);
                         self.join_function = JoinButtonFunction::NavigateOrJoin;
                     }
@@ -1508,9 +1710,9 @@ fn refresh_space_children(cx: &mut Cx, space_id: &OwnedRoomId) {
     }
 }
 
-fn creatable_space_labels(creatable_spaces: &[RoomNameId]) -> Vec<String> {
+fn creatable_space_labels(creatable_spaces: &[RoomNameId], app_language: AppLanguage) -> Vec<String> {
     let mut labels = Vec::with_capacity(creatable_spaces.len() + 1);
-    labels.push("Create without a space".to_string());
+    labels.push(tr_key(app_language, "add_room.create_room.dropdown.no_space").to_string());
     labels.extend(creatable_spaces.iter().map(ToString::to_string));
     labels
 }
@@ -1541,18 +1743,21 @@ fn update_space_hint(
     hint_label: &LabelRef,
     creatable_spaces: &[RoomNameId],
     selected_space_id: Option<&OwnedRoomId>,
+    app_language: AppLanguage,
 ) {
     if creatable_spaces.is_empty() {
-        hint_label.set_text(cx, "No joined space currently allows you to create child rooms.");
+        hint_label.set_text(cx, tr_key(app_language, "add_room.create_room.dropdown.hint.no_creatable_spaces"));
     } else if let Some(space_id) = selected_space_id {
         let selected_name = creatable_spaces
             .iter()
             .find(|space| space.room_id() == space_id)
             .map(ToString::to_string)
             .unwrap_or_else(|| space_id.to_string());
-        hint_label.set_text(cx, &format!("New room will be added under: {selected_name}"));
+        hint_label.set_text(cx, &tr_fmt(app_language, "add_room.create_room.dropdown.hint.new_room_under", &[
+            ("selected_name", selected_name.as_str()),
+        ]));
     } else {
-        hint_label.set_text(cx, "Create a standalone room, or choose a space from the dropdown.");
+        hint_label.set_text(cx, tr_key(app_language, "add_room.create_room.dropdown.hint.default"));
     }
 }
 
@@ -1562,11 +1767,12 @@ fn sync_space_dropdown(
     hint_label: &LabelRef,
     creatable_spaces: &[RoomNameId],
     preferred_parent_space_id: Option<&OwnedRoomId>,
+    app_language: AppLanguage,
 ) {
-    dropdown.set_labels(cx, creatable_space_labels(creatable_spaces));
+    dropdown.set_labels(cx, creatable_space_labels(creatable_spaces, app_language));
     apply_space_dropdown_selection(cx, dropdown, creatable_spaces, preferred_parent_space_id);
     let selected_space_id = selected_creatable_space(creatable_spaces, dropdown.selected_item());
-    update_space_hint(cx, hint_label, creatable_spaces, selected_space_id.as_ref());
+    update_space_hint(cx, hint_label, creatable_spaces, selected_space_id.as_ref(), app_language);
 }
 
 

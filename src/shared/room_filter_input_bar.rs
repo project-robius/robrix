@@ -5,6 +5,7 @@
 //! reused consistently across both Desktop and Mobile layouts.
 
 use makepad_widgets::*;
+use crate::{app::AppState, i18n::{AppLanguage, tr_key}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -69,6 +70,7 @@ script_mod! {
 #[derive(Script, ScriptHook, Widget)]
 pub struct RoomFilterInputBar {
     #[deref] view: View,
+    #[rust] app_language: AppLanguage,
 }
 
 /// Actions emitted by the `RoomFilterInputBar` based on user interaction with it.
@@ -89,11 +91,23 @@ impl ActionDefaultRef for RoomFilterAction {
 
 impl Widget for RoomFilterInputBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -129,5 +143,15 @@ impl WidgetMatchEvent for RoomFilterInputBar {
                 RoomFilterAction::Changed(String::new())
             );
         }
+    }
+}
+
+impl RoomFilterInputBar {
+    fn set_app_language(&mut self, cx: &mut Cx, app_language: AppLanguage) {
+        self.app_language = app_language;
+        self.view
+            .text_input(cx, ids!(input))
+            .set_empty_text(cx, tr_key(self.app_language, "room_filter_input.placeholder").to_string());
+        self.view.redraw(cx);
     }
 }

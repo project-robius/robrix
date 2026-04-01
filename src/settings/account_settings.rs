@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use makepad_widgets::{text::selection::Cursor, *};
 
-use crate::{app::ConfirmDeleteAction, avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, MatrixRequest, submit_async_request}, utils};
+use crate::{app::{AppState, ConfirmDeleteAction}, avatar_cache::{self}, i18n::{AppLanguage, tr_key}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, MatrixRequest, submit_async_request}, utils};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -14,11 +14,11 @@ script_mod! {
         width: Fill, height: Fit
         flow: Down
 
-        TitleLabel {
+        account_settings_title := TitleLabel {
             text: "Account Settings"
         }
 
-        SubsectionLabel {
+        avatar_section_label := SubsectionLabel {
             text: "Your Avatar:"
         }
 
@@ -95,7 +95,7 @@ script_mod! {
             }
         }
 
-        SubsectionLabel {
+        display_name_section_label := SubsectionLabel {
             text: "Your Display Name:"
         }
 
@@ -144,7 +144,7 @@ script_mod! {
             }
         }
 
-        SubsectionLabel {
+        user_id_section_label := SubsectionLabel {
             text: "Your User ID:"
         }
 
@@ -174,7 +174,7 @@ script_mod! {
             }
         }
 
-        SubsectionLabel {
+        other_actions_section_label := SubsectionLabel {
             text: "Other actions:"
         }
 
@@ -210,10 +210,17 @@ pub struct AccountSettings {
     #[deref] view: View,
 
     #[rust] own_profile: Option<UserProfile>,
+    #[rust] app_language: AppLanguage,
 }
 
 impl Widget for AccountSettings {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         self.match_event(cx, event);
 
         let copy_user_id_button = self.view.button(cx, ids!(copy_user_id_button));
@@ -223,7 +230,7 @@ impl Widget for AccountSettings {
                 cx.widget_action(
                     copy_user_id_button.widget_uid(), 
                     TooltipAction::HoverIn {
-                        text: "Copy User ID".to_string(),
+                        text: tr_key(self.app_language, "settings.account.tooltip.copy_user_id").to_string(),
                         widget_rect: copy_user_id_button_area.rect(cx),
                         options: CalloutTooltipOptions {
                             position: TooltipPosition::Top,
@@ -245,6 +252,12 @@ impl Widget for AccountSettings {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -272,7 +285,11 @@ impl MatchEvent for AccountSettings {
             // Handle LogoutAction::InProgress to update button state
             if let Some(LogoutAction::InProgress(is_in_progress)) = action.downcast_ref() {
                 let logout_button = self.view.button(cx, ids!(logout_button));
-                logout_button.set_text(cx, if *is_in_progress { "Logging out..." } else { "Log out" });
+                logout_button.set_text(cx, if *is_in_progress {
+                    tr_key(self.app_language, "settings.account.button.logging_out")
+                } else {
+                    tr_key(self.app_language, "settings.account.button.log_out")
+                });
                 logout_button.set_enabled(cx, !*is_in_progress);
                 logout_button.reset_hover(cx);
                 continue;
@@ -291,7 +308,11 @@ impl MatchEvent for AccountSettings {
                         profile.avatar_state.update_from_cache(cx);
                         self.populate_avatar_views(cx);
                         enqueue_popup_notification(
-                            format!("Successfully {} avatar.", if new_avatar_url.is_some() { "updated" } else { "deleted" }),
+                            if new_avatar_url.is_some() {
+                                tr_key(self.app_language, "settings.account.popup.avatar_updated")
+                            } else {
+                                tr_key(self.app_language, "settings.account.popup.avatar_deleted")
+                            },
                             PopupKind::Success,
                             Some(4.0),
                         );
@@ -329,7 +350,11 @@ impl MatchEvent for AccountSettings {
                     display_name_input.set_disabled(cx, false);
                     Self::enable_display_name_buttons(cx, false, &accept_display_name_button, &cancel_display_name_button);
                     enqueue_popup_notification(
-                        format!("Successfully {} display name.", if new_name.is_some() { "updated" } else { "removed" }),
+                        if new_name.is_some() {
+                            tr_key(self.app_language, "settings.account.popup.display_name_updated")
+                        } else {
+                            tr_key(self.app_language, "settings.account.popup.display_name_removed")
+                        },
                         PopupKind::Success,
                         Some(4.0),
                     );
@@ -380,7 +405,7 @@ impl MatchEvent for AccountSettings {
             // Self::enable_upload_avatar_button(cx, false, &upload_avatar_button);
             // Self::enable_delete_avatar_button(cx, false, &delete_avatar_button);
             enqueue_popup_notification(
-                "Avatar uploading is not yet implemented.",
+                tr_key(self.app_language, "settings.account.popup.avatar_upload_not_implemented"),
                 PopupKind::Warning,
                 Some(4.0),
             );
@@ -390,15 +415,16 @@ impl MatchEvent for AccountSettings {
             // Don't immediately disable the buttons. Instead, we wait for the user
             // to confirm the action in the confirmation modal,
             // and then we disable the buttons in the AvatarDeleteStarted action handler.
+            let app_language = self.app_language;
             let content = ConfirmationModalContent {
-                title_text: "Delete Avatar".into(),
-                body_text: "Are you sure you want to delete your avatar?".into(),
-                accept_button_text: Some("Delete".into()),
-                on_accept_clicked: Some(Box::new(|cx| {
+                title_text: tr_key(app_language, "settings.account.modal.delete_avatar.title").into(),
+                body_text: tr_key(app_language, "settings.account.modal.delete_avatar.body").into(),
+                accept_button_text: Some(tr_key(app_language, "settings.account.modal.delete_avatar.accept").into()),
+                on_accept_clicked: Some(Box::new(move |cx| {
                     submit_async_request(MatrixRequest::SetAvatar { avatar_url: None });
                     cx.action(AccountSettingsAction::AvatarDeleteStarted);
                     enqueue_popup_notification(
-                        "Deleting your avatar...",
+                        tr_key(app_language, "settings.account.popup.deleting_avatar"),
                         PopupKind::Info,
                         Some(5.0),
                     );
@@ -436,7 +462,7 @@ impl MatchEvent for AccountSettings {
             display_name_input.set_is_read_only(cx, true);
             Self::enable_display_name_buttons(cx, false, &accept_display_name_button, &cancel_display_name_button);
             enqueue_popup_notification(
-                "Uploading new display name...",
+                tr_key(self.app_language, "settings.account.popup.uploading_display_name"),
                 PopupKind::Info,
                 Some(5.0),
             );
@@ -445,7 +471,7 @@ impl MatchEvent for AccountSettings {
         if self.view.button(cx, ids!(copy_user_id_button)).clicked(actions) {
             cx.copy_to_clipboard(own_profile.user_id.as_str());
             enqueue_popup_notification(
-                "Copied your User ID to the clipboard.",
+                tr_key(self.app_language, "settings.account.popup.copied_user_id"),
                 PopupKind::Success,
                 Some(3.0),
             );
@@ -455,7 +481,7 @@ impl MatchEvent for AccountSettings {
             // TODO: support opening the user's account management page in a browser,
             //       or perhaps in an in-app pane if that's what is needed for regular UN+PW login.
             enqueue_popup_notification(
-                "Account management is not yet implemented.",
+                tr_key(self.app_language, "settings.account.popup.account_management_not_implemented"),
                 PopupKind::Warning,
                 Some(4.0),
             );
@@ -465,6 +491,56 @@ impl MatchEvent for AccountSettings {
 }
 
 impl AccountSettings {
+    fn set_app_language(&mut self, cx: &mut Cx, app_language: AppLanguage) {
+        self.app_language = app_language;
+        self.sync_app_language(cx);
+    }
+
+    fn sync_app_language(&mut self, cx: &mut Cx) {
+        self.view
+            .label(cx, ids!(account_settings_title))
+            .set_text(cx, tr_key(self.app_language, "settings.account.title"));
+        self.view
+            .label(cx, ids!(avatar_section_label))
+            .set_text(cx, tr_key(self.app_language, "settings.account.section.your_avatar"));
+        self.view
+            .button(cx, ids!(upload_avatar_button))
+            .set_text(cx, tr_key(self.app_language, "settings.account.button.upload_avatar"));
+        self.view
+            .button(cx, ids!(delete_avatar_button))
+            .set_text(cx, tr_key(self.app_language, "settings.account.button.delete_avatar"));
+        self.view
+            .label(cx, ids!(display_name_section_label))
+            .set_text(cx, tr_key(self.app_language, "settings.account.section.your_display_name"));
+        self.view
+            .text_input(cx, ids!(display_name_input))
+            .set_empty_text(cx, tr_key(self.app_language, "settings.account.display_name.placeholder").to_string());
+        self.view
+            .button(cx, ids!(cancel_display_name_button))
+            .set_text(cx, tr_key(self.app_language, "settings.account.button.cancel"));
+        self.view
+            .button(cx, ids!(accept_display_name_button))
+            .set_text(cx, tr_key(self.app_language, "settings.account.button.save_name"));
+        self.view
+            .label(cx, ids!(user_id_section_label))
+            .set_text(cx, tr_key(self.app_language, "settings.account.section.your_user_id"));
+        if self.own_profile.is_none() {
+            self.view
+                .label(cx, ids!(user_id))
+                .set_text(cx, tr_key(self.app_language, "settings.account.user_id.not_logged_in"));
+        }
+        self.view
+            .label(cx, ids!(other_actions_section_label))
+            .set_text(cx, tr_key(self.app_language, "settings.account.section.other_actions"));
+        self.view
+            .button(cx, ids!(manage_account_button))
+            .set_text(cx, tr_key(self.app_language, "settings.account.button.manage_account"));
+        self.view
+            .button(cx, ids!(logout_button))
+            .set_text(cx, tr_key(self.app_language, "settings.account.button.log_out"));
+        self.view.redraw(cx);
+    }
+
     /// Populate avatar-related views with the user's profile data.
     ///
     /// This does nothing if `self.own_profile` is `None`.
@@ -519,6 +595,7 @@ impl AccountSettings {
 
         self.own_profile = Some(own_profile);
         self.populate_avatar_views(cx);
+        self.sync_app_language(cx);
 
         self.view.button(cx, ids!(upload_avatar_button)).reset_hover(cx);
         self.view.button(cx, ids!(delete_avatar_button)).reset_hover(cx);
@@ -638,6 +715,11 @@ impl AccountSettingsRef {
     pub fn populate(&self, cx: &mut Cx, own_profile: UserProfile) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.populate(cx, own_profile);
+    }
+
+    pub fn set_app_language(&self, cx: &mut Cx, app_language: AppLanguage) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_app_language(cx, app_language);
     }
 }
 
