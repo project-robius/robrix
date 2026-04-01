@@ -69,8 +69,6 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.IMG_APP_LOGO = crate_resource("self://resources/robrix_logo_alpha.png")
-
     mod.widgets.MaskableButton = RobrixIconButton {
         draw_bg +: {
             mask: instance(0.0)
@@ -89,36 +87,30 @@ script_mod! {
         align: Align{x: 0.5, y: 0.5}
         show_bg: true,
         draw_bg +: {
-            color: #FFF
+            color: COLOR_SECONDARY
         }
 
         ScrollYView {
-            width: Fit, height: Fill,
+            width: Fill, height: Fill,
             // Note: *do NOT* vertically center this, it will break scrolling.
             align: Align{x: 0.5}
             show_bg: true,
-            draw_bg +: {
-                color: (COLOR_PRIMARY)
-            }
+            draw_bg.color: (COLOR_SECONDARY)
 
-            RoundedView {
-                margin: 40
-                width: Fit, height: Fit
+            View {
+                margin: Inset{top: 40, bottom: 40}
+                width: Fill
+                height: Fit
                 align: Align{x: 0.5, y: 0.5}
                 flow: Overlay,
 
-                show_bg: true,
-                draw_bg +: {
-                    color: (COLOR_SECONDARY)
-                    border_radius: 6.0
-                }
-
                 View {
-                    width: Fit, height: Fit
+                    width: Fill
+                    height: Fit
                     flow: Down
                     align: Align{x: 0.5, y: 0.5}
-                    padding: 30
-                    margin: 40
+                    padding: Inset{top: 30, bottom: 30}
+                    margin: Inset{top: 40, bottom: 40}
                     spacing: 15.0
 
                     logo_image := Image {
@@ -140,7 +132,7 @@ script_mod! {
 
                     // Homeserver selection area
                     View {
-                        width: 250, height: Fit
+                        width: 275, height: Fit
                         flow: Down
                         spacing: 5
 
@@ -197,7 +189,7 @@ script_mod! {
 
                     // Homeserver selection options (initially hidden)
                     homeserver_options := View {
-                        width: 250, height: Fit
+                        width: 275, height: Fit
                         flow: Down
                         spacing: 10
                         visible: false
@@ -251,7 +243,7 @@ script_mod! {
 
                     // Dynamic registration area
                     sso_area := View {
-                        width: 250, height: Fit
+                        width: 275, height: Fit
                         flow: Down
                         spacing: 10
                         visible: true
@@ -274,7 +266,7 @@ script_mod! {
                     }
 
                     password_area := View {
-                        width: 250, height: Fit
+                        width: 275, height: Fit
                         flow: Down
                         spacing: 10
                         visible: false
@@ -343,14 +335,14 @@ script_mod! {
                     }
 
                     View {
-                        width: 250,
+                        width: 275,
                         height: Fit,
                         flow: Right,
                         spacing: 0.0,
                         align: Align{x: 0.5, y: 0.5}
 
                         left_line := LineH {
-                            draw_bg +: { color: (COLOR_DIVIDER) }
+                            draw_bg.color: #C8C8C8
                         }
 
                         Label {
@@ -364,7 +356,7 @@ script_mod! {
                         }
 
                         right_line := LineH {
-                            draw_bg +: { color: (COLOR_DIVIDER) }
+                            draw_bg.color: #C8C8C8
                         }
                     }
 
