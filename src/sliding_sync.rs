@@ -385,7 +385,7 @@ async fn login(
             } else {
                 (cli, false)
             };
-            let (client, client_session) = build_client(&cli, app_data_dir()).await?;
+            let (client, client_session) = build_client(cli, app_data_dir()).await?;
             Cx::post_action(LoginAction::Status {
                 title: "Authenticating".into(),
                 status: format!("Logging in as {}...", cli.user_id),

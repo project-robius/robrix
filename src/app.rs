@@ -473,6 +473,7 @@ fn init_file_logging() -> Option<()> {
 
 /// Writes a log message to the log file (if file logging is enabled).
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[allow(dead_code)]
 fn write_to_log_file(message: &str) {
     if let Some(Some(file_mutex)) = LOG_FILE.get() {
         if let Ok(mut file) = file_mutex.lock() {
