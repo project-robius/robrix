@@ -3,7 +3,7 @@ use std::ops::Not;
 use makepad_widgets::*;
 use url::Url;
 
-use crate::sliding_sync::{submit_async_request, LoginByPassword, LoginRequest, MatrixRequest};
+use crate::sliding_sync::{submit_async_request, AccountSwitchAction, LoginByPassword, LoginRequest, MatrixRequest};
 
 use super::login_status_modal::{LoginStatusModalAction, LoginStatusModalWidgetExt};
 
@@ -478,6 +478,23 @@ impl MatchEvent for LoginScreen {
                     cancel_button.set_visible(cx, false);
                     signup_button.set_visible(cx, true);
                     login_status_modal.close(cx);
+                    self.redraw(cx);
+                }
+                _ => { }
+            }
+
+            // Handle account switch actions - close modal when switch completes or fails
+            match action.downcast_ref() {
+                Some(AccountSwitchAction::Switched(_)) => {
+                    login_status_modal.close(cx);
+                    self.redraw(cx);
+                }
+                Some(AccountSwitchAction::Failed(error)) => {
+                    login_status_modal_inner.set_title(cx, "Account Switch Failed");
+                    login_status_modal_inner.set_status(cx, error);
+                    let login_status_modal_button = login_status_modal_inner.button_ref(cx);
+                    login_status_modal_button.set_text(cx, "Okay");
+                    login_status_modal_button.set_enabled(cx, true);
                     self.redraw(cx);
                 }
                 _ => { }

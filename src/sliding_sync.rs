@@ -1067,8 +1067,6 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::SwitchAccount { user_id } => {
-                log!("Received MatrixRequest::SwitchAccount for {}", user_id);
-
                 // Check if the account exists in AccountManager
                 if account_manager::get_client_for_user(&user_id).is_some() {
                     // Set the target account for switch
@@ -1079,7 +1077,6 @@ async fn matrix_worker_task(
 
                     // Stop the sync service - this will cause the main loop to restart
                     if let Some(sync_service) = get_sync_service() {
-                        log!("Stopping sync service for account switch");
                         sync_service.stop().await;
                     }
 
@@ -2528,7 +2525,6 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
     Ok(rt_handle)
 }
 
-
 /// A tokio::watch channel sender for sending requests from the RoomScreen UI widget
 /// to the corresponding background async task for that room (its `timeline_subscriber_handler`).
 pub type TimelineRequestSender = watch::Sender<Vec<BackwardsPaginateUntilEventRequest>>;
@@ -2655,8 +2651,13 @@ static SYNC_SERVICE: Mutex<Option<Arc<SyncService>>> = Mutex::new(None);
 /// Contains the user_id to switch to, if any.
 static ACCOUNT_SWITCH_TARGET: Mutex<Option<OwnedUserId>> = Mutex::new(None);
 
-/// Check if an account switch is pending.
-fn get_account_switch_target() -> Option<OwnedUserId> {
+/// Check if an account switch is pending (non-consuming peek).
+fn is_account_switch_pending() -> bool {
+    ACCOUNT_SWITCH_TARGET.lock().ok().map(|g| g.is_some()).unwrap_or(false)
+}
+
+/// Take the account switch target, consuming it. Only call when ready to perform the switch.
+fn take_account_switch_target() -> Option<OwnedUserId> {
     ACCOUNT_SWITCH_TARGET.lock().ok()?.take()
 }
 
@@ -2664,6 +2665,14 @@ fn get_account_switch_target() -> Option<OwnedUserId> {
 fn set_account_switch_target(user_id: OwnedUserId) {
     if let Ok(mut guard) = ACCOUNT_SWITCH_TARGET.lock() {
         *guard = Some(user_id);
+    }
+}
+
+/// Clear the account switch target without taking it.
+#[allow(dead_code)]
+fn clear_account_switch_target() {
+    if let Ok(mut guard) = ACCOUNT_SWITCH_TARGET.lock() {
+        *guard = None;
     }
 }
 
@@ -3028,12 +3037,12 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
     // Now, this task becomes an infinite loop that monitors the state of the
     // three core matrix-related background tasks that we just spawned above.
     #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
-    let reauth_message = loop {
+    let reauth_message: Option<String> = loop {
         tokio::select! {
             session_reset = session_reset_receiver.recv() => {
                 match session_reset {
                     Some(SessionResetAction::Reauthenticate { message }) => {
-                        break message;
+                        break Some(message);
                     }
                     None => {
                         warning!("Session reset receiver closed unexpectedly.");
@@ -3045,17 +3054,21 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                 session_change_handler_task.abort();
                 match result {
                     Ok(Ok(())) => {
-                        // Check if this is due to logout
+                        // Check if this is due to logout or account switch
                         if is_logout_in_progress() {
                             log!("matrix worker task ended due to logout");
+                        } else if is_account_switch_pending() {
+                            log!("matrix worker task ended due to account switch");
                         } else {
                             error!("BUG: matrix worker task ended unexpectedly!");
                         }
                     }
                     Ok(Err(e)) => {
-                        // Check if this is due to logout
+                        // Check if this is due to logout or account switch
                         if is_logout_in_progress() {
                             log!("matrix worker task ended with error due to logout: {e:?}");
+                        } else if is_account_switch_pending() {
+                            log!("matrix worker task ended with error due to account switch: {e:?}");
                         } else {
                             error!("Error: matrix worker task ended:\n\t{e:?}");
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
@@ -3072,61 +3085,71 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                         error!("BUG: failed to join matrix worker task: {e:?}");
                     }
                 }
-                return;
+                break None;
             }
             result = &mut room_list_service_task => {
                 session_change_handler_task.abort();
                 match result {
                     Ok(Ok(())) => {
-                        error!("BUG: room list service loop task ended unexpectedly!");
+                        if is_logout_in_progress() || is_account_switch_pending() {
+                            log!("room list service loop task ended due to logout/account switch");
+                        } else {
+                            error!("BUG: room list service loop task ended unexpectedly!");
+                        }
                     }
                     Ok(Err(e)) => {
-                        error!("Error: room list service loop task ended:\n\t{e:?}");
-                        rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                            status: e.to_string(),
-                        });
-                        enqueue_popup_notification(
-                            format!("Room list service  error: {e}"),
-                            PopupKind::Error,
-                            None,
-                        );
+                        if !is_logout_in_progress() && !is_account_switch_pending() {
+                            error!("Error: room list service loop task ended:\n\t{e:?}");
+                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                status: e.to_string(),
+                            });
+                            enqueue_popup_notification(
+                                format!("Room list service error: {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
+                        }
                     },
                     Err(e) => {
                         error!("BUG: failed to join room list service loop task: {e:?}");
                     }
                 }
-                return;
+                break None;
             }
             result = &mut space_service_task => {
                 session_change_handler_task.abort();
                 match result {
                     Ok(Ok(())) => {
-                        error!("BUG: space service loop task ended unexpectedly!");
+                        if is_logout_in_progress() || is_account_switch_pending() {
+                            log!("space service loop task ended due to logout/account switch");
+                        } else {
+                            error!("BUG: space service loop task ended unexpectedly!");
+                        }
                     }
                     Ok(Err(e)) => {
-                        error!("Error: space service loop task ended:\n\t{e:?}");
-                        rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                            status: e.to_string(),
-                        });
-                        enqueue_popup_notification(
-                            format!("Space service error: {e}"),
-                            PopupKind::Error,
-                            None,
-                        );
+                        if !is_logout_in_progress() && !is_account_switch_pending() {
+                            error!("Error: space service loop task ended:\n\t{e:?}");
+                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                status: e.to_string(),
+                            });
+                            enqueue_popup_notification(
+                                format!("Space service error: {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
+                        }
                     },
                     Err(e) => {
                         error!("BUG: failed to join space service loop task: {e:?}");
                     }
                 }
-                return;
+                break None;
             }
         }
     };
 
-    // Check if we need to restart for an account switch
-    if let Some(switch_user_id) = get_account_switch_target() {
-        log!("Account switch detected, restarting with user: {}", switch_user_id);
-
+    // Check if we need to restart for an account switch (loop to handle consecutive switches)
+    while let Some(switch_user_id) = take_account_switch_target() {
         // Clear all backend state
         CLIENT.lock().unwrap_or_else(|e| e.into_inner()).take();
         SYNC_SERVICE.lock().unwrap_or_else(|e| e.into_inner()).take();
@@ -3146,8 +3169,6 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         // Restore session for the switched account
         match persistence::restore_session(Some(switch_user_id.clone())).await {
             Ok((client, _sync_token, _session)) => {
-                log!("Successfully restored session for {}", switch_user_id);
-
                 // Store the client
                 CLIENT.lock().unwrap_or_else(|e| e.into_inner()).replace(client.clone());
 
@@ -3163,7 +3184,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                 {
                     Ok(ss) => ss,
                     Err(e) => {
-                        error!("Failed to create SyncService after account switch: {e:?}");
+                        error!("Failed to create SyncService: {e:?}");
                         Cx::post_action(AccountSwitchAction::Failed(format!("Failed to create sync service: {e}")));
                         return;
                     }
@@ -3183,6 +3204,12 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                 REQUEST_SENDER.lock().unwrap_or_else(|e| e.into_inner()).replace(sender);
                 let (login_sender, _login_receiver) = tokio::sync::mpsc::channel(1);
 
+                // Set up session change handler for the switched account
+                let (session_reset_sender, mut session_reset_receiver) =
+                    tokio::sync::mpsc::unbounded_channel::<SessionResetAction>();
+                let session_change_handler_task =
+                    handle_session_changes(client.clone(), session_reset_sender);
+
                 let mut matrix_worker_task_handle = rt.spawn(matrix_worker_task(receiver, login_sender));
                 let mut room_list_service_task = rt.spawn(room_list_service_loop(room_list_service));
                 let mut space_service_task = rt.spawn(space_service_loop(client.clone()));
@@ -3193,19 +3220,34 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                 // Re-enter the main monitoring loop
                 loop {
                     tokio::select! {
+                        session_reset = session_reset_receiver.recv() => {
+                            match session_reset {
+                                Some(SessionResetAction::Reauthenticate { message }) => {
+                                    error!("Session reset during account switch: {}", message);
+                                    session_change_handler_task.abort();
+                                    room_list_service_task.abort();
+                                    space_service_task.abort();
+                                    Cx::post_action(AccountSwitchAction::Failed(message));
+                                    break;
+                                }
+                                None => {
+                                    warning!("Session reset receiver closed unexpectedly.");
+                                    continue;
+                                }
+                            }
+                        }
                         result = &mut matrix_worker_task_handle => {
+                            session_change_handler_task.abort();
                             match result {
                                 Ok(Ok(())) => {
-                                    if is_logout_in_progress() {
-                                        log!("matrix worker task ended due to logout");
-                                    } else if get_account_switch_target().is_some() {
-                                        // Another account switch requested, will handle after loop
-                                    } else {
+                                    if !is_logout_in_progress() && !is_account_switch_pending() {
                                         error!("BUG: matrix worker task ended unexpectedly!");
                                     }
                                 }
                                 Ok(Err(e)) => {
-                                    error!("Error: matrix worker task ended:\n\t{e:?}");
+                                    if !is_logout_in_progress() && !is_account_switch_pending() {
+                                        error!("Error: matrix worker task ended:\n\t{e:?}");
+                                    }
                                 }
                                 Err(e) => {
                                     error!("BUG: failed to join matrix worker task: {e:?}");
@@ -3214,19 +3256,26 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                             break;
                         }
                         result = &mut room_list_service_task => {
+                            session_change_handler_task.abort();
                             if let Err(e) = result {
-                                error!("room list service task error: {e:?}");
+                                if !is_logout_in_progress() && !is_account_switch_pending() {
+                                    error!("Room list service task error: {e:?}");
+                                }
                             }
                             break;
                         }
                         result = &mut space_service_task => {
+                            session_change_handler_task.abort();
                             if let Err(e) = result {
-                                error!("space service task error: {e:?}");
+                                if !is_logout_in_progress() && !is_account_switch_pending() {
+                                    error!("Space service task error: {e:?}");
+                                }
                             }
                             break;
                         }
                     }
                 }
+                // After inner loop breaks, outer while loop will check for another pending account switch
             }
             Err(e) => {
                 error!("Failed to restore session for account switch: {e:?}");
@@ -3236,19 +3285,24 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                     PopupKind::Error,
                     None,
                 );
+                // Don't loop back - a failed switch shouldn't keep trying
+                break;
             }
         }
     }
-    session_change_handler_task.abort();
-    room_list_service_task.abort();
-    space_service_task.abort();
 
-    reset_runtime_state_for_relogin().await;
-    Cx::post_action(LoginAction::LoginFailure(reauth_message.clone()));
-    enqueue_rooms_list_update(RoomsListUpdate::Status {
-        status: reauth_message,
-    });
-    initial_client_opt = None;
+    // Only run reauth cleanup if we got a reauth message (not account switch or logout)
+    if let Some(reauth_msg) = reauth_message {
+        session_change_handler_task.abort();
+        room_list_service_task.abort();
+        space_service_task.abort();
+
+        reset_runtime_state_for_relogin().await;
+        Cx::post_action(LoginAction::LoginFailure(reauth_msg.clone()));
+        enqueue_rooms_list_update(RoomsListUpdate::Status {
+            status: reauth_msg,
+        });
+    }
 }
 
 

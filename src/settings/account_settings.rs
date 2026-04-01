@@ -312,7 +312,7 @@ script_mod! {
 
             manage_account_button := RobrixIconButton {
                 height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                padding: Inset{left: 12, right: 15}
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 5}
                 draw_icon.svg: (ICON_EXTERNAL_LINK)
                 icon_walk: Walk{width: 16, height: 16}

@@ -314,6 +314,15 @@ impl MatchEvent for App {
                 continue;
             }
 
+            // Handle cancellation of adding a new account - go back to previous screen
+            if let Some(LoginAction::CancelAddAccount) = action.downcast_ref() {
+                log!("Received LoginAction::CancelAddAccount, hiding login view.");
+                self.app_state.adding_account = false;
+                self.ui.view(cx, ids!(login_screen_view)).set_visible(cx, false);
+                self.ui.redraw(cx);
+                continue;
+            }
+
             // Handle account switch actions
             match action.downcast_ref() {
                 Some(AccountSwitchAction::Starting(user_id)) => {
@@ -323,6 +332,9 @@ impl MatchEvent for App {
                     self.app_state.selected_room = None;
                     // Clear saved dock state so tabs will be closed
                     self.app_state.saved_dock_state_home = Default::default();
+                    // Reset navigation to Home tab
+                    self.app_state.selected_tab = SelectedTab::Home;
+                    cx.action(NavigationBarAction::TabSelected(SelectedTab::Home));
                     self.ui.redraw(cx);
                     continue;
                 }
