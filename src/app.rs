@@ -8,7 +8,7 @@ use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomI
 use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::clear_avatar_cache, home::{
-        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
+        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states, RoomScreenWidgetRefExt}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, invite_screen::InviteScreenWidgetRefExt, space_lobby::SpaceLobbyScreenWidgetRefExt,
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{AccountSwitchAction, DirectMessageRoomAction, MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
@@ -171,6 +171,9 @@ pub struct App {
     /// This can be either a room we're waiting to join, or one we're waiting to be invited to.
     /// Also includes an optional room ID to be closed once the awaited room has been loaded.
     #[rust] waiting_to_navigate_to_room: Option<(BasicRoomDetails, Option<OwnedRoomId>)>,
+    /// A stack of previously-selected rooms for mobile navigation.
+    /// When a view is popped off the stack, the previous `selected_room` is restored from here.
+    #[rust] mobile_room_nav_stack: Vec<SelectedRoom>,
 }
 
 impl ScriptHook for App {
@@ -417,6 +420,33 @@ impl MatchEvent for App {
                 });
                 self.ui.redraw(cx);
                 continue;
+            }
+
+            // A new room has been selected; push the appropriate view onto the mobile
+            // StackNavigation and update the app state.
+            // In Desktop mode, MainDesktopUI also handles this action to manage dock tabs;
+            // the mobile push is harmless there (the view isn't drawn).
+            match action.as_widget_action().cast() {
+                RoomsListAction::Selected(selected_room) => {
+                    self.push_selected_room_view(cx, selected_room);
+                    continue;
+                }
+                // An invite was accepted; upgrade the selected room from invite to joined.
+                // In Desktop mode, MainDesktopUI also handles this (harmless duplicate).
+                RoomsListAction::InviteAccepted { room_name_id } => {
+                    cx.action(AppStateAction::UpgradedInviteToJoinedRoom(room_name_id.room_id().clone()));
+                    continue;
+                }
+                _ => {}
+            }
+
+            // When a stack navigation pop is initiated (back button pressed),
+            // pop the mobile nav stack so it stays in sync with StackNavigation.
+            if let StackNavigationAction::Pop = action.as_widget_action().cast() {
+                if self.app_state.selected_room.is_some() {
+                    self.app_state.selected_room = self.mobile_room_nav_stack.pop();
+                }
+                // Don't `continue` — let StackNavigation also process this Pop.
             }
 
             // Handle actions that instruct us to update the top-level app state.
@@ -796,7 +826,7 @@ impl AppMain for App {
             }
             #[cfg(feature = "tsp")] {
                 // Save the TSP wallet state, if it exists, with a 3-second timeout.
-                let tsp_state = std::mem::take(&mut *crate::tsp::tsp_state_ref().lock().unwrap_or_else(|e| e.into_inner()));
+                let tsp_state = std::mem::take(&mut *crate::tsp::tsp_state_ref().lock().unwrap());
                 let res = crate::sliding_sync::block_on_async_with_timeout(
                     Some(std::time::Duration::from_secs(3)),
                     async move {
@@ -937,6 +967,104 @@ impl App {
         }
     }
 
+    /// Room StackNavigationView instances, one per stack depth.
+    /// Each depth gets its own dedicated view widget to avoid
+    /// complex state save/restore when views would otherwise be reused.
+    const ROOM_VIEW_IDS: [LiveId; 16] = [
+        live_id!(room_view_0),  live_id!(room_view_1),
+        live_id!(room_view_2),  live_id!(room_view_3),
+        live_id!(room_view_4),  live_id!(room_view_5),
+        live_id!(room_view_6),  live_id!(room_view_7),
+        live_id!(room_view_8),  live_id!(room_view_9),
+        live_id!(room_view_10), live_id!(room_view_11),
+        live_id!(room_view_12), live_id!(room_view_13),
+        live_id!(room_view_14), live_id!(room_view_15),
+    ];
+
+    /// The RoomScreen widget IDs inside each room view,
+    /// corresponding 1:1 with [`Self::ROOM_VIEW_IDS`].
+    const ROOM_SCREEN_IDS: [LiveId; 16] = [
+        live_id!(room_screen_0),  live_id!(room_screen_1),
+        live_id!(room_screen_2),  live_id!(room_screen_3),
+        live_id!(room_screen_4),  live_id!(room_screen_5),
+        live_id!(room_screen_6),  live_id!(room_screen_7),
+        live_id!(room_screen_8),  live_id!(room_screen_9),
+        live_id!(room_screen_10), live_id!(room_screen_11),
+        live_id!(room_screen_12), live_id!(room_screen_13),
+        live_id!(room_screen_14), live_id!(room_screen_15),
+    ];
+
+    /// Returns the room view and room screen LiveIds for the given stack depth.
+    /// Clamps to the last available view if depth exceeds the pool size.
+    fn room_ids_for_depth(depth: usize) -> (LiveId, LiveId) {
+        let index = depth.min(Self::ROOM_VIEW_IDS.len() - 1);
+        (Self::ROOM_VIEW_IDS[index], Self::ROOM_SCREEN_IDS[index])
+    }
+
+    /// Pushes the appropriate StackNavigationView for the given `SelectedRoom`,
+    /// configuring the view's content widget and header title.
+    ///
+    /// Each stack depth gets its own dedicated room view widget,
+    /// supporting deep navigation (room → thread → room → thread → ...).
+    ///
+    /// In Desktop mode, the StackNavigation isn't drawn, so the push and
+    /// screen configuration are effectively no-ops — MainDesktopUI handles
+    /// room display via dock tabs instead.
+    fn push_selected_room_view(&mut self, cx: &mut Cx, selected_room: SelectedRoom) {
+        // Use the actual StackNavigation depth to pick the next room view slot.
+        let new_depth = self.ui.stack_navigation(cx, ids!(view_stack)).depth();
+
+        // Determine which view to push and configure its content.
+        // The `set_displayed_room` / `set_displayed_invite` / `set_displayed_space` calls
+        // configure the screen widget inside the mobile StackNavigationView.
+        // In Desktop mode, these widgets exist but aren't drawn; the configuration
+        // consumes timeline endpoints, but Desktop's MainDesktopUI processes the same
+        // `RoomsListAction::Selected` in its own handler to set up dock tabs.
+        let view_id = match &selected_room {
+            SelectedRoom::JoinedRoom { room_name_id }
+            | SelectedRoom::Thread { room_name_id, .. } => {
+                let (view_id, room_screen_id) = Self::room_ids_for_depth(new_depth);
+
+                let thread_root = if let SelectedRoom::Thread { thread_root_event_id, .. } = &selected_room {
+                    Some(thread_root_event_id.clone())
+                } else {
+                    None
+                };
+                self.ui
+                    .room_screen(cx, &[room_screen_id])
+                    .set_displayed_room(cx, room_name_id, thread_root);
+
+                view_id
+            }
+            SelectedRoom::InvitedRoom { room_name_id } => {
+                self.ui
+                    .invite_screen(cx, ids!(invite_screen))
+                    .set_displayed_invite(cx, room_name_id);
+                id!(invite_view)
+            }
+            SelectedRoom::Space { space_name_id } => {
+                self.ui
+                    .space_lobby_screen(cx, ids!(space_lobby_screen))
+                    .set_displayed_space(cx, space_name_id);
+                id!(space_lobby_view)
+            }
+        };
+
+        // Set the header title for the view being pushed.
+        let title_path = &[view_id, live_id!(header), live_id!(content), live_id!(title_container), live_id!(title)];
+        self.ui.label(cx, title_path).set_text(cx, &selected_room.display_name());
+
+        // Save the current selected_room onto the navigation stack before replacing it.
+        if let Some(prev) = self.app_state.selected_room.take() {
+            self.mobile_room_nav_stack.push(prev);
+        }
+        // Update app state (used by both Desktop and Mobile paths).
+        self.app_state.selected_room = Some(selected_room);
+
+        // Push the view onto the mobile navigation stack.
+        self.ui.stack_navigation(cx, ids!(view_stack)).push(cx, view_id);
+        self.ui.redraw(cx);
+    }
 
 }
 

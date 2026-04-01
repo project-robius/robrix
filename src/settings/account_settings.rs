@@ -120,8 +120,7 @@ script_mod! {
             // their styles to RobrixNeutralIconButton / RobrixPositiveIconButton.
             cancel_display_name_button := RobrixNeutralIconButton {
                 enabled: false,
-                width: Fit,
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
+                width: Fit, height: Fit,
                 padding: 10,
                 margin: Inset{left: 5},
                 draw_icon.svg: (ICON_FORBIDDEN)
@@ -131,10 +130,10 @@ script_mod! {
 
             accept_display_name_button := RobrixPositiveIconButton {
                 enabled: false,
-                width: Fit, 
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
+                width: Fit, height: Fit,
                 padding: 10,
                 margin: Inset{left: 5},
+                draw_bg.border_radius: 5.0
                 draw_icon.svg: (ICON_CHECKMARK)
                 icon_walk: Walk{width: 16, height: 16, margin: 0}
                 text: "Save Name"
@@ -311,7 +310,6 @@ script_mod! {
             spacing: 10
 
             manage_account_button := RobrixIconButton {
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 5}
                 draw_icon.svg: (ICON_EXTERNAL_LINK)
@@ -320,7 +318,6 @@ script_mod! {
             }
 
             logout_button := RobrixNegativeIconButton {
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 5}
                 draw_icon.svg: (ICON_LOGOUT)
@@ -350,7 +347,7 @@ impl Widget for AccountSettings {
         match event.hits(cx, copy_user_id_button_area) {
             Hit::FingerHoverIn(_) | Hit::FingerLongPress(_) => {
                 cx.widget_action(
-                    copy_user_id_button.widget_uid(),
+                    copy_user_id_button.widget_uid(), 
                     TooltipAction::HoverIn {
                         text: "Copy User ID".to_string(),
                         widget_rect: copy_user_id_button_area.rect(cx),
@@ -363,7 +360,7 @@ impl Widget for AccountSettings {
             }
             Hit::FingerHoverOut(_) => {
                 cx.widget_action(
-                    copy_user_id_button.widget_uid(),
+                    copy_user_id_button.widget_uid(), 
                     TooltipAction::HoverOut,
                 );
             }
@@ -380,9 +377,6 @@ impl Widget for AccountSettings {
 
 impl MatchEvent for AccountSettings {
     fn handle_signal(&mut self, cx: &mut Cx) {
-        // Process avatar updates from the cache
-        avatar_cache::process_avatar_updates(cx);
-
         // If we don't have a profile yet, try to get it
         if self.own_profile.is_none() {
             user_profile_cache::process_user_profile_updates(cx);
@@ -398,6 +392,8 @@ impl MatchEvent for AccountSettings {
             }
             return;
         }
+        // Process avatar updates from the cache
+        avatar_cache::process_avatar_updates(cx);
 
         // Update avatar from cache if we have a profile
         if let Some(profile) = self.own_profile.as_mut() {
@@ -521,10 +517,13 @@ impl MatchEvent for AccountSettings {
         let Some(own_profile) = &self.own_profile else { return };
 
         if upload_avatar_button.clicked(actions) {
+            // TODO: uncomment the below once avatar uploading is implemented
+            // Self::enable_upload_avatar_button(cx, false, &upload_avatar_button);
+            // Self::enable_delete_avatar_button(cx, false, &delete_avatar_button);
             enqueue_popup_notification(
                 "Avatar upload is not yet implemented.",
-                PopupKind::Info,
-                Some(3.0),
+                PopupKind::Warning,
+                Some(4.0),
             );
         }
 
