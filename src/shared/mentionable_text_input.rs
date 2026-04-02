@@ -11,7 +11,7 @@ use crate::utils;
 
 use makepad_widgets::{text::selection::Cursor, *};
 use crate::{LivePtr, widget_ref_from_live_ptr};
-use matrix_sdk::ruma::{events::{room::message::RoomMessageEventContent, Mentions}, OwnedRoomId, OwnedUserId};
+use matrix_sdk::ruma::{events::{room::message::RoomMessageEventContent, Mentions}, OwnedMxcUri, OwnedRoomId, OwnedUserId};
 use matrix_sdk::room::RoomMember;
 use std::collections::{BTreeMap, BTreeSet};
 use unicode_segmentation::UnicodeSegmentation;
@@ -247,6 +247,85 @@ script_mod! {
         }
     }
 
+    // Template for user mention pill shown in the input area
+    mod.widgets.UserPill = RoundedView {
+        width: Fit,
+        height: Fit,
+        margin: Inset{left: 2, right: 2, top: 2, bottom: 2}
+        padding: Inset{left: 4, right: 2, top: 2, bottom: 2}
+        show_bg: true
+        draw_bg +: {
+            color: instance(#E8F4FD),
+            border_radius: uniform(12.0),
+        }
+        flow: Right,
+        spacing: 4.0,
+        align: Align{y: 0.5}
+
+        pill_avatar := Avatar {
+            width: 18,
+            height: 18,
+            text_view +: {
+                text +: {
+                    draw_text +: {
+                        text_style: theme.font_regular { font_size: 9.0 }
+                    }
+                }
+            }
+        }
+
+        pill_username := Label {
+            height: Fit,
+            draw_text +: {
+                color: #1976D2,
+                text_style: theme.font_regular {font_size: 12.0}
+            }
+        }
+
+        close_button := RoundedView {
+            width: 16,
+            height: 16,
+            show_bg: true
+            cursor: MouseCursor.Hand
+            draw_bg +: {
+                color: instance(#00000000),
+                border_radius: uniform(8.0),
+                hover: instance(0.0),
+
+                pixel: fn() {
+                    let sdf = Sdf2d.viewport(self.pos * self.rect_size);
+                    sdf.circle(self.rect_size.x * 0.5, self.rect_size.y * 0.5, self.rect_size.x * 0.5);
+                    // Light red hover color
+                    let hover_color = vec4(0.95, 0.85, 0.85, 1.0);
+                    if self.hover > 0.0 {
+                        sdf.fill(hover_color)
+                    } else {
+                        sdf.fill(self.color)
+                    }
+                    return sdf.result
+                }
+            }
+            animator: Animator {
+                hover: {
+                    default: off
+                    off: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { hover: 0.0 }}}
+                    on: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { hover: 1.0 }}}
+                }
+            }
+            align: Align{x: 0.5, y: 0.5}
+
+            close_icon := Label {
+                width: Fit,
+                height: Fit,
+                draw_text +: {
+                    color: #666,
+                    text_style: theme.font_regular {font_size: 10.0}
+                }
+                text: "×"
+            }
+        }
+    }
+
     // Step 1: Register the base widget type
     mod.widgets.MentionableTextInputBase = #(MentionableTextInput::register_widget(vm))
 
@@ -328,6 +407,22 @@ script_mod! {
             bottom := View { height: 0 }
             center := RoundedView {
                 height: Fit
+                flow: Right
+                align: Align{y: 0.5}
+                pills_container := View {
+                    width: Fit
+                    height: Fit
+                    flow: Right
+                    spacing: 2.0
+                    align: Align{y: 0.5}
+
+                    // Pre-defined pill slots (max 5 pills)
+                    pill_0 := mod.widgets.UserPill { visible: false }
+                    pill_1 := mod.widgets.UserPill { visible: false }
+                    pill_2 := mod.widgets.UserPill { visible: false }
+                    pill_3 := mod.widgets.UserPill { visible: false }
+                    pill_4 := mod.widgets.UserPill { visible: false }
+                }
                 left := View{ width: Fit, height: Fit }
                 right := View{ width: Fit, height: Fit }
                 text_input := RobrixTextInput {
@@ -342,6 +437,7 @@ script_mod! {
         room_mention_list_item: mod.widgets.RoomMentionListItem {}
         loading_indicator: mod.widgets.LoadingIndicator {}
         no_matches_indicator: mod.widgets.NoMatchesIndicator {}
+        user_pill: mod.widgets.UserPill {}
     }
 }
 
@@ -361,6 +457,14 @@ pub enum MentionableTextInputAction {
     }
 }
 
+/// Data for a selected user pill
+#[derive(Clone, Debug)]
+pub struct SelectedPill {
+    pub user_id: OwnedUserId,
+    pub display_name: String,
+    pub avatar_url: Option<OwnedMxcUri>,
+}
+
 /// Widget that extends CommandTextInput with @mention capabilities
 #[derive(Script, ScriptHook, Widget)]
 pub struct MentionableTextInput {
@@ -375,6 +479,8 @@ pub struct MentionableTextInput {
     #[live] loading_indicator: Option<LivePtr>,
     /// Template for no matches indicator
     #[live] no_matches_indicator: Option<LivePtr>,
+    /// Template for user pill
+    #[live] user_pill: Option<LivePtr>,
     /// Position where the @ mention starts
     #[rust] current_mention_start_index: Option<usize>,
     /// The set of users that were mentioned (at one point) in this text input.
@@ -392,12 +498,19 @@ pub struct MentionableTextInput {
     #[rust] can_notify_room: bool,
     /// Whether the room members are currently being loaded
     #[rust] members_loading: bool,
+    /// Selected user pills to display in the input
+    #[rust] selected_pills: Vec<SelectedPill>,
+    /// Widget references for rendered pills (to handle close button events)
+    #[rust] pill_widgets: Vec<WidgetRef>,
 }
 
 
 impl Widget for MentionableTextInput {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.cmd_text_input.handle_event(cx, event, scope);
+
+        // Handle pill close button clicks
+        self.handle_pill_events(cx, event);
 
         // Best practice: Always check Scope first to get current context
         // Scope represents the current widget context as passed down from parents
@@ -761,48 +874,179 @@ impl MentionableTextInput {
 
             let is_room_mention = room_mention_text == "Notify the entire room" && room_user_id_text == "@room";
 
-            let mention_to_insert = if is_room_mention {
-                // Always set to true, don't reset previously selected @room mentions
+            if is_room_mention {
+                // For @room, insert text directly (no pill)
                 self.possible_room_mention = true;
-                "@room ".to_string()
+                let mention_to_insert = "@room ".to_string();
+
+                // Use utility function to safely replace text
+                let new_text = utils::safe_replace_by_byte_indices(
+                    &current_text,
+                    start_idx,
+                    head,
+                    &mention_to_insert,
+                );
+
+                self.cmd_text_input.set_text(cx, &new_text);
+                // Calculate new cursor position
+                let new_pos = start_idx + mention_to_insert.len();
+                text_input_ref.set_cursor(cx, Cursor { index: new_pos, prefer_next_row: false }, false);
             } else {
-                // User selected a specific user
+                // User selected a specific user - add as pill
                 let username = selected.label(cx, ids!(user_info.username)).text();
                 let user_id_str = selected.label(cx, ids!(user_id)).text();
                 let Ok(user_id): Result<OwnedUserId, _> = user_id_str.clone().try_into() else {
                     log!("Failed to parse user_id: {}", user_id_str);
                     return;
                 };
-                self.possible_mentions.insert(user_id.clone(), username.clone());
 
-                // Currently, we directly insert the markdown link for user mentions
-                // instead of the user's display name, because we don't yet have a way
-                // to track mentioned display names and replace them later.
-                format!(
-                    "[{username}]({}) ",
-                    user_id.matrix_to_uri(),
-                )
-            };
+                // Check if user is already in pills (avoid duplicates)
+                if !self.selected_pills.iter().any(|p| p.user_id == user_id) {
+                    // Get avatar URL from the selected item's avatar widget
+                    // We'll store None for now since we don't have easy access to the MXC URI here
+                    // The avatar will be re-fetched when rendering the pill
+                    let avatar_url = None;
 
+                    self.selected_pills.push(SelectedPill {
+                        user_id: user_id.clone(),
+                        display_name: username.clone(),
+                        avatar_url,
+                    });
 
-            // Use utility function to safely replace text
-            let new_text = utils::safe_replace_by_byte_indices(
-                &current_text,
-                start_idx,
-                head,
-                &mention_to_insert,
-            );
+                    // Track in possible_mentions for message creation
+                    self.possible_mentions.insert(user_id, username);
+                }
 
-            self.cmd_text_input.set_text(cx, &new_text);
-            // Calculate new cursor position
-            let new_pos = start_idx + mention_to_insert.len();
-            text_input_ref.set_cursor(cx, Cursor { index: new_pos, prefer_next_row: false }, false);
+                // Remove the @ and any partial search text from the input
+                let new_text = utils::safe_replace_by_byte_indices(
+                    &current_text,
+                    start_idx,
+                    head,
+                    "",
+                );
+                self.cmd_text_input.set_text(cx, &new_text);
+                text_input_ref.set_cursor(cx, Cursor { index: start_idx, prefer_next_row: false }, false);
 
+                // Render the pills
+                self.render_pills(cx);
+            }
         }
 
         self.is_searching = false;
         self.current_mention_start_index = None;
         self.close_mention_popup(cx);
+    }
+
+    /// Renders all selected pills in the pills_container using pre-defined pill slots
+    fn render_pills(&mut self, cx: &mut Cx) {
+        // Clear existing pill widget references
+        self.pill_widgets.clear();
+
+        // Pre-defined pill slot IDs
+        let pill_ids = [
+            ids!(persistent.center.pills_container.pill_0),
+            ids!(persistent.center.pills_container.pill_1),
+            ids!(persistent.center.pills_container.pill_2),
+            ids!(persistent.center.pills_container.pill_3),
+            ids!(persistent.center.pills_container.pill_4),
+        ];
+
+        // Update each pill slot
+        for (index, pill_id) in pill_ids.iter().enumerate() {
+            let pill_view = self.cmd_text_input.view(cx, *pill_id);
+
+            if index < self.selected_pills.len() {
+                let pill_data = &self.selected_pills[index];
+
+                // Show and configure the pill
+                pill_view.set_visible(cx, true);
+
+                // Set the username
+                pill_view.label(cx, ids!(pill_username)).set_text(cx, &pill_data.display_name);
+
+                // Set up avatar
+                let avatar = pill_view.avatar(cx, ids!(pill_avatar));
+                if let Some(avatar_url) = &pill_data.avatar_url {
+                    match get_or_fetch_avatar(cx, avatar_url) {
+                        AvatarCacheEntry::Loaded(avatar_data) => {
+                            let _ = avatar.show_image(cx, None, |cx, img| {
+                                utils::load_png_or_jpg(&img, cx, &avatar_data)
+                            });
+                        }
+                        AvatarCacheEntry::Requested | AvatarCacheEntry::Failed => {
+                            avatar.show_text(cx, None, None, &pill_data.display_name);
+                        }
+                    }
+                } else {
+                    avatar.show_text(cx, None, None, &pill_data.display_name);
+                }
+
+                // Store reference for event handling
+                self.pill_widgets.push(pill_view.clone().into());
+            } else {
+                // Hide unused pill slots
+                pill_view.set_visible(cx, false);
+            }
+        }
+
+        self.redraw(cx);
+    }
+
+    /// Removes a pill by user_id
+    fn remove_pill_by_user_id(&mut self, cx: &mut Cx, user_id: &OwnedUserId) {
+        if let Some(index) = self.selected_pills.iter().position(|p| &p.user_id == user_id) {
+            let removed = self.selected_pills.remove(index);
+            self.possible_mentions.remove(&removed.user_id);
+            self.render_pills(cx);
+        }
+    }
+
+    /// Clears all pills
+    fn clear_all_pills(&mut self, cx: &mut Cx) {
+        self.selected_pills.clear();
+        self.pill_widgets.clear();
+        self.possible_mentions.clear();
+        self.render_pills(cx);
+    }
+
+    /// Handles pill close button click events
+    fn handle_pill_events(&mut self, cx: &mut Cx, event: &Event) {
+        // Pre-defined pill slot IDs
+        let pill_ids = [
+            ids!(persistent.center.pills_container.pill_0),
+            ids!(persistent.center.pills_container.pill_1),
+            ids!(persistent.center.pills_container.pill_2),
+            ids!(persistent.center.pills_container.pill_3),
+            ids!(persistent.center.pills_container.pill_4),
+        ];
+
+        // Check each visible pill's close button for clicks
+        for (index, pill_id) in pill_ids.iter().enumerate() {
+            if index >= self.selected_pills.len() {
+                break;
+            }
+
+            let pill_view = self.cmd_text_input.view(cx, *pill_id);
+            let close_button = pill_view.view(cx, ids!(close_button));
+            let area = close_button.area();
+
+            match event.hits(cx, area) {
+                Hit::FingerUp(fue) if fue.is_over && fue.was_tap() => {
+                    // Remove this pill
+                    let removed = self.selected_pills.remove(index);
+                    self.possible_mentions.remove(&removed.user_id);
+                    self.render_pills(cx);
+                    return;
+                }
+                Hit::FingerHoverIn(_) => {
+                    close_button.animate_state(cx, ids!(hover.on));
+                }
+                Hit::FingerHoverOut(_) => {
+                    close_button.animate_state(cx, ids!(hover.off));
+                }
+                _ => {}
+            }
+        }
     }
 
     /// Core text change handler that manages mention context
@@ -1182,69 +1426,72 @@ impl MentionableTextInputRef {
         self.borrow().is_some_and(|inner| inner.can_notify_room())
     }
 
-    /// Returns the mentions actually present in the given html message content.
-    fn get_real_mentions_in_html_text(&self, html: &str) -> Mentions {
+    /// Returns the mentions from selected pills plus any @room mention in the text.
+    fn get_mentions_from_pills_and_text(&self, text: &str) -> Mentions {
         let mut mentions = Mentions::new();
 
         let Some(inner) = self.borrow() else {
             return mentions;
         };
 
-        let mut user_ids = BTreeSet::new();
-
-        for (user_id, username) in &inner.possible_mentions {
-            if html.contains(&format!(
-                "<a href=\"{}\">{}</a>",
-                user_id.matrix_to_uri(),
-                username,
-            )) {
-                user_ids.insert(user_id.clone());
-            }
-        }
+        // Get user IDs from selected pills
+        let user_ids: BTreeSet<OwnedUserId> = inner.selected_pills
+            .iter()
+            .map(|pill| pill.user_id.clone())
+            .collect();
 
         mentions.user_ids = user_ids;
-        // Check for @room mention in HTML content
-        mentions.room = inner.possible_room_mention && html.contains("@room");
+        // Check for @room mention in text content
+        mentions.room = inner.possible_room_mention && text.contains("@room");
         mentions
     }
 
-    /// Returns the mentions actually present in the given markdown message content.
-    fn get_real_mentions_in_markdown_text(&self, markdown: &str) -> Mentions {
-        let mut mentions = Mentions::new();
-
+    /// Builds the message text with pill mentions converted to markdown links.
+    fn build_text_with_pill_mentions(&self, entered_text: &str) -> String {
         let Some(inner) = self.borrow() else {
-            return mentions;
+            return entered_text.to_string();
         };
 
-        let mut user_ids = BTreeSet::new();
-        for (user_id, username) in &inner.possible_mentions {
-            // Check both username format and user_id format for flexibility
-            let username_pattern = format!("[{}]({})", username, user_id.matrix_to_uri());
-            let userid_pattern = format!("[{}]({})", user_id, user_id.matrix_to_uri());
-
-            if markdown.contains(&username_pattern) || markdown.contains(&userid_pattern) {
-                user_ids.insert(user_id.clone());
-            }
+        if inner.selected_pills.is_empty() {
+            return entered_text.to_string();
         }
 
-        mentions.user_ids = user_ids;
-        // Check for @room mention in markdown content
-        mentions.room = inner.possible_room_mention && markdown.contains("@room");
-        mentions
+        // Build mention prefix from pills
+        let mention_prefix: String = inner.selected_pills
+            .iter()
+            .map(|pill| format!("[{}]({}) ", pill.display_name, pill.user_id.matrix_to_uri()))
+            .collect();
+
+        // Prepend pill mentions to the entered text
+        format!("{}{}", mention_prefix, entered_text)
     }
 
     /// Processes entered text and creates a message with mentions based on detected message type.
     /// This method handles /html, /plain prefixes and defaults to markdown.
+    /// Pill mentions are converted to markdown links and prepended to the message.
     pub fn create_message_with_mentions(&self, entered_text: &str) -> RoomMessageEventContent {
         if let Some(html_text) = entered_text.strip_prefix("/html") {
-            let message = RoomMessageEventContent::text_html(html_text, html_text);
-            message.add_mentions(self.get_real_mentions_in_html_text(html_text))
+            let full_text = self.build_text_with_pill_mentions(html_text);
+            let message = RoomMessageEventContent::text_html(&full_text, &full_text);
+            message.add_mentions(self.get_mentions_from_pills_and_text(&full_text))
         } else if let Some(plain_text) = entered_text.strip_prefix("/plain") {
             // Plain text messages don't support mentions
             RoomMessageEventContent::text_plain(plain_text)
         } else {
-            let message = RoomMessageEventContent::text_markdown(entered_text);
-            message.add_mentions(self.get_real_mentions_in_markdown_text(entered_text))
+            let full_text = self.build_text_with_pill_mentions(entered_text);
+            let message = RoomMessageEventContent::text_markdown(&full_text);
+            message.add_mentions(self.get_mentions_from_pills_and_text(&full_text))
+        }
+    }
+
+    /// Clears all selected pills
+    pub fn clear_pills(&self, cx: &mut Cx) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.selected_pills.clear();
+            inner.pill_widgets.clear();
+            inner.possible_mentions.clear();
+            inner.possible_room_mention = false;
+            inner.render_pills(cx);
         }
     }
 
