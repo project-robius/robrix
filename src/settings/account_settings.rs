@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 
 use makepad_widgets::{text::selection::Cursor, *};
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+use rfd::FileDialog;
 
 use matrix_sdk::ruma::OwnedUserId;
 use crate::{account_manager, app::ConfirmDeleteAction, avatar_cache::{self}, home::navigation_tab_bar::get_own_profile, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::{user_profile::UserProfile, user_profile_cache}, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, AccountSwitchAction, MatrixRequest, submit_async_request}, utils};
@@ -522,17 +524,34 @@ impl MatchEvent for AccountSettings {
         let Some(own_profile) = &self.own_profile else { return };
 
         if upload_avatar_button.clicked(actions) {
-            // TODO: uncomment the below once avatar uploading is implemented
-            // Self::enable_upload_avatar_button(cx, false, &upload_avatar_button);
-            // Self::enable_delete_avatar_button(cx, false, &delete_avatar_button);
-            enqueue_popup_notification(
-                "Avatar upload is not yet implemented.",
-                PopupKind::Warning,
-                Some(4.0),
-            );
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            {
+                if let Some(avatar_path) = FileDialog::new()
+                    .add_filter("Image", &["png", "jpg", "jpeg"])
+                    .pick_file()
+                {
+                    submit_async_request(MatrixRequest::UploadAvatar { avatar_path });
+                    cx.action(AccountSettingsAction::AvatarUploadStarted);
+                    enqueue_popup_notification(
+                        "Uploading avatar...",
+                        PopupKind::Info,
+                        Some(5.0),
+                    );
+                }
+            }
+            #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+            {
+                enqueue_popup_notification(
+                    "Avatar uploading is not yet supported on this platform.",
+                    PopupKind::Warning,
+                    Some(4.0),
+                );
+            }
         }
 
         if delete_avatar_button.clicked(actions) {
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            {
             // Don't immediately disable the buttons. Instead, we wait for the user
             // to confirm the action in the confirmation modal,
             // and then we disable the buttons in the AvatarDeleteStarted action handler.
@@ -552,6 +571,15 @@ impl MatchEvent for AccountSettings {
                 ..Default::default()
             };
             cx.action(ConfirmDeleteAction::Show(RefCell::new(Some(content))));
+            }
+            #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+            {
+                enqueue_popup_notification(
+                    "Deleting avatar is not yet supported on this platform.",
+                    PopupKind::Warning,
+                    Some(4.0),
+                );
+            }
         }
 
         // Enable the name change buttons if the user modified the display name to be different.

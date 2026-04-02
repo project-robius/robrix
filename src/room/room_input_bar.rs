@@ -5,7 +5,7 @@
 //! The widgets included in the RoomInputBar are:
 //! * a preview of the message the user is replying to.
 //! * the location preview (which allows you to send your current location to the room),
-//!   and a button to show the location preview.
+//!   and a location card to show the location preview.
 //! * If TSP is enabled, a checkbox to enable TSP signing for the outgoing message.
 //! * A MentionableTextInput, which allows the user to type a message
 //!   and mention other users via the `@` key.
@@ -19,7 +19,7 @@
 use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
-use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedRoomId};
+use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedRoomId, OwnedUserId};
 use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 
 script_mod! {
@@ -28,6 +28,28 @@ script_mod! {
 
 
     mod.widgets.ICO_LOCATION_PERSON = crate_resource("self://resources/icons/location-person.svg")
+    mod.widgets.ICO_MENU = crate_resource("self://resources/icons/menu.svg")
+
+    mod.widgets.RoomEmojiButton = mod.widgets.RobrixIconButton {
+        spacing: 0
+        text: ""
+        margin: 0
+        padding: Inset{left: 8, right: 8, top: 6, bottom: 6}
+        icon_walk: Walk{width: 0, height: 0}
+        draw_text +: {
+            color: (COLOR_TEXT)
+            color_hover: (COLOR_TEXT)
+            color_down: (COLOR_TEXT)
+            text_style: MESSAGE_TEXT_STYLE { font_size: 15.0 }
+        }
+        draw_bg +: {
+            color: (COLOR_PRIMARY)
+            color_hover: #F4F7FC
+            color_down: #E8EEF8
+            border_size: 1.0
+            border_color: (COLOR_SECONDARY)
+        }
+    }
 
 
     mod.widgets.RoomInputBar = set_type_default() do #(RoomInputBar::register_widget(vm)) {
@@ -74,15 +96,17 @@ script_mod! {
             input_bar := View {
                 width: Fill,
                 height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
-                flow: Right
-                // Bottom-align everything to ensure that buttons always stick to the bottom
-                // even when the mentionable_text_input box is very tall.
-                align: Align{y: 1.0},
+                flow: Down
                 padding: 6,
+                spacing: 4
 
-                location_button := RobrixIconButton {
-                    margin: 4
-                    spacing: 0,
+                location_card_button := RobrixIconButton {
+                    visible: false
+                    width: 230
+                    align: Align{x: 0.0, y: 0.5}
+                    margin: Inset{top: 1, bottom: 1}
+                    padding: Inset{left: 10, right: 10, top: 8, bottom: 8}
+                    spacing: 8
                     draw_icon +: {
                         svg: (mod.widgets.ICO_LOCATION_PERSON)
                         color: (COLOR_ACTIVE_PRIMARY_DARKER)
@@ -91,43 +115,110 @@ script_mod! {
                         color: (COLOR_BG_PREVIEW)
                         color_hover: #E0E8F0
                         color_down: #D0D8E8
+                        border_size: 1.0
+                        border_color: (COLOR_SECONDARY)
                     }
-                    icon_walk: Walk{width: 23, height: 23, margin: Inset{bottom: -1}}
-                    text: "",
+                    draw_text +: {
+                        color: (COLOR_TEXT)
+                        color_hover: (COLOR_TEXT)
+                        color_down: (COLOR_TEXT)
+                        text_style: MESSAGE_TEXT_STYLE { font_size: 10.5 }
+                    }
+                    icon_walk: Walk{width: 20, height: 20}
+                    text: "Share your current location",
                 }
 
-                // A checkbox that enables TSP signing for the outgoing message.
-                // If TSP is not enabled, this will be an empty invisible view.
-                tsp_sign_checkbox := TspSignAnycastCheckbox {
-                    margin: Inset{bottom: 9, left: 6, right: 0}
+                emoji_picker_popup := View {
+                    visible: false
+                    width: Fit
+                    height: Fit
+                    flow: Right{wrap: true}
+                    align: Align{x: 0.0, y: 0.5}
+                    margin: Inset{left: 5, top: 1, bottom: 1}
+                    padding: Inset{left: 0, right: 0, top: 0, bottom: 0}
+                    spacing: 6
+
+                    emoji_smile_button := mod.widgets.RoomEmojiButton { text: "😀" }
+                    emoji_joy_button := mod.widgets.RoomEmojiButton { text: "😂" }
+                    emoji_thumbsup_button := mod.widgets.RoomEmojiButton { text: "👍" }
+                    emoji_heart_button := mod.widgets.RoomEmojiButton { text: "❤️" }
+                    emoji_fire_button := mod.widgets.RoomEmojiButton { text: "🔥" }
+                    emoji_party_button := mod.widgets.RoomEmojiButton { text: "🎉" }
+                    emoji_think_button := mod.widgets.RoomEmojiButton { text: "🤔" }
+                    emoji_clap_button := mod.widgets.RoomEmojiButton { text: "👏" }
                 }
 
-                mentionable_text_input := MentionableTextInput {
+                input_row := View {
                     width: Fill,
                     height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
-                    margin: Inset {
-                        top: 3, // add some space between the top border of the text input and the top border of the room input bar
-                        bottom: 5.75, // to line up the middle of the text input with the middle of the buttons
-                        left: 3, right: 3 // to give a bit of breathing room between the text input and the buttons on the sides
-                    },
+                    flow: Right
+                    // Bottom-align everything to ensure that buttons always stick to the bottom
+                    // even when the mentionable_text_input box is very tall.
+                    align: Align{y: 1.0},
 
-                    persistent +: {
-                        center +: {
-                            text_input := RobrixTextInput {
-                                empty_text: "Write a message (in Markdown) ..."
+                    // A checkbox that enables TSP signing for the outgoing message.
+                    // If TSP is not enabled, this will be an empty invisible view.
+                    tsp_sign_checkbox := TspSignAnycastCheckbox {
+                        margin: Inset{bottom: 9, left: 6, right: 0}
+                    }
+
+                    emoji_picker_button := RobrixIconButton {
+                        margin: Inset{left: 3, right: 1, top: 4, bottom: 4}
+                        spacing: 0,
+                        draw_icon +: {
+                            svg: (ICON_ADD_REACTION)
+                            color: (COLOR_ACTIVE_PRIMARY_DARKER)
+                        },
+                        draw_bg +: {
+                            color: (COLOR_BG_PREVIEW)
+                            color_hover: #E0E8F0
+                            color_down: #D0D8E8
+                        }
+                        icon_walk: Walk{width: 19, height: 19}
+                        text: "",
+                    }
+
+                    mentionable_text_input := MentionableTextInput {
+                        width: Fill,
+                        height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
+                        margin: Inset {
+                            top: 3, // add some space between the top border of the text input and the top border of this row
+                            bottom: 5.75, // to line up the middle of the text input with the middle of the buttons
+                            left: 3, right: 3 // to give a bit of breathing room between the text input and the buttons on the sides
+                        },
+
+                        persistent +: {
+                            center +: {
+                                text_input := RobrixTextInput {
+                                    empty_text: "Write a message (in Markdown) ..."
+                                }
                             }
                         }
                     }
-                }
 
-                send_message_button := RobrixPositiveIconButton {
-                    // Disabled by default; enabled when text is inputted
-                    enabled: false,
-                    spacing: 0,
-                    text: "",
-                    margin: 4
-                    draw_icon +: { svg: (ICON_SEND) }
-                    icon_walk: Walk{width: 21, height: 21},
+                    send_message_button := RobrixPositiveIconButton {
+                        visible: false,
+                        // Disabled by default; enabled when text is inputted
+                        enabled: false,
+                        spacing: 0,
+                        text: "",
+                        margin: 4
+                        draw_icon +: { svg: (ICON_SEND) }
+                        icon_walk: Walk{width: 21, height: 21},
+                    }
+
+                    more_actions_button := RobrixIconButton {
+                        spacing: 0,
+                        text: "",
+                        margin: 4
+                        draw_icon +: { svg: (mod.widgets.ICO_MENU) }
+                        draw_bg +: {
+                            color: (COLOR_ACTIVE_PRIMARY)
+                            color_hover: (COLOR_ACTIVE_PRIMARY_DARKER)
+                            color_down: #0C5DAA
+                        }
+                        icon_walk: Walk{width: 19, height: 19},
+                    }
                 }
             }
 
@@ -169,6 +260,12 @@ pub struct RoomInputBar {
     #[rust] was_replying_preview_visible: bool,
     /// Info about the message event that the user is currently replying to, if any.
     #[rust] replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
+    /// The most recently selected explicit bot target for this room.
+    #[rust] active_target_user_id: Option<OwnedUserId>,
+    /// Whether the location card is currently expanded.
+    #[rust] is_location_card_expanded: bool,
+    /// Whether the emoji picker popup is currently expanded.
+    #[rust] is_emoji_picker_expanded: bool,
 }
 
 impl Widget for RoomInputBar {
@@ -212,6 +309,23 @@ impl Widget for RoomInputBar {
 }
 
 impl RoomInputBar {
+    fn resolve_target_user_id(
+        &mut self,
+        explicit_target_user_id: Option<OwnedUserId>,
+        reply_target_user_id: Option<OwnedUserId>,
+        fallback_target_user_id: Option<OwnedUserId>,
+    ) -> Option<OwnedUserId> {
+        if let Some(explicit_target_user_id) = explicit_target_user_id {
+            self.active_target_user_id = Some(explicit_target_user_id.clone());
+            Some(explicit_target_user_id)
+        } else if let Some(reply_target_user_id) = reply_target_user_id {
+            self.active_target_user_id = Some(reply_target_user_id.clone());
+            Some(reply_target_user_id)
+        } else {
+            self.active_target_user_id.clone().or(fallback_target_user_id)
+        }
+    }
+
     fn handle_actions(
         &mut self,
         cx: &mut Cx,
@@ -230,9 +344,58 @@ impl RoomInputBar {
             self.redraw(cx);
         }
 
-        // Handle the add location button being clicked.
-        if self.button(cx, ids!(location_button)).clicked(actions) {
-            log!("Add location button clicked; requesting current location...");
+        // Handle the more actions button being clicked.
+        if self.button(cx, ids!(more_actions_button)).clicked(actions) {
+            self.is_location_card_expanded = !self.is_location_card_expanded;
+            self.button(cx, ids!(location_card_button)).set_visible(cx, self.is_location_card_expanded);
+            self.redraw(cx);
+        }
+
+        // Handle the emoji picker button being clicked.
+        if self.button(cx, ids!(emoji_picker_button)).clicked(actions) {
+            self.is_emoji_picker_expanded = !self.is_emoji_picker_expanded;
+            self.view.view(cx, ids!(emoji_picker_popup)).set_visible(cx, self.is_emoji_picker_expanded);
+            self.redraw(cx);
+        }
+
+        let picked_emoji = if self.button(cx, ids!(emoji_smile_button)).clicked(actions) {
+            Some("😀")
+        } else if self.button(cx, ids!(emoji_joy_button)).clicked(actions) {
+            Some("😂")
+        } else if self.button(cx, ids!(emoji_thumbsup_button)).clicked(actions) {
+            Some("👍")
+        } else if self.button(cx, ids!(emoji_heart_button)).clicked(actions) {
+            Some("❤️")
+        } else if self.button(cx, ids!(emoji_fire_button)).clicked(actions) {
+            Some("🔥")
+        } else if self.button(cx, ids!(emoji_party_button)).clicked(actions) {
+            Some("🎉")
+        } else if self.button(cx, ids!(emoji_think_button)).clicked(actions) {
+            Some("🤔")
+        } else if self.button(cx, ids!(emoji_clap_button)).clicked(actions) {
+            Some("👏")
+        } else {
+            None
+        };
+
+        if let Some(emoji) = picked_emoji {
+            let mut text = mentionable_text_input.text();
+            text.push_str(emoji);
+            mentionable_text_input.set_text(cx, &text);
+            self.enable_send_message_button(cx, !text.trim().is_empty());
+            submit_async_request(MatrixRequest::SendTypingNotice {
+                room_id: room_screen_props.timeline_kind.room_id().clone(),
+                typing: !text.is_empty(),
+            });
+            self.is_emoji_picker_expanded = false;
+            self.view.view(cx, ids!(emoji_picker_popup)).set_visible(cx, false);
+            self.text_input(cx, ids!(input_bar.input_row.mentionable_text_input.text_input)).set_key_focus(cx);
+            self.redraw(cx);
+        }
+
+        // Handle the location card being clicked.
+        if self.button(cx, ids!(location_card_button)).clicked(actions) {
+            log!("Location card clicked; requesting current location...");
             if let Err(_e) = init_location_subscriber(cx) {
                 error!("Failed to initialize location subscriber");
                 enqueue_popup_notification(
@@ -255,6 +418,10 @@ impl RoomInputBar {
                         LocationMessageEventContent::new(geo_uri.clone(), geo_uri)
                     )
                 );
+                let reply_target_user_id = self
+                    .replying_to
+                    .as_ref()
+                    .map(|(event_tl_item, _emb)| event_tl_item.sender().to_owned());
                 let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
                     event_tl_item.event_id().map(|event_id| {
                         let enforce_thread = if room_screen_props.timeline_kind.thread_root_event_id().is_some() {
@@ -279,6 +446,11 @@ impl RoomInputBar {
                     timeline_kind: room_screen_props.timeline_kind.clone(),
                     message,
                     replied_to,
+                    target_user_id: self.resolve_target_user_id(
+                        None,
+                        reply_target_user_id,
+                        room_screen_props.bound_bot_user_id.clone(),
+                    ),
                     #[cfg(feature = "tsp")]
                     sign_with_tsp: self.is_tsp_signing_enabled(cx),
                 });
@@ -306,6 +478,10 @@ impl RoomInputBar {
                     self.redraw(cx);
                     return;
                 }
+                let reply_target_user_id = self
+                    .replying_to
+                    .as_ref()
+                    .map(|(event_tl_item, _emb)| event_tl_item.sender().to_owned());
                 let message = mentionable_text_input.create_message_with_mentions(&entered_text);
                 let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
                     event_tl_item.event_id().map(|event_id| {
@@ -331,6 +507,11 @@ impl RoomInputBar {
                     timeline_kind: room_screen_props.timeline_kind.clone(),
                     message,
                     replied_to,
+                    target_user_id: self.resolve_target_user_id(
+                        None,
+                        reply_target_user_id,
+                        room_screen_props.bound_bot_user_id.clone(),
+                    ),
                     #[cfg(feature = "tsp")]
                     sign_with_tsp: self.is_tsp_signing_enabled(cx),
                 });
@@ -425,7 +606,7 @@ impl RoomInputBar {
         //    so that the user can immediately start typing their reply
         //    without having to manually click on the message input box.
         if grab_key_focus {
-            self.text_input(cx, ids!(input_bar.mentionable_text_input.text_input)).set_key_focus(cx);
+            self.text_input(cx, ids!(input_bar.input_row.mentionable_text_input.text_input)).set_key_focus(cx);
         }
         self.button(cx, ids!(cancel_reply_button)).reset_hover(cx);
         self.redraw(cx);
@@ -506,7 +687,7 @@ impl RoomInputBar {
         }
     }
 
-    /// Sets the send_message_button to be enabled and green, or disabled and gray.
+    /// Sets the send_message_button to be shown/enabled and green, or hidden/disabled and gray.
     ///
     /// This should be called to update the button state when the message TextInput content changes.
     fn enable_send_message_button(&mut self, cx: &mut Cx, enable: bool) {
@@ -517,6 +698,7 @@ impl RoomInputBar {
             (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
         };
         script_apply_eval!(cx, send_message_button, {
+            visible: #(enable),
             enabled: #(enable),
             draw_icon.color: #(fg_color),
             draw_bg.color: #(bg_color),
@@ -664,8 +846,9 @@ impl RoomInputBarRef {
         RoomInputBarState {
             was_replying_preview_visible: inner.was_replying_preview_visible,
             replying_to: inner.replying_to.clone(),
+            active_target_user_id: inner.active_target_user_id.clone(),
             editing_pane_state: inner.child_by_path(ids!(editing_pane)).as_editing_pane().save_state(),
-            text_input_state: inner.child_by_path(ids!(input_bar.mentionable_text_input.text_input)).as_text_input().save_state(),
+            text_input_state: inner.child_by_path(ids!(input_bar.input_row.mentionable_text_input.text_input)).as_text_input().save_state(),
         }
     }
 
@@ -683,6 +866,7 @@ impl RoomInputBarRef {
             was_replying_preview_visible,
             text_input_state,
             replying_to,
+            active_target_user_id,
             editing_pane_state,
         } = saved_state;
 
@@ -694,8 +878,16 @@ impl RoomInputBarRef {
         inner.update_user_power_levels(cx, user_power_levels);
 
         // 1. Restore the state of the TextInput within the MentionableTextInput.
-        inner.text_input(cx, ids!(input_bar.mentionable_text_input.text_input))
+        inner.text_input(cx, ids!(input_bar.input_row.mentionable_text_input.text_input))
             .restore_state(cx, text_input_state);
+        let is_text_input_empty = inner.text_input(cx, ids!(input_bar.input_row.mentionable_text_input.text_input))
+            .text()
+            .is_empty();
+        inner.enable_send_message_button(cx, !is_text_input_empty);
+        inner.is_location_card_expanded = false;
+        inner.button(cx, ids!(location_card_button)).set_visible(cx, false);
+        inner.is_emoji_picker_expanded = false;
+        inner.view.view(cx, ids!(emoji_picker_popup)).set_visible(cx, false);
 
         // 2. Restore the state of the replying-to preview.
         if let Some(replying_to) = replying_to {
@@ -704,6 +896,7 @@ impl RoomInputBarRef {
             inner.clear_replying_to(cx);
         }
         inner.was_replying_preview_visible = was_replying_preview_visible;
+        inner.active_target_user_id = active_target_user_id;
 
         // 3. Restore the state of the editing pane.
         if let Some(editing_pane_state) = editing_pane_state {
@@ -732,6 +925,8 @@ pub struct RoomInputBarState {
     text_input_state: TextInputState,
     /// The event that the user is currently replying to, if any.
     replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
+    /// The most recently selected explicit bot target for this room.
+    active_target_user_id: Option<OwnedUserId>,
     /// The state of the `EditingPane`, if any message was being edited.
     editing_pane_state: Option<EditingPaneState>,
 }
