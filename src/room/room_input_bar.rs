@@ -292,7 +292,9 @@ impl RoomInputBar {
             || text_input.returned(actions).is_some_and(|(_, m)| m.is_primary())
         {
             let entered_text = mentionable_text_input.text().trim().to_string();
-            if !entered_text.is_empty() {
+            let has_pills = mentionable_text_input.has_pills();
+            // Send message if there's text OR if there are mention pills
+            if !entered_text.is_empty() || has_pills {
                 let message = mentionable_text_input.create_message_with_mentions(&entered_text);
                 let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
                     event_tl_item.event_id().map(|event_id| {
@@ -324,6 +326,7 @@ impl RoomInputBar {
 
                 self.clear_replying_to(cx);
                 mentionable_text_input.set_text(cx, "");
+                mentionable_text_input.clear_pills(cx);
                 self.enable_send_message_button(cx, false);
             }
         }
@@ -340,7 +343,9 @@ impl RoomInputBar {
         } else {
             text_input.text().is_empty()
         };
-        self.enable_send_message_button(cx, !is_text_input_empty);
+        // Enable send button if there's text OR if there are mention pills
+        let has_content = !is_text_input_empty || mentionable_text_input.has_pills();
+        self.enable_send_message_button(cx, has_content);
 
         // Handle the user pressing the up arrow in an empty message input box
         // to edit their latest sent message.

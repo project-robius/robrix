@@ -56,14 +56,14 @@ script_mod! {
         }
         animator: Animator {
             hover: {
-                default: off
-                off: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { hover: 0.0 }}}
-                on: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { hover: 1.0 }}}
+                default: @off
+                off: AnimatorState{ from: {all: Forward{duration: 0.1}} apply: { draw_bg: { hover: 0.0 }}}
+                on: AnimatorState{ from: {all: Forward{duration: 0.1}} apply: { draw_bg: { hover: 1.0 }}}
             }
             selected: {
-                default: off
-                off: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { selected: 0.0 }}}
-                on: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { selected: 1.0 }}}
+                default: @off
+                off: AnimatorState{ from: {all: Forward{duration: 0.1}} apply: { draw_bg: { selected: 0.0 }}}
+                on: AnimatorState{ from: {all: Forward{duration: 0.1}} apply: { draw_bg: { selected: 1.0 }}}
             }
         }
         flow: Down
@@ -140,14 +140,14 @@ script_mod! {
         }
         animator: Animator {
             hover: {
-                default: off
-                off: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { hover: 0.0 }}}
-                on: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { hover: 1.0 }}}
+                default: @off
+                off: AnimatorState{ from: {all: Forward{duration: 0.1}} apply: { draw_bg: { hover: 0.0 }}}
+                on: AnimatorState{ from: {all: Forward{duration: 0.1}} apply: { draw_bg: { hover: 1.0 }}}
             }
             selected: {
-                default: off
-                off: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { selected: 0.0 }}}
-                on: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { selected: 1.0 }}}
+                default: @off
+                off: AnimatorState{ from: {all: Forward{duration: 0.1}} apply: { draw_bg: { selected: 0.0 }}}
+                on: AnimatorState{ from: {all: Forward{duration: 0.1}} apply: { draw_bg: { selected: 1.0 }}}
             }
         }
         flow: Down
@@ -307,9 +307,9 @@ script_mod! {
             }
             animator: Animator {
                 hover: {
-                    default: off
-                    off: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { hover: 0.0 }}}
-                    on: { from: {all: Forward{duration: 0.1}} apply: { draw_bg: { hover: 1.0 }}}
+                    default: @off
+                    off: AnimatorState{ from: {all: Forward{duration: 0.1}} apply: { draw_bg: { hover: 0.0 }}}
+                    on: AnimatorState{ from: {all: Forward{duration: 0.1}} apply: { draw_bg: { hover: 1.0 }}}
                 }
             }
             align: Align{x: 0.5, y: 0.5}
@@ -500,8 +500,8 @@ pub struct MentionableTextInput {
     #[rust] members_loading: bool,
     /// Selected user pills to display in the input
     #[rust] selected_pills: Vec<SelectedPill>,
-    /// Widget references for rendered pills (to handle close button events)
-    #[rust] pill_widgets: Vec<WidgetRef>,
+    /// View references for rendered pills (to handle close button events)
+    #[rust] pill_widgets: Vec<ViewRef>,
 }
 
 
@@ -895,6 +895,7 @@ impl MentionableTextInput {
                 // User selected a specific user - add as pill
                 let username = selected.label(cx, ids!(user_info.username)).text();
                 let user_id_str = selected.label(cx, ids!(user_id)).text();
+                log!("[MentionableTextInput {:p}] User selected: {} ({})", self as *const _, username, user_id_str);
                 let Ok(user_id): Result<OwnedUserId, _> = user_id_str.clone().try_into() else {
                     log!("Failed to parse user_id: {}", user_id_str);
                     return;
@@ -939,6 +940,16 @@ impl MentionableTextInput {
 
     /// Renders all selected pills in the pills_container using pre-defined pill slots
     fn render_pills(&mut self, cx: &mut Cx) {
+        // Log with widget address to identify different instances
+        log!("[MentionableTextInput {:p}] render_pills called with {} pills", self as *const _, self.selected_pills.len());
+        for (i, pill) in self.selected_pills.iter().enumerate() {
+            log!("[MentionableTextInput {:p}]   pill {}: {} ({})", self as *const _, i, pill.display_name, pill.user_id);
+        }
+
+        // Log the container
+        let pills_container = self.cmd_text_input.view(cx, ids!(persistent.center.pills_container));
+        log!("[MentionableTextInput {:p}] pills_container area: {:?}", self as *const _, pills_container.area());
+
         // Clear existing pill widget references
         self.pill_widgets.clear();
 
@@ -954,11 +965,13 @@ impl MentionableTextInput {
         // Update each pill slot
         for (index, pill_id) in pill_ids.iter().enumerate() {
             let pill_view = self.cmd_text_input.view(cx, *pill_id);
+            log!("[MentionableTextInput] pill_view index {} area: {:?}", index, pill_view.area());
 
             if index < self.selected_pills.len() {
                 let pill_data = &self.selected_pills[index];
 
                 // Show and configure the pill
+                log!("[MentionableTextInput] Setting pill {} visible: true, name: {}", index, pill_data.display_name);
                 pill_view.set_visible(cx, true);
 
                 // Set the username
@@ -982,7 +995,7 @@ impl MentionableTextInput {
                 }
 
                 // Store reference for event handling
-                self.pill_widgets.push(pill_view.clone().into());
+                self.pill_widgets.push(pill_view);
             } else {
                 // Hide unused pill slots
                 pill_view.set_visible(cx, false);
@@ -1038,12 +1051,6 @@ impl MentionableTextInput {
                     self.render_pills(cx);
                     return;
                 }
-                Hit::FingerHoverIn(_) => {
-                    close_button.animate_state(cx, ids!(hover.on));
-                }
-                Hit::FingerHoverOut(_) => {
-                    close_button.animate_state(cx, ids!(hover.off));
-                }
                 _ => {}
             }
         }
@@ -1051,9 +1058,13 @@ impl MentionableTextInput {
 
     /// Core text change handler that manages mention context
     fn handle_text_change(&mut self, cx: &mut Cx, scope: &mut Scope, text: String) {
+        log!("[MentionableTextInput {:p}] handle_text_change called, text: '{}', pills: {}",
+             self as *const _, text, self.selected_pills.len());
+
         // Check if text is empty or contains only whitespace
         let trimmed_text = text.trim();
         if trimmed_text.is_empty() {
+            log!("[MentionableTextInput {:p}] Text is empty, clearing possible_mentions (not pills)", self as *const _);
             self.possible_mentions.clear();
             self.possible_room_mention = false;
             if self.is_searching {
@@ -1493,6 +1504,11 @@ impl MentionableTextInputRef {
             inner.possible_room_mention = false;
             inner.render_pills(cx);
         }
+    }
+
+    /// Returns true if there are any selected pills
+    pub fn has_pills(&self) -> bool {
+        self.borrow().is_some_and(|inner| !inner.selected_pills.is_empty())
     }
 
 }
