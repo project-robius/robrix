@@ -6,6 +6,7 @@ use eyeball_im::VectorDiff;
 use futures_util::{future::join_all, pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
+use mime::{IMAGE_JPEG, IMAGE_PNG};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
     config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, RelationsOptions, RoomMember}, ruma::{
@@ -14,7 +15,7 @@ use matrix_sdk::{
             room::create_room::v3::{Request as CreateRoomRequest, RoomPreset},
             directory::get_public_rooms_filtered,
             error::ErrorKind,
-            profile::{AvatarUrl, DisplayName},
+            profile::{AvatarUrl, DisplayName, set_avatar_url},
             receipt::create_receipt::v3::ReceiptType,
             uiaa::{AuthData, AuthType, Dummy},
         }}, directory::{Filter as PublicRoomsFilter, RoomTypeFilter}, events::{
@@ -37,7 +38,7 @@ use tokio::{
     sync::{broadcast, mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
 };
 use url::Url;
-use std::{borrow::Cow, cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, DerefMut, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
+use std::{borrow::Cow, cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, DerefMut, Not}, path::{ Path, PathBuf }, sync::{Arc, LazyLock, Mutex}, time::Duration};
 use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
@@ -803,6 +804,11 @@ pub enum MatrixRequest {
         /// which is only needed because it isn't present in the `RoomMember` object.
         room_id: OwnedRoomId,
     },
+    /// Request to upload and set the avatar of the current user's account.
+    UploadAvatar {
+        /// The path to a local PNG or JPEG image file.
+        avatar_path: PathBuf,
+    },
     /// Request to set or remove the avatar of the current user's account.
     SetAvatar {
         /// * If `Some`, the avatar will be set to the given MXC URI.
@@ -1563,6 +1569,7 @@ async fn matrix_worker_task(
                 let _search_task = Handle::current().spawn(async move {
                     let query = query.trim().to_owned();
                     let action_kind = kind.clone();
+                    log!("Remote directory search request: kind={kind:?}, query=\"{query}\", limit={limit}");
                     if query.is_empty() {
                         Cx::post_action(RoomFilterRemoteSearchAction::Results {
                             query,
@@ -1574,19 +1581,42 @@ async fn matrix_worker_task(
 
                     let result = match &kind {
                         RemoteDirectorySearchKind::People => {
-                            client.search_users(&query, limit).await
-                                .map(|response| {
-                                    response.results.into_iter()
-                                        .map(|user| {
-                                            RemoteDirectorySearchResult::User(UserProfile {
+                            let mut users = Vec::new();
+                            let mut seen_user_ids = HashSet::new();
+
+                            if let Ok(user_id) = UserId::parse(&query).map(|u| u.to_owned()) {
+                                if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
+                                    if seen_user_ids.insert(user_id.clone()) {
+                                        users.push(RemoteDirectorySearchResult::User(UserProfile {
+                                            username: response.get_static::<DisplayName>().ok().flatten(),
+                                            user_id,
+                                            avatar_state: response.get_static::<AvatarUrl>()
+                                                .ok()
+                                                .map_or(AvatarState::Unknown, AvatarState::Known),
+                                        }));
+                                    }
+                                }
+                            }
+
+                            match client.search_users(&query, limit).await {
+                                Ok(response) => {
+                                    for user in response.results.into_iter() {
+                                        if seen_user_ids.insert(user.user_id.clone()) {
+                                            users.push(RemoteDirectorySearchResult::User(UserProfile {
                                                 username: user.display_name,
                                                 user_id: user.user_id,
                                                 avatar_state: AvatarState::Known(user.avatar_url),
-                                            })
-                                        })
-                                        .collect::<Vec<_>>()
-                                })
-                                .map_err(|e| e.to_string())
+                                            }));
+                                        }
+                                        if users.len() >= limit as usize {
+                                            break;
+                                        }
+                                    }
+                                    Ok(users)
+                                }
+                                Err(_e) if !users.is_empty() => Ok(users),
+                                Err(e) => Err(e.to_string()),
+                            }
                         }
                         RemoteDirectorySearchKind::Rooms | RemoteDirectorySearchKind::Spaces => {
                             let mut filter = PublicRoomsFilter::new();
@@ -1910,6 +1940,55 @@ async fn matrix_worker_task(
                 });
             }
 
+            MatrixRequest::UploadAvatar { avatar_path } => {
+                let Some(client) = get_client() else { continue };
+                let _upload_avatar_task = Handle::current().spawn(async move {
+                    let data = match std::fs::read(&avatar_path) {
+                        Ok(data) => data,
+                        Err(e) => {
+                            Cx::post_action(AccountDataAction::AvatarChangeFailed(
+                                format!("Failed to read selected avatar file {:?}: {e}", avatar_path)
+                            ));
+                            return;
+                        }
+                    };
+
+                    let content_type = match imghdr::from_bytes(&data) {
+                        Some(imghdr::Type::Png) => IMAGE_PNG,
+                        Some(imghdr::Type::Jpeg) => IMAGE_JPEG,
+                        _ => {
+                            let ext = avatar_path
+                                .extension()
+                                .and_then(|e| e.to_str())
+                                .map(|e| e.to_ascii_lowercase());
+                            match ext.as_deref() {
+                                Some("png") => IMAGE_PNG,
+                                Some("jpg") | Some("jpeg") => IMAGE_JPEG,
+                                _ => {
+                                    Cx::post_action(AccountDataAction::AvatarChangeFailed(
+                                        "Unsupported avatar format. Please choose a PNG or JPEG image.".to_string()
+                                    ));
+                                    return;
+                                }
+                            }
+                        }
+                    };
+
+                    log!("Uploading avatar from file: {:?}", avatar_path);
+                    match client.account().upload_avatar(&content_type, data).await {
+                        Ok(new_avatar_uri) => {
+                            log!("Successfully uploaded avatar.");
+                            Cx::post_action(AccountDataAction::AvatarChanged(Some(new_avatar_uri)));
+                        }
+                        Err(e) => {
+                            Cx::post_action(AccountDataAction::AvatarChangeFailed(
+                                format!("Failed to upload avatar: {e}")
+                            ));
+                        }
+                    }
+                });
+            }
+
             MatrixRequest::SetAvatar { avatar_url } => {
                 let Some(client) = get_client() else { continue };
                 let _set_avatar_task = Handle::current().spawn(async move {
@@ -1922,6 +2001,30 @@ async fn matrix_worker_task(
                             Cx::post_action(AccountDataAction::AvatarChanged(avatar_url));
                         }
                         Err(e) => {
+                            if is_removing && e.client_api_error_kind() == Some(&ErrorKind::Unrecognized) {
+                                log!("Avatar delete endpoint not recognized by homeserver, retrying fallback request...");
+                                let Some(user_id) = client.user_id() else {
+                                    Cx::post_action(AccountDataAction::AvatarChangeFailed(
+                                        "Failed to remove avatar: not authenticated.".to_string()
+                                    ));
+                                    return;
+                                };
+                                #[allow(deprecated)]
+                                let fallback_result = client.send(
+                                    set_avatar_url::v3::Request::new(user_id.to_owned(), None)
+                                ).await;
+                                match fallback_result {
+                                    Ok(_) => {
+                                        log!("Successfully removed avatar via fallback endpoint.");
+                                        Cx::post_action(AccountDataAction::AvatarChanged(None));
+                                    }
+                                    Err(fallback_err) => {
+                                        let err_msg = format!("Failed to remove avatar: {fallback_err}");
+                                        Cx::post_action(AccountDataAction::AvatarChangeFailed(err_msg));
+                                    }
+                                }
+                                return;
+                            }
                             let err_msg = format!("Failed to {} avatar: {e}", if is_removing { "remove" } else { "set" });
                             Cx::post_action(AccountDataAction::AvatarChangeFailed(err_msg));
                         }
