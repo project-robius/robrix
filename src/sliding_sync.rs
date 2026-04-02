@@ -845,6 +845,7 @@ pub enum MatrixRequest {
         timeline_kind: TimelineKind,
         message: RoomMessageEventContent,
         replied_to: Option<Reply>,
+        target_user_id: Option<OwnedUserId>,
         #[cfg(feature = "tsp")]
         sign_with_tsp: bool,
     },
@@ -943,6 +944,75 @@ pub enum MatrixRequest {
         destination: Arc<Mutex<crate::home::link_preview::TimestampedCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
+}
+
+fn add_octos_target_user_id(
+    mut content: serde_json::Value,
+    target_user_id: &UserId,
+) -> serde_json::Value {
+    if let Some(content_obj) = content.as_object_mut() {
+        content_obj.insert(
+            "org.octos.target_user_id".to_string(),
+            serde_json::Value::String(target_user_id.to_string()),
+        );
+    }
+    content
+}
+
+async fn ensure_target_user_joined_room(
+    room: &Room,
+    target_user_id: &UserId,
+) -> Result<()> {
+    let already_present = room
+        .get_member_no_sync(target_user_id)
+        .await
+        .ok()
+        .flatten()
+        .is_some();
+    if already_present {
+        return Ok(());
+    }
+
+    room.invite_user_by_id(target_user_id).await?;
+
+    for _attempt in 0..20 {
+        let joined = room
+            .get_member_no_sync(target_user_id)
+            .await
+            .ok()
+            .flatten()
+            .is_some();
+        if joined {
+            return Ok(());
+        }
+
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod matrix_request_tests {
+    use super::*;
+
+    #[test]
+    fn should_add_octos_target_user_id_to_message_content() {
+        let target_user_id = OwnedUserId::try_from("@bot_weather:example.com").unwrap();
+        let content = serde_json::json!({
+            "msgtype": "m.text",
+            "body": "hello",
+        });
+
+        let content = add_octos_target_user_id(content, target_user_id.as_ref());
+
+        assert_eq!(
+            content
+                .get("org.octos.target_user_id")
+                .and_then(|value| value.as_str()),
+            Some("@bot_weather:example.com")
+        );
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2255,6 +2325,7 @@ async fn matrix_worker_task(
                 timeline_kind,
                 message,
                 replied_to,
+                target_user_id,
                 #[cfg(feature = "tsp")]
                 sign_with_tsp,
             } => {
@@ -2328,11 +2399,84 @@ async fn matrix_worker_task(
                                 return;
                             }
                         };
-                        match timeline.send(reply_content.into()).await {
-                            Ok(_send_handle) => log!("Sent reply message to {timeline_kind}."),
+
+                        if let Some(target_user_id) = target_user_id.as_ref() {
+                            if let Err(_e) = ensure_target_user_joined_room(
+                                timeline.room(),
+                                target_user_id.as_ref(),
+                            )
+                            .await
+                            {
+                                error!("Failed to ensure targeted bot {target_user_id} joined {timeline_kind}: {_e:?}");
+                                enqueue_popup_notification(
+                                    format!("Failed to invite {target_user_id} into this room: {_e}"),
+                                    PopupKind::Error,
+                                    None,
+                                );
+                                return;
+                            }
+
+                            let raw_content = match serde_json::to_value(&reply_content) {
+                                Ok(content) => add_octos_target_user_id(content, target_user_id.as_ref()),
+                                Err(_e) => {
+                                    error!("Failed to serialize reply content for {timeline_kind}: {_e:?}");
+                                    enqueue_popup_notification(
+                                        format!("Failed to send reply: {_e}"),
+                                        PopupKind::Error,
+                                        None,
+                                    );
+                                    return;
+                                }
+                            };
+                            match timeline.room().send_raw("m.room.message", raw_content).await {
+                                Ok(_response) => log!("Sent targeted reply message to {timeline_kind}."),
+                                Err(_e) => {
+                                    error!("Failed to send targeted reply message to {timeline_kind}: {_e:?}");
+                                    enqueue_popup_notification(format!("Failed to send reply: {_e}"), PopupKind::Error, None);
+                                }
+                            }
+                        } else {
+                            match timeline.send(reply_content.into()).await {
+                                Ok(_send_handle) => log!("Sent reply message to {timeline_kind}."),
+                                Err(_e) => {
+                                    error!("Failed to send reply message to {timeline_kind}: {_e:?}");
+                                    enqueue_popup_notification(format!("Failed to send reply: {_e}"), PopupKind::Error, None);
+                                }
+                            }
+                        }
+                    } else if let Some(target_user_id) = target_user_id.as_ref() {
+                        if let Err(_e) = ensure_target_user_joined_room(
+                            timeline.room(),
+                            target_user_id.as_ref(),
+                        )
+                        .await
+                        {
+                            error!("Failed to ensure targeted bot {target_user_id} joined {timeline_kind}: {_e:?}");
+                            enqueue_popup_notification(
+                                format!("Failed to invite {target_user_id} into this room: {_e}"),
+                                PopupKind::Error,
+                                None,
+                            );
+                            return;
+                        }
+
+                        let raw_content = match serde_json::to_value(&message) {
+                            Ok(content) => add_octos_target_user_id(content, target_user_id.as_ref()),
                             Err(_e) => {
-                                error!("Failed to send reply message to {timeline_kind}: {_e:?}");
-                                enqueue_popup_notification(format!("Failed to send reply: {_e}"), PopupKind::Error, None);
+                                error!("Failed to serialize message content for {timeline_kind}: {_e:?}");
+                                enqueue_popup_notification(
+                                    format!("Failed to send message: {_e}"),
+                                    PopupKind::Error,
+                                    None,
+                                );
+                                return;
+                            }
+                        };
+                        match timeline.room().send_raw("m.room.message", raw_content).await {
+                            Ok(_response) => log!("Sent targeted message to {timeline_kind}."),
+                            Err(_e) => {
+                                error!("Failed to send targeted message to {timeline_kind}: {_e:?}");
+                                enqueue_popup_notification(format!("Failed to send message: {_e}"), PopupKind::Error, None);
                             }
                         }
                     } else {
