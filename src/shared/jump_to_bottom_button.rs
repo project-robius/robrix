@@ -173,7 +173,9 @@ impl JumpToBottomButton {
                 self.label(cx, ids!(unread_messages_count)).set_text(cx, "");
             }
             UnreadMessageCount::Known(0) => {
-                self.visible = false;
+                // Only hide the badge, not the entire button.
+                // The button's visibility is controlled by `update_visibility()`
+                // based on whether the portal list is at the end.
                 self.view(cx, ids!(unread_message_badge)).set_visible(cx, false);
                 self.label(cx, ids!(unread_messages_count)).set_text(cx, "");
             }
