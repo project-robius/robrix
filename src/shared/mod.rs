@@ -4,12 +4,14 @@ pub mod avatar;
 pub mod collapsible_header;
 pub mod expand_arrow;
 pub mod confirmation_modal;
+pub mod file_upload_modal;
 pub mod helpers;
 pub mod html_or_plaintext;
 pub mod icon_button;
 pub mod jump_to_bottom_button;
 pub mod mentionable_text_input;
 pub mod popup_list;
+pub mod progress_bar;
 pub mod room_filter_input_bar;
 pub mod styles;
 pub mod text_or_image;
@@ -44,4 +46,6 @@ pub fn script_mod(vm: &mut ScriptVm) {
     restore_status_view::script_mod(vm);
     confirmation_modal::script_mod(vm);
     image_viewer::script_mod(vm);
+    progress_bar::script_mod(vm);
+    file_upload_modal::script_mod(vm);
 }

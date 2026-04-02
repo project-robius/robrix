@@ -1007,6 +1007,25 @@ impl From<(Option<RoomDisplayName>, OwnedRoomId)> for RoomNameId {
     }
 }
 
+/// Formats a file size in bytes to a human-readable string.
+///
+/// Examples: "1.5 KB", "2.3 MB", "4.0 GB"
+pub fn format_file_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
 /// Returns a text avatar string containing the first character of the room name.
 ///
 /// Skips the first character if it is a `#` or `!`, the sigils used for Room aliases and Room IDs.

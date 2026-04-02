@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail, Result};
 use bitflags::bitflags;
+use mime::Mime;
 use clap::Parser;
 use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
@@ -569,6 +570,14 @@ pub enum MatrixRequest {
     SendMessage {
         timeline_kind: TimelineKind,
         message: RoomMessageEventContent,
+        replied_to: Option<Reply>,
+        #[cfg(feature = "tsp")]
+        sign_with_tsp: bool,
+    },
+    /// Request to send a file attachment to the given room.
+    SendAttachment {
+        timeline_kind: TimelineKind,
+        file_data: crate::shared::file_upload_modal::FileData,
         replied_to: Option<Reply>,
         #[cfg(feature = "tsp")]
         sign_with_tsp: bool,
@@ -1689,6 +1698,94 @@ async fn matrix_worker_task(
                 });
             }
 
+            MatrixRequest::SendAttachment {
+                timeline_kind,
+                file_data,
+                replied_to,
+                #[cfg(feature = "tsp")]
+                sign_with_tsp: _sign_with_tsp,
+            } => {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+                    log!("BUG: {timeline_kind} not found for send attachment request");
+                    continue;
+                };
+
+                // Spawn a new async task to send the attachment.
+                let _send_attachment_task = Handle::current().spawn(async move {
+                    use matrix_sdk::attachment::AttachmentConfig;
+                    use eyeball::SharedObservable;
+
+                    log!("Sending attachment to {timeline_kind}: {} ({} bytes)...",
+                        file_data.name, file_data.size);
+
+                    // For now, we'll just send the attachment without reply support
+                    // TODO: Add proper reply support for attachments
+                    let _ = replied_to; // Suppress unused warning for now
+
+                    // Parse MIME type
+                    let content_type: Mime = file_data.mime_type.parse()
+                        .unwrap_or_else(|_| "application/octet-stream".parse().unwrap());
+
+                    // Create a progress observable to track upload progress
+                    let send_progress: SharedObservable<matrix_sdk::TransmissionProgress> = Default::default();
+                    let progress_subscriber = send_progress.subscribe();
+
+                    // Spawn a task to handle progress updates
+                    let sender_clone = sender.clone();
+                    Handle::current().spawn(async move {
+                        let mut subscriber = progress_subscriber;
+                        loop {
+                            let progress = subscriber.get();
+                            let current: u64 = progress.current as u64;
+                            let total: u64 = progress.total as u64;
+                            if sender_clone.send(TimelineUpdate::FileUploadUpdate {
+                                current,
+                                total,
+                            }).is_err() {
+                                break;
+                            }
+                            SignalToUI::set_ui_signal();
+                            // Wait for next update
+                            if subscriber.next().await.is_none() {
+                                break;
+                            }
+                        }
+                    });
+
+                    // Use the Room's send_attachment method directly
+                    let room = timeline.room();
+                    let config = AttachmentConfig::new();
+
+                    let send_future = room.send_attachment(
+                        &file_data.name,
+                        &content_type,
+                        file_data.data.clone(),
+                        config,
+                    ).with_send_progress_observable(send_progress);
+
+                    match send_future.await {
+                        Ok(_response) => {
+                            log!("Successfully sent attachment to {timeline_kind}.");
+                            let _ = sender.send(TimelineUpdate::FileUploadComplete);
+                        }
+                        Err(e) => {
+                            error!("Failed to send attachment to {timeline_kind}: {e:?}");
+                            let _ = sender.send(TimelineUpdate::FileUploadError {
+                                error: format!("{e}"),
+                                file_data: file_data.clone(),
+                            });
+                            enqueue_popup_notification(
+                                format!("Failed to upload file: {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
+                        }
+                    }
+
+                    SignalToUI::set_ui_signal();
+                });
+            }
+
             MatrixRequest::ReadReceipt { timeline_kind, event_id, receipt_type } => {
                 let Some(timeline) = get_timeline(&timeline_kind) else {
                     log!("BUG: {timeline_kind} not found when sending read receipt, {event_id}");
@@ -2179,6 +2276,19 @@ pub fn take_timeline_endpoints(kind: &TimelineKind) -> Option<TimelineEndpoints>
         request_sender,
         successor_room: details.timeline.room().successor_room(),
     })
+}
+
+/// Returns a clone of the timeline update sender for the given timeline.
+///
+/// This can be called multiple times, as it only clones the sender.
+pub fn get_timeline_update_sender(kind: &TimelineKind) -> Option<crossbeam_channel::Sender<TimelineUpdate>> {
+    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+    let jrd = all_joined_rooms.get(kind.room_id())?;
+    let details = match kind {
+        TimelineKind::MainRoom { .. } => &jrd.main_timeline,
+        TimelineKind::Thread { thread_root_event_id, .. } => jrd.thread_timelines.get(thread_root_event_id)?,
+    };
+    Some(details.timeline_update_sender.clone())
 }
 
 const DEFAULT_HOMESERVER: &str = "matrix.org";
