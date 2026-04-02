@@ -3,7 +3,7 @@ use ruma::OwnedRoomId;
 use tokio::sync::Notify;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, utils::RoomNameId};
+use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, sliding_sync::AccountSwitchAction, utils::RoomNameId};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
 
 script_mod! {
@@ -410,6 +410,12 @@ impl WidgetMatchEvent for MainDesktopUI {
             if let Some(MainDesktopUiAction::CloseAllTabs { on_close_all }) = action.downcast_ref() {
                 self.close_all_tabs(cx);
                 on_close_all.notify_one();
+                continue;
+            }
+
+            // When switching accounts, close all room tabs (keeping only the home tab)
+            if let Some(AccountSwitchAction::Starting(_)) = action.downcast_ref() {
+                self.close_all_tabs(cx);
                 continue;
             }
 

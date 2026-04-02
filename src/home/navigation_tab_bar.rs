@@ -36,7 +36,7 @@ use crate::{
         user_profile_cache::{self, UserProfileUpdate},
     }, home::spaces_bar::SpacesBarWidgetExt, shared::{
         avatar::{AvatarState, AvatarWidgetExt}, styles::*, verification_badge::VerificationBadgeWidgetExt
-    }, sliding_sync::{current_user_id, AccountDataAction}, utils::{self, RoomNameId}
+    }, sliding_sync::{current_user_id, AccountDataAction, AccountSwitchAction}, utils::{self, RoomNameId}
 };
 
 script_mod! {
@@ -285,6 +285,13 @@ impl Widget for ProfileIcon {
 
                 if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
                     self.own_profile = None;
+                    self.view.redraw(cx);
+                    continue;
+                }
+
+                // Handle account switch - refresh profile with new account's data
+                if let Some(AccountSwitchAction::Switched(_new_user_id)) = action.downcast_ref() {
+                    self.own_profile = get_own_profile(cx);
                     self.view.redraw(cx);
                     continue;
                 }
