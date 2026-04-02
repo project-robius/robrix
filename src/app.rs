@@ -6,7 +6,7 @@
 use std::{fs::{File, OpenOptions}, io::Write, sync::Mutex};
 use std::{cell::RefCell, collections::HashMap};
 use makepad_widgets::*;
-use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedUserId, RoomId, UserId}};
+use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedUserId, RoomId, UserId, events::room::message::RoomMessageEventContent}};
 use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::{self, AvatarCacheEntry, clear_avatar_cache}, home::{
@@ -14,7 +14,7 @@ use crate::{
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, invite_screen::InviteScreenWidgetRefExt, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, RoomScreenWidgetRefExt, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, space_lobby::SpaceLobbyScreenWidgetRefExt, spaces_bar::SpacesBarRef
     }, i18n::{AppLanguage, tr_fmt, tr_key}, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::{user_profile::UserProfile, user_profile_cache::clear_user_profile_cache}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, room_filter_input_bar::RoomFilterAction}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RemoteDirectorySearchKind, RemoteDirectorySearchResult, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::{user_profile::UserProfile, user_profile_cache::clear_user_profile_cache}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, room_filter_input_bar::RoomFilterAction}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RemoteDirectorySearchKind, RemoteDirectorySearchResult, TimelineKind, AccountSwitchAction, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -473,6 +473,7 @@ fn init_file_logging() -> Option<()> {
 
 /// Writes a log message to the log file (if file logging is enabled).
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[allow(dead_code)]
 fn write_to_log_file(message: &str) {
     if let Some(Some(file_mutex)) = LOG_FILE.get() {
         if let Ok(mut file) = file_mutex.lock() {
@@ -767,9 +768,74 @@ impl MatchEvent for App {
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
                 log!("Received LoginAction::LoginSuccess, hiding login view.");
                 self.app_state.logged_in = true;
+                self.app_state.adding_account = false;
                 self.update_login_visibility(cx);
                 self.ui.redraw(cx);
                 continue;
+            }
+
+            // Handle request to show login screen for adding another account
+            if let Some(LoginAction::ShowAddAccountScreen) = action.downcast_ref() {
+                log!("Received LoginAction::ShowAddAccountScreen, showing login view for adding account.");
+                self.app_state.adding_account = true;
+                self.ui.view(cx, ids!(login_screen_view)).set_visible(cx, true);
+                self.ui.redraw(cx);
+                continue;
+            }
+
+            // Handle successful addition of a new account
+            if let Some(LoginAction::AddAccountSuccess) = action.downcast_ref() {
+                log!("Received LoginAction::AddAccountSuccess, hiding login view.");
+                self.app_state.adding_account = false;
+                self.ui.view(cx, ids!(login_screen_view)).set_visible(cx, false);
+                self.ui.redraw(cx);
+                continue;
+            }
+
+            // Handle cancellation of adding a new account - go back to previous screen
+            if let Some(LoginAction::CancelAddAccount) = action.downcast_ref() {
+                log!("Received LoginAction::CancelAddAccount, hiding login view.");
+                self.app_state.adding_account = false;
+                self.ui.view(cx, ids!(login_screen_view)).set_visible(cx, false);
+                self.ui.redraw(cx);
+                continue;
+            }
+
+            // Handle account switch actions
+            match action.downcast_ref() {
+                Some(AccountSwitchAction::Starting(user_id)) => {
+                    log!("Account switch starting to: {}", user_id);
+                    // Clear UI state during account switch
+                    clear_all_app_state(cx);
+                    self.app_state.selected_room = None;
+                    // Clear saved dock state so tabs will be closed
+                    self.app_state.saved_dock_state_home = Default::default();
+                    // Reset navigation to Home tab
+                    self.app_state.selected_tab = SelectedTab::Home;
+                    cx.action(NavigationBarAction::TabSelected(SelectedTab::Home));
+                    self.ui.redraw(cx);
+                    continue;
+                }
+                Some(AccountSwitchAction::Switched(user_id)) => {
+                    log!("Account switch completed to: {}", user_id);
+                    enqueue_popup_notification(
+                        format!("Switched to account {}", user_id),
+                        PopupKind::Success,
+                        Some(3.0),
+                    );
+                    self.ui.redraw(cx);
+                    continue;
+                }
+                Some(AccountSwitchAction::Failed(error)) => {
+                    log!("Account switch failed: {}", error);
+                    enqueue_popup_notification(
+                        format!("Failed to switch account: {}", error),
+                        PopupKind::Error,
+                        None,
+                    );
+                    continue;
+                }
+                _ => {}
             }
 
             // If a login failure occurs mid-session (e.g., an expired/revoked token detected
@@ -976,11 +1042,6 @@ impl MatchEvent for App {
                             error!("Failed to persist app state after updating BotFather room binding. Error: {e}");
                         }
                     }
-                    let kind = if warning.is_some() {
-                        PopupKind::Warning
-                    } else {
-                        PopupKind::Success
-                    };
                     let message = match (*bound, bot_user_id.as_ref(), warning.as_deref()) {
                         (true, Some(bot_user_id), Some(warning)) => {
                             format!("BotFather {bot_user_id} is available for room {room_id}, but inviting it reported a warning: {warning}")
@@ -1007,7 +1068,14 @@ impl MatchEvent for App {
                             format!("Bound room {room_id} to BotFather.")
                         }
                     };
-                    enqueue_popup_notification(message, kind, Some(5.0));
+                    submit_async_request(MatrixRequest::SendMessage {
+                        timeline_kind: TimelineKind::MainRoom { room_id: room_id.clone() },
+                        message: RoomMessageEventContent::notice_plain(format!("[App Service] {message}")),
+                        replied_to: None,
+                        target_user_id: None,
+                        #[cfg(feature = "tsp")]
+                        sign_with_tsp: false,
+                    });
                     self.ui.redraw(cx);
                     continue;
                 }
@@ -1833,6 +1901,10 @@ pub struct AppState {
     pub logged_in: bool,
     /// The preferred app language.
     pub app_language: AppLanguage,
+    /// Whether the app is currently showing the login screen for adding another account.
+    /// This is transient state and not persisted.
+    #[serde(skip)]
+    pub adding_account: bool,
     /// Local configuration and UI state for bot-assisted room binding.
     pub bot_settings: BotSettingsState,
 }

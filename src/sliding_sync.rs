@@ -6,6 +6,7 @@ use eyeball_im::VectorDiff;
 use futures_util::{future::join_all, pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
+use mime::{IMAGE_JPEG, IMAGE_PNG};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
     config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, RelationsOptions, RoomMember}, ruma::{
@@ -14,7 +15,7 @@ use matrix_sdk::{
             room::create_room::v3::{Request as CreateRoomRequest, RoomPreset},
             directory::get_public_rooms_filtered,
             error::ErrorKind,
-            profile::{AvatarUrl, DisplayName},
+            profile::{AvatarUrl, DisplayName, set_avatar_url},
             receipt::create_receipt::v3::ReceiptType,
             uiaa::{AuthData, AuthType, Dummy},
         }}, directory::{Filter as PublicRoomsFilter, RoomTypeFilter}, events::{
@@ -37,10 +38,11 @@ use tokio::{
     sync::{broadcast, mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
 };
 use url::Url;
-use std::{borrow::Cow, cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, DerefMut, Not}, path:: Path, sync::{Arc, LazyLock, Mutex}, time::Duration};
+use std::{borrow::Cow, cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, DerefMut, Not}, path::{ Path, PathBuf }, sync::{Arc, LazyLock, Mutex}, time::Duration};
 use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
+    account_manager::{self, Account},
     app::{AppStateAction, RoomFilterRemoteSearchAction}, app_data_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
         add_room::{CreatableSpacesAction, CreateRoomAction, CreateRoomContext, KnockResultAction}, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, build_room_search_text, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
@@ -130,7 +132,8 @@ async fn finalize_authenticated_client(
     client: Client,
     client_session: ClientSessionPersisted,
     fallback_user_id: &str,
-) -> Result<(Client, Option<String>)> {
+    is_add_account: bool,
+) -> Result<(Client, Option<String>, bool, ClientSessionPersisted)> {
     if client.matrix_auth().logged_in() {
         let logged_in_user_id = client.user_id()
             .map(ToString::to_string)
@@ -138,12 +141,12 @@ async fn finalize_authenticated_client(
         log!("Logged in successfully.");
         let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
         enqueue_rooms_list_update(RoomsListUpdate::Status { status });
-        if let Err(e) = persistence::save_session(&client, client_session).await {
+        if let Err(e) = persistence::save_session(&client, client_session.clone()).await {
             let err_msg = format!("Failed to save session state to storage: {e}");
             error!("{err_msg}");
             enqueue_popup_notification(err_msg, PopupKind::Error, None);
         }
-        Ok((client, None))
+        Ok((client, None, is_add_account, client_session))
     } else {
         let err_msg = format!(
             "Authentication succeeded for {fallback_user_id}, but the homeserver did not return a login session."
@@ -368,17 +371,20 @@ async fn build_client(
 ///
 /// This function is used by the login screen to log in to the Matrix server.
 ///
-/// Upon success, this function returns the logged-in client and an optional sync token.
+/// Upon success, this function returns the logged-in client, an optional sync token,
+/// a boolean indicating if this is an add-account operation (multi-account mode),
+/// and the client session for storing in the account manager.
 async fn login(
     cli: &Cli,
     login_request: LoginRequest,
-) -> Result<(Client, Option<String>)> {
+) -> Result<(Client, Option<String>, bool, ClientSessionPersisted)> {
     match login_request {
         LoginRequest::LoginByCli | LoginRequest::LoginByPassword(_) => {
-            let cli = if let LoginRequest::LoginByPassword(login_by_password) = login_request {
-                &Cli::from(login_by_password)
+            let (cli, is_add_account) = if let LoginRequest::LoginByPassword(login_by_password) = login_request {
+                let is_add_account = login_by_password.is_add_account;
+                (&Cli::from(login_by_password), is_add_account)
             } else {
-                cli
+                (cli, false)
             };
             let (client, client_session) = build_client(cli, app_data_dir()).await?;
             Cx::post_action(LoginAction::Status {
@@ -392,13 +398,23 @@ async fn login(
                 .initial_device_display_name("robrix-un-pw")
                 .send()
                 .await?;
-            if !client.matrix_auth().logged_in() {
+            if client.matrix_auth().logged_in() {
+                log!("Logged in successfully.");
+                let status = format!("Logged in as {}.\n → Loading rooms...", cli.user_id);
+                // enqueue_popup_notification(status.clone());
+                enqueue_rooms_list_update(RoomsListUpdate::Status { status });
+                if let Err(e) = persistence::save_session(&client, client_session.clone()).await {
+                    let err_msg = format!("Failed to save session state to storage: {e}");
+                    error!("{err_msg}");
+                    enqueue_popup_notification(err_msg, PopupKind::Error, None);
+                }
+            } else {
                 let err_msg = format!("Failed to login as {}: {:?}", cli.user_id, login_result);
                 enqueue_popup_notification(err_msg.clone(), PopupKind::Error, None);
                 enqueue_rooms_list_update(RoomsListUpdate::Status { status: err_msg.clone() });
                 bail!(err_msg);
             }
-            finalize_authenticated_client(client, client_session, &cli.user_id).await
+            finalize_authenticated_client(client, client_session, &cli.user_id, is_add_account).await
         }
 
         LoginRequest::Register(registration) => {
@@ -455,15 +471,15 @@ async fn login(
                 bail!(err_msg);
             }
 
-            finalize_authenticated_client(client, client_session, register_result.user_id.as_str())
+            finalize_authenticated_client(client, client_session, register_result.user_id.as_str(), false)
                 .await
         }
 
-        LoginRequest::LoginBySSOSuccess(client, client_session) => {
-            if let Err(e) = persistence::save_session(&client, client_session).await {
+        LoginRequest::LoginBySSOSuccess(client, client_session, is_add_account) => {
+            if let Err(e) = persistence::save_session(&client, client_session.clone()).await {
                 error!("Failed to save session state to storage: {e:?}");
             }
-            Ok((client, None))
+            Ok((client, None, is_add_account, client_session))
         }
         LoginRequest::HomeserverLoginTypesQuery(_) => {
             bail!("LoginRequest::HomeserverLoginTypesQuery not handled earlier");
@@ -562,6 +578,17 @@ pub enum AccountDataAction {
     DisplayNameChangeFailed(String),
 }
 
+/// Actions emitted in response to account switching.
+#[derive(Debug, Clone)]
+pub enum AccountSwitchAction {
+    /// Account switch is starting - UI should show loading state.
+    Starting(OwnedUserId),
+    /// Successfully switched to a different account.
+    Switched(OwnedUserId),
+    /// Failed to switch accounts.
+    Failed(String),
+}
+
 /// Actions emitted in response to a [`MatrixRequest::OpenOrCreateDirectMessage`].
 #[derive(Debug)]
 pub enum DirectMessageRoomAction {
@@ -628,6 +655,10 @@ impl std::fmt::Display for TimelineKind {
 pub enum MatrixRequest {
     /// Request from the login screen to log in with the given credentials.
     Login(LoginRequest),
+    /// Request to switch to a different logged-in account.
+    SwitchAccount {
+        user_id: OwnedUserId,
+    },
     /// Request to logout.
     Logout {
         is_desktop: bool,
@@ -803,6 +834,11 @@ pub enum MatrixRequest {
         /// which is only needed because it isn't present in the `RoomMember` object.
         room_id: OwnedRoomId,
     },
+    /// Request to upload and set the avatar of the current user's account.
+    UploadAvatar {
+        /// The path to a local PNG or JPEG image file.
+        avatar_path: PathBuf,
+    },
     /// Request to set or remove the avatar of the current user's account.
     SetAvatar {
         /// * If `Some`, the avatar will be set to the given MXC URI.
@@ -839,6 +875,7 @@ pub enum MatrixRequest {
         timeline_kind: TimelineKind,
         message: RoomMessageEventContent,
         replied_to: Option<Reply>,
+        target_user_id: Option<OwnedUserId>,
         #[cfg(feature = "tsp")]
         sign_with_tsp: bool,
     },
@@ -939,6 +976,75 @@ pub enum MatrixRequest {
     },
 }
 
+fn add_octos_target_user_id(
+    mut content: serde_json::Value,
+    target_user_id: &UserId,
+) -> serde_json::Value {
+    if let Some(content_obj) = content.as_object_mut() {
+        content_obj.insert(
+            "org.octos.target_user_id".to_string(),
+            serde_json::Value::String(target_user_id.to_string()),
+        );
+    }
+    content
+}
+
+async fn ensure_target_user_joined_room(
+    room: &Room,
+    target_user_id: &UserId,
+) -> Result<()> {
+    let already_present = room
+        .get_member_no_sync(target_user_id)
+        .await
+        .ok()
+        .flatten()
+        .is_some();
+    if already_present {
+        return Ok(());
+    }
+
+    room.invite_user_by_id(target_user_id).await?;
+
+    for _attempt in 0..20 {
+        let joined = room
+            .get_member_no_sync(target_user_id)
+            .await
+            .ok()
+            .flatten()
+            .is_some();
+        if joined {
+            return Ok(());
+        }
+
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod matrix_request_tests {
+    use super::*;
+
+    #[test]
+    fn should_add_octos_target_user_id_to_message_content() {
+        let target_user_id = OwnedUserId::try_from("@bot_weather:example.com").unwrap();
+        let content = serde_json::json!({
+            "msgtype": "m.text",
+            "body": "hello",
+        });
+
+        let content = add_octos_target_user_id(content, target_user_id.as_ref());
+
+        assert_eq!(
+            content
+                .get("org.octos.target_user_id")
+                .and_then(|value| value.as_str()),
+            Some("@bot_weather:example.com")
+        );
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RemoteDirectorySearchKind {
     People,
@@ -971,7 +1077,7 @@ pub fn submit_async_request(req: MatrixRequest) {
 pub enum LoginRequest{
     LoginByPassword(LoginByPassword),
     Register(RegisterAccount),
-    LoginBySSOSuccess(Client, ClientSessionPersisted),
+    LoginBySSOSuccess(Client, ClientSessionPersisted, bool),
     LoginByCli,
     HomeserverLoginTypesQuery(String),
 
@@ -981,6 +1087,8 @@ pub struct LoginByPassword {
     pub user_id: String,
     pub password: String,
     pub homeserver: Option<String>,
+    /// Whether this login is for adding another account (multi-account mode).
+    pub is_add_account: bool,
 }
 
 /// Information needed to register a new account on a Matrix homeserver.
@@ -1009,11 +1117,84 @@ async fn matrix_worker_task(
     while let Some(request) = request_receiver.recv().await {
         match request {
             MatrixRequest::Login(login_request) => {
-                if let Err(e) = login_sender.send(login_request).await {
-                    error!("Error sending login request to login_sender: {e:?}");
-                    Cx::post_action(LoginAction::LoginFailure(String::from(
-                        "BUG: failed to send login request to login worker task."
-                    )));
+                // Check if this is an add-account login (when already logged in)
+                let is_add_account = match &login_request {
+                    LoginRequest::LoginByPassword(lpw) => lpw.is_add_account,
+                    LoginRequest::LoginBySSOSuccess(_, _, is_add) => *is_add,
+                    _ => false,
+                };
+
+                if is_add_account {
+                    // Handle add-account login directly in the worker task
+                    log!("Processing add-account login directly in worker task");
+                    let cli = Cli::default();
+                    match login(&cli, login_request).await {
+                        Ok((client, _sync_token, _is_add, session)) => {
+                            let user_id = client.user_id()
+                                .expect("BUG: client.user_id() returned None after login!");
+
+                            // Add to account manager
+                            let account = Account {
+                                client: client.clone(),
+                                user_id: user_id.to_owned(),
+                                session,
+                                display_name: None,
+                                avatar_url: None,
+                            };
+                            let is_new = account_manager::add_account(account);
+                            log!("Add-account login successful for {}. New account: {}", user_id, is_new);
+
+                            // Post success action
+                            Cx::post_action(LoginAction::AddAccountSuccess);
+                            enqueue_popup_notification(
+                                format!("Added account: {}", user_id),
+                                PopupKind::Success,
+                                Some(3.0),
+                            );
+                        }
+                        Err(e) => {
+                            error!("Add-account login failed: {e:?}");
+                            Cx::post_action(LoginAction::LoginFailure(format!("{e}")));
+                        }
+                    }
+                } else {
+                    // Forward to login_sender for initial login flow
+                    if let Err(e) = login_sender.send(login_request).await {
+                        error!("Error sending login request to login_sender: {e:?}");
+                        Cx::post_action(LoginAction::LoginFailure(String::from(
+                            "BUG: failed to send login request to login worker task."
+                        )));
+                    }
+                }
+            }
+
+            MatrixRequest::SwitchAccount { user_id } => {
+                // Check if the account exists in AccountManager
+                if account_manager::get_client_for_user(&user_id).is_some() {
+                    // Set the target account for switch
+                    set_account_switch_target(user_id.clone());
+
+                    // Notify UI that switch is starting (app.rs handles the popup notification)
+                    Cx::post_action(AccountSwitchAction::Starting(user_id.clone()));
+
+                    // Stop the sync service - this will cause the main loop to restart
+                    if let Some(sync_service) = get_sync_service() {
+                        sync_service.stop().await;
+                    }
+
+                    // The main loop will detect the account switch target and restart with the new account
+                    // We return Ok(()) to signal the worker should end gracefully
+                    return Ok(());
+                } else {
+                    error!("Account {} not found in AccountManager", user_id);
+                    Cx::post_action(AccountSwitchAction::Failed(
+                        format!("Account {} not found", user_id)
+                    ));
+                    enqueue_popup_notification(
+                        format!("Account not found: {}", user_id),
+                        PopupKind::Error,
+                        Some(3.0),
+                    );
                 }
             }
 
@@ -1469,12 +1650,14 @@ async fn matrix_worker_task(
 
                     let room = timeline.room();
                     if local_only {
-                        if let Ok(members) = room.members_no_sync(memberships).await {
-                            send_update(members, "Got");
+                        match room.members_no_sync(memberships).await {
+                            Ok(members) => send_update(members, "Got"),
+                            Err(e) => error!("Failed to get room members (local_only) for {timeline_kind}: {e:?}"),
                         }
                     } else {
-                        if let Ok(members) = room.members(memberships).await {
-                            send_update(members, "Successfully fetched");
+                        match room.members(memberships).await {
+                            Ok(members) => send_update(members, "Successfully fetched"),
+                            Err(e) => error!("Failed to fetch room members for {timeline_kind}: {e:?}"),
                         }
                     }
                 });
@@ -1493,6 +1676,7 @@ async fn matrix_worker_task(
                 let _search_task = Handle::current().spawn(async move {
                     let query = query.trim().to_owned();
                     let action_kind = kind.clone();
+                    log!("Remote directory search request: kind={kind:?}, query=\"{query}\", limit={limit}");
                     if query.is_empty() {
                         Cx::post_action(RoomFilterRemoteSearchAction::Results {
                             query,
@@ -1504,19 +1688,42 @@ async fn matrix_worker_task(
 
                     let result = match &kind {
                         RemoteDirectorySearchKind::People => {
-                            client.search_users(&query, limit).await
-                                .map(|response| {
-                                    response.results.into_iter()
-                                        .map(|user| {
-                                            RemoteDirectorySearchResult::User(UserProfile {
+                            let mut users = Vec::new();
+                            let mut seen_user_ids = HashSet::new();
+
+                            if let Ok(user_id) = UserId::parse(&query).map(|u| u.to_owned()) {
+                                if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
+                                    if seen_user_ids.insert(user_id.clone()) {
+                                        users.push(RemoteDirectorySearchResult::User(UserProfile {
+                                            username: response.get_static::<DisplayName>().ok().flatten(),
+                                            user_id,
+                                            avatar_state: response.get_static::<AvatarUrl>()
+                                                .ok()
+                                                .map_or(AvatarState::Unknown, AvatarState::Known),
+                                        }));
+                                    }
+                                }
+                            }
+
+                            match client.search_users(&query, limit).await {
+                                Ok(response) => {
+                                    for user in response.results.into_iter() {
+                                        if seen_user_ids.insert(user.user_id.clone()) {
+                                            users.push(RemoteDirectorySearchResult::User(UserProfile {
                                                 username: user.display_name,
                                                 user_id: user.user_id,
                                                 avatar_state: AvatarState::Known(user.avatar_url),
-                                            })
-                                        })
-                                        .collect::<Vec<_>>()
-                                })
-                                .map_err(|e| e.to_string())
+                                            }));
+                                        }
+                                        if users.len() >= limit as usize {
+                                            break;
+                                        }
+                                    }
+                                    Ok(users)
+                                }
+                                Err(_e) if !users.is_empty() => Ok(users),
+                                Err(e) => Err(e.to_string()),
+                            }
                         }
                         RemoteDirectorySearchKind::Rooms | RemoteDirectorySearchKind::Spaces => {
                             let mut filter = PublicRoomsFilter::new();
@@ -1840,6 +2047,55 @@ async fn matrix_worker_task(
                 });
             }
 
+            MatrixRequest::UploadAvatar { avatar_path } => {
+                let Some(client) = get_client() else { continue };
+                let _upload_avatar_task = Handle::current().spawn(async move {
+                    let data = match std::fs::read(&avatar_path) {
+                        Ok(data) => data,
+                        Err(e) => {
+                            Cx::post_action(AccountDataAction::AvatarChangeFailed(
+                                format!("Failed to read selected avatar file {:?}: {e}", avatar_path)
+                            ));
+                            return;
+                        }
+                    };
+
+                    let content_type = match imghdr::from_bytes(&data) {
+                        Some(imghdr::Type::Png) => IMAGE_PNG,
+                        Some(imghdr::Type::Jpeg) => IMAGE_JPEG,
+                        _ => {
+                            let ext = avatar_path
+                                .extension()
+                                .and_then(|e| e.to_str())
+                                .map(|e| e.to_ascii_lowercase());
+                            match ext.as_deref() {
+                                Some("png") => IMAGE_PNG,
+                                Some("jpg") | Some("jpeg") => IMAGE_JPEG,
+                                _ => {
+                                    Cx::post_action(AccountDataAction::AvatarChangeFailed(
+                                        "Unsupported avatar format. Please choose a PNG or JPEG image.".to_string()
+                                    ));
+                                    return;
+                                }
+                            }
+                        }
+                    };
+
+                    log!("Uploading avatar from file: {:?}", avatar_path);
+                    match client.account().upload_avatar(&content_type, data).await {
+                        Ok(new_avatar_uri) => {
+                            log!("Successfully uploaded avatar.");
+                            Cx::post_action(AccountDataAction::AvatarChanged(Some(new_avatar_uri)));
+                        }
+                        Err(e) => {
+                            Cx::post_action(AccountDataAction::AvatarChangeFailed(
+                                format!("Failed to upload avatar: {e}")
+                            ));
+                        }
+                    }
+                });
+            }
+
             MatrixRequest::SetAvatar { avatar_url } => {
                 let Some(client) = get_client() else { continue };
                 let _set_avatar_task = Handle::current().spawn(async move {
@@ -1852,6 +2108,30 @@ async fn matrix_worker_task(
                             Cx::post_action(AccountDataAction::AvatarChanged(avatar_url));
                         }
                         Err(e) => {
+                            if is_removing && e.client_api_error_kind() == Some(&ErrorKind::Unrecognized) {
+                                log!("Avatar delete endpoint not recognized by homeserver, retrying fallback request...");
+                                let Some(user_id) = client.user_id() else {
+                                    Cx::post_action(AccountDataAction::AvatarChangeFailed(
+                                        "Failed to remove avatar: not authenticated.".to_string()
+                                    ));
+                                    return;
+                                };
+                                #[allow(deprecated)]
+                                let fallback_result = client.send(
+                                    set_avatar_url::v3::Request::new(user_id.to_owned(), None)
+                                ).await;
+                                match fallback_result {
+                                    Ok(_) => {
+                                        log!("Successfully removed avatar via fallback endpoint.");
+                                        Cx::post_action(AccountDataAction::AvatarChanged(None));
+                                    }
+                                    Err(fallback_err) => {
+                                        let err_msg = format!("Failed to remove avatar: {fallback_err}");
+                                        Cx::post_action(AccountDataAction::AvatarChangeFailed(err_msg));
+                                    }
+                                }
+                                return;
+                            }
                             let err_msg = format!("Failed to {} avatar: {e}", if is_removing { "remove" } else { "set" });
                             Cx::post_action(AccountDataAction::AvatarChangeFailed(err_msg));
                         }
@@ -2152,6 +2432,7 @@ async fn matrix_worker_task(
                 timeline_kind,
                 message,
                 replied_to,
+                target_user_id,
                 #[cfg(feature = "tsp")]
                 sign_with_tsp,
             } => {
@@ -2225,11 +2506,84 @@ async fn matrix_worker_task(
                                 return;
                             }
                         };
-                        match timeline.send(reply_content.into()).await {
-                            Ok(_send_handle) => log!("Sent reply message to {timeline_kind}."),
+
+                        if let Some(target_user_id) = target_user_id.as_ref() {
+                            if let Err(_e) = ensure_target_user_joined_room(
+                                timeline.room(),
+                                target_user_id.as_ref(),
+                            )
+                            .await
+                            {
+                                error!("Failed to ensure targeted bot {target_user_id} joined {timeline_kind}: {_e:?}");
+                                enqueue_popup_notification(
+                                    format!("Failed to invite {target_user_id} into this room: {_e}"),
+                                    PopupKind::Error,
+                                    None,
+                                );
+                                return;
+                            }
+
+                            let raw_content = match serde_json::to_value(&reply_content) {
+                                Ok(content) => add_octos_target_user_id(content, target_user_id.as_ref()),
+                                Err(_e) => {
+                                    error!("Failed to serialize reply content for {timeline_kind}: {_e:?}");
+                                    enqueue_popup_notification(
+                                        format!("Failed to send reply: {_e}"),
+                                        PopupKind::Error,
+                                        None,
+                                    );
+                                    return;
+                                }
+                            };
+                            match timeline.room().send_raw("m.room.message", raw_content).await {
+                                Ok(_response) => log!("Sent targeted reply message to {timeline_kind}."),
+                                Err(_e) => {
+                                    error!("Failed to send targeted reply message to {timeline_kind}: {_e:?}");
+                                    enqueue_popup_notification(format!("Failed to send reply: {_e}"), PopupKind::Error, None);
+                                }
+                            }
+                        } else {
+                            match timeline.send(reply_content.into()).await {
+                                Ok(_send_handle) => log!("Sent reply message to {timeline_kind}."),
+                                Err(_e) => {
+                                    error!("Failed to send reply message to {timeline_kind}: {_e:?}");
+                                    enqueue_popup_notification(format!("Failed to send reply: {_e}"), PopupKind::Error, None);
+                                }
+                            }
+                        }
+                    } else if let Some(target_user_id) = target_user_id.as_ref() {
+                        if let Err(_e) = ensure_target_user_joined_room(
+                            timeline.room(),
+                            target_user_id.as_ref(),
+                        )
+                        .await
+                        {
+                            error!("Failed to ensure targeted bot {target_user_id} joined {timeline_kind}: {_e:?}");
+                            enqueue_popup_notification(
+                                format!("Failed to invite {target_user_id} into this room: {_e}"),
+                                PopupKind::Error,
+                                None,
+                            );
+                            return;
+                        }
+
+                        let raw_content = match serde_json::to_value(&message) {
+                            Ok(content) => add_octos_target_user_id(content, target_user_id.as_ref()),
                             Err(_e) => {
-                                error!("Failed to send reply message to {timeline_kind}: {_e:?}");
-                                enqueue_popup_notification(format!("Failed to send reply: {_e}"), PopupKind::Error, None);
+                                error!("Failed to serialize message content for {timeline_kind}: {_e:?}");
+                                enqueue_popup_notification(
+                                    format!("Failed to send message: {_e}"),
+                                    PopupKind::Error,
+                                    None,
+                                );
+                                return;
+                            }
+                        };
+                        match timeline.room().send_raw("m.room.message", raw_content).await {
+                            Ok(_response) => log!("Sent targeted message to {timeline_kind}."),
+                            Err(_e) => {
+                                error!("Failed to send targeted message to {timeline_kind}: {_e:?}");
+                                enqueue_popup_notification(format!("Failed to send message: {_e}"), PopupKind::Error, None);
                             }
                         }
                     } else {
@@ -2718,6 +3072,35 @@ pub fn current_user_id() -> Option<OwnedUserId> {
 /// The singleton sync service.
 static SYNC_SERVICE: Mutex<Option<Arc<SyncService>>> = Mutex::new(None);
 
+/// Flag to indicate an account switch is in progress.
+/// Contains the user_id to switch to, if any.
+static ACCOUNT_SWITCH_TARGET: Mutex<Option<OwnedUserId>> = Mutex::new(None);
+
+/// Check if an account switch is pending (non-consuming peek).
+fn is_account_switch_pending() -> bool {
+    ACCOUNT_SWITCH_TARGET.lock().ok().map(|g| g.is_some()).unwrap_or(false)
+}
+
+/// Take the account switch target, consuming it. Only call when ready to perform the switch.
+fn take_account_switch_target() -> Option<OwnedUserId> {
+    ACCOUNT_SWITCH_TARGET.lock().ok()?.take()
+}
+
+/// Set the target account to switch to.
+fn set_account_switch_target(user_id: OwnedUserId) {
+    if let Ok(mut guard) = ACCOUNT_SWITCH_TARGET.lock() {
+        *guard = Some(user_id);
+    }
+}
+
+/// Clear the account switch target without taking it.
+#[allow(dead_code)]
+fn clear_account_switch_target() {
+    if let Ok(mut guard) = ACCOUNT_SWITCH_TARGET.lock() {
+        *guard = None;
+    }
+}
+
 
 /// Get a reference to the current sync service, if available.
 pub fn get_sync_service() -> Option<Arc<SyncService>> {
@@ -2877,7 +3260,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
     );
     log!("Waiting for login? {}", wait_for_login);
 
-    let new_login_opt: Option<(Client, Option<String>, bool)> = if !wait_for_login {
+    let new_login_opt = if !wait_for_login {
         let specified_username = cli_parse_result.as_ref().ok().and_then(|cli|
             username_to_full_user_id(
                 &cli.user_id,
@@ -2888,7 +3271,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             specified_username.as_ref().or(most_recent_user_id.as_ref())
         );
         match persistence::restore_session(specified_username.clone()).await {
-            Ok((client, sync_token)) => Some((client, sync_token, true)),
+            Ok((client, sync_token, session)) => Some((client, sync_token, true, session)),
             Err(e) => {
                 let status_err = "Could not restore previous user session.\n\nPlease login again.";
                 log!("{status_err} Error: {e:?}");
@@ -2907,7 +3290,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                         homeserver: cli.homeserver.clone(),
                     });
                     match login(cli, LoginRequest::LoginByCli).await {
-                        Ok((client, sync_token)) => Some((client, sync_token, false)),
+                        Ok((client, sync_token, _is_add_account, session)) => Some((client, sync_token, false, session)),
                         Err(e) => {
                             error!("CLI-based login failed: {e:?}");
                             Cx::post_action(LoginAction::LoginFailure(
@@ -2935,7 +3318,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
 
     loop {
         let (client, sync_service, logged_in_user_id) = 'login_loop: loop {
-            let (client, _sync_token, validate_session) = match initial_client_opt.take() {
+            let (client, _sync_token, validate_session, session) = match initial_client_opt.take() {
                 Some(login) => login,
                 None => {
                     loop {
@@ -2943,7 +3326,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                         match login_receiver.recv().await {
                             Some(login_request) => {
                                 match login(&cli, login_request).await {
-                                    Ok((client, sync_token)) => break (client, sync_token, false),
+                                    Ok((client, sync_token, _is_add_account, session)) => break (client, sync_token, false, session),
                                     Err(e) => {
                                         error!("Login failed: {e:?}");
                                         Cx::post_action(LoginAction::LoginFailure(format!("{e}")));
@@ -2996,6 +3379,17 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
             enqueue_rooms_list_update(RoomsListUpdate::Status { status });
 
+            // Add the account to the AccountManager
+            let account = account_manager::Account {
+                client: client.clone(),
+                user_id: logged_in_user_id.clone(),
+                session,
+                display_name: None,
+                avatar_url: None,
+            };
+            let is_new = account_manager::add_account(account);
+            log!("Added account {} to AccountManager. New account: {}", logged_in_user_id, is_new);
+
             // Store this active client in our global Client state so that other tasks can access it.
             if let Some(_existing) = CLIENT.lock().unwrap().replace(client.clone()) {
                 error!("BUG: unexpectedly replaced an existing client when initializing the matrix client.");
@@ -3042,6 +3436,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
 
         let (session_reset_sender, mut session_reset_receiver) =
             tokio::sync::mpsc::unbounded_channel::<SessionResetAction>();
+        // Listen for session changes, e.g., when the access token becomes invalid.
         let session_change_handler_task =
             handle_session_changes(client.clone(), session_reset_sender);
 
@@ -3069,12 +3464,12 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         // Now, this task becomes an infinite loop that monitors the
         // matrix/background tasks for the currently-authenticated session.
         #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
-        let reauth_message = loop {
+        let reauth_message: Option<String> = loop {
             tokio::select! {
                 session_reset = session_reset_receiver.recv() => {
                     match session_reset {
                         Some(SessionResetAction::Reauthenticate { message }) => {
-                            break message;
+                            break Some(message);
                         }
                         None => {
                             warning!("Session reset receiver closed unexpectedly.");
@@ -3086,17 +3481,21 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                     session_change_handler_task.abort();
                     match result {
                         Ok(Ok(())) => {
-                            // Check if this is due to logout
+                            // Check if this is due to logout or account switch
                             if is_logout_in_progress() {
                                 log!("matrix worker task ended due to logout");
+                            } else if is_account_switch_pending() {
+                                log!("matrix worker task ended due to account switch");
                             } else {
                                 error!("BUG: matrix worker task ended unexpectedly!");
                             }
                         }
                         Ok(Err(e)) => {
-                            // Check if this is due to logout
+                            // Check if this is due to logout or account switch
                             if is_logout_in_progress() {
                                 log!("matrix worker task ended with error due to logout: {e:?}");
+                            } else if is_account_switch_pending() {
+                                log!("matrix worker task ended with error due to account switch: {e:?}");
                             } else {
                                 error!("Error: matrix worker task ended:\n\t{e:?}");
                                 rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
@@ -3113,67 +3512,223 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                             error!("BUG: failed to join matrix worker task: {e:?}");
                         }
                     }
-                    return;
+                    break None;
                 }
                 result = &mut room_list_service_task => {
                     session_change_handler_task.abort();
                     match result {
                         Ok(Ok(())) => {
-                            error!("BUG: room list service loop task ended unexpectedly!");
+                            if is_logout_in_progress() || is_account_switch_pending() {
+                                log!("room list service loop task ended due to logout/account switch");
+                            } else {
+                                error!("BUG: room list service loop task ended unexpectedly!");
+                            }
                         }
                         Ok(Err(e)) => {
-                            error!("Error: room list service loop task ended:\n\t{e:?}");
-                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                status: e.to_string(),
-                            });
-                            enqueue_popup_notification(
-                                format!("Room list service  error: {e}"),
-                                PopupKind::Error,
-                                None,
-                            );
+                            if !is_logout_in_progress() && !is_account_switch_pending() {
+                                error!("Error: room list service loop task ended:\n\t{e:?}");
+                                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                    status: e.to_string(),
+                                });
+                                enqueue_popup_notification(
+                                    format!("Room list service error: {e}"),
+                                    PopupKind::Error,
+                                    None,
+                                );
+                            }
                         },
                         Err(e) => {
                             error!("BUG: failed to join room list service loop task: {e:?}");
                         }
                     }
-                    return;
+                    break None;
                 }
                 result = &mut space_service_task => {
                     session_change_handler_task.abort();
                     match result {
                         Ok(Ok(())) => {
-                            error!("BUG: space service loop task ended unexpectedly!");
+                            if is_logout_in_progress() || is_account_switch_pending() {
+                                log!("space service loop task ended due to logout/account switch");
+                            } else {
+                                error!("BUG: space service loop task ended unexpectedly!");
+                            }
                         }
                         Ok(Err(e)) => {
-                            error!("Error: space service loop task ended:\n\t{e:?}");
-                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                status: e.to_string(),
-                            });
-                            enqueue_popup_notification(
-                                format!("Space service error: {e}"),
-                                PopupKind::Error,
-                                None,
-                            );
+                            if !is_logout_in_progress() && !is_account_switch_pending() {
+                                error!("Error: space service loop task ended:\n\t{e:?}");
+                                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                    status: e.to_string(),
+                                });
+                                enqueue_popup_notification(
+                                    format!("Space service error: {e}"),
+                                    PopupKind::Error,
+                                    None,
+                                );
+                            }
                         },
                         Err(e) => {
                             error!("BUG: failed to join space service loop task: {e:?}");
                         }
                     }
-                    return;
+                    break None;
                 }
             }
         };
 
-        session_change_handler_task.abort();
-        room_list_service_task.abort();
-        space_service_task.abort();
+        // Check if we need to restart for an account switch (loop to handle consecutive switches)
+        while let Some(switch_user_id) = take_account_switch_target() {
+            // Clear all backend state
+            CLIENT.lock().unwrap().take();
+            SYNC_SERVICE.lock().unwrap().take();
+            ALL_JOINED_ROOMS.lock().unwrap().clear();
+            IGNORED_USERS.lock().unwrap().clear();
 
-        reset_runtime_state_for_relogin().await;
-        Cx::post_action(LoginAction::LoginFailure(reauth_message.clone()));
-        enqueue_rooms_list_update(RoomsListUpdate::Status {
-            status: reauth_message,
-        });
-        initial_client_opt = None;
+            // Clear the rooms list UI
+            enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
+            enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(VecDiff::Clear));
+
+            // Post action to clear UI state
+            Cx::post_action(AccountSwitchAction::Starting(switch_user_id.clone()));
+
+            // Update active account
+            account_manager::set_active_account(&switch_user_id);
+            // Recreate worker task and service loops
+            let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
+            REQUEST_SENDER.lock().unwrap().replace(sender);
+            // Restore session for the switched account
+            match persistence::restore_session(Some(switch_user_id.clone())).await {
+                Ok((client, _sync_token, _session)) => {
+                    // Store the client
+                    CLIENT.lock().unwrap().replace(client.clone());
+
+                    // Set up the new client
+                    add_verification_event_handlers_and_sync_client(client.clone());
+                    handle_ignore_user_list_subscriber(client.clone());
+
+                    // Create new sync service
+                    let sync_service = match SyncService::builder(client.clone())
+                        .with_offline_mode()
+                        .build()
+                        .await
+                    {
+                        Ok(ss) => ss,
+                        Err(e) => {
+                            error!("Failed to create SyncService: {e:?}");
+                            Cx::post_action(AccountSwitchAction::Failed(format!("Failed to create sync service: {e}")));
+                            return;
+                        }
+                    };
+
+                    // Load app state for the new user
+                    handle_load_app_state(switch_user_id.clone());
+                    handle_sync_indicator_subscriber(&sync_service);
+                    handle_sync_service_state_subscriber(sync_service.state());
+                    sync_service.start().await;
+                    let room_list_service = sync_service.room_list_service();
+
+                    SYNC_SERVICE.lock().unwrap().replace(Arc::new(sync_service));
+                    
+                    let (login_sender, _login_receiver) = tokio::sync::mpsc::channel(1);
+
+                    // Set up session change handler for the switched account
+                    let (session_reset_sender, mut session_reset_receiver) =
+                        tokio::sync::mpsc::unbounded_channel::<SessionResetAction>();
+                    let session_change_handler_task =
+                        handle_session_changes(client.clone(), session_reset_sender);
+
+                    let mut matrix_worker_task_handle = rt.spawn(matrix_worker_task(receiver, login_sender));
+                    let mut room_list_service_task = rt.spawn(room_list_service_loop(room_list_service));
+                    let mut space_service_task = rt.spawn(space_service_loop(client.clone()));
+
+                    // Notify UI that switch is complete (app.rs handles the popup notification)
+                    Cx::post_action(AccountSwitchAction::Switched(switch_user_id.clone()));
+
+                    // Re-enter the main monitoring loop
+                    loop {
+                        tokio::select! {
+                            session_reset = session_reset_receiver.recv() => {
+                                match session_reset {
+                                    Some(SessionResetAction::Reauthenticate { message }) => {
+                                        error!("Session reset during account switch: {}", message);
+                                        session_change_handler_task.abort();
+                                        room_list_service_task.abort();
+                                        space_service_task.abort();
+                                        Cx::post_action(AccountSwitchAction::Failed(message));
+                                        break;
+                                    }
+                                    None => {
+                                        warning!("Session reset receiver closed unexpectedly.");
+                                        continue;
+                                    }
+                                }
+                            }
+                            result = &mut matrix_worker_task_handle => {
+                                session_change_handler_task.abort();
+                                match result {
+                                    Ok(Ok(())) => {
+                                        if !is_logout_in_progress() && !is_account_switch_pending() {
+                                            error!("BUG: matrix worker task ended unexpectedly!");
+                                        }
+                                    }
+                                    Ok(Err(e)) => {
+                                        if !is_logout_in_progress() && !is_account_switch_pending() {
+                                            error!("Error: matrix worker task ended:\n\t{e:?}");
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("BUG: failed to join matrix worker task: {e:?}");
+                                    }
+                                }
+                                break;
+                            }
+                            result = &mut room_list_service_task => {
+                                session_change_handler_task.abort();
+                                if let Err(e) = result {
+                                    if !is_logout_in_progress() && !is_account_switch_pending() {
+                                        error!("Room list service task error: {e:?}");
+                                    }
+                                }
+                                break;
+                            }
+                            result = &mut space_service_task => {
+                                session_change_handler_task.abort();
+                                if let Err(e) = result {
+                                    if !is_logout_in_progress() && !is_account_switch_pending() {
+                                        error!("Space service task error: {e:?}");
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    // After inner loop breaks, outer while loop will check for another pending account switch
+                }
+                Err(e) => {
+                    error!("Failed to restore session for account switch: {e:?}");
+                    Cx::post_action(AccountSwitchAction::Failed(format!("Failed to restore session: {e}")));
+                    enqueue_popup_notification(
+                        format!("Account switch failed: {e}"),
+                        PopupKind::Error,
+                        None,
+                    );
+                    // Don't loop back - a failed switch shouldn't keep trying
+                    break;
+                }
+            }
+        }
+
+        // Only run reauth cleanup if we got a reauth message (not account switch or logout)
+        if let Some(reauth_msg) = reauth_message {
+            session_change_handler_task.abort();
+            room_list_service_task.abort();
+            space_service_task.abort();
+
+            reset_runtime_state_for_relogin().await;
+            Cx::post_action(LoginAction::LoginFailure(reauth_msg.clone()));
+            enqueue_rooms_list_update(RoomsListUpdate::Status {
+                status: reauth_msg,
+            });
+        }
     }
 }
 
@@ -3905,6 +4460,7 @@ fn handle_session_changes(
                         "Your login token is no longer valid.\n\nPlease log in again."
                     };
                     error!("Session token is no longer valid (soft_logout: {soft_logout}). Prompting re-login.");
+                    Cx::post_action(LoginAction::LoginFailure(msg.to_string()));
                     clear_persisted_session(client.user_id()).await;
                     let _ = session_reset_sender.send(SessionResetAction::Reauthenticate {
                         message: msg.to_string(),
@@ -4724,7 +5280,7 @@ async fn spawn_sso_server(
             }) {
             Ok(identity_provider_res) => {
                 if !is_logged_in {
-                    if let Err(e) = login_sender.send(LoginRequest::LoginBySSOSuccess(client, client_session)).await {
+                    if let Err(e) = login_sender.send(LoginRequest::LoginBySSOSuccess(client, client_session, false)).await {
                         error!("Error sending login request to login_sender: {e:?}");
                         Cx::post_action(LoginAction::LoginFailure(String::from(
                             "BUG: failed to send login request to matrix worker thread."

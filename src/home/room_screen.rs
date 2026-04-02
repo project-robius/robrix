@@ -275,6 +275,38 @@ fn detected_bot_binding_for_members(
         .then_some(bot_user_id)
 }
 
+fn is_likely_bot_user_id(
+    user_id: &UserId,
+    resolved_parent_bot_user_id: Option<&UserId>,
+) -> bool {
+    if resolved_parent_bot_user_id.is_some_and(|parent| parent == user_id) {
+        return true;
+    }
+
+    let localpart = user_id.localpart().to_ascii_lowercase();
+    localpart == "bot"
+        || localpart.starts_with("bot_")
+        || localpart.ends_with("_bot")
+        || (localpart.ends_with("bot") && localpart.len() > 3)
+}
+
+fn is_likely_bot_member(
+    room_member: &RoomMember,
+    resolved_parent_bot_user_id: Option<&UserId>,
+) -> bool {
+    if is_likely_bot_user_id(room_member.user_id(), resolved_parent_bot_user_id) {
+        return true;
+    }
+
+    room_member.display_name().is_some_and(|display_name| {
+        let display_name = display_name.trim().to_ascii_lowercase();
+        display_name == "bot"
+            || display_name.starts_with("bot ")
+            || display_name.ends_with(" bot")
+            || display_name.contains(" bot ")
+    })
+}
+
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
@@ -889,6 +921,15 @@ script_mod! {
                 flow: Right
                 spacing: 8
 
+                view_bound_button := RobrixNeutralIconButton {
+                    width: 156
+                    height: 46
+                    padding: 10
+                    draw_icon.svg: (ICON_SEARCH)
+                    icon_walk: Walk{width: 14, height: 14, margin: Inset{left: -2, right: -1}}
+                    text: "View Bound Bots"
+                }
+
                 unbind_button := RobrixNeutralIconButton {
                     width: 156
                     height: 46
@@ -1439,16 +1480,24 @@ impl Widget for RoomScreen {
             let room_props = if let Some(tl) = self.tl_state.as_ref() {
                 let room_id = tl.kind.room_id().clone();
                 let room_members = tl.room_members.clone();
-                let (app_service_enabled, app_service_room_bound) = scope
+                let (app_service_enabled, app_service_room_bound, bound_bot_user_id) = scope
                     .data
                     .get::<AppState>()
                     .map(|app_state| {
+                        let app_service_enabled = app_state.bot_settings.enabled;
+                        let app_service_room_bound = self.is_app_service_room_bound(app_state, &room_id);
+                        let bound_bot_user_id = if app_service_enabled && app_service_room_bound {
+                            app_state.bot_settings.bound_bot_user_id(&room_id).map(ToOwned::to_owned)
+                        } else {
+                            None
+                        };
                         (
-                            app_state.bot_settings.enabled,
-                            self.is_app_service_room_bound(app_state, &room_id),
+                            app_service_enabled,
+                            app_service_room_bound,
+                            bound_bot_user_id,
                         )
                     })
-                    .unwrap_or((false, false));
+                    .unwrap_or((false, false, None));
 
                 RoomScreenProps {
                     room_screen_widget_uid,
@@ -1458,6 +1507,7 @@ impl Widget for RoomScreen {
                     room_avatar_url: self.room_avatar_url.clone(),
                     app_service_enabled,
                     app_service_room_bound,
+                    bound_bot_user_id,
                 }
             } else if let Some(room_name) = &self.room_name_id {
                 // Fallback case: we have a room_name but no tl_state yet
@@ -1470,6 +1520,7 @@ impl Widget for RoomScreen {
                     room_avatar_url: None,
                     app_service_enabled: false,
                     app_service_room_bound: false,
+                    bound_bot_user_id: None,
                 }
             } else {
                 // No room selected yet, skip event handling that requires room context
@@ -1487,6 +1538,7 @@ impl Widget for RoomScreen {
                     room_avatar_url: None,
                     app_service_enabled: false,
                     app_service_room_bound: false,
+                    bound_bot_user_id: None,
                 }
             };
             let mut room_scope = Scope::with_props(&room_props);
@@ -1517,27 +1569,21 @@ impl Widget for RoomScreen {
                     AppServicePanelAction::OpenCreateBotModal => {
                         if let Some(app_state) = scope.data.get::<AppState>() {
                             if !app_state.bot_settings.enabled {
-                                enqueue_popup_notification(
+                                self.send_app_service_feedback_message(
                                     tr_key(self.app_language, "room_screen.popup.app_service.enable_before_create"),
-                                    PopupKind::Warning,
-                                    Some(4.0),
                                 );
                                 self.set_app_service_actions_visible(cx, false);
                             } else if !room_props.app_service_room_bound {
-                                enqueue_popup_notification(
+                                self.send_app_service_feedback_message(
                                     tr_key(self.app_language, "room_screen.popup.app_service.bind_before_create"),
-                                    PopupKind::Warning,
-                                    Some(4.0),
                                 );
                                 self.set_app_service_actions_visible(cx, false);
                             } else {
                                 self.open_create_bot_modal(cx);
                             }
                         } else {
-                            enqueue_popup_notification(
+                            self.send_app_service_feedback_message(
                                 tr_key(self.app_language, "room_screen.popup.app_service.state_unavailable_create"),
-                                PopupKind::Error,
-                                Some(4.0),
                             );
                             self.set_app_service_actions_visible(cx, false);
                         }
@@ -1546,27 +1592,21 @@ impl Widget for RoomScreen {
                     AppServicePanelAction::OpenDeleteBotModal => {
                         if let Some(app_state) = scope.data.get::<AppState>() {
                             if !app_state.bot_settings.enabled {
-                                enqueue_popup_notification(
+                                self.send_app_service_feedback_message(
                                     tr_key(self.app_language, "room_screen.popup.app_service.enable_before_delete"),
-                                    PopupKind::Warning,
-                                    Some(4.0),
                                 );
                                 self.set_app_service_actions_visible(cx, false);
                             } else if !room_props.app_service_room_bound {
-                                enqueue_popup_notification(
+                                self.send_app_service_feedback_message(
                                     tr_key(self.app_language, "room_screen.popup.app_service.bind_before_delete"),
-                                    PopupKind::Warning,
-                                    Some(4.0),
                                 );
                                 self.set_app_service_actions_visible(cx, false);
                             } else {
                                 self.open_delete_bot_modal(cx);
                             }
                         } else {
-                            enqueue_popup_notification(
+                            self.send_app_service_feedback_message(
                                 tr_key(self.app_language, "room_screen.popup.app_service.state_unavailable_delete"),
-                                PopupKind::Error,
-                                Some(4.0),
                             );
                             self.set_app_service_actions_visible(cx, false);
                         }
@@ -1594,13 +1634,73 @@ impl Widget for RoomScreen {
                         }
                         return false;
                     }
+                    AppServicePanelAction::ShowBoundBots => {
+                        let room_id = room_props.room_name_id.room_id();
+                        let own_user_id = current_user_id();
+                        let mut bound_bots = Vec::<OwnedUserId>::new();
+                        let mut push_unique_bot = |bot_user_id: OwnedUserId| {
+                            if !bound_bots.iter().any(|existing| existing == &bot_user_id) {
+                                bound_bots.push(bot_user_id);
+                            }
+                        };
+
+                        if let Some(bound_bot_user_id) = room_props.bound_bot_user_id.as_ref() {
+                            push_unique_bot(bound_bot_user_id.clone());
+                        }
+
+                        let mut resolved_parent_bot_user_id: Option<OwnedUserId> = None;
+                        if let Some(app_state) = scope.data.get::<AppState>() {
+                            for room_binding in &app_state.bot_settings.room_bindings {
+                                if &room_binding.room_id == room_id {
+                                    push_unique_bot(room_binding.bot_user_id.clone());
+                                }
+                            }
+
+                            resolved_parent_bot_user_id = app_state
+                                .bot_settings
+                                .resolved_bot_user_id_for_room(room_id, current_user_id().as_deref())
+                                .ok();
+                            if let Some(bot_user_id) = resolved_parent_bot_user_id.as_ref() {
+                                push_unique_bot(bot_user_id.clone());
+                            }
+                        }
+
+                        if let Some(room_members) = room_props.room_members.as_ref() {
+                            for room_member in room_members.iter() {
+                                if own_user_id
+                                    .as_deref()
+                                    .is_some_and(|own_user_id| own_user_id == room_member.user_id())
+                                {
+                                    continue;
+                                }
+                                if is_likely_bot_member(
+                                    room_member,
+                                    resolved_parent_bot_user_id.as_deref(),
+                                ) {
+                                    push_unique_bot(room_member.user_id().to_owned());
+                                }
+                            }
+                        }
+
+                        if bound_bots.is_empty() {
+                            self.send_app_service_feedback_message(
+                                "No bots are currently bound to this room.",
+                            );
+                        } else {
+                            let mut message = String::from("Bots bound to this room:");
+                            for bot_user_id in &bound_bots {
+                                message.push('\n');
+                                message.push_str(bot_user_id.as_str());
+                            }
+                            self.send_app_service_feedback_message(message);
+                        }
+                        return false;
+                    }
                     AppServicePanelAction::Unbind => {
                         if let Some(app_state) = scope.data.get::<AppState>() {
                             if !room_props.app_service_room_bound {
-                                enqueue_popup_notification(
+                                self.send_app_service_feedback_message(
                                     tr_key(self.app_language, "room_screen.popup.app_service.room_not_bound"),
-                                    PopupKind::Warning,
-                                    Some(4.0),
                                 );
                             } else {
                                 match app_state
@@ -1616,28 +1716,22 @@ impl Widget for RoomScreen {
                                             bound: false,
                                             bot_user_id: bot_user_id.clone(),
                                         });
-                                        enqueue_popup_notification(
+                                        self.send_app_service_feedback_message(
                                             tr_fmt(self.app_language, "room_screen.popup.app_service.removing_botfather", &[
                                                 ("bot_user_id", bot_user_id.as_str()),
                                             ]),
-                                            PopupKind::Info,
-                                            Some(4.0),
                                         );
                                     }
                                     Err(error) => {
-                                        enqueue_popup_notification(
+                                        self.send_app_service_feedback_message(
                                             error,
-                                            PopupKind::Error,
-                                            Some(4.0),
                                         );
                                     }
                                 }
                             }
                         } else {
-                            enqueue_popup_notification(
+                            self.send_app_service_feedback_message(
                                 tr_key(self.app_language, "room_screen.popup.app_service.state_unavailable_unbind"),
-                                PopupKind::Error,
-                                Some(4.0),
                             );
                         }
                         self.set_app_service_actions_visible(cx, false);
@@ -1653,10 +1747,8 @@ impl Widget for RoomScreen {
                     }
                     Some(CreateBotModalAction::Submit(request)) => {
                         let Some(app_state) = scope.data.get::<AppState>() else {
-                            enqueue_popup_notification(
+                            self.send_app_service_feedback_message(
                                 tr_key(self.app_language, "room_screen.popup.bot.state_unavailable_create_command"),
-                                PopupKind::Error,
-                                Some(4.0),
                             );
                             self.close_create_bot_modal(cx);
                             return false;
@@ -1680,10 +1772,8 @@ impl Widget for RoomScreen {
                     }
                     Some(DeleteBotModalAction::Submit(request)) => {
                         let Some(app_state) = scope.data.get::<AppState>() else {
-                            enqueue_popup_notification(
+                            self.send_app_service_feedback_message(
                                 tr_key(self.app_language, "room_screen.popup.bot.state_unavailable_delete_command"),
-                                PopupKind::Error,
-                                Some(4.0),
                             );
                             self.close_delete_bot_modal(cx);
                             return false;
@@ -1700,22 +1790,16 @@ impl Widget for RoomScreen {
                     .cast()
                 {
                     if room_props.timeline_kind.thread_root_event_id().is_some() {
-                        enqueue_popup_notification(
+                        self.send_app_service_feedback_message(
                             tr_key(self.app_language, "room_screen.popup.bot.main_timeline_only"),
-                            PopupKind::Warning,
-                            Some(4.0),
                         );
                     } else if !room_props.app_service_enabled {
-                        enqueue_popup_notification(
+                        self.send_app_service_feedback_message(
                             tr_key(self.app_language, "room_screen.popup.bot.enable_in_settings_before_bot"),
-                            PopupKind::Warning,
-                            Some(4.0),
                         );
                     } else if !room_props.app_service_room_bound {
-                        enqueue_popup_notification(
+                        self.send_app_service_feedback_message(
                             tr_key(self.app_language, "room_screen.popup.bot.bind_before_bot"),
-                            PopupKind::Warning,
-                            Some(4.0),
                         );
                     } else {
                         self.toggle_app_service_actions(cx);
@@ -2093,6 +2177,21 @@ impl RoomScreen {
         app_state.bot_settings.is_room_bound(room_id)
     }
 
+    fn send_app_service_feedback_message(&self, message: impl Into<String>) {
+        let Some(room_id) = self.room_id().cloned() else {
+            return;
+        };
+        let message = format!("[App Service] {}", message.into());
+        submit_async_request(MatrixRequest::SendMessage {
+            timeline_kind: TimelineKind::MainRoom { room_id },
+            message: RoomMessageEventContent::notice_plain(message),
+            replied_to: None,
+            target_user_id: None,
+            #[cfg(feature = "tsp")]
+            sign_with_tsp: false,
+        });
+    }
+
     fn send_botfather_command(
         &mut self,
         cx: &mut Cx,
@@ -2104,10 +2203,8 @@ impl RoomScreen {
             return false;
         };
         if timeline_kind.thread_root_event_id().is_some() {
-            enqueue_popup_notification(
+            self.send_app_service_feedback_message(
                 tr_key(self.app_language, "room_screen.popup.bot.main_timeline_only"),
-                PopupKind::Warning,
-                Some(4.0),
             );
             return false;
         }
@@ -2116,18 +2213,14 @@ impl RoomScreen {
             return false;
         };
         if !app_state.bot_settings.enabled {
-            enqueue_popup_notification(
+            self.send_app_service_feedback_message(
                 tr_key(self.app_language, "room_screen.popup.bot.enable_before_commands"),
-                PopupKind::Warning,
-                Some(4.0),
             );
             return false;
         }
         if !self.is_app_service_room_bound(app_state, &room_id) {
-            enqueue_popup_notification(
+            self.send_app_service_feedback_message(
                 tr_key(self.app_language, "room_screen.popup.bot.bind_before_commands"),
-                PopupKind::Warning,
-                Some(4.0),
             );
             return false;
         }
@@ -2136,11 +2229,15 @@ impl RoomScreen {
             timeline_kind,
             message: RoomMessageEventContent::text_plain(command),
             replied_to: None,
+            target_user_id: app_state
+                .bot_settings
+                .bound_bot_user_id(room_id.as_ref())
+                .map(ToOwned::to_owned),
             #[cfg(feature = "tsp")]
             sign_with_tsp: false,
         });
 
-        enqueue_popup_notification(success_message, PopupKind::Info, Some(4.0));
+        self.send_app_service_feedback_message(success_message);
         self.set_app_service_actions_visible(cx, false);
         true
     }
@@ -2157,10 +2254,8 @@ impl RoomScreen {
             return;
         };
         if timeline_kind.thread_root_event_id().is_some() {
-            enqueue_popup_notification(
+            self.send_app_service_feedback_message(
                 tr_key(self.app_language, "room_screen.popup.bot.creation_main_timeline_only"),
-                PopupKind::Warning,
-                Some(4.0),
             );
             return;
         }
@@ -2169,18 +2264,14 @@ impl RoomScreen {
             return;
         };
         if !app_state.bot_settings.enabled {
-            enqueue_popup_notification(
+            self.send_app_service_feedback_message(
                 tr_key(self.app_language, "room_screen.popup.app_service.enable_before_create"),
-                PopupKind::Warning,
-                Some(4.0),
             );
             return;
         }
         if !self.is_app_service_room_bound(app_state, &room_id) {
-            enqueue_popup_notification(
+            self.send_app_service_feedback_message(
                 tr_key(self.app_language, "room_screen.popup.app_service.bind_before_create"),
-                PopupKind::Warning,
-                Some(4.0),
             );
             return;
         }
@@ -2206,7 +2297,7 @@ impl RoomScreen {
             match resolve_delete_bot_user_id(user_id_or_localpart, current_user_id().as_deref(), self.app_language) {
                 Ok(user_id) => user_id,
                 Err(error) => {
-                    enqueue_popup_notification(error, PopupKind::Error, Some(4.0));
+                    self.send_app_service_feedback_message(error);
                     return;
                 }
             };
@@ -3742,6 +3833,7 @@ pub struct RoomScreenProps {
     pub room_avatar_url: Option<OwnedMxcUri>,
     pub app_service_enabled: bool,
     pub app_service_room_bound: bool,
+    pub bound_bot_user_id: Option<OwnedUserId>,
 }
 
 
@@ -5840,6 +5932,7 @@ pub enum AppServicePanelAction {
     OpenDeleteBotModal,
     SendListBots,
     SendBotHelp,
+    ShowBoundBots,
     Unbind,
     #[default]
     None,
@@ -5927,6 +6020,17 @@ impl Widget for AppServicePanel {
                 cx.widget_action(
                     room_screen_props.room_screen_widget_uid,
                     AppServicePanelAction::SendBotHelp,
+                );
+            }
+
+            if self
+                .view
+                .button(cx, ids!(keyboard.third_row.view_bound_button))
+                .clicked(actions)
+            {
+                cx.widget_action(
+                    room_screen_props.room_screen_widget_uid,
+                    AppServicePanelAction::ShowBoundBots,
                 );
             }
 

@@ -13,7 +13,7 @@ use matrix_sdk::{RoomDisplayName, RoomState};
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 
 use crate::{
-    app::AppState, home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, i18n::{AppLanguage, tr_fmt, tr_key}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, room_filter_input_bar::RoomFilterAction}, utils::{self, RoomNameId}
+    app::AppState, home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, i18n::{AppLanguage, tr_fmt, tr_key}, login::login_screen::LoginAction, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, room_filter_input_bar::RoomFilterAction}, sliding_sync::AccountSwitchAction, utils::{self, RoomNameId}
 };
 
 script_mod! {
@@ -551,6 +551,24 @@ impl Widget for SpacesBar {
                     }
                     continue;
                 }
+
+                // Handle login success - clear and redraw spaces
+                if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
+                    self.all_joined_spaces.clear();
+                    self.displayed_spaces.clear();
+                    self.selected_space = None;
+                    self.redraw(cx);
+                    continue;
+                }
+
+                // Handle account switch - clear and redraw spaces
+                if let Some(AccountSwitchAction::Switched(_)) = action.downcast_ref() {
+                    self.all_joined_spaces.clear();
+                    self.displayed_spaces.clear();
+                    self.selected_space = None;
+                    self.redraw(cx);
+                    continue;
+                }
             }
         }
     }
@@ -876,6 +894,11 @@ impl SpacesBar {
         } else {
             filtered_spaces_iter.map(|(space_id, _)| space_id.clone()).collect()
         };
+        if self.displayed_spaces.is_empty() {
+            self.is_filtered = false;
+            self.display_filter = RoomDisplayFilter::default();
+            self.displayed_spaces = self.all_joined_spaces.keys().cloned().collect();
+        }
 
         portal_list.set_first_id_and_scroll(0, 0.0);
         self.redraw(cx);

@@ -1013,7 +1013,19 @@ impl RoomsList {
     /// If `false`, the scroll position is preserved, unless it exceeds the new list length,
     /// in which case the logic in `draw_walk()` will limit it to the max valid index.
     fn update_displayed_rooms(&mut self, cx: &mut Cx, reset_scroll: bool) {
-        let (invited, regular, direct) = self.generate_displayed_rooms();
+        let (mut invited, mut regular, mut direct) = self.generate_displayed_rooms();
+        if self.display_filter.is_some()
+            && invited.is_empty()
+            && regular.is_empty()
+            && direct.is_empty()
+        {
+            self.display_filter = RoomDisplayFilter::default();
+            self.sort_fn = None;
+            let (fallback_invited, fallback_regular, fallback_direct) = self.generate_displayed_rooms();
+            invited = fallback_invited;
+            regular = fallback_regular;
+            direct = fallback_direct;
+        }
         self.displayed_invited_rooms = invited;
         self.displayed_regular_rooms = regular;
         self.displayed_direct_rooms = direct;
