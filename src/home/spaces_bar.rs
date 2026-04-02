@@ -846,6 +846,11 @@ impl SpacesBar {
         } else {
             filtered_spaces_iter.map(|(space_id, _)| space_id.clone()).collect()
         };
+        if self.displayed_spaces.is_empty() {
+            self.is_filtered = false;
+            self.display_filter = RoomDisplayFilter::default();
+            self.displayed_spaces = self.all_joined_spaces.keys().cloned().collect();
+        }
 
         portal_list.set_first_id_and_scroll(0, 0.0);
         self.redraw(cx);

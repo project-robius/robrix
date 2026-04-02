@@ -1499,6 +1499,7 @@ async fn matrix_worker_task(
                 let _search_task = Handle::current().spawn(async move {
                     let query = query.trim().to_owned();
                     let action_kind = kind.clone();
+                    log!("Remote directory search request: kind={kind:?}, query=\"{query}\", limit={limit}");
                     if query.is_empty() {
                         Cx::post_action(RoomFilterRemoteSearchAction::Results {
                             query,
@@ -1510,19 +1511,42 @@ async fn matrix_worker_task(
 
                     let result = match &kind {
                         RemoteDirectorySearchKind::People => {
-                            client.search_users(&query, limit).await
-                                .map(|response| {
-                                    response.results.into_iter()
-                                        .map(|user| {
-                                            RemoteDirectorySearchResult::User(UserProfile {
+                            let mut users = Vec::new();
+                            let mut seen_user_ids = HashSet::new();
+
+                            if let Ok(user_id) = UserId::parse(&query).map(|u| u.to_owned()) {
+                                if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
+                                    if seen_user_ids.insert(user_id.clone()) {
+                                        users.push(RemoteDirectorySearchResult::User(UserProfile {
+                                            username: response.get_static::<DisplayName>().ok().flatten(),
+                                            user_id,
+                                            avatar_state: response.get_static::<AvatarUrl>()
+                                                .ok()
+                                                .map_or(AvatarState::Unknown, AvatarState::Known),
+                                        }));
+                                    }
+                                }
+                            }
+
+                            match client.search_users(&query, limit).await {
+                                Ok(response) => {
+                                    for user in response.results.into_iter() {
+                                        if seen_user_ids.insert(user.user_id.clone()) {
+                                            users.push(RemoteDirectorySearchResult::User(UserProfile {
                                                 username: user.display_name,
                                                 user_id: user.user_id,
                                                 avatar_state: AvatarState::Known(user.avatar_url),
-                                            })
-                                        })
-                                        .collect::<Vec<_>>()
-                                })
-                                .map_err(|e| e.to_string())
+                                            }));
+                                        }
+                                        if users.len() >= limit as usize {
+                                            break;
+                                        }
+                                    }
+                                    Ok(users)
+                                }
+                                Err(_e) if !users.is_empty() => Ok(users),
+                                Err(e) => Err(e.to_string()),
+                            }
                         }
                         RemoteDirectorySearchKind::Rooms | RemoteDirectorySearchKind::Spaces => {
                             let mut filter = PublicRoomsFilter::new();
