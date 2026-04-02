@@ -773,8 +773,7 @@ impl SpacesBar {
                     if let Some(index) = self.displayed_spaces.iter().position(|s| s == &space_id) {
                         let portal_list = self.view.portal_list(cx, ids!(spaces_list));
                         let speed = 40.0;
-                        // Scroll to just above the space to make it more visible.
-                        portal_list.smooth_scroll_to(cx, index.saturating_sub(1), speed, Some(10));
+                        portal_list.smooth_scroll_to(cx, index, speed, Some(10), 10.0);
                     }
                 }
             }
