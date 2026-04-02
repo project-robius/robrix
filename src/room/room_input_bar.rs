@@ -359,8 +359,15 @@ impl RoomInputBar {
             }
         }
 
-        // If the EditingPane has been hidden, handle that.
-        if self.view.editing_pane(cx, ids!(editing_pane)).was_hidden(actions) {
+        let editing_pane = self.view.editing_pane(cx, ids!(editing_pane));
+        // When the hide animation starts, restore the input_bar immediately
+        // so it's visible as the editing pane slides away.
+        if editing_pane.was_hide_animation_started(actions) {
+            self.view.view(cx, ids!(input_bar)).set_visible(cx, true);
+            self.redraw(cx);
+        }
+        // When the hide animation fully completes, restore the replying preview.
+        if editing_pane.was_hidden(actions) {
             self.on_editing_pane_hidden(cx);
         }
     }
@@ -434,13 +441,9 @@ impl RoomInputBar {
         behavior: ShowEditingPaneBehavior,
         timeline_kind: TimelineKind,
     ) {
-        // We must hide the input_bar while the editing pane is shown,
-        // otherwise a very-tall inputted message might show up underneath a shorter editing pane.
+        // Hide the input_bar, replying preview, and location preview
+        // while the editing pane is shown.
         self.view.view(cx, ids!(input_bar)).set_visible(cx, false);
-
-        // Similarly, we must hide the replying preview and location preview,
-        // since those are not relevant to editing an existing message,
-        // so keeping them visible might confuse the user.
         let replying_preview = self.view.view(cx, ids!(replying_preview));
         self.was_replying_preview_visible = replying_preview.visible();
         replying_preview.set_visible(cx, false);
@@ -461,10 +464,7 @@ impl RoomInputBar {
 
     /// This should be invoked after the EditingPane has been fully hidden.
     fn on_editing_pane_hidden(&mut self, cx: &mut Cx) {
-        // In `show_editing_pane()` above, we hid the input_bar while the editing pane
-        // was being shown, so here we need to make it visible again.
-        // Same goes for the replying_preview, if it was previously shown.
-        self.view.view(cx, ids!(input_bar)).set_visible(cx, true);
+        // Restore the replying_preview.
         if self.was_replying_preview_visible && self.replying_to.is_some() {
             self.view.view(cx, ids!(replying_preview)).set_visible(cx, true);
         }
@@ -489,9 +489,7 @@ impl RoomInputBar {
             input_bar.set_visible(cx, false);
         } else {
             tombstone_footer.hide(cx);
-            if !self.editing_pane(cx, ids!(editing_pane)).is_currently_shown(cx) {
-                input_bar.set_visible(cx, true);
-            }
+            input_bar.set_visible(cx, true);
         }
     }
 
