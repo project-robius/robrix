@@ -177,7 +177,9 @@ impl Widget for EditingPane {
 
         let animator_action = self.animator_handle_event(cx, event);
         if animator_action.must_redraw() {
-            self.redraw(cx);
+            // Redraw the entire UI so the parent RoomInputBar can
+            // animate the input_bar height in its draw_walk.
+            cx.redraw_all();
         }
         // If we started animating the hide, check if the track has finished.
         // `is_track_animating` returns false once the track has fully completed,

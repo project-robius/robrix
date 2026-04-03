@@ -169,6 +169,9 @@ pub struct RoomInputBar {
     #[rust] was_replying_preview_visible: bool,
     /// Info about the message event that the user is currently replying to, if any.
     #[rust] replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
+    /// Cached natural Fit height of the input_bar, used as the animation
+    /// target when the editing pane is being hidden.
+    #[rust] input_bar_natural_height: f64,
 }
 
 impl Widget for RoomInputBar {
@@ -213,19 +216,22 @@ impl Widget for RoomInputBar {
         // slide=0.0 → editing pane shown → input_bar at zero height.
         let slide = self.editing_pane(cx, ids!(editing_pane)).slide();
         let input_bar = self.view.view(cx, ids!(input_bar));
-        if slide < 0.999 {
-            let input_bar_height = input_bar.area().rect(cx).size.y;
-            let h = if input_bar_height > 0.0 {
-                input_bar_height * slide as f64
-            } else {
-                0.0
-            };
-            if let Some(mut inner) = input_bar.borrow_mut() {
-                inner.walk.height = Size::Fixed(h);
+
+        if slide > 0.999 {
+            // Editing pane fully hidden: input_bar at natural Fit height.
+            // Update the cached height for future animations.
+            let h = input_bar.area().rect(cx).size.y;
+            if h > 0.0 {
+                self.input_bar_natural_height = h;
             }
-        } else {
             if let Some(mut inner) = input_bar.borrow_mut() {
                 inner.walk.height = Size::fit();
+            }
+        } else {
+            // Editing pane visible or animating: shrink/grow input_bar.
+            let target = self.input_bar_natural_height;
+            if let Some(mut inner) = input_bar.borrow_mut() {
+                inner.walk.height = Size::Fixed((target * slide as f64).max(0.0));
             }
         }
 
@@ -456,6 +462,12 @@ impl RoomInputBar {
         behavior: ShowEditingPaneBehavior,
         timeline_kind: TimelineKind,
     ) {
+        // Cache the input_bar's natural height before the animation shrinks it.
+        let input_bar_height = self.view.view(cx, ids!(input_bar)).area().rect(cx).size.y;
+        if input_bar_height > 0.0 {
+            self.input_bar_natural_height = input_bar_height;
+        }
+
         // Hide the replying preview and location preview while the editing
         // pane is shown. The input_bar is not hidden; instead it is slid out
         // of view in draw_walk using the EditingPane's slide value.
