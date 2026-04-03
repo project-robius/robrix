@@ -1224,7 +1224,10 @@ async fn matrix_worker_task(
                 // Spawn a new async task that will make the actual pagination request.
                 let _paginate_task = Handle::current().spawn(async move {
                     log!("Starting {direction} pagination request for {timeline_kind}...");
-                    sender.send(TimelineUpdate::PaginationRunning(direction)).unwrap();
+                    if sender.send(TimelineUpdate::PaginationRunning(direction)).is_err() {
+                        warning!("Skipping {direction} pagination request for {timeline_kind}: timeline receiver was dropped before start.");
+                        return;
+                    }
                     SignalToUI::set_ui_signal();
 
                     let mut res = if direction == PaginationDirection::Forwards {
@@ -1272,19 +1275,25 @@ async fn matrix_worker_task(
                                 if direction == PaginationDirection::Forwards { "end" } else { "start" },
                                 if fully_paginated { "yes" } else { "no" },
                             );
-                            sender.send(TimelineUpdate::PaginationIdle {
+                            if sender.send(TimelineUpdate::PaginationIdle {
                                 fully_paginated,
                                 direction,
-                            }).unwrap();
-                            SignalToUI::set_ui_signal();
+                            }).is_ok() {
+                                SignalToUI::set_ui_signal();
+                            } else {
+                                warning!("Dropping completed {direction} pagination update for {timeline_kind}: timeline receiver was dropped.");
+                            }
                         }
                         Err(error) => {
                             error!("Error sending {direction} pagination request for {timeline_kind}: {error:?}");
-                            sender.send(TimelineUpdate::PaginationError {
+                            if sender.send(TimelineUpdate::PaginationError {
                                 error,
                                 direction,
-                            }).unwrap();
-                            SignalToUI::set_ui_signal();
+                            }).is_ok() {
+                                SignalToUI::set_ui_signal();
+                            } else {
+                                warning!("Dropping failed {direction} pagination update for {timeline_kind}: timeline receiver was dropped.");
+                            }
                         }
                     }
                 });
@@ -1378,8 +1387,11 @@ async fn matrix_worker_task(
                     log!("Sending sync room members request for {timeline_kind}...");
                     timeline.fetch_members().await;
                     log!("Completed sync room members request for {timeline_kind}.");
-                    sender.send(TimelineUpdate::RoomMembersSynced).unwrap();
-                    SignalToUI::set_ui_signal();
+                    if sender.send(TimelineUpdate::RoomMembersSynced).is_ok() {
+                        SignalToUI::set_ui_signal();
+                    } else {
+                        warning!("Dropping room members synced update for {timeline_kind}: timeline receiver was dropped.");
+                    }
                 });
             }
 
@@ -1644,8 +1656,11 @@ async fn matrix_worker_task(
                 let _get_members_task = Handle::current().spawn(async move {
                     let send_update = |members: Vec<matrix_sdk::room::RoomMember>, source: &str| {
                         log!("{} {} members for {timeline_kind}", source, members.len());
-                        sender.send(TimelineUpdate::RoomMembersListFetched { members }).unwrap();
-                        SignalToUI::set_ui_signal();
+                        if sender.send(TimelineUpdate::RoomMembersListFetched { members }).is_ok() {
+                            SignalToUI::set_ui_signal();
+                        } else {
+                            warning!("Dropping room members list update for {timeline_kind}: timeline receiver was dropped.");
+                        }
                     };
 
                     let room = timeline.room();
