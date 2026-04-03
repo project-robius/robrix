@@ -377,8 +377,11 @@ impl MainDesktopUI {
     ///
     /// If the saved state is empty (has no open rooms), we use the default dock layout
     /// defined in the DSL: one splitter with the RoomsList on the left and a Welcome tab on the right.
+    ///
+    /// Instead of calling `dock.load_state()` directly (which can corrupt Makepad's
+    /// internal DrawList references and cause blank rendering), we recreate each tab
+    /// programmatically via `focus_or_create_tab()`.
     fn load_dock_state_from(&mut self, cx: &mut Cx, app_state: &mut AppState) {
-        let dock = self.view.dock(cx, ids!(dock));
         let to_restore_opt = if let Some(ss) = self.selected_space.as_ref() {
             app_state.saved_dock_state_per_space.get(ss)
         } else {
@@ -389,32 +392,24 @@ impl MainDesktopUI {
             Some(sds) if sds.open_rooms.is_empty() => &self.default_layout,
             Some(sds) => sds,
         };
-        let SavedDockState { dock_items, open_rooms, room_order, selected_room } = to_restore;
 
-        self.room_order = room_order.clone();
-        self.open_rooms = open_rooms.clone();
+        let room_order = to_restore.room_order.clone();
+        let selected_room = to_restore.selected_room.clone();
 
-        if let Some(mut dock) = dock.borrow_mut() {
-            dock.load_state(cx, dock_items.clone());
-            // Only populate the currently-selected tab immediately.
-            // Background tabs will be initialized lazily when they are focused.
-            if let Some(selected_room) = selected_room.as_ref() {
-                if let Some((_, widget)) = dock.items().get(&selected_room.tab_id()) {
-                    Self::sync_tab_widget(cx, widget, selected_room);
-                }
-            }
-        } else {
-            error!("BUG: failed to borrow dock widget to restore state upon LoadDockFromAppState action.");
-            return;
+        // Close any existing tabs first, starting from the default layout.
+        self.close_all_tabs(cx);
+
+        // Recreate each room tab in the saved order.
+        for room in &room_order {
+            self.focus_or_create_tab(cx, room.clone());
         }
-        // Note: the borrow of `dock` must end here *before* we call `self.focus_or_create_tab()`.
 
-        // Now that we've loaded the dock content, we can re-select the selected room.
-        let selected_room = selected_room.clone();
-        if let Some(selected_room) = selected_room.clone() {
-            self.focus_or_create_tab(cx, selected_room);
+        // Re-select the previously-selected room (or the last one if not set).
+        let final_selected = selected_room.or_else(|| room_order.last().cloned());
+        if let Some(selected) = final_selected.clone() {
+            self.focus_or_create_tab(cx, selected);
         }
-        app_state.selected_room = selected_room;
+        app_state.selected_room = final_selected;
         self.redraw(cx);
     }
 }
