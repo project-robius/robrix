@@ -217,8 +217,12 @@ impl Widget for RoomInputBar {
         let slide = self.editing_pane(cx, ids!(editing_pane)).slide();
         let input_bar = self.view.view(cx, ids!(input_bar));
 
-        if slide > 0.999 {
-            // Editing pane fully hidden: input_bar at natural Fit height.
+        // Remap slide through a steeper curve so the input_bar reaches
+        // its full target height before the ExpDecay tail.
+        let remapped = (slide as f64 * 1.25).min(1.0);
+        if remapped >= 1.0 {
+            // Input_bar has reached its full natural height: switch to Fit
+            // so it can respond to content changes normally.
             // Update the cached height for future animations.
             let h = input_bar.area().rect(cx).size.y;
             if h > 0.0 {
@@ -228,10 +232,9 @@ impl Widget for RoomInputBar {
                 inner.walk.height = Size::fit();
             }
         } else {
-            // Editing pane visible or animating: shrink/grow input_bar.
             let target = self.input_bar_natural_height;
             if let Some(mut inner) = input_bar.borrow_mut() {
-                inner.walk.height = Size::Fixed((target * slide as f64).max(0.0));
+                inner.walk.height = Size::Fixed((target * remapped).max(0.0));
             }
         }
 
