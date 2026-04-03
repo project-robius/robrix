@@ -594,6 +594,11 @@ impl EditingPaneRef {
         inner.is_currently_shown(cx)
     }
 
+    /// Returns the current slide value (0.0 = fully shown, 1.0 = fully hidden).
+    pub fn slide(&self) -> f32 {
+        self.borrow().map_or(1.0, |inner| inner.slide)
+    }
+
     /// See [`EditingPane::handle_edit_result()`].
     pub fn handle_edit_result(
         &self,

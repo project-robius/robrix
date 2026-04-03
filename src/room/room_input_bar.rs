@@ -207,6 +207,28 @@ impl Widget for RoomInputBar {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // Shrink the input_bar's height as the editing pane slides in,
+        // and grow it back as the editing pane slides out.
+        // slide=1.0 → editing pane hidden → input_bar at full Fit height.
+        // slide=0.0 → editing pane shown → input_bar at zero height.
+        let slide = self.editing_pane(cx, ids!(editing_pane)).slide();
+        let input_bar = self.view.view(cx, ids!(input_bar));
+        if slide < 0.999 {
+            let input_bar_height = input_bar.area().rect(cx).size.y;
+            let h = if input_bar_height > 0.0 {
+                input_bar_height * slide as f64
+            } else {
+                0.0
+            };
+            if let Some(mut inner) = input_bar.borrow_mut() {
+                inner.walk.height = Size::Fixed(h);
+            }
+        } else {
+            if let Some(mut inner) = input_bar.borrow_mut() {
+                inner.walk.height = Size::fit();
+            }
+        }
+
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -359,15 +381,8 @@ impl RoomInputBar {
             }
         }
 
-        let editing_pane = self.view.editing_pane(cx, ids!(editing_pane));
-        // When the hide animation starts, restore the input_bar immediately
-        // so it's visible as the editing pane slides away.
-        if editing_pane.was_hide_animation_started(actions) {
-            self.view.view(cx, ids!(input_bar)).set_visible(cx, true);
-            self.redraw(cx);
-        }
         // When the hide animation fully completes, restore the replying preview.
-        if editing_pane.was_hidden(actions) {
+        if self.view.editing_pane(cx, ids!(editing_pane)).was_hidden(actions) {
             self.on_editing_pane_hidden(cx);
         }
     }
@@ -441,9 +456,9 @@ impl RoomInputBar {
         behavior: ShowEditingPaneBehavior,
         timeline_kind: TimelineKind,
     ) {
-        // Hide the input_bar, replying preview, and location preview
-        // while the editing pane is shown.
-        self.view.view(cx, ids!(input_bar)).set_visible(cx, false);
+        // Hide the replying preview and location preview while the editing
+        // pane is shown. The input_bar is not hidden; instead it is slid out
+        // of view in draw_walk using the EditingPane's slide value.
         let replying_preview = self.view.view(cx, ids!(replying_preview));
         self.was_replying_preview_visible = replying_preview.visible();
         replying_preview.set_visible(cx, false);
