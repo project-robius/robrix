@@ -33,8 +33,8 @@ script_mod! {
         draw_bg +: {
             color: (COLOR_PRIMARY)
             border_radius: 5.0
-            border_color: #F00 // (COLOR_SECONDARY)
-            border_size: 5.0 // 2.0
+            border_color: (COLOR_SECONDARY)
+            border_size: 2.0
             // shadow_color: #0006
             // shadow_radius: 0.0
             // shadow_offset: vec2(0.0,0.0)

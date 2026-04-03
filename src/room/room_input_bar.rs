@@ -42,7 +42,6 @@ script_mod! {
         // This only works if the border_color is the same as its parents,
         // which is currently `COLOR_SECONDARY`.
         margin: Inset{left: -4, right: -4, bottom: -4 }
-
         show_bg: true,
         draw_bg +: {
             color: (COLOR_PRIMARY)
