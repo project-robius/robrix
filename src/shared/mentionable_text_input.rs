@@ -30,6 +30,7 @@ script_mod! {
                 height: Fit,
                 text_input := RobrixTextInput {
                     empty_text: "Start typing..."
+                    is_multiline: true,
                 }
             }
             bottom := View { height: 0 }
