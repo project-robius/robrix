@@ -1313,11 +1313,14 @@ async fn matrix_worker_task(
                         Ok(_) => log!("Successfully edited message {timeline_event_item_id:?} in {timeline_kind}."),
                         Err(ref e) => error!("Error editing message {timeline_event_item_id:?} in {timeline_kind}: {e:?}"),
                     }
-                    sender.send(TimelineUpdate::MessageEdited {
+                    if sender.send(TimelineUpdate::MessageEdited {
                         timeline_event_item_id,
                         result,
-                    }).unwrap();
-                    SignalToUI::set_ui_signal();
+                    }).is_ok() {
+                        SignalToUI::set_ui_signal();
+                    } else {
+                        warning!("Dropping message edited update for {timeline_kind}: timeline receiver was dropped.");
+                    }
                 });
             }
 

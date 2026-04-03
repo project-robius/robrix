@@ -1398,6 +1398,7 @@ impl Widget for RoomsList {
         if let Event::Actions(actions) = event {
             for action in actions {
                 if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
+                    while PENDING_ROOM_UPDATES.pop().is_some() {}
                     self.invited_rooms.borrow_mut().clear();
                     self.all_joined_rooms.clear();
                     self.all_known_rooms_order.clear();
@@ -1414,6 +1415,8 @@ impl Widget for RoomsList {
                     self.displayed_regular_rooms.clear();
                     self.is_regular_rooms_header_expanded = true;
                     self.regular_rooms_indexes = RoomCategoryIndexes::default();
+                    self.display_filter = RoomDisplayFilter::default();
+                    self.sort_fn = None;
                     self.status.clear();
                     self.current_active_room = None;
                     self.max_known_rooms = None;

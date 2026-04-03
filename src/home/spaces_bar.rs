@@ -521,6 +521,7 @@ impl Widget for SpacesBar {
         if let Event::Actions(actions) = event {
             for action in actions {
                 if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
+                    while PENDING_SPACE_UPDATES.pop().is_some() {}
                     self.all_joined_spaces.clear();
                     self.display_filter = RoomDisplayFilter::default();
                     self.displayed_spaces.clear();

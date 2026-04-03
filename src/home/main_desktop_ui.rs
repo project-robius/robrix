@@ -295,6 +295,7 @@ impl MainDesktopUI {
         self.room_order.clear();
         self.most_recently_selected_room = None;
         self.selected_space = None;
+        self.drawn_previously = false;
 
         if let Some(mut dock) = self.view.dock(cx, ids!(dock)).borrow_mut() {
             dock.load_state(cx, self.default_layout.dock_items.clone());
