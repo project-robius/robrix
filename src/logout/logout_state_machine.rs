@@ -90,7 +90,7 @@ use anyhow::{anyhow, Result};
 use makepad_widgets::{Cx, log};
 
 use crate::home::navigation_tab_bar::NavigationBarAction;
-use crate::persistence::delete_latest_user_id;
+use crate::persistence::{delete_latest_user_id, skip_app_state_restore_once};
 use crate::sliding_sync::clear_app_state;
 use crate::{
     home::main_desktop_ui::MainDesktopUiAction,
@@ -317,51 +317,16 @@ impl LogoutStateMachine {
         
         match self.perform_server_logout().await {
             Ok(_) => {
-                self.point_of_no_return.store(true, Ordering::Release);
-                set_logout_point_of_no_return(true);
-                self.transition_to(
-                    LogoutState::PointOfNoReturn,
-                    "Point of no return reached".to_string(),
-                    50
-                ).await?;
-                
-                // We delete latest_user_id after reaching LOGOUT_POINT_OF_NO_RETURN:
-                // 1. To prevent auto-login with invalid session on next start
-                // 2. While keeping session file intact for potential future login
-                if let Err(e) = delete_latest_user_id().await {
-                    log!("Warning: Failed to delete latest user ID: {}", e);
-                }
+                self.enter_point_of_no_return("Point of no return reached").await?;
             }
             Err(e) => {
                 // Check if it's an M_UNKNOWN_TOKEN error
                 if matches!(&e, LogoutError::Recoverable(RecoverableError::ServerLogoutFailed(msg)) if msg.contains("M_UNKNOWN_TOKEN")) {
                     log!("Token already invalidated, continuing with logout");
-                    self.point_of_no_return.store(true, Ordering::Release);
-                    set_logout_point_of_no_return(true);
-                    self.transition_to(
-                        LogoutState::PointOfNoReturn,
-                        "Token already invalidated".to_string(),
-                        50
-                    ).await?;
-                    
-                    // Same delete operation as in the success case above
-                    if let Err(e) = delete_latest_user_id().await {
-                        log!("Warning: Failed to delete latest user ID: {}", e);
-                    }
+                    self.enter_point_of_no_return("Token already invalidated").await?;
                 } else if should_continue_local_logout_without_server(&e) {
                     log!("Homeserver appears unavailable, continuing with local logout: {}", e);
-                    self.point_of_no_return.store(true, Ordering::Release);
-                    set_logout_point_of_no_return(true);
-                    self.transition_to(
-                        LogoutState::PointOfNoReturn,
-                        "Homeserver unavailable, continuing with local logout".to_string(),
-                        50
-                    ).await?;
-
-                    // Same delete operation as in the success case above
-                    if let Err(e) = delete_latest_user_id().await {
-                        log!("Warning: Failed to delete latest user ID: {}", e);
-                    }
+                    self.enter_point_of_no_return("Homeserver unavailable, continuing with local logout").await?;
                 } else {
                     // Restart sync service since we haven't reached point of no return
                     if let Some(sync_service) = get_sync_service() {
@@ -466,6 +431,30 @@ impl LogoutStateMachine {
         Ok(())
     }
     
+    /// Sets the global point-of-no-return flags, writes the skip-restore marker,
+    /// and deletes the saved user ID so the next app start won't auto-login.
+    async fn enter_point_of_no_return(&self, message: &str) -> Result<()> {
+        self.point_of_no_return.store(true, Ordering::Release);
+        set_logout_point_of_no_return(true);
+        self.transition_to(
+            LogoutState::PointOfNoReturn,
+            message.to_string(),
+            50
+        ).await?;
+
+        if let Some(user_id) = get_client().and_then(|client| client.user_id().map(ToOwned::to_owned)) {
+            if let Err(e) = skip_app_state_restore_once(&user_id).await {
+                log!("Warning: Failed to mark app state restore to skip once for {user_id}: {e}");
+            }
+        }
+
+        if let Err(e) = delete_latest_user_id().await {
+            log!("Warning: Failed to delete latest user ID: {}", e);
+        }
+
+        Ok(())
+    }
+
     // Individual step implementations
     async fn perform_prechecks(&self) -> Result<(), LogoutError> {
         log!("perform_prechecks started");

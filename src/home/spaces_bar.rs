@@ -13,7 +13,7 @@ use matrix_sdk::{RoomDisplayName, RoomState};
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 
 use crate::{
-    app::AppState, home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, i18n::{AppLanguage, tr_fmt, tr_key}, login::login_screen::LoginAction, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, room_filter_input_bar::RoomFilterAction}, sliding_sync::AccountSwitchAction, utils::{self, RoomNameId}
+    app::AppState, home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, i18n::{AppLanguage, tr_fmt, tr_key}, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, room_filter_input_bar::RoomFilterAction}, sliding_sync::AccountSwitchAction, utils::{self, RoomNameId}
 };
 
 script_mod! {
@@ -522,6 +522,17 @@ impl Widget for SpacesBar {
 
         if let Event::Actions(actions) = event {
             for action in actions {
+                if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
+                    while PENDING_SPACE_UPDATES.pop().is_some() {}
+                    self.all_joined_spaces.clear();
+                    self.display_filter = RoomDisplayFilter::default();
+                    self.displayed_spaces.clear();
+                    self.is_filtered = false;
+                    self.selected_space = None;
+                    self.redraw(cx);
+                    continue;
+                }
+
                 // The room filter input bar is also used to filter which spaces are visible.
                 if let RoomFilterAction::Changed(keywords) = action.as_widget_action().cast() {
                     self.update_displayed_spaces(cx, &keywords);

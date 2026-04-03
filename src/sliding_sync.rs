@@ -45,7 +45,7 @@ use crate::{
     account_manager::{self, Account},
     app::{AppStateAction, RoomFilterRemoteSearchAction}, app_data_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
         add_room::{CreatableSpacesAction, CreateRoomAction, CreateRoomContext, KnockResultAction}, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, build_room_search_text, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
-    }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
+    }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state, take_skip_app_state_restore_once}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
@@ -1258,7 +1258,10 @@ async fn matrix_worker_task(
                 // Spawn a new async task that will make the actual pagination request.
                 let _paginate_task = Handle::current().spawn(async move {
                     log!("Starting {direction} pagination request for {timeline_kind}...");
-                    sender.send(TimelineUpdate::PaginationRunning(direction)).unwrap();
+                    if sender.send(TimelineUpdate::PaginationRunning(direction)).is_err() {
+                        warning!("Skipping {direction} pagination request for {timeline_kind}: timeline receiver was dropped before start.");
+                        return;
+                    }
                     SignalToUI::set_ui_signal();
 
                     let mut res = if direction == PaginationDirection::Forwards {
@@ -1306,11 +1309,14 @@ async fn matrix_worker_task(
                                 if direction == PaginationDirection::Forwards { "end" } else { "start" },
                                 if fully_paginated { "yes" } else { "no" },
                             );
-                            sender.send(TimelineUpdate::PaginationIdle {
+                            if sender.send(TimelineUpdate::PaginationIdle {
                                 fully_paginated,
                                 direction,
-                            }).unwrap();
-                            SignalToUI::set_ui_signal();
+                            }).is_ok() {
+                                SignalToUI::set_ui_signal();
+                            } else {
+                                warning!("Dropping completed {direction} pagination update for {timeline_kind}: timeline receiver was dropped.");
+                            }
                         }
                         Err(error) => {
                             if direction == PaginationDirection::Backwards
@@ -1328,11 +1334,14 @@ async fn matrix_worker_task(
                                 return;
                             }
                             error!("Error sending {direction} pagination request for {timeline_kind}: {error:?}");
-                            sender.send(TimelineUpdate::PaginationError {
+                            if sender.send(TimelineUpdate::PaginationError {
                                 error,
                                 direction,
-                            }).unwrap();
-                            SignalToUI::set_ui_signal();
+                            }).is_ok() {
+                                SignalToUI::set_ui_signal();
+                            } else {
+                                warning!("Dropping failed {direction} pagination update for {timeline_kind}: timeline receiver was dropped.");
+                            }
                         }
                     }
                 });
@@ -1352,11 +1361,14 @@ async fn matrix_worker_task(
                         Ok(_) => log!("Successfully edited message {timeline_event_item_id:?} in {timeline_kind}."),
                         Err(ref e) => error!("Error editing message {timeline_event_item_id:?} in {timeline_kind}: {e:?}"),
                     }
-                    sender.send(TimelineUpdate::MessageEdited {
+                    if sender.send(TimelineUpdate::MessageEdited {
                         timeline_event_item_id,
                         result,
-                    }).unwrap();
-                    SignalToUI::set_ui_signal();
+                    }).is_ok() {
+                        SignalToUI::set_ui_signal();
+                    } else {
+                        warning!("Dropping message edited update for {timeline_kind}: timeline receiver was dropped.");
+                    }
                 });
             }
 
@@ -1457,8 +1469,11 @@ async fn matrix_worker_task(
                     log!("Sending sync room members request for {timeline_kind}...");
                     timeline.fetch_members().await;
                     log!("Completed sync room members request for {timeline_kind}.");
-                    sender.send(TimelineUpdate::RoomMembersSynced).unwrap();
-                    SignalToUI::set_ui_signal();
+                    if sender.send(TimelineUpdate::RoomMembersSynced).is_ok() {
+                        SignalToUI::set_ui_signal();
+                    } else {
+                        warning!("Dropping room members synced update for {timeline_kind}: timeline receiver was dropped.");
+                    }
                 });
             }
 
@@ -1723,8 +1738,11 @@ async fn matrix_worker_task(
                 let _get_members_task = Handle::current().spawn(async move {
                     let send_update = |members: Vec<matrix_sdk::room::RoomMember>, source: &str| {
                         log!("{} {} members for {timeline_kind}", source, members.len());
-                        sender.send(TimelineUpdate::RoomMembersListFetched { members }).unwrap();
-                        SignalToUI::set_ui_signal();
+                        if sender.send(TimelineUpdate::RoomMembersListFetched { members }).is_ok() {
+                            SignalToUI::set_ui_signal();
+                        } else {
+                            warning!("Dropping room members list update for {timeline_kind}: timeline receiver was dropped.");
+                        }
                     };
 
                     let room = timeline.room();
@@ -4480,6 +4498,17 @@ fn handle_ignore_user_list_subscriber(client: Client) {
 /// If loading fails, it shows a popup notification with the error message.
 fn handle_load_app_state(user_id: OwnedUserId) {
     Handle::current().spawn(async move {
+        match take_skip_app_state_restore_once(&user_id).await {
+            Ok(true) => {
+                log!("Skipping automatic app state restore once for {user_id} after explicit logout.");
+                return;
+            }
+            Ok(false) => {}
+            Err(e) => {
+                warning!("Failed to check skip-restore marker for {user_id}: {e}");
+            }
+        }
+
         match load_app_state(&user_id).await {
             Ok(app_state) => {
                 if !app_state.saved_dock_state_home.open_rooms.is_empty()

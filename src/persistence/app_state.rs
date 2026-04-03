@@ -7,6 +7,7 @@ use crate::{app::AppState, app_data_dir, persistence::persistent_state_dir};
 
 
 const LATEST_APP_STATE_FILE_NAME: &str = "latest_app_state.json";
+const SKIP_APP_STATE_RESTORE_ONCE_FILE_NAME: &str = "skip_app_state_restore_once";
 
 const WINDOW_GEOM_STATE_FILE_NAME: &str = "window_geom_state.json";
 
@@ -36,6 +37,26 @@ pub fn save_app_state(
     writer.flush()?;
     log!("Successfully saved app state to persistent storage.");
     Ok(())
+}
+
+/// Marks that the next login for this user should skip automatic app-state restore once.
+pub async fn skip_app_state_restore_once(user_id: &UserId) -> anyhow::Result<()> {
+    let marker_path = persistent_state_dir(user_id).join(SKIP_APP_STATE_RESTORE_ONCE_FILE_NAME);
+    if let Some(parent) = marker_path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    tokio::fs::write(marker_path, b"1").await?;
+    Ok(())
+}
+
+/// Consumes the one-shot "skip automatic restore" marker for the given user, if present.
+pub async fn take_skip_app_state_restore_once(user_id: &UserId) -> anyhow::Result<bool> {
+    let marker_path = persistent_state_dir(user_id).join(SKIP_APP_STATE_RESTORE_ONCE_FILE_NAME);
+    match tokio::fs::remove_file(marker_path).await {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// Save the current state of the given window's geometry to persistent storage.

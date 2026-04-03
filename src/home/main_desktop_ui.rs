@@ -3,7 +3,7 @@ use ruma::OwnedRoomId;
 use tokio::sync::Notify;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, sliding_sync::AccountSwitchAction, utils::RoomNameId};
+use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, logout::logout_confirm_modal::LogoutAction, sliding_sync::AccountSwitchAction, utils::RoomNameId};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
 
 script_mod! {
@@ -289,6 +289,24 @@ impl MainDesktopUI {
         self.most_recently_selected_room = None;
     }
 
+    fn reset_to_default_layout(&mut self, cx: &mut Cx) {
+        self.open_rooms.clear();
+        self.tab_to_close = None;
+        self.room_order.clear();
+        self.most_recently_selected_room = None;
+        self.selected_space = None;
+        self.drawn_previously = false;
+
+        if let Some(mut dock) = self.view.dock(cx, ids!(dock)).borrow_mut() {
+            dock.load_state(cx, self.default_layout.dock_items.clone());
+        } else {
+            error!("BUG: failed to borrow dock widget to reset desktop UI to its default layout.");
+        }
+
+        cx.action(AppStateAction::FocusNone);
+        self.redraw(cx);
+    }
+
     /// Replaces an invite with a joined room in the dock.
     fn replace_invite_with_joined_room(
         &mut self,
@@ -413,9 +431,14 @@ impl WidgetMatchEvent for MainDesktopUI {
                 continue;
             }
 
+            if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
+                self.reset_to_default_layout(cx);
+                continue;
+            }
+
             // When switching accounts, close all room tabs (keeping only the home tab)
             if let Some(AccountSwitchAction::Starting(_)) = action.downcast_ref() {
-                self.close_all_tabs(cx);
+                self.reset_to_default_layout(cx);
                 continue;
             }
 
