@@ -42,6 +42,7 @@ use crate::{
         popup_list::{PopupKind, enqueue_popup_notification},
         room_filter_input_bar::RoomFilterAction,
     },
+    logout::logout_confirm_modal::LogoutAction,
     sliding_sync::{MatrixLinkAction, MatrixRequest, PaginationDirection, TimelineKind, submit_async_request},
     space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction}, utils::{RoomNameId, VecDiff},
 };
@@ -1396,6 +1397,32 @@ impl Widget for RoomsList {
         // Second, handle any other actions that came from other widgets/components.
         if let Event::Actions(actions) = event {
             for action in actions {
+                if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
+                    self.invited_rooms.borrow_mut().clear();
+                    self.all_joined_rooms.clear();
+                    self.all_known_rooms_order.clear();
+                    self.selected_space = None;
+                    self.space_request_sender = None;
+                    self.space_map.clear();
+                    self.hidden_rooms.clear();
+                    self.displayed_invited_rooms.clear();
+                    self.is_invited_rooms_header_expanded = false;
+                    self.invited_rooms_indexes = RoomCategoryIndexes::default();
+                    self.displayed_direct_rooms.clear();
+                    self.is_direct_rooms_header_expanded = false;
+                    self.direct_rooms_indexes = RoomCategoryIndexes::default();
+                    self.displayed_regular_rooms.clear();
+                    self.is_regular_rooms_header_expanded = true;
+                    self.regular_rooms_indexes = RoomCategoryIndexes::default();
+                    self.status.clear();
+                    self.current_active_room = None;
+                    self.max_known_rooms = None;
+                    self.indexes_dirty = true;
+                    self.view.space_lobby_entry(cx, ids!(space_lobby_entry)).set_visible(cx, false);
+                    self.redraw(cx);
+                    continue;
+                }
+
                 if let RoomFilterAction::Changed(keywords) = action.as_widget_action().cast_ref() {
                     self.regenerate_display_filter_and_sort_fn(keywords);
                     self.update_displayed_rooms(cx, true);
