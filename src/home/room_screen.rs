@@ -34,7 +34,7 @@ use crate::{
     shared::{
         avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
-    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, current_user_id, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
+    sliding_sync::{BackwardsPaginateUntilEventRequest, FetchedRoomThread, MatrixRequest, PaginationDirection, RoomThreadsAction, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, current_user_id, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -744,6 +744,218 @@ script_mod! {
         }
     }
 
+    mod.widgets.ThreadsPaneEntry = #(ThreadsPaneEntry::register_widget(vm)) {
+        ..mod.widgets.RoundedView
+
+        width: Fill
+        height: Fit
+        flow: Down
+        spacing: 5
+        padding: Inset{top: 12, right: 12, bottom: 12, left: 12}
+        margin: Inset{left: 12, right: 12, top: 6, bottom: 0}
+        cursor: MouseCursor.Hand
+
+        show_bg: true
+        draw_bg +: {
+            color: #F8FAFD
+            border_radius: 4.0
+            border_size: 1.0
+            border_color: #D8E0EA
+        }
+
+        title_row := View {
+            width: Fill
+            height: Fit
+            flow: Right
+            spacing: 8
+
+            title := Label {
+                width: Fill
+                height: Fit
+                flow: Flow.Right{wrap: true}
+                draw_text +: {
+                    text_style: USERNAME_TEXT_STYLE { font_size: 10.8 }
+                    color: #1F1F1F
+                }
+                text: ""
+            }
+
+            time := Label {
+                width: Fit
+                height: Fit
+                draw_text +: {
+                    text_style: TIMESTAMP_TEXT_STYLE { font_size: 7.5 }
+                    color: (TIMESTAMP_TEXT_COLOR)
+                }
+                text: ""
+            }
+        }
+
+        subtitle := Label {
+            width: Fill
+            height: Fit
+            flow: Flow.Right{wrap: true}
+            draw_text +: {
+                text_style: MESSAGE_TEXT_STYLE { font_size: 9.8 }
+                color: #7B7B7B
+            }
+            text: ""
+        }
+
+        preview := Label {
+            width: Fill
+            height: Fit
+            flow: Flow.Right{wrap: true}
+            draw_text +: {
+                text_style: MESSAGE_TEXT_STYLE { font_size: 10.0 }
+                color: (COLOR_TEXT)
+            }
+            text: ""
+        }
+    }
+
+    mod.widgets.ThreadsSlidingPane = #(ThreadsSlidingPane::register_widget(vm)) {
+        visible: false,
+        flow: Overlay,
+        width: Fill,
+        height: Fill,
+        align: Align{x: 1.0, y: 0}
+
+        bg_view := SolidView {
+            width: Fill
+            height: Fill
+            visible: false,
+            show_bg: true
+            draw_bg.color: #000000BB
+        }
+
+        main_content := SolidView {
+            width: 320,
+            height: Fill
+            flow: Down,
+            align: Align{x: 1.0}
+
+            show_bg: true,
+            draw_bg.color: (COLOR_PRIMARY)
+
+            header := View {
+                width: Fill
+                height: Fit
+                flow: Right
+                align: Align{y: 0.5}
+                padding: Inset{top: 12, right: 10, bottom: 12, left: 15}
+
+                title := Label {
+                    width: Fit
+                    height: Fit
+                    draw_text +: {
+                        text_style: USERNAME_TEXT_STYLE { font_size: 12.5 }
+                        color: #000
+                    }
+                    text: "Threads"
+                }
+
+                spacer := View {
+                    width: Fill
+                    height: Fit
+                }
+
+                close_button := RobrixNeutralIconButton {
+                    width: Fit,
+                    height: Fit,
+                    spacing: 0,
+                    padding: 15,
+                    draw_icon.svg: (ICON_CLOSE)
+                    icon_walk: Walk{width: 14, height: 14}
+                    text: ""
+                }
+            }
+
+            room_name := Label {
+                width: Fill
+                height: Fit
+                flow: Flow.Right{wrap: true}
+                padding: Inset{left: 15, right: 15, bottom: 10}
+                draw_text +: {
+                    text_style: MESSAGE_TEXT_STYLE { font_size: 10.5 }
+                    color: #6E6E6E
+                }
+                text: ""
+            }
+
+            loading_indicator := View {
+                visible: false
+                width: Fill
+                height: Fit
+                flow: Right
+                align: Align{y: 0.5}
+                spacing: 8
+                padding: Inset{left: 15, right: 15, top: 6, bottom: 10}
+
+                spinner := LoadingSpinner {
+                    width: 18
+                    height: 18
+                }
+
+                loading_label := Label {
+                    width: Fit
+                    height: Fit
+                    draw_text +: {
+                        text_style: MESSAGE_TEXT_STYLE { font_size: 10.5 }
+                        color: #7B7B7B
+                    }
+                    text: "Loading threads..."
+                }
+            }
+
+            empty_state := Label {
+                visible: false
+                width: Fill
+                height: Fit
+                flow: Flow.Right{wrap: true}
+                padding: Inset{left: 15, right: 15, top: 20, bottom: 20}
+                draw_text +: {
+                    text_style: MESSAGE_TEXT_STYLE { font_size: 10.5 }
+                    color: #7B7B7B
+                }
+                text: "No threads yet."
+            }
+
+            threads_list := PortalList {
+                width: Fill
+                height: Fill
+                flow: Down
+                max_pull_down: 0.0
+
+                ThreadEntry := mod.widgets.ThreadsPaneEntry {}
+            }
+        }
+
+        slide: 1.0,
+
+        animator: Animator {
+            panel: {
+                default: @hide
+                show: AnimatorState{
+                    redraw: true,
+                    from: {all: Forward {duration: 0.5}}
+                    ease: Ease.ExpDecay {d1: 0.80, d2: 0.97}
+                    apply: {
+                        slide: 0.0
+                    }
+                }
+                hide: AnimatorState{
+                    redraw: true,
+                    from: {all: Forward {duration: 0.5}}
+                    ease: Ease.ExpDecay {d1: 0.80, d2: 0.97}
+                    apply: {
+                        slide: 1.0
+                    }
+                }
+            }
+        }
+    }
+
     mod.widgets.AppServicePanel = #(AppServicePanel::register_widget(vm)) {
         width: Fill
         height: Fit
@@ -1013,6 +1225,8 @@ script_mod! {
             // (on top of all other views that are always visible).
             user_profile_sliding_pane := mod.widgets.UserProfileSlidingPane { }
 
+            threads_sliding_pane := mod.widgets.ThreadsSlidingPane { }
+
             // The loading pane appears while the user is waiting for something in the room screen
             // to finish loading, e.g., when loading an older replied-to message.
             loading_pane := LoadingPane { }
@@ -1052,6 +1266,258 @@ script_mod! {
     }
 }
 
+#[derive(Clone, Default, Debug)]
+pub enum ThreadsPaneAction {
+    OpenThread(OwnedEventId),
+    LoadMoreRequested,
+    #[default]
+    None,
+}
+
+impl ActionDefaultRef for ThreadsPaneAction {
+    fn default_ref() -> &'static Self {
+        static DEFAULT: ThreadsPaneAction = ThreadsPaneAction::None;
+        &DEFAULT
+    }
+}
+
+#[derive(Clone, Debug)]
+struct ThreadsPaneEntryInfo {
+    thread_root_event_id: OwnedEventId,
+    title: String,
+    subtitle: String,
+    time: String,
+    preview: String,
+}
+
+#[derive(Clone, Debug)]
+struct ThreadsPaneInfo {
+    room_name: String,
+    entries: Vec<ThreadsPaneEntryInfo>,
+    status_text: String,
+    show_entries: bool,
+    loading_text: String,
+    show_loading: bool,
+}
+
+#[derive(Default)]
+struct ThreadsPaneState {
+    room_id: Option<OwnedRoomId>,
+    entries: Vec<FetchedRoomThread>,
+    prev_batch_token: Option<String>,
+    is_loading: bool,
+    initialized: bool,
+    status_text: String,
+}
+
+#[derive(Script, ScriptHook, Widget)]
+pub struct ThreadsPaneEntry {
+    #[source] source: ScriptObjectRef,
+    #[deref] view: View,
+
+    #[rust] thread_root_event_id: Option<OwnedEventId>,
+}
+
+impl Widget for ThreadsPaneEntry {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+
+        let Some(thread_root_event_id) = self.thread_root_event_id.clone() else { return };
+        match event.hits(cx, self.view.area()) {
+            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                cx.widget_action(
+                    self.widget_uid(),
+                    ThreadsPaneAction::OpenThread(thread_root_event_id),
+                );
+            }
+            _ => {}
+        }
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl ThreadsPaneEntry {
+    fn set_entry(&mut self, cx: &mut Cx, entry: &ThreadsPaneEntryInfo) {
+        self.thread_root_event_id = Some(entry.thread_root_event_id.clone());
+        self.label(cx, ids!(title)).set_text(cx, &entry.title);
+        self.label(cx, ids!(time)).set_text(cx, &entry.time);
+        self.label(cx, ids!(subtitle)).set_text(cx, &entry.subtitle);
+        self.label(cx, ids!(preview)).set_text(cx, &entry.preview);
+    }
+}
+
+impl ThreadsPaneEntryRef {
+    fn set_entry(&self, cx: &mut Cx, entry: &ThreadsPaneEntryInfo) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_entry(cx, entry);
+    }
+}
+
+#[derive(Script, ScriptHook, Widget, Animator)]
+pub struct ThreadsSlidingPane {
+    #[source] source: ScriptObjectRef,
+    #[deref] view: View,
+    #[apply_default] animator: Animator,
+    #[live] slide: f32,
+
+    #[rust] info: Option<ThreadsPaneInfo>,
+    #[rust] is_animating_out: bool,
+}
+
+impl Widget for ThreadsSlidingPane {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+
+        if !self.visible { return; }
+
+        let animator_action = self.animator_handle_event(cx, event);
+        if animator_action.must_redraw() {
+            self.redraw(cx);
+        }
+
+        if self.is_animating_out && !self.animator.is_track_animating(id!(panel)) {
+            self.visible = false;
+            self.is_animating_out = false;
+            cx.revert_key_focus();
+            self.view(cx, ids!(bg_view)).set_visible(cx, false);
+            self.redraw(cx);
+            return;
+        }
+
+        let area = self.view.area();
+        let close_pane = {
+            matches!(
+                event,
+                Event::Actions(actions) if self.button(cx, ids!(close_button)).clicked(actions)
+            )
+            || event.back_pressed()
+            || match event.hits_with_capture_overload(cx, area, true) {
+                Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
+                Hit::FingerDown(_fde) => {
+                    cx.set_key_focus(area);
+                    false
+                }
+                Hit::FingerUp(fue) if fue.is_over => {
+                    fue.mouse_button().is_some_and(|b| b.is_back())
+                    || !self.view(cx, ids!(main_content)).area().rect(cx).contains(fue.abs)
+                }
+                _ => false,
+            }
+        };
+        if close_pane {
+            self.hide(cx);
+        }
+
+        if let Event::Actions(actions) = event {
+            let threads_list = self.portal_list(cx, ids!(threads_list));
+            if threads_list.scrolled(actions)
+                && threads_list.first_id() == 0
+                && threads_list.scroll_position() >= -0.5
+            {
+                cx.widget_action(
+                    self.widget_uid(),
+                    ThreadsPaneAction::LoadMoreRequested,
+                );
+            }
+        }
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let Some(info) = self.info.as_ref() else {
+            self.visible = false;
+            return self.view.draw_walk(cx, scope, walk);
+        };
+
+        let panel_width = 320.0;
+        let right_margin = -(self.slide * panel_width);
+        let mut main_content = self.view(cx, ids!(main_content));
+        script_apply_eval!(cx, main_content, {
+            margin.right: #(right_margin)
+        });
+        let bg_alpha = (1.0 - self.slide) * 0.733;
+        let bg_color = vec4(0.0, 0.0, 0.0, bg_alpha);
+        let mut bg_view = self.view(cx, ids!(bg_view));
+        script_apply_eval!(cx, bg_view, {
+            draw_bg +: { color: #(bg_color) }
+        });
+
+        self.label(cx, ids!(room_name)).set_text(cx, &info.room_name);
+        self.label(cx, ids!(loading_label)).set_text(cx, &info.loading_text);
+        self.view(cx, ids!(loading_indicator)).set_visible(cx, info.show_loading);
+        self.label(cx, ids!(empty_state)).set_text(cx, &info.status_text);
+        self.view(cx, ids!(empty_state)).set_visible(cx, !info.show_entries && !info.show_loading);
+        self.view(cx, ids!(threads_list)).set_visible(cx, info.show_entries);
+
+        while let Some(widget) = self.view.draw_walk(cx, scope, walk).step() {
+            let portal_list_ref = widget.as_portal_list();
+            let Some(mut list) = portal_list_ref.borrow_mut() else { continue };
+
+            list.set_item_range(cx, 0, info.entries.len());
+            while let Some(item_id) = list.next_visible_item(cx) {
+                let Some(entry) = info.entries.get(item_id) else { continue };
+                let item = list.item(cx, item_id, id!(ThreadEntry));
+                item.as_threads_pane_entry().set_entry(cx, entry);
+                item.draw_all(cx, &mut Scope::empty());
+            }
+        }
+        DrawStep::done()
+    }
+}
+
+impl ThreadsSlidingPane {
+    pub fn is_currently_shown(&self, _cx: &mut Cx) -> bool {
+        self.visible
+    }
+
+    fn set_info(&mut self, _cx: &mut Cx, info: ThreadsPaneInfo) {
+        self.info = Some(info);
+    }
+
+    pub fn show(&mut self, cx: &mut Cx) {
+        self.visible = true;
+        self.is_animating_out = false;
+        cx.set_key_focus(self.view.area());
+        self.animator_play(cx, ids!(panel.show));
+        self.view(cx, ids!(bg_view)).set_visible(cx, true);
+        self.view.button(cx, ids!(close_button)).reset_hover(cx);
+        self.redraw(cx);
+    }
+
+    pub fn hide(&mut self, cx: &mut Cx) {
+        if !self.visible {
+            return;
+        }
+        self.is_animating_out = true;
+        self.animator_play(cx, ids!(panel.hide));
+        self.redraw(cx);
+    }
+}
+
+impl ThreadsSlidingPaneRef {
+    pub fn is_currently_shown(&self, cx: &mut Cx) -> bool {
+        let Some(inner) = self.borrow() else { return false };
+        inner.is_currently_shown(cx)
+    }
+
+    fn set_info(&self, cx: &mut Cx, info: ThreadsPaneInfo) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_info(cx, info);
+    }
+
+    pub fn show(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.show(cx);
+    }
+
+    pub fn hide(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.hide(cx);
+    }
+}
+
 /// The main widget that displays a single Matrix room.
 #[derive(Script, Widget)]
 pub struct RoomScreen {
@@ -1079,6 +1545,7 @@ pub struct RoomScreen {
     streaming_timeout_timer: Timer,
     /// Whether the in-room app service quick actions card is currently visible.
     #[rust] show_app_service_actions: bool,
+    #[rust] threads_pane_state: ThreadsPaneState,
 }
 
 impl Drop for RoomScreen {
@@ -1111,6 +1578,7 @@ impl Widget for RoomScreen {
         let room_screen_widget_uid = self.widget_uid();
         let portal_list = self.portal_list(cx, ids!(timeline.list));
         let user_profile_sliding_pane = self.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane));
+        let threads_sliding_pane = self.threads_sliding_pane(cx, ids!(threads_sliding_pane));
         let loading_pane = self.loading_pane(cx, ids!(loading_pane));
 
         // Streaming animation frame handler
@@ -1354,6 +1822,40 @@ impl Widget for RoomScreen {
                     }
                 }
 
+                match action.as_widget_action().cast_ref() {
+                    ThreadsPaneAction::OpenThread(thread_root_event_id) => {
+                        let Some(room_name_id) = self.room_name_id.as_ref().cloned() else { continue };
+                        threads_sliding_pane.hide(cx);
+                        cx.widget_action(
+                            room_screen_widget_uid,
+                            RoomsListAction::Selected(SelectedRoom::Thread {
+                                room_name_id,
+                                thread_root_event_id: thread_root_event_id.clone(),
+                            }),
+                        );
+                    }
+                    ThreadsPaneAction::LoadMoreRequested => {
+                        self.request_more_threads(cx, true);
+                    }
+                    ThreadsPaneAction::None => {}
+                }
+
+                if let Some(RoomThreadsAction::Loaded { room_id, from, threads, prev_batch_token }) = action.downcast_ref() {
+                    if self.threads_pane_state.room_id.as_ref().is_some_and(|current| current == room_id) {
+                        self.on_threads_loaded(
+                            cx,
+                            from.as_ref(),
+                            threads,
+                            prev_batch_token.clone(),
+                        );
+                    }
+                }
+                if let Some(RoomThreadsAction::Failed { room_id, from: _, error }) = action.downcast_ref() {
+                    if self.threads_pane_state.room_id.as_ref().is_some_and(|current| current == room_id) {
+                        self.on_threads_failed(cx, error);
+                    }
+                }
+
                 // Handle the highlight animation for a message.
                 let Some(tl) = self.tl_state.as_mut() else { continue };
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
@@ -1418,6 +1920,9 @@ impl Widget for RoomScreen {
             }
 
             self.process_timeline_updates(cx, &portal_list, scope.data.get::<AppState>());
+            if threads_sliding_pane.is_currently_shown(cx) {
+                self.refresh_threads_pane(cx);
+            }
 
             // Ideally we would do this elsewhere on the main thread, because it's not room-specific,
             // but it doesn't hurt to do it here.
@@ -1439,6 +1944,12 @@ impl Widget for RoomScreen {
             is_pane_shown = true;
             if is_interactive_hit {
                 loading_pane.handle_event(cx, event, scope);
+            }
+        }
+        else if threads_sliding_pane.is_currently_shown(cx) {
+            is_pane_shown = true;
+            if is_interactive_hit {
+                threads_sliding_pane.handle_event(cx, event, scope);
             }
         }
         else if user_profile_sliding_pane.is_currently_shown(cx) {
@@ -2036,7 +2547,8 @@ impl Widget for RoomScreen {
 
             // If the list is not filling the viewport, we need to back paginate the timeline
             // until we have enough events items to fill the viewport.
-            if !tl_state.fully_paginated
+            if tl_state.kind.thread_root_event_id().is_none()
+                && !tl_state.fully_paginated
                 && !tl_state.backwards_pagination_in_flight
                 && !list.is_filling_viewport()
             {
@@ -3177,6 +3689,9 @@ impl RoomScreen {
                         }),
                     );
                 }
+                MessageAction::ShowThreadsPane => {
+                    self.show_threads_pane(cx);
+                }
                 MessageAction::Redact { details, reason } => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
                     let timeline_event_id = details.timeline_event_id.clone();
@@ -3309,6 +3824,123 @@ impl RoomScreen {
     ) {
         pane.set_info(cx, info);
         pane.show(cx);
+        self.redraw(cx);
+    }
+
+    fn show_threads_pane(&mut self, cx: &mut Cx) {
+        self.ensure_threads_state_for_current_room();
+        if !self.threads_pane_state.initialized && !self.threads_pane_state.is_loading {
+            self.request_more_threads(cx, false);
+        }
+        self.refresh_threads_pane(cx);
+        self.threads_sliding_pane(cx, ids!(threads_sliding_pane)).show(cx);
+        self.redraw(cx);
+    }
+
+    fn refresh_threads_pane(&mut self, cx: &mut Cx) {
+        let Some(room_name_id) = self.room_name_id.as_ref() else { return };
+        self.threads_sliding_pane(cx, ids!(threads_sliding_pane)).set_info(
+            cx,
+            ThreadsPaneInfo {
+                room_name: room_name_id.to_string(),
+                entries: self.threads_pane_state.entries.iter()
+                    .map(|entry| ThreadsPaneEntryInfo {
+                        thread_root_event_id: entry.thread_root_event_id.clone(),
+                        title: entry.title.clone(),
+                        subtitle: match entry.reply_count {
+                            1 => String::from("1 reply"),
+                            n => format!("{n} replies"),
+                        },
+                        time: utils::relative_format(entry.timestamp)
+                            .unwrap_or_else(|| String::from("")),
+                        preview: entry.latest_reply_preview.clone().unwrap_or_else(|| String::from("Tap to open thread")),
+                    })
+                    .collect(),
+                status_text: self.threads_pane_state.status_text.clone(),
+                show_entries: !self.threads_pane_state.entries.is_empty(),
+                loading_text: if self.threads_pane_state.entries.is_empty() {
+                    String::from("Loading threads...")
+                } else {
+                    String::from("Loading more threads...")
+                },
+                show_loading: self.threads_pane_state.is_loading,
+            },
+        );
+    }
+
+    fn hide_threads_pane(&mut self, cx: &mut Cx) {
+        self.threads_sliding_pane(cx, ids!(threads_sliding_pane)).hide(cx);
+    }
+
+    fn ensure_threads_state_for_current_room(&mut self) {
+        let Some(room_id) = self.room_id().cloned() else { return };
+        if self.threads_pane_state.room_id.as_ref().is_some_and(|current| current == &room_id) {
+            return;
+        }
+        self.threads_pane_state = ThreadsPaneState {
+            room_id: Some(room_id),
+            status_text: String::from("Loading threads..."),
+            ..Default::default()
+        };
+    }
+
+    fn request_more_threads(&mut self, _cx: &mut Cx, load_more: bool) {
+        self.ensure_threads_state_for_current_room();
+        let Some(room_id) = self.threads_pane_state.room_id.clone() else { return };
+        if self.threads_pane_state.is_loading {
+            return;
+        }
+        let from = if load_more {
+            let Some(from) = self.threads_pane_state.prev_batch_token.clone() else { return };
+            Some(from)
+        } else {
+            None
+        };
+        self.threads_pane_state.is_loading = true;
+        if !self.threads_pane_state.initialized {
+            self.threads_pane_state.status_text = String::from("Loading threads...");
+        }
+        submit_async_request(MatrixRequest::ListRoomThreads {
+            room_id,
+            from,
+        });
+    }
+
+    fn on_threads_loaded(
+        &mut self,
+        cx: &mut Cx,
+        _from: Option<&String>,
+        threads: &[FetchedRoomThread],
+        prev_batch_token: Option<String>,
+    ) {
+        self.threads_pane_state.is_loading = false;
+        self.threads_pane_state.initialized = true;
+        self.threads_pane_state.prev_batch_token = prev_batch_token;
+        self.threads_pane_state.entries.extend_from_slice(threads);
+        self.threads_pane_state.entries.sort_by_key(|entry| u64::from(entry.timestamp.0));
+        self.threads_pane_state.entries.dedup_by(|a, b| a.thread_root_event_id == b.thread_root_event_id);
+        self.threads_pane_state.status_text = if self.threads_pane_state.entries.is_empty() {
+            String::from("No threads yet.")
+        } else {
+            String::new()
+        };
+        self.refresh_threads_pane(cx);
+        self.redraw(cx);
+    }
+
+    fn on_threads_failed(&mut self, cx: &mut Cx, error: &str) {
+        self.threads_pane_state.is_loading = false;
+        self.threads_pane_state.initialized = true;
+        if self.threads_pane_state.entries.is_empty() {
+            self.threads_pane_state.status_text = format!("Failed to load threads.\n\nError: {error}");
+        } else {
+            enqueue_popup_notification(
+                format!("Failed to load more threads.\n\nError: {error}"),
+                PopupKind::Error,
+                Some(5.0),
+            );
+        }
+        self.refresh_threads_pane(cx);
         self.redraw(cx);
     }
 
@@ -3618,6 +4250,8 @@ impl RoomScreen {
 
         self.hide_timeline();
         self.reset_app_service_ui(cx);
+        self.hide_threads_pane(cx);
+        self.threads_pane_state = Default::default();
         // Reset the the state of the inner loading pane.
         self.loading_pane(cx, ids!(loading_pane)).take_state();
 
@@ -4114,6 +4748,7 @@ struct FetchedThreadSummary {
     num_replies: u32,
     latest_reply_preview_text: Option<String>,
 }
+
 impl ItemDrawnStatus {
     /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `false`.
     const fn new() -> Self {
@@ -5764,6 +6399,7 @@ pub enum MessageAction {
     ActionBarClose,
     /// The user requested toggling the in-room app service quick actions card.
     ToggleAppServiceActions,
+    ShowThreadsPane,
     #[default]
     None,
 }

@@ -9,7 +9,7 @@ use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use mime::{IMAGE_JPEG, IMAGE_PNG};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, RelationsOptions, RoomMember}, ruma::{
+    config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, ListThreadsOptions, RelationsOptions, RoomMember}, ruma::{
         api::{Direction, client::{
             account::register::v3::Request as RegistrationRequest,
             room::create_room::v3::{Request as CreateRoomRequest, RoomPreset},
@@ -293,6 +293,11 @@ fn is_invalid_batch_token_timeline_error(error: &matrix_sdk_ui::timeline::Error)
     let error_text = error.to_string().to_ascii_lowercase();
     error_text.contains("invalid batch token")
         || error_text.contains("must start with 's' or 't'")
+}
+
+fn is_thread_unknown_parent_timeline_error(error: &matrix_sdk_ui::timeline::Error) -> bool {
+    let error_text = error.to_string().to_ascii_lowercase();
+    error_text.contains("unknown parent event")
 }
 
 
@@ -613,6 +618,30 @@ pub enum DirectMessageRoomAction {
     },
 }
 
+#[derive(Clone, Debug)]
+pub struct FetchedRoomThread {
+    pub thread_root_event_id: OwnedEventId,
+    pub timestamp: MilliSecondsSinceUnixEpoch,
+    pub title: String,
+    pub reply_count: u32,
+    pub latest_reply_preview: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub enum RoomThreadsAction {
+    Loaded {
+        room_id: OwnedRoomId,
+        from: Option<String>,
+        threads: Vec<FetchedRoomThread>,
+        prev_batch_token: Option<String>,
+    },
+    Failed {
+        room_id: OwnedRoomId,
+        from: Option<String>,
+        error: String,
+    },
+}
+
 /// Either a main room timeline or a thread-focused timeline.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TimelineKind {
@@ -687,6 +716,11 @@ pub enum MatrixRequest {
         timeline_kind: TimelineKind,
         thread_root_event_id: OwnedEventId,
         timeline_item_index: usize,
+    },
+    /// Request to fetch a page of thread roots for the given room.
+    ListRoomThreads {
+        room_id: OwnedRoomId,
+        from: Option<String>,
     },
     /// Request to fetch profile information for all members of a room.
     ///
@@ -1279,6 +1313,20 @@ async fn matrix_worker_task(
                             SignalToUI::set_ui_signal();
                         }
                         Err(error) => {
+                            if direction == PaginationDirection::Backwards
+                                && matches!(timeline_kind, TimelineKind::Thread { .. })
+                                && is_thread_unknown_parent_timeline_error(&error)
+                            {
+                                warning!(
+                                    "Treating unknown parent event as end-of-thread for {timeline_kind}."
+                                );
+                                sender.send(TimelineUpdate::PaginationIdle {
+                                    fully_paginated: true,
+                                    direction,
+                                }).unwrap();
+                                SignalToUI::set_ui_signal();
+                                return;
+                            }
                             error!("Error sending {direction} pagination request for {timeline_kind}: {error:?}");
                             sender.send(TimelineUpdate::PaginationError {
                                 error,
@@ -1365,6 +1413,37 @@ async fn matrix_worker_task(
                         error!("Failed to send fetched thread summary details to UI for {timeline_kind}");
                     }
                     SignalToUI::set_ui_signal();
+                });
+            }
+
+            MatrixRequest::ListRoomThreads { room_id, from } => {
+                let Some(room) = get_client().and_then(|client| client.get_room(&room_id)) else {
+                    Cx::post_action(RoomThreadsAction::Failed {
+                        room_id,
+                        from,
+                        error: String::from("Room not found."),
+                    });
+                    continue;
+                };
+
+                let _list_threads_task = Handle::current().spawn(async move {
+                    match fetch_room_threads_page(&room, from.clone()).await {
+                        Ok((threads, prev_batch_token)) => {
+                            Cx::post_action(RoomThreadsAction::Loaded {
+                                room_id,
+                                from,
+                                threads,
+                                prev_batch_token,
+                            });
+                        }
+                        Err(error) => {
+                            Cx::post_action(RoomThreadsAction::Failed {
+                                room_id,
+                                from,
+                                error: error.to_string(),
+                            });
+                        }
+                    }
                 });
             }
 
@@ -4745,6 +4824,87 @@ async fn text_preview_of_latest_thread_reply(
         Cow::Borrowed(_) => Some(preview_str),
         Cow::Owned(replaced) => Some(replaced),
     }
+}
+
+async fn sender_display_name_for_timeline_event(
+    room: &Room,
+    event: &matrix_sdk::deserialized_responses::TimelineEvent,
+) -> Option<(OwnedUserId, String)> {
+    let raw = event.raw();
+    let sender_id = raw.get_field::<OwnedUserId>("sender").ok().flatten()?;
+    let sender_room_member = match room.get_member_no_sync(&sender_id).await {
+        Ok(Some(rm)) => Some(rm),
+        _ => None,
+    };
+    let sender_name = sender_room_member.as_ref()
+        .and_then(|rm| rm.display_name())
+        .unwrap_or(sender_id.as_str())
+        .to_string();
+    Some((sender_id, sender_name))
+}
+
+fn fallback_preview_for_timeline_event(
+    event: &matrix_sdk::deserialized_responses::TimelineEvent,
+    sender_name: &str,
+    as_html: bool,
+) -> String {
+    text_preview_of_raw_timeline_event(event.raw(), sender_name)
+        .unwrap_or_else(|| {
+            let event_type = event.raw().get_field::<String>("type").ok().flatten();
+            TextPreview::from((
+                event_type.unwrap_or_else(|| "unknown event type".to_string()),
+                BeforeText::UsernameWithColon,
+            ))
+        })
+        .format_with(sender_name, as_html)
+}
+
+async fn fetch_room_threads_page(
+    room: &Room,
+    from: Option<String>,
+) -> Result<(Vec<FetchedRoomThread>, Option<String>), matrix_sdk::Error> {
+    let response = room.list_threads(ListThreadsOptions {
+        from: from.clone(),
+        limit: Some(uint!(20)),
+        ..Default::default()
+    }).await?;
+
+    let mut threads = Vec::new();
+    for event in response.chunk {
+        let Some(thread_root_event_id) = event.event_id() else { continue };
+        let timestamp = event.timestamp().unwrap_or_else(MilliSecondsSinceUnixEpoch::now);
+        let sender_name = sender_display_name_for_timeline_event(room, &event).await
+            .map(|(_, sender_name)| sender_name)
+            .unwrap_or_else(|| String::from("Unknown user"));
+        let title = utils::replace_linebreaks_separators(
+            &fallback_preview_for_timeline_event(&event, &sender_name, false),
+            true,
+        ).into_owned();
+        let title = if title.trim().is_empty() {
+            String::from("(No message preview)")
+        } else {
+            title
+        };
+
+        let reply_count = event.thread_summary.summary()
+            .map(|summary| summary.num_replies)
+            .unwrap_or(0);
+        let latest_reply_preview = if let Some(latest_event) = event.bundled_latest_thread_event.as_ref() {
+            text_preview_of_latest_thread_reply(room, latest_event).await
+        } else {
+            None
+        };
+
+        threads.push(FetchedRoomThread {
+            thread_root_event_id,
+            timestamp,
+            title,
+            reply_count,
+            latest_reply_preview,
+        });
+    }
+
+    Ok((threads, response.prev_batch_token))
 }
 
 
