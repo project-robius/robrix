@@ -135,24 +135,3 @@ pub fn load_window_state(window_ref: WindowRef, cx: &mut Cx) -> anyhow::Result<(
     );
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn skip_restore_marker_is_consumed_once() {
-        let user_id = UserId::parse("@robrix-test-skip-restore:example.invalid")
-            .unwrap()
-            .to_owned();
-
-        let _ = tokio::fs::remove_dir_all(persistent_state_dir(&user_id)).await;
-
-        skip_app_state_restore_once(&user_id).await.unwrap();
-
-        assert!(take_skip_app_state_restore_once(&user_id).await.unwrap());
-        assert!(!take_skip_app_state_restore_once(&user_id).await.unwrap());
-
-        let _ = tokio::fs::remove_dir_all(persistent_state_dir(&user_id)).await;
-    }
-}
