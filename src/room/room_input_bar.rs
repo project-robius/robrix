@@ -103,7 +103,7 @@ script_mod! {
 
                 mentionable_text_input := MentionableTextInput {
                     width: Fill,
-                    height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
+                    height: Fit
                     margin: Inset {
                         top: 3, // add some space between the top border of the text input and the top border of the room input bar
                         bottom: 5.75, // to line up the middle of the text input with the middle of the buttons
@@ -114,6 +114,7 @@ script_mod! {
                         center +: {
                             text_input := RobrixTextInput {
                                 empty_text: "Write a message (in Markdown) ..."
+                                is_multiline: true,
                             }
                         }
                     }
