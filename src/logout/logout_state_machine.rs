@@ -90,7 +90,7 @@ use anyhow::{anyhow, Result};
 use makepad_widgets::{Cx, log};
 
 use crate::home::navigation_tab_bar::NavigationBarAction;
-use crate::persistence::delete_latest_user_id;
+use crate::persistence::{delete_latest_user_id, skip_app_state_restore_once};
 use crate::sliding_sync::clear_app_state;
 use crate::{
     home::main_desktop_ui::MainDesktopUiAction,
@@ -324,6 +324,12 @@ impl LogoutStateMachine {
                     "Point of no return reached".to_string(),
                     50
                 ).await?;
+
+                if let Some(user_id) = get_client().and_then(|client| client.user_id().map(ToOwned::to_owned)) {
+                    if let Err(e) = skip_app_state_restore_once(&user_id).await {
+                        log!("Warning: Failed to mark app state restore to skip once for {user_id}: {e}");
+                    }
+                }
                 
                 // We delete latest_user_id after reaching LOGOUT_POINT_OF_NO_RETURN:
                 // 1. To prevent auto-login with invalid session on next start
@@ -343,6 +349,12 @@ impl LogoutStateMachine {
                         "Token already invalidated".to_string(),
                         50
                     ).await?;
+
+                    if let Some(user_id) = get_client().and_then(|client| client.user_id().map(ToOwned::to_owned)) {
+                        if let Err(e) = skip_app_state_restore_once(&user_id).await {
+                            log!("Warning: Failed to mark app state restore to skip once for {user_id}: {e}");
+                        }
+                    }
                     
                     // Same delete operation as in the success case above
                     if let Err(e) = delete_latest_user_id().await {
@@ -357,6 +369,12 @@ impl LogoutStateMachine {
                         "Homeserver unavailable, continuing with local logout".to_string(),
                         50
                     ).await?;
+
+                    if let Some(user_id) = get_client().and_then(|client| client.user_id().map(ToOwned::to_owned)) {
+                        if let Err(e) = skip_app_state_restore_once(&user_id).await {
+                            log!("Warning: Failed to mark app state restore to skip once for {user_id}: {e}");
+                        }
+                    }
 
                     // Same delete operation as in the success case above
                     if let Err(e) = delete_latest_user_id().await {

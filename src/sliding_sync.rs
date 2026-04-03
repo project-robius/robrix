@@ -45,7 +45,7 @@ use crate::{
     account_manager::{self, Account},
     app::{AppStateAction, RoomFilterRemoteSearchAction}, app_data_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
         add_room::{CreatableSpacesAction, CreateRoomAction, CreateRoomContext, KnockResultAction}, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, build_room_search_text, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
-    }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
+    }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state, take_skip_app_state_restore_once}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
@@ -4401,6 +4401,17 @@ fn handle_ignore_user_list_subscriber(client: Client) {
 /// If loading fails, it shows a popup notification with the error message.
 fn handle_load_app_state(user_id: OwnedUserId) {
     Handle::current().spawn(async move {
+        match take_skip_app_state_restore_once(&user_id).await {
+            Ok(true) => {
+                log!("Skipping automatic app state restore once for {user_id} after explicit logout.");
+                return;
+            }
+            Ok(false) => {}
+            Err(e) => {
+                warning!("Failed to check skip-restore marker for {user_id}: {e}");
+            }
+        }
+
         match load_app_state(&user_id).await {
             Ok(app_state) => {
                 if !app_state.saved_dock_state_home.open_rooms.is_empty()
