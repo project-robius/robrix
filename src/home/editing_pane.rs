@@ -29,6 +29,7 @@ script_mod! {
         flow: Down,
 
         // this must match the RoomInputBar exactly such that it overlaps atop it.
+        margin: Inset{left: -4, right: -4, bottom: -4 }
         show_bg: true,
         draw_bg +: {
             color: (COLOR_PRIMARY)
@@ -167,7 +168,6 @@ impl Widget for EditingPane {
         // Handle the next-frame event scheduled after hide animation completes.
         // This forces a full redraw cycle so the parent relayouts properly.
         if self.next_frame.is_event(event).is_some() {
-            log!("EditingPane: NextFrame fired, calling redraw_all");
             cx.redraw_all();
         }
 
@@ -177,9 +177,14 @@ impl Widget for EditingPane {
 
         let animator_action = self.animator_handle_event(cx, event);
         if animator_action.must_redraw() {
-            // Redraw the entire UI so the parent RoomInputBar can
-            // animate the input_bar height in its draw_walk.
-            cx.redraw_all();
+            // During hide, redraw the entire UI so the parent RoomInputBar
+            // can animate the input_bar height in its draw_walk.
+            // During show, only this widget needs to redraw.
+            if self.is_animating_out {
+                cx.redraw_all();
+            } else {
+                self.redraw(cx);
+            }
         }
         // If we started animating the hide, check if the track has finished.
         // `is_track_animating` returns false once the track has fully completed,
@@ -392,20 +397,13 @@ impl Widget for EditingPane {
             self.visible = false;
         };
 
-        // Animate both the layout height and the content position:
-        // 1. walk.height grows from 0 to ch — the RoomInputBar border
-        //    grows smoothly alongside.
-        // 2. Balanced margins on editing_content slide it up from below
-        //    the clip boundary (show_bg).
-        //
-        // When fully shown (slide ~= 0), walk.height is NOT overridden,
-        // so the pane uses its natural Fit height.  This ensures the
-        // opaque background covers the full content area (and the
-        // input_bar beneath it in the overlay).
-        // Slide editing_content within the pane using balanced margins.
-        // margin.top pushes content below the pane's clip boundary;
-        // margin.bottom compensates so the Fit height stays constant.
-        // The pane's show_bg provides clipping.
+        // Animate both the layout height and content position simultaneously:
+        // 1. walk.height grows from 0 to ch (and shrinks back during hide),
+        //    so the RoomInputBar border grows/shrinks smoothly.
+        // 2. Balanced margins on editing_content slide it within the pane:
+        //    margin.top pushes content below the clip boundary,
+        //    margin.bottom compensates so the Fit height stays constant.
+        //    The pane's show_bg provides the clipping.
         let ch = self.last_content_height;
         if self.slide > 0.001 {
             let offset = if ch > 0.0 {
@@ -519,13 +517,6 @@ impl EditingPane {
             event_tl_item,
             timeline_kind,
         });
-
-        // Reset editing_content to Fit before starting the animation,
-        // in case a previous hide animation left it at Fixed(ch).
-        // This ensures the first draw frame can measure the real content height.
-        if let Some(mut ec) = self.view(cx, ids!(editing_content)).borrow_mut() {
-            ec.walk.height = Size::fit();
-        }
 
         self.visible = true;
         self.is_animating_out = false;
@@ -667,7 +658,14 @@ impl EditingPaneRef {
         inner.animator_cut(cx, ids!(panel.hide));
         inner.is_animating_out = false;
         inner.info = None;
-        inner.redraw(cx);
+        // Reset editing_content margins in case we interrupted an animation.
+        if let Some(mut ec) = inner.view(cx, ids!(editing_content)).borrow_mut() {
+            ec.walk.margin.top = 0.0;
+            ec.walk.margin.bottom = 0.0;
+        }
+        // Redraw all so the parent RoomInputBar restores the input_bar
+        // height (its draw_walk reads the slide value, which is now 1.0).
+        cx.redraw_all();
     }
 }
 
