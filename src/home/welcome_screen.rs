@@ -1,4 +1,5 @@
 use makepad_widgets::*;
+use crate::{app::AppState, i18n::{AppLanguage, tr_key}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -7,9 +8,9 @@ script_mod! {
 
     mod.widgets.WELCOME_TEXT_COLOR = #x4
 
-    mod.widgets.WelcomeScreen = SolidView {
+    mod.widgets.WelcomeScreen = #(WelcomeScreen::register_widget(vm)) {
         width: Fill, height: Fill
-        align: Align{x: 0.0, y: 0.5}
+        align: Align{x: 0.5, y: 0.5}
 
         show_bg: true,
         draw_bg.color: (COLOR_PRIMARY)
@@ -22,13 +23,15 @@ script_mod! {
 
         welcome_message := RoundedView {
             padding: 40.
-            width: Fill, height: Fit
+            width: Fill, height: Fill
             flow: Down, spacing: 20
+            align: Align{x: 0.5, y: 0.5}
 
             draw_bg.color: (COLOR_PRIMARY)
 
             title := Label {
-                text: "Welcome to Robrix!",
+                text: ""
+                align: Align{x: 0.5, y: 0.5}
                 draw_text +: {
                     color: (mod.widgets.WELCOME_TEXT_COLOR),
                     text_style: theme.font_bold {
@@ -38,7 +41,7 @@ script_mod! {
             }
 
             // Using the HTML widget to taking advantage of embedding a link within text with proper vertical alignment
-            MessageHtml {
+            body := MessageHtml {
                 padding: Inset{top: 12, left: 0.}
                 font_size: 14.
                 font_color: (mod.widgets.WELCOME_TEXT_COLOR)
@@ -52,14 +55,51 @@ script_mod! {
                     //     color_hover: #0f0,
                     // }
                 }
-                body:"<p>Our Matrix client is under heavy development. Currently, you can access the rooms and spaces that you've joined in other clients.</p>
-                <p><br></p>
-                <p>But don't worry, we're constantly expanding the featureset of Robrix!</p>
-                <p><br></p>
-                <p>Look for the latest announcements in our Matrix channel:</p>
-                <p><b>#robrix:matrix.org</b></p>
-                "
+                body:""
             }
         }
+    }
+}
+
+#[derive(Script, ScriptHook, Widget)]
+pub struct WelcomeScreen {
+    #[deref] view: View,
+    #[rust] app_language: AppLanguage,
+    #[rust] app_language_initialized: bool,
+}
+
+impl Widget for WelcomeScreen {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if !self.app_language_initialized || self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
+        self.view.handle_event(cx, event, scope);
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if !self.app_language_initialized || self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl WelcomeScreen {
+    fn set_app_language(&mut self, cx: &mut Cx, app_language: AppLanguage) {
+        self.app_language = app_language;
+        self.app_language_initialized = true;
+        self.view
+            .label(cx, ids!(title))
+            .set_text(cx, tr_key(self.app_language, "welcome_screen.title"));
+        self.view
+            .html(cx, ids!(body))
+            .set_text(cx, tr_key(self.app_language, "welcome_screen.body_html"));
+        self.view.redraw(cx);
     }
 }

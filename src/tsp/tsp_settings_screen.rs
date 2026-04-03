@@ -1,9 +1,7 @@
 
 use makepad_widgets::*;
 
-use crate::{shared::{popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
-
-const REPUBLISH_IDENTITY_BUTTON_TEXT: &str = "Republish Current Identity to DID Server";
+use crate::{app::AppState, i18n::{AppLanguage, tr_fmt, tr_key}, shared::{popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
 
 script_mod! {
     link tsp_enabled
@@ -12,19 +10,17 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.REPUBLISH_IDENTITY_BUTTON_TEXT = "Republish Current Identity to DID Server"
-
     // The view containing all TSP-related settings.
     mod.widgets.TspSettingsScreen = #(TspSettingsScreen::register_widget(vm)) {
         width: Fill, height: Fit
         flow: Down
 
-        TitleLabel {
-            text: "TSP Wallet Settings"
+        title := TitleLabel {
+            text: ""
         }
 
-        SubsectionLabel {
-            text: "Your active identity:"
+        section_active_identity := SubsectionLabel {
+            text: ""
         }
 
         View {
@@ -57,17 +53,17 @@ script_mod! {
             draw_bg.border_radius: 5.0
             draw_icon.svg: (ICON_UPLOAD)
             icon_walk: Walk{width: 16, height: 16}
-            text: (REPUBLISH_IDENTITY_BUTTON_TEXT)
+            text: ""
         }
 
 
-        SubsectionLabel {
-            text: "Your Wallets:"
+        section_wallets := SubsectionLabel {
+            text: ""
         }
 
         no_wallets_label := View {
             width: Fill, height: Fit
-            Label {
+            no_wallets_text := Label {
                 width: Fill, height: Fit
                 margin: Inset{top: 10, bottom: 8, left: 13, right: 10},
                 flow: Flow.Right{wrap: true},
@@ -75,7 +71,7 @@ script_mod! {
                     color: (COLOR_TEXT_WARNING_NOT_FOUND),
                     text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
-                text: "No wallets found. Create or import a wallet."
+                text: ""
             }
         }
 
@@ -117,7 +113,7 @@ script_mod! {
                 draw_bg.border_radius: 5.0
                 draw_icon.svg: (ICON_ADD_USER)
                 icon_walk: Walk{width: 21, height: Fit, margin: 0}
-                text: "Create New Identity (DID)"
+                text: ""
             }
 
             create_wallet_button := RobrixPositiveIconButton {
@@ -127,13 +123,13 @@ script_mod! {
                 draw_bg.border_radius: 5.0
                 draw_icon.svg: (ICON_ADD_WALLET)
                 icon_walk: Walk{width: 21, height: Fit, margin: 0}
-                text: "Create New Wallet"
+                text: ""
             }
 
             import_wallet_button := RobrixIconButton {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 5}
-                text: "Import Existing Wallet"
+                text: ""
                 // TODO: fix this icon, or pick a different SVG
                 // draw_icon +: {
                 //     svg: (ICON_IMPORT)
@@ -161,18 +157,18 @@ impl WalletState {
         self.active_wallet.is_some() as usize + self.other_wallets.len()
     }
 
-    fn get(&self, index: usize) -> Option<(&TspWalletMetadata, WalletStatusAndDefault)> {
+    fn get(&self, index: usize, app_language: AppLanguage) -> Option<(&TspWalletMetadata, WalletStatusAndDefault)> {
         if let Some(active) = self.active_wallet.as_ref() {
             if index == 0 {
-                Some((active, WalletStatusAndDefault::new(WalletStatus::Opened, true)))
+                Some((active, WalletStatusAndDefault::new(WalletStatus::Opened, true, app_language)))
             } else {
                 self.other_wallets.get(index - 1).map(|(m, s)|
-                    (m, WalletStatusAndDefault::new(*s, false))
+                    (m, WalletStatusAndDefault::new(*s, false, app_language))
                 )
             }
         } else {
             self.other_wallets.get(index).map(|(m, s)|
-                (m, WalletStatusAndDefault::new(*s, false))
+                (m, WalletStatusAndDefault::new(*s, false, app_language))
             )
         }
     }
@@ -188,10 +184,11 @@ pub enum WalletStatus {
 pub struct WalletStatusAndDefault {
     pub status: WalletStatus,
     pub is_default: bool,
+    pub app_language: AppLanguage,
 }
 impl WalletStatusAndDefault {
-    pub fn new(status: WalletStatus, is_default: bool) -> Self {
-        Self { status, is_default }
+    pub fn new(status: WalletStatus, is_default: bool, app_language: AppLanguage) -> Self {
+        Self { status, is_default, app_language }
     }
 }
 
@@ -211,15 +208,29 @@ pub struct TspSettingsScreen {
     /// to avoid having to re-fetch them from the shared TSP state every time,
     /// as that requires locking the mutex and can be expensive.
     #[rust] wallets: Option<WalletState>,
+    #[rust] app_language: AppLanguage,
+    #[rust] app_language_initialized: bool,
 }
 
 impl Widget for TspSettingsScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if !self.app_language_initialized || self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if !self.app_language_initialized || self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         if self.wallets.is_none() {
             // If we don't have any wallets, load them from the TSP state.
             self.refresh_wallets();
@@ -231,7 +242,7 @@ impl Widget for TspSettingsScreen {
             self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref())
         {
             Some(current_did) => (current_did.to_string(), COLOR_FG_ACCEPT_GREEN, true),
-            None => ("No default identity has been set.".to_string(), COLOR_TEXT_WARNING_NOT_FOUND, false),
+            None => (tr_key(self.app_language, "tsp.settings.identity.none_set").to_string(), COLOR_TEXT_WARNING_NOT_FOUND, false),
         };
         let mut current_identity_label = self.view.label(cx, ids!(current_identity_label));
         script_apply_eval!(cx, current_identity_label, {
@@ -256,7 +267,7 @@ impl Widget for TspSettingsScreen {
                 return DrawStep::done();
             };
 
-            for (metadata, mut status_and_default) in (0..wallets.len()).filter_map(|i| wallets.get(i)) {
+            for (metadata, mut status_and_default) in (0..wallets.len()).filter_map(|i| wallets.get(i, self.app_language)) {
                 let item_live_id = LiveId::from_str(metadata.url.as_url_unencoded());
                 let item = list.item(cx, item_live_id, id!(wallet_entry)).unwrap();
                 // Pass the wallet metadata in through Scope via props,
@@ -300,7 +311,7 @@ impl MatchEvent for TspSettingsScreen {
                         continue;
                     }
                     enqueue_popup_notification(
-                        format!("Removed wallet \"{}\".", metadata.wallet_name),
+                        tr_fmt(self.app_language, "tsp.settings.popup.wallet.removed", &[("wallet_name", metadata.wallet_name.as_str())]),
                         PopupKind::Success,
                         Some(4.0),
                     );
@@ -308,8 +319,7 @@ impl MatchEvent for TspSettingsScreen {
                         // If the removed wallet was the default wallet, notify the user.
                         // The user should then select another wallet as the default.
                         enqueue_popup_notification(
-                            "The default wallet was removed.\n\n\
-                                TSP features will not work properly until you set a default wallet.",
+                            tr_key(self.app_language, "tsp.settings.popup.wallet.default_removed_warning"),
                             PopupKind::Warning,
                             None,
                         );
@@ -335,7 +345,7 @@ impl MatchEvent for TspSettingsScreen {
                 }
                 Some(TspWalletAction::DefaultWalletChanged(Err(_))) => {
                     enqueue_popup_notification(
-                        "Failed to set default wallet, could not find or open selected wallet.",
+                        tr_key(self.app_language, "tsp.settings.popup.wallet.set_default_failed"),
                         PopupKind::Error,
                         None,
                     );
@@ -355,7 +365,7 @@ impl MatchEvent for TspSettingsScreen {
                 }
                 Some(TspWalletAction::WalletOpened(Err(e))) => {
                     enqueue_popup_notification(
-                        format!("Failed to open wallet: {e}"),
+                        tr_fmt(self.app_language, "tsp.settings.popup.wallet.open_failed", &[("error", &e.to_string())]),
                         PopupKind::Error,
                         None,
                     );
@@ -381,19 +391,19 @@ impl MatchEvent for TspSettingsScreen {
                     // restore the republish button to its original state.
                     script_apply_eval!(cx, republish_identity_button, {
                         enabled: true,
-                        text: #(REPUBLISH_IDENTITY_BUTTON_TEXT),
+                        text: #(tr_key(self.app_language, "tsp.settings.button.republish_identity")),
                     });
                     match result {
                         Ok(did) => {
                             enqueue_popup_notification(
-                                format!("Successfully republished identity \"{}\" to the DID server.", did),
+                                tr_fmt(self.app_language, "tsp.settings.popup.identity.republish_success", &[("did", did.as_str())]),
                                 PopupKind::Success,
                                 Some(5.0),
                             );
                         }
                         Err(e) => {
                             enqueue_popup_notification(
-                                format!("Failed to republish identity to the DID server: {e}"),
+                                tr_fmt(self.app_language, "tsp.settings.popup.identity.republish_failed", &[("error", &e.to_string())]),
                                 PopupKind::Error,
                                 None,
                             );
@@ -415,13 +425,13 @@ impl MatchEvent for TspSettingsScreen {
             if let Some(did) = self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref()) {
                 cx.copy_to_clipboard(did);
                 enqueue_popup_notification(
-                    "Copied your default TSP identity to the clipboard.",
+                    tr_key(self.app_language, "tsp.settings.popup.identity.copied"),
                     PopupKind::Success,
                     Some(3.0),
                 );
             } else {
                 enqueue_popup_notification(
-                    "No default TSP identity has been set.",
+                    tr_key(self.app_language, "tsp.settings.popup.identity.none_set"),
                     PopupKind::Warning,
                     Some(4.0),
                 );
@@ -436,13 +446,13 @@ impl MatchEvent for TspSettingsScreen {
                 if let Some(our_did) = self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref()) {
                     script_apply_eval!(cx, republish_identity_button, {
                         enabled: false,
-                        text: "Republishing DID now...",
+                        text: #(tr_key(self.app_language, "tsp.settings.button.republishing_now")),
                     });
 
                     submit_tsp_request(TspRequest::RepublishDid { did: our_did.to_string() });
                 } else {
                     enqueue_popup_notification(
-                        "You must set a default TSP identity to be republished.",
+                        tr_key(self.app_language, "tsp.settings.popup.identity.must_set_default"),
                         PopupKind::Error,
                         Some(5.0),
                     );
@@ -463,7 +473,7 @@ impl MatchEvent for TspSettingsScreen {
         if self.view.button(cx, ids!(import_wallet_button)).clicked(actions) {
             // TODO: support importing an existing wallet.
             enqueue_popup_notification(
-                "Importing an existing wallet is not yet implemented.",
+                tr_key(self.app_language, "tsp.settings.popup.wallet.import_not_implemented"),
                 PopupKind::Warning,
                 Some(4.0),
             );
@@ -472,6 +482,36 @@ impl MatchEvent for TspSettingsScreen {
 }
 
 impl TspSettingsScreen {
+    fn set_app_language(&mut self, cx: &mut Cx, app_language: AppLanguage) {
+        self.app_language = app_language;
+        self.app_language_initialized = true;
+        self.view
+            .label(cx, ids!(title))
+            .set_text(cx, tr_key(self.app_language, "tsp.settings.title"));
+        self.view
+            .label(cx, ids!(section_active_identity))
+            .set_text(cx, tr_key(self.app_language, "tsp.settings.section.active_identity"));
+        self.view
+            .button(cx, ids!(republish_identity_button))
+            .set_text(cx, tr_key(self.app_language, "tsp.settings.button.republish_identity"));
+        self.view
+            .label(cx, ids!(section_wallets))
+            .set_text(cx, tr_key(self.app_language, "tsp.settings.section.wallets"));
+        self.view
+            .label(cx, ids!(no_wallets_text))
+            .set_text(cx, tr_key(self.app_language, "tsp.settings.wallet.none"));
+        self.view
+            .button(cx, ids!(create_did_button))
+            .set_text(cx, tr_key(self.app_language, "tsp.settings.button.create_identity"));
+        self.view
+            .button(cx, ids!(create_wallet_button))
+            .set_text(cx, tr_key(self.app_language, "tsp.settings.button.create_wallet"));
+        self.view
+            .button(cx, ids!(import_wallet_button))
+            .set_text(cx, tr_key(self.app_language, "tsp.settings.button.import_wallet"));
+        self.view.redraw(cx);
+    }
+
     /// Re-fetches the TSP state and populates this widget's list of wallets.
     fn refresh_wallets(&mut self) {
         let tsp_state = tsp_state_ref().lock().unwrap();
@@ -499,7 +539,7 @@ impl TspSettingsScreen {
     fn has_default_wallet(&self) -> bool {
         let Some(wallets) = self.wallets.as_ref() else {
             enqueue_popup_notification(
-                "No TSP wallets found.\n\nPlease create or import a wallet.",
+                tr_key(self.app_language, "tsp.settings.popup.wallet.none_found"),
                 PopupKind::Warning,
                 Some(5.0),
             );
@@ -507,7 +547,7 @@ impl TspSettingsScreen {
         };
         if wallets.active_wallet.is_none() {
             enqueue_popup_notification(
-                "No default TSP wallet is set.\n\nPlease select or create a default wallet.",
+                tr_key(self.app_language, "tsp.settings.popup.wallet.no_default"),
                 PopupKind::Warning,
                 Some(5.0),
             );

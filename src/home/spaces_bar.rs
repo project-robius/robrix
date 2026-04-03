@@ -13,7 +13,7 @@ use matrix_sdk::{RoomDisplayName, RoomState};
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 
 use crate::{
-    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, room_filter_input_bar::RoomFilterAction}, sliding_sync::AccountSwitchAction, utils::{self, RoomNameId}
+    app::AppState, home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, i18n::{AppLanguage, tr_fmt, tr_key}, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, room_filter_input_bar::RoomFilterAction}, sliding_sync::AccountSwitchAction, utils::{self, RoomNameId}
 };
 
 script_mod! {
@@ -257,6 +257,7 @@ pub struct SpacesBarEntry {
     #[apply_default] animator: Animator,
 
     #[rust] space_name_id: Option<RoomNameId>,
+    #[rust] app_language: AppLanguage,
 }
 
 impl Widget for SpacesBarEntry {
@@ -273,7 +274,7 @@ impl Widget for SpacesBarEntry {
                 TooltipAction::HoverIn {
                     widget_rect: area.rect(cx),
                     text: this.space_name_id.as_ref().map_or(
-                        String::from("Unknown Space Name"),
+                        String::from(tr_key(this.app_language, "spaces_bar.tooltip.unknown_space_name")),
                         |sni| sni.to_string(),
                     ),
                     options: CalloutTooltipOptions {
@@ -343,15 +344,16 @@ impl Widget for SpacesBarEntry {
 }
 
 impl SpacesBarEntry {
-    fn set_metadata(&mut self, cx: &mut Cx, space_name_id: RoomNameId, is_selected: bool) {
+    fn set_metadata(&mut self, cx: &mut Cx, space_name_id: RoomNameId, is_selected: bool, app_language: AppLanguage) {
         self.space_name_id = Some(space_name_id);
+        self.app_language = app_language;
         self.animator_toggle(cx, is_selected, Animate::No, ids!(active.on), ids!(active.off));
     }
 }
 impl SpacesBarEntryRef {
-    pub fn set_metadata(&self, cx: &mut Cx, space_name_id: RoomNameId, is_selected: bool) {
+    pub fn set_metadata(&self, cx: &mut Cx, space_name_id: RoomNameId, is_selected: bool, app_language: AppLanguage) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_metadata(cx, space_name_id, is_selected);
+        inner.set_metadata(cx, space_name_id, is_selected, app_language);
     }
 }
 
@@ -583,6 +585,10 @@ impl Widget for SpacesBar {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+
         while let Some(widget_to_draw) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = widget_to_draw.as_portal_list();
@@ -609,9 +615,9 @@ impl Widget for SpacesBar {
                         item.label(cx, ids!(label)).set_text(
                             cx,
                             if self.is_filtered {
-                                "Found no\nmatching spaces."
+                                tr_key(app_language, "spaces_bar.status.none_matching")
                             } else {
-                                "Found no\njoined spaces."
+                                tr_key(app_language, "spaces_bar.status.none_joined")
                             }
                         );
                         item
@@ -657,17 +663,41 @@ impl Widget for SpacesBar {
                             cx,
                             space.space_name_id.clone(),
                             self.selected_space.as_ref().is_some_and(|id| id == space.space_name_id.room_id()),
+                            app_language,
                         );
                         item
                     }
                     else if portal_list_index == len {
                         let item = list.item(cx, portal_list_index, id!(StatusLabel));
-                        let descriptor = if self.is_filtered { "matching" } else { "joined" }; 
                         let text = match len {
-                            0      => format!("Found no\n{descriptor} spaces."),
-                            1      => format!("Found 1\n{descriptor} space."),
-                            2..100 => format!("Found {len}\n{descriptor} spaces."),
-                            100..  => format!("Found 99+\n{descriptor} spaces."),
+                            0 => {
+                                if self.is_filtered {
+                                    tr_key(app_language, "spaces_bar.status.none_matching").to_string()
+                                } else {
+                                    tr_key(app_language, "spaces_bar.status.none_joined").to_string()
+                                }
+                            }
+                            1 => {
+                                if self.is_filtered {
+                                    tr_key(app_language, "spaces_bar.status.one_matching").to_string()
+                                } else {
+                                    tr_key(app_language, "spaces_bar.status.one_joined").to_string()
+                                }
+                            }
+                            2..100 => {
+                                if self.is_filtered {
+                                    tr_fmt(app_language, "spaces_bar.status.n_matching", &[("count", &len.to_string())])
+                                } else {
+                                    tr_fmt(app_language, "spaces_bar.status.n_joined", &[("count", &len.to_string())])
+                                }
+                            }
+                            100.. => {
+                                if self.is_filtered {
+                                    tr_key(app_language, "spaces_bar.status.many_matching").to_string()
+                                } else {
+                                    tr_key(app_language, "spaces_bar.status.many_joined").to_string()
+                                }
+                            }
                         };
                         item.label(cx, ids!(label)).set_text(cx, &text);
                         item

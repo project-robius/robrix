@@ -19,13 +19,14 @@ use crate::shared::avatar::AvatarState;
 use crate::shared::expand_arrow::ExpandArrow;
 use crate::utils::replace_linebreaks_separators;
 use crate::{
-    app::AppStateAction,
+    app::{AppState, AppStateAction},
     avatar_cache::{self, AvatarCacheEntry},
     home::{
         add_room::{CreateRoomAction, CreateRoomModalAction},
         invite_modal::InviteModalAction,
         rooms_list::RoomsListRef,
     },
+    i18n::{AppLanguage, tr_fmt, tr_key},
     join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction},
     room::BasicRoomDetails,
     shared::avatar::{AvatarWidgetExt, AvatarWidgetRefExt},
@@ -152,7 +153,7 @@ script_mod! {
                     )
                 }
             }
-            text: "Explore this Space"
+            text: ""
         }
 
         animator: Animator{
@@ -323,7 +324,7 @@ script_mod! {
                 spacing: 0
                 icon_walk: Walk{width: 0, height: 0}
                 draw_text.text_style: REGULAR_TEXT {font_size: 9.5}
-                text: "Join"
+                text: ""
             }
 
             view_button := RobrixIconButton {
@@ -332,7 +333,7 @@ script_mod! {
                 spacing: 0
                 icon_walk: Walk{width: 0, height: 0}
                 draw_text.text_style: REGULAR_TEXT {font_size: 9.5}
-                text: "View"
+                text: ""
             }
 
             leave_button := RobrixNegativeIconButton {
@@ -341,7 +342,7 @@ script_mod! {
                 spacing: 0
                 icon_walk: Walk{width: 0, height: 0}
                 draw_text.text_style: REGULAR_TEXT {font_size: 9.5}
-                text: "Leave"
+                text: ""
             }
         }
 
@@ -389,7 +390,7 @@ script_mod! {
                 color: #737373,
                 text_style: REGULAR_TEXT {font_size: 10}
             }
-            text: "Loading rooms and spaces..."
+            text: ""
         }
     }
 
@@ -420,7 +421,7 @@ script_mod! {
                 text_style: REGULAR_TEXT {font_size: 9},
                 color: #888,
             }
-            text: "Loading..."
+            text: ""
         }
     }
 
@@ -455,7 +456,7 @@ script_mod! {
                     text_style: REGULAR_TEXT {font_size: 10},
                     color: #737373,
                 }
-                text: "Welcome to the space:"
+                text: ""
             }
             
             parent_space_row := View {
@@ -490,7 +491,7 @@ script_mod! {
                     padding: 12,
                     draw_icon.svg: (ICON_ADD)
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                    text: "New Room"
+                    text: ""
                 }
 
                 invite_button := RobrixPositiveIconButton {
@@ -500,7 +501,7 @@ script_mod! {
                     padding: 12,
                     draw_icon.svg: (ICON_ADD_USER)
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                    text: "Invite"
+                    text: ""
                 }
             }
         }
@@ -584,6 +585,11 @@ impl Widget for SpaceLobbyEntry {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        self.view.label(cx, ids!(space_lobby_label))
+            .set_text(cx, tr_key(app_language, "space_lobby.entry.explore_space"));
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -877,10 +883,21 @@ pub struct SpaceLobbyScreen {
 
     /// Whether we are currently loading the initial data.
     #[rust] is_loading: bool,
+    #[rust] top_level_join_rule: Option<JoinRuleSummary>,
+    #[rust] top_level_member_count: Option<u64>,
+    #[rust] app_language: AppLanguage,
 }
 
 impl Widget for SpaceLobbyScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if self.app_language != app_language {
+            self.app_language = app_language;
+            self.update_space_info_label(cx, app_language);
+            self.redraw(cx);
+        }
         self.view.handle_event(cx, event, scope);
 
         // Handle Signal events for avatar cache updates
@@ -902,15 +919,9 @@ impl Widget for SpaceLobbyScreen {
                         if self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == &sr.room_id) {
                             self.space_avatar_state = AvatarState::Known(sr.avatar_url.clone());
                             self.space_avatar_state.update_from_cache(cx); // prefetch the avatar image
-                            self.view.label(cx, ids!(header.space_info_label)).set_text(cx, &format!(
-                                "{}  ·  {} {}",
-                                match sr.join_rule {
-                                    Some(JoinRuleSummary::Public) => "🌐  Public space",
-                                    _ => "🔒  Private space",
-                                },
-                                sr.num_joined_members,
-                                if sr.num_joined_members == 1 { "member" } else { "members" }
-                            ));
+                            self.top_level_join_rule = sr.join_rule.clone();
+                            self.top_level_member_count = Some(sr.num_joined_members);
+                            self.update_space_info_label(cx, app_language);
                             self.redraw(cx);
                         }
                     }
@@ -1006,6 +1017,11 @@ impl Widget for SpaceLobbyScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        self.app_language = app_language;
+
         // Draw parent avatar from the SpaceRoom's avatar URL, or show initials.
         let parent_avatar_ref = self.view.avatar(cx, ids!(parent_avatar));
         if self.space_avatar_state.update_from_cache(cx).is_none_or(|data| {
@@ -1019,6 +1035,12 @@ impl Widget for SpaceLobbyScreen {
                 .and_then(|name| utils::user_name_first_letter(name));
             parent_avatar_ref.show_text(cx, None, None, first_char.unwrap_or("S"));
         }
+
+        self.update_space_info_label(cx, app_language);
+        self.view.button(cx, ids!(header.parent_space_row.create_room_button))
+            .set_text(cx, tr_key(app_language, "space_lobby.header.button.new_room"));
+        self.view.button(cx, ids!(header.parent_space_row.invite_button))
+            .set_text(cx, tr_key(app_language, "space_lobby.header.button.invite"));
         
         while let Some(widget_to_draw) = self.view.draw_walk(cx, scope, walk).step() {
             let portal_list_ref = widget_to_draw.as_portal_list();
@@ -1041,13 +1063,20 @@ impl Widget for SpaceLobbyScreen {
                 // Draw loading indicator
                 let item = if self.is_loading && item_id == 0 {
                     let item = list.item(cx, item_id, id!(status_label));
-                    item.child_by_path(ids!(label)).as_label().set_text(cx, "Loading rooms and spaces...");
+                    item.child_by_path(ids!(label)).as_label().set_text(
+                        cx,
+                        tr_key(app_language, "space_lobby.status.loading_rooms_spaces"),
+                    );
+                    item.child_by_path(ids!(loading_spinner)).set_visible(cx, true);
                     item
                 }
                 // No entries found
                 else if entry_count == 0 && item_id == 0 {
                     let item = list.item(cx, item_id, id!(status_label));
-                    item.child_by_path(ids!(label)).as_label().set_text(cx, "No rooms or spaces found.");
+                    item.child_by_path(ids!(label)).as_label().set_text(
+                        cx,
+                        tr_key(app_language, "space_lobby.status.no_rooms_spaces"),
+                    );
                     item.child_by_path(ids!(loading_spinner)).set_visible(cx, false);
                     item
                 }
@@ -1102,6 +1131,18 @@ impl Widget for SpaceLobbyScreen {
                             item.child_by_path(ids!(buttons_view.join_button)).set_visible(cx, show_join_button);
                             item.child_by_path(ids!(buttons_view.leave_button)).set_visible(cx, show_leave_button);
                             item.child_by_path(ids!(buttons_view.view_button)).set_visible(cx, show_view_button);
+                            item.child_by_path(ids!(buttons_view.join_button)).as_button().set_text(
+                                cx,
+                                tr_key(app_language, "space_lobby.item.button.join"),
+                            );
+                            item.child_by_path(ids!(buttons_view.leave_button)).as_button().set_text(
+                                cx,
+                                tr_key(app_language, "space_lobby.item.button.leave"),
+                            );
+                            item.child_by_path(ids!(buttons_view.view_button)).as_button().set_text(
+                                cx,
+                                tr_key(app_language, "space_lobby.item.button.view"),
+                            );
 
                             // Below, draw things that are common to child rooms and subspaces.
                             item.child_by_path(ids!(content.name_label)).as_label().set_text(cx, &info.name);
@@ -1157,29 +1198,31 @@ impl Widget for SpaceLobbyScreen {
                             // Add join status for rooms we haven't joined
                             if let Some(state) = &info.state {
                                 match state {
-                                    RoomState::Joined => info_parts.push("✅ Joined".to_string()),
-                                    RoomState::Left => info_parts.push("Left".to_string()),
-                                    RoomState::Invited => info_parts.push("Invited".to_string()),
-                                    RoomState::Knocked => info_parts.push("Knocked".to_string()),
-                                    RoomState::Banned => info_parts.push("Banned".to_string()),
+                                    RoomState::Joined => info_parts.push(tr_key(app_language, "space_lobby.item.state.joined").to_string()),
+                                    RoomState::Left => info_parts.push(tr_key(app_language, "space_lobby.item.state.left").to_string()),
+                                    RoomState::Invited => info_parts.push(tr_key(app_language, "space_lobby.item.state.invited").to_string()),
+                                    RoomState::Knocked => info_parts.push(tr_key(app_language, "space_lobby.item.state.knocked").to_string()),
+                                    RoomState::Banned => info_parts.push(tr_key(app_language, "space_lobby.item.state.banned").to_string()),
                                 }
                             }
 
                             // Add member count
-                            info_parts.push(format!(
-                                "{} {}",
-                                info.num_joined_members,
-                                if info.num_joined_members == 1 { "member" } else { "members" }
-                            ));
+                            let member_count = info.num_joined_members.to_string();
+                            info_parts.push(if info.num_joined_members == 1 {
+                                tr_key(app_language, "space_lobby.item.member_one").to_string()
+                            } else {
+                                tr_fmt(app_language, "space_lobby.item.member_n", &[("count", member_count.as_str())])
+                            });
 
                             // Add children count for spaces
                             if let Some(c) = info.children_count {
                                 if c > 0 {
-                                    info_parts.push(format!(
-                                        "~{} {}",
-                                        c,
-                                        if c == 1 { "room" } else { "rooms" }
-                                    ));
+                                    let child_count = c.to_string();
+                                    info_parts.push(if c == 1 {
+                                        tr_fmt(app_language, "space_lobby.item.child_room_one", &[("count", child_count.as_str())])
+                                    } else {
+                                        tr_fmt(app_language, "space_lobby.item.child_room_n", &[("count", child_count.as_str())])
+                                    });
                                 }
                             }
 
@@ -1195,6 +1238,10 @@ impl Widget for SpaceLobbyScreen {
                         TreeEntry::Loading { level, parent_mask } => {
                             // Draw loading indicator for subspace
                             let item = list.item(cx, item_id, id!(subspace_loading));
+                            item.child_by_path(ids!(label)).as_label().set_text(
+                                cx,
+                                tr_key(app_language, "space_lobby.status.loading"),
+                            );
                             // Configure tree lines
                             if let Some(mut lines) = item.child_by_path(ids!(tree_lines)).borrow_mut::<TreeLines>() {
                                 lines.draw_bg.level = *level as f32;
@@ -1227,6 +1274,29 @@ impl SpaceLobbyScreen {
             .map(|name| RoomNameId::new(RoomDisplayName::Named(name), room_id.clone()))
             .unwrap_or_else(|| RoomNameId::empty(room_id.clone()));
         BasicRoomDetails::Name(room_name_id)
+    }
+
+    fn update_space_info_label(&mut self, cx: &mut Cx, app_language: AppLanguage) {
+        let text = if self.is_loading {
+            tr_key(app_language, "space_lobby.header.welcome").to_string()
+        } else if let Some(member_count) = self.top_level_member_count {
+            let member_count_str = member_count.to_string();
+            format!(
+                "{}  ·  {}",
+                match self.top_level_join_rule.as_ref() {
+                    Some(JoinRuleSummary::Public) => tr_key(app_language, "space_lobby.header.public_space"),
+                    _ => tr_key(app_language, "space_lobby.header.private_space"),
+                },
+                if member_count == 1 {
+                    tr_key(app_language, "space_lobby.header.member_one").to_string()
+                } else {
+                    tr_fmt(app_language, "space_lobby.header.member_n", &[("count", member_count_str.as_str())])
+                }
+            )
+        } else {
+            String::new()
+        };
+        self.view.label(cx, ids!(header.space_info_label)).set_text(cx, &text);
     }
 
     fn insert_created_room_placeholder(&mut self, cx: &mut Cx, room_name_id: &RoomNameId) {
@@ -1450,6 +1520,8 @@ impl SpaceLobbyScreen {
 
         // Clear the main content until we receive the async space info responses.
         self.tree_entries.clear();
+        self.top_level_join_rule = None;
+        self.top_level_member_count = None;
         self.view.label(cx, ids!(header.space_info_label)).set_text(cx, "");
         self.is_loading = true;
 

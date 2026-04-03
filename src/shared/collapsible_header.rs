@@ -10,7 +10,7 @@
 use makepad_widgets::*;
 use makepad_widgets::animator::Animate;
 
-use crate::home::rooms_list::RoomsListScopeProps;
+use crate::{app::AppState, home::rooms_list::RoomsListScopeProps, i18n::tr_key};
 
 use super::expand_arrow::ExpandArrow;
 use super::unread_badge::UnreadBadgeWidgetRefExt as _;
@@ -82,15 +82,15 @@ pub enum HeaderCategory {
     None,
 }
 impl HeaderCategory {
-    fn as_str(&self) -> &'static str {
+    fn i18n_key(&self) -> Option<&'static str> {
         match self {
-            HeaderCategory::Invites => "Invites",
-            HeaderCategory::Favorites => "Favorites",
-            HeaderCategory::RegularRooms => "Rooms",
-            HeaderCategory::DirectRooms => "People",
-            HeaderCategory::LowPriority => "Low Priority",
-            HeaderCategory::LeftRooms => "Left Rooms",
-            HeaderCategory::None => "",
+            HeaderCategory::Invites => Some("rooms_list.category.invites"),
+            HeaderCategory::Favorites => Some("rooms_list.category.favorites"),
+            HeaderCategory::RegularRooms => Some("rooms_list.category.rooms"),
+            HeaderCategory::DirectRooms => Some("rooms_list.category.people"),
+            HeaderCategory::LowPriority => Some("rooms_list.category.low_priority"),
+            HeaderCategory::LeftRooms => Some("rooms_list.category.left_rooms"),
+            HeaderCategory::None => None,
         }
     }
 }
@@ -133,10 +133,18 @@ impl Widget for CollapsibleHeader {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // Set arrow and label state during draw to ensure child widgets are available.
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
         if let Some(mut arrow) = self.view.child_by_path(ids!(collapse_icon)).borrow_mut::<ExpandArrow>() {
             arrow.set_is_open_no_animate(self.is_expanded);
         }
-        self.view.child_by_path(ids!(label)).set_text(cx, self.category.as_str());
+        self.view.child_by_path(ids!(label)).set_text(
+            cx,
+            self.category
+                .i18n_key()
+                .map_or("", |key| tr_key(app_language, key)),
+        );
         self.view.child_by_path(ids!(unread_badge))
             .as_unread_badge()
             .update_counts(false, self.num_unread_mentions, 0);

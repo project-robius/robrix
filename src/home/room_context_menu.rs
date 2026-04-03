@@ -3,7 +3,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
-use crate::{app::AppState, home::invite_modal::InviteModalAction, shared::popup_list::{PopupKind, enqueue_popup_notification}, sliding_sync::{MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId};
+use crate::{app::AppState, home::invite_modal::InviteModalAction, i18n::{AppLanguage, tr_fmt, tr_key}, shared::popup_list::{PopupKind, enqueue_popup_notification}, sliding_sync::{MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId};
 
 const BUTTON_HEIGHT: f64 = 35.0;
 const MENU_WIDTH: f64 = 215.0;
@@ -147,6 +147,7 @@ pub struct RoomContextMenu {
     #[deref] view: View,
     #[source] source: ScriptObjectRef,
     #[rust] details: Option<RoomContextMenuDetails>,
+    #[rust] app_language: AppLanguage,
 }
 
 impl Widget for RoomContextMenu {
@@ -159,6 +160,14 @@ impl Widget for RoomContextMenu {
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if !self.visible { return; }
+        if let Some(app_state) = scope.data.get::<AppState>()
+            && self.app_language != app_state.app_language
+        {
+            self.app_language = app_state.app_language;
+            if let Some(details) = self.details.clone() {
+                self.update_buttons(cx, &details);
+            }
+        }
         self.view.handle_event(cx, event, scope);
 
         // Close logic similar to NewMessageContextMenu
@@ -219,10 +228,10 @@ impl WidgetMatchEvent for RoomContextMenu {
             });
             close_menu = true;
         }
-         else if self.button(cx, ids!(room_settings_button)).clicked(actions) {
+        else if self.button(cx, ids!(room_settings_button)).clicked(actions) {
             // TODO: handle/implement this
             enqueue_popup_notification(
-                "The room settings page is not yet implemented.",
+                tr_key(self.app_language, "room_context_menu.popup.settings_not_implemented"),
                 PopupKind::Warning,
                 Some(5.0),
             );
@@ -231,7 +240,7 @@ impl WidgetMatchEvent for RoomContextMenu {
         else if self.button(cx, ids!(notifications_button)).clicked(actions) {
             // TODO: handle/implement this
             enqueue_popup_notification(
-                "The room notifications page is not yet implemented.",
+                tr_key(self.app_language, "room_context_menu.popup.notifications_not_implemented"),
                 PopupKind::Warning,
                 Some(5.0),
             );
@@ -256,7 +265,9 @@ impl WidgetMatchEvent for RoomContextMenu {
                                 bot_user_id: bot_user_id.clone(),
                             });
                             enqueue_popup_notification(
-                                format!("Removing BotFather {bot_user_id} from this room..."),
+                                tr_fmt(self.app_language, "room_context_menu.popup.removing_botfather", &[
+                                    ("bot_user_id", bot_user_id.as_str()),
+                                ]),
                                 PopupKind::Info,
                                 Some(4.0),
                             );
@@ -267,7 +278,9 @@ impl WidgetMatchEvent for RoomContextMenu {
                                 bot_user_id: bot_user_id.clone(),
                             });
                             enqueue_popup_notification(
-                                format!("Inviting BotFather {bot_user_id} into this room..."),
+                                tr_fmt(self.app_language, "room_context_menu.popup.inviting_botfather", &[
+                                    ("bot_user_id", bot_user_id.as_str()),
+                                ]),
                                 PopupKind::Info,
                                 Some(5.0),
                             );
@@ -279,7 +292,7 @@ impl WidgetMatchEvent for RoomContextMenu {
                 }
             } else {
                 enqueue_popup_notification(
-                    "Bot settings are unavailable right now.",
+                    tr_key(self.app_language, "room_context_menu.popup.bot_settings_unavailable"),
                     PopupKind::Error,
                     Some(5.0),
                 );
@@ -308,7 +321,8 @@ impl RoomContextMenu {
         self.visible
     }
 
-    pub fn show(&mut self, cx: &mut Cx, details: RoomContextMenuDetails) -> DVec2 {
+    pub fn show(&mut self, cx: &mut Cx, details: RoomContextMenuDetails, app_language: AppLanguage) -> DVec2 {
+        self.app_language = app_language;
         let height = self.update_buttons(cx, &details);
         self.details = Some(details);
         self.visible = true;
@@ -319,31 +333,42 @@ impl RoomContextMenu {
     fn update_buttons(&mut self, cx: &mut Cx, details: &RoomContextMenuDetails) -> f64 {
         let mark_unread_button = self.button(cx, ids!(mark_unread_button));
         if details.is_marked_unread {
-            mark_unread_button.set_text(cx, "Mark as Read");
+            mark_unread_button.set_text(cx, tr_key(self.app_language, "room_context_menu.button.mark_read"));
         } else {
-            mark_unread_button.set_text(cx, "Mark as Unread");
+            mark_unread_button.set_text(cx, tr_key(self.app_language, "room_context_menu.button.mark_unread"));
         }
         
         let favorite_button = self.button(cx, ids!(favorite_button));
         if details.is_favorite {
-            favorite_button.set_text(cx, "Un-favorite");
+            favorite_button.set_text(cx, tr_key(self.app_language, "room_context_menu.button.unfavorite"));
         } else {
-             favorite_button.set_text(cx, "Favorite");
+             favorite_button.set_text(cx, tr_key(self.app_language, "room_context_menu.button.favorite"));
         }
 
         let priority_button = self.button(cx, ids!(priority_button));
         if details.is_low_priority {
-            priority_button.set_text(cx, "Un-set Low Priority");
+            priority_button.set_text(cx, tr_key(self.app_language, "room_context_menu.button.unset_low_priority"));
         } else {
-            priority_button.set_text(cx, "Set Low Priority");
+            priority_button.set_text(cx, tr_key(self.app_language, "room_context_menu.button.set_low_priority"));
         }
+
+        self.button(cx, ids!(copy_link_button))
+            .set_text(cx, tr_key(self.app_language, "room_context_menu.button.copy_link_to_room"));
+        self.button(cx, ids!(room_settings_button))
+            .set_text(cx, tr_key(self.app_language, "room_context_menu.button.settings"));
+        self.button(cx, ids!(notifications_button))
+            .set_text(cx, tr_key(self.app_language, "room_context_menu.button.notifications"));
+        self.button(cx, ids!(invite_button))
+            .set_text(cx, tr_key(self.app_language, "room_context_menu.button.invite"));
+        self.button(cx, ids!(leave_button))
+            .set_text(cx, tr_key(self.app_language, "room_context_menu.button.leave_room"));
 
         let bot_binding_button = self.button(cx, ids!(bot_binding_button));
         bot_binding_button.set_visible(cx, details.app_service_enabled);
         if details.is_bot_bound {
-            bot_binding_button.set_text(cx, "Unbind BotFather");
+            bot_binding_button.set_text(cx, tr_key(self.app_language, "room_context_menu.button.unbind_botfather"));
         } else {
-            bot_binding_button.set_text(cx, "Bind BotFather");
+            bot_binding_button.set_text(cx, tr_key(self.app_language, "room_context_menu.button.bind_botfather"));
         }
         
         // Reset hover states
@@ -378,8 +403,8 @@ impl RoomContextMenuRef {
         inner.is_currently_shown(cx)
     }
 
-    pub fn show(&self, cx: &mut Cx, details: RoomContextMenuDetails) -> DVec2 {
+    pub fn show(&self, cx: &mut Cx, details: RoomContextMenuDetails, app_language: AppLanguage) -> DVec2 {
         let Some(mut inner) = self.borrow_mut() else { return DVec2::default()};
-        inner.show(cx, details)
+        inner.show(cx, details, app_language)
     }
 }

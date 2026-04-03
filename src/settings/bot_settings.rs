@@ -2,6 +2,7 @@ use makepad_widgets::*;
 
 use crate::{
     app::{AppState, BotSettingsState},
+    i18n::{AppLanguage, tr_key},
     persistence,
     shared::popup_list::{PopupKind, enqueue_popup_notification},
     sliding_sync::current_user_id,
@@ -28,7 +29,7 @@ script_mod! {
         flow: Down
         spacing: 10
 
-        TitleLabel {
+        app_service_title := TitleLabel {
             text: "App Service"
         }
 
@@ -68,7 +69,7 @@ script_mod! {
             height: Fit
             flow: Down
 
-            SubsectionLabel {
+            bot_user_id_label := SubsectionLabel {
                 text: "BotFather User ID:"
             }
 
@@ -103,15 +104,29 @@ script_mod! {
 pub struct BotSettings {
     #[deref]
     view: View,
+    #[rust]
+    app_language: AppLanguage,
 }
 
 impl Widget for BotSettings {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -140,7 +155,7 @@ impl WidgetMatchEvent for BotSettings {
             app_state.bot_settings.botfather_user_id = bot_user_id_input.text().trim().to_string();
             persist_bot_settings(app_state);
             enqueue_popup_notification(
-                "Saved Matrix app service settings.",
+                tr_key(self.app_language, "settings.labs.app_service.popup.saved"),
                 PopupKind::Success,
                 Some(3.0),
             );
@@ -150,6 +165,33 @@ impl WidgetMatchEvent for BotSettings {
 }
 
 impl BotSettings {
+    fn set_app_language(&mut self, cx: &mut Cx, app_language: AppLanguage) {
+        self.app_language = app_language;
+        self.sync_app_language(cx);
+    }
+
+    fn sync_app_language(&mut self, cx: &mut Cx) {
+        self.view
+            .label(cx, ids!(app_service_title))
+            .set_text(cx, tr_key(self.app_language, "settings.labs.app_service.title"));
+        self.view
+            .label(cx, ids!(description))
+            .set_text(cx, tr_key(self.app_language, "settings.labs.app_service.description"));
+        self.view
+            .label(cx, ids!(enable_label))
+            .set_text(cx, tr_key(self.app_language, "settings.labs.app_service.enable_label"));
+        self.view
+            .label(cx, ids!(bot_user_id_label))
+            .set_text(cx, tr_key(self.app_language, "settings.labs.app_service.botfather_user_id"));
+        self.view
+            .text_input(cx, ids!(bot_user_id_input))
+            .set_empty_text(cx, tr_key(self.app_language, "settings.labs.app_service.botfather_placeholder").to_string());
+        self.view
+            .button(cx, ids!(buttons.save_button))
+            .set_text(cx, tr_key(self.app_language, "settings.labs.app_service.button.save"));
+        self.view.redraw(cx);
+    }
+
     fn sync_ui(&mut self, cx: &mut Cx, bot_settings: &BotSettingsState) {
         self.view
             .view(cx, ids!(bot_details))
@@ -159,9 +201,9 @@ impl BotSettings {
             .set_text(cx, &bot_settings.botfather_user_id);
 
         let toggle_text = if bot_settings.enabled {
-            "Disable App Service"
+            tr_key(self.app_language, "settings.labs.app_service.button.disable")
         } else {
-            "Enable App Service"
+            tr_key(self.app_language, "settings.labs.app_service.button.enable")
         };
         self.view
             .button(cx, ids!(toggle_button))
@@ -175,6 +217,7 @@ impl BotSettings {
 
     /// Populates the bot settings UI from the current persisted app state.
     pub fn populate(&mut self, cx: &mut Cx, bot_settings: &BotSettingsState) {
+        self.sync_app_language(cx);
         self.sync_ui(cx, bot_settings);
     }
 }
@@ -186,6 +229,13 @@ impl BotSettingsRef {
             return;
         };
         inner.populate(cx, bot_settings);
+    }
+
+    pub fn set_app_language(&self, cx: &mut Cx, app_language: AppLanguage) {
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
+        inner.set_app_language(cx, app_language);
     }
 }
 
