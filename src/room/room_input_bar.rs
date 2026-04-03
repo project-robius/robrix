@@ -29,6 +29,7 @@ script_mod! {
 
     mod.widgets.ICO_LOCATION_PERSON = crate_resource("self://resources/icons/location-person.svg")
     mod.widgets.ICO_MENU = crate_resource("self://resources/icons/menu.svg")
+    mod.widgets.ICO_THREADS = crate_resource("self://resources/icons/double_chat.svg")
 
     mod.widgets.RoomEmojiButton = mod.widgets.RobrixIconButton {
         spacing: 0
@@ -100,32 +101,67 @@ script_mod! {
                 padding: 6,
                 spacing: 4
 
-                location_card_button := RobrixIconButton {
+                more_actions_popup := View {
                     visible: false
-                    width: 230
+                    width: Fill
+                    height: Fit
+                    flow: Right{wrap: true}
+                    spacing: 6
                     align: Align{x: 0.0, y: 0.5}
-                    margin: Inset{top: 1, bottom: 1}
-                    padding: Inset{left: 10, right: 10, top: 8, bottom: 8}
-                    spacing: 8
-                    draw_icon +: {
-                        svg: (mod.widgets.ICO_LOCATION_PERSON)
-                        color: (COLOR_ACTIVE_PRIMARY_DARKER)
-                    },
-                    draw_bg +: {
-                        color: (COLOR_BG_PREVIEW)
-                        color_hover: #E0E8F0
-                        color_down: #D0D8E8
-                        border_size: 1.0
-                        border_color: (COLOR_SECONDARY)
+
+                    location_card_button := RobrixIconButton {
+                        width: Fit
+                        align: Align{x: 0.0, y: 0.5}
+                        margin: Inset{top: 1, bottom: 1}
+                        padding: Inset{left: 10, right: 10, top: 8, bottom: 8}
+                        spacing: 8
+                        draw_icon +: {
+                            svg: (mod.widgets.ICO_LOCATION_PERSON)
+                            color: (COLOR_ACTIVE_PRIMARY_DARKER)
+                        },
+                        draw_bg +: {
+                            color: (COLOR_BG_PREVIEW)
+                            color_hover: #E0E8F0
+                            color_down: #D0D8E8
+                            border_size: 1.0
+                            border_color: (COLOR_SECONDARY)
+                        }
+                        draw_text +: {
+                            color: (COLOR_TEXT)
+                            color_hover: (COLOR_TEXT)
+                            color_down: (COLOR_TEXT)
+                            text_style: MESSAGE_TEXT_STYLE { font_size: 10.5 }
+                        }
+                        icon_walk: Walk{width: 20, height: 20}
+                        text: "location",
                     }
-                    draw_text +: {
-                        color: (COLOR_TEXT)
-                        color_hover: (COLOR_TEXT)
-                        color_down: (COLOR_TEXT)
-                        text_style: MESSAGE_TEXT_STYLE { font_size: 10.5 }
+
+                    threads_card_button := RobrixIconButton {
+                        width: Fit
+                        align: Align{x: 0.0, y: 0.5}
+                        margin: Inset{top: 1, bottom: 1}
+                        padding: Inset{left: 10, right: 10, top: 8, bottom: 8}
+                        spacing: 8
+                        draw_icon +: {
+                            svg: (mod.widgets.ICO_THREADS)
+                            color: (COLOR_ACTIVE_PRIMARY_DARKER)
+                        },
+                        draw_bg +: {
+                            color: (COLOR_BG_PREVIEW)
+                            color_hover: #E0E8F0
+                            color_down: #D0D8E8
+                            border_size: 1.0
+                            border_color: (COLOR_SECONDARY)
+                        }
+                        draw_text +: {
+                            color: (COLOR_TEXT)
+                            color_hover: (COLOR_TEXT)
+                            color_down: (COLOR_TEXT)
+                            text_style: MESSAGE_TEXT_STYLE { font_size: 10.5 }
+                        }
+                        icon_walk: Walk{width: 20, height: 20}
+                        text: "threads",
                     }
-                    icon_walk: Walk{width: 20, height: 20}
-                    text: "Share your current location",
                 }
 
                 emoji_picker_popup := View {
@@ -347,7 +383,7 @@ impl RoomInputBar {
         // Handle the more actions button being clicked.
         if self.button(cx, ids!(more_actions_button)).clicked(actions) {
             self.is_location_card_expanded = !self.is_location_card_expanded;
-            self.button(cx, ids!(location_card_button)).set_visible(cx, self.is_location_card_expanded);
+            self.view.view(cx, ids!(more_actions_popup)).set_visible(cx, self.is_location_card_expanded);
             self.redraw(cx);
         }
 
@@ -396,6 +432,8 @@ impl RoomInputBar {
         // Handle the location card being clicked.
         if self.button(cx, ids!(location_card_button)).clicked(actions) {
             log!("Location card clicked; requesting current location...");
+            self.is_location_card_expanded = false;
+            self.view.view(cx, ids!(more_actions_popup)).set_visible(cx, false);
             if let Err(_e) = init_location_subscriber(cx) {
                 error!("Failed to initialize location subscriber");
                 enqueue_popup_notification(
@@ -405,6 +443,14 @@ impl RoomInputBar {
                 );
             }
             self.view.location_preview(cx, ids!(location_preview)).show();
+            self.redraw(cx);
+        }
+
+        if self.button(cx, ids!(threads_card_button)).clicked(actions) {
+            cx.widget_action(
+                room_screen_props.room_screen_widget_uid,
+                MessageAction::ShowThreadsPane,
+            );
             self.redraw(cx);
         }
 
@@ -886,7 +932,7 @@ impl RoomInputBarRef {
             .is_empty();
         inner.enable_send_message_button(cx, !is_text_input_empty);
         inner.is_location_card_expanded = false;
-        inner.button(cx, ids!(location_card_button)).set_visible(cx, false);
+        inner.view.view(cx, ids!(more_actions_popup)).set_visible(cx, false);
         inner.is_emoji_picker_expanded = false;
         inner.view.view(cx, ids!(emoji_picker_popup)).set_visible(cx, false);
 
