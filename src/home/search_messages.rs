@@ -2,6 +2,7 @@
 //! UI widgets for searching messages in one or more rooms.
 
 use makepad_widgets::*;
+use crate::{app::AppState, i18n::{AppLanguage, tr_key}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -47,10 +48,17 @@ script_mod! {
 #[derive(Script, ScriptHook, Widget)]
 pub struct SearchMessagesButton {
     #[deref] button: Button,
+    #[rust] app_language: AppLanguage,
 }
 
 impl Widget for SearchMessagesButton {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         self.button.handle_event(cx, event, scope);
 
         if let Event::Actions(actions) = event {
@@ -61,7 +69,20 @@ impl Widget for SearchMessagesButton {
         }
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         self.button.draw_walk(cx, scope, walk)
+    }
+}
+
+impl SearchMessagesButton {
+    fn set_app_language(&mut self, cx: &mut Cx, app_language: AppLanguage) {
+        self.app_language = app_language;
+        self.button.set_text(cx, tr_key(self.app_language, "search_messages.button.todo"));
     }
 }
 

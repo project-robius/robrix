@@ -8,7 +8,7 @@ use std::ops::Deref;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
+use crate::{app::{AppState, AppStateAction}, home::rooms_list::RoomsListRef, i18n::{AppLanguage, tr_fmt, tr_key}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
 
 use super::rooms_list::{InviteState, InviterInfo};
 
@@ -251,10 +251,16 @@ pub struct InviteScreen {
     #[rust] room_name_id: Option<RoomNameId>,
     #[rust] is_loaded: bool,
     #[rust] all_rooms_loaded: bool,
+    #[rust] app_language: AppLanguage,
 }
 
 impl Widget for InviteScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        self.app_language = app_language;
+
         // Currently, a Signal event is only used to tell this widget
         // to check if the room has been loaded from the homeserver yet.
         if let Event::Signal = event {
@@ -324,7 +330,11 @@ impl Widget for InviteScreen {
                     Some(JoinRoomResultAction::Joined { room_id }) if room_id == info.room_id() => {
                         self.invite_state = InviteState::WaitingForJoinedRoom;
                         if !self.has_shown_confirmation {
-                            enqueue_popup_notification("Successfully joined room.", PopupKind::Success, Some(5.0));
+                            enqueue_popup_notification(
+                                tr_key(self.app_language, "invite_screen.popup.joined_success"),
+                                PopupKind::Success,
+                                Some(5.0),
+                            );
                         }
                         continue;
                     }
@@ -343,14 +353,23 @@ impl Widget for InviteScreen {
                     Some(LeaveRoomResultAction::Left { room_id }) if room_id == info.room_id() => {
                         self.invite_state = InviteState::RoomLeft;
                         if !self.has_shown_confirmation {
-                            enqueue_popup_notification("Successfully rejected invite.", PopupKind::Success, Some(5.0));
+                            enqueue_popup_notification(
+                                tr_key(self.app_language, "invite_screen.popup.rejected_success"),
+                                PopupKind::Success,
+                                Some(5.0),
+                            );
                         }
                         continue;
                     }
                     Some(LeaveRoomResultAction::Failed { room_id, error }) if room_id == info.room_id() => {
                         self.invite_state = InviteState::WaitingOnUserInput;
                         if !self.has_shown_confirmation {
-                            enqueue_popup_notification(format!("Failed to reject invite: {error}"), PopupKind::Error, None);
+                            let error_text = error.to_string();
+                            enqueue_popup_notification(
+                                tr_fmt(self.app_language, "invite_screen.popup.reject_failed", &[("error", error_text.as_str())]),
+                                PopupKind::Error,
+                                None,
+                            );
                         }
                         continue;
                     }
@@ -375,6 +394,11 @@ impl Widget for InviteScreen {
 
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        self.app_language = app_language;
+
         if !self.is_loaded {
             let mut restore_status_view = self.view.restore_status_view(cx, ids!(restore_status_view));
             if let Some(room_name) = &self.room_name_id {
@@ -421,10 +445,10 @@ impl Widget for InviteScreen {
                 inviter_name.set_text(cx, inviter.user_id.as_str());
                 inviter_user_id.set_visible(cx, false);
             }
-            (true, "has invited you to join:")
+            (true, tr_key(self.app_language, "invite_screen.message.invited_by"))
         }
         else {
-            (false, "You have been invited to join:")
+            (false, tr_key(self.app_language, "invite_screen.message.invited_generic"))
         };
         inviter_view.set_visible(cx, is_visible);
         self.view.label(cx, ids!(invite_message)).set_text(cx, invite_text);
@@ -459,33 +483,33 @@ impl Widget for InviteScreen {
             InviteState::WaitingOnUserInput => {
                 cancel_button.set_enabled(cx, true);
                 accept_button.set_enabled(cx, true);
-                cancel_button.set_text(cx, "Reject Invite");
-                accept_button.set_text(cx, "Join Room");
+                cancel_button.set_text(cx, tr_key(self.app_language, "invite_screen.button.reject"));
+                accept_button.set_text(cx, tr_key(self.app_language, "invite_screen.button.join"));
             }
             InviteState::WaitingForJoinResult => {
                 cancel_button.set_enabled(cx, false);
                 accept_button.set_enabled(cx, false);
-                cancel_button.set_text(cx, "Reject Invite");
-                accept_button.set_text(cx, "Joining...");
+                cancel_button.set_text(cx, tr_key(self.app_language, "invite_screen.button.reject"));
+                accept_button.set_text(cx, tr_key(self.app_language, "invite_screen.button.joining"));
             }
             InviteState::WaitingForLeaveResult => {
                 cancel_button.set_enabled(cx, false);
                 accept_button.set_enabled(cx, false);
-                cancel_button.set_text(cx, "Rejecting...");
-                accept_button.set_text(cx, "Join Room");
+                cancel_button.set_text(cx, tr_key(self.app_language, "invite_screen.button.rejecting"));
+                accept_button.set_text(cx, tr_key(self.app_language, "invite_screen.button.join"));
             }
             InviteState::WaitingForJoinedRoom => {
                 cancel_button.set_enabled(cx, false);
                 accept_button.set_enabled(cx, false);
-                cancel_button.set_text(cx, "Reject Invite");
-                accept_button.set_text(cx, "Joined!");
+                cancel_button.set_text(cx, tr_key(self.app_language, "invite_screen.button.reject"));
+                accept_button.set_text(cx, tr_key(self.app_language, "invite_screen.button.joined"));
             }
             InviteState::RoomLeft => {
                 cancel_button.set_visible(cx, false);
                 accept_button.set_visible(cx, false);
                 self.view.label(cx, ids!(completion_label)).set_text(
                     cx,
-                    "Invite successfully rejected. You may close this invite.",
+                    tr_key(self.app_language, "invite_screen.completion.rejected"),
                 );
             }
         }
