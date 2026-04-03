@@ -3,7 +3,7 @@ use std::ops::Not;
 use makepad_widgets::*;
 use url::Url;
 
-use crate::sliding_sync::{submit_async_request, AccountSwitchAction, LoginByPassword, LoginRequest, MatrixRequest, RegisterAccount};
+use crate::{app::AppState, i18n::{AppLanguage, tr_fmt, tr_key}, sliding_sync::{submit_async_request, AccountSwitchAction, LoginByPassword, LoginRequest, MatrixRequest, RegisterAccount}};
 
 use super::login_status_modal::{LoginStatusModalAction, LoginStatusModalWidgetExt};
 
@@ -154,7 +154,7 @@ script_mod! {
 
                             LineH { draw_bg.color: #C8C8C8 }
 
-                            Label {
+                            homeserver_hint_label := Label {
                                 width: Fit, height: Fit
                                 padding: 0
                                 draw_text +: {
@@ -190,7 +190,7 @@ script_mod! {
                             draw_bg.color: #C8C8C8
                         }
 
-                        Label {
+                        sso_prompt_label := Label {
                             width: Fit, height: Fit
                             padding: 0,
                             draw_text +: {
@@ -306,27 +306,68 @@ pub struct LoginScreen {
     #[rust] sso_redirect_url: Option<String>,
     /// The most recent login failure message shown to the user.
     #[rust] last_failure_message_shown: Option<String>,
+    #[rust] app_language: AppLanguage,
     /// Boolean to indicate if we're in "add account" mode (adding another Matrix account).
     #[rust] adding_account: bool,
 }
 
 impl LoginScreen {
+    fn sync_mode_texts(&mut self, cx: &mut Cx) {
+        self.view.label(cx, ids!(title)).set_text(cx,
+            if self.signup_mode {
+                tr_key(self.app_language, "login.title.create_account")
+            } else {
+                tr_key(self.app_language, "login.title.login_to_robrix")
+            }
+        );
+        self.view.button(cx, ids!(login_button)).set_text(cx,
+            if self.signup_mode {
+                tr_key(self.app_language, "login.button.create_account")
+            } else {
+                tr_key(self.app_language, "login.button.login")
+            }
+        );
+        self.view.label(cx, ids!(account_prompt_label)).set_text(cx,
+            if self.signup_mode {
+                tr_key(self.app_language, "login.account_prompt.already_have")
+            } else {
+                tr_key(self.app_language, "login.account_prompt.no_account")
+            }
+        );
+        self.view.button(cx, ids!(mode_toggle_button)).set_text(cx,
+            if self.signup_mode {
+                tr_key(self.app_language, "login.mode_toggle.back_to_login")
+            } else {
+                tr_key(self.app_language, "login.mode_toggle.sign_up_here")
+            }
+        );
+    }
+
+    fn set_app_language(&mut self, cx: &mut Cx, app_language: AppLanguage) {
+        self.app_language = app_language;
+        self.view.text_input(cx, ids!(user_id_input))
+            .set_empty_text(cx, tr_key(self.app_language, "login.input.user_id").to_string());
+        self.view.text_input(cx, ids!(password_input))
+            .set_empty_text(cx, tr_key(self.app_language, "login.input.password").to_string());
+        self.view.text_input(cx, ids!(confirm_password_input))
+            .set_empty_text(cx, tr_key(self.app_language, "login.input.confirm_password").to_string());
+        self.view.text_input(cx, ids!(homeserver_input))
+            .set_empty_text(cx, tr_key(self.app_language, "login.input.homeserver").to_string());
+        self.view.label(cx, ids!(homeserver_hint_label))
+            .set_text(cx, tr_key(self.app_language, "login.label.homeserver_optional"));
+        self.view.label(cx, ids!(sso_prompt_label))
+            .set_text(cx, tr_key(self.app_language, "login.sso.prompt"));
+        let login_status_modal_inner = self.view.login_status_modal(cx, ids!(login_status_modal_inner));
+        login_status_modal_inner.set_title(cx, tr_key(self.app_language, "login_status_modal.title"));
+        login_status_modal_inner.button_ref(cx).set_text(cx, tr_key(self.app_language, "login_status_modal.button.cancel"));
+        self.sync_mode_texts(cx);
+    }
+
     fn set_signup_mode(&mut self, cx: &mut Cx, signup_mode: bool) {
         self.signup_mode = signup_mode;
         self.view.view(cx, ids!(confirm_password_wrapper)).set_visible(cx, signup_mode);
         self.view.view(cx, ids!(login_only_view)).set_visible(cx, !signup_mode);
-        self.view.label(cx, ids!(title)).set_text(cx,
-            if signup_mode { "Create your Robrix account" } else { "Login to Robrix" }
-        );
-        self.view.button(cx, ids!(login_button)).set_text(cx,
-            if signup_mode { "Create account" } else { "Login" }
-        );
-        self.view.label(cx, ids!(account_prompt_label)).set_text(cx,
-            if signup_mode { "Already have an account?" } else { "Don't have an account?" }
-        );
-        self.view.button(cx, ids!(mode_toggle_button)).set_text(cx,
-            if signup_mode { "Back to login" } else { "Sign up here" }
-        );
+        self.sync_mode_texts(cx);
 
         if !signup_mode {
             self.view.text_input(cx, ids!(confirm_password_input)).set_text(cx, "");
@@ -339,17 +380,29 @@ impl LoginScreen {
 
 impl Widget for LoginScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         self.view.handle_event(cx, event, scope);
-        self.match_event(cx, event);
+        self.widget_match_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
 
-impl MatchEvent for LoginScreen {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+impl WidgetMatchEvent for LoginScreen {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         let login_button = self.view.button(cx, ids!(login_button));
         let mode_toggle_button = self.view.button(cx, ids!(mode_toggle_button));
         let cancel_button = self.view.button(cx, ids!(cancel_button));
@@ -388,33 +441,33 @@ impl MatchEvent for LoginScreen {
             let confirm_password = confirm_password_input.text();
             let homeserver = homeserver_input.text().trim().to_owned();
             if user_id.is_empty() {
-                login_status_modal_inner.set_title(cx, "Missing User ID");
-                login_status_modal_inner.set_status(cx, "Please enter a valid User ID.");
-                login_status_modal_inner.button_ref(cx).set_text(cx, "Okay");
+                login_status_modal_inner.set_title(cx, tr_key(self.app_language, "login.status.missing_user_id.title"));
+                login_status_modal_inner.set_status(cx, tr_key(self.app_language, "login.status.missing_user_id.body"));
+                login_status_modal_inner.button_ref(cx).set_text(cx, tr_key(self.app_language, "login.status.okay"));
             } else if password.is_empty() {
-                login_status_modal_inner.set_title(cx, "Missing Password");
-                login_status_modal_inner.set_status(cx, "Please enter a valid password.");
-                login_status_modal_inner.button_ref(cx).set_text(cx, "Okay");
+                login_status_modal_inner.set_title(cx, tr_key(self.app_language, "login.status.missing_password.title"));
+                login_status_modal_inner.set_status(cx, tr_key(self.app_language, "login.status.missing_password.body"));
+                login_status_modal_inner.button_ref(cx).set_text(cx, tr_key(self.app_language, "login.status.okay"));
             } else if self.signup_mode && password != confirm_password {
-                login_status_modal_inner.set_title(cx, "Passwords do not match");
-                login_status_modal_inner.set_status(cx, "Please enter the same password in both password fields.");
-                login_status_modal_inner.button_ref(cx).set_text(cx, "Okay");
+                login_status_modal_inner.set_title(cx, tr_key(self.app_language, "login.status.password_mismatch.title"));
+                login_status_modal_inner.set_status(cx, tr_key(self.app_language, "login.status.password_mismatch.body"));
+                login_status_modal_inner.button_ref(cx).set_text(cx, tr_key(self.app_language, "login.status.okay"));
             } else {
                 self.last_failure_message_shown = None;
                 login_status_modal_inner.set_title(cx, if self.signup_mode {
-                    "Creating account..."
+                    tr_key(self.app_language, "login.status.creating_account.title")
                 } else {
-                    "Logging in..."
+                    tr_key(self.app_language, "login.status.logging_in.title")
                 });
                 login_status_modal_inner.set_status(
                     cx,
                     if self.signup_mode {
-                        "Waiting for the homeserver to create your account..."
+                        tr_key(self.app_language, "login.status.creating_account.body")
                     } else {
-                        "Waiting for a login response..."
+                        tr_key(self.app_language, "login.status.logging_in.body")
                     },
                 );
-                login_status_modal_inner.button_ref(cx).set_text(cx, "Cancel");
+                login_status_modal_inner.button_ref(cx).set_text(cx, tr_key(self.app_language, "login.status.cancel"));
                 submit_async_request(MatrixRequest::Login(if self.signup_mode {
                     LoginRequest::Register(RegisterAccount {
                         user_id,
@@ -455,13 +508,15 @@ impl MatchEvent for LoginScreen {
                     user_id_input.set_text(cx, user_id);
                     password_input.set_text(cx, "");
                     homeserver_input.set_text(cx, homeserver.as_deref().unwrap_or_default());
-                    login_status_modal_inner.set_title(cx, "Logging in via CLI...");
+                    login_status_modal_inner.set_title(cx, tr_key(self.app_language, "login.status.logging_in_cli.title"));
                     login_status_modal_inner.set_status(
                         cx,
-                        &format!("Auto-logging in as user {user_id}...")
+                        &tr_fmt(self.app_language, "login.status.auto_logging_in_as_user", &[
+                            ("user_id", user_id.as_str()),
+                        ])
                     );
                     let login_status_modal_button = login_status_modal_inner.button_ref(cx);
-                    login_status_modal_button.set_text(cx, "Cancel");
+                    login_status_modal_button.set_text(cx, tr_key(self.app_language, "login.status.cancel"));
                     login_status_modal_button.set_enabled(cx, false); // Login cancel not yet supported
                     login_status_modal.open(cx);
                 }
@@ -470,7 +525,7 @@ impl MatchEvent for LoginScreen {
                     login_status_modal_inner.set_title(cx, title);
                     login_status_modal_inner.set_status(cx, status);
                     let login_status_modal_button = login_status_modal_inner.button_ref(cx);
-                    login_status_modal_button.set_text(cx, "Cancel");
+                    login_status_modal_button.set_text(cx, tr_key(self.app_language, "login.status.cancel"));
                     login_status_modal_button.set_enabled(cx, true);
                     login_status_modal.open(cx);
                     self.redraw(cx);
@@ -498,13 +553,13 @@ impl MatchEvent for LoginScreen {
                     }
                     self.last_failure_message_shown = Some(error.clone());
                     login_status_modal_inner.set_title(cx, if self.signup_mode {
-                        "Account Creation Failed."
+                        tr_key(self.app_language, "login.status.account_creation_failed")
                     } else {
-                        "Login Failed."
+                        tr_key(self.app_language, "login.status.login_failed")
                     });
                     login_status_modal_inner.set_status(cx, error);
                     let login_status_modal_button = login_status_modal_inner.button_ref(cx);
-                    login_status_modal_button.set_text(cx, "Okay");
+                    login_status_modal_button.set_text(cx, tr_key(self.app_language, "login.status.okay"));
                     login_status_modal_button.set_enabled(cx, true);
                     login_status_modal.open(cx);
                     self.redraw(cx);

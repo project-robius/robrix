@@ -26,7 +26,7 @@ use matrix_sdk_ui::timeline::{
 use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}, owned_room_id};
 
 use crate::{
-    app::{AppState, AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{create_bot_modal::{CreateBotModalAction, CreateBotModalWidgetExt}, delete_bot_modal::{DeleteBotModalAction, DeleteBotModalWidgetExt}, edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::{RoomsListAction, RoomsListRef}, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppState, AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{create_bot_modal::{CreateBotModalAction, CreateBotModalWidgetExt}, delete_bot_modal::{DeleteBotModalAction, DeleteBotModalWidgetExt}, edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::{RoomsListAction, RoomsListRef}, tombstone_footer::SuccessorRoomDetails}, i18n::{AppLanguage, tr_fmt, tr_key}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
@@ -59,7 +59,6 @@ const BLURHASH_IMAGE_MAX_SIZE: u32 = 500;
 /// otherwise many short messages can trigger a long chain of tiny paginations.
 const VIEWPORT_FILL_PAGINATION_SIZE: u16 = 150;
 
-static UNNAMED_ROOM: &str = "Unnamed Room";
 
 /// #FFF4E5
 const COLOR_THREAD_SUMMARY_BG: Vec4 = vec4(1.0, 0.957, 0.898, 1.0);
@@ -220,10 +219,11 @@ fn format_delete_bot_command(matrix_user_id: &UserId) -> String {
 fn resolve_delete_bot_user_id(
     user_id_or_localpart: &str,
     current_user_id: Option<&UserId>,
+    app_language: AppLanguage,
 ) -> Result<OwnedUserId, String> {
     let raw = user_id_or_localpart.trim();
     if raw.is_empty() {
-        return Err("Please enter the bot Matrix user ID to delete.".into());
+        return Err(tr_key(app_language, "room_screen.bot.delete.error.empty_user_id").into());
     }
 
     if raw.starts_with('@') || raw.contains(':') {
@@ -234,19 +234,23 @@ fn resolve_delete_bot_user_id(
         };
         return UserId::parse(&full_user_id)
             .map(|user_id| user_id.to_owned())
-            .map_err(|_| format!("Invalid Matrix user ID: {full_user_id}"));
+            .map_err(|_| tr_fmt(app_language, "room_screen.bot.delete.error.invalid_user_id", &[
+                ("full_user_id", full_user_id.as_str()),
+            ]));
     }
 
     let Some(current_user_id) = current_user_id else {
         return Err(
-            "Current user ID is unavailable, so the bot homeserver cannot be resolved.".into(),
+            tr_key(app_language, "room_screen.bot.delete.error.current_user_unavailable").into(),
         );
     };
 
     let full_user_id = format!("@{raw}:{}", current_user_id.server_name());
     UserId::parse(&full_user_id)
         .map(|user_id| user_id.to_owned())
-        .map_err(|_| format!("Invalid Matrix user ID: {full_user_id}"))
+        .map_err(|_| tr_fmt(app_language, "room_screen.bot.delete.error.invalid_user_id", &[
+            ("full_user_id", full_user_id.as_str()),
+        ]))
 }
 
 fn detected_bot_binding_for_members(
@@ -496,7 +500,7 @@ script_mod! {
                             text_style: USERNAME_TEXT_STYLE {},
                             color: (USERNAME_TEXT_COLOR)
                         }
-                        text: "<Username not available>"
+                        text: ""
                     }
                 }
 
@@ -656,7 +660,7 @@ script_mod! {
                 draw_icon.svg: (ICON_ADD_USER)
                 draw_text.text_style: SMALL_STATE_TEXT_STYLE {}
                 icon_walk: Walk{width: 15, height: Fit, margin: Inset{right: -4}}
-                text: "Invite to Room"
+                text: ""
             }
 
             content := Label {
@@ -696,7 +700,7 @@ script_mod! {
                 text_style: TEXT_SUB {},
                 color: (COLOR_DIVIDER_DARK)
             }
-            text: "<date>"
+            text: ""
         }
 
         right_line := LineH { }
@@ -711,7 +715,7 @@ script_mod! {
 
         date := Label {
             draw_text.color: (mod.widgets.COLOR_READ_MARKER)
-            text: "New Messages"
+            text: ""
         }
 
         right_line := LineH {
@@ -740,7 +744,7 @@ script_mod! {
                 text_style: MESSAGE_TEXT_STYLE { font_size: 10 },
                 color: (TIMESTAMP_TEXT_COLOR)
             }
-            text: "Loading earlier messages..."
+            text: ""
         }
     }
 
@@ -977,7 +981,7 @@ script_mod! {
                     text_style: USERNAME_TEXT_STYLE { font_size: 10.8 }
                     color: (COLOR_ACTIVE_PRIMARY)
                 }
-                text: "BotFather"
+                text: ""
             }
 
             sender_tag := Label {
@@ -987,7 +991,7 @@ script_mod! {
                     text_style: REGULAR_TEXT { font_size: 9.5 }
                     color: #8A8A8A
                 }
-                text: "bot"
+                text: ""
             }
         }
 
@@ -1019,7 +1023,7 @@ script_mod! {
                         text_style: USERNAME_TEXT_STYLE { font_size: 11.2 }
                         color: #1F1F1F
                     }
-                    text: "App Service Actions"
+                    text: ""
                 }
 
                 spacer := View {
@@ -1046,7 +1050,7 @@ script_mod! {
                     text_style: REGULAR_TEXT { font_size: 10.5 }
                     color: (COLOR_TEXT)
                 }
-                text: "Create a bot through BotFather. Robrix only sends the matching slash command."
+                text: ""
             }
 
             footer := View {
@@ -1062,7 +1066,7 @@ script_mod! {
                         text_style: REGULAR_TEXT { font_size: 8.8 }
                         color: #9A9A9A
                     }
-                    text: "now"
+                    text: ""
                 }
             }
         }
@@ -1085,7 +1089,7 @@ script_mod! {
                     padding: 10
                     draw_icon.svg: (ICON_CHECKMARK)
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
-                    text: "Create Bot"
+                    text: ""
                 }
 
                 list_button := RobrixNeutralIconButton {
@@ -1094,7 +1098,7 @@ script_mod! {
                     padding: 10
                     draw_icon.svg: (ICON_SEARCH)
                     icon_walk: Walk{width: 14, height: 14, margin: Inset{left: -2, right: -1}}
-                    text: "List Bots"
+                    text: ""
                 }
             }
 
@@ -1110,7 +1114,7 @@ script_mod! {
                     padding: 10
                     draw_icon.svg: (ICON_CLOSE)
                     icon_walk: Walk{width: 14, height: 14, margin: Inset{left: -2, right: -1}}
-                    text: "Delete Bot"
+                    text: ""
                 }
 
                 help_button := RobrixNeutralIconButton {
@@ -1119,7 +1123,7 @@ script_mod! {
                     padding: 10
                     draw_icon.svg: (ICON_INFO)
                     icon_walk: Walk{width: 14, height: 14, margin: Inset{left: -2, right: -1}}
-                    text: "Bot Help"
+                    text: ""
                 }
             }
 
@@ -1144,7 +1148,7 @@ script_mod! {
                     padding: 10
                     draw_icon.svg: (ICON_CLOSE)
                     icon_walk: Walk{width: 14, height: 14, margin: Inset{left: -2, right: -1}}
-                    text: "Unbind"
+                    text: ""
                 }
             }
         }
@@ -1546,6 +1550,8 @@ pub struct RoomScreen {
     /// Whether the in-room app service quick actions card is currently visible.
     #[rust] show_app_service_actions: bool,
     #[rust] threads_pane_state: ThreadsPaneState,
+    #[rust] app_language: AppLanguage,
+    #[rust] app_language_initialized: bool,
 }
 
 impl Drop for RoomScreen {
@@ -1575,6 +1581,12 @@ impl ScriptHook for RoomScreen {
 impl Widget for RoomScreen {
     // Handle events and actions for the RoomScreen widget and its inner Timeline view.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if !self.app_language_initialized || self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         let room_screen_widget_uid = self.widget_uid();
         let portal_list = self.portal_list(cx, ids!(timeline.list));
         let user_profile_sliding_pane = self.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane));
@@ -1702,7 +1714,9 @@ impl Widget for RoomScreen {
                         .collect();
 
                     let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
-                    tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.reaction));
+                    tooltip_text.push_str(&tr_fmt(self.app_language, "room_screen.tooltip.reacted_with_suffix", &[
+                        ("reaction", reaction_data.reaction.as_str()),
+                    ]));
                     cx.widget_action(
                         room_screen_widget_uid, 
                         TooltipAction::HoverIn {
@@ -1771,10 +1785,11 @@ impl Widget for RoomScreen {
                             user_id.as_str()
                         };
                         let room_id = tl.kind.room_id().clone();
+                        let app_language = self.app_language;
                         let content = ConfirmationModalContent {
-                            title_text: "Send Invitation".into(),
-                            body_text: format!("Are you sure you want to invite {username} to this room?").into(),
-                            accept_button_text: Some("Invite".into()),
+                            title_text: tr_key(app_language, "room_screen.modal.invite.title").into(),
+                            body_text: tr_fmt(app_language, "room_screen.modal.invite.body", &[("username", username)]).into(),
+                            accept_button_text: Some(tr_key(app_language, "room_screen.modal.invite.accept").into()),
                             on_accept_clicked: Some(Box::new(move |_cx| {
                                 submit_async_request(MatrixRequest::InviteUser { room_id, user_id });
                             })),
@@ -1805,7 +1820,7 @@ impl Widget for RoomScreen {
                     // Only handle if this is for the current room.
                     if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == room_id) {
                         enqueue_popup_notification(
-                            "Sent invite successfully.",
+                            tr_key(self.app_language, "room_screen.popup.invite.sent_success"),
                             PopupKind::Success,
                             Some(4.0),
                         );
@@ -1814,8 +1829,11 @@ impl Widget for RoomScreen {
                 if let Some(InviteResultAction::Failed { room_id, error, .. }) = action.downcast_ref() {
                     // Only handle if this is for the current room.
                     if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == room_id) {
+                        let error_text = error.to_string();
                         enqueue_popup_notification(
-                            format!("Failed to send invite.\n\nError: {error}"),
+                            tr_fmt(self.app_language, "room_screen.popup.invite.failed", &[
+                                ("error", error_text.as_str()),
+                            ]),
                             PopupKind::Error,
                             None,
                         );
@@ -2063,12 +2081,12 @@ impl Widget for RoomScreen {
                         if let Some(app_state) = scope.data.get::<AppState>() {
                             if !app_state.bot_settings.enabled {
                                 self.send_app_service_feedback_message(
-                                    "Enable App Service before creating bots in a room.",
+                                    tr_key(self.app_language, "room_screen.popup.app_service.enable_before_create"),
                                 );
                                 self.set_app_service_actions_visible(cx, false);
                             } else if !room_props.app_service_room_bound {
                                 self.send_app_service_feedback_message(
-                                    "Bind BotFather to this room before creating a bot.",
+                                    tr_key(self.app_language, "room_screen.popup.app_service.bind_before_create"),
                                 );
                                 self.set_app_service_actions_visible(cx, false);
                             } else {
@@ -2076,7 +2094,7 @@ impl Widget for RoomScreen {
                             }
                         } else {
                             self.send_app_service_feedback_message(
-                                "App state is unavailable, so bot creation is temporarily unavailable.",
+                                tr_key(self.app_language, "room_screen.popup.app_service.state_unavailable_create"),
                             );
                             self.set_app_service_actions_visible(cx, false);
                         }
@@ -2086,12 +2104,12 @@ impl Widget for RoomScreen {
                         if let Some(app_state) = scope.data.get::<AppState>() {
                             if !app_state.bot_settings.enabled {
                                 self.send_app_service_feedback_message(
-                                    "Enable App Service before deleting bots in a room.",
+                                    tr_key(self.app_language, "room_screen.popup.app_service.enable_before_delete"),
                                 );
                                 self.set_app_service_actions_visible(cx, false);
                             } else if !room_props.app_service_room_bound {
                                 self.send_app_service_feedback_message(
-                                    "Bind BotFather to this room before deleting a bot.",
+                                    tr_key(self.app_language, "room_screen.popup.app_service.bind_before_delete"),
                                 );
                                 self.set_app_service_actions_visible(cx, false);
                             } else {
@@ -2099,7 +2117,7 @@ impl Widget for RoomScreen {
                             }
                         } else {
                             self.send_app_service_feedback_message(
-                                "App state is unavailable, so bot deletion is temporarily unavailable.",
+                                tr_key(self.app_language, "room_screen.popup.app_service.state_unavailable_delete"),
                             );
                             self.set_app_service_actions_visible(cx, false);
                         }
@@ -2111,7 +2129,7 @@ impl Widget for RoomScreen {
                                 cx,
                                 app_state,
                                 "/listbots",
-                                "Sent `/listbots` to BotFather.",
+                                tr_key(self.app_language, "room_screen.popup.bot.sent_listbots").to_string(),
                             );
                         }
                         return false;
@@ -2122,7 +2140,7 @@ impl Widget for RoomScreen {
                                 cx,
                                 app_state,
                                 "/bothelp",
-                                "Sent `/bothelp` to BotFather.",
+                                tr_key(self.app_language, "room_screen.popup.bot.sent_bothelp").to_string(),
                             );
                         }
                         return false;
@@ -2193,7 +2211,7 @@ impl Widget for RoomScreen {
                         if let Some(app_state) = scope.data.get::<AppState>() {
                             if !room_props.app_service_room_bound {
                                 self.send_app_service_feedback_message(
-                                    "This room is not currently bound to BotFather.",
+                                    tr_key(self.app_language, "room_screen.popup.app_service.room_not_bound"),
                                 );
                             } else {
                                 match app_state
@@ -2210,9 +2228,9 @@ impl Widget for RoomScreen {
                                             bot_user_id: bot_user_id.clone(),
                                         });
                                         self.send_app_service_feedback_message(
-                                            format!(
-                                                "Removing BotFather {bot_user_id} from this room..."
-                                            ),
+                                            tr_fmt(self.app_language, "room_screen.popup.app_service.removing_botfather", &[
+                                                ("bot_user_id", bot_user_id.as_str()),
+                                            ]),
                                         );
                                     }
                                     Err(error) => {
@@ -2224,7 +2242,7 @@ impl Widget for RoomScreen {
                             }
                         } else {
                             self.send_app_service_feedback_message(
-                                "App state is unavailable, so BotFather could not be removed from this room.",
+                                tr_key(self.app_language, "room_screen.popup.app_service.state_unavailable_unbind"),
                             );
                         }
                         self.set_app_service_actions_visible(cx, false);
@@ -2241,7 +2259,7 @@ impl Widget for RoomScreen {
                     Some(CreateBotModalAction::Submit(request)) => {
                         let Some(app_state) = scope.data.get::<AppState>() else {
                             self.send_app_service_feedback_message(
-                                "App state is unavailable, so the create-bot command was not sent.",
+                                tr_key(self.app_language, "room_screen.popup.bot.state_unavailable_create_command"),
                             );
                             self.close_create_bot_modal(cx);
                             return false;
@@ -2266,7 +2284,7 @@ impl Widget for RoomScreen {
                     Some(DeleteBotModalAction::Submit(request)) => {
                         let Some(app_state) = scope.data.get::<AppState>() else {
                             self.send_app_service_feedback_message(
-                                "App state is unavailable, so the delete-bot command was not sent.",
+                                tr_key(self.app_language, "room_screen.popup.bot.state_unavailable_delete_command"),
                             );
                             self.close_delete_bot_modal(cx);
                             return false;
@@ -2284,15 +2302,15 @@ impl Widget for RoomScreen {
                 {
                     if room_props.timeline_kind.thread_root_event_id().is_some() {
                         self.send_app_service_feedback_message(
-                            "Bot commands are only supported in the main room timeline.",
+                            tr_key(self.app_language, "room_screen.popup.bot.main_timeline_only"),
                         );
                     } else if !room_props.app_service_enabled {
                         self.send_app_service_feedback_message(
-                            "Enable App Service in Settings before using /bot.",
+                            tr_key(self.app_language, "room_screen.popup.bot.enable_in_settings_before_bot"),
                         );
                     } else if !room_props.app_service_room_bound {
                         self.send_app_service_feedback_message(
-                            "Bind BotFather to this room before using /bot.",
+                            tr_key(self.app_language, "room_screen.popup.bot.bind_before_bot"),
                         );
                     } else {
                         self.toggle_app_service_actions(cx);
@@ -2308,7 +2326,7 @@ impl Widget for RoomScreen {
                         UserProfilePaneInfo {
                             profile_and_room_id,
                             room_name: self.room_name_id.as_ref().map_or_else(
-                                || UNNAMED_ROOM.to_string(),
+                                || tr_key(self.app_language, "room_screen.fallback.unnamed_room").to_string(),
                                 |r| r.to_string(),
                             ),
                             room_member: None,
@@ -2363,6 +2381,12 @@ impl Widget for RoomScreen {
 
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if !self.app_language_initialized || self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         // If the room isn't loaded yet, we show the restore status label only.
         if !self.is_loaded {
             let Some(room_name) = &self.room_name_id else {
@@ -2435,6 +2459,7 @@ impl Widget for RoomScreen {
                                                 list,
                                                 item_id,
                                                 &tl_state.kind,
+                                                self.app_language,
                                                 event_tl_item,
                                                 msg_like_content,
                                                 prev_event,
@@ -2455,6 +2480,7 @@ impl Widget for RoomScreen {
                                             list,
                                             item_id,
                                             &tl_state.kind,
+                                            self.app_language,
                                             event_tl_item,
                                             poll_state,
                                             item_drawn_status,
@@ -2464,6 +2490,7 @@ impl Widget for RoomScreen {
                                             list,
                                             item_id,
                                             &tl_state.kind,
+                                            self.app_language,
                                             event_tl_item,
                                             utd,
                                             item_drawn_status,
@@ -2473,6 +2500,7 @@ impl Widget for RoomScreen {
                                             list,
                                             item_id,
                                             &tl_state.kind,
+                                            self.app_language,
                                             event_tl_item,
                                             other,
                                             item_drawn_status,
@@ -2485,6 +2513,7 @@ impl Widget for RoomScreen {
                                 list,
                                 item_id,
                                 &tl_state.kind,
+                                self.app_language,
                                 event_tl_item,
                                 membership_change,
                                 item_drawn_status,
@@ -2494,6 +2523,7 @@ impl Widget for RoomScreen {
                                 list,
                                 item_id,
                                 &tl_state.kind,
+                                self.app_language,
                                 event_tl_item,
                                 profile_change,
                                 item_drawn_status,
@@ -2503,13 +2533,17 @@ impl Widget for RoomScreen {
                                 list,
                                 item_id,
                                 &tl_state.kind,
+                                self.app_language,
                                 event_tl_item,
                                 other,
                                 item_drawn_status,
                             ),
                             unhandled => {
                                 let item = list.item(cx, item_id, id!(SmallStateEvent));
-                                item.label(cx, ids!(content)).set_text(cx, &format!("[Unsupported] {:?}", unhandled));
+                                item.label(cx, ids!(content)).set_text(
+                                    cx,
+                                    &format!("{} {:?}", tr_key(self.app_language, "room_screen.unsupported.prefix"), unhandled),
+                                );
                                 (item, ItemDrawnStatus::both_drawn())
                             }
                         }
@@ -2524,6 +2558,10 @@ impl Widget for RoomScreen {
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
                             let item = list.item(cx, item_id, id!(ReadMarker));
+                            item.label(cx, ids!(date)).set_text(
+                                cx,
+                                tr_key(self.app_language, "room_screen.read_marker.new_messages"),
+                            );
                             (item, ItemDrawnStatus::both_drawn())
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::TimelineStart) => {
@@ -2566,6 +2604,19 @@ impl Widget for RoomScreen {
 }
 
 impl RoomScreen {
+    fn set_app_language(&mut self, cx: &mut Cx, app_language: AppLanguage) {
+        self.app_language = app_language;
+        self.app_language_initialized = true;
+        self.sync_app_language(cx);
+    }
+
+    fn sync_app_language(&mut self, cx: &mut Cx) {
+        self.view
+            .label(cx, ids!(top_space.label))
+            .set_text(cx, tr_key(self.app_language, "room_screen.top_space.loading_earlier"));
+        self.view.redraw(cx);
+    }
+
     fn room_id(&self) -> Option<&OwnedRoomId> {
         self.room_name_id.as_ref().map(|r| r.room_id())
     }
@@ -2658,14 +2709,14 @@ impl RoomScreen {
         cx: &mut Cx,
         app_state: &AppState,
         command: &str,
-        success_message: &str,
+        success_message: String,
     ) -> bool {
         let Some(timeline_kind) = self.timeline_kind.clone() else {
             return false;
         };
         if timeline_kind.thread_root_event_id().is_some() {
             self.send_app_service_feedback_message(
-                "Bot commands are only supported in the main room timeline.",
+                tr_key(self.app_language, "room_screen.popup.bot.main_timeline_only"),
             );
             return false;
         }
@@ -2675,13 +2726,13 @@ impl RoomScreen {
         };
         if !app_state.bot_settings.enabled {
             self.send_app_service_feedback_message(
-                "Enable App Service before using BotFather commands in a room.",
+                tr_key(self.app_language, "room_screen.popup.bot.enable_before_commands"),
             );
             return false;
         }
         if !self.is_app_service_room_bound(app_state, &room_id) {
             self.send_app_service_feedback_message(
-                "Bind BotFather to this room before using BotFather commands.",
+                tr_key(self.app_language, "room_screen.popup.bot.bind_before_commands"),
             );
             return false;
         }
@@ -2698,7 +2749,7 @@ impl RoomScreen {
             sign_with_tsp: false,
         });
 
-        self.send_app_service_feedback_message(success_message.to_string());
+        self.send_app_service_feedback_message(success_message);
         self.set_app_service_actions_visible(cx, false);
         true
     }
@@ -2716,7 +2767,7 @@ impl RoomScreen {
         };
         if timeline_kind.thread_root_event_id().is_some() {
             self.send_app_service_feedback_message(
-                "Bot creation commands are only supported in the main room timeline.",
+                tr_key(self.app_language, "room_screen.popup.bot.creation_main_timeline_only"),
             );
             return;
         }
@@ -2726,13 +2777,13 @@ impl RoomScreen {
         };
         if !app_state.bot_settings.enabled {
             self.send_app_service_feedback_message(
-                "Enable App Service before creating bots in a room.",
+                tr_key(self.app_language, "room_screen.popup.app_service.enable_before_create"),
             );
             return;
         }
         if !self.is_app_service_room_bound(app_state, &room_id) {
             self.send_app_service_feedback_message(
-                "Bind BotFather to this room before creating a bot.",
+                tr_key(self.app_language, "room_screen.popup.app_service.bind_before_create"),
             );
             return;
         }
@@ -2742,7 +2793,7 @@ impl RoomScreen {
             cx,
             app_state,
             &command,
-            &format!("Sent `/createbot` for `{username}` to BotFather."),
+            tr_fmt(self.app_language, "room_screen.popup.bot.sent_createbot", &[("username", username)]),
         ) {
             self.close_create_bot_modal(cx);
         }
@@ -2755,7 +2806,7 @@ impl RoomScreen {
         user_id_or_localpart: &str,
     ) {
         let matrix_user_id =
-            match resolve_delete_bot_user_id(user_id_or_localpart, current_user_id().as_deref()) {
+            match resolve_delete_bot_user_id(user_id_or_localpart, current_user_id().as_deref(), self.app_language) {
                 Ok(user_id) => user_id,
                 Err(error) => {
                     self.send_app_service_feedback_message(error);
@@ -2768,7 +2819,7 @@ impl RoomScreen {
             cx,
             app_state,
             &command,
-            &format!("Sent `/deletebot` for {matrix_user_id} to BotFather."),
+            tr_fmt(self.app_language, "room_screen.popup.bot.sent_deletebot", &[("matrix_user_id", matrix_user_id.as_str())]),
         ) {
             self.close_delete_bot_modal(cx);
         }
@@ -3027,7 +3078,7 @@ impl RoomScreen {
                     if is_valid {
                         // We successfully found the target event, so we can close the loading pane,
                         // reset the loading panestate to `None`, and stop issuing backwards pagination requests.
-                        loading_pane.set_status(cx, "Successfully found replied-to message!");
+                        loading_pane.set_status(cx, tr_key(self.app_language, "room_screen.loading.found_related_message"));
                         loading_pane.set_state(cx, LoadingPaneState::None);
 
                         // NOTE: this code was copied from the `MessageAction::JumpToRelated` handler;
@@ -3050,7 +3101,7 @@ impl RoomScreen {
                         error!("Target event index {index} of {} is out of bounds for room {}", tl.items.len(), tl.kind.room_id());
                         // Show this error in the loading pane, which should already be open.
                         loading_pane.set_state(cx, LoadingPaneState::Error(
-                            String::from("Unable to find related message; it may have been deleted.")
+                            tr_key(self.app_language, "room_screen.loading.related_message_not_found").to_string()
                         ));
                     }
 
@@ -3075,7 +3126,12 @@ impl RoomScreen {
                     error!("Pagination error ({direction}) in {:?}: {error:?}", self.room_name_id);
                     let room_name = self.room_name_id.as_ref().map(|r| r.to_string());
                     enqueue_popup_notification(
-                        utils::stringify_pagination_error(&error, room_name.as_deref().unwrap_or(UNNAMED_ROOM)),
+                        utils::stringify_pagination_error(
+                            &error,
+                            room_name
+                                .as_deref()
+                                .unwrap_or(tr_key(self.app_language, "room_screen.fallback.unnamed_room")),
+                        ),
                         PopupKind::Error,
                         Some(10.0),
                     );
@@ -3165,17 +3221,29 @@ impl RoomScreen {
                 TimelineUpdate::PinResult { result, pin, .. } => {
                     let (message, auto_dismissal_duration, kind) = match &result {
                         Ok(true) => (
-                            format!("Successfully {} event.", if pin { "pinned" } else { "unpinned" }),
+                            if pin {
+                                tr_key(self.app_language, "room_screen.popup.pin.pinned_success").to_string()
+                            } else {
+                                tr_key(self.app_language, "room_screen.popup.pin.unpinned_success").to_string()
+                            },
                             Some(4.0),
                             PopupKind::Success
                         ),
                         Ok(false) => (
-                            format!("Message was already {}.", if pin { "pinned" } else { "unpinned" }),
+                            if pin {
+                                tr_key(self.app_language, "room_screen.popup.pin.already_pinned").to_string()
+                            } else {
+                                tr_key(self.app_language, "room_screen.popup.pin.already_unpinned").to_string()
+                            },
                             Some(4.0),
                             PopupKind::Info
                         ),
                         Err(e) => (
-                            format!("Failed to {} event. Error: {e}", if pin { "pin" } else { "unpin" }),
+                            tr_fmt(self.app_language, if pin {
+                                "room_screen.popup.pin.pin_failed"
+                            } else {
+                                "room_screen.popup.pin.unpin_failed"
+                            }, &[("error", &e.to_string())]),
                             None,
                             PopupKind::Error
                         ),
@@ -3298,7 +3366,7 @@ impl RoomScreen {
                 MatrixId::Room(room_id) => {
                     if self.room_name_id.as_ref().is_some_and(|r| r.room_id() == room_id) {
                         enqueue_popup_notification(
-                            "You are already viewing that room.",
+                            tr_key(self.app_language, "room_screen.popup.already_viewing_room"),
                             PopupKind::Info,
                             Some(4.0),
                         );
@@ -3348,7 +3416,7 @@ impl RoomScreen {
                 if let Err(e) = robius_open::Uri::new(&url).open() {
                     error!("Failed to open URL {:?}. Error: {:?}", url, e);
                     enqueue_popup_notification(
-                        format!("Could not open URL: {url}"),
+                        tr_fmt(self.app_language, "room_screen.popup.open_url_failed", &[("url", url.as_str())]),
                         PopupKind::Error,
                         Some(10.0),
                     );
@@ -3363,7 +3431,7 @@ impl RoomScreen {
                 if let Err(e) = robius_open::Uri::new(&url).open() {
                     error!("Failed to open URL {:?}. Error: {:?}", url, e);
                     enqueue_popup_notification(
-                        format!("Could not open URL: {url}"),
+                        tr_fmt(self.app_language, "room_screen.popup.open_url_failed", &[("url", url.as_str())]),
                         PopupKind::Error,
                         Some(10.0),
                     );
@@ -3463,7 +3531,7 @@ impl RoomScreen {
                     }
                     else {
                         enqueue_popup_notification(
-                            "Could not find message in timeline to reply to. Please try again.",
+                            tr_key(self.app_language, "room_screen.popup.message.reply_not_found"),
                             PopupKind::Error,
                             Some(5.0),
                         );
@@ -3486,7 +3554,7 @@ impl RoomScreen {
                     }
                     else {
                         enqueue_popup_notification(
-                            "Could not find message in timeline to edit. Please try again.",
+                            tr_key(self.app_language, "room_screen.popup.message.edit_not_found"),
                             PopupKind::Error,
                             Some(5.0),
                         );
@@ -3514,7 +3582,7 @@ impl RoomScreen {
                     }
                     else {
                         enqueue_popup_notification(
-                            "No recent message available to edit. Please manually select a message to edit.",
+                            tr_key(self.app_language, "room_screen.popup.message.no_recent_editable"),
                             PopupKind::Warning,
                             Some(5.0),
                         );
@@ -3530,7 +3598,7 @@ impl RoomScreen {
                         });
                     } else {
                         enqueue_popup_notification(
-                            "This event cannot be pinned.",
+                            tr_key(self.app_language, "room_screen.popup.message.cannot_pin"),
                             PopupKind::Error,
                             Some(5.0),
                         );
@@ -3546,7 +3614,7 @@ impl RoomScreen {
                         });
                     } else {
                         enqueue_popup_notification(
-                            "This event cannot be unpinned.",
+                            tr_key(self.app_language, "room_screen.popup.message.cannot_unpin"),
                             PopupKind::Error,
                             Some(5.0),
                         );
@@ -3559,7 +3627,7 @@ impl RoomScreen {
                     }
                     else {
                         enqueue_popup_notification(
-                            "Could not find message in timeline to copy text from. Please try again.",
+                            tr_key(self.app_language, "room_screen.popup.message.copy_text_not_found"),
                             PopupKind::Error,
                             Some(5.0),
                         );
@@ -3596,7 +3664,7 @@ impl RoomScreen {
                     }
                     if !success {
                         enqueue_popup_notification(
-                            "Could not find message in timeline to copy HTML from. Please try again.",
+                            tr_key(self.app_language, "room_screen.popup.message.copy_html_not_found"),
                             PopupKind::Error,
                             Some(5.0),
                         );
@@ -3614,7 +3682,7 @@ impl RoomScreen {
                         cx.copy_to_clipboard(&matrix_to_uri.to_string());
                     } else {
                         enqueue_popup_notification(
-                            "Couldn't create permalink to message. Please try again.",
+                            tr_key(self.app_language, "room_screen.popup.message.copy_link_failed"),
                             PopupKind::Error,
                             Some(5.0),
                         );
@@ -3629,7 +3697,7 @@ impl RoomScreen {
                     let Some(tl) = self.tl_state.as_ref() else { continue };
                     let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details) else {
                         enqueue_popup_notification(
-                            "Could not find message in timeline to view source.",
+                            tr_key(self.app_language, "room_screen.popup.message.view_source_not_found"),
                             PopupKind::Error,
                             Some(5.0),
                         );
@@ -3653,7 +3721,7 @@ impl RoomScreen {
                     let Some(related_event_id) = details.related_event_id.as_ref() else {
                         error!("BUG: MessageAction::JumpToRelated had no related event ID.\n{details:#?}");
                         enqueue_popup_notification(
-                            "Could not find related message or event in timeline.",
+                            tr_key(self.app_language, "room_screen.popup.message.related_not_found"),
                             PopupKind::Error,
                             Some(5.0),
                         );
@@ -3697,10 +3765,11 @@ impl RoomScreen {
                     let timeline_event_id = details.timeline_event_id.clone();
                     let timeline_kind = tl.kind.clone();
                     let reason = reason.clone();
+                    let app_language = self.app_language;
                     let content = ConfirmationModalContent {
-                        title_text: "Delete Message".into(),
-                        body_text: "Are you sure you want to delete this message? This cannot be undone.".into(),
-                        accept_button_text: Some("Delete".into()),
+                        title_text: tr_key(app_language, "room_screen.modal.delete_message.title").into(),
+                        body_text: tr_key(app_language, "room_screen.modal.delete_message.body").into(),
+                        accept_button_text: Some(tr_key(app_language, "room_screen.modal.delete_message.accept").into()),
                         on_accept_clicked: Some(Box::new(move |_cx| {
                             submit_async_request(MatrixRequest::RedactMessage {
                                 timeline_kind,
@@ -4776,6 +4845,7 @@ fn populate_message_view(
     list: &mut PortalList,
     item_id: usize,
     timeline_kind: &TimelineKind,
+    app_language: AppLanguage,
     event_tl_item: &EventTimelineItem,
     msg_like_content: &MsgLikeContent,
     prev_event: Option<&Arc<TimelineItem>>,
@@ -4849,6 +4919,7 @@ fn populate_message_view(
                             new_drawn_status.content_drawn = populate_text_message_content(
                                 cx,
                                 &html_or_plaintext_ref,
+                                app_language,
                                 body,
                                 formatted.as_ref(),
                                 Some(&mut link_preview_ref),
@@ -4887,6 +4958,7 @@ fn populate_message_view(
                         new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
                             &html_or_plaintext_ref,
+                            app_language,
                             body,
                             formatted.as_ref(),
                             Some(&mut link_preview_ref),
@@ -4915,14 +4987,16 @@ fn populate_message_view(
                             }
                         });
                         let formatted = format!(
-                            "<b>Server notice:</b> {}\n\n<i>Notice type:</i>: {}{}{}",
+                            "<b>{}</b> {}\n\n<i>{}</i>: {}{}{}",
+                            tr_key(app_language, "room_screen.server_notice.title"),
                             sn.body,
+                            tr_key(app_language, "room_screen.server_notice.notice_type"),
                             sn.server_notice_type.as_str(),
                             sn.limit_type.as_ref()
-                                .map(|l| format!("\n<i>Limit type:</i> {}", l.as_str()))
+                                .map(|l| format!("\n<i>{}</i> {}", tr_key(app_language, "room_screen.server_notice.limit_type"), l.as_str()))
                                 .unwrap_or_default(),
                             sn.admin_contact.as_ref()
-                                .map(|c| format!("\n<i>Admin contact:</i> {}", c))
+                                .map(|c| format!("\n<i>{}</i> {}", tr_key(app_language, "room_screen.server_notice.admin_contact"), c))
                                 .unwrap_or_default(),
                         );
                         let mut link_preview_ref =
@@ -4930,6 +5004,7 @@ fn populate_message_view(
                         new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
                             &html_or_plaintext_ref,
+                            app_language,
                             &sn.body,
                             Some(&FormattedBody {
                                 format: MessageFormat::Html,
@@ -4984,6 +5059,7 @@ fn populate_message_view(
                         let link_previews_drawn = populate_text_message_content(
                             cx,
                             &html_or_plaintext_ref,
+                            app_language,
                             &body,
                             formatted.as_ref(),
                             Some(&mut link_preview_ref),
@@ -5012,6 +5088,7 @@ fn populate_message_view(
                         let is_image_fully_drawn = populate_image_message_content(
                             cx,
                             &text_or_image_ref,
+                            app_language,
                             image_info,
                             image.source.clone(),
                             msg.body(),
@@ -5037,6 +5114,7 @@ fn populate_message_view(
                         let is_location_fully_drawn = populate_location_message_content(
                             cx,
                             &html_or_plaintext_ref,
+                            app_language,
                             location,
                         );
                         new_drawn_status.content_drawn = is_location_fully_drawn;
@@ -5059,6 +5137,7 @@ fn populate_message_view(
                         new_drawn_status.content_drawn = populate_file_message_content(
                             cx,
                             &html_or_plaintext_ref,
+                            app_language,
                             file_content,
                         );
                         (item, false)
@@ -5080,6 +5159,7 @@ fn populate_message_view(
                         new_drawn_status.content_drawn = populate_audio_message_content(
                             cx,
                             &html_or_plaintext_ref,
+                            app_language,
                             audio,
                         );
                         (item, false)
@@ -5101,6 +5181,7 @@ fn populate_message_view(
                         new_drawn_status.content_drawn = populate_video_message_content(
                             cx,
                             &html_or_plaintext_ref,
+                            app_language,
                             video,
                         );
                         (item, false)
@@ -5117,8 +5198,11 @@ fn populate_message_view(
                         let formatted = FormattedBody {
                             format: MessageFormat::Html,
                             body: format!(
-                                "<i>Sent a <b>verification request</b> to {}.<br>(Supported methods: {})</i>",
-                                verification.to,
+                                "<i>{}<b>{}</b>{}<br>({}: {})</i>",
+                                tr_key(app_language, "room_screen.verification.sent_prefix"),
+                                tr_key(app_language, "room_screen.verification.request"),
+                                tr_fmt(app_language, "room_screen.verification.sent_to_suffix", &[("user_id", verification.to.as_str())]),
+                                tr_key(app_language, "room_screen.verification.supported_methods"),
                                 verification.methods
                                     .iter()
                                     .map(|m| m.as_str())
@@ -5134,6 +5218,7 @@ fn populate_message_view(
                         new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
                             &html_or_plaintext_ref,
+                            app_language,
                             &verification.body,
                             Some(&formatted),
                             Some(&mut link_preview_ref),
@@ -5151,7 +5236,7 @@ fn populate_message_view(
                     } else {
                         item.label(cx, ids!(content.message)).set_text(
                             cx,
-                            &format!("[Unsupported {:?}]", msg_like_content.kind),
+                            &format!("{} {:?}", tr_key(app_language, "room_screen.unsupported.prefix"), msg_like_content.kind),
                         );
                         new_drawn_status.content_drawn = true;
                         (item, false)
@@ -5180,6 +5265,7 @@ fn populate_message_view(
                     let is_image_fully_drawn = populate_image_message_content(
                         cx,
                         &text_or_image_ref,
+                        app_language,
                         Some(Box::new(image_info.clone())),
                         MediaSource::Plain(owned_mxc_url.clone()),
                         body,
@@ -5218,6 +5304,7 @@ fn populate_message_view(
                 new_drawn_status.content_drawn = populate_redacted_message_content(
                     cx,
                     &html_or_plaintext_ref,
+                    app_language,
                     event_tl_item,
                     timeline_kind.room_id(),
                 );
@@ -5232,7 +5319,7 @@ fn populate_message_view(
             } else {
                 item.label(cx, ids!(content.message)).set_text(
                     cx,
-                    &format!("[Unsupported {:?}] ", other),
+                    &format!("{} {:?} ", tr_key(app_language, "room_screen.unsupported.prefix"), other),
                 );
                 new_drawn_status.content_drawn = true;
                 (item, false)
@@ -5257,6 +5344,7 @@ fn populate_message_view(
             cx,
             &item.view(cx, ids!(replied_to_message)),
             timeline_kind,
+            app_language,
             msg_like_content.in_reply_to.as_ref(),
             event_tl_item.event_id(),
         );
@@ -5265,6 +5353,7 @@ fn populate_message_view(
             &item,
             item_id,
             timeline_kind,
+            app_language,
             msg_like_content,
             event_tl_item,
             fetched_thread_summaries,
@@ -5338,7 +5427,7 @@ fn populate_message_view(
             // Server notices are drawn with a red color avatar background and username.
             let avatar = item.avatar(cx, ids!(profile.avatar));
             avatar.show_text(cx, Some(COLOR_FG_DANGER_RED), None, "⚠");
-            username_label.set_text(cx, "Server notice");
+            username_label.set_text(cx, tr_key(app_language, "room_screen.server_notice.username"));
             script_apply_eval!(cx, username_label, {
                 draw_text +: {
                     color: (mod.widgets.COLOR_FG_DANGER_RED)
@@ -5408,6 +5497,7 @@ fn populate_message_view(
 fn populate_text_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
+    app_language: AppLanguage,
     body: &str,
     formatted_body: Option<&FormattedBody>,
     link_preview_ref: Option<&mut LinkPreviewRef>,
@@ -5444,7 +5534,17 @@ fn populate_text_message_content(
             &links,
             media_cache,
             link_preview_cache,
-            &populate_image_message_content,
+            &|cx, text_or_image_ref, image_info_source, original_source, body, media_cache| {
+                populate_image_message_content(
+                    cx,
+                    text_or_image_ref,
+                    app_language,
+                    image_info_source,
+                    original_source,
+                    body,
+                    media_cache,
+                )
+            },
         )
     } else {
         true
@@ -5457,6 +5557,7 @@ fn populate_text_message_content(
 fn populate_image_message_content(
     cx: &mut Cx,
     text_or_image_ref: &TextOrImageRef,
+    app_language: AppLanguage,
     image_info_source: Option<Box<ImageInfo>>,
     original_source: MediaSource,
     body: &str,
@@ -5474,7 +5575,7 @@ fn populate_image_message_content(
         if ImageFormat::from_mimetype(mime).is_none() {
             text_or_image_ref.show_text(
                 cx,
-                format!("{body}\n\nUnsupported type {mime:?}"),
+                tr_fmt(app_language, "room_screen.image.unsupported_type", &[("body", body), ("mime", mime)]),
             );
             return true; // consider this as fully drawn
         }
@@ -5492,7 +5593,7 @@ fn populate_image_message_content(
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
                 if let Err(e) = show_image_result {
-                    let err_str = format!("{body}\n\nFailed to display image: {e:?}");
+                    let err_str = tr_fmt(app_language, "room_screen.image.failed_to_display", &[("body", body), ("error", &format!("{e:?}"))]);
                     error!("{err_str}");
                     text_or_image_ref.show_text(cx, &err_str);
                 }
@@ -5540,7 +5641,7 @@ fn populate_image_message_content(
                         }
                     });
                     if let Err(e) = show_image_result {
-                        let err_str = format!("{body}\n\nFailed to display image: {e:?}");
+                        let err_str = tr_fmt(app_language, "room_screen.image.failed_to_display", &[("body", body), ("error", &format!("{e:?}"))]);
                         error!("{err_str}");
                         text_or_image_ref.show_text(cx, &err_str);
                     }
@@ -5553,7 +5654,7 @@ fn populate_image_message_content(
                     return;
                 }
                 text_or_image_ref
-                    .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
+                    .show_text(cx, tr_fmt(app_language, "room_screen.image.failed_to_fetch", &[("body", body), ("mxc_uri", &format!("{mxc_uri:?}"))]));
                 // For now, we consider this as being "complete". In the future, we could support
                 // retrying to fetch thumbnail of the image on a user click/tap.
                 fully_drawn = true;
@@ -5567,7 +5668,7 @@ fn populate_image_message_content(
                 // We consider this as "fully drawn" since we don't yet support encryption.
                 text_or_image_ref.show_text(
                     cx,
-                    format!("{body}\n\n[TODO] fetch encrypted image at {:?}", encrypted.url)
+                    tr_fmt(app_language, "room_screen.image.encrypted_todo", &[("body", body), ("url", &format!("{:?}", encrypted.url))])
                 );
             },
             MediaSource::Plain(mxc_uri) => {
@@ -5584,7 +5685,7 @@ fn populate_image_message_content(
             fetch_and_show_media_source(cx, media_source, image_info);
         }
         None => {
-            text_or_image_ref.show_text(cx, "{body}\n\nImage message had no source URL.");
+            text_or_image_ref.show_text(cx, tr_fmt(app_language, "room_screen.image.no_source_url", &[("body", body)]));
             fully_drawn = true;
         }
     }
@@ -5599,6 +5700,7 @@ fn populate_image_message_content(
 fn populate_file_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
+    app_language: AppLanguage,
     file_content: &FileMessageEventContent,
 ) -> bool {
     // Display the file name, human-readable size, caption, and a button to download it.
@@ -5618,7 +5720,11 @@ fn populate_file_message_content(
 
     message_content_widget.show_html(
         cx,
-        format!("<b>{filename}</b>{size}{caption}<br> → <i>File download not yet supported.</i>"),
+        tr_fmt(app_language, "room_screen.file.preview_html", &[
+            ("filename", &filename),
+            ("size", size.as_str()),
+            ("caption", caption.as_str()),
+        ]),
     );
     true
 }
@@ -5629,6 +5735,7 @@ fn populate_file_message_content(
 fn populate_audio_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
+    app_language: AppLanguage,
     audio: &AudioMessageEventContent,
 ) -> bool {
     // Display the file name, human-readable size, caption, and a button to download it.
@@ -5658,7 +5765,13 @@ fn populate_audio_message_content(
 
     message_content_widget.show_html(
         cx,
-        format!("Audio: <b>{filename}</b>{mime}{duration}{size}{caption}<br> → <i>Audio playback not yet supported.</i>"),
+        tr_fmt(app_language, "room_screen.audio.preview_html", &[
+            ("filename", &filename),
+            ("mime", mime.as_str()),
+            ("duration", duration.as_str()),
+            ("size", size.as_str()),
+            ("caption", caption.as_str()),
+        ]),
     );
     true
 }
@@ -5670,6 +5783,7 @@ fn populate_audio_message_content(
 fn populate_video_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
+    app_language: AppLanguage,
     video: &VideoMessageEventContent,
 ) -> bool {
     // Display the file name, human-readable size, caption, and a button to download it.
@@ -5702,7 +5816,14 @@ fn populate_video_message_content(
 
     message_content_widget.show_html(
         cx,
-        format!("Video: <b>{filename}</b>{mime}{duration}{size}{dimensions}{caption}<br> → <i>Video playback not yet supported.</i>"),
+        tr_fmt(app_language, "room_screen.video.preview_html", &[
+            ("filename", &filename),
+            ("mime", mime.as_str()),
+            ("duration", duration.as_str()),
+            ("size", size.as_str()),
+            ("dimensions", dimensions.as_str()),
+            ("caption", caption.as_str()),
+        ]),
     );
     true
 }
@@ -5715,6 +5836,7 @@ fn populate_video_message_content(
 fn populate_location_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
+    app_language: AppLanguage,
     location: &LocationMessageEventContent,
 ) -> bool {
     let coords = location.geo_uri
@@ -5736,19 +5858,26 @@ fn populate_location_message_content(
         let safe_short_lat = htmlize::escape_text(short_lat);
         let safe_short_long = htmlize::escape_text(short_long);
         let html_body = format!(
-            "Location: <a href=\"{}\">{safe_short_lat},{safe_short_long}</a><br>\
+            "{} <a href=\"{}\">{safe_short_lat},{safe_short_long}</a><br>\
             <ul>\
-            <li><a href=\"https://www.openstreetmap.org/?mlat={safe_lat}&amp;mlon={safe_long}#map=15/{safe_lat}/{safe_long}\">Open in OpenStreetMap</a></li>\
-            <li><a href=\"https://www.google.com/maps/search/?api=1&amp;query={safe_lat},{safe_long}\">Open in Google Maps</a></li>\
-            <li><a href=\"https://maps.apple.com/?ll={safe_lat},{safe_long}&amp;q={safe_lat},{safe_long}\">Open in Apple Maps</a></li>\
+            <li><a href=\"https://www.openstreetmap.org/?mlat={safe_lat}&amp;mlon={safe_long}#map=15/{safe_lat}/{safe_long}\">{}</a></li>\
+            <li><a href=\"https://www.google.com/maps/search/?api=1&amp;query={safe_lat},{safe_long}\">{}</a></li>\
+            <li><a href=\"https://maps.apple.com/?ll={safe_lat},{safe_long}&amp;q={safe_lat},{safe_long}\">{}</a></li>\
             </ul>",
+            tr_key(app_language, "room_screen.location.label"),
             safe_geo_uri,
+            tr_key(app_language, "room_screen.location.open_osm"),
+            tr_key(app_language, "room_screen.location.open_google_maps"),
+            tr_key(app_language, "room_screen.location.open_apple_maps"),
         );
         message_content_widget.show_html(cx, html_body);
     } else {
+        let escaped_body = htmlize::escape_text(&location.body);
         message_content_widget.show_html(
             cx,
-            format!("<i>[Location invalid]</i> {}", htmlize::escape_text(&location.body))
+            tr_fmt(app_language, "room_screen.location.invalid_html", &[
+                ("body", &escaped_body),
+            ])
         );
     }
 
@@ -5765,6 +5894,7 @@ fn populate_location_message_content(
 fn populate_redacted_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
+    app_language: AppLanguage,
     event_tl_item: &EventTimelineItem,
     room_id: &OwnedRoomId,
 ) -> bool {
@@ -5789,8 +5919,13 @@ fn populate_redacted_message_content(
         if redactor == event_tl_item.sender() {
             fully_drawn = true;
             match reason {
-                Some(r) => format!("⛔ <i>Deleted their own message. Reason: \"{}\".</i>", htmlize::escape_text(r)),
-                None => String::from("⛔ <i>Deleted their own message.</i>"),
+                Some(r) => {
+                    let escaped_reason = htmlize::escape_text(r);
+                    tr_fmt(app_language, "room_screen.redacted.self_with_reason", &[
+                        ("reason", &escaped_reason),
+                    ])
+                }
+                None => tr_key(app_language, "room_screen.redacted.self").to_string(),
             }
         } else {
             // Try to get the displayable name of the user who redacted this message.
@@ -5803,16 +5938,21 @@ fn populate_redacted_message_content(
             fully_drawn = redactor_name.was_found();
             let redactor_name_esc = htmlize::escape_text(redactor_name.as_deref().unwrap_or(redactor.as_str()));
             match reason {
-                Some(r) => format!("⛔ <i>{} deleted this message. Reason: \"{}\".</i>",
-                    redactor_name_esc,
-                    htmlize::escape_text(r),
-                ),
-                None => format!("⛔ <i>{} deleted this message.</i>", redactor_name_esc),
+                Some(r) => {
+                    let escaped_reason = htmlize::escape_text(r);
+                    tr_fmt(app_language, "room_screen.redacted.other_with_reason", &[
+                        ("redactor", &redactor_name_esc),
+                        ("reason", &escaped_reason),
+                    ])
+                }
+                None => tr_fmt(app_language, "room_screen.redacted.other", &[
+                    ("redactor", &redactor_name_esc),
+                ]),
             }
         }
     } else {
         fully_drawn = true;
-        String::from("⛔ <i>Message deleted.</i>")
+        tr_key(app_language, "room_screen.redacted.generic").to_string()
     };
     message_content_widget.show_html(cx, html);
     fully_drawn
@@ -5835,6 +5975,7 @@ fn draw_replied_to_message(
     cx: &mut Cx2d,
     replied_to_message_view: &ViewRef,
     timeline_kind: &TimelineKind,
+    app_language: AppLanguage,
     in_reply_to: Option<&InReplyToDetails>,
     message_event_id: Option<&EventId>,
 ) -> bool {
@@ -5866,6 +6007,7 @@ fn draw_replied_to_message(
                 populate_preview_of_timeline_item(
                     cx,
                     &msg_body,
+                    app_language,
                     &replied_to_event.content,
                     &replied_to_event.sender,
                     &in_reply_to_username,
@@ -5875,26 +6017,26 @@ fn draw_replied_to_message(
                 fully_drawn = true;
                 replied_to_message_view
                     .label(cx, ids!(replied_to_message_content.reply_preview_username))
-                    .set_text(cx, "[Error fetching username]");
+                    .set_text(cx, tr_key(app_language, "room_screen.reply_preview.error_username"));
                 replied_to_message_view
                     .avatar(cx, ids!(replied_to_message_content.reply_preview_avatar))
                     .show_text(cx, None, None, "?");
                 replied_to_message_view
                     .html_or_plaintext(cx, ids!(replied_to_message_content.reply_preview_body))
-                    .show_plaintext(cx, "[Error fetching replied-to event]");
+                    .show_plaintext(cx, tr_key(app_language, "room_screen.reply_preview.error_event"));
             }
             td @ TimelineDetails::Pending | td @ TimelineDetails::Unavailable => {
                 // We don't have the replied-to message yet, so we can't fully draw the preview.
                 fully_drawn = false;
                 replied_to_message_view
                     .label(cx, ids!(replied_to_message_content.reply_preview_username))
-                    .set_text(cx, "[Loading username...]");
+                    .set_text(cx, tr_key(app_language, "room_screen.reply_preview.loading_username"));
                 replied_to_message_view
                     .avatar(cx, ids!(replied_to_message_content.reply_preview_avatar))
                     .show_text(cx, None, None, "?");
                 replied_to_message_view
                     .html_or_plaintext(cx, ids!(replied_to_message_content.reply_preview_body))
-                    .show_plaintext(cx, "[Loading replied-to message...]");
+                    .show_plaintext(cx, tr_key(app_language, "room_screen.reply_preview.loading_event"));
 
                 // Confusingly, we need to fetch the details of the `message` (the event that is the reply),
                 // not the details of the original event that this `message` is replying to.
@@ -5927,6 +6069,7 @@ fn populate_thread_root_summary(
     item: &WidgetRef,
     timeline_item_index: usize,
     timeline_kind: &TimelineKind,
+    app_language: AppLanguage,
     msg_like_content: &MsgLikeContent,
     event_tl_item: &EventTimelineItem,
     fetched_thread_summaries: &HashMap<OwnedEventId, FetchedThreadSummary>,
@@ -5996,18 +6139,18 @@ fn populate_thread_root_summary(
                 }
             }
             fetched_summary.and_then(|fs| fs.latest_reply_preview_text.as_deref())
-                .unwrap_or("<i>Loading latest reply...</i>")
+                .unwrap_or(tr_key(app_language, "room_screen.thread_summary.loading_latest_reply"))
                 .into()
         }
         TimelineDetails::Error(_) => {
             fully_drawn = true; // consider this fully drawn since there's no point retrying.
-            "<i>Unable to load latest reply</i>".into()
+            tr_key(app_language, "room_screen.thread_summary.error_latest_reply").into()
         }
     };
 
     let replies_count_text = match replies_count {
-        1 => Cow::Borrowed("1 reply"),
-        n => Cow::Owned(format!("{n} replies"))
+        1 => Cow::Borrowed(tr_key(app_language, "room_screen.thread_summary.one_reply")),
+        n => Cow::Owned(tr_fmt(app_language, "room_screen.thread_summary.n_replies", &[("n", &n.to_string())]))
     };
     item.label(cx, ids!(thread_summary_count))
         .set_text(cx, &replies_count_text);
@@ -6021,6 +6164,7 @@ fn populate_thread_root_summary(
 pub fn populate_preview_of_timeline_item(
     cx: &mut Cx,
     widget_out: &HtmlOrPlaintextRef,
+    app_language: AppLanguage,
     timeline_item_content: &TimelineItemContent,
     sender_user_id: &UserId,
     sender_username: &str,
@@ -6029,7 +6173,7 @@ pub fn populate_preview_of_timeline_item(
         match m.msgtype() {
             MessageType::Text(TextMessageEventContent { body, formatted, .. })
             | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
-                let _ = populate_text_message_content(cx, widget_out, body, formatted.as_ref(), None, None, None);
+                let _ = populate_text_message_content(cx, widget_out, app_language, body, formatted.as_ref(), None, None, None);
                 return;
             }
             _ => { } // fall through to the general case for all timeline items below.
@@ -6233,6 +6377,7 @@ fn populate_small_state_event(
     list: &mut PortalList,
     item_id: usize,
     timeline_kind: &TimelineKind,
+    app_language: AppLanguage,
     event_tl_item: &EventTimelineItem,
     event_content: &impl SmallStateEventContent,
     item_drawn_status: ItemDrawnStatus,
@@ -6275,7 +6420,7 @@ fn populate_small_state_event(
     });
 
     // Proceed to draw the actual event content.
-    event_content.populate_item_content(
+    let (item, new_drawn_status) = event_content.populate_item_content(
         cx,
         list,
         item_id,
@@ -6284,7 +6429,12 @@ fn populate_small_state_event(
         &username,
         item_drawn_status,
         new_drawn_status,
-    )
+    );
+
+    item.button(cx, ids!(invite_user_button))
+        .set_text(cx, tr_key(app_language, "room_screen.small_state.invite_to_room"));
+
+    (item, new_drawn_status)
 }
 
 
@@ -6434,10 +6584,18 @@ impl ActionDefaultRef for AppServicePanelAction {
 #[derive(Script, ScriptHook, Widget)]
 pub struct AppServicePanel {
     #[deref] view: View,
+    #[rust] app_language: AppLanguage,
+    #[rust] app_language_initialized: bool,
 }
 
 impl Widget for AppServicePanel {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if !self.app_language_initialized || self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         self.view.handle_event(cx, event, scope);
 
         let room_screen_props = scope
@@ -6526,7 +6684,51 @@ impl Widget for AppServicePanel {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if !self.app_language_initialized || self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl AppServicePanel {
+    fn set_app_language(&mut self, cx: &mut Cx, app_language: AppLanguage) {
+        self.app_language = app_language;
+        self.app_language_initialized = true;
+        self.view
+            .label(cx, ids!(sender_row.sender_name))
+            .set_text(cx, tr_key(self.app_language, "room_screen.app_service.sender_name"));
+        self.view
+            .label(cx, ids!(sender_row.sender_tag))
+            .set_text(cx, tr_key(self.app_language, "room_screen.app_service.sender_tag"));
+        self.view
+            .label(cx, ids!(bubble.header.title))
+            .set_text(cx, tr_key(self.app_language, "room_screen.app_service.title"));
+        self.view
+            .label(cx, ids!(bubble.subtitle))
+            .set_text(cx, tr_key(self.app_language, "room_screen.app_service.subtitle"));
+        self.view
+            .label(cx, ids!(bubble.footer.timestamp))
+            .set_text(cx, tr_key(self.app_language, "room_screen.app_service.timestamp_now"));
+        self.view
+            .button(cx, ids!(keyboard.first_row.create_button))
+            .set_text(cx, tr_key(self.app_language, "room_screen.app_service.button.create_bot"));
+        self.view
+            .button(cx, ids!(keyboard.first_row.list_button))
+            .set_text(cx, tr_key(self.app_language, "room_screen.app_service.button.list_bots"));
+        self.view
+            .button(cx, ids!(keyboard.second_row.delete_button))
+            .set_text(cx, tr_key(self.app_language, "room_screen.app_service.button.delete_bot"));
+        self.view
+            .button(cx, ids!(keyboard.second_row.help_button))
+            .set_text(cx, tr_key(self.app_language, "room_screen.app_service.button.bot_help"));
+        self.view
+            .button(cx, ids!(keyboard.third_row.unbind_button))
+            .set_text(cx, tr_key(self.app_language, "room_screen.app_service.button.unbind"));
+        self.view.redraw(cx);
     }
 }
 
