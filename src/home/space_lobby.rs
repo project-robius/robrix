@@ -18,6 +18,9 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::shared::avatar::AvatarState;
 use crate::shared::expand_arrow::ExpandArrow;
 use crate::utils::replace_linebreaks_separators;
+/// The horizontal indent width (in pixels) per tree level.
+const TREE_INDENT_WIDTH: f64 = 44.0;
+
 use crate::{
     app::AppStateAction,
     avatar_cache::{self, AvatarCacheEntry},
@@ -233,8 +236,8 @@ script_mod! {
                         // strict abs() < 0.5 check always hits exactly one pixel regardless
                         // of whether rect_size.y is even or odd.
                         let hy = floor(self.rect_size.y * 0.5) + 0.5;
-                        // Extend horizontal line to the right edge of the expand_icon:
-                        // spacer end + left_padding(8) - expand_margin_left(6) + expand_width(16)/2 = +10
+                        // Extend horizontal line to the center of the expand_icon:
+                        // spacer_end + left_padding(8) - expand_margin_left(6) + expand_width(16)/2 = +10
                         if abs(pos.y - hy) < half_line && pos.x > (f32(i) * indent + half_indent) && pos.x < ((f32(i) + 1.0) * indent + 10.0) {
                             c = #888;
                             break;
@@ -438,7 +441,7 @@ script_mod! {
             loading_spinner := LoadingSpinner {
                 width: 14,
                 height: 14,
-                margin: Inset{left: 8, right: 6}
+                margin: Inset{left: 10, right: 6}
                 draw_bg +: {
                     color: (COLOR_ACTIVE_PRIMARY)
                     border_size: 2.0
@@ -1162,7 +1165,7 @@ impl Widget for SpaceLobbyScreen {
                                 avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
                             }
 
-                            let indent_width = 44.0_f32;
+                            let indent_width = TREE_INDENT_WIDTH as f32;
                             if let Some(mut lines) = item.child_by_path(ids!(tree_lines)).borrow_mut::<TreeLines>() {
                                 lines.draw_bg.level = *level as f32;
                                 lines.draw_bg.is_last = if *is_last { 1.0 } else { 0.0 };
@@ -1170,7 +1173,7 @@ impl Widget for SpaceLobbyScreen {
                                 lines.draw_bg.indent_width = indent_width;
                             }
                             // Set the indent spacer width to match the tree indentation.
-                            let indent_pixel = (*level as f64 + 1.0) * indent_width as f64;
+                            let indent_pixel = (*level as f64 + 1.0) * TREE_INDENT_WIDTH;
                             if let Some(mut spacer) = item.child_by_path(ids!(main_entry.indent_spacer)).borrow_mut::<View>() {
                                 spacer.walk.width = Size::Fixed(indent_pixel);
                             }
@@ -1223,7 +1226,7 @@ impl Widget for SpaceLobbyScreen {
                         TreeEntry::Loading { level, parent_mask } => {
                             // Draw loading indicator for subspace
                             let item = list.item(cx, item_id, id!(subspace_loading));
-                            let indent_width = 44.0_f32;
+                            let indent_width = TREE_INDENT_WIDTH as f32;
                             // Configure tree lines
                             if let Some(mut lines) = item.child_by_path(ids!(tree_lines)).borrow_mut::<TreeLines>() {
                                 lines.draw_bg.level = *level as f32;
@@ -1232,7 +1235,7 @@ impl Widget for SpaceLobbyScreen {
                                 lines.draw_bg.indent_width = indent_width;
                             }
                             // Set the indent spacer width to match the tree indentation.
-                            let indent_pixel = (*level as f64 + 1.0) * indent_width as f64;
+                            let indent_pixel = (*level as f64 + 1.0) * TREE_INDENT_WIDTH;
                             if let Some(mut spacer) = item.child_by_path(ids!(loading_content.indent_spacer)).borrow_mut::<View>() {
                                 spacer.walk.width = Size::Fixed(indent_pixel);
                             }
