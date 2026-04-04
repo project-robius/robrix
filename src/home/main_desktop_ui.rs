@@ -45,8 +45,7 @@ script_mod! {
                 selected: 0
             }
 
-            rooms_sidebar_tab := DockTab{
-                name: "" // show no tab header
+            rooms_sidebar_tab := DockTab {
                 kind: @rooms_sidebar // this template is defined below.
                 template: @PermanentTab
             }

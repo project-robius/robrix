@@ -132,8 +132,8 @@ script_mod! {
 
             can_not_send_message_notice := SolidView {
                 visible: false
-                padding: Inset{left: 50, right: 50, top: 20, bottom: 20}
-                align: Align{y: 0.5}
+                padding: 20
+                align: Align{x: 0.5, y: 0.5}
                 width: Fill, height: Fit
 
                 show_bg: true
@@ -142,6 +142,7 @@ script_mod! {
                 text := Label {
                     width: Fill,
                     flow: Flow.Right{wrap: true},
+                    align: Align{x: 0.5, y: 0.5}
                     draw_text +: {
                         color: (COLOR_TEXT)
                         text_style: theme.font_italic {font_size: 12.2}
