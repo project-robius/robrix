@@ -200,6 +200,8 @@ script_mod! {
                         width: Fill, height: Fit,
                         flow: Flow.Right{wrap: true},
                         padding: Inset{ left: 0.0 }
+                        max_lines: 2
+                        text_overflow: Ellipsis
                         draw_text +: {
                             text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
                                 font_size: 11.0,

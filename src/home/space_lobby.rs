@@ -18,6 +18,9 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::shared::avatar::AvatarState;
 use crate::shared::expand_arrow::ExpandArrow;
 use crate::utils::replace_linebreaks_separators;
+/// The horizontal indent width (in pixels) per tree level.
+const TREE_INDENT_WIDTH: f64 = 44.0;
+
 use crate::{
     app::AppStateAction,
     avatar_cache::{self, AvatarCacheEntry},
@@ -191,7 +194,7 @@ script_mod! {
     }
 
     mod.widgets.TreeLines = #(TreeLines::register_widget(vm)) {
-        width: 0, height: Fill
+        width: Fill, height: Fill { min: 32 }
 
         draw_bg: DrawTreeLine {
             indent_width: 44.0
@@ -202,9 +205,10 @@ script_mod! {
             pixel: fn() {
                 let pos = self.pos * self.rect_size;
                 let indent = self.indent_width;
-                // Yes, this should be 0.5, but 0.6 makes it line up nicely
-                // with the middle of the parent-level avatar, which is better.
-                let half_indent = indent * 0.6;
+                // Offset to center each vertical line under the parent-level avatar.
+                // Derived from: main_entry left padding (8) + expand_icon space (14)
+                // + half avatar width (16) = 38.
+                let half_indent = 38.0;
                 let line_width = 1.0;
                 let half_line = 0.5;
 
@@ -220,7 +224,7 @@ script_mod! {
                         if mask_bit > 0.5 {
                             // Draw full vertical line
                             if abs(pos.x - (f32(i) * indent + half_indent)) < half_line && pos.y < self.rect_size.y {
-                                c = vec4(0.8, 0.8, 0.8, 1.0);
+                                c = #888;
                                 break;
                             }
                         }
@@ -232,14 +236,16 @@ script_mod! {
                         // strict abs() < 0.5 check always hits exactly one pixel regardless
                         // of whether rect_size.y is even or odd.
                         let hy = floor(self.rect_size.y * 0.5) + 0.5;
-                        if abs(pos.y - hy) < half_line && pos.x > (f32(i) * indent + half_indent) {
-                            c = vec4(0.8, 0.8, 0.8, 1.0);
+                        // Extend horizontal line to the center of the expand_icon:
+                        // spacer_end + left_padding(8) - expand_margin_left(6) + expand_width(16)/2 = +10
+                        if abs(pos.y - hy) < half_line && pos.x > (f32(i) * indent + half_indent) && pos.x < ((f32(i) + 1.0) * indent + 10.0) {
+                            c = #888;
                             break;
                         }
                         
                         // Vertical line (L shape)
                         if abs(pos.x - (f32(i) * indent + half_indent)) < half_line && pos.y < (self.rect_size.y * (1.0 - 0.5 * self.is_last)) {
-                            c = vec4(0.8, 0.8, 0.8, 1.0);
+                            c = #888;
                             break;
                         }
                     }
@@ -251,13 +257,10 @@ script_mod! {
 
     // Entry for a child subspace (can be expanded)
     mod.widgets.SubspaceEntry = #(SubspaceEntry::register_widget(vm)) {
-
         width: Fill,
-        height: 44,
-        flow: Right,
-        align: Align{y: 0.5}
-        padding: Inset{left: 8, right: 12}
-        cursor: MouseCursor.Hand
+        height: Fit,
+        flow: Overlay
+        align: Align{x: 1.0, y: 0.5}
 
         show_bg: true
         draw_bg +: {
@@ -269,52 +272,73 @@ script_mod! {
             }
         }
 
-        // The connecting hierarchical lines on the left.
-        tree_lines := mod.widgets.TreeLines {}
+        main_entry := View {
+            width: Fill,
+            height: Fit,
+            flow: Right
+            align: Align{x: 0, y: 0.5}
+            padding: Inset{top: 8, bottom: 8, left: 8, right: 12}
+            cursor: MouseCursor.Hand
 
-        // Expand/collapse arrow (animated triangle)
-        expand_icon := mod.widgets.ExpandArrow {
-            width: 16,
-            height: 16,
-            margin: Inset{ left: -6, right: 4 }
-            draw_bg.border_radius: 1.5 // less rounded
+            // Invisible spacer whose width is set dynamically to match
+            // the tree indent level, replacing tree_lines' layout role.
+            indent_spacer := View { width: 0, height: Fit }
+
+            // Expand/collapse arrow (animated triangle)
+            expand_icon := mod.widgets.ExpandArrow {
+                width: 16,
+                height: 16,
+                margin: Inset{ left: -6, right: 4 }
+                draw_bg.color: #888
+                draw_bg.border_radius: 1.5 // less rounded
+            }
+
+            avatar := Avatar { width: 32, height: 32, margin: Inset{right: 8} }
+
+            content := View {
+                width: Fill
+                height: Fit
+                flow: Down
+                align: Align { y: 0.5 }
+                spacing: 5,
+
+                name_label := Label {
+                    width: Fill, height: Fit,
+                    margin: 0
+                    padding: 0
+                    flow: Flow.Right{wrap: true}
+                    max_lines: 2
+                    text_overflow: Ellipsis
+                    draw_text +: { text_style: REGULAR_TEXT {font_size: 10.5}, color: #1a1a1a }
+                }
+                info_label := Label {
+                    width: Fill, height: Fit,
+                    margin: 0
+                    padding: 0
+                    flow: Flow.Right{wrap: true}
+                    max_lines: 2
+                    text_overflow: Ellipsis
+                    draw_text +: { text_style: REGULAR_TEXT {font_size: 8.5}, color: #737373 }
+                }
+            }
         }
 
-        avatar := Avatar { width: 32, height: 32, margin: Inset{right: 8} }
-
-        content := View {
-            width: Fill
-            height: Fit
-            flow: Down
-            align: Align { y: 0.5 }
-            spacing: 5,
-
-            name_label := Label {
-                width: Fill, height: Fit,
-                flow: Right
-                margin: 0
-                padding: 0
-                flow: Flow.Right{wrap: false}
-                draw_text +: { text_style: REGULAR_TEXT {font_size: 10.5}, color: #1a1a1a }
-            }
-            info_label := Label {
-                width: Fill, height: Fit,
-                flow: Right
-                margin: 0
-                padding: 0
-                flow: Flow.Right{wrap: false}
-                draw_text +: { text_style: REGULAR_TEXT {font_size: 8.5}, color: #737373 }
-            }
-        }
-
-        buttons_view := View {
+        buttons_view := RoundedView {
+            visible: false
             width: Fit,
             height: Fit,
             flow: Right,
             spacing: 8,
+            padding: Inset { left: 8, right: 8, top: 4, bottom: 4 }
             align: Align{x: 1.0, y: 0.5}
-            margin: Inset{left: 8}
-            visible: false
+            margin: Inset{right: 16}
+
+            show_bg: true
+            draw_bg +: {
+                color: #f5f5f5
+                border_radius: 4.0
+                border_size: 0
+            }
 
             join_button := RobrixPositiveIconButton {
                 width: Fit,
@@ -344,6 +368,10 @@ script_mod! {
             }
         }
 
+        // The connecting hierarchical lines on the left, placed last in
+        // the Overlay so the parent's Fit height (from main_entry) is
+        // already resolved when tree_lines is laid out.
+        tree_lines := mod.widgets.TreeLines {}
 
         animator: Animator{
             hover: {
@@ -356,11 +384,12 @@ script_mod! {
 
     // Entry for a child room within a space, which cannot be expanded.
     mod.widgets.RoomEntry = mod.widgets.SubspaceEntry {
-        cursor: MouseCursor.Default
-
-        expand_icon := View {
-            width: 10
-            height: 16
+        main_entry +: {
+            cursor: MouseCursor.Default
+            expand_icon := View {
+                width: 10
+                height: 16
+            }
         }
     }
 
@@ -392,35 +421,46 @@ script_mod! {
         }
     }
 
-    // Small loading indicator shown inline when loading subspace children
+    // Small loading indicator shown inline when loading subspace children.
+    // Uses the same Overlay + spacer pattern as SubspaceEntry so tree lines
+    // span the full row height and the content is indented correctly.
     mod.widgets.SubspaceLoadingEntry = View {
         width: Fill, height: 36,
-        flow: Right,
-        align: Align{ y: 0.5 }
-        padding: Inset{left: 8, right: 12}
+        flow: Overlay,
+        align: Align{ x: 0, y: 0.5 }
 
-        // Tree lines replace the spacer
+        loading_content := View {
+            width: Fill, height: Fit,
+            flow: Right,
+            align: Align{ x: 0, y: 0.5 }
+            padding: Inset{left: 8, right: 12}
+
+            // Spacer for tree indent (width set dynamically in draw_item)
+            indent_spacer := View { width: 0, height: Fit }
+
+            loading_spinner := LoadingSpinner {
+                width: 14,
+                height: 14,
+                margin: Inset{left: 10, right: 6}
+                draw_bg +: {
+                    color: (COLOR_ACTIVE_PRIMARY)
+                    border_size: 2.0
+                }
+            }
+
+            label := Label {
+                width: Fit,
+                height: Fit,
+                draw_text +: {
+                    text_style: REGULAR_TEXT {font_size: 9},
+                    color: #888,
+                }
+                text: "Loading..."
+            }
+        }
+
+        // Tree lines drawn last so parent height is resolved
         tree_lines := mod.widgets.TreeLines {}
-
-        loading_spinner := LoadingSpinner {
-            width: 14,
-            height: 14,
-            margin: Inset{left: 8, right: 10}
-            draw_bg +: {
-                color: (COLOR_ACTIVE_PRIMARY)
-                border_size: 2.0
-            }
-        }
-
-        label := Label {
-            width: Fit,
-            height: Fit,
-            draw_text +: {
-                text_style: REGULAR_TEXT {font_size: 9},
-                color: #888,
-            }
-            text: "Loading..."
-        }
     }
 
     // The main view that shows the lobby (homepage) for a space.
@@ -604,10 +644,20 @@ impl Widget for TreeLines {
     fn handle_event(&mut self, _cx: &mut Cx, _event: &Event, _scope: &mut Scope) { }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
-        let indent_pixel = (self.draw_bg.level + 1.0) * self.draw_bg.indent_width;
         let mut walk = walk;
-        walk.width = Size::Fixed(indent_pixel as f64);
-        
+        // When used in a non-Overlay flow (e.g., SubspaceLoadingEntry's Right flow),
+        // set the width to the indent area. When width is Fill (Overlay case),
+        // the shader handles clipping via indent_width.
+        if !walk.width.is_fill() {
+            let indent_pixel = (self.draw_bg.level + 1.0) * self.draw_bg.indent_width;
+            walk.width = Size::Fixed(indent_pixel as f64);
+        }
+        // Use the parent's resolved height so tree lines span the full row,
+        // even when our height is Fill inside a Fit parent.
+        let parent_h = cx.turtle().height();
+        if parent_h.is_finite() && parent_h > 0.0 {
+            walk.height = Size::Fixed(parent_h);
+        }
         self.draw_bg.draw_walk(cx, walk);
         DrawStep::done()
     }
@@ -702,7 +752,7 @@ impl Widget for SubspaceEntry {
                         if self.is_space {
                             // Toggle expansion and animate the arrow
                             self.is_expanded = !self.is_expanded;
-                            if let Some(mut arrow) = self.view.child_by_path(ids!(expand_icon)).borrow_mut::<ExpandArrow>() {
+                            if let Some(mut arrow) = self.view.child_by_path(ids!(main_entry.expand_icon)).borrow_mut::<ExpandArrow>() {
                                 arrow.set_is_open(cx, self.is_expanded, Animate::Yes);
                             }
                             cx.widget_action(
@@ -1051,7 +1101,7 @@ impl Widget for SpaceLobbyScreen {
                                 // Snap expand arrow to correct state without animation
                                 // when item is reused or state changed externally
                                 if need_snap {
-                                    if let Some(mut arrow) = item.child_by_path(ids!(expand_icon)).borrow_mut::<ExpandArrow>() {
+                                    if let Some(mut arrow) = item.child_by_path(ids!(main_entry.expand_icon)).borrow_mut::<ExpandArrow>() {
                                         arrow.set_is_open(cx, is_expanded, Animate::No);
                                     }
                                 }
@@ -1077,10 +1127,10 @@ impl Widget for SpaceLobbyScreen {
                             item.child_by_path(ids!(buttons_view.view_button)).set_visible(cx, show_view_button);
 
                             // Below, draw things that are common to child rooms and subspaces.
-                            item.child_by_path(ids!(content.name_label)).as_label().set_text(cx, &info.name);
+                            item.child_by_path(ids!(main_entry.content.name_label)).as_label().set_text(cx, &info.name);
 
                             // Display avatar from stored data, or fetch from cache, or show initials
-                            let avatar_ref = item.child_by_path(ids!(avatar)).as_avatar();
+                            let avatar_ref = item.child_by_path(ids!(main_entry.avatar)).as_avatar();
                             let first_char = utils::user_name_first_letter(&info.name);
                             let mut drew_avatar = false;
 
@@ -1115,16 +1165,22 @@ impl Widget for SpaceLobbyScreen {
                                 avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
                             }
 
+                            let indent_width = TREE_INDENT_WIDTH as f32;
                             if let Some(mut lines) = item.child_by_path(ids!(tree_lines)).borrow_mut::<TreeLines>() {
                                 lines.draw_bg.level = *level as f32;
                                 lines.draw_bg.is_last = if *is_last { 1.0 } else { 0.0 };
                                 lines.draw_bg.parent_mask = *parent_mask as f32;
-                                lines.draw_bg.indent_width = 44.0;
+                                lines.draw_bg.indent_width = indent_width;
+                            }
+                            // Set the indent spacer width to match the tree indentation.
+                            let indent_pixel = (*level as f64 + 1.0) * TREE_INDENT_WIDTH;
+                            if let Some(mut spacer) = item.child_by_path(ids!(main_entry.indent_spacer)).borrow_mut::<View>() {
+                                spacer.walk.width = Size::Fixed(indent_pixel);
                             }
 
                             // Build the info label with join status, member count, and topic
                             // Note: Public/Private is intentionally not shown per-item to reduce clutter
-                            let info_label = item.child_by_path(ids!(content.info_label)).as_label();
+                            let info_label = item.child_by_path(ids!(main_entry.content.info_label)).as_label();
                             let mut info_parts = Vec::new();
 
                             // Add join status for rooms we haven't joined
@@ -1158,7 +1214,9 @@ impl Widget for SpaceLobbyScreen {
 
                             // Add topic if available (Label handles truncation via flow: Flow.Right{wrap: false})
                             if let Some(topic) = &info.topic {
-                                info_parts.push(topic.to_string());
+                                if !topic.is_empty() {
+                                    info_parts.push(topic.to_string());
+                                }
                             }
 
                             info_label.set_text(cx, &info_parts.join("  |  "));
@@ -1168,12 +1226,18 @@ impl Widget for SpaceLobbyScreen {
                         TreeEntry::Loading { level, parent_mask } => {
                             // Draw loading indicator for subspace
                             let item = list.item(cx, item_id, id!(subspace_loading));
+                            let indent_width = TREE_INDENT_WIDTH as f32;
                             // Configure tree lines
                             if let Some(mut lines) = item.child_by_path(ids!(tree_lines)).borrow_mut::<TreeLines>() {
                                 lines.draw_bg.level = *level as f32;
                                 lines.draw_bg.is_last = 1.0;
                                 lines.draw_bg.parent_mask = *parent_mask as f32;
-                                lines.draw_bg.indent_width = 44.0;
+                                lines.draw_bg.indent_width = indent_width;
+                            }
+                            // Set the indent spacer width to match the tree indentation.
+                            let indent_pixel = (*level as f64 + 1.0) * TREE_INDENT_WIDTH;
+                            if let Some(mut spacer) = item.child_by_path(ids!(loading_content.indent_spacer)).borrow_mut::<View>() {
+                                spacer.walk.width = Size::Fixed(indent_pixel);
                             }
                             item
                         }
