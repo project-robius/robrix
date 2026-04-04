@@ -40,6 +40,8 @@ script_mod! {
                 width: Fill,
                 flow: Right, // do not wrap
                 margin: Inset{ left: 5.0, top: 2 }
+                max_lines: 1
+                text_overflow: Ellipsis
                 draw_text +: {
                     text_style: USERNAME_TEXT_STYLE { font_size: 10 },
                     color: (USERNAME_TEXT_COLOR)

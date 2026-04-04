@@ -100,6 +100,8 @@ script_mod! {
             flow: Flow.Right{wrap: false}, // do not wrap
             padding: 0,
             align: Align{x: 0.5}
+            max_lines: 1
+            text_overflow: Ellipsis
             draw_text +: {
                 active: instance(0.0)
                 hover: instance(0.0)

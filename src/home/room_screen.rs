@@ -124,6 +124,8 @@ script_mod! {
 
         thread_summary_latest := MessageHtml {
             flow: Right,
+            max_lines: 2
+            text_overflow: Ellipsis
         }
     }
 
@@ -253,6 +255,8 @@ script_mod! {
                         flow: Right, // do not wrap
                         padding: 0,
                         margin: Inset{bottom: 9.0, top: 20.0, right: 10.0,}
+                        max_lines: 1
+                        text_overflow: Ellipsis
                         draw_text +: {
                             text_style: USERNAME_TEXT_STYLE {},
                             color: (USERNAME_TEXT_COLOR)
