@@ -17,8 +17,8 @@ metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 # makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
 # makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "multiline_text_input_relative_max_height_bound", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "multiline_text_input_relative_max_height_bound" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "text_flow_ellipsis", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "text_flow_ellipsis" }
 
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.

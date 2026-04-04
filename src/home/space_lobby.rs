@@ -221,7 +221,7 @@ script_mod! {
                         if mask_bit > 0.5 {
                             // Draw full vertical line
                             if abs(pos.x - (f32(i) * indent + half_indent)) < half_line && pos.y < self.rect_size.y {
-                                c = vec4(0.8, 0.8, 0.8, 1.0);
+                                c = #888;
                                 break;
                             }
                         }
@@ -233,14 +233,16 @@ script_mod! {
                         // strict abs() < 0.5 check always hits exactly one pixel regardless
                         // of whether rect_size.y is even or odd.
                         let hy = floor(self.rect_size.y * 0.5) + 0.5;
-                        if abs(pos.y - hy) < half_line && pos.x > (f32(i) * indent + half_indent) && pos.x < ((f32(i) + 1.0) * indent) {
-                            c = vec4(0.8, 0.8, 0.8, 1.0);
+                        // Extend horizontal line to the right edge of the expand_icon:
+                        // spacer end + left_padding(8) - expand_margin_left(6) + expand_width(16)/2 = +10
+                        if abs(pos.y - hy) < half_line && pos.x > (f32(i) * indent + half_indent) && pos.x < ((f32(i) + 1.0) * indent + 10.0) {
+                            c = #888;
                             break;
                         }
                         
                         // Vertical line (L shape)
                         if abs(pos.x - (f32(i) * indent + half_indent)) < half_line && pos.y < (self.rect_size.y * (1.0 - 0.5 * self.is_last)) {
-                            c = vec4(0.8, 0.8, 0.8, 1.0);
+                            c = #888;
                             break;
                         }
                     }
@@ -284,6 +286,7 @@ script_mod! {
                 width: 16,
                 height: 16,
                 margin: Inset{ left: -6, right: 4 }
+                draw_bg.color: #888
                 draw_bg.border_radius: 1.5 // less rounded
             }
 
@@ -415,35 +418,46 @@ script_mod! {
         }
     }
 
-    // Small loading indicator shown inline when loading subspace children
+    // Small loading indicator shown inline when loading subspace children.
+    // Uses the same Overlay + spacer pattern as SubspaceEntry so tree lines
+    // span the full row height and the content is indented correctly.
     mod.widgets.SubspaceLoadingEntry = View {
         width: Fill, height: 36,
-        flow: Right,
-        align: Align{ y: 0.5 }
-        padding: Inset{left: 8, right: 12}
+        flow: Overlay,
+        align: Align{ x: 0, y: 0.5 }
 
-        // Tree lines replace the spacer
+        loading_content := View {
+            width: Fill, height: Fit,
+            flow: Right,
+            align: Align{ x: 0, y: 0.5 }
+            padding: Inset{left: 8, right: 12}
+
+            // Spacer for tree indent (width set dynamically in draw_item)
+            indent_spacer := View { width: 0, height: Fit }
+
+            loading_spinner := LoadingSpinner {
+                width: 14,
+                height: 14,
+                margin: Inset{left: 8, right: 6}
+                draw_bg +: {
+                    color: (COLOR_ACTIVE_PRIMARY)
+                    border_size: 2.0
+                }
+            }
+
+            label := Label {
+                width: Fit,
+                height: Fit,
+                draw_text +: {
+                    text_style: REGULAR_TEXT {font_size: 9},
+                    color: #888,
+                }
+                text: "Loading..."
+            }
+        }
+
+        // Tree lines drawn last so parent height is resolved
         tree_lines := mod.widgets.TreeLines {}
-
-        loading_spinner := LoadingSpinner {
-            width: 14,
-            height: 14,
-            margin: Inset{left: 8, right: 10}
-            draw_bg +: {
-                color: (COLOR_ACTIVE_PRIMARY)
-                border_size: 2.0
-            }
-        }
-
-        label := Label {
-            width: Fit,
-            height: Fit,
-            draw_text +: {
-                text_style: REGULAR_TEXT {font_size: 9},
-                color: #888,
-            }
-            text: "Loading..."
-        }
     }
 
     // The main view that shows the lobby (homepage) for a space.
@@ -1197,7 +1211,9 @@ impl Widget for SpaceLobbyScreen {
 
                             // Add topic if available (Label handles truncation via flow: Flow.Right{wrap: false})
                             if let Some(topic) = &info.topic {
-                                info_parts.push(topic.to_string());
+                                if !topic.is_empty() {
+                                    info_parts.push(topic.to_string());
+                                }
                             }
 
                             info_label.set_text(cx, &info_parts.join("  |  "));
@@ -1207,12 +1223,18 @@ impl Widget for SpaceLobbyScreen {
                         TreeEntry::Loading { level, parent_mask } => {
                             // Draw loading indicator for subspace
                             let item = list.item(cx, item_id, id!(subspace_loading));
+                            let indent_width = 44.0_f32;
                             // Configure tree lines
                             if let Some(mut lines) = item.child_by_path(ids!(tree_lines)).borrow_mut::<TreeLines>() {
                                 lines.draw_bg.level = *level as f32;
                                 lines.draw_bg.is_last = 1.0;
                                 lines.draw_bg.parent_mask = *parent_mask as f32;
-                                lines.draw_bg.indent_width = 44.0;
+                                lines.draw_bg.indent_width = indent_width;
+                            }
+                            // Set the indent spacer width to match the tree indentation.
+                            let indent_pixel = (*level as f64 + 1.0) * indent_width as f64;
+                            if let Some(mut spacer) = item.child_by_path(ids!(loading_content.indent_spacer)).borrow_mut::<View>() {
+                                spacer.walk.width = Size::Fixed(indent_pixel);
                             }
                             item
                         }
