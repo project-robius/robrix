@@ -11,9 +11,7 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-
     mod.widgets.IMG_APP_LOGO = crate_resource("self://resources/robrix_logo_alpha.png")
-
     mod.widgets.ICON_EYE_OPEN   = crate_resource("self://resources/icons/eye_open.svg")
     mod.widgets.ICON_EYE_CLOSED = crate_resource("self://resources/icons/eye_closed.svg")
 
@@ -53,17 +51,14 @@ script_mod! {
         show_bg: true,
         draw_bg +: {
             color: COLOR_SECONDARY
-            // color: COLOR_PRIMARY // TODO: once Makepad supports `Fill {max: 375}`, change this back to COLOR_PRIMARY
         }
 
         ScrollYView {
             width: Fill, height: Fill,
             flow: Down, // Required for vertical scrolling to work.
-            // Note: *do NOT* vertically center this (no `y: 0.5`), it will break scrolling.
-            align: Align{x: 0.5}
+            align: Align{x: 0.5, y: 0.5}
             show_bg: true,
             draw_bg.color: (COLOR_SECONDARY)
-            // draw_bg.color: (COLOR_PRIMARY) // TODO: once Makepad supports `Fill {max: 375}`, change this back to COLOR_PRIMARY
 
             // allow the view to be scrollable but hide the actual scroll bar
             scroll_bars: {
@@ -76,8 +71,8 @@ script_mod! {
             }
 
             RoundedView {
-                margin: Inset{top: 40, bottom: 40}
-                width: Fill // TODO: once Makepad supports it, use `Fill {max: 375}`
+                margin: Inset{top: 50, bottom: 50}
+                width: Fill
                 height: Fit
                 align: Align{x: 0.5, y: 0.5}
                 flow: Overlay,
@@ -89,12 +84,10 @@ script_mod! {
                 }
 
                 View {
-                    width: Fill // TODO: once Makepad supports it, use `Fill {max: 375}`
+                    width: Fill
                     height: Fit
                     flow: Down
                     align: Align{x: 0.5, y: 0.5}
-                    padding: Inset{top: 30, bottom: 30}
-                    margin: Inset{top: 40, bottom: 40}
                     spacing: 15.0
 
                     logo_image := Image {
@@ -309,8 +302,6 @@ script_mod! {
                 // The modal that pops up to display login status messages,
                 // such as when the user is logging in or when there is an error.
                 login_status_modal := Modal {
-                    // width: Fit, height: Fit,
-                    // align: Align{x: 0.5, y: 0.5},
                     can_dismiss: false,
                     content +: {
                         login_status_modal_inner := mod.widgets.LoginStatusModal {}
