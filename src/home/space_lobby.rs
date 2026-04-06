@@ -13,7 +13,7 @@ use makepad_widgets::*;
 use makepad_widgets::animator::Animate;
 use matrix_sdk::{RoomDisplayName, RoomState, ruma::OwnedRoomId};
 use matrix_sdk_ui::spaces::SpaceRoom;
-use ruma::room::JoinRuleSummary;
+use ruma::{OwnedRoomAliasId, room::JoinRuleSummary};
 use tokio::sync::mpsc::UnboundedSender;
 use crate::shared::avatar::AvatarState;
 use crate::shared::expand_arrow::ExpandArrow;
@@ -27,7 +27,10 @@ use crate::{
     },
     join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction},
     room::BasicRoomDetails,
-    shared::avatar::{AvatarWidgetExt, AvatarWidgetRefExt},
+    shared::{
+        avatar::{AvatarWidgetExt, AvatarWidgetRefExt},
+        room_filter_input_bar::RoomFilterInputBarWidgetExt,
+    },
     space_service_sync::{SpaceRequest, SpaceRoomExt, SpaceRoomListAction},
     utils::{self, RoomNameId},
 };
@@ -445,16 +448,31 @@ script_mod! {
             show_bg: true,
             draw_bg.color: (COLOR_BG_PREVIEW)
 
-            space_info_label := Label {
+            space_info_row := View {
                 width: Fill,
                 height: Fit,
-                flow: Right, // do not wrap
-                margin: Inset{left: 2}
-                draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: 10},
-                    color: #737373,
+                flow: Right,
+                spacing: 10,
+                align: Align { y: 0.5 }
+
+                space_info_label := Label {
+                    width: Fit,
+                    height: Fit,
+                    flow: Right, // do not wrap
+                    margin: Inset{left: 2}
+                    draw_text +: {
+                        text_style: REGULAR_TEXT {font_size: 10},
+                        color: #737373,
+                    }
+                    text: "Welcome to the space:"
                 }
-                text: "Welcome to the space:"
+
+                // Filter input bar for searching rooms/spaces in this space
+                filter_bar := mod.widgets.RoomFilterInputBar {
+                    input +: {
+                        empty_text: "Filter this space..."
+                    }
+                }
             }
             
             parent_space_row := View {
@@ -768,6 +786,7 @@ impl Widget for SubspaceEntry {
 struct SpaceRoomInfo {
     id: OwnedRoomId,
     name: String,
+    canonical_alias: Option<OwnedRoomAliasId>,
     topic: Option<String>,
     avatar: AvatarState,
     num_joined_members: u64,
@@ -787,6 +806,7 @@ impl From<&SpaceRoom> for SpaceRoomInfo {
         SpaceRoomInfo {
             id: space_room.room_id.clone(),
             name: space_room.display_name.clone(),
+            canonical_alias: space_room.canonical_alias.clone(),
             topic: space_room.topic.as_ref().map(|t| {
                 replace_linebreaks_separators(t.trim(), false).into_owned()
             }),
@@ -802,6 +822,7 @@ impl From<SpaceRoom> for SpaceRoomInfo {
     fn from(space_room: SpaceRoom) -> Self {
         SpaceRoomInfo {
             children_count: space_room.is_space().then_some(space_room.children_count),
+            canonical_alias: space_room.canonical_alias,
             id: space_room.room_id,
             name: space_room.display_name,
             topic: space_room.topic.map(|t| {
@@ -866,6 +887,9 @@ pub struct SpaceLobbyScreen {
 
     /// Whether we are currently loading the initial data.
     #[rust] is_loading: bool,
+
+    /// The current filter keywords entered by the user, if any.
+    #[rust] filter_keywords: String,
 }
 
 impl Widget for SpaceLobbyScreen {
@@ -891,7 +915,7 @@ impl Widget for SpaceLobbyScreen {
                         if self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == &sr.room_id) {
                             self.space_avatar_state = AvatarState::Known(sr.avatar_url.clone());
                             self.space_avatar_state.update_from_cache(cx); // prefetch the avatar image
-                            self.view.label(cx, ids!(header.space_info_label)).set_text(cx, &format!(
+                            self.view.label(cx, ids!(header.space_info_row.space_info_label)).set_text(cx, &format!(
                                 "{}  ·  {} {}",
                                 match sr.join_rule {
                                     Some(JoinRuleSummary::Public) => "🌐  Public space",
@@ -975,6 +999,16 @@ impl Widget for SpaceLobbyScreen {
                     cx.action(InviteModalAction::Open(space_name_id.clone()));
                 }
             }
+
+            // Handle changes to this screen's own filter input bar.
+            if let Some(keywords) = self.view.room_filter_input_bar(cx, ids!(filter_bar)).changed(actions) {
+                self.filter_keywords = keywords;
+                self.rebuild_tree_entries();
+                // Reset scroll to the top when filter changes.
+                let portal_list = self.view.portal_list(cx, ids!(tree_list));
+                portal_list.set_first_id_and_scroll(0, 0.0);
+                self.redraw(cx);
+            }
         }
     }
 
@@ -1020,7 +1054,12 @@ impl Widget for SpaceLobbyScreen {
                 // No entries found
                 else if entry_count == 0 && item_id == 0 {
                     let item = list.item(cx, item_id, id!(status_label));
-                    item.child_by_path(ids!(label)).as_label().set_text(cx, "No rooms or spaces found.");
+                    let msg = if self.filter_keywords.is_empty() {
+                        "No rooms or spaces found."
+                    } else {
+                        "No matching rooms or spaces."
+                    };
+                    item.child_by_path(ids!(label)).as_label().set_text(cx, msg);
                     item.child_by_path(ids!(loading_spinner)).set_visible(cx, false);
                     item
                 }
@@ -1245,7 +1284,8 @@ impl SpaceLobbyScreen {
         self.redraw(cx);
     }
 
-    /// Rebuild the flattened tree entries based on the current expansion state.
+    /// Rebuild the flattened tree entries based on the current expansion state,
+    /// and then apply the current filter keywords (if any).
     fn rebuild_tree_entries(&mut self) {
         let Some(space_name_id) = &self.space_name_id else { return };
         let root_space_id = space_name_id.room_id().clone();
@@ -1260,6 +1300,33 @@ impl SpaceLobbyScreen {
             0,
             0,
         );
+
+        // Apply filter keywords if any are set.
+        if !self.filter_keywords.is_empty() {
+            let kw = self.filter_keywords.to_lowercase();
+            new_tree_entries.retain(|entry| match entry {
+                TreeEntry::Item { info, .. } => {
+                    info.name.to_lowercase().contains(&kw)
+                        || info.id.as_str().to_lowercase().contains(&kw)
+                        || info.canonical_alias.as_ref()
+                            .is_some_and(|a| a.as_str().to_lowercase().contains(&kw))
+                        || info.topic.as_ref()
+                            .is_some_and(|t| t.to_lowercase().contains(&kw))
+                }
+                // Keep loading entries only when not filtering.
+                TreeEntry::Loading { .. } => false,
+            });
+            // Flatten the hierarchy: show all matched entries at level 0
+            // since the tree structure is not meaningful for filtered results.
+            for entry in &mut new_tree_entries {
+                if let TreeEntry::Item { level, is_last, parent_mask, .. } = entry {
+                    *level = 0;
+                    *is_last = true;
+                    *parent_mask = 0;
+                }
+            }
+        }
+
         self.tree_entries = new_tree_entries;
     }
 
@@ -1380,8 +1447,13 @@ impl SpaceLobbyScreen {
 
         // Clear the main content until we receive the async space info responses.
         self.tree_entries.clear();
-        self.view.label(cx, ids!(header.space_info_label)).set_text(cx, "");
+        self.view.label(cx, ids!(header.space_info_row.space_info_label)).set_text(cx, "");
         self.is_loading = true;
+
+        // Clear the filter bar when switching to a new space.
+        self.filter_keywords.clear();
+        self.view.text_input(cx, ids!(filter_bar.input)).set_text(cx, "");
+        self.view.button(cx, ids!(filter_bar.clear_button)).set_visible(cx, false);
 
         // Restore UI state if we've viewed this space before, otherwise start fresh
         self.expanded_spaces = SPACE_LOBBY_STATES.with_borrow(|states| {
