@@ -10,6 +10,7 @@ use crate::{
         space_lobby::SpaceLobbyScreenWidgetExt,
     },
     settings::settings_screen::SettingsScreenWidgetRefExt,
+    shared::room_filter_input_bar::{MainFilterAction, RoomFilterInputBarWidgetExt},
 };
 
 script_mod! {
@@ -430,6 +431,14 @@ pub struct HomeScreen {
 impl Widget for HomeScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
+            // On desktop, the RoomFilterInputBar is inside this HomeScreen.
+            // Check if it changed and re-emit as a MainFilterAction so that
+            // RoomsList and SpacesBar can respond without cross-talk from
+            // other RoomFilterInputBar instances (e.g., SpaceLobbyScreen's).
+            if let Some(keywords) = self.view.room_filter_input_bar(cx, ids!(room_filter_input_bar)).changed(actions) {
+                cx.action(MainFilterAction::Changed(keywords));
+            }
+
             let app_state = scope.data.get_mut::<AppState>().unwrap();
             for action in actions {
                 match action.downcast_ref() {
