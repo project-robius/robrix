@@ -1289,45 +1289,206 @@ impl SpaceLobbyScreen {
     fn rebuild_tree_entries(&mut self) {
         let Some(space_name_id) = &self.space_name_id else { return };
         let root_space_id = space_name_id.room_id().clone();
-        // Build tree starting from root
         let mut new_tree_entries = Vec::new();
-        Self::build_tree_for_space(
-            &self.children_cache,
-            &self.expanded_spaces,
-            &self.loading_subspaces,
-            &mut new_tree_entries,
-            &root_space_id,
-            0,
-            0,
-        );
 
-        // Apply filter keywords if any are set.
-        if !self.filter_keywords.is_empty() {
+        if self.filter_keywords.is_empty() {
+            // No filter: build tree respecting expansion state.
+            Self::build_tree_for_space(
+                &self.children_cache,
+                &self.expanded_spaces,
+                &self.loading_subspaces,
+                &mut new_tree_entries,
+                &root_space_id,
+                0,
+                0,
+            );
+        } else {
+            // Filter active: build tree showing all matching entries
+            // plus their ancestor spaces to preserve hierarchy context.
             let kw = self.filter_keywords.to_lowercase();
-            new_tree_entries.retain(|entry| match entry {
-                TreeEntry::Item { info, .. } => {
-                    info.name.to_lowercase().contains(&kw)
-                        || info.id.as_str().to_lowercase().contains(&kw)
-                        || info.canonical_alias.as_ref()
-                            .is_some_and(|a| a.as_str().to_lowercase().contains(&kw))
-                        || info.topic.as_ref()
-                            .is_some_and(|t| t.to_lowercase().contains(&kw))
-                }
-                // Keep loading entries only when not filtering.
-                TreeEntry::Loading { .. } => false,
-            });
-            // Flatten the hierarchy: show all matched entries at level 0
-            // since the tree structure is not meaningful for filtered results.
-            for entry in &mut new_tree_entries {
-                if let TreeEntry::Item { level, is_last, parent_mask, .. } = entry {
-                    *level = 0;
-                    *is_last = true;
-                    *parent_mask = 0;
-                }
-            }
+            Self::build_filtered_tree(
+                &self.children_cache,
+                &mut new_tree_entries,
+                &root_space_id,
+                &kw,
+                0,
+                0,
+            );
         }
 
         self.tree_entries = new_tree_entries;
+    }
+
+    /// Returns whether the given [`SpaceRoomInfo`] matches the filter keywords.
+    fn matches_filter(info: &SpaceRoomInfo, keywords: &str) -> bool {
+        info.name.to_lowercase().contains(keywords)
+            || info.id.as_str().to_lowercase().contains(keywords)
+            || info.canonical_alias.as_ref()
+                .is_some_and(|a| a.as_str().to_lowercase().contains(keywords))
+            || info.topic.as_ref()
+                .is_some_and(|t| t.to_lowercase().contains(keywords))
+    }
+
+    /// Recursively build a filtered tree that includes only entries matching
+    /// the keywords, plus any ancestor spaces needed to preserve the hierarchy.
+    ///
+    /// Returns `true` if any matching entry was added within this subtree.
+    fn build_filtered_tree(
+        children_cache: &HashMap<OwnedRoomId, Vector<SpaceRoom>>,
+        tree_entries: &mut Vec<TreeEntry>,
+        space_id: &OwnedRoomId,
+        keywords: &str,
+        level: usize,
+        parent_mask: u32,
+    ) -> bool {
+        let Some(children) = children_cache.get(space_id) else { return false };
+
+        // Sort identically to the unfiltered tree: spaces first, then rooms, both alphabetically.
+        let mut sorted_children: Vec<_> = children.iter().collect();
+        sorted_children.sort_by(|a, b| {
+            match (a.is_space(), b.is_space()) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()),
+            }
+        });
+
+        // First pass: determine which children have matches (self or descendants)
+        // so we can correctly compute `is_last` for tree line drawing.
+        let matched_indices: Vec<usize> = sorted_children.iter().enumerate().filter_map(|(i, child)| {
+            let info = SpaceRoomInfo::from(*child);
+            let self_matches = Self::matches_filter(&info, keywords);
+            let has_matching_descendants = child.is_space()
+                && children_cache.contains_key(&child.room_id)
+                && Self::subtree_has_match(children_cache, &child.room_id, keywords);
+            if self_matches || has_matching_descendants {
+                Some(i)
+            } else {
+                None
+            }
+        }).collect();
+
+        if matched_indices.is_empty() {
+            return false;
+        }
+
+        // Second pass: emit entries for matched children, preserving hierarchy.
+        for (pos, &child_idx) in matched_indices.iter().enumerate() {
+            let child = sorted_children[child_idx];
+            let is_last = pos == matched_indices.len() - 1;
+            let info = SpaceRoomInfo::from(child);
+            let self_matches = Self::matches_filter(&info, keywords);
+
+            let child_mask = if is_last {
+                parent_mask
+            } else {
+                parent_mask | (1 << level)
+            };
+
+            if child.is_space() && children_cache.contains_key(&child.room_id) {
+                // For spaces: always include if self matches or descendants match.
+                tree_entries.push(TreeEntry::Item {
+                    info,
+                    level,
+                    is_last,
+                    parent_mask,
+                });
+                // Recurse into child space: if the space itself matches,
+                // show ALL of its children (unfiltered); otherwise show only
+                // the matching descendants.
+                if self_matches {
+                    // Show all children of a matching space (no further filtering).
+                    Self::build_tree_for_space_ignoring_expansion(
+                        children_cache,
+                        tree_entries,
+                        &child.room_id,
+                        level + 1,
+                        child_mask,
+                    );
+                } else {
+                    // Space doesn't match, but some descendant does — recurse with filter.
+                    Self::build_filtered_tree(
+                        children_cache,
+                        tree_entries,
+                        &child.room_id,
+                        keywords,
+                        level + 1,
+                        child_mask,
+                    );
+                }
+            } else if self_matches {
+                // Non-space room or space without cached children: include only if it matches.
+                tree_entries.push(TreeEntry::Item {
+                    info,
+                    level,
+                    is_last,
+                    parent_mask,
+                });
+            }
+        }
+
+        true
+    }
+
+    /// Returns `true` if any entry in the subtree rooted at `space_id` matches the keywords.
+    fn subtree_has_match(
+        children_cache: &HashMap<OwnedRoomId, Vector<SpaceRoom>>,
+        space_id: &OwnedRoomId,
+        keywords: &str,
+    ) -> bool {
+        let Some(children) = children_cache.get(space_id) else { return false };
+        children.iter().any(|child| {
+            let info = SpaceRoomInfo::from(child);
+            Self::matches_filter(&info, keywords)
+                || (child.is_space() && Self::subtree_has_match(children_cache, &child.room_id, keywords))
+        })
+    }
+
+    /// Like [`build_tree_for_space`] but ignores expansion state — shows all children.
+    /// Used to display the full contents of a space that itself matched the filter.
+    fn build_tree_for_space_ignoring_expansion(
+        children_cache: &HashMap<OwnedRoomId, Vector<SpaceRoom>>,
+        tree_entries: &mut Vec<TreeEntry>,
+        space_id: &OwnedRoomId,
+        level: usize,
+        parent_mask: u32,
+    ) {
+        let Some(children) = children_cache.get(space_id) else { return };
+
+        let mut sorted_children: Vec<_> = children.iter().collect();
+        sorted_children.sort_by(|a, b| {
+            match (a.is_space(), b.is_space()) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()),
+            }
+        });
+
+        let count = sorted_children.len();
+        for (i, child) in sorted_children.into_iter().enumerate() {
+            let is_last = i == count - 1;
+            tree_entries.push(TreeEntry::Item {
+                info: SpaceRoomInfo::from(child),
+                level,
+                is_last,
+                parent_mask,
+            });
+
+            if child.is_space() && children_cache.contains_key(&child.room_id) {
+                let child_mask = if is_last {
+                    parent_mask
+                } else {
+                    parent_mask | (1 << level)
+                };
+                Self::build_tree_for_space_ignoring_expansion(
+                    children_cache,
+                    tree_entries,
+                    &child.room_id,
+                    level + 1,
+                    child_mask,
+                );
+            }
+        }
     }
 
     /// Recursively build the tree of spaces and their expanded children such that they
