@@ -58,17 +58,20 @@ script_mod! {
 
         ScrollYView {
             width: Fill, height: Fill,
-            // Note: *do NOT* vertically center this, it will break scrolling.
+            flow: Down, // Required for vertical scrolling to work.
+            // Note: *do NOT* vertically center this (no `y: 0.5`), it will break scrolling.
             align: Align{x: 0.5}
             show_bg: true,
             draw_bg.color: (COLOR_SECONDARY)
             // draw_bg.color: (COLOR_PRIMARY) // TODO: once Makepad supports `Fill {max: 375}`, change this back to COLOR_PRIMARY
-   
+
             // allow the view to be scrollable but hide the actual scroll bar
             scroll_bars: {
+                show_scroll_x: false, show_scroll_y: true,
                 scroll_bar_y: {
                     bar_size: 0.0
                     min_handle_size: 0.0
+                    drag_scrolling: true
                 }
             }
 
