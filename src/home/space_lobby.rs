@@ -465,7 +465,7 @@ script_mod! {
             loading_spinner := LoadingSpinner {
                 width: 14,
                 height: 14,
-                margin: Inset{left: 10, right: 6}
+                margin: Inset{left: 10, right: 4}
                 draw_bg +: {
                     color: (COLOR_ACTIVE_PRIMARY)
                     border_size: 2.0
