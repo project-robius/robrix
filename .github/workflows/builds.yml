@@ -181,6 +181,10 @@ jobs:
         run: |
           cargo makepad apple ios install-toolchain
 
+      - name: Install bindgen-cli for aws-lc-sys cross-compilation
+        run: |
+          cargo install --force --locked bindgen-cli
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:

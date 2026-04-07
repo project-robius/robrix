@@ -3,9 +3,3 @@
 [target.'cfg(all())']
 rustflags = ["--cfg", "ruma_identifiers_storage=\"Arc\""]
 
-[env]
-## Use the fast `cc` crate builder for aws-lc-sys instead of cmake on desktop.
-## For mobile cross-compilation (Android, iOS), override this with:
-##   AWS_LC_SYS_CMAKE_BUILDER=1 cargo makepad android build ...
-AWS_LC_SYS_CMAKE_BUILDER = "0"
-
