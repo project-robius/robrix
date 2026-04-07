@@ -345,6 +345,8 @@ jobs:
       - name: Package (android)
         uses: project-robius/makepad-packaging-action@v1
         env:
+          AWS_LC_SYS_CMAKE_BUILDER: 1
+          MAKEPAD_ANDROID_FULL_NDK: true
           MAKEPAD_MOBILE_CARGO_EXTRA_ARGS: >-
             --config profile.dev.opt-level=0
             --config profile.dev.debug=false
@@ -370,6 +372,7 @@ jobs:
       - name: Package (iOS)
         uses: project-robius/makepad-packaging-action@v1
         env:
+          AWS_LC_SYS_CMAKE_BUILDER: 1
           MAKEPAD_MOBILE_CARGO_EXTRA_ARGS: >-
             --config profile.dev.opt-level=0
             --config profile.dev.debug=false

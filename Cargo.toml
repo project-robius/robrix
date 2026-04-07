@@ -17,8 +17,8 @@ metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 # makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
 # makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "scrolling_while_centered", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "scrolling_while_centered" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "cargo_makepad_ndk_fix", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "cargo_makepad_ndk_fix" }
 
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
@@ -45,8 +45,8 @@ htmlize = "1.0.5"
 indexmap = "2.6.0"
 imghdr = "0.7.0"
 linkify = "0.10.0"
-matrix-sdk-base = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main" }
-matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [
+matrix-sdk-base = { git = "https://github.com/project-robius/matrix-rust-sdk", branch = "space_room_suggested" }
+matrix-sdk = { git = "https://github.com/project-robius/matrix-rust-sdk", branch = "space_room_suggested", default-features = false, features = [
     "e2e-encryption",
     "automatic-room-key-forwarding",
     "markdown",
@@ -55,7 +55,7 @@ matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "
     "bundled-sqlite",
     "sso-login",
 ] }
-matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [
+matrix-sdk-ui = { git = "https://github.com/project-robius/matrix-rust-sdk", branch = "space_room_suggested", default-features = false, features = [
     "rustls-tls",
 ] }
 ## Use the same ruma version as what's specified in matrix-sdk's Cargo.toml.
@@ -63,7 +63,7 @@ matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch 
 ## * "compat-optional" feature to allow missing body field in m.room.tombstone event.
 ## * "compat-unset-avatar" feature to allow deleting the user's avatar to work properly.
 ## * Note: we need a feature like "compat-unset-display-name" to unset display names, but that doesn't exist yet.
-ruma = { version = "0.14.1", features = [
+ruma = { git = "https://github.com/ruma/ruma", rev = "a0acf4187a7c7557d145db54bcb23b01f6295ce7", features = [
     "compat-optional",
     "compat-unset-avatar",
 ] }
@@ -88,13 +88,14 @@ tsp_sdk = { git = "https://github.com/openwallet-foundation-labs/tsp.git", rev =
     "resolve",
 ] }
 quinn = { version = "0.11", default-features = false, optional = true }
-## We only include this such that we can specify the prebuilt-nasm features,
+## We only include this such that we can specify the prebuilt-nasm feature,
 ## which is required to build this on Windows x86_64 without having to install NASM separately.
 aws-lc-rs = { version = "1.13", optional = true, features = ["prebuilt-nasm"] }
 percent-encoding = { version = "2.3", optional = true }
-## The following reqwest features were taken from the tsp_sdk's `Cargo.toml` file.
-## I'm not sure if all of them are actually needed.
-reqwest = { version = "0.12", default-features = false, features = [
+## The following reqwest 0.12 features were taken from the tsp_sdk's `Cargo.toml` file.
+## This is only needed for the optional TSP feature; the matrix-sdk uses reqwest 0.13 internally,
+## which is re-exported as `matrix_sdk::reqwest` and used by regular (non-TSP) Robrix code.
+reqwest = { version = "0.12", default-features = false, optional = true, features = [
     "rustls-tls-native-roots",
     "json",
     "stream",
@@ -107,7 +108,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 [features]
 default = []
 ## Enables experimental support for using TSP wallets.
-tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding"]
+tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding", "dep:reqwest"]
 
 ## Hides the command prompt console on Windows.
 hide_windows_console = []
@@ -153,6 +154,9 @@ askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
 ## and then we won't need to patch ruma-events anymore.
 ## But that is a significant amount of work, so for now we just patch ruma-events.
 ##
+## Note: matrix-sdk currently uses a git dependency for ruma,
+## so we patch the git source, not crates-io.
+[patch."https://github.com/ruma/ruma"]
 ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
 
 

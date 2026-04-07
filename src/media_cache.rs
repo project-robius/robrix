@@ -2,7 +2,7 @@ use std::{ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, OwnedMxcUri}, Error, HttpError};
-use reqwest::StatusCode;
+use matrix_sdk::reqwest::StatusCode;
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
 
 /// The value type in the media cache, one per Matrix URI.

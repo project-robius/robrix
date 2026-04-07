@@ -18,6 +18,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
+use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedRoomId};
 use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
@@ -297,6 +298,7 @@ impl RoomInputBar {
                         Reply {
                             event_id: event_id.to_owned(),
                             enforce_thread,
+                            add_mentions: AddMentions::Yes,
                         }
                     })
                 ).or_else(||
@@ -304,6 +306,7 @@ impl RoomInputBar {
                         Reply {
                             event_id: thread_root_event_id.clone(),
                             enforce_thread: EnforceThread::Threaded(ReplyWithinThread::No),
+                            add_mentions: AddMentions::No,
                         }
                     )
                 );
@@ -338,6 +341,7 @@ impl RoomInputBar {
                         Reply {
                             event_id: event_id.to_owned(),
                             enforce_thread,
+                            add_mentions: AddMentions::Yes,
                         }
                     })
                 ).or_else(||
@@ -345,6 +349,7 @@ impl RoomInputBar {
                         Reply {
                             event_id: thread_root_event_id.clone(),
                             enforce_thread: EnforceThread::Threaded(ReplyWithinThread::No),
+                            add_mentions: AddMentions::No,
                         }
                     )
                 );
