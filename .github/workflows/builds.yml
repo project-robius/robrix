@@ -296,9 +296,15 @@ jobs:
         run: |
           cargo makepad android install-toolchain
 
+      - name: Install Ninja
+        run: |
+          choco install ninja -y
+        shell: powershell
+
       - name: Build Android APK
         env:
           RUSTFLAGS: "-D warnings"
+          CMAKE_GENERATOR: Ninja
         run: |
           ## Note: we can't use the profile here because cargo-makepad doesn't support custom profiles.
           # cargo makepad android build -p robrix --profile fast

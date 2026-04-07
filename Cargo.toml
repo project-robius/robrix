@@ -92,9 +92,10 @@ quinn = { version = "0.11", default-features = false, optional = true }
 ## which is required to build this on Windows x86_64 without having to install NASM separately.
 aws-lc-rs = { version = "1.13", optional = true, features = ["prebuilt-nasm"] }
 percent-encoding = { version = "2.3", optional = true }
-## The following reqwest features were taken from the tsp_sdk's `Cargo.toml` file.
-## I'm not sure if all of them are actually needed.
-reqwest = { version = "0.12", default-features = false, features = [
+## The following reqwest 0.12 features were taken from the tsp_sdk's `Cargo.toml` file.
+## This is only needed for the optional TSP feature; the matrix-sdk uses reqwest 0.13 internally,
+## which is re-exported as `matrix_sdk::reqwest` and used by non-TSP Robrix code.
+reqwest = { version = "0.12", default-features = false, optional = true, features = [
     "rustls-tls-native-roots",
     "json",
     "stream",
@@ -107,7 +108,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 [features]
 default = []
 ## Enables experimental support for using TSP wallets.
-tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding"]
+tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding", "dep:reqwest"]
 
 ## Hides the command prompt console on Windows.
 hide_windows_console = []
