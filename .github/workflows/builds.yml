@@ -181,6 +181,10 @@ jobs:
         run: |
           cargo makepad apple ios install-toolchain
 
+      - name: Install build dependencies for aws-lc-sys
+        run: |
+          brew install cmake
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
@@ -203,7 +207,6 @@ jobs:
           --config profile.dev.lto=\"off\" \
           --config profile.dev.strip=true \
           --config profile.dev.debug-assertions=false
-        continue-on-error: true # iOS builds may fail due to signing requirements in CI
 
   build_android_on_macos:
     name: Build Android (macOS Host)
