@@ -17,8 +17,8 @@ metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 # makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
 # makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "scrolling_while_centered", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "scrolling_while_centered" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "cargo_makepad_ndk_fix", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "cargo_makepad_ndk_fix" }
 
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
@@ -88,10 +88,9 @@ tsp_sdk = { git = "https://github.com/openwallet-foundation-labs/tsp.git", rev =
     "resolve",
 ] }
 quinn = { version = "0.11", default-features = false, optional = true }
-## We include aws-lc-rs with `bindgen` so that cross-compilation targets (iOS, Android)
-## can generate bindings at build time, since pregenerated bindings aren't available for all targets.
-## The `prebuilt-nasm` feature avoids requiring NASM to be installed on Windows x86_64.
-aws-lc-rs = { version = "1.13", features = ["bindgen", "prebuilt-nasm"] }
+## We only include this such that we can specify the prebuilt-nasm feature,
+## which is required to build this on Windows x86_64 without having to install NASM separately.
+aws-lc-rs = { version = "1.13", optional = true, features = ["prebuilt-nasm"] }
 percent-encoding = { version = "2.3", optional = true }
 ## The following reqwest 0.12 features were taken from the tsp_sdk's `Cargo.toml` file.
 ## This is only needed for the optional TSP feature; the matrix-sdk uses reqwest 0.13 internally,
@@ -109,7 +108,7 @@ reqwest = { version = "0.12", default-features = false, optional = true, feature
 [features]
 default = []
 ## Enables experimental support for using TSP wallets.
-tsp = ["dep:tsp_sdk", "dep:quinn", "dep:percent-encoding", "dep:reqwest"]
+tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding", "dep:reqwest"]
 
 ## Hides the command prompt console on Windows.
 hide_windows_console = []

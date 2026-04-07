@@ -181,10 +181,6 @@ jobs:
         run: |
           cargo makepad apple ios install-toolchain
 
-      - name: Install build dependencies for aws-lc-sys
-        run: |
-          brew install cmake
-
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
@@ -193,6 +189,7 @@ jobs:
       - name: Build for iOS targets
         env:
           RUSTFLAGS: "-D warnings"
+          AWS_LC_SYS_CMAKE_BUILDER: 1
         run: |
           # Install iOS targets
           rustup target add aarch64-apple-ios
@@ -201,7 +198,7 @@ jobs:
           cargo makepad apple ios \
           --org=rs.robius \
           --app=robrix \
-          run-sim -p robrix \
+          build -p robrix \
           --config profile.dev.opt-level=0 \
           --config profile.dev.debug=false \
           --config profile.dev.lto=\"off\" \
@@ -223,7 +220,7 @@ jobs:
 
       - name: Install Android toolchain
         run: |
-          cargo makepad android install-toolchain
+          cargo makepad android install-toolchain --full-ndk
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -233,6 +230,7 @@ jobs:
       - name: Build Android APK
         env:
           RUSTFLAGS: "-D warnings"
+          AWS_LC_SYS_CMAKE_BUILDER: 1
         run: |
           cargo makepad android build -p robrix \
           --config profile.dev.opt-level=0 \
@@ -256,7 +254,7 @@ jobs:
 
       - name: Install Android toolchain
         run: |
-          cargo makepad android install-toolchain
+          cargo makepad android install-toolchain --full-ndk
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -266,6 +264,7 @@ jobs:
       - name: Build Android APK
         env:
           RUSTFLAGS: "-D warnings"
+          AWS_LC_SYS_CMAKE_BUILDER: 1
         run: |
           cargo makepad android build -p robrix \
           --config profile.dev.opt-level=0 \
@@ -297,16 +296,16 @@ jobs:
 
       - name: Install Android toolchain
         run: |
-          cargo makepad android install-toolchain
+          cargo makepad android install-toolchain --full-ndk
 
       - name: Install Ninja
-        run: |
-          choco install ninja -y
+        run: choco install ninja -y
         shell: powershell
 
       - name: Build Android APK
         env:
           RUSTFLAGS: "-D warnings"
+          AWS_LC_SYS_CMAKE_BUILDER: 1
           CMAKE_GENERATOR: Ninja
         run: |
           ## Note: we can't use the profile here because cargo-makepad doesn't support custom profiles.

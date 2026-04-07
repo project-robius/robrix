@@ -328,7 +328,6 @@ script_mod! {
                     }
                     suggested_label := Label {
                         padding: 0
-                        spacing: 0
                         margin: 0
                         width: Fit, height: Fit,
                         text: "Suggested"
