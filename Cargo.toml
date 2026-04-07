@@ -45,8 +45,8 @@ htmlize = "1.0.5"
 indexmap = "2.6.0"
 imghdr = "0.7.0"
 linkify = "0.10.0"
-matrix-sdk-base = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main" }
-matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [
+matrix-sdk-base = { git = "https://github.com/project-robius/matrix-rust-sdk", branch = "space_room_suggested" }
+matrix-sdk = { git = "https://github.com/project-robius/matrix-rust-sdk", branch = "space_room_suggested", default-features = false, features = [
     "e2e-encryption",
     "automatic-room-key-forwarding",
     "markdown",
@@ -55,7 +55,7 @@ matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "
     "bundled-sqlite",
     "sso-login",
 ] }
-matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch = "main", default-features = false, features = [
+matrix-sdk-ui = { git = "https://github.com/project-robius/matrix-rust-sdk", branch = "space_room_suggested", default-features = false, features = [
     "rustls-tls",
 ] }
 ## Use the same ruma version as what's specified in matrix-sdk's Cargo.toml.
@@ -63,7 +63,7 @@ matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", branch 
 ## * "compat-optional" feature to allow missing body field in m.room.tombstone event.
 ## * "compat-unset-avatar" feature to allow deleting the user's avatar to work properly.
 ## * Note: we need a feature like "compat-unset-display-name" to unset display names, but that doesn't exist yet.
-ruma = { version = "0.14.1", features = [
+ruma = { git = "https://github.com/ruma/ruma", rev = "a0acf4187a7c7557d145db54bcb23b01f6295ce7", features = [
     "compat-optional",
     "compat-unset-avatar",
 ] }
@@ -153,6 +153,9 @@ askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
 ## and then we won't need to patch ruma-events anymore.
 ## But that is a significant amount of work, so for now we just patch ruma-events.
 ##
+## Note: matrix-sdk currently uses a git dependency for ruma,
+## so we patch the git source, not crates-io.
+[patch."https://github.com/ruma/ruma"]
 ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
 
 

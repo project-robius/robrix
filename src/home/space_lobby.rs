@@ -314,6 +314,28 @@ script_mod! {
                     text_overflow: Ellipsis
                     draw_text +: { text_style: REGULAR_TEXT {font_size: 10.5}, color: #1a1a1a }
                 }
+
+                suggested_tag := RoundedView {
+                    visible: false
+                    width: Fit, height: Fit,
+                    padding: Inset { left: 6, right: 6, top: 3, bottom: 3 }
+                    show_bg: true
+                    draw_bg +: {
+                        color: #E8F4FD
+                        border_radius: 3.0
+                        border_size: 0.75
+                        border_color: (COLOR_INFO_BLUE)
+                    }
+                    suggested_label := Label {
+                        padding: 0
+                        spacing: 0
+                        margin: 0
+                        width: Fit, height: Fit,
+                        text: "Suggested"
+                        draw_text +: { text_style: REGULAR_TEXT {font_size: 8.5}, color: (COLOR_INFO_BLUE) }
+                    }
+                }
+
                 info_label := Label {
                     width: Fill, height: Fit,
                     margin: 0
@@ -845,6 +867,8 @@ struct SpaceRoomInfo {
     join_rule: Option<JoinRuleSummary>,
     /// If `Some`, this is a space. If `None`, it's a room.
     children_count: Option<u64>,
+    /// Whether the room is suggested by the space administrators.
+    suggested: bool,
 }
 impl SpaceRoomInfo {
     fn is_space(&self) -> bool {
@@ -865,6 +889,7 @@ impl From<&SpaceRoom> for SpaceRoomInfo {
             state: space_room.state,
             join_rule: space_room.join_rule.clone(),
             children_count: space_room.is_space().then_some(space_room.children_count),
+            suggested: space_room.suggested,
         }
     }
 }
@@ -882,6 +907,7 @@ impl From<SpaceRoom> for SpaceRoomInfo {
             num_joined_members: space_room.num_joined_members,
             state: space_room.state,
             join_rule: space_room.join_rule,
+            suggested: space_room.suggested,
         }
     }
 }
@@ -1216,6 +1242,12 @@ impl Widget for SpaceLobbyScreen {
                             if let Some(mut spacer) = item.child_by_path(ids!(main_entry.indent_spacer)).borrow_mut::<View>() {
                                 spacer.walk.width = Size::Fixed(indent_pixel);
                             }
+
+                            // Show "Suggested" tag if recommended and not already joined
+                            let show_suggested = info.suggested
+                                && !matches!(info.state, Some(RoomState::Joined));
+                            item.child_by_path(ids!(main_entry.content.suggested_tag))
+                                .set_visible(cx, show_suggested);
 
                             // Build the info label with join status, member count, and topic
                             // Note: Public/Private is intentionally not shown per-item to reduce clutter
