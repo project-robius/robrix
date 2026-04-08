@@ -130,6 +130,12 @@ The following table shows which host systems can currently be used to build Robr
      --app=robrix \
      run-sim -p robrix --release
    ```
+> [!TIP]
+> If you get errors from the simulator, update your simulator tooling:
+> ```sh
+> xcodebuild -downloadPlatform iOS
+> ```
+
 
 #### Running on a real iOS device
 4. Run the following command to show all provisioning profiles, signing identities, and device identifiers on your Mac.
