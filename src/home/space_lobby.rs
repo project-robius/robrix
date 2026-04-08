@@ -712,6 +712,10 @@ pub struct SubspaceEntry {
     #[rust] room_id: Option<OwnedRoomId>,
     #[rust] is_space: bool,
     #[rust] show_buttons_view: bool,
+    /// Whether `show_buttons_view` was set by a tap (touch) rather than mouse hover.
+    /// On mobile (no hover events), tapping toggles button visibility;
+    /// on desktop, hover handles it and taps fire the normal action.
+    #[rust] buttons_shown_by_tap: bool,
     #[rust] is_expanded: bool,
 }
 
@@ -755,6 +759,7 @@ impl Widget for SubspaceEntry {
                 self.animator_play(cx, ids!(hover.on));
                 if !self.show_buttons_view {
                     self.show_buttons_view = true;
+                    self.buttons_shown_by_tap = false;
                     self.view.child_by_path(ids!(buttons_view)).set_visible(cx, true);
                     self.redraw(cx);
                 }
@@ -764,6 +769,7 @@ impl Widget for SubspaceEntry {
             Hit::FingerHoverOver(_) if !self.show_buttons_view => {
                 self.animator_play(cx, ids!(hover.on));
                 self.show_buttons_view = true;
+                self.buttons_shown_by_tap = false;
                 self.view.child_by_path(ids!(buttons_view)).set_visible(cx, true);
                 self.redraw(cx);
             }
@@ -776,6 +782,7 @@ impl Widget for SubspaceEntry {
                 if !entry_rect.contains(fe.abs) && !is_over_buttons_view {
                     self.animator_play(cx, ids!(hover.off));
                     self.show_buttons_view = false;
+                    self.buttons_shown_by_tap = false;
                     self.view.child_by_path(ids!(buttons_view)).set_visible(cx, false);
                     self.redraw(cx);
                 }
@@ -786,24 +793,51 @@ impl Widget for SubspaceEntry {
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
                 let is_within_buttons_view = self.show_buttons_view
                     && self.view.child_by_path(ids!(buttons_view)).area().rect(cx).contains(fe.abs);
-                if !is_within_buttons_view {
-                    if let Some(room_id) = self.room_id.as_ref() {
-                        if self.is_space {
-                            // Toggle expansion and animate the arrow
-                            self.is_expanded = !self.is_expanded;
-                            if let Some(mut arrow) = self.view.child_by_path(ids!(main_entry.expand_icon)).borrow_mut::<ExpandArrow>() {
-                                arrow.set_is_open(cx, self.is_expanded, Animate::Yes);
-                            }
+                if is_within_buttons_view {
+                    // Let individual button handlers deal with taps on the buttons.
+                }
+                // On touch devices, tapping on the avatar or to its left
+                // always expands/collapses a space (bypasses button toggle).
+                else if fe.is_touch() && self.is_space {
+                    let avatar_rect = self.view.child_by_path(ids!(main_entry.avatar)).area().rect(cx);
+                    let tap_in_expand_region = fe.abs.x <= avatar_rect.pos.x + avatar_rect.size.x;
+                    if tap_in_expand_region {
+                        self.is_expanded = !self.is_expanded;
+                        if let Some(mut arrow) = self.view.child_by_path(ids!(main_entry.expand_icon)).borrow_mut::<ExpandArrow>() {
+                            arrow.set_is_open(cx, self.is_expanded, Animate::Yes);
+                        }
+                        if let Some(room_id) = self.room_id.as_ref() {
                             cx.widget_action(
                                 self.widget_uid(),
                                 SubspaceEntryAction::SpaceClicked { space_id: room_id.clone() },
                             );
-                        } else {
-                            cx.widget_action(
-                                self.widget_uid(),
-                                SubspaceEntryAction::RoomClicked { room_id: room_id.clone() },
-                            );
                         }
+                    } else {
+                        // Touch tap on the text area: toggle buttons visibility.
+                        self.toggle_buttons_for_tap(cx);
+                    }
+                }
+                // On touch devices for rooms (not spaces): tap toggles buttons.
+                else if fe.is_touch() {
+                    self.toggle_buttons_for_tap(cx);
+                }
+                // Non-touch (desktop): fire the normal entry action,
+                // since hover already handles button visibility.
+                else if let Some(room_id) = self.room_id.as_ref() {
+                    if self.is_space {
+                        self.is_expanded = !self.is_expanded;
+                        if let Some(mut arrow) = self.view.child_by_path(ids!(main_entry.expand_icon)).borrow_mut::<ExpandArrow>() {
+                            arrow.set_is_open(cx, self.is_expanded, Animate::Yes);
+                        }
+                        cx.widget_action(
+                            self.widget_uid(),
+                            SubspaceEntryAction::SpaceClicked { space_id: room_id.clone() },
+                        );
+                    } else {
+                        cx.widget_action(
+                            self.widget_uid(),
+                            SubspaceEntryAction::RoomClicked { room_id: room_id.clone() },
+                        );
                     }
                 }
             }
@@ -849,6 +883,24 @@ impl Widget for SubspaceEntry {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl SubspaceEntry {
+    /// Toggles the buttons_view visibility for a touch tap.
+    fn toggle_buttons_for_tap(&mut self, cx: &mut Cx) {
+        if self.show_buttons_view {
+            self.animator_play(cx, ids!(hover.off));
+            self.show_buttons_view = false;
+            self.buttons_shown_by_tap = false;
+            self.view.child_by_path(ids!(buttons_view)).set_visible(cx, false);
+        } else {
+            self.animator_play(cx, ids!(hover.on));
+            self.show_buttons_view = true;
+            self.buttons_shown_by_tap = true;
+            self.view.child_by_path(ids!(buttons_view)).set_visible(cx, true);
+        }
+        self.redraw(cx);
     }
 }
 
@@ -1158,6 +1210,7 @@ impl Widget for SpaceLobbyScreen {
                                     inner.is_expanded = is_expanded;
                                     if id_changed {
                                         inner.show_buttons_view = false;
+                                        inner.buttons_shown_by_tap = false;
                                     }
                                     show_buttons_view = inner.show_buttons_view;
                                 }
@@ -1179,6 +1232,7 @@ impl Widget for SpaceLobbyScreen {
                                     inner.is_space = false;
                                     if id_changed {
                                         inner.show_buttons_view = false;
+                                        inner.buttons_shown_by_tap = false;
                                     }
                                     show_buttons_view = inner.show_buttons_view;
                                 }

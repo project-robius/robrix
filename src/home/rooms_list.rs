@@ -651,10 +651,9 @@ impl RoomsList {
                             continue;
                         }
                         enqueue_popup_notification(
-                            format!("{} was changed from {} to {}.",
+                            format!("Note: \"{}\" is now a {} room.",
                                 room.room_name_id,
-                                if room.is_direct { "direct" } else { "regular" },
-                                if is_direct { "direct" } else { "regular" }
+                                if is_direct { "direct" } else { "non-direct" },
                             ),
                             PopupKind::Info,
                             Some(5.0),
