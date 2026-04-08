@@ -585,7 +585,6 @@ impl Widget for ImageViewer {
                 let mouse_moved = dist > 0.5;
                 self.last_mouse_pos = he.abs;
                 if mouse_moved {
-                    log!("ImageViewer: FingerHoverOver — mouse moved {dist:.1}px, showing overlay");
                     self.show_overlay_ui(cx, true);
                 }
             }
@@ -602,7 +601,6 @@ impl Widget for ImageViewer {
                             self.drag_state.pan_offset = Some(DVec2::default());
                         }
                     } else if !on_buttons && !on_metadata {
-                        log!("ImageViewer: closing — click outside image");
                         self.reset(cx);
                         cx.action(ImageViewerAction::Hide);
                     }
@@ -621,8 +619,6 @@ impl Widget for ImageViewer {
                         rotated_image_container.redraw(cx);
                     }
                     // Tap toggles the overlay UI visibility.
-                    log!("ImageViewer: FingerUp tap on image — toggling overlay (currently {})",
-                        if self.ui_overlay_visible { "visible" } else { "hidden" });
                     if self.ui_overlay_visible {
                         self.hide_overlay_ui(cx);
                     } else {
@@ -738,7 +734,6 @@ impl Widget for ImageViewer {
         }
 
         if self.hide_ui_timer.is_event(event).is_some() {
-            log!("ImageViewer: auto-hide timer fired!");
             self.hide_overlay_ui(cx);
         }
     }
@@ -840,21 +835,18 @@ impl ImageViewer {
     /// Shows the UI overlay (buttons + metadata) and optionally starts the auto-hide timer.
     fn show_overlay_ui(&mut self, cx: &mut Cx, start_auto_hide_timer: bool) {
         if !self.ui_overlay_visible {
-            log!("ImageViewer: show_overlay_ui — transitioning from hidden to visible");
             self.ui_overlay_visible = true;
             self.view.view(cx, ids!(button_group_view)).set_visible(cx, true);
             self.view.view(cx, ids!(metadata_view)).set_visible(cx, true);
         }
         cx.stop_timer(self.hide_ui_timer);
         if start_auto_hide_timer {
-            log!("ImageViewer: show_overlay_ui — starting {SHOW_UI_DURATION}s auto-hide timer");
             self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
         }
     }
 
     /// Hides the UI overlay (buttons + metadata) and stops the auto-hide timer.
     fn hide_overlay_ui(&mut self, cx: &mut Cx) {
-        log!("ImageViewer: hide_overlay_ui — hiding overlay");
         self.ui_overlay_visible = false;
         cx.stop_timer(self.hide_ui_timer);
         self.view.view(cx, ids!(button_group_view)).set_visible(cx, false);
@@ -1042,7 +1034,6 @@ impl ImageViewer {
     /// The loading spinner is shown, the error icon is hidden, and the
     /// status label is set to "Loading...".
     pub fn show_loading(&mut self, cx: &mut Cx) {
-        log!("ImageViewer: show_loading called");
         let footer = self.view.view(cx, ids!(image_layer.footer));
         footer.view(cx, ids!(image_viewer_loading_spinner_view))
             .set_visible(cx, true);
