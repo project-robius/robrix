@@ -23,7 +23,7 @@ CARGO_TOML="$PROJECT_DIR/Cargo.toml"
 cd "$PROJECT_DIR"
 
 # Extract the signing identity from Cargo.toml before we remove it.
-SIGNING_IDENTITY=$(grep -oP 'signing_identity\s*=\s*"\K[^"]+' "$CARGO_TOML" || true)
+SIGNING_IDENTITY=$(sed -n 's/^signing_identity[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$CARGO_TOML")
 
 if [[ -z "$SIGNING_IDENTITY" ]]; then
     echo "Warning: No signing_identity found in Cargo.toml. DMG will not be codesigned."
@@ -46,8 +46,9 @@ if [[ -z "$DMG_FILE" ]]; then
     exit 1
 fi
 
+BG_IMAGE="$PROJECT_DIR/packaging/Robrix macOS dmg background.png"
 echo "==> Applying Applications folder icon fix to: $DMG_FILE"
-"$SCRIPT_DIR/fix-dmg-applications-icon.sh" "$DMG_FILE"
+"$SCRIPT_DIR/fix-dmg-applications-icon.sh" "$DMG_FILE" "$BG_IMAGE"
 
 # Step 4: Codesign the DMG if we have a signing identity.
 if [[ -n "$SIGNING_IDENTITY" ]]; then

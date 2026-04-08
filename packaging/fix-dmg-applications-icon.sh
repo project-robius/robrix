@@ -5,16 +5,28 @@
 #
 # This replaces the Unix symlink with a Finder alias, which embeds its
 # own icon data and doesn't rely on Finder's broken overlay rendering.
-# No extra dependencies required (just osascript, which ships with macOS).
+# After replacing the symlink, we re-apply the Finder view settings
+# (background image, icon positions, window size) because the
+# convert-modify-convert cycle can lose them.
 #
-# Usage: ./fix-dmg-applications-icon.sh <path-to.dmg>
+# Usage: ./fix-dmg-applications-icon.sh <path-to.dmg> <background-image>
+#
+# The background image is copied into the DMG at .background/background.png.
+# Window size, icon positions, and icon size are configured in the
+# AppleScript block below to match the Cargo.toml [package.metadata.packager.dmg]
+# settings.
 
 set -euo pipefail
 
-DMG_PATH="${1:?Usage: $0 <path-to.dmg>}"
+DMG_PATH="${1:?Usage: $0 <path-to.dmg> <background-image>}"
+BG_IMAGE="${2:?Usage: $0 <path-to.dmg> <background-image>}"
 
 if [[ ! -f "$DMG_PATH" ]]; then
     echo "Error: DMG file not found: $DMG_PATH"
+    exit 1
+fi
+if [[ ! -f "$BG_IMAGE" ]]; then
+    echo "Error: Background image not found: $BG_IMAGE"
     exit 1
 fi
 
@@ -35,7 +47,10 @@ if [[ -z "$MOUNT_DIR" ]]; then
     exit 1
 fi
 
-echo "Mounted at: $MOUNT_DIR"
+# Extract just the volume name (last path component of the mount point)
+VOLUME_NAME="$(basename "$MOUNT_DIR")"
+
+echo "Mounted at: $MOUNT_DIR (volume: $VOLUME_NAME)"
 
 cleanup() {
     echo "Detaching DMG..."
@@ -43,9 +58,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Replace the Unix symlink with a Finder alias.
-# Finder aliases embed their own icon, so they don't depend on
-# Finder's broken overlay icon rendering on macOS Tahoe.
+# --- Step 1: Replace the Unix symlink with a Finder alias ---
+
 APPS_LINK="$MOUNT_DIR/Applications"
 
 if [[ -L "$APPS_LINK" ]]; then
@@ -63,18 +77,77 @@ osascript -e "
     end tell
 "
 
-# Verify the alias was created
-if [[ -e "$APPS_LINK" ]]; then
-    echo "Finder alias created successfully."
-else
+if [[ ! -e "$APPS_LINK" ]]; then
     echo "Error: Failed to create Finder alias"
     exit 1
 fi
+echo "Finder alias created successfully."
 
-# Let Finder flush changes
-sleep 2
+# Copy the /Applications folder icon onto the alias so it's visible
+# on macOS Tahoe, where Finder no longer renders overlay icons for aliases.
+echo "Setting Applications folder icon on alias..."
+osascript <<ICON_SCRIPT
+use framework "AppKit"
+set ws to current application's NSWorkspace's sharedWorkspace()
+set theIcon to ws's iconForFile:"/Applications"
+ws's setIcon:theIcon forFile:"$APPS_LINK" options:0
+ICON_SCRIPT
 
-# Detach explicitly for the conversion step
+# --- Step 2: Copy background image into the DMG ---
+
+BG_DIR="$MOUNT_DIR/.background"
+mkdir -p "$BG_DIR"
+cp "$BG_IMAGE" "$BG_DIR/background.png"
+echo "Background image copied to .background/background.png"
+
+# --- Step 3: Re-apply Finder view settings via AppleScript ---
+#
+# These values must match the [package.metadata.packager.dmg] section
+# in Cargo.toml:
+#   window_size = { width = 960, height = 540 }
+#   app_position = { x = 200, y = 250 }
+#   application_folder_position = { x = 760, y = 250 }
+
+echo "Applying Finder view settings..."
+
+# Window bounds: {left, top, right, bottom}
+# We place the window at (100, 100) so bounds are {100, 100, 1060, 640}
+WIN_LEFT=100
+WIN_TOP=100
+WIN_RIGHT=$((WIN_LEFT + 960))
+WIN_BOTTOM=$((WIN_TOP + 540))
+
+osascript <<APPLESCRIPT
+tell application "Finder"
+    tell disk "$VOLUME_NAME"
+        open
+        set current view of container window to icon view
+        set toolbar visible of container window to false
+        set statusbar visible of container window to false
+        set bounds of container window to {$WIN_LEFT, $WIN_TOP, $WIN_RIGHT, $WIN_BOTTOM}
+
+        set theViewOptions to the icon view options of container window
+        set arrangement of theViewOptions to not arranged
+        set icon size of theViewOptions to 128
+        set background picture of theViewOptions to file ".background:background.png"
+
+        set position of item "Robrix.app" of container window to {200, 250}
+        set position of item "Applications" of container window to {760, 250}
+
+        close
+        open
+    end tell
+end tell
+APPLESCRIPT
+
+echo "Finder view settings applied."
+
+# Let Finder flush .DS_Store changes
+sync
+sleep 3
+
+# --- Step 4: Detach and convert back to compressed DMG ---
+
 trap - EXIT
 echo "Detaching DMG..."
 hdiutil detach "$DEV_NAME"
