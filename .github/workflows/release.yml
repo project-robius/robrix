@@ -291,21 +291,75 @@ jobs:
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Package (macos)
-        uses: project-robius/makepad-packaging-action@v1
+      - name: Install packaging tools
+        run: |
+          cargo install cargo-packager --locked
+          cargo install robius-packaging-commands --locked
+
+      - name: Import Apple certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          CERT_FILE=$(mktemp /tmp/certificate.XXXXXX.p12)
+          KEYCHAIN_FILE=$(mktemp /tmp/keychain.XXXXXX.keychain-db)
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_FILE"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_FILE"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
+          security import "$CERT_FILE" -k "$KEYCHAIN_FILE" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
+          security list-keychains -d user -s "$KEYCHAIN_FILE" login.keychain
+
+          rm -f "$CERT_FILE"
+
+      - name: Build DMG with Applications icon fix
         env:
           CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
           CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          chmod +x ./packaging/build-macos-dmg.sh ./packaging/fix-dmg-applications-icon.sh
+          ./packaging/build-macos-dmg.sh
+
+      - name: Notarize DMG
+        env:
           APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-        with:
-          github_token: ${{ secrets.ROBRIX_RELEASE }}
-          packager_formats: dmg
-          enable_macos_notarization: true
-          releaseId: ${{ needs.create_release.outputs.release_id }}
+        run: |
+          API_KEY_FILE=$(mktemp /tmp/api_key.XXXXXX.p8)
+          echo "$APP_STORE_CONNECT_API_KEY_CONTENT" > "$API_KEY_FILE"
+
+          DMG_FILE=$(find ./dist -name '*.dmg' -print -quit)
+          if [[ -z "$DMG_FILE" ]]; then
+            echo "Error: No DMG file found in dist/"
+            exit 1
+          fi
+
+          xcrun notarytool submit "$DMG_FILE" \
+            --key "$API_KEY_FILE" \
+            --key-id "$APP_STORE_CONNECT_KEY_ID" \
+            --issuer "$APP_STORE_CONNECT_ISSUER_ID" \
+            --wait
+
+          xcrun stapler staple "$DMG_FILE"
+          rm -f "$API_KEY_FILE"
+
+      - name: Upload DMG to Release
+        env:
+          GH_TOKEN: ${{ secrets.ROBRIX_RELEASE }}
+        run: |
+          DMG_FILE=$(find ./dist -name '*.dmg' -print -quit)
+          RELEASE_ID="${{ needs.create_release.outputs.release_id }}"
+          gh api "repos/${{ github.repository }}/releases/${RELEASE_ID}/assets" \
+            --method POST \
+            -H "Content-Type: application/octet-stream" \
+            --input "$DMG_FILE" \
+            -f "name=$(basename "$DMG_FILE")"
 
   for_windows:
     name: Release Robrix for Windows (${{ matrix.os }}, ${{ matrix.arch }})

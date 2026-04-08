@@ -3,18 +3,17 @@
 # Workaround for macOS Tahoe (26.x) bug where the Applications folder
 # symlink icon is invisible in DMG files.
 #
-# This replaces the Unix symlink with a Finder alias, which embeds its
-# own icon data and doesn't rely on Finder's broken overlay rendering.
-# After replacing the symlink, we re-apply the Finder view settings
-# (background image, icon positions, window size) because the
-# convert-modify-convert cycle can lose them.
+# This replaces the Unix symlink with a Finder alias (using NSURL bookmark
+# APIs, no Finder.app needed) and explicitly sets the /Applications folder
+# icon on it via NSWorkspace. Both APIs are headless-safe, so this works
+# in CI environments (e.g., GitHub Actions macOS runners) as well as locally.
+#
+# If Finder.app is available, the script also re-applies DMG view settings
+# (background, icon positions, window size) as a safety net. On headless CI,
+# this step is skipped gracefully and the original .DS_Store from
+# cargo-packager is preserved.
 #
 # Usage: ./fix-dmg-applications-icon.sh <path-to.dmg> <background-image>
-#
-# The background image is copied into the DMG at .background/background.png.
-# Window size, icon positions, and icon size are configured in the
-# AppleScript block below to match the Cargo.toml [package.metadata.packager.dmg]
-# settings.
 
 set -euo pipefail
 
@@ -47,9 +46,7 @@ if [[ -z "$MOUNT_DIR" ]]; then
     exit 1
 fi
 
-# Extract just the volume name (last path component of the mount point)
 VOLUME_NAME="$(basename "$MOUNT_DIR")"
-
 echo "Mounted at: $MOUNT_DIR (volume: $VOLUME_NAME)"
 
 cleanup() {
@@ -59,6 +56,7 @@ cleanup() {
 trap cleanup EXIT
 
 # --- Step 1: Replace the Unix symlink with a Finder alias ---
+# Uses NSURL bookmark APIs (headless-safe, no Finder.app needed).
 
 APPS_LINK="$MOUNT_DIR/Applications"
 
@@ -70,12 +68,15 @@ elif [[ -e "$APPS_LINK" ]]; then
     rm -rf "$APPS_LINK"
 fi
 
-echo "Creating Finder alias to /Applications..."
-osascript -e "
-    tell application \"Finder\"
-        make new alias file at POSIX file \"$MOUNT_DIR\" to POSIX file \"/Applications\" with properties {name:\"Applications\"}
-    end tell
-"
+echo "Creating Finder alias to /Applications (headless)..."
+osascript <<ALIAS_SCRIPT
+use framework "Foundation"
+set sourceURL to current application's |NSURL|'s fileURLWithPath:"/Applications"
+set aliasURL to current application's |NSURL|'s fileURLWithPath:"$MOUNT_DIR/Applications"
+set bkOpts to current application's NSURLBookmarkCreationSuitableForBookmarkFile
+set bookmarkData to sourceURL's bookmarkDataWithOptions:bkOpts includingResourceValuesForKeys:(missing value) relativeToURL:(missing value) |error|:(missing value)
+current application's |NSURL|'s writeBookmarkData:bookmarkData toURL:aliasURL options:bkOpts |error|:(missing value)
+ALIAS_SCRIPT
 
 if [[ ! -e "$APPS_LINK" ]]; then
     echo "Error: Failed to create Finder alias"
@@ -83,8 +84,9 @@ if [[ ! -e "$APPS_LINK" ]]; then
 fi
 echo "Finder alias created successfully."
 
-# Copy the /Applications folder icon onto the alias so it's visible
-# on macOS Tahoe, where Finder no longer renders overlay icons for aliases.
+# --- Step 2: Set the /Applications folder icon on the alias ---
+# Uses NSWorkspace (headless-safe, needs WindowServer but not Finder.app).
+
 echo "Setting Applications folder icon on alias..."
 osascript <<ICON_SCRIPT
 use framework "AppKit"
@@ -93,31 +95,24 @@ set theIcon to ws's iconForFile:"/Applications"
 ws's setIcon:theIcon forFile:"$APPS_LINK" options:0
 ICON_SCRIPT
 
-# --- Step 2: Copy background image into the DMG ---
+# --- Step 3: Ensure background image is in the DMG ---
 
 BG_DIR="$MOUNT_DIR/.background"
 mkdir -p "$BG_DIR"
 cp "$BG_IMAGE" "$BG_DIR/background.png"
 echo "Background image copied to .background/background.png"
 
-# --- Step 3: Re-apply Finder view settings via AppleScript ---
-#
-# These values must match the [package.metadata.packager.dmg] section
-# in Cargo.toml:
-#   window_size = { width = 960, height = 540 }
-#   app_position = { x = 200, y = 250 }
-#   application_folder_position = { x = 760, y = 250 }
+# --- Step 4: Re-apply Finder view settings (non-fatal) ---
+# This is a safety net in case the .DS_Store was corrupted. It requires
+# Finder.app, so it will be skipped gracefully on headless CI runners
+# (where the original .DS_Store from cargo-packager is preserved anyway).
 
-echo "Applying Finder view settings..."
-
-# Window bounds: {left, top, right, bottom}
-# We place the window at (100, 100) so bounds are {100, 100, 1060, 640}
 WIN_LEFT=100
 WIN_TOP=100
 WIN_RIGHT=$((WIN_LEFT + 960))
 WIN_BOTTOM=$((WIN_TOP + 540))
 
-osascript <<APPLESCRIPT
+if osascript <<APPLESCRIPT 2>/dev/null; then
 tell application "Finder"
     tell disk "$VOLUME_NAME"
         open
@@ -139,14 +134,16 @@ tell application "Finder"
     end tell
 end tell
 APPLESCRIPT
+    echo "Finder view settings applied."
+else
+    echo "Skipping Finder view settings (headless environment)."
+fi
 
-echo "Finder view settings applied."
-
-# Let Finder flush .DS_Store changes
+# Let any Finder/filesystem changes flush
 sync
 sleep 3
 
-# --- Step 4: Detach and convert back to compressed DMG ---
+# --- Step 5: Detach and convert back to compressed DMG ---
 
 trap - EXIT
 echo "Detaching DMG..."
