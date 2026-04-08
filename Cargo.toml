@@ -213,7 +213,14 @@ and the Project Robius app dev framework and platform abstractions
 Robrix runs on all major desktop and mobile platforms:
 macOS, Windows, Linux, Android, and iOS.
 """
-icons = ["./packaging/robrix_logo_alpha.png"]
+icons = [
+    "./packaging/robrix_logo_alpha_32x32.png",
+    "./packaging/robrix_logo_alpha_48x48.png",
+    "./packaging/robrix_logo_alpha_64x64.png",
+    "./packaging/robrix_logo_alpha_128x128.png",
+    "./packaging/robrix_logo_alpha_256x256.png",
+    "./packaging/robrix_logo_alpha_512x512.png",
+]
 out_dir = "./dist"
 
 ## Here, we define the list of resource directories for both Makepad and Robrix.
