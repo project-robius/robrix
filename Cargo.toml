@@ -218,13 +218,13 @@ Robrix runs on all major desktop and mobile platforms:
 macOS, Windows, Linux, Android, and iOS.
 """
 icons = [
-    "./packaging/robrix_logo_alpha_32x32.png",
-    "./packaging/robrix_logo_alpha_48x48.png",
-    "./packaging/robrix_logo_alpha_64x64.png",
-    "./packaging/robrix_logo_alpha_128x128.png",
-    "./packaging/robrix_logo_alpha_256x256.png",
-    "./packaging/robrix_logo_alpha_512x512.png",
-    "./packaging/robrix_logo.ico",
+    "./resources/icon_32.png",
+    "./resources/icon_48.png",
+    "./resources/icon_64.png",
+    "./resources/icon_128.png",
+    "./resources/icon_256.png",
+    "./resources/icon_512.png",
+    "./resources/icon.ico",
 ]
 out_dir = "./dist"
 
