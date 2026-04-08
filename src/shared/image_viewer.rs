@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// The timeout for hiding the UI overlays after no user mouse/tap activity.
-const SHOW_UI_DURATION: f64 = 3.0;
+const SHOW_UI_DURATION: f64 = 2.5;
 
 /// Loads the given image `data` into an `ImageBuffer` as either a PNG or JPEG, using the `imghdr` library to determine which format it is.
 ///
@@ -108,7 +108,7 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    mod.widgets.UI_ANIMATION_DURATION_SECS = 0.5
+    mod.widgets.UI_ANIMATION_DURATION_SECS = 0.4
 
     mod.widgets.ROTATION_ANIMATION_DURATION_SECS = 0.2
 
@@ -118,7 +118,11 @@ script_mod! {
         align: Align{x: 0.5, y: 0.5},
         spacing: 0,
         padding: 0,
-        draw_bg.color: (COLOR_SECONDARY * 0.925)
+        draw_bg +: {
+            color: (COLOR_SECONDARY * 0.925)
+            color_hover: (COLOR_SECONDARY * 0.825)
+            color_down: (COLOR_SECONDARY * 0.7)
+        }
         draw_icon +: {
             svg: (ICON_ZOOM_OUT),
             color: #000
@@ -195,7 +199,7 @@ script_mod! {
 
         metadata_view := View {
             width: Fill, height: Fill,
-            margin: 20,
+            margin: Inset{top: 20, left: 20, right: 20, bottom: 20},
             align: Align{x: 0.0, y: 1.0},
             metadata_rounded_view := RoundedView {
                 width: Fill, height: Fit
@@ -405,24 +409,14 @@ script_mod! {
                     redraw: true,
                     from: { all: Forward { duration: (mod.widgets.UI_ANIMATION_DURATION_SECS) } }
                     apply: {
-                        button_group_view: {
-                            margin: Inset{ top: 20 }
-                        }
-                        metadata_view: {
-                            margin: Inset{ bottom: 20 }
-                        }
+                        ui_overlay_slide: 0.0
                     }
                 }
                 hide: AnimatorState{
                     redraw: true,
                     from: { all: Forward { duration: (mod.widgets.UI_ANIMATION_DURATION_SECS) } }
                     apply: {
-                        button_group_view: {
-                            margin: Inset{ top: -200 }
-                        }
-                        metadata_view: {
-                            margin: Inset{ bottom: -300 }
-                        }
+                        ui_overlay_slide: 1.0
                     }
                 }
             }
@@ -476,6 +470,15 @@ struct ImageViewer {
     #[rust] next_frame: NextFrame,
     /// Whether the UI overlay (buttons + metadata) is currently visible or animating to visible.
     #[rust] ui_overlay_visible: bool,
+    /// Whether the mouse is hovering over the overlay UI (buttons or metadata).
+    /// When true, the auto-hide timer should not run.
+    #[rust] mouse_over_overlay_ui: bool,
+    /// Whether the hide animation is currently playing. When it finishes,
+    /// the overlay views are set to invisible.
+    #[rust] is_hiding_overlay: bool,
+    /// Animated slide value for the UI overlay: 0.0 = fully visible, 1.0 = fully hidden.
+    /// The animator interpolates this value; `draw_walk` uses it to position the views.
+    #[live] ui_overlay_slide: f32,
     /// Timer used to animate-out (hide) the UI overlay after no user mouse/tap activity.
     #[rust] hide_ui_timer: Timer,
     /// Last known mouse position, used to distinguish actual mouse movement
@@ -531,32 +534,6 @@ impl Widget for ImageViewer {
         // persist from the last draw and would consume events before rotated_image.
         let rotated_image = self.view.image(cx, ids!(rotated_image));
         let button_group_rounded_view = self.view.view(cx, ids!(button_group_rounded_view));
-        if self.ui_overlay_visible {
-            match event.hits(cx, button_group_rounded_view.area()) {
-                Hit::FingerHoverIn(_) => {
-                    // Mouse entered the button area — pause auto-hide.
-                    cx.stop_timer(self.hide_ui_timer);
-                }
-                Hit::FingerHoverOut(fe) => {
-                    // FingerHoverOut is triggered when the cursor enters into a child button.
-                    // Only restart the timer if the cursor actually left the button group area.
-                    if !button_group_rounded_view.area().rect(cx).contains(fe.abs) {
-                        self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
-                    }
-                }
-                _ => {}
-            }
-            match event.hits(cx, self.view.view(cx, ids!(metadata_rounded_view)).area()) {
-                Hit::FingerHoverIn(_) => {
-                    // Mouse entered metadata area — pause auto-hide.
-                    cx.stop_timer(self.hide_ui_timer);
-                }
-                Hit::FingerHoverOut(_) => {
-                    self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
-                }
-                _ => {}
-            }
-        }
         // All hit events (hover + finger) must use self.view.area() because the inner
         // View's handle_event captures events on its own area first (due to its animator),
         // preventing rotated_image.area() from receiving them.
@@ -578,6 +555,17 @@ impl Widget for ImageViewer {
                 if on_image != self.mouse_cursor_hover_over_image {
                     self.mouse_cursor_hover_over_image = on_image;
                     cx.set_cursor(if on_image { MouseCursor::Hand } else { MouseCursor::Default });
+                }
+                // Track whether cursor is over the overlay UI elements.
+                let on_overlay = button_group_rounded_view.area().rect(cx).contains(he.abs)
+                    || self.view.view(cx, ids!(metadata_rounded_view)).area().rect(cx).contains(he.abs);
+                if on_overlay != self.mouse_over_overlay_ui {
+                    self.mouse_over_overlay_ui = on_overlay;
+                    if on_overlay {
+                        cx.stop_timer(self.hide_ui_timer);
+                    } else {
+                        self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
+                    }
                 }
                 // FingerHoverOver fires every frame the cursor is over the area,
                 // even without actual movement. Only react to real mouse movement.
@@ -646,12 +634,13 @@ impl Widget for ImageViewer {
         if let Event::Scroll(scroll_event) = event {
             if self.mouse_cursor_hover_over_image {
                 let scroll_delta = scroll_event.scroll.y;
+                // Scale the zoom factor proportionally to the scroll magnitude,
+                // clamped so each scroll tick produces a gentle zoom step.
+                let normalized = (scroll_delta.abs() / 200.0).clamp(0.005, 0.06);
                 if scroll_delta > 0.0 {
-                    // Scroll up = Zoom in
-                    self.adjust_zoom(cx, self.config.zoom_scale_factor);
+                    self.adjust_zoom(cx, 1.0 + normalized);
                 } else if scroll_delta < 0.0 {
-                    // Scroll down = Zoom out
-                    self.adjust_zoom(cx, 1.0 / self.config.zoom_scale_factor);
+                    self.adjust_zoom(cx, 1.0 / (1.0 + normalized));
                 }
             }
         }
@@ -710,6 +699,16 @@ impl Widget for ImageViewer {
         if animator_action.must_redraw() {
             self.view.redraw(cx);
         }
+
+        // When the hide animation finishes, make the overlay views invisible
+        // so their stale areas don't consume events.
+        if self.is_hiding_overlay && !self.animator.is_track_animating(id!(ui_animator)) {
+            self.is_hiding_overlay = false;
+            self.view.view(cx, ids!(button_group_view)).set_visible(cx, false);
+            self.view.view(cx, ids!(metadata_view)).set_visible(cx, false);
+            self.view.redraw(cx);
+        }
+
         if self.next_frame.is_event(event).is_some() {
             self.display_using_texture(cx);
         }
@@ -744,6 +743,22 @@ impl Widget for ImageViewer {
             self.image_container_size = rect.size;
             self.next_frame = cx.new_next_frame();
         }
+
+        // Use the animated `ui_overlay_slide` value to position the overlay views.
+        // slide=0.0 → fully visible (margins at their DSL defaults).
+        // slide=1.0 → fully hidden (margins push views off-screen).
+        let slide = self.ui_overlay_slide as f64;
+        let button_top = 20.0 - (slide * 220.0); // 20 → -200
+        let meta_bottom = 20.0 - (slide * 320.0); // 20 → -300
+        let mut bg = self.view(cx, ids!(button_group_view));
+        script_apply_eval!(cx, bg, {
+            margin +: { top: #(button_top), right: 20.0 }
+        });
+        let mut mv = self.view(cx, ids!(metadata_view));
+        script_apply_eval!(cx, mv, {
+            margin +: { top: 20.0, left: 20.0, right: 20.0, bottom: #(meta_bottom) }
+        });
+
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -836,21 +851,27 @@ impl ImageViewer {
     fn show_overlay_ui(&mut self, cx: &mut Cx, start_auto_hide_timer: bool) {
         if !self.ui_overlay_visible {
             self.ui_overlay_visible = true;
+            self.is_hiding_overlay = false;
             self.view.view(cx, ids!(button_group_view)).set_visible(cx, true);
             self.view.view(cx, ids!(metadata_view)).set_visible(cx, true);
+            self.animator_play(cx, ids!(ui_animator.show));
+            self.view.redraw(cx);
         }
         cx.stop_timer(self.hide_ui_timer);
-        if start_auto_hide_timer {
+        if start_auto_hide_timer && !self.mouse_over_overlay_ui {
             self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
         }
     }
 
-    /// Hides the UI overlay (buttons + metadata) and stops the auto-hide timer.
+    /// Hides the UI overlay (buttons + metadata) with an animated slide-out.
+    /// The views are kept visible during animation; `handle_event` sets them
+    /// invisible once the animation finishes.
     fn hide_overlay_ui(&mut self, cx: &mut Cx) {
         self.ui_overlay_visible = false;
+        self.is_hiding_overlay = true;
         cx.stop_timer(self.hide_ui_timer);
-        self.view.view(cx, ids!(button_group_view)).set_visible(cx, false);
-        self.view.view(cx, ids!(metadata_view)).set_visible(cx, false);
+        self.animator_play(cx, ids!(ui_animator.hide));
+        self.view.redraw(cx);
     }
 
     /// Reset state.
@@ -864,10 +885,14 @@ impl ImageViewer {
         self.is_loaded = false;
         self.image_container_size = DVec2::new();
         self.ui_overlay_visible = true;
+        self.mouse_over_overlay_ui = false;
+        self.is_hiding_overlay = false;
         cx.stop_timer(self.hide_ui_timer);
         self.hide_ui_timer = Timer::empty();
         self.view.view(cx, ids!(button_group_view)).set_visible(cx, true);
         self.view.view(cx, ids!(metadata_view)).set_visible(cx, true);
+        // Snap to fully visible (no animation on reset).
+        self.animator_cut(cx, ids!(ui_animator.show));
         self.reset_drag_state(cx);
         self.animator_cut(cx, ids!(mode.upright));
         let rotated_image_ref = self
@@ -1042,7 +1067,14 @@ impl ImageViewer {
         footer.view(cx, ids!(image_viewer_forbidden_view))
             .set_visible(cx, false);
         footer.set_visible(cx, true);
-        self.show_overlay_ui(cx, true);
+        // Snap the overlay to visible immediately on initial open (no animation).
+        self.ui_overlay_visible = true;
+        self.is_hiding_overlay = false;
+        self.view.view(cx, ids!(button_group_view)).set_visible(cx, true);
+        self.view.view(cx, ids!(metadata_view)).set_visible(cx, true);
+        self.animator_cut(cx, ids!(ui_animator.show));
+        cx.stop_timer(self.hide_ui_timer);
+        self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
     }
 
     /// Shows an error message in the footer.
