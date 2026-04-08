@@ -10,15 +10,15 @@ license = "MIT"
 readme = "README.md"
 categories = ["gui"]
 repository = "https://github.com/project-robius/robrix"
-version = "0.0.1-pre-alpha-4"
+version = "1.0.0-alpha.1"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
 # makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
 # makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "cargo_makepad_ndk_fix", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "cargo_makepad_ndk_fix" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "packaging_fixes", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "packaging_fixes" }
 
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
@@ -159,6 +159,10 @@ askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
 [patch."https://github.com/ruma/ruma"]
 ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
 
+## On Windows, use the `winresource` crate to embed the app's icon and metadata into the executable.
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
 
 [package.metadata.docs.rs]
 all-features = true
@@ -213,7 +217,15 @@ and the Project Robius app dev framework and platform abstractions
 Robrix runs on all major desktop and mobile platforms:
 macOS, Windows, Linux, Android, and iOS.
 """
-icons = ["./packaging/robrix_logo_alpha.png"]
+icons = [
+    "./resources/icon_32.png",
+    "./resources/icon_48.png",
+    "./resources/icon_64.png",
+    "./resources/icon_128.png",
+    "./resources/icon_256.png",
+    "./resources/icon_512.png",
+    "./resources/icon.ico",
+]
 out_dir = "./dist"
 
 ## Here, we define the list of resource directories for both Makepad and Robrix.

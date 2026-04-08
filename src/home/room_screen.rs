@@ -3815,7 +3815,7 @@ fn populate_file_message_content(
         .unwrap_or_default();
     let caption = file_content.formatted_caption()
         .map(|fb| format!("<br><i>{}</i>", fb.body))
-        .or_else(|| file_content.caption().map(|c| format!("<br><i>{c}</i>")))
+        .or_else(|| file_content.caption().map(|c| format!("<br><i>{}</i>", htmlize::escape_text(c))))
         .unwrap_or_default();
 
     // TODO: add a button to download the file
@@ -3846,7 +3846,7 @@ fn populate_audio_message_content(
                 .unwrap_or_default(),
             info.mimetype
                 .as_ref()
-                .map(|m| format!("  {m},"))
+                .map(|m| format!("  {},", htmlize::escape_text(m)))
                 .unwrap_or_default(),
             info.size
                 .map(|bytes| format!("  ({}),", ByteSize::b(bytes.into())))
@@ -3855,7 +3855,7 @@ fn populate_audio_message_content(
         .unwrap_or_default();
     let caption = audio.formatted_caption()
         .map(|fb| format!("<br><i>{}</i>", fb.body))
-        .or_else(|| audio.caption().map(|c| format!("<br><i>{c}</i>")))
+        .or_else(|| audio.caption().map(|c| format!("<br><i>{}</i>", htmlize::escape_text(c))))
         .unwrap_or_default();
 
     // TODO: add an audio to play the audio file
@@ -3887,7 +3887,7 @@ fn populate_video_message_content(
                 .unwrap_or_default(),
             info.mimetype
                 .as_ref()
-                .map(|m| format!("  {m},"))
+                .map(|m| format!("  {},", htmlize::escape_text(m)))
                 .unwrap_or_default(),
             info.size
                 .map(|bytes| format!("  ({}),", ByteSize::b(bytes.into())))
@@ -3899,7 +3899,7 @@ fn populate_video_message_content(
         .unwrap_or_default();
     let caption = video.formatted_caption()
         .map(|fb| format!("<br><i>{}</i>", fb.body))
-        .or_else(|| video.caption().map(|c| format!("<br><i>{c}</i>")))
+        .or_else(|| video.caption().map(|c| format!("<br><i>{}</i>", htmlize::escape_text(c))))
         .unwrap_or_default();
 
     // TODO: add an video to play the video file
