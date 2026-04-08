@@ -402,7 +402,7 @@ script_mod! {
             ui_animator: {
                 default: @hide
                 show: AnimatorState{
-                    redraw: false,
+                    redraw: true,
                     from: { all: Forward { duration: (mod.widgets.UI_ANIMATION_DURATION_SECS) } }
                     apply: {
                         button_group_view: {
@@ -414,7 +414,7 @@ script_mod! {
                     }
                 }
                 hide: AnimatorState{
-                    redraw: false,
+                    redraw: true,
                     from: { all: Forward { duration: (mod.widgets.UI_ANIMATION_DURATION_SECS) } }
                     apply: {
                         button_group_view: {
@@ -474,10 +474,13 @@ struct ImageViewer {
     #[rust] texture: Option<Texture>,
     /// The event to trigger displaying with the loaded image after peek_walk_turtle of the widget.
     #[rust] next_frame: NextFrame,
-    /// Whether to display the UI overlay, including buttons and metadata.
-    #[rust] ui_visible_toggle: bool,
-    /// Timer used to animate-out (hide) the UI view after the latest user input.
+    /// Whether the UI overlay (buttons + metadata) is currently visible or animating to visible.
+    #[rust] ui_overlay_visible: bool,
+    /// Timer used to animate-out (hide) the UI overlay after no user mouse/tap activity.
     #[rust] hide_ui_timer: Timer,
+    /// Last known mouse position, used to distinguish actual mouse movement
+    /// from the continuous `FingerHoverOver` events that fire every frame.
+    #[rust] last_mouse_pos: DVec2,
     #[rust] capped_dimension: DVec2,
 }
 
@@ -523,68 +526,109 @@ impl Widget for ImageViewer {
             }
         }
 
-        // Handle hover events for UI elements without consuming the main image events
-        // We'll track hover state in the FingerMove event within the image handling
+        // Handle hover events for UI overlay elements.
+        // Only hit-test these when the overlay is visible; when hidden, their areas
+        // persist from the last draw and would consume events before rotated_image.
         let rotated_image = self.view.image(cx, ids!(rotated_image));
         let button_group_rounded_view = self.view.view(cx, ids!(button_group_rounded_view));
-        match event.hits(cx, button_group_rounded_view.area()) {
-            Hit::FingerHoverIn(_) if !self.ui_visible_toggle => {
-                cx.stop_timer(self.hide_ui_timer);
-                self.animator_cut(cx, ids!(ui_animator.show));
+        if self.ui_overlay_visible {
+            match event.hits(cx, button_group_rounded_view.area()) {
+                Hit::FingerHoverIn(_) => {
+                    // Mouse entered the button area — pause auto-hide.
+                    cx.stop_timer(self.hide_ui_timer);
+                }
+                Hit::FingerHoverOut(fe) => {
+                    // FingerHoverOut is triggered when the cursor enters into a child button.
+                    // Only restart the timer if the cursor actually left the button group area.
+                    if !button_group_rounded_view.area().rect(cx).contains(fe.abs) {
+                        self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
+                    }
+                }
+                _ => {}
             }
-            Hit::FingerHoverOut(fe) => {
-                // FingerHoverOut is triggered when the cursor enters into the button.
-                // Hence we need to check if the cursor is actually inside the button group.
-                if !self.ui_visible_toggle
-                    && !button_group_rounded_view.area().rect(cx).contains(fe.abs)
-                {
+            match event.hits(cx, self.view.view(cx, ids!(metadata_rounded_view)).area()) {
+                Hit::FingerHoverIn(_) => {
+                    // Mouse entered metadata area — pause auto-hide.
+                    cx.stop_timer(self.hide_ui_timer);
+                }
+                Hit::FingerHoverOut(_) => {
                     self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
                 }
+                _ => {}
             }
-            _ => {}
         }
-        match event.hits(cx, self.view.view(cx, ids!(metadata_rounded_view)).area()) {
-            Hit::FingerHoverIn(_) if !self.ui_visible_toggle => {
-                cx.stop_timer(self.hide_ui_timer);
-                self.animator_cut(cx, ids!(ui_animator.show));
+        // All hit events (hover + finger) must use self.view.area() because the inner
+        // View's handle_event captures events on its own area first (due to its animator),
+        // preventing rotated_image.area() from receiving them.
+        // Position checks distinguish image vs. background interactions.
+        match event.hits(cx, self.view.area()) {
+            Hit::FingerHoverIn(he) => {
+                if rotated_image.area().rect(cx).contains(he.abs) {
+                    self.mouse_cursor_hover_over_image = true;
+                    cx.set_cursor(MouseCursor::Hand);
+                }
             }
-            Hit::FingerHoverOut(_) if !self.ui_visible_toggle => {
-                self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
+            Hit::FingerHoverOut(_) => {
+                self.mouse_cursor_hover_over_image = false;
+                cx.set_cursor(MouseCursor::Default);
             }
-            _ => {}
-        }
-        // Handle cursor changes on mouse hover
-        match event.hits(cx, rotated_image.area()) {
+            Hit::FingerHoverOver(he) => {
+                // Update cursor based on position over image.
+                let on_image = rotated_image.area().rect(cx).contains(he.abs);
+                if on_image != self.mouse_cursor_hover_over_image {
+                    self.mouse_cursor_hover_over_image = on_image;
+                    cx.set_cursor(if on_image { MouseCursor::Hand } else { MouseCursor::Default });
+                }
+                // FingerHoverOver fires every frame the cursor is over the area,
+                // even without actual movement. Only react to real mouse movement.
+                let dist = (he.abs - self.last_mouse_pos).length();
+                let mouse_moved = dist > 0.5;
+                self.last_mouse_pos = he.abs;
+                if mouse_moved {
+                    log!("ImageViewer: FingerHoverOver — mouse moved {dist:.1}px, showing overlay");
+                    self.show_overlay_ui(cx, true);
+                }
+            }
             Hit::FingerDown(fe) => {
                 if fe.is_primary_hit() {
-                    self.drag_state.drag_start = fe.abs;
-                    // Initialize pan_offset with current position if not set
-                    if self.drag_state.pan_offset.is_none() {
-                        self.drag_state.pan_offset = Some(DVec2::default());
+                    let click_pos = fe.abs;
+                    let on_image = rotated_image.area().rect(cx).contains(click_pos);
+                    let on_buttons = button_group_rounded_view.area().rect(cx).contains(click_pos);
+                    let on_metadata = self.view.view(cx, ids!(metadata_rounded_view))
+                        .area().rect(cx).contains(click_pos);
+                    if on_image {
+                        self.drag_state.drag_start = fe.abs;
+                        if self.drag_state.pan_offset.is_none() {
+                            self.drag_state.pan_offset = Some(DVec2::default());
+                        }
+                    } else if !on_buttons && !on_metadata {
+                        log!("ImageViewer: closing — click outside image");
+                        self.reset(cx);
+                        cx.action(ImageViewerAction::Hide);
                     }
                 }
             }
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() => {
-                // Only reset pan_offset on double-tap, not single tap
-                if fe.tap_count == 2 {
-                    self.drag_state.pan_offset = Some(DVec2::default());
-                    let mut rotated_image_container = self.view.image(cx, ids!(rotated_image));
-                    script_apply_eval!(cx, rotated_image_container, {
-                        margin +: { top: 0.0, left: 0.0 },
-                    });
-                    rotated_image_container.redraw(cx);
+                let on_image = rotated_image.area().rect(cx).contains(fe.abs);
+                if on_image {
+                    // Only reset pan_offset on double-tap, not single tap
+                    if fe.tap_count == 2 {
+                        self.drag_state.pan_offset = Some(DVec2::default());
+                        let mut rotated_image_container = self.view.image(cx, ids!(rotated_image));
+                        script_apply_eval!(cx, rotated_image_container, {
+                            margin +: { top: 0.0, left: 0.0 },
+                        });
+                        rotated_image_container.redraw(cx);
+                    }
+                    // Tap toggles the overlay UI visibility.
+                    log!("ImageViewer: FingerUp tap on image — toggling overlay (currently {})",
+                        if self.ui_overlay_visible { "visible" } else { "hidden" });
+                    if self.ui_overlay_visible {
+                        self.hide_overlay_ui(cx);
+                    } else {
+                        self.show_overlay_ui(cx, true);
+                    }
                 }
-                self.ui_visible_toggle = !self.ui_visible_toggle;
-                if self.ui_visible_toggle {
-                    self.animator_play(cx, ids!(ui_animator.show));
-                } else {
-                    self.animator_play(cx, ids!(ui_animator.hide));
-                }
-                cx.stop_timer(self.hide_ui_timer);
-            }
-            Hit::FingerHoverIn(_) => {
-                self.mouse_cursor_hover_over_image = true;
-                cx.set_cursor(MouseCursor::Hand);
             }
             Hit::FingerMove(fe) => {
                 if let Some(current_offset) = self.drag_state.pan_offset {
@@ -597,25 +641,9 @@ impl Widget for ImageViewer {
                         width: #(size.x),
                         height: #(size.y)
                     });
-
-                    // Update pan_offset with new position
                     self.drag_state.pan_offset = Some(new_offset);
                 }
                 self.drag_state.drag_start = fe.abs;
-            }
-            Hit::FingerHoverOut(_) => {
-                self.mouse_cursor_hover_over_image = false;
-                cx.set_cursor(MouseCursor::Default);
-            }
-            Hit::FingerHoverOver(_) => {
-                if !self.ui_visible_toggle
-                    && !self.animator.in_state(cx, ids!(ui_animator.show))
-                {
-                    self.animator_cut(cx, ids!(ui_animator.hide));
-                    self.animator_play(cx, ids!(ui_animator.show));
-                    cx.stop_timer(self.hide_ui_timer);
-                    self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
-                }
             }
             _ => {}
         }
@@ -683,6 +711,9 @@ impl Widget for ImageViewer {
         }
 
         let animator_action = self.animator_handle_event(cx, event);
+        if animator_action.must_redraw() {
+            self.view.redraw(cx);
+        }
         if self.next_frame.is_event(event).is_some() {
             self.display_using_texture(cx);
         }
@@ -707,7 +738,8 @@ impl Widget for ImageViewer {
         }
 
         if self.hide_ui_timer.is_event(event).is_some() {
-            self.animator_play(cx, ids!(ui_animator.hide));
+            log!("ImageViewer: auto-hide timer fired!");
+            self.hide_overlay_ui(cx);
         }
     }
 
@@ -805,19 +837,45 @@ impl MatchEvent for ImageViewer {
 }
 
 impl ImageViewer {
+    /// Shows the UI overlay (buttons + metadata) and optionally starts the auto-hide timer.
+    fn show_overlay_ui(&mut self, cx: &mut Cx, start_auto_hide_timer: bool) {
+        if !self.ui_overlay_visible {
+            log!("ImageViewer: show_overlay_ui — transitioning from hidden to visible");
+            self.ui_overlay_visible = true;
+            self.view.view(cx, ids!(button_group_view)).set_visible(cx, true);
+            self.view.view(cx, ids!(metadata_view)).set_visible(cx, true);
+        }
+        cx.stop_timer(self.hide_ui_timer);
+        if start_auto_hide_timer {
+            log!("ImageViewer: show_overlay_ui — starting {SHOW_UI_DURATION}s auto-hide timer");
+            self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
+        }
+    }
+
+    /// Hides the UI overlay (buttons + metadata) and stops the auto-hide timer.
+    fn hide_overlay_ui(&mut self, cx: &mut Cx) {
+        log!("ImageViewer: hide_overlay_ui — hiding overlay");
+        self.ui_overlay_visible = false;
+        cx.stop_timer(self.hide_ui_timer);
+        self.view.view(cx, ids!(button_group_view)).set_visible(cx, false);
+        self.view.view(cx, ids!(metadata_view)).set_visible(cx, false);
+    }
+
     /// Reset state.
     pub fn reset(&mut self, cx: &mut Cx) {
         self.rotation_step = 0; // Reset to upright (0°)
         self.is_animating_rotation = false; // Reset animation state
         self.previous_pinch_distance = None; // Reset pinch tracking
         self.mouse_cursor_hover_over_image = false; // Reset hover state
+        self.last_mouse_pos = DVec2::default();
         self.receiver = None;
         self.is_loaded = false;
         self.image_container_size = DVec2::new();
-        self.ui_visible_toggle = false;
+        self.ui_overlay_visible = true;
         cx.stop_timer(self.hide_ui_timer);
-        self.animator_cut(cx, ids!(ui_animator.show));
         self.hide_ui_timer = Timer::empty();
+        self.view.view(cx, ids!(button_group_view)).set_visible(cx, true);
+        self.view.view(cx, ids!(metadata_view)).set_visible(cx, true);
         self.reset_drag_state(cx);
         self.animator_cut(cx, ids!(mode.upright));
         let rotated_image_ref = self
@@ -887,8 +945,7 @@ impl ImageViewer {
             let _ = sender.send(get_png_or_jpg_image_buffer(image_bytes_clone));
             SignalToUI::set_ui_signal();
         });
-        cx.stop_timer(self.hide_ui_timer);
-        self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
+        self.show_overlay_ui(cx, true);
     }
 
     /// Displays an image in the image viewer widget using the provided texture.
@@ -985,6 +1042,7 @@ impl ImageViewer {
     /// The loading spinner is shown, the error icon is hidden, and the
     /// status label is set to "Loading...".
     pub fn show_loading(&mut self, cx: &mut Cx) {
+        log!("ImageViewer: show_loading called");
         let footer = self.view.view(cx, ids!(image_layer.footer));
         footer.view(cx, ids!(image_viewer_loading_spinner_view))
             .set_visible(cx, true);
@@ -993,9 +1051,7 @@ impl ImageViewer {
         footer.view(cx, ids!(image_viewer_forbidden_view))
             .set_visible(cx, false);
         footer.set_visible(cx, true);
-        self.ui_visible_toggle = true;
-        cx.stop_timer(self.hide_ui_timer);
-        self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
+        self.show_overlay_ui(cx, true);
     }
 
     /// Shows an error message in the footer.
