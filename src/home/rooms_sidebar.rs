@@ -10,6 +10,7 @@
 use makepad_widgets::*;
 
 use crate::home::rooms_list::RoomsListWidgetExt;
+use crate::shared::room_filter_input_bar::{MainFilterAction, RoomFilterInputBarWidgetExt};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -148,6 +149,13 @@ impl ScriptHook for RoomsSideBar {
 }
 impl Widget for RoomsSideBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // If the main room filter input bar changed keywords, re-emit that action
+        // as a MainFilterAction so that other widgets can handle it.
+        if let Event::Actions(actions) = event {
+            if let Some(keywords) = self.view.room_filter_input_bar(cx, ids!(room_filter_input_bar)).changed(actions) {
+                cx.action(MainFilterAction::Changed(keywords));
+            }
+        }
         self.view.handle_event(cx, event, scope);
     }
 

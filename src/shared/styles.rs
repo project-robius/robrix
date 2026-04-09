@@ -199,6 +199,15 @@ script_mod! {
         margin: 0,
         padding: 10,
 
+        // For multiline text inputs, we want to show a light-colored scroll bar.
+        scroll_bar +: {
+            draw_bg +: {
+                color: #00000040
+                color_hover: #00000060
+                color_drag: #00000080
+            }
+        }
+
         draw_bg +: {
             border_radius: 4.0 // was previously 2.0
             border_size: 1.0

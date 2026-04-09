@@ -423,8 +423,8 @@ pub fn stringify_pagination_error(
             return format!("Failed to load earlier messages in \"{room_name}\": \
                 pagination is not supported in this timeline focus mode.");
         }
-        TimelineError::PaginationError(PaginationError::Paginator(PaginatorError::SdkError(sdk_error)))
-        | TimelineError::EventCacheError(EventCacheError::BackpaginationError(sdk_error)) =>
+        TimelineError::PaginationError(PaginationError::Pagination(PaginatorError::SdkError(sdk_error)))
+        | TimelineError::EventCacheError(EventCacheError::PaginationError(sdk_error)) =>
         {
             if let Some(message) = match_sdk_error(sdk_error) {
                 return message; 

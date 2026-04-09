@@ -21,7 +21,7 @@ use matrix_sdk::{
     }
 };
 use matrix_sdk_ui::timeline::{
-    self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MembershipChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, LiveLocationState, MemberProfileChange, MembershipChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}, owned_room_id};
 
@@ -124,6 +124,8 @@ script_mod! {
 
         thread_summary_latest := MessageHtml {
             flow: Right,
+            max_lines: 2
+            text_overflow: Ellipsis
         }
     }
 
@@ -253,6 +255,8 @@ script_mod! {
                         flow: Right, // do not wrap
                         padding: 0,
                         margin: Inset{bottom: 9.0, top: 20.0, right: 10.0,}
+                        max_lines: 1
+                        text_overflow: Ellipsis
                         draw_text +: {
                             text_style: USERNAME_TEXT_STYLE {},
                             color: (USERNAME_TEXT_COLOR)
@@ -1152,6 +1156,15 @@ impl Widget for RoomScreen {
                                             utd,
                                             item_drawn_status,
                                         ),
+                                        MsgLikeKind::LiveLocation(live_loc) => populate_small_state_event(
+                                            cx,
+                                            list,
+                                            item_id,
+                                            &tl_state.kind,
+                                            event_tl_item,
+                                            live_loc,
+                                            item_drawn_status,
+                                        ),
                                         MsgLikeKind::Other(other) => populate_small_state_event(
                                             cx,
                                             list,
@@ -1428,11 +1441,7 @@ impl RoomScreen {
                         // NOTE: this code was copied from the `MessageAction::JumpToRelated` handler;
                         //       we should deduplicate them at some point.
                         let speed = 50.0;
-                        // Scroll to the message right above the replied-to message.
-                        // FIXME: `smooth_scroll_to` should accept a scroll offset parameter too,
-                        //       so that we can scroll to the replied-to message and have it
-                        //       appear beneath the top of the viewport.
-                        portal_list.smooth_scroll_to(cx, index.saturating_sub(1), speed, None);
+                        portal_list.smooth_scroll_to(cx, index, speed, None, 10.0);
                         // start highlight animation.
                         tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
                             item_id: index
@@ -2137,11 +2146,7 @@ impl RoomScreen {
         if let Some(index) = related_msg_tl_index {
             // log!("The related message {replied_to_event} was immediately found in room {}, scrolling to from index {reply_message_item_id} --> {index} (first ID {}).", tl.kind.room_id(), portal_list.first_id());
             let speed = 50.0;
-            // Scroll to the message right *before* the replied-to message.
-            // FIXME: `smooth_scroll_to` should accept a "scroll offset" (first scroll) parameter too,
-            //       so that we can scroll to the replied-to message and have it
-            //       appear beneath the top of the viewport.
-            portal_list.smooth_scroll_to(cx, index.saturating_sub(1), speed, None);
+            portal_list.smooth_scroll_to(cx, index, speed, None, 10.0);
             // start highlight animation.
             tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
                 item_id: index
@@ -3810,7 +3815,7 @@ fn populate_file_message_content(
         .unwrap_or_default();
     let caption = file_content.formatted_caption()
         .map(|fb| format!("<br><i>{}</i>", fb.body))
-        .or_else(|| file_content.caption().map(|c| format!("<br><i>{c}</i>")))
+        .or_else(|| file_content.caption().map(|c| format!("<br><i>{}</i>", htmlize::escape_text(c))))
         .unwrap_or_default();
 
     // TODO: add a button to download the file
@@ -3841,7 +3846,7 @@ fn populate_audio_message_content(
                 .unwrap_or_default(),
             info.mimetype
                 .as_ref()
-                .map(|m| format!("  {m},"))
+                .map(|m| format!("  {},", htmlize::escape_text(m)))
                 .unwrap_or_default(),
             info.size
                 .map(|bytes| format!("  ({}),", ByteSize::b(bytes.into())))
@@ -3850,7 +3855,7 @@ fn populate_audio_message_content(
         .unwrap_or_default();
     let caption = audio.formatted_caption()
         .map(|fb| format!("<br><i>{}</i>", fb.body))
-        .or_else(|| audio.caption().map(|c| format!("<br><i>{c}</i>")))
+        .or_else(|| audio.caption().map(|c| format!("<br><i>{}</i>", htmlize::escape_text(c))))
         .unwrap_or_default();
 
     // TODO: add an audio to play the audio file
@@ -3882,7 +3887,7 @@ fn populate_video_message_content(
                 .unwrap_or_default(),
             info.mimetype
                 .as_ref()
-                .map(|m| format!("  {m},"))
+                .map(|m| format!("  {},", htmlize::escape_text(m)))
                 .unwrap_or_default(),
             info.size
                 .map(|bytes| format!("  ({}),", ByteSize::b(bytes.into())))
@@ -3894,7 +3899,7 @@ fn populate_video_message_content(
         .unwrap_or_default();
     let caption = video.formatted_caption()
         .map(|fb| format!("<br><i>{}</i>", fb.body))
-        .or_else(|| video.caption().map(|c| format!("<br><i>{c}</i>")))
+        .or_else(|| video.caption().map(|c| format!("<br><i>{}</i>", htmlize::escape_text(c))))
         .unwrap_or_default();
 
     // TODO: add an video to play the video file
@@ -4296,6 +4301,27 @@ impl SmallStateEventContent for EncryptedMessage {
 }
 
 // For other message-like content (custom message-like events).
+impl SmallStateEventContent for LiveLocationState {
+    fn populate_item_content(
+        &self,
+        cx: &mut Cx,
+        _list: &mut PortalList,
+        _item_id: usize,
+        item: WidgetRef,
+        _event_tl_item: &EventTimelineItem,
+        username: &str,
+        _item_drawn_status: ItemDrawnStatus,
+        mut new_drawn_status: ItemDrawnStatus,
+    ) -> (WidgetRef, ItemDrawnStatus) {
+        item.label(cx, ids!(content)).set_text(
+            cx,
+            &format!("{username} shared a live location."),
+        );
+        new_drawn_status.content_drawn = true;
+        (item, new_drawn_status)
+    }
+}
+
 impl SmallStateEventContent for OtherMessageLike {
     fn populate_item_content(
         &self,

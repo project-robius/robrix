@@ -13,7 +13,7 @@ use matrix_sdk::{RoomDisplayName, RoomState};
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 
 use crate::{
-    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, room_filter_input_bar::RoomFilterAction}, utils::{self, RoomNameId}
+    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, room_filter_input_bar::MainFilterAction}, utils::{self, RoomNameId}
 };
 
 script_mod! {
@@ -100,6 +100,8 @@ script_mod! {
             flow: Flow.Right{wrap: false}, // do not wrap
             padding: 0,
             align: Align{x: 0.5}
+            max_lines: 1
+            text_overflow: Ellipsis
             draw_text +: {
                 active: instance(0.0)
                 hover: instance(0.0)
@@ -497,9 +499,10 @@ impl Widget for SpacesBar {
 
         if let Event::Actions(actions) = event {
             for action in actions {
-                // The room filter input bar is also used to filter which spaces are visible.
-                if let RoomFilterAction::Changed(keywords) = action.as_widget_action().cast() {
-                    self.update_displayed_spaces(cx, &keywords);
+                // Only handle filter changes from the home screen's filter bar,
+                // not from any other RoomFilterInputBar instance (e.g., SpaceLobbyScreen's).
+                if let Some(MainFilterAction::Changed(keywords)) = action.downcast_ref() {
+                    self.update_displayed_spaces(cx, keywords);
                     continue;
                 }
 
@@ -773,8 +776,7 @@ impl SpacesBar {
                     if let Some(index) = self.displayed_spaces.iter().position(|s| s == &space_id) {
                         let portal_list = self.view.portal_list(cx, ids!(spaces_list));
                         let speed = 40.0;
-                        // Scroll to just above the space to make it more visible.
-                        portal_list.smooth_scroll_to(cx, index.saturating_sub(1), speed, Some(10));
+                        portal_list.smooth_scroll_to(cx, index, speed, Some(10), 10.0);
                     }
                 }
             }

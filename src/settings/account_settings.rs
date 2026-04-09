@@ -111,7 +111,8 @@ script_mod! {
             width: Fill, height: Fit
             flow: Flow.Right{wrap: true},
             align: Align{y: 0.5},
-            spacing: 10
+            spacing: 10,
+            wrap_spacing: 10
 
             // These buttons are disabled by default, and enabled when the user
             // changes the `display_name_input` text.
@@ -186,7 +187,8 @@ script_mod! {
             width: Fill, height: Fit
             flow: Flow.Right{wrap: true},
             align: Align{y: 0.5},
-            spacing: 10
+            spacing: 10,
+            wrap_spacing: 10
 
             manage_account_button := RobrixIconButton {
                 height: mod.widgets.SETTINGS_BUTTON_HEIGHT,

@@ -18,6 +18,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
+use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedRoomId};
 use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
@@ -42,7 +43,6 @@ script_mod! {
         // This only works if the border_color is the same as its parents,
         // which is currently `COLOR_SECONDARY`.
         margin: Inset{left: -4, right: -4, bottom: -4 }
-
         show_bg: true,
         draw_bg +: {
             color: (COLOR_PRIMARY)
@@ -104,7 +104,7 @@ script_mod! {
 
                 mentionable_text_input := MentionableTextInput {
                     width: Fill,
-                    height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
+                    height: Fit
                     margin: Inset {
                         top: 3, // add some space between the top border of the text input and the top border of the room input bar
                         bottom: 5.75, // to line up the middle of the text input with the middle of the buttons
@@ -115,6 +115,7 @@ script_mod! {
                         center +: {
                             text_input := RobrixTextInput {
                                 empty_text: "Write a message (in Markdown) ..."
+                                is_multiline: true,
                             }
                         }
                     }
@@ -133,8 +134,8 @@ script_mod! {
 
             can_not_send_message_notice := SolidView {
                 visible: false
-                padding: Inset{left: 50, right: 50, top: 20, bottom: 20}
-                align: Align{y: 0.5}
+                padding: 20
+                align: Align{x: 0.5, y: 0.5}
                 width: Fill, height: Fit
 
                 show_bg: true
@@ -143,6 +144,7 @@ script_mod! {
                 text := Label {
                     width: Fill,
                     flow: Flow.Right{wrap: true},
+                    align: Align{x: 0.5, y: 0.5}
                     draw_text +: {
                         color: (COLOR_TEXT)
                         text_style: theme.font_italic {font_size: 12.2}
@@ -169,6 +171,9 @@ pub struct RoomInputBar {
     #[rust] was_replying_preview_visible: bool,
     /// Info about the message event that the user is currently replying to, if any.
     #[rust] replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
+    /// Cached natural Fit height of the input_bar, used as the animation
+    /// target when the editing pane is being hidden.
+    #[rust] input_bar_natural_height: f64,
 }
 
 impl Widget for RoomInputBar {
@@ -207,6 +212,34 @@ impl Widget for RoomInputBar {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // Shrink the input_bar's height as the editing pane slides in,
+        // and grow it back as the editing pane slides out.
+        // slide=1.0 → editing pane hidden → input_bar at full Fit height.
+        // slide=0.0 → editing pane shown → input_bar at zero height.
+        let slide = self.editing_pane(cx, ids!(editing_pane)).slide();
+        let input_bar = self.view.view(cx, ids!(input_bar));
+
+        // Remap slide through a steeper curve so the input_bar reaches
+        // its full target height before the ExpDecay tail.
+        let remapped = (slide as f64 * 1.25).min(1.0);
+        if remapped >= 1.0 {
+            // Input_bar has reached its full natural height: switch to Fit
+            // so it can respond to content changes normally.
+            // Update the cached height for future animations.
+            let h = input_bar.area().rect(cx).size.y;
+            if h > 0.0 {
+                self.input_bar_natural_height = h;
+            }
+            if let Some(mut inner) = input_bar.borrow_mut() {
+                inner.walk.height = Size::fit();
+            }
+        } else {
+            let target = self.input_bar_natural_height;
+            if let Some(mut inner) = input_bar.borrow_mut() {
+                inner.walk.height = Size::Fixed((target * remapped).max(0.0));
+            }
+        }
+
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -265,6 +298,7 @@ impl RoomInputBar {
                         Reply {
                             event_id: event_id.to_owned(),
                             enforce_thread,
+                            add_mentions: AddMentions::Yes,
                         }
                     })
                 ).or_else(||
@@ -272,6 +306,7 @@ impl RoomInputBar {
                         Reply {
                             event_id: thread_root_event_id.clone(),
                             enforce_thread: EnforceThread::Threaded(ReplyWithinThread::No),
+                            add_mentions: AddMentions::No,
                         }
                     )
                 );
@@ -306,6 +341,7 @@ impl RoomInputBar {
                         Reply {
                             event_id: event_id.to_owned(),
                             enforce_thread,
+                            add_mentions: AddMentions::Yes,
                         }
                     })
                 ).or_else(||
@@ -313,6 +349,7 @@ impl RoomInputBar {
                         Reply {
                             event_id: thread_root_event_id.clone(),
                             enforce_thread: EnforceThread::Threaded(ReplyWithinThread::No),
+                            add_mentions: AddMentions::No,
                         }
                     )
                 );
@@ -359,7 +396,7 @@ impl RoomInputBar {
             }
         }
 
-        // If the EditingPane has been hidden, handle that.
+        // When the hide animation fully completes, restore the replying preview.
         if self.view.editing_pane(cx, ids!(editing_pane)).was_hidden(actions) {
             self.on_editing_pane_hidden(cx);
         }
@@ -434,13 +471,15 @@ impl RoomInputBar {
         behavior: ShowEditingPaneBehavior,
         timeline_kind: TimelineKind,
     ) {
-        // We must hide the input_bar while the editing pane is shown,
-        // otherwise a very-tall inputted message might show up underneath a shorter editing pane.
-        self.view.view(cx, ids!(input_bar)).set_visible(cx, false);
+        // Cache the input_bar's natural height before the animation shrinks it.
+        let input_bar_height = self.view.view(cx, ids!(input_bar)).area().rect(cx).size.y;
+        if input_bar_height > 0.0 {
+            self.input_bar_natural_height = input_bar_height;
+        }
 
-        // Similarly, we must hide the replying preview and location preview,
-        // since those are not relevant to editing an existing message,
-        // so keeping them visible might confuse the user.
+        // Hide the replying preview and location preview while the editing
+        // pane is shown. The input_bar is not hidden; instead it is slid out
+        // of view in draw_walk using the EditingPane's slide value.
         let replying_preview = self.view.view(cx, ids!(replying_preview));
         self.was_replying_preview_visible = replying_preview.visible();
         replying_preview.set_visible(cx, false);
@@ -461,10 +500,7 @@ impl RoomInputBar {
 
     /// This should be invoked after the EditingPane has been fully hidden.
     fn on_editing_pane_hidden(&mut self, cx: &mut Cx) {
-        // In `show_editing_pane()` above, we hid the input_bar while the editing pane
-        // was being shown, so here we need to make it visible again.
-        // Same goes for the replying_preview, if it was previously shown.
-        self.view.view(cx, ids!(input_bar)).set_visible(cx, true);
+        // Restore the replying_preview.
         if self.was_replying_preview_visible && self.replying_to.is_some() {
             self.view.view(cx, ids!(replying_preview)).set_visible(cx, true);
         }
@@ -489,9 +525,7 @@ impl RoomInputBar {
             input_bar.set_visible(cx, false);
         } else {
             tombstone_footer.hide(cx);
-            if !self.editing_pane(cx, ids!(editing_pane)).is_currently_shown(cx) {
-                input_bar.set_visible(cx, true);
-            }
+            input_bar.set_visible(cx, true);
         }
     }
 

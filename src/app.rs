@@ -46,7 +46,7 @@ script_mod! {
                         right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
                     }
 
-                    View {
+                    overlay_container := View {
                         width: Fill, height: Fill,
                         flow: Overlay,
 
@@ -210,30 +210,6 @@ impl MatchEvent for App {
             error!("Failed to load window state: {}", e);
         }
 
-        // On Linux, hide the caption bar because it uses native window chrome.
-        // On Windows (with custom chrome), the caption bar is needed.
-        // On macOS, we currently show the caption bar to make spacing easy, but it's not technically needed.
-        // If we remove it on macOS, we'd need to add a bit of padding in its place.
-        match cx.os_type() {
-            OsType::LinuxWindow(_) | OsType::LinuxDirect => {
-                let mut window = self.ui.window(cx, ids!(main_window));
-                script_apply_eval!(cx, window, {
-                    show_caption_bar: false
-                });
-            }
-            OsType::Macos => {
-                // Newer macOS versions have a larger traffic light button layout,
-                // so we make the title bar larger to make the buttons vertically centered.
-                // TODO: upstream this into Makepad by querying the actual size of 
-                //       the traffic light buttons on macOS and setting the caption bar height accordingly.
-                let mut caption_bar = self.ui.view(cx, ids!(main_window.caption_bar));
-                script_apply_eval!(cx, caption_bar, {
-                    height: 34.0
-                });
-            }
-            _ => {}
-        }
-
         self.update_login_visibility(cx);
 
         log!("App::Startup: starting matrix sdk loop");
@@ -371,10 +347,11 @@ impl MatchEvent for App {
                 self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
                 let new_message_context_menu = self.ui.new_message_context_menu(cx, ids!(new_message_context_menu));
                 let expected_dimensions = new_message_context_menu.show(cx, details);
-                // Ensure the context menu does not spill over the window's bounds.
-                let rect = self.ui.window(cx, ids!(main_window)).area().rect(cx);
-                let pos_x = min(abs_pos.x, rect.size.x - expected_dimensions.x);
-                let pos_y = min(abs_pos.y, rect.size.y - expected_dimensions.y);
+                // Use the overlay container's rect (not the window's) to correctly position
+                // the context menu relative to the body area, which excludes the caption bar.
+                let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
+                let pos_x = min(abs_pos.x - rect.pos.x, rect.size.x - expected_dimensions.x);
+                let pos_y = min(abs_pos.y - rect.pos.y, rect.size.y - expected_dimensions.y);
                 let margin = Inset {
                     left: pos_x as f64,
                     top: pos_y as f64,
@@ -394,10 +371,11 @@ impl MatchEvent for App {
                 self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
                 let room_context_menu = self.ui.room_context_menu(cx, ids!(room_context_menu));
                 let expected_dimensions = room_context_menu.show(cx, details);
-                // Ensure the context menu does not spill over the window's bounds.
-                let rect = self.ui.window(cx, ids!(main_window)).area().rect(cx);
-                let pos_x = min(pos.x, rect.size.x - expected_dimensions.x);
-                let pos_y = min(pos.y, rect.size.y - expected_dimensions.y);
+                // Use the overlay container's rect (not the window's) to correctly position
+                // the context menu relative to the body area, which excludes the caption bar.
+                let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
+                let pos_x = min(pos.x - rect.pos.x, rect.size.x - expected_dimensions.x);
+                let pos_y = min(pos.y - rect.pos.y, rect.size.y - expected_dimensions.y);
                 let margin = Inset {
                     left: pos_x as f64,
                     top: pos_y as f64,
@@ -738,37 +716,6 @@ impl AppMain for App {
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
 
-        /*
-         * TODO: I'd like for this to work, but it doesn't behave as expected.
-         *       The context menu fails to draw properly when a draw event is passed to it.
-         *       Also, once we do get this to work, we should remove the
-         *       Hit::FingerScroll event handler in the new_message_context_menu widget.
-         *
-        // We only forward "interactive hit" events to the underlying UI view
-        // if none of the various overlay views are visible.
-        // Currently, the only overlay view that captures interactive events is
-        // the new message context menu.
-        // We always forward "non-interactive hit" events to the inner UI view.
-        // We check which overlay views are visible in the order of those views' z-ordering,
-        // such that the top-most views get a chance to handle the event first.
-
-        let new_message_context_menu = self.ui.new_message_context_menu(cx, ids!(new_message_context_menu));
-        let is_interactive_hit = utils::is_interactive_hit_event(event);
-        let is_pane_shown: bool;
-        if new_message_context_menu.is_currently_shown(cx) {
-            is_pane_shown = true;
-            new_message_context_menu.handle_event(cx, event, scope);
-        }
-        else {
-            is_pane_shown = false;
-        }
-
-        if !is_pane_shown || !is_interactive_hit {
-            // Forward the event to the inner UI view.
-            self.ui.handle_event(cx, event, scope);
-        }
-         *
-         */
     }
 }
 

@@ -4,7 +4,7 @@
 //! with an underline to indicate that it is clickable.
 //! Upon hover, it shows a tooltip with the date and time when the message was edited.
 //!
-//! On click, this widget opens a scrollabel modal dialog that shows the full edit history
+//! On click, this widget opens a scrollable modal dialog that shows the full edit history
 //! of the message, including all previous content versions and their timestamps.
 
 use chrono::{DateTime, Local};
