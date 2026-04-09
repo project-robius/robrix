@@ -9,6 +9,7 @@ pub mod html_or_plaintext;
 pub mod icon_button;
 pub mod jump_to_bottom_button;
 pub mod mentionable_text_input;
+pub mod navigation_bar_button;
 pub mod popup_list;
 pub mod room_filter_input_bar;
 pub mod styles;
@@ -27,6 +28,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     styles::script_mod(vm);
     helpers::script_mod(vm);
     icon_button::script_mod(vm);
+    navigation_bar_button::script_mod(vm);
     expand_arrow::script_mod(vm);
     unread_badge::script_mod(vm);
     collapsible_header::script_mod(vm);
