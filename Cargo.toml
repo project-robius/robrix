@@ -159,6 +159,10 @@ askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
 [patch."https://github.com/ruma/ruma"]
 ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
 
+## On Windows, use the `winresource` crate to embed the app's icon and metadata into the executable.
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
 
 [package.metadata.docs.rs]
 all-features = true
@@ -220,6 +224,7 @@ icons = [
     "./packaging/robrix_logo_alpha_128x128.png",
     "./packaging/robrix_logo_alpha_256x256.png",
     "./packaging/robrix_logo_alpha_512x512.png",
+    "./packaging/robrix_logo.ico",
 ]
 out_dir = "./dist"
 
