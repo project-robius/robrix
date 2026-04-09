@@ -71,6 +71,17 @@ The following table shows which host systems can currently be used to build Robr
    cargo run --release
    ```   
 
+> [!TIP]
+> If you get a build error from `aws-lc-sys` about a **"COMPILER BUG DETECTED"** related to `memcmp`
+> ([GCC #95189](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95189)),
+> your GCC version is too old (GCC 9 and earlier are affected).
+> The easiest fix is to build using `clang` instead:
+> ```sh
+> CC=clang CXX=clang++ cargo run --release
+> ```
+> Alternatively, upgrade GCC to version 10 or newer.
+
+
 ## Building & Running Robrix on Mobile: Android, iOS, iPadOS
 
 1. Install the `cargo-makepad` build tool:
@@ -119,6 +130,12 @@ The following table shows which host systems can currently be used to build Robr
      --app=robrix \
      run-sim -p robrix --release
    ```
+> [!TIP]
+> If you get errors from the simulator, update your simulator tooling:
+> ```sh
+> xcodebuild -downloadPlatform iOS
+> ```
+
 
 #### Running on a real iOS device
 4. Run the following command to show all provisioning profiles, signing identities, and device identifiers on your Mac.
