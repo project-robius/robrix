@@ -60,35 +60,64 @@ script_mod! {
     }
 
     mod.widgets.ProfileIcon = #(ProfileIcon::register_widget(vm)) {
-        ..mod.widgets.NavigationTabButton
+        // Inherit hover/selected styling directly from NavigationBarButton
+        // (not via NavigationTabButton, to avoid inheriting its padding/margin
+        // which would squeeze ProfileIcon's avatar+badge layout).
+        ..mod.widgets.NavigationBarButton
 
         // ProfileIcon emits its own dynamic tooltip (with verification badge info)
         // from Rust, so leave the built-in tooltip text empty.
         tooltip_text: ""
 
-        height: (NAVIGATION_TAB_BAR_SIZE - 8)
-        flow: Overlay
+        // Match the drawn bg bounds of `NavigationTabButton` (height and
+        // margin) so that ProfileIcon's hover/selected highlight is the same
+        // size and shape as the other buttons in the tab bar.
+        width: Fill,
+        height: (NAVIGATION_TAB_BAR_SIZE - 5)
+        padding: 0,
+        margin: 3,
         align: Align{ x: 0.5, y: 0.5 }
 
-        our_own_avatar := Avatar {
-            width: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE
-            height: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE
-            // If no avatar picture, use white text on a dark background.
-            text_view +: {
-                draw_bg.color: (COLOR_FG_DISABLED),
-                text +: {
-                    draw_text +: {
-                        text_style: theme.font_regular { font_size: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_FONT_SIZE },
-                        color: (COLOR_PRIMARY),
+        // The avatar and verification badge are wrapped in a sub-container that
+        // is *larger* than the avatar (sized to match ProfileIcon's drawn bg
+        // bounds), so the avatar can be centered while the badge sits in the
+        // gap between the avatar's edge and the wrapper's corner. This places
+        // the badge at the avatar's outer top-right (overlapping the corner)
+        // independently of the parent ProfileIcon's width.
+        avatar_with_badge := View {
+            width: (NAVIGATION_TAB_BAR_SIZE - 5)
+            height: (NAVIGATION_TAB_BAR_SIZE - 5)
+            flow: Overlay
+            align: Align { x: 0.5, y: 0.5 }
+
+            our_own_avatar := Avatar {
+                width: (mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE)
+                height: (mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE)
+                // If no avatar picture, use white text on a dark background.
+                text_view +: {
+                    draw_bg.color: (COLOR_FG_DISABLED),
+                    text +: {
+                        draw_text +: {
+                            text_style: theme.font_regular { font_size: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_FONT_SIZE },
+                            color: (COLOR_PRIMARY),
+                        }
                     }
                 }
             }
-        }
 
-        View {
-            align: Align { x: 0.5, y: 0.0 }
-            margin: Inset{ left: (mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE * 0.9) }
-            verification_badge := VerificationBadge {}
+            // A Fill-sized View that aligns the badge (which is Fit-sized)
+            // to the top-right corner of the wrapper. Since the wrapper is
+            // larger than the avatar, the badge ends up sitting near the
+            // avatar's outer top-right corner, half-overlapping the avatar.
+            // The right/top margin nudges the badge a few pixels south-west
+            // so it sits visually centered on the avatar's corner.
+            View {
+                width: Fill,
+                height: Fill,
+                align: Align { x: 1.0, y: 0.0 }
+                margin: Inset { left: 0, bottom: 0, top: 2, right: 2 }
+                verification_badge := VerificationBadge {}
+            }
         }
     }
 
