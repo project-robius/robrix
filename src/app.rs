@@ -663,37 +663,6 @@ impl AppMain for App {
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
 
-        /*
-         * TODO: I'd like for this to work, but it doesn't behave as expected.
-         *       The context menu fails to draw properly when a draw event is passed to it.
-         *       Also, once we do get this to work, we should remove the
-         *       Hit::FingerScroll event handler in the new_message_context_menu widget.
-         *
-        // We only forward "interactive hit" events to the underlying UI view
-        // if none of the various overlay views are visible.
-        // Currently, the only overlay view that captures interactive events is
-        // the new message context menu.
-        // We always forward "non-interactive hit" events to the inner UI view.
-        // We check which overlay views are visible in the order of those views' z-ordering,
-        // such that the top-most views get a chance to handle the event first.
-
-        let new_message_context_menu = self.ui.new_message_context_menu(cx, ids!(new_message_context_menu));
-        let is_interactive_hit = utils::is_interactive_hit_event(event);
-        let is_pane_shown: bool;
-        if new_message_context_menu.is_currently_shown(cx) {
-            is_pane_shown = true;
-            new_message_context_menu.handle_event(cx, event, scope);
-        }
-        else {
-            is_pane_shown = false;
-        }
-
-        if !is_pane_shown || !is_interactive_hit {
-            // Forward the event to the inner UI view.
-            self.ui.handle_event(cx, event, scope);
-        }
-         *
-         */
     }
 }
 
