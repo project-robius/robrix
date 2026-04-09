@@ -26,7 +26,7 @@ script_mod! {
                 settings_header_title := TitleLabel {
                     padding: 0,
                     margin: Inset{ left: 1, top: 11 },
-                    text: "Add/Explore Rooms"
+                    text: "All Settings"
                     draw_text +: {
                         text_style: theme.font_regular {font_size: 18},
                     }
