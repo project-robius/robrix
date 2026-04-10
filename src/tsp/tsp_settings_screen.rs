@@ -3,14 +3,11 @@ use makepad_widgets::*;
 
 use crate::{shared::{popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
 
-const REPUBLISH_IDENTITY_BUTTON_TEXT: &str = "Republish Current Identity to DID Server";
-
 script_mod! {
     link tsp_enabled
 
     use mod.prelude.widgets.*
     use mod.widgets.*
-
 
     mod.widgets.REPUBLISH_IDENTITY_BUTTON_TEXT = "Republish Current Identity to DID Server"
 
@@ -32,46 +29,32 @@ script_mod! {
             flow: Right,
             spacing: 10
 
-            copy_identity_button := RobrixIconButton {
+            copy_identity_button := RobrixNeutralIconButton {
                 margin: Inset{left: 5}
                 padding: 12,
                 spacing: 0,
-                draw_bg.color: (COLOR_SECONDARY)
-                draw_icon +: {
-                    svg: (ICON_COPY)
-                }
+                draw_icon.svg: (ICON_COPY)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{right: -2} }
             }
 
             current_identity_label := Label {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true},
-                margin: Inset{top: 10}
+                margin: Inset{top: 8}
                 draw_text +: {
-                    wrap: Line,
                     text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
             }
         }
 
         republish_identity_button := RobrixIconButton {
-            width: Fit, height: Fit,
+            width: Fit,
+            height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
             padding: 10,
             margin: Inset{top: 8, bottom: 10, left: 5},
-
-            draw_bg +: {
-                color: (COLOR_ACTIVE_PRIMARY),
-                border_radius: 5.0
-            }
-            draw_icon +: {
-                svg: (ICON_UPLOAD)
-                color: (COLOR_PRIMARY),
-            }
+            draw_icon.svg: (ICON_UPLOAD)
             icon_walk: Walk{width: 16, height: 16}
-            draw_text +: {
-                color: (COLOR_PRIMARY),
-            }
-            text: (REPUBLISH_IDENTITY_BUTTON_TEXT)
+            text: mod.widgets.REPUBLISH_IDENTITY_BUTTON_TEXT
         }
 
 
@@ -86,7 +69,6 @@ script_mod! {
                 margin: Inset{top: 10, bottom: 8, left: 13, right: 10},
                 flow: Flow.Right{wrap: true},
                 draw_text +: {
-                    wrap: Line,
                     color: (COLOR_TEXT_WARNING_NOT_FOUND),
                     text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
@@ -125,64 +107,37 @@ script_mod! {
             align: Align{y: 0.5},
             spacing: 10
 
-            create_did_button := RobrixIconButton {
-                width: Fit, height: Fit,
+            create_did_button := RobrixPositiveIconButton {
+                width: Fit,
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: 10,
                 margin: Inset{left: 5},
-
-                draw_bg +: {
-                    border_color: (COLOR_FG_ACCEPT_GREEN),
-                    color: (COLOR_BG_ACCEPT_GREEN),
-                    border_radius: 5.0
-                }
-                draw_icon +: {
-                    svg: (ICON_ADD_USER)
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
-                icon_walk: Walk{width: 21, height: Fit, margin: 0}
-                draw_text +: {
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
+                draw_icon.svg: (ICON_ADD_USER)
+                icon_walk: Walk{width: 19, height: Fit, margin: 0}
                 text: "Create New Identity (DID)"
             }
 
-            create_wallet_button := RobrixIconButton {
-                width: Fit, height: Fit,
+            create_wallet_button := RobrixPositiveIconButton {
+                width: Fit,
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: 10,
                 margin: Inset{left: 5},
-
-                draw_bg +: {
-                    border_color: (COLOR_FG_ACCEPT_GREEN),
-                    color: (COLOR_BG_ACCEPT_GREEN),
-                    border_radius: 5.0
-                }
-                draw_icon +: {
-                    svg: (ICON_ADD_WALLET)
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
+                draw_icon.svg: (ICON_ADD_WALLET)
                 icon_walk: Walk{width: 21, height: Fit, margin: 0}
-                draw_text +: {
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
                 text: "Create New Wallet"
             }
 
             import_wallet_button := RobrixIconButton {
+                width: Fit,
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 5}
-                draw_bg.color: (COLOR_ACTIVE_PRIMARY)
-                draw_text +: {
-                    color: (COLOR_PRIMARY)
-                    text_style: REGULAR_TEXT {}
-                }
                 text: "Import Existing Wallet"
-                // TODO: fix this icon, or pick a different SVG
-                // draw_icon +: {
-                //     svg: (ICON_IMPORT)
-                //     color: (COLOR_PRIMARY)
-                // }
-                // icon_walk: Walk{width: 16, height: 16}
-                icon_walk: Walk{width: 0, height: 0}
+                draw_icon +: {
+                    svg: (ICON_IMPORT)
+                    color: (COLOR_PRIMARY)
+                }
+                icon_walk: Walk{width: 16, height: 16}
             }
         }
     }
@@ -423,7 +378,7 @@ impl MatchEvent for TspSettingsScreen {
                     // restore the republish button to its original state.
                     script_apply_eval!(cx, republish_identity_button, {
                         enabled: true,
-                        text: #(REPUBLISH_IDENTITY_BUTTON_TEXT),
+                        text: mod.widgets.REPUBLISH_IDENTITY_BUTTON_TEXT,
                     });
                     match result {
                         Ok(did) => {

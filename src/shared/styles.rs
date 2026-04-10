@@ -7,7 +7,7 @@ script_mod! {
 
     mod.widgets.ICON_ADD              = crate_resource("self://resources/icons/add.svg")
     mod.widgets.ICON_ADD_REACTION     = crate_resource("self://resources/icons/add_reaction.svg")
-    mod.widgets.ICON_ADD_USER         = crate_resource("self://resources/icons/add_user.svg") // TODO: FIX
+    mod.widgets.ICON_ADD_USER         = crate_resource("self://resources/icons/add_user.svg")
     mod.widgets.ICON_ADD_WALLET       = crate_resource("self://resources/icons/add_wallet.svg")
     mod.widgets.ICON_FORBIDDEN        = crate_resource("self://resources/icons/forbidden.svg")
     mod.widgets.ICON_CHECKMARK        = crate_resource("self://resources/icons/checkmark.svg")
@@ -19,7 +19,7 @@ script_mod! {
     mod.widgets.ICON_COPY             = crate_resource("self://resources/icons/copy.svg")
     mod.widgets.ICON_EDIT             = crate_resource("self://resources/icons/edit.svg")
     mod.widgets.ICON_EXTERNAL_LINK    = crate_resource("self://resources/icons/external_link.svg")
-    mod.widgets.ICON_IMPORT           = crate_resource("self://resources/icons/import.svg") // TODO: FIX
+    mod.widgets.ICON_IMPORT           = crate_resource("self://resources/icons/import.svg")
     mod.widgets.ICON_HIERARCHY        = crate_resource("self://resources/icons/hierarchy.svg")
     mod.widgets.ICON_HOME             = crate_resource("self://resources/icons/home.svg")
     mod.widgets.ICON_HTML_FILE        = crate_resource("self://resources/icons/html_file.svg")
@@ -37,6 +37,8 @@ script_mod! {
     mod.widgets.ICON_SQUARES          = crate_resource("self://resources/icons/squares_filled.svg")
     mod.widgets.ICON_TOMBSTONE        = crate_resource("self://resources/icons/tombstone.svg")
     mod.widgets.ICON_TRASH            = crate_resource("self://resources/icons/trash.svg")
+    mod.widgets.ICON_TRIANGLE_DOWN    = crate_resource("self://resources/icons/triangle_down_fill.svg")
+    mod.widgets.ICON_TRIANGLE_UP      = crate_resource("self://resources/icons/triangle_up_fill.svg")
     mod.widgets.ICON_UPLOAD           = crate_resource("self://resources/icons/upload.svg")
     mod.widgets.ICON_VIEW_SOURCE      = crate_resource("self://resources/icons/view_source.svg")
     mod.widgets.ICON_WARNING          = crate_resource("self://resources/icons/warning.svg")
@@ -70,6 +72,7 @@ script_mod! {
 
 
     mod.widgets.MESSAGE_FONT_SIZE = 11
+    mod.widgets.REDACTED_MESSAGE_FONT_SIZE = 10
 
     mod.widgets.MESSAGE_TEXT_COLOR = #x333
     // notices (automated messages from bots) use a lighter color
@@ -184,6 +187,10 @@ script_mod! {
 
     mod.widgets.COLOR_IMAGE_VIEWER_META_BACKGROUND = #E8E8E8
 
+    // Ensure all settings buttons have a consistent height
+    mod.widgets.SETTINGS_BUTTON_HEIGHT = 40
+
+
     // A text input widget styled for Robrix.
     mod.widgets.RobrixTextInput = TextInput {
         width: Fill, height: Fit
@@ -191,6 +198,15 @@ script_mod! {
         align: Align{y: 0.5}
         margin: 0,
         padding: 10,
+
+        // For multiline text inputs, we want to show a light-colored scroll bar.
+        scroll_bar +: {
+            draw_bg +: {
+                color: #00000040
+                color_hover: #00000060
+                color_drag: #00000080
+            }
+        }
 
         draw_bg +: {
             border_radius: 4.0 // was previously 2.0
@@ -244,9 +260,6 @@ script_mod! {
 }
 
 
-pub const NAVIGATION_TAB_BAR_SIZE: f64 = 68.0;
-pub const REDACTED_MESSAGE_FONT_SIZE: f32 = 10.0;
-
 /// #FFFFFF
 pub const COLOR_PRIMARY:               Vec4 = vec4(1.0, 1.0, 1.0, 1.0);
 /// #0F88FE
@@ -285,3 +298,85 @@ pub const COLOR_TEXT_WARNING_NOT_FOUND: Vec4 = vec4(0.584, 0.219, 0.0, 1.0);
 pub const COLOR_BG_PREVIEW:            Vec4 = vec4(0.941, 0.961, 1.0, 1.0);
 /// #CDEDDF
 pub const COLOR_BG_PREVIEW_HOVER:      Vec4 = vec4(0.804, 0.929, 0.875, 1.0);
+
+/// Applies positive (green) button styling to the given button.
+pub fn apply_positive_button_style(cx: &mut Cx, button: &mut ButtonRef) {
+    script_apply_eval!(cx, button, {
+        draw_bg +: {
+            border_color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
+            color: mod.widgets.COLOR_BG_ACCEPT_GREEN,
+            color_hover: #D4EED4,
+            color_down: #B8E0B8,
+        }
+        draw_text +: {
+            color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
+            color_hover: mod.widgets.COLOR_FG_ACCEPT_GREEN,
+            color_down: mod.widgets.COLOR_FG_ACCEPT_GREEN,
+        }
+        draw_icon +: {
+            color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
+        }
+    });
+}
+
+/// Applies negative (red) button styling to the given button.
+pub fn apply_negative_button_style(cx: &mut Cx, button: &mut ButtonRef) {
+    script_apply_eval!(cx, button, {
+        draw_bg +: {
+            border_color: mod.widgets.COLOR_FG_DANGER_RED,
+            color: mod.widgets.COLOR_BG_DANGER_RED,
+            color_hover: #F0D4D4,
+            color_down: #E0B8B8,
+        }
+        draw_text +: {
+            color: mod.widgets.COLOR_FG_DANGER_RED,
+            color_hover: mod.widgets.COLOR_FG_DANGER_RED,
+            color_down: mod.widgets.COLOR_FG_DANGER_RED,
+        }
+        draw_icon +: {
+            color: mod.widgets.COLOR_FG_DANGER_RED,
+        }
+    });
+}
+
+/// Applies neutral (gray) button styling to the given button.
+pub fn apply_neutral_button_style(cx: &mut Cx, button: &mut ButtonRef) {
+    script_apply_eval!(cx, button, {
+        draw_bg +: {
+            border_color: mod.widgets.COLOR_BG_DISABLED,
+            color: mod.widgets.COLOR_SECONDARY,
+            color_hover: #D0D0D0,
+            color_down: #C0C0C0,
+        }
+        draw_text +: {
+            color: mod.widgets.COLOR_TEXT,
+            color_hover: mod.widgets.COLOR_TEXT,
+            color_down: mod.widgets.COLOR_TEXT,
+        }
+        draw_icon +: {
+            color: mod.widgets.COLOR_TEXT,
+        }
+    });
+}
+
+/// Applies the primary (blue) button styling to the given button.
+pub fn apply_primary_button_style(cx: &mut Cx, button: &mut ButtonRef) {
+    script_apply_eval!(cx, button, {
+        draw_bg +: {
+            color: mod.widgets.COLOR_ACTIVE_PRIMARY,
+            color_hover: mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER,
+            color_down: #0C5DAA,
+            border_color: #0000,
+            border_color_hover: #0000,
+            border_color_down: #0000,
+        }
+        draw_text +: {
+            color: mod.widgets.COLOR_PRIMARY,
+            color_hover: mod.widgets.COLOR_PRIMARY,
+            color_down: mod.widgets.COLOR_PRIMARY,
+        }
+        draw_icon +: {
+            color: mod.widgets.COLOR_PRIMARY,
+        }
+    });
+}

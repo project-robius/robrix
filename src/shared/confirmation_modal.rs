@@ -40,7 +40,6 @@ script_mod! {
                     draw_text +: {
                         text_style: TITLE_TEXT {font_size: 13},
                         color: #000
-                        flow: Flow.Right{wrap: true}
                     }
                 }
             }
@@ -55,7 +54,6 @@ script_mod! {
                     draw_text +: {
                         text_style: REGULAR_TEXT {font_size: 11.5},
                         color: #000
-                        flow: Flow.Right{wrap: true}
                     }
                 }
             }
@@ -68,37 +66,19 @@ script_mod! {
                 align: Align{x: 1.0, y: 0.5}
                 spacing: 20
 
-                cancel_button := RobrixIconButton {
+                cancel_button := RobrixNeutralIconButton {
                     width: 120,
                     align: Align{x: 0.5, y: 0.5}
                     padding: 15,
                     icon_walk: Walk{width: 0, height: 0, margin: 0}
-    
-                    draw_bg +: {
-                        border_size: 0.75
-                        border_color: (COLOR_BG_DISABLED)
-                        color: (COLOR_SECONDARY)
-                    }
-                    draw_text +: {
-                        color: (COLOR_TEXT),
-                    }
                     text: "Cancel"
                 }
 
-                accept_button := RobrixIconButton {
+                accept_button := RobrixPositiveIconButton {
                     width: 120
                     align: Align{x: 0.5, y: 0.5}
                     padding: 15,
                     icon_walk: Walk{width: 0, height: 0, margin: 0}
-
-                    draw_bg +: {
-                        border_size: 0.75
-                        border_color: (COLOR_ACTIVE_PRIMARY_DARKER)
-                        color: (COLOR_ACTIVE_PRIMARY)
-                    }
-                    draw_text +: {
-                        color: (COLOR_PRIMARY),
-                    }
                     text: "Confirm"
                 }
             }
@@ -107,11 +87,43 @@ script_mod! {
 
     // A confirmation modal for a positive action.
     // The accept button is green with a checkmark icon.
-    mod.widgets.PositiveConfirmationModal = mod.widgets.ConfirmationModal {}
+    mod.widgets.PositiveConfirmationModal = mod.widgets.ConfirmationModal {
+        wrapper +: {
+            buttons_view +: {
+                cancel_button +: {
+                    draw_icon +: { svg: (ICON_FORBIDDEN) }
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
+                }
+                accept_button +: {
+                    draw_icon +: { svg: (ICON_CHECKMARK) }
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
+                }
+            }
+        }
+    }
 
     // A confirmation modal for a negative action.
     // The accept button is red with a forbidden icon.
-    mod.widgets.NegativeConfirmationModal = mod.widgets.ConfirmationModal {}
+    mod.widgets.NegativeConfirmationModal = mod.widgets.ConfirmationModal {
+        wrapper +: {
+            buttons_view +: {
+                cancel_button := RobrixNeutralIconButton {
+                    width: 120,
+                    align: Align{x: 0.5, y: 0.5}
+                    padding: 15,
+                    draw_icon +: { svg: (ICON_FORBIDDEN) }
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
+                }
+                accept_button := RobrixNegativeIconButton {
+                    width: 120,
+                    align: Align{x: 0.5, y: 0.5}
+                    padding: 15,
+                    draw_icon +: { svg: (ICON_CLOSE) }
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
+                }
+            }
+        }
+    }
 }
 
 /// Widget actions emitted by the ConfirmationModal.

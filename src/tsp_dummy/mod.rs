@@ -38,7 +38,6 @@ script_mod! {
             align: Align{x: 0}
             margin: Inset{top: 10, bottom: 10}
             draw_text +: {
-                flow: Flow.Right{wrap: true},
                 color: (MESSAGE_TEXT_COLOR),
                 text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
             }

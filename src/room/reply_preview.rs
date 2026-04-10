@@ -40,10 +40,11 @@ script_mod! {
                 width: Fill,
                 flow: Right, // do not wrap
                 margin: Inset{ left: 5.0, top: 2 }
+                max_lines: 1
+                text_overflow: Ellipsis
                 draw_text +: {
                     text_style: USERNAME_TEXT_STYLE { font_size: 10 },
                     color: (USERNAME_TEXT_COLOR)
-                    flow: Flow.Right{wrap: true},
                 }
                 text: "<Username not available>"
             }
@@ -54,11 +55,11 @@ script_mod! {
             html_view +: {
                 html +: {
                     font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE)
-                    text_style_normal: theme.font_regular { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
-                    text_style_italic: theme.font_italic { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
-                    text_style_bold: theme.font_bold { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
-                    text_style_bold_italic: theme.font_bold_italic { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
-                    text_style_fixed: theme.font_code { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
+                    text_style_normal +: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
+                    text_style_italic +: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
+                    text_style_bold +: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
+                    text_style_bold_italic +: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
+                    text_style_fixed +: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
                 }
             }
             plaintext_view +: {
@@ -98,27 +99,18 @@ script_mod! {
                 draw_text +: {
                     text_style: USERNAME_TEXT_STYLE {},
                     color: #222,
-                    flow: Flow.Right{wrap: true},
                 }
                 text: "Replying to:"
             }
 
-            cancel_reply_button := RobrixIconButton {
+            cancel_reply_button := RobrixNegativeIconButton {
                 width: Fit,
                 height: Fit,
                 padding: 13,
                 spacing: 0,
                 margin: Inset{left: 5, right: 0},
-
-                draw_bg +: {
-                    border_color: (COLOR_FG_DANGER_RED),
-                    color: (COLOR_BG_DANGER_RED)
-                    border_radius: 5.0
-                }
-                draw_icon +: {
-                    svg: (ICON_CLOSE),
-                    color: (COLOR_FG_DANGER_RED)
-                }
+                draw_bg.border_radius: 4.0
+                draw_icon.svg: (ICON_CLOSE)
                 icon_walk: Walk{width: 16, height: 16, margin: 0}
             }
         }

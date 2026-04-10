@@ -12,25 +12,15 @@ script_mod! {
     use mod.widgets.*
 
 
-
     // The main view that allows the user to add (join) or explore new rooms/spaces.
     mod.widgets.AddRoomScreen = #(AddRoomScreen::register_widget(vm)) {
+        ..mod.widgets.ScrollYView
+
         width: Fill, height: Fill,
         flow: Down,
         padding: Inset{top: 5, left: 15, right: 15, bottom: 0},
 
-        // show_bg: true
-        // draw_bg +: {
-        //     color: (COLOR_PRIMARY)
-        // }
-
         title := TitleLabel {
-            flow: Flow.Right{wrap: true},
-            draw_text +: {
-                text_style: TITLE_TEXT {font_size: 13},
-                color: #000
-                flow: Flow.Right{wrap: true}
-            }
             text: "Add/Explore Rooms and Spaces"
             draw_text +: {
                 text_style: theme.font_regular {font_size: 18},
@@ -80,15 +70,7 @@ script_mod! {
             search_for_room_button := RobrixIconButton {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 14}
                 height: 40
-                draw_bg.color: (COLOR_ACTIVE_PRIMARY)
-                draw_icon +: {
-                    svg: (ICON_SEARCH)
-                    color: (COLOR_PRIMARY)
-                }
-                draw_text +: {
-                    color: (COLOR_PRIMARY)
-                    text_style: REGULAR_TEXT {}
-                }
+                draw_icon.svg: (ICON_SEARCH)
                 icon_walk: Walk{width: 16, height: 16}
                 text: "Go"
             }
@@ -117,7 +99,6 @@ script_mod! {
                 flow: Flow.Right{wrap: true},
                 margin: Inset { top: 4 }
                 draw_text +: {
-                    wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
                     text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
@@ -130,7 +111,6 @@ script_mod! {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true},
                 draw_text +: {
-                    wrap: Line,
                     color: (COLOR_FG_DANGER_RED),
                     text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
@@ -180,7 +160,6 @@ script_mod! {
                     draw_text +: {
                         text_style: TITLE_TEXT { font_size: 16 }
                         color: (COLOR_TEXT)
-                        flow: Flow.Right{wrap: true},
                     }
                 }
             }
@@ -191,7 +170,6 @@ script_mod! {
                 flow: Flow.Right{wrap: true},
                 margin: Inset{top: 10}
                 draw_text +: {
-                    wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
                     text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
@@ -212,7 +190,6 @@ script_mod! {
                     width: Fit, height: Fit
                     flow: Flow.Right{wrap: true},
                     draw_text +: {
-                        wrap: Line,
                         color: (MESSAGE_TEXT_COLOR),
                         text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                     }
@@ -222,7 +199,6 @@ script_mod! {
                     width: Fit, height: Fit
                     flow: Flow.Right{wrap: true},
                     draw_text +: {
-                        wrap: Line,
                         color: (SMALL_STATE_TEXT_COLOR),
                         text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                     }
@@ -236,7 +212,7 @@ script_mod! {
             room_topic := MessageHtml {
                 padding: Inset{left: 20, top: 5, right: 10, bottom: 10}
                 width: Fill,
-                height: Fit
+                height: Fit,
                 font_size: 11
                 font_color: (MESSAGE_TEXT_COLOR)
             }
@@ -251,40 +227,18 @@ script_mod! {
 
                 // This button's text is based on the room state (e.g., joined, left, invited)
                 // the room's join rules (e.g., public, can knock, invite-only (in which we disable it)).
-                join_room_button := RobrixIconButton {
+                join_room_button := RobrixPositiveIconButton {
                     padding: 15,
-                    draw_icon +: {
-                        svg: (ICON_JOIN_ROOM),
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
+                    draw_icon.svg: (ICON_JOIN_ROOM)
                     icon_walk: Walk{width: 17, height: 17, margin: Inset{left: -2, right: -1} }
-
-                    draw_bg +: {
-                        border_color: (COLOR_FG_ACCEPT_GREEN),
-                        color: (COLOR_BG_ACCEPT_GREEN)
-                    }
-                    draw_text +: {
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
                 }
 
-                cancel_button := RobrixIconButton {
+                cancel_button := RobrixNegativeIconButton {
                     align: Align{x: 0.5, y: 0.5}
                     padding: 15
-                    draw_icon +: {
-                        svg: (ICON_FORBIDDEN)
-                        color: (COLOR_FG_DANGER_RED),
-                    }
+                    draw_icon.svg: (ICON_FORBIDDEN)
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-
-                    draw_bg +: {
-                        border_color: (COLOR_FG_DANGER_RED),
-                        color: (COLOR_BG_DANGER_RED)
-                    }
                     text: "Cancel"
-                    draw_text +: {
-                        color: (COLOR_FG_DANGER_RED),
-                    }
                 }
             }
         }
@@ -404,6 +358,7 @@ impl Widget for AddRoomScreen {
             if cancel_button.clicked(actions) {
                 self.state = AddRoomState::WaitingOnUserInput;
                 room_alias_id_input.set_text(cx, "");
+                room_alias_id_input.set_key_focus(cx);
                 self.redraw(cx);
             }
 
@@ -457,6 +412,7 @@ impl Widget for AddRoomScreen {
                             None,
                         );
                         self.state = AddRoomState::ParseError(err_str);
+                        room_alias_id_input.set_key_focus(cx);
                     }
                 }
                 self.redraw(cx);
@@ -475,6 +431,9 @@ impl Widget for AddRoomScreen {
                                 room_or_alias_id,
                                 via,
                             };
+                            // Reset the buttons' hover states when they are first shown.
+                            join_room_button.reset_hover(cx);
+                            cancel_button.reset_hover(cx);
                             self.redraw(cx);
                             break;
                         }
@@ -759,8 +718,6 @@ impl Widget for AddRoomScreen {
                     AddRoomState::FetchedRoomPreview { .. } => {
                         join_room_button.set_enabled(cx, !matches!(join_function, JoinButtonFunction::None));
                         self.join_function = join_function;
-                        join_room_button.reset_hover(cx);
-                        fetched_room_summary.button(cx, ids!(cancel_button)).reset_hover(cx);
                     }
                     AddRoomState::Knocked { .. } => {
                         room_summary.set_text(cx, &format!("You have knocked on this {room_or_space_lc} and must now wait for someone to invite you in."));

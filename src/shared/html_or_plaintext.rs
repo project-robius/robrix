@@ -119,6 +119,7 @@ script_mod! {
         text_style_fixed: theme.font_code {
             font_size: (MESSAGE_FONT_SIZE)
             line_spacing: (MESSAGE_TEXT_LINE_SPACING)
+            top_drop: 0.21
         }
         draw_block +: {
             line_color: (MESSAGE_TEXT_COLOR)
@@ -134,7 +135,8 @@ script_mod! {
         sep_walk: Walk{ margin: Inset{ top: 10, bottom: 10 } }
 
         list_item_layout: Layout{ padding: Inset{left: 5.0, top: 1.0, bottom: 1.0}, }
-        list_item_walk: Walk{ margin: Inset{ left: 0, right: 0, top: 3, bottom: 3 } }
+        list_item_marker_pad: 8.0
+        list_item_walk: Walk{ margin: Inset{ left: 0, right: 0, top: 1, bottom: 3 } }
         code_layout: Layout{ padding: Inset{top: 15.0, bottom: 15.0, left: 15, right: 5 } }
         code_walk: Walk{ margin: Inset{ top: 10, bottom: 10, left: 0, right: 0 } }
 
@@ -454,7 +456,7 @@ impl MatrixLinkPillRef {
 }
 
 /// A widget used to display a single HTML `<span>` tag or a `<font>` tag.
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 struct MatrixHtmlSpan {
     #[uid] uid: WidgetUid,
     // TODO: this is unused; just here to invalidly satisfy the area provider.
@@ -479,6 +481,31 @@ struct MatrixHtmlSpan {
     /// Background color: the `data-mx-bg-color` attribute.
     #[rust] bg_color: Option<Vec4>,
 }
+
+impl ScriptHook for MatrixHtmlSpan {
+    // After an MatrixHtmlSpan instance has been instantiated, we must
+    // populate its struct fields from the `<span>` or `<font>` tag's attributes.
+    fn on_after_new_scoped(&mut self, _vm: &mut ScriptVm, scope: &mut Scope) {
+        // The attributes we care about (we allow all attributes in both tags):
+        // * in `<font>` tags: `color`
+        // * in `<span>` tags: `data-mx-color`, `data-mx-bg-color`, `data-mx-spoiler`
+        if let Some(doc) = scope.props.get::<makepad_html::HtmlDoc>() {
+            let mut walker = doc.new_walker_with_index(scope.index + 1);
+            while let Some((lc, attr)) = walker.while_attr_lc() {
+                let attr = attr.trim_matches(['"', '\'']);
+                match lc {
+                    id!(color)
+                    | id!(data-mx-color) => self.fg_color = utils::vec4_from_hex_str(attr),
+                    id!(data-mx-bg-color) => self.bg_color = utils::vec4_from_hex_str(attr),
+                    id!(data-mx-spoiler) => self.spoiler = SpoilerDisplay::Hidden { reason: attr.into() },
+                    _ => ()
+                }
+            }
+        }
+    }
+}
+
+
 
 
 /// The possible states that a spoiler can be in: hidden or revealed.
@@ -683,6 +710,50 @@ impl HtmlOrPlaintextRef {
     pub fn show_html<T: AsRef<str>>(&self, cx: &mut Cx, html_body: T) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.show_html(cx, html_body);
+        }
+    }
+
+    /// Sets the color of links in the HTML content.
+    ///
+    /// This modifies the cached `HtmlLink` widget instances inside the inner
+    /// `Html` widget's `TextFlow` items. On the very first draw (before items
+    /// are created), this is a no-op, but subsequent frames will have the
+    /// correct color.
+    pub fn set_link_color(&self, cx: &mut Cx, color: Option<Vec4>) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_link_color(cx, color);
+        }
+    }
+}
+
+impl HtmlOrPlaintext {
+    /// See [`HtmlOrPlaintextRef::set_link_color()`].
+    pub fn set_link_color(&mut self, cx: &mut Cx, color: Option<Vec4>) {
+        let html_ref = self.html(cx, ids!(html_view.html));
+        let Some(mut html) = html_ref.borrow_mut() else { return };
+        // Iterate over cached TextFlow items (auto-generated IDs start at 1)
+        // until we hit a non-existent item.
+        let mut i = 1u64;
+        loop {
+            let item = html.existing_item(LiveId(i));
+            if item.is_empty() { break; }
+            // Check if this item is a RobrixHtmlLink and modify its inner HtmlLink.
+            if let Some(link) = item.borrow_mut::<RobrixHtmlLink>() {
+                let mut html_link = link.html_link(cx, ids!(html_link));
+                match color {
+                    Some(c) => {
+                        script_apply_eval!(cx, html_link, {
+                            color: #(c)
+                        });
+                    }
+                    None => {
+                        script_apply_eval!(cx, html_link, {
+                            color: nil
+                        });
+                    }
+                }
+            }
+            i += 1;
         }
     }
 }

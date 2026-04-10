@@ -18,11 +18,13 @@ script_mod! {
     mod.widgets.WalletEntry = #(WalletEntry::register_widget(vm)) {
         width: Fill, height: Fit
         flow: Down
+        align: Align { y: 0.5 }
 
         View {
             width: Fill, height: Fit
             flow: Flow.Right{wrap: true},
             padding: 10
+            align: Align { y: 0.5 }
 
             wallet_name := Label {
                 width: Fit, height: Fit
@@ -50,9 +52,11 @@ script_mod! {
                 visible: false,
                 width: Fit, height: Fit
                 margin: Inset{left: 20}
+                align: Align { y: 0.5 }
                 Label {
-                    margin: Inset{top: 2.9}
                     width: Fit, height: Fit
+                    margin: Inset{top: 3}
+                    align: Align { y: 0.5 }
                     flow: Right,
                     draw_text +: {
                         color: (COLOR_FG_ACCEPT_GREEN),
@@ -66,10 +70,12 @@ script_mod! {
                 visible: false,
                 width: Fit, height: Fit
                 margin: Inset{left: 20}
+                align: Align { y: 0.5 }
                 Label {
                     margin: Inset{top: 2.9}
                     width: Fit, height: Fit
                     flow: Right,
+                    align: Align { y: 0.5 }
                     draw_text +: {
                         color: (COLOR_FG_DANGER_RED),
                         text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
@@ -79,53 +85,28 @@ script_mod! {
             }
 
             set_default_wallet_button := RobrixIconButton {
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 20}
-                draw_bg.color: (COLOR_ACTIVE_PRIMARY)
-                draw_icon +: {
-                    svg: (ICON_CHECKMARK)
-                    color: (COLOR_PRIMARY)
-                }
-                draw_text +: {
-                    color: (COLOR_PRIMARY)
-                    text_style: REGULAR_TEXT {}
-                }
+                draw_icon.svg: (ICON_CHECKMARK)
                 icon_walk: Walk{width: 16, height: 16}
                 text: "Set As Default"
             }
 
-            remove_wallet_button := RobrixIconButton {
+            remove_wallet_button := RobrixNegativeIconButton {
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 20}
-                draw_bg +: {
-                    color: (COLOR_BG_DANGER_RED)
-                    border_color: (COLOR_FG_DANGER_RED)
-                }
-                draw_icon +: {
-                    svg: (ICON_CLOSE),
-                    color: (COLOR_FG_DANGER_RED),
-                }
-                draw_text +: {
-                    color: (COLOR_FG_DANGER_RED),
-                }
+                draw_icon.svg: (ICON_CLOSE)
                 icon_walk: Walk{ width: 16, height: 16 }
                 text: "Remove From List"
             }
 
-            delete_wallet_button := RobrixIconButton {
+            delete_wallet_button := RobrixNegativeIconButton {
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 20}
-                draw_bg +: {
-                    color: (COLOR_BG_DANGER_RED)
-                    border_color: (COLOR_FG_DANGER_RED)
-                }
-                draw_icon +: {
-                    svg: (ICON_TRASH),
-                    color: (COLOR_FG_DANGER_RED),
-                }
-                draw_text +: {
-                    color: (COLOR_FG_DANGER_RED),
-                }
+                draw_icon.svg: (ICON_TRASH)
                 icon_walk: Walk{ width: 16, height: 16 }
                 text: "Delete Wallet"
             }
@@ -210,7 +191,7 @@ impl Widget for WalletEntry {
             cx,
             sd.is_default
         );
-        self.label(cx, ids!(not_found_label_view)).set_visible(
+        self.view(cx, ids!(not_found_label_view)).set_visible(
             cx,
             sd.status == WalletStatus::NotFound,
         );

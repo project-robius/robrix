@@ -161,7 +161,7 @@ script_mod! {
             height: Fit,
             draw_text +: {
                 color: #000
-                text_style: mod.widgets.MESSAGE_TEXT_STYLE { font_size: 10 },
+                text_style: mod.widgets.MESSAGE_TEXT_STYLE { font_size: 10.5 },
             }
         }
     }

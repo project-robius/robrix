@@ -26,6 +26,10 @@ script_mod! {
         width: Fill,
         margin: 0,
         icon_walk: Walk{width: 16, height: 16, margin: Inset{right: 3}}
+        // Override the blue default back to neutral for context menu items
+        draw_bg +: { color: (COLOR_PRIMARY), color_hover: #EBEBEB, color_down: #DCDCDC }
+        draw_icon.color: #000
+        draw_text +: { color: #000, color_hover: #000, color_down: #000 }
     }
 
     mod.widgets.NewMessageContextMenu = set_type_default() do #(NewMessageContextMenu::register_widget(vm)) {
@@ -85,38 +89,23 @@ script_mod! {
                         height: Fit,
                         align: Align{x: 0, y: 0.5}
                         padding: 7
+                        // TODO: we want the TextInput flow to show all text
+                        // within the single-line box by scrolling horizontally
+                        // when the text is too long, upon a user typing/pasting
+                        // or navigating with the mouse or arrow keys.
+                        // However, makepad doesn't yet support this feature,
+                        // so we just make the TextInput non-wrap.
                         flow: Flow.Right{wrap: false}, // do not wrap
                         draw_bg.border_size: 0.0
-                        draw_text +: {
-                            // TODO: we want the TextInput flow to show all text
-                            // within the single-line box by scrolling horizontally
-                            // when the text is too long, upon a user typing/pasting
-                            // or navigating with the mouse or arrow keys.
-                            // However, makepad doesn't yet support this feature,
-                            // so Ellipsis is the closest we can get.
-                            flow: Flow.Right{wrap: false},
-                        }
                         empty_text: "Enter reaction..."
                     }
-                    reaction_send_button := RobrixIconButton {
+                    reaction_send_button := RobrixPositiveIconButton {
                         height: (mod.widgets.NEW_MESSAGE_CONTEXT_MENU_BUTTON_HEIGHT)
                         align: Align{x: 0.5, y: 0.5}
                         padding: Inset{left: 10, right: 10, top: 8, bottom: 8}
                         spacing: 0,
-                        draw_icon +: {
-                            svg: (ICON_SEND)
-                            color: (COLOR_FG_ACCEPT_GREEN),
-                        }
+                        draw_icon.svg: (ICON_SEND)
                         icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-
-                        draw_bg +: {
-                            border_color: (COLOR_FG_ACCEPT_GREEN),
-                            color: (COLOR_BG_ACCEPT_GREEN)
-                        }
-                        text: ""
-                        draw_text +: {
-                            color: (COLOR_FG_ACCEPT_GREEN),
-                        }
                     }
                 }
             }
@@ -312,7 +301,12 @@ impl Widget for NewMessageContextMenu {
             self.visible = false;
         };
 
-        self.view.draw_walk(cx, scope, walk)
+        let step = self.view.draw_walk(cx, scope, walk);
+        if self.visible {
+            let main_content_area = self.view(cx, ids!(main_content)).area();
+            cx.block_scrolling_except_within(main_content_area);
+        }
+        step
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
@@ -325,7 +319,6 @@ impl Widget for NewMessageContextMenu {
         // 1. The back navigational gesture/action occurs (e.g., Back on Android),
         // 2. The escape key is pressed if this menu has key focus,
         // 3. The user clicks/touches outside the main_content view area.
-        // 4. The user scrolls anywhere.
         let close_menu = {
             event.back_pressed()
             || match event.hits_with_capture_overload(cx, area, true) {
@@ -342,7 +335,6 @@ impl Widget for NewMessageContextMenu {
                 Hit::FingerUp(fue) if fue.is_over => {
                     !self.view(cx, ids!(main_content)).area().rect(cx).contains(fue.abs)
                 }
-                Hit::FingerScroll(_) => true,
                 _ => false,
             }
         };
@@ -601,6 +593,7 @@ impl NewMessageContextMenu {
         self.visible = false;
         self.details = None;
         cx.revert_key_focus();
+        cx.unblock_scrolling();
         self.redraw(cx);
     }
 }

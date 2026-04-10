@@ -6,22 +6,20 @@ script_mod! {
 
 
     mod.widgets.TitleLabel = Label {
-
-
         width: Fill, height: Fit
         margin: Inset{top: 5},
+        align: Align{x: 0.0, y: 0.5}
         flow: Flow.Right{wrap: true},
         draw_text +: {
             text_style: TITLE_TEXT {font_size: 15},
             color: #000
-            flow: Flow.Right{wrap: true}
         }
     }
 
     mod.widgets.SubsectionLabel = Label {
-
         width: Fill, height: Fit
         margin: Inset{top: 5},
+        align: Align{x: 0.0, y: 0.5}
         flow: Right,
         draw_text +: {
             color: (COLOR_TEXT),

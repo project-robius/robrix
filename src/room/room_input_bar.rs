@@ -1,6 +1,6 @@
 //! The RoomInputBar widget contains all components related to sending messages/content to a room.
 //!
-//! The RoomInputBar is capped to a maximum height of 62.5% of the containing RoomScreen's height.
+//! The RoomInputBar is capped to a maximum height of 75% of the containing RoomScreen's height.
 //!
 //! The widgets included in the RoomInputBar are:
 //! * a preview of the message the user is replying to.
@@ -18,6 +18,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
+use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedRoomId};
 use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
@@ -34,7 +35,7 @@ script_mod! {
         ..mod.widgets.RoundedView
 
         width: Fill,
-        height: Fit
+        height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
         flow: Down,
 
         // These margins are a hack to make the borders of the RoomInputBar
@@ -42,7 +43,6 @@ script_mod! {
         // This only works if the border_color is the same as its parents,
         // which is currently `COLOR_SECONDARY`.
         margin: Inset{left: -4, right: -4, bottom: -4 }
-
         show_bg: true,
         draw_bg +: {
             color: (COLOR_PRIMARY)
@@ -67,13 +67,13 @@ script_mod! {
         // * the EditingPane, which slides up as an overlay in front of the other views below.
         overlay_wrapper := View {
             width: Fill,
-            height: Fit
+            height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
             flow: Overlay,
 
             // Below that, display a view that holds the message input bar and send button.
             input_bar := View {
                 width: Fill,
-                height: Fit
+                height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
                 flow: Right
                 // Bottom-align everything to ensure that buttons always stick to the bottom
                 // even when the mentionable_text_input box is very tall.
@@ -81,13 +81,17 @@ script_mod! {
                 padding: 6,
 
                 location_button := RobrixIconButton {
-                    margin: Inset{left: 4}
+                    margin: 4
                     spacing: 0,
                     draw_icon +: {
                         svg: (mod.widgets.ICO_LOCATION_PERSON)
                         color: (COLOR_ACTIVE_PRIMARY_DARKER)
                     },
-                    draw_bg.color: (COLOR_BG_PREVIEW)
+                    draw_bg +: {
+                        color: (COLOR_BG_PREVIEW)
+                        color_hover: #E0E8F0
+                        color_down: #D0D8E8
+                    }
                     icon_walk: Walk{width: 23, height: 23, margin: Inset{bottom: -1}}
                     text: "",
                 }
@@ -98,41 +102,40 @@ script_mod! {
                     margin: Inset{bottom: 9, left: 6, right: 0}
                 }
 
-                //mentionable_text_input := 
-                MentionableTextInput {
-                    // width: Fill,
-                    // height: Fit
-                    // margin: Inset{ top: 5, bottom: 12, left: 1, right: 1 },
+                mentionable_text_input := MentionableTextInput {
+                    width: Fill,
+                    height: Fit
+                    margin: Inset {
+                        top: 3, // add some space between the top border of the text input and the top border of the room input bar
+                        bottom: 5.75, // to line up the middle of the text input with the middle of the buttons
+                        left: 3, right: 3 // to give a bit of breathing room between the text input and the buttons on the sides
+                    },
 
-                    // persistent := RoundedView {
-                    //     center := RoundedView {
-                    //         text_input := TextInput {
-                    //             empty_text: "Write a message (in Markdown) ..."
-                    //         }
-                    //     }
-                    // }
+                    persistent +: {
+                        center +: {
+                            text_input := RobrixTextInput {
+                                empty_text: "Write a message (in Markdown) ..."
+                                is_multiline: true,
+                            }
+                        }
+                    }
                 }
-                // CommandTextInput {
-                    
-                // }
-                send_message_button := RobrixIconButton {
+
+                send_message_button := RobrixPositiveIconButton {
                     // Disabled by default; enabled when text is inputted
                     enabled: false,
                     spacing: 0,
-                    margin: Inset{right: 4}
-                    draw_icon +: {
-                        svg: (ICON_SEND),
-                        color: (COLOR_FG_DISABLED),
-                    }
+                    text: "",
+                    margin: 4
+                    draw_icon +: { svg: (ICON_SEND) }
                     icon_walk: Walk{width: 21, height: 21},
-                    draw_bg.color: (COLOR_BG_DISABLED)
                 }
             }
 
             can_not_send_message_notice := SolidView {
                 visible: false
-                padding: Inset{left: 50, right: 50, top: 20, bottom: 20}
-                align: Align{y: 0.5}
+                padding: 20
+                align: Align{x: 0.5, y: 0.5}
                 width: Fill, height: Fit
 
                 show_bg: true
@@ -140,10 +143,11 @@ script_mod! {
 
                 text := Label {
                     width: Fill,
+                    flow: Flow.Right{wrap: true},
+                    align: Align{x: 0.5, y: 0.5}
                     draw_text +: {
                         color: (COLOR_TEXT)
                         text_style: theme.font_italic {font_size: 12.2}
-                        flow: Flow.Right{wrap: true},
                     }
                     text: "You don't have permission to post to this room.",
                 }
@@ -167,6 +171,9 @@ pub struct RoomInputBar {
     #[rust] was_replying_preview_visible: bool,
     /// Info about the message event that the user is currently replying to, if any.
     #[rust] replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
+    /// Cached natural Fit height of the input_bar, used as the animation
+    /// target when the editing pane is being hidden.
+    #[rust] input_bar_natural_height: f64,
 }
 
 impl Widget for RoomInputBar {
@@ -205,6 +212,34 @@ impl Widget for RoomInputBar {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // Shrink the input_bar's height as the editing pane slides in,
+        // and grow it back as the editing pane slides out.
+        // slide=1.0 → editing pane hidden → input_bar at full Fit height.
+        // slide=0.0 → editing pane shown → input_bar at zero height.
+        let slide = self.editing_pane(cx, ids!(editing_pane)).slide();
+        let input_bar = self.view.view(cx, ids!(input_bar));
+
+        // Remap slide through a steeper curve so the input_bar reaches
+        // its full target height before the ExpDecay tail.
+        let remapped = (slide as f64 * 1.25).min(1.0);
+        if remapped >= 1.0 {
+            // Input_bar has reached its full natural height: switch to Fit
+            // so it can respond to content changes normally.
+            // Update the cached height for future animations.
+            let h = input_bar.area().rect(cx).size.y;
+            if h > 0.0 {
+                self.input_bar_natural_height = h;
+            }
+            if let Some(mut inner) = input_bar.borrow_mut() {
+                inner.walk.height = Size::fit();
+            }
+        } else {
+            let target = self.input_bar_natural_height;
+            if let Some(mut inner) = input_bar.borrow_mut() {
+                inner.walk.height = Size::Fixed((target * remapped).max(0.0));
+            }
+        }
+
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -263,6 +298,7 @@ impl RoomInputBar {
                         Reply {
                             event_id: event_id.to_owned(),
                             enforce_thread,
+                            add_mentions: AddMentions::Yes,
                         }
                     })
                 ).or_else(||
@@ -270,6 +306,7 @@ impl RoomInputBar {
                         Reply {
                             event_id: thread_root_event_id.clone(),
                             enforce_thread: EnforceThread::Threaded(ReplyWithinThread::No),
+                            add_mentions: AddMentions::No,
                         }
                     )
                 );
@@ -306,6 +343,7 @@ impl RoomInputBar {
                         Reply {
                             event_id: event_id.to_owned(),
                             enforce_thread,
+                            add_mentions: AddMentions::Yes,
                         }
                     })
                 ).or_else(||
@@ -313,6 +351,7 @@ impl RoomInputBar {
                         Reply {
                             event_id: thread_root_event_id.clone(),
                             enforce_thread: EnforceThread::Threaded(ReplyWithinThread::No),
+                            add_mentions: AddMentions::No,
                         }
                     )
                 );
@@ -362,7 +401,7 @@ impl RoomInputBar {
             }
         }
 
-        // If the EditingPane has been hidden, handle that.
+        // When the hide animation fully completes, restore the replying preview.
         if self.view.editing_pane(cx, ids!(editing_pane)).was_hidden(actions) {
             self.on_editing_pane_hidden(cx);
         }
@@ -419,6 +458,7 @@ impl RoomInputBar {
         if grab_key_focus {
             self.text_input(cx, ids!(input_bar.mentionable_text_input.text_input)).set_key_focus(cx);
         }
+        self.button(cx, ids!(cancel_reply_button)).reset_hover(cx);
         self.redraw(cx);
     }
 
@@ -436,13 +476,15 @@ impl RoomInputBar {
         behavior: ShowEditingPaneBehavior,
         timeline_kind: TimelineKind,
     ) {
-        // We must hide the input_bar while the editing pane is shown,
-        // otherwise a very-tall inputted message might show up underneath a shorter editing pane.
-        self.view.view(cx, ids!(input_bar)).set_visible(cx, false);
+        // Cache the input_bar's natural height before the animation shrinks it.
+        let input_bar_height = self.view.view(cx, ids!(input_bar)).area().rect(cx).size.y;
+        if input_bar_height > 0.0 {
+            self.input_bar_natural_height = input_bar_height;
+        }
 
-        // Similarly, we must hide the replying preview and location preview,
-        // since those are not relevant to editing an existing message,
-        // so keeping them visible might confuse the user.
+        // Hide the replying preview and location preview while the editing
+        // pane is shown. The input_bar is not hidden; instead it is slid out
+        // of view in draw_walk using the EditingPane's slide value.
         let replying_preview = self.view.view(cx, ids!(replying_preview));
         self.was_replying_preview_visible = replying_preview.visible();
         replying_preview.set_visible(cx, false);
@@ -463,10 +505,7 @@ impl RoomInputBar {
 
     /// This should be invoked after the EditingPane has been fully hidden.
     fn on_editing_pane_hidden(&mut self, cx: &mut Cx) {
-        // In `show_editing_pane()` above, we hid the input_bar while the editing pane
-        // was being shown, so here we need to make it visible again.
-        // Same goes for the replying_preview, if it was previously shown.
-        self.view.view(cx, ids!(input_bar)).set_visible(cx, true);
+        // Restore the replying_preview.
         if self.was_replying_preview_visible && self.replying_to.is_some() {
             self.view.view(cx, ids!(replying_preview)).set_visible(cx, true);
         }
@@ -491,9 +530,7 @@ impl RoomInputBar {
             input_bar.set_visible(cx, false);
         } else {
             tombstone_footer.hide(cx);
-            if !self.editing_pane(cx, ids!(editing_pane)).is_currently_shown(cx) {
-                input_bar.set_visible(cx, true);
-            }
+            input_bar.set_visible(cx, true);
         }
     }
 
@@ -605,11 +642,11 @@ impl RoomInputBarRef {
         let Some(inner) = self.borrow() else { return Default::default() };
         // Clear the location preview. We don't save this state because the
         // current location might change by the next time the user opens this same room.
-        inner.child(id!(location_preview)).as_location_preview().clear();
+        inner.child_by_path(ids!(location_preview)).as_location_preview().clear();
         RoomInputBarState {
             was_replying_preview_visible: inner.was_replying_preview_visible,
             replying_to: inner.replying_to.clone(),
-            editing_pane_state: inner.child(id!(editing_pane)).as_editing_pane().save_state(),
+            editing_pane_state: inner.child_by_path(ids!(editing_pane)).as_editing_pane().save_state(),
             text_input_state: inner.child_by_path(ids!(input_bar.mentionable_text_input.text_input)).as_text_input().save_state(),
         }
     }

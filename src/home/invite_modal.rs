@@ -44,7 +44,6 @@ script_mod! {
                     draw_text +: {
                         text_style: TITLE_TEXT {font_size: 13},
                         color: #000
-                        flow: Flow.Right{wrap: true}
                     }
                     text: "Invite to Room"
                 }
@@ -65,44 +64,22 @@ script_mod! {
                 align: Align{x: 1.0, y: 0.5}
                 spacing: 20
 
-                cancel_button := RobrixIconButton {
+                cancel_button := RobrixNeutralIconButton {
                     width: 120,
                     align: Align{x: 0.5, y: 0.5}
                     padding: 12,
-                    draw_icon +: {
-                        svg: (ICON_FORBIDDEN)
-                        color: (COLOR_TEXT),
-                    }
+                    draw_icon.svg: (ICON_FORBIDDEN)
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-
-                    draw_bg +: {
-                        border_size: 0.75
-                        border_color: (COLOR_BG_DISABLED)
-                        color: (COLOR_SECONDARY)
-                    }
                     text: "Cancel"
-                    draw_text +: {
-                        color: (COLOR_TEXT),
-                    }
                 }
 
-                confirm_button := RobrixIconButton {
+                confirm_button := RobrixPositiveIconButton {
                     width: 120
                     align: Align{x: 0.5, y: 0.5}
                     padding: 12,
-                    draw_icon +: {
-                        svg: (ICON_ADD_USER)
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
+                    draw_icon.svg: (ICON_ADD_USER)
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-
-                    draw_bg +: {
-                        border_size: 0.75
-                        border_color: (COLOR_FG_ACCEPT_GREEN)
-                        color: (COLOR_BG_ACCEPT_GREEN)
-                    }
                     text: "Invite"
-                    draw_text.color: (COLOR_FG_ACCEPT_GREEN)
                 }
 
                 okay_button := RobrixIconButton {
@@ -110,16 +87,9 @@ script_mod! {
                     width: 120
                     align: Align{x: 0.5, y: 0.5}
                     padding: 12,
-                    draw_icon +: {
-                        svg: (ICON_CHECKMARK)
-                        color: (COLOR_PRIMARY),
-                    }
+                    draw_icon.svg: (ICON_CHECKMARK)
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-
-                    draw_bg.color: (COLOR_ACTIVE_PRIMARY)
-
                     text: "Okay"
-                    draw_text.color: (COLOR_PRIMARY)
                 }
             }
 
@@ -136,7 +106,6 @@ script_mod! {
                     align: Align{x: 0.5, y: 0.0}
                     margin: Inset{top: 10}
                     draw_text +: {
-                        flow: Flow.Right{wrap: true}
                         text_style: REGULAR_TEXT {font_size: 11},
                         color: #000
                     }
@@ -347,6 +316,7 @@ impl InviteModal {
         self.view.view(cx, ids!(status_label_view)).set_visible(cx, false);
         self.view.label(cx, ids!(status_label_view.status_label)).set_text(cx, "");
         self.view.redraw(cx);
+        user_id_input.set_key_focus(cx);
     }
 }
 

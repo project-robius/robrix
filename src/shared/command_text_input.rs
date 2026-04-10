@@ -368,7 +368,7 @@ impl Widget for CommandTextInput {
                     .map(|fe| fe.tap_count == 1)
                     .unwrap_or(false)
                 {
-                    selected_by_click = Some((&*item).clone());
+                    selected_by_click = Some((*item).clone());
 
                     // Clear keyboard focus when mouse is clicked
                     self.keyboard_focus_index = None;
@@ -757,12 +757,12 @@ impl CommandTextInput {
 
     /// Returns a reference to the inner `TextInput` widget.
     pub fn text_input_ref(&self) -> TextInputRef {
-        self.child(id!(persistent)).child(id!(center)).child(id!(text_input)).as_text_input().as_text_input()
+        self.child_by_path(ids!(text_input)).as_text_input()
     }
 
     /// Returns a reference to the inner `TextInput` widget used for search.
     pub fn search_input_ref(&self) -> TextInputRef {
-        self.child(id!(persistent)).child(id!(center)).child(id!(text_input)).as_text_input().as_text_input()
+        self.child_by_path(ids!(search_input)).as_text_input()
     }
 
     fn trigger_grapheme(&self) -> Option<&str> {
@@ -849,7 +849,7 @@ impl CommandTextInputRef {
     /// See [`CommandTextInput::should_build_items()`].
     pub fn should_build_items(&self, actions: &Actions) -> bool {
         self.borrow()
-            .map_or(false, |inner| inner.should_build_items(actions))
+            .is_some_and(|inner| inner.should_build_items(actions))
     }
 
     /// See [`CommandTextInput::clear_items()`].

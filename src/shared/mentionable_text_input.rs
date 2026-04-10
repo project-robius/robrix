@@ -1,25 +1,17 @@
-//! MentionableTextInput component provides text input with @mention capabilities
-//! Can be used in any context where user mentions are needed (message input, editing)
+//! A temporary mock/placeholder for MentionableTextInput that uses a simple TextInput
+//! instead of the full @mention popup system (CommandTextInput).
 //!
-use crate::avatar_cache::*;
-use crate::shared::command_text_input::CommandTextInput;
-use crate::shared::avatar::AvatarWidgetRefExt;
-use crate::shared::bouncing_dots::BouncingDotsWidgetRefExt;
-use crate::shared::styles::COLOR_UNKNOWN_ROOM_AVATAR;
-use crate::utils;
+//! This preserves the same external-facing API so that the real MentionableTextInput
+//! can be slotted back in later without changing the code that depends on it.
 
-
-use makepad_widgets::{text::selection::Cursor, *};
-use crate::{LivePtr, widget_ref_from_live_ptr};
-use matrix_sdk::ruma::{events::{room::message::RoomMessageEventContent, Mentions}, OwnedMxcUri, OwnedRoomId, OwnedUserId};
-use matrix_sdk::room::RoomMember;
 use std::collections::{BTreeMap, BTreeSet};
-use unicode_segmentation::UnicodeSegmentation;
-use crate::home::room_screen::RoomScreenProps;
-
-// Constants for mention popup height calculations
-const DESKTOP_ITEM_HEIGHT: f64 = 32.0;
-const MOBILE_ITEM_HEIGHT: f64 = 64.0;
+use makepad_widgets::*;
+use matrix_sdk::ruma::{
+    events::{room::message::RoomMessageEventContent, Mentions},
+    OwnedMxcUri, OwnedRoomId, OwnedUserId,
+};
+use crate::LivePtr;
+use crate::shared::command_text_input::CommandTextInput;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -337,58 +329,20 @@ script_mod! {
         trigger: "@"
         inline_search: true
 
-        // Light blue colors for hover/focus highlighting (#DBEAFE)
-        color_focus: #DBEAFE
-        color_hover: #DBEAFE
+        color_focus: (mod.widgets.FOCUS_HOVER_COLOR),
+        color_hover: (mod.widgets.FOCUS_HOVER_COLOR),
 
         popup := RoundedView {
-            width: Fill
-            flow: Down
-            height: Fit
-            visible: false
-            show_bg: true
+            spacing: 0.0
+            padding: 0.0
 
-            draw_bg +: {
-                color: instance(#ffffff)
-                border_size: uniform(1.0)
-                border_color: instance(#cccccc)
-                border_radius: uniform(4.0)
+            draw_bg.color: (COLOR_SECONDARY)
 
-                pixel: fn() {
-                    let sdf = Sdf2d.viewport(self.pos * self.rect_size)
-                    sdf.box_all(
-                        0.0, 0.0,
-                        self.rect_size.x, self.rect_size.y,
-                        self.border_radius, self.border_radius,
-                        self.border_radius, self.border_radius
-                    )
-                    sdf.fill(self.border_color)
-                    sdf.box_all(
-                        self.border_size, self.border_size,
-                        self.rect_size.x - self.border_size * 2.0,
-                        self.rect_size.y - self.border_size * 2.0,
-                        self.border_radius - self.border_size,
-                        self.border_radius - self.border_size,
-                        self.border_radius - self.border_size,
-                        self.border_radius - self.border_size
-                    )
-                    sdf.fill(self.color)
-                    return sdf.result
-                }
-            }
-            
-            header_view := RoundedView {
-                visible: true
-                width: Fill
-                height: Fit
-                padding: Inset{left: 8, right: 8, top: 8, bottom: 4}
+            header_view := SolidView {
+                margin: Inset{left: 4, right: 4}
                 draw_bg.color: (COLOR_ROBRIX_PURPLE)
-
                 header_label := Label {
-                    draw_text +: {
-                        color: #ffffff
-                        text_style: theme.font_regular { font_size: 12.0 }
-                    }
+                    draw_text.color: (COLOR_PRIMARY_DARKER),
                     text: "Users in this Room"
                 }
             }
@@ -400,11 +354,12 @@ script_mod! {
                 padding: 0.0
             }
         }
-        persistent := RoundedView{
-            flow: Down
-            height: Fit
+
+        persistent := RoundedView {
+            width: Fill,
+            height: Fit,
+            flow: Down,
             top := View { height: 0 }
-            bottom := View { height: 0 }
             center := RoundedView {
                 height: Fit
                 flow: Right
@@ -425,6 +380,8 @@ script_mod! {
                 }
                 left := View{ width: Fit, height: Fit }
                 right := View{ width: Fit, height: Fit }
+                width: Fill,
+                height: Fit,
                 text_input := RobrixTextInput {
                     width: Fill
                     empty_text: "Start typing..."
@@ -465,7 +422,8 @@ pub struct SelectedPill {
     pub avatar_url: Option<OwnedMxcUri>,
 }
 
-/// Widget that extends CommandTextInput with @mention capabilities
+/// Temporary mock widget that wraps a simple TextInput (RobrixTextInput)
+/// while preserving the same external API as the real MentionableTextInput.
 #[derive(Script, ScriptHook, Widget)]
 pub struct MentionableTextInput {
     #[source] source: ScriptObjectRef,
@@ -495,6 +453,9 @@ pub struct MentionableTextInput {
     /// Indicates if currently in mention search mode
     #[rust] is_searching: bool,
     /// Whether the current user can notify everyone in the room (@room mention)
+    #[deref] view: View,
+    /// Whether the current user can notify everyone in the room (@room mention).
+    /// Stored but not used in this mock; kept for API compatibility.
     #[rust] can_notify_room: bool,
     /// Whether the room members are currently being loaded
     #[rust] members_loading: bool,
@@ -504,7 +465,6 @@ pub struct MentionableTextInput {
     #[rust] pill_widgets: Vec<ViewRef>,
 }
 
-
 impl Widget for MentionableTextInput {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.cmd_text_input.handle_event(cx, event, scope);
@@ -512,927 +472,74 @@ impl Widget for MentionableTextInput {
         // Handle pill close button clicks
         self.handle_pill_events(cx, event);
 
-        // Best practice: Always check Scope first to get current context
-        // Scope represents the current widget context as passed down from parents
-        let scope_room_id = scope.props.get::<RoomScreenProps>()
-            .expect("BUG: RoomScreenProps should be available in Scope::props for MentionableTextInput")
-            .room_name_id
-            .room_id()
-            .clone();
-
+        // Handle MentionableTextInputAction for API compatibility.
         if let Event::Actions(actions) = event {
-            let text_input_ref = self.cmd_text_input.text_input_ref();
-            let text_input_uid = text_input_ref.widget_uid();
-            let text_input_area = text_input_ref.area();
-            let has_focus = cx.has_key_focus(text_input_area);
-
-            // Handle item selection from mention popup
-            if let Some(selected) = self.cmd_text_input.item_selected(actions) {
-                self.on_user_selected(cx, scope, selected);
-            }
-
-            // Handle build items request
-            if self.cmd_text_input.should_build_items(actions) {
-                if has_focus {
-                    let search_text = self.cmd_text_input.search_text().to_lowercase();
-                    self.update_user_list(cx, &search_text, scope);
-                } else if self.cmd_text_input.view(cx, ids!(popup)).visible() {
-                    self.close_mention_popup(cx);
-                }
-            }
-
-            // Process all actions
             for action in actions {
-                // Handle TextInput changes
-                if let Some(widget_action) = action.as_widget_action() {
-                    if widget_action.widget_uid == text_input_uid {
-                        if let TextInputAction::Changed(text) = widget_action.cast() {
-                            if has_focus {
-                                self.handle_text_change(cx, scope, text.to_owned());
-                            }
-                            continue; // Continue processing other actions
-                        }
-                    }
-                }
-
-                // Handle MentionableTextInputAction actions
-                if let Some(MentionableTextInputAction::PowerLevelsUpdated { room_id, can_notify_room }) = action.downcast_ref() {
-                    if &scope_room_id != room_id {
-                        continue;
-                    }
-
-                    if self.can_notify_room != *can_notify_room {
-                        self.can_notify_room = *can_notify_room;
-                        if self.is_searching && has_focus {
-                            let search_text = self.cmd_text_input.search_text().to_lowercase();
-                            self.update_user_list(cx, &search_text, scope);
-                        } else {
-                            self.redraw(cx);
-                        }
-                    }
-                }
-            }
-
-            // Close popup if focus is lost
-            if !has_focus && self.cmd_text_input.view(cx, ids!(popup)).visible() {
-                self.close_mention_popup(cx);
-            }
-        }
-
-        // Check if we were waiting for members and they're now available
-        if self.members_loading && self.is_searching {
-            let room_props = scope
-                .props
-                .get::<RoomScreenProps>()
-                .expect("RoomScreenProps should be available in scope");
-
-            if let Some(room_members) = &room_props.room_members {
-                if !room_members.is_empty() {
-                    // Members are now available, update the list
-                    self.members_loading = false;
-                    let text_input = self.cmd_text_input.text_input_ref();
-                    let text_input_area = text_input.area();
-                    let is_focused = cx.has_key_focus(text_input_area);
-
-                    if is_focused {
-                        let search_text = self.cmd_text_input.search_text().to_lowercase();
-                        self.update_user_list(cx, &search_text, scope);
-                    }
+                if let Some(MentionableTextInputAction::PowerLevelsUpdated {
+                    can_notify_room, ..
+                }) = action.downcast_ref()
+                {
+                    self.can_notify_room = *can_notify_room;
                 }
             }
         }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.cmd_text_input.draw_walk(cx, scope, walk)
+        self.view.draw_walk(cx, scope, walk)
     }
 
-    /// Returns the current text content
     fn text(&self) -> String {
-        self.cmd_text_input.text_input_ref().text()
+        self.child_by_path(ids!(text_input)).as_text_input().text()
+    }
+
+    fn set_text(&mut self, cx: &mut Cx, text: &str) {
+        self.text_input(cx, ids!(persistent.center.text_input)).set_text(cx, text);
+        self.redraw(cx);
+    }
+
+    fn set_key_focus(&self, cx: &mut Cx) {
+        self.text_input(cx, ids!(persistent.center.text_input)).set_key_focus(cx);
     }
 }
 
-
 impl MentionableTextInput {
 
-    /// Check if members are loading and show loading indicator if needed.
-    ///
-    /// Returns true if we should return early because we're in the loading state.
-    fn handle_members_loading_state(
-        &mut self,
-        cx: &mut Cx,
-        room_members: &Option<std::sync::Arc<Vec<RoomMember>>>,
-    ) -> bool {
-        let Some(room_members) = room_members else {
-            self.members_loading = true;
-            self.show_loading_indicator(cx);
-            return true;
-        };
-
-        let members_are_empty = room_members.is_empty();
-
-        if members_are_empty && !self.members_loading {
-            // Members list is empty and we're not already showing loading - start loading state
-            self.members_loading = true;
-            self.show_loading_indicator(cx);
-            return true;
-        } else if !members_are_empty && self.members_loading {
-            // Members have been loaded, stop loading state
-            self.members_loading = false;
-        } else if members_are_empty && self.members_loading {
-            // Still loading and members are empty - keep showing loading indicator
-            return true;
-        }
-
-        false
-    }
-
-    /// Tries to add the `@room` mention item to the list of selectable popup mentions.
-    ///
-    /// Returns true if @room item was added to the list and will be displayed in the popup.
-    fn try_search_messages_mention_item(
-        &mut self,
-        cx: &mut Cx,
-        search_text: &str,
-        room_props: &RoomScreenProps,
-        is_desktop: bool,
-    ) -> bool {
-        if !self.can_notify_room || !("@room".contains(search_text) || search_text.is_empty()) {
-            return false;
-        }
-
-        let Some(ptr) = self.room_mention_list_item else { return false };
-        let room_mention_item = widget_ref_from_live_ptr(cx, Some(ptr));
-        let mut room_avatar_shown = false;
-
-        let avatar_ref = room_mention_item.avatar(cx, ids!(user_info.room_avatar));
-
-        // Get room avatar fallback text from room name (with automatic ID fallback)
-        let room_label = room_props.room_name_id.to_string();
-        let room_name_first_char = room_label
-            .graphemes(true)
-            .find(|g| *g != "#" && *g != "!" && *g != "@")
-            .map(|s| s.to_uppercase())
-            .filter(|s| s.chars().all(|c| c.is_alphabetic()))
-            .unwrap_or_else(|| "R".to_string());
-
-        if let Some(avatar_url) = &room_props.room_avatar_url {
-            match get_or_fetch_avatar(cx, avatar_url) {
-                AvatarCacheEntry::Loaded(avatar_data) => {
-                    // Display room avatar
-                    let result = avatar_ref.show_image(cx, None, |cx, img| {
-                        utils::load_png_or_jpg(&img, cx, &avatar_data)
-                    });
-                    if result.is_ok() {
-                        room_avatar_shown = true;
-                    } else {
-                        log!("Failed to show @room avatar with room avatar image");
-                    }
-                },
-                AvatarCacheEntry::Requested => {
-                    avatar_ref.show_text(cx, Some(COLOR_UNKNOWN_ROOM_AVATAR), None, &room_name_first_char);
-                    room_avatar_shown = true;
-                },
-                AvatarCacheEntry::Failed => {
-                    log!("Failed to load room avatar for @room");
-                }
-            }
-        }
-
-        // If unable to display room avatar, show first character of room name
-        if !room_avatar_shown {
-            avatar_ref.show_text(cx, Some(COLOR_UNKNOWN_ROOM_AVATAR), None, &room_name_first_char);
-        }
-
-        // Apply layout and height styling based on device type
-        let new_height = if is_desktop { DESKTOP_ITEM_HEIGHT } else { MOBILE_ITEM_HEIGHT };
-        let mut room_mention_item = room_mention_item;
-        if is_desktop {
-            script_apply_eval!(cx, room_mention_item, {
-                height: #(new_height),
-                flow: #(Flow::Right{ row_align: turtle::RowAlign::Top, wrap: false }),
-            });
-        } else {
-            script_apply_eval!(cx, room_mention_item, {
-                height: #(new_height),
-                flow: #(Flow::Down),
-            });
-        }
-
-        self.cmd_text_input.add_item(cx, room_mention_item);
-        true
-    }
-
-    /// Find and sort matching members based on search text
-    fn find_and_sort_matching_members(
-        &self,
-        search_text: &str,
-        room_members: &std::sync::Arc<Vec<RoomMember>>,
-        max_matched_members: usize,
-    ) -> Vec<(String, RoomMember)> {
-        let mut prioritized_members = Vec::new();
-
-        // Get current user ID to filter out self-mentions
-        let current_user_id = crate::sliding_sync::current_user_id();
-
-        for member in room_members.iter() {
-            if prioritized_members.len() >= max_matched_members {
-                break;
-            }
-
-            // Skip the current user - users should not be able to mention themselves
-            if let Some(ref current_id) = current_user_id {
-                if member.user_id() == current_id {
-                    continue;
-                }
-            }
-
-            // Check if this member matches the search text (including Matrix ID)
-            if self.user_matches_search(member, search_text) {
-                let display_name = member
-                    .display_name()
-                    .map(|n| n.to_string())
-                    .unwrap_or_else(|| member.user_id().to_string());
-
-                let priority = self.get_match_priority(member, search_text);
-                prioritized_members.push((priority, display_name, member.clone()));
-            }
-        }
-
-        // Sort by priority (lower number = higher priority)
-        prioritized_members.sort_by_key(|(priority, _, _)| *priority);
-
-        // Convert to the format expected by the rest of the code
-        prioritized_members
-            .into_iter()
-            .map(|(_, display_name, member)| (display_name, member))
-            .collect()
-    }
-
-    /// Add user mention items to the list
-    /// Returns the number of items added
-    fn add_user_mention_items(
-        &mut self,
-        cx: &mut Cx,
-        matched_members: Vec<(String, RoomMember)>,
-        user_items_limit: usize,
-        is_desktop: bool,
-    ) -> usize {
-        let mut items_added = 0;
-
-        for (index, (display_name, member)) in matched_members.into_iter().take(user_items_limit).enumerate() {
-            let Some(user_list_item_ptr) = self.user_list_item else { continue };
-            let item = widget_ref_from_live_ptr(cx, Some(user_list_item_ptr));
-
-            item.label(cx, ids!(user_info.username)).set_text(cx, &display_name);
-
-            // Use the full user ID string
-            let user_id_str = member.user_id().as_str();
-            item.label(cx, ids!(user_id)).set_text(cx, user_id_str);
-
-            if is_desktop {
-                let mut item_ref = item.clone();
-                script_apply_eval!(cx, item_ref, {
-                    flow: #(Flow::Right{wrap: false, row_align: turtle::RowAlign::Top}),
-                    height: #(DESKTOP_ITEM_HEIGHT),
-                });
-                item.view(cx, ids!(user_info.filler)).set_visible(cx, true);
-            } else {
-                let mut item_ref = item.clone();
-                script_apply_eval!(cx, item_ref, {
-                    flow: #(Flow::Down),
-                    height: #(MOBILE_ITEM_HEIGHT),
-                });
-                item.view(cx, ids!(user_info.filler)).set_visible(cx, false);
-            }
-
-            let avatar = item.avatar(cx, ids!(user_info.avatar));
-            if let Some(mxc_uri) = member.avatar_url() {
-                match get_or_fetch_avatar(cx, &mxc_uri.to_owned()) {
-                    AvatarCacheEntry::Loaded(avatar_data) => {
-                        let _ = avatar.show_image(cx, None, |cx, img| {
-                            utils::load_png_or_jpg(&img, cx, &avatar_data)
-                        });
-                    }
-                    AvatarCacheEntry::Requested | AvatarCacheEntry::Failed => {
-                        avatar.show_text(cx, None, None, &display_name);
-                    }
-                }
-            } else {
-                avatar.show_text(cx, None, None, &display_name);
-            }
-
-            self.cmd_text_input.add_item(cx, item.clone());
-            items_added += 1;
-
-            // Set keyboard focus to the first item
-            if index == 0 {
-                // If @room exists, it's index 0, otherwise first user is index 0
-                self.cmd_text_input.set_keyboard_focus_index(0);
-            }
-        }
-
-        items_added
-    }
-
-    /// Update popup visibility and layout
-    fn update_popup_visibility(&mut self, cx: &mut Cx, has_items: bool) {
-        let popup = self.cmd_text_input.view(cx, ids!(popup));
-
-        if has_items {
-            popup.set_visible(cx, true);
-            if self.is_searching {
-                self.cmd_text_input.text_input_ref().set_key_focus(cx);
-            }
-        } else if self.is_searching {
-            // If we're searching but have no items, show "no matches" message
-            // Keep the popup open so users can correct their search
-            self.show_no_matches_indicator(cx);
-            popup.set_visible(cx, true);
-            self.cmd_text_input.text_input_ref().set_key_focus(cx);
-        } else {
-            // Only hide popup if we're not actively searching
-            popup.set_visible(cx, false);
-        }
-    }
-
-    /// Handles item selection from mention popup (either user or @room)
-    fn on_user_selected(&mut self, cx: &mut Cx, _scope: &mut Scope, selected: WidgetRef) {
-        // Note: We receive scope as parameter but don't use it in this method
-        // This is good practice to maintain signature consistency with other methods
-        // and allow for future scope-based enhancements
-
-        let text_input_ref = self.cmd_text_input.text_input_ref();
-        let current_text = text_input_ref.text();
-        let head = text_input_ref.borrow().map_or(0, |p| p.cursor().index);
-
-        if let Some(start_idx) = self.current_mention_start_index {
-            let room_mention_label = selected.label(cx, ids!(user_info.room_mention));
-            let room_mention_text = room_mention_label.text();
-            let room_user_id_text = selected.label(cx, ids!(room_user_id)).text();
-
-            let is_room_mention = room_mention_text == "Notify the entire room" && room_user_id_text == "@room";
-
-            if is_room_mention {
-                // For @room, insert text directly (no pill)
-                self.possible_room_mention = true;
-                let mention_to_insert = "@room ".to_string();
-
-                // Use utility function to safely replace text
-                let new_text = utils::safe_replace_by_byte_indices(
-                    &current_text,
-                    start_idx,
-                    head,
-                    &mention_to_insert,
-                );
-
-                self.cmd_text_input.set_text(cx, &new_text);
-                // Calculate new cursor position
-                let new_pos = start_idx + mention_to_insert.len();
-                text_input_ref.set_cursor(cx, Cursor { index: new_pos, prefer_next_row: false }, false);
-            } else {
-                // User selected a specific user - add as pill
-                let username = selected.label(cx, ids!(user_info.username)).text();
-                let user_id_str = selected.label(cx, ids!(user_id)).text();
-                log!("[MentionableTextInput {:p}] User selected: {} ({})", self as *const _, username, user_id_str);
-                let Ok(user_id): Result<OwnedUserId, _> = user_id_str.clone().try_into() else {
-                    log!("Failed to parse user_id: {}", user_id_str);
-                    return;
-                };
-
-                // Check if user is already in pills (avoid duplicates)
-                if !self.selected_pills.iter().any(|p| p.user_id == user_id) {
-                    // Get avatar URL from the selected item's avatar widget
-                    // We'll store None for now since we don't have easy access to the MXC URI here
-                    // The avatar will be re-fetched when rendering the pill
-                    let avatar_url = None;
-
-                    self.selected_pills.push(SelectedPill {
-                        user_id: user_id.clone(),
-                        display_name: username.clone(),
-                        avatar_url,
-                    });
-
-                    // Track in possible_mentions for message creation
-                    self.possible_mentions.insert(user_id, username);
-                }
-
-                // Remove the @ and any partial search text from the input
-                let new_text = utils::safe_replace_by_byte_indices(
-                    &current_text,
-                    start_idx,
-                    head,
-                    "",
-                );
-                self.cmd_text_input.set_text(cx, &new_text);
-                text_input_ref.set_cursor(cx, Cursor { index: start_idx, prefer_next_row: false }, false);
-
-                // Render the pills
-                self.render_pills(cx);
-            }
-        }
-
-        self.is_searching = false;
-        self.current_mention_start_index = None;
-        self.close_mention_popup(cx);
-    }
-
-    /// Renders all selected pills in the pills_container using pre-defined pill slots
-    fn render_pills(&mut self, cx: &mut Cx) {
-        // Log with widget address to identify different instances
-        log!("[MentionableTextInput {:p}] render_pills called with {} pills", self as *const _, self.selected_pills.len());
-        for (i, pill) in self.selected_pills.iter().enumerate() {
-            log!("[MentionableTextInput {:p}]   pill {}: {} ({})", self as *const _, i, pill.display_name, pill.user_id);
-        }
-
-        // Log the container
-        let pills_container = self.cmd_text_input.view(cx, ids!(persistent.center.pills_container));
-        log!("[MentionableTextInput {:p}] pills_container area: {:?}", self as *const _, pills_container.area());
-
-        // Clear existing pill widget references
-        self.pill_widgets.clear();
-
-        // Pre-defined pill slot IDs
-        let pill_ids = [
-            ids!(persistent.center.pills_container.pill_0),
-            ids!(persistent.center.pills_container.pill_1),
-            ids!(persistent.center.pills_container.pill_2),
-            ids!(persistent.center.pills_container.pill_3),
-            ids!(persistent.center.pills_container.pill_4),
-        ];
-
-        // Update each pill slot
-        for (index, pill_id) in pill_ids.iter().enumerate() {
-            let pill_view = self.cmd_text_input.view(cx, *pill_id);
-            log!("[MentionableTextInput] pill_view index {} area: {:?}", index, pill_view.area());
-
-            if index < self.selected_pills.len() {
-                let pill_data = &self.selected_pills[index];
-
-                // Show and configure the pill
-                log!("[MentionableTextInput] Setting pill {} visible: true, name: {}", index, pill_data.display_name);
-                pill_view.set_visible(cx, true);
-
-                // Set the username
-                pill_view.label(cx, ids!(pill_username)).set_text(cx, &pill_data.display_name);
-
-                // Set up avatar
-                let avatar = pill_view.avatar(cx, ids!(pill_avatar));
-                if let Some(avatar_url) = &pill_data.avatar_url {
-                    match get_or_fetch_avatar(cx, avatar_url) {
-                        AvatarCacheEntry::Loaded(avatar_data) => {
-                            let _ = avatar.show_image(cx, None, |cx, img| {
-                                utils::load_png_or_jpg(&img, cx, &avatar_data)
-                            });
-                        }
-                        AvatarCacheEntry::Requested | AvatarCacheEntry::Failed => {
-                            avatar.show_text(cx, None, None, &pill_data.display_name);
-                        }
-                    }
-                } else {
-                    avatar.show_text(cx, None, None, &pill_data.display_name);
-                }
-
-                // Store reference for event handling
-                self.pill_widgets.push(pill_view);
-            } else {
-                // Hide unused pill slots
-                pill_view.set_visible(cx, false);
-            }
-        }
-
-        self.redraw(cx);
-    }
-
-    /// Removes a pill by user_id
-    fn remove_pill_by_user_id(&mut self, cx: &mut Cx, user_id: &OwnedUserId) {
-        if let Some(index) = self.selected_pills.iter().position(|p| &p.user_id == user_id) {
-            let removed = self.selected_pills.remove(index);
-            self.possible_mentions.remove(&removed.user_id);
-            self.render_pills(cx);
-        }
-    }
-
-    /// Clears all pills
-    fn clear_all_pills(&mut self, cx: &mut Cx) {
-        self.selected_pills.clear();
-        self.pill_widgets.clear();
-        self.possible_mentions.clear();
-        self.render_pills(cx);
-    }
-
-    /// Handles pill close button click events
-    fn handle_pill_events(&mut self, cx: &mut Cx, event: &Event) {
-        // Pre-defined pill slot IDs
-        let pill_ids = [
-            ids!(persistent.center.pills_container.pill_0),
-            ids!(persistent.center.pills_container.pill_1),
-            ids!(persistent.center.pills_container.pill_2),
-            ids!(persistent.center.pills_container.pill_3),
-            ids!(persistent.center.pills_container.pill_4),
-        ];
-
-        // Check each visible pill's close button for clicks
-        for (index, pill_id) in pill_ids.iter().enumerate() {
-            if index >= self.selected_pills.len() {
-                break;
-            }
-
-            let pill_view = self.cmd_text_input.view(cx, *pill_id);
-            let close_button = pill_view.view(cx, ids!(close_button));
-            let area = close_button.area();
-
-            match event.hits(cx, area) {
-                Hit::FingerUp(fue) if fue.is_over && fue.was_tap() => {
-                    // Remove this pill
-                    let removed = self.selected_pills.remove(index);
-                    self.possible_mentions.remove(&removed.user_id);
-                    self.render_pills(cx);
-                    return;
-                }
-                _ => {}
-            }
-        }
-    }
-
-    /// Core text change handler that manages mention context
-    fn handle_text_change(&mut self, cx: &mut Cx, scope: &mut Scope, text: String) {
-        log!("[MentionableTextInput {:p}] handle_text_change called, text: '{}', pills: {}",
-             self as *const _, text, self.selected_pills.len());
-
-        // Check if text is empty or contains only whitespace
-        let trimmed_text = text.trim();
-        if trimmed_text.is_empty() {
-            log!("[MentionableTextInput {:p}] Text is empty, clearing possible_mentions (not pills)", self as *const _);
-            self.possible_mentions.clear();
-            self.possible_room_mention = false;
-            if self.is_searching {
-                self.close_mention_popup(cx);
-            }
-            return;
-        }
-
-        let cursor_pos = self.cmd_text_input.text_input_ref().borrow().map_or(0, |p| p.cursor().index);
-
-        // Check if we're currently searching and the @ symbol was deleted
-        if self.is_searching {
-            if let Some(start_pos) = self.current_mention_start_index {
-                // Check if the @ symbol at the start position still exists
-                if start_pos >= text.len() || text.get(start_pos..start_pos+1).is_some_and(|c| c != "@") {
-                    // The @ symbol was deleted, stop searching
-                    self.close_mention_popup(cx);
-                    return;
-                }
-            }
-        }
-
-        // Look for trigger position for @ menu
-        if let Some(trigger_pos) = self.find_mention_trigger_position(&text, cursor_pos) {
-            self.current_mention_start_index = Some(trigger_pos);
-            self.is_searching = true;
-
-            let search_text = utils::safe_substring_by_byte_indices(
-                &text,
-                trigger_pos + 1,
-                cursor_pos
-            ).to_lowercase();
-
-            // Ensure header view is visible to prevent header disappearing during consecutive @mentions
-            let popup = self.cmd_text_input.view(cx, ids!(popup));
-            let header_view = self.cmd_text_input.view(cx, ids!(popup.header_view));
-            header_view.set_visible(cx, true);
-
-            self.update_user_list(cx, &search_text, scope);
-            popup.set_visible(cx, true);
-        } else if self.is_searching {
-            self.close_mention_popup(cx);
-        }
-    }
-
-    /// Updates the mention suggestion list based on search
-    fn update_user_list(&mut self, cx: &mut Cx, search_text: &str, scope: &mut Scope) {
-        // 1. Get Props from Scope
-        let room_props = scope.props.get::<RoomScreenProps>()
-            .expect("RoomScreenProps should be available in scope for MentionableTextInput");
-
-        // 2. Check if members are loading and handle loading state
-        if self.handle_members_loading_state(cx, &room_props.room_members) {
-            return;
-        }
-
-        // 3. Get room members (we know they exist because handle_members_loading_state returned false)
-        let room_members = room_props.room_members.as_ref().unwrap();
-
-        // Clear old list items, prepare to populate new list
-        self.cmd_text_input.clear_items(cx);
-
-        if !self.is_searching {
-            return;
-        }
-
-        let is_desktop = cx.display_context.is_desktop();
-        let max_visible_items: usize = if is_desktop { 10 } else { 5 };
-        let mut items_added = 0;
-
-        // 4. Try to add @room mention item
-        let has_room_item = self.try_search_messages_mention_item(cx, search_text, room_props, is_desktop);
-        if has_room_item {
-            items_added += 1;
-        }
-
-        // 5. Find and sort matching members
-        let max_matched_members = max_visible_items * 2;  // Buffer for better UX
-        let matched_members = self.find_and_sort_matching_members(search_text, room_members, max_matched_members);
-
-        // 6. Add user mention items
-        let user_items_limit = max_visible_items.saturating_sub(has_room_item as usize);
-        let user_items_added = self.add_user_mention_items(cx, matched_members, user_items_limit, is_desktop);
-        items_added += user_items_added;
-
-        // 7. Update popup visibility based on whether we have items
-        self.update_popup_visibility(cx, items_added > 0);
-    }
-
-    /// Detects valid mention trigger positions in text
-    fn find_mention_trigger_position(&self, text: &str, cursor_pos: usize) -> Option<usize> {
-        if cursor_pos == 0 {
-            return None;
-        }
-
-        // Use utility function to convert byte position to grapheme index
-        let cursor_grapheme_idx = utils::byte_index_to_grapheme_index(text, cursor_pos);
-        let text_graphemes: Vec<&str> = text.graphemes(true).collect();
-
-        // Build byte position mapping to facilitate conversion back to byte positions
-        let byte_positions = utils::build_grapheme_byte_positions(text);
-
-        // Simple logic: trigger when cursor is immediately after @ symbol
-        // Only trigger if @ is preceded by whitespace or beginning of text
-        if cursor_grapheme_idx > 0 && text_graphemes.get(cursor_grapheme_idx - 1) == Some(&"@") {
-            let is_preceded_by_whitespace_or_start = cursor_grapheme_idx == 1 ||
-                (cursor_grapheme_idx > 1 && text_graphemes.get(cursor_grapheme_idx - 2).is_some_and(|g| g.trim().is_empty()));
-            if is_preceded_by_whitespace_or_start {
-                if let Some(&byte_pos) = byte_positions.get(cursor_grapheme_idx - 1) {
-                    return Some(byte_pos);
-                }
-            }
-        }
-
-        // Find the last @ symbol before the cursor for search continuation
-        // Only continue if we're already in search mode
-        if self.is_searching {
-            let last_at_pos = text_graphemes.get(..cursor_grapheme_idx)
-                .and_then(|slice| slice.iter()
-                    .enumerate()
-                    .filter(|(_, g)| **g == "@")
-                    .map(|(i, _)| i)
-                    .next_back());
-
-            if let Some(at_idx) = last_at_pos {
-                // Get the byte position of this @ symbol
-                let &at_byte_pos = byte_positions.get(at_idx)?;
-
-                // Extract the text after the @ symbol up to the cursor position
-                let mention_text = text_graphemes.get(at_idx + 1..cursor_grapheme_idx)
-                    .unwrap_or(&[]);
-
-                // Only trigger if this looks like an ongoing mention (contains only alphanumeric and basic chars)
-                if self.is_valid_mention_text(mention_text) {
-                    return Some(at_byte_pos);
-                }
-            }
-        }
-
-        None
-    }
-
-    /// Simple validation for mention text
-    fn is_valid_mention_text(&self, graphemes: &[&str]) -> bool {
-        // Allow empty text (for @)
-        if graphemes.is_empty() {
-            return true;
-        }
-
-        // Check if it contains newline characters
-        !graphemes.iter().any(|g| g.contains('\n'))
-    }
-
-    /// Helper function to check if a user matches the search text
-    /// Checks both display name and Matrix ID for matching
-    fn user_matches_search(&self, member: &RoomMember, search_text: &str) -> bool {
-        let search_text_lower = search_text.to_lowercase();
-
-        // Check display name
-        let display_name = member
-            .display_name()
-            .map(|n| n.to_string())
-            .unwrap_or_else(|| member.user_id().to_string());
-
-        let display_name_lower = display_name.to_lowercase();
-        if display_name_lower.contains(&search_text_lower) {
-            return true;
-        }
-
-        // Only match against the localpart (e.g., "mihran" from "@mihran:matrix.org")
-        // Don't match against the homeserver part to avoid false matches
-        let localpart = member.user_id().localpart();
-        let localpart_lower = localpart.to_lowercase();
-        if localpart_lower.contains(&search_text_lower) {
-            return true;
-        }
-
-        false
-    }
-
-    /// Helper function to determine match priority for sorting
-    /// Lower values = higher priority (better matches shown first)
-    fn get_match_priority(&self, member: &RoomMember, search_text: &str) -> u8 {
-        let search_text_lower = search_text.to_lowercase();
-
-        let display_name = member
-            .display_name()
-            .map(|n| n.to_string())
-            .unwrap_or_else(|| member.user_id().to_string());
-
-        let display_name_lower = display_name.to_lowercase();
-        let localpart = member.user_id().localpart();
-        let localpart_lower = localpart.to_lowercase();
-
-        // Priority 0: Exact case-sensitive match (highest priority)
-        if display_name == search_text || localpart == search_text {
-            return 0;
-        }
-
-        // Priority 1: Exact match (case-insensitive)
-        if display_name_lower == search_text_lower || localpart_lower == search_text_lower {
-            return 1;
-        }
-
-        // Priority 2: Case-sensitive prefix match
-        if display_name.starts_with(search_text) || localpart.starts_with(search_text) {
-            return 2;
-        }
-
-        // Priority 3: Display name starts with search text (case-insensitive)
-        if display_name_lower.starts_with(&search_text_lower) {
-            return 3;
-        }
-
-        // Priority 4: Localpart starts with search text (case-insensitive)
-        if localpart_lower.starts_with(&search_text_lower) {
-            return 4;
-        }
-
-        // Priority 5: Display name contains search text at word boundary
-        if let Some(pos) = display_name_lower.find(&search_text_lower) {
-            // Check if it's at the start of a word (preceded by space or at start)
-            if pos == 0 || display_name_lower.chars().nth(pos - 1) == Some(' ') {
-                return 5;
-            }
-        }
-
-        // Priority 6: Localpart contains search text at word boundary
-        if let Some(pos) = localpart_lower.find(&search_text_lower) {
-            // Check if it's at the start of a word (preceded by non-alphanumeric or at start)
-            if pos == 0 || !localpart_lower.chars().nth(pos - 1).unwrap_or('a').is_alphanumeric() {
-                return 6;
-            }
-        }
-
-        // Priority 7: Display name contains search text (anywhere)
-        if display_name_lower.contains(&search_text_lower) {
-            return 7;
-        }
-
-        // Priority 8: Localpart contains search text (anywhere)
-        if localpart_lower.contains(&search_text_lower) {
-            return 8;
-        }
-
-        // Should not reach here if user_matches_search returned true
-        u8::MAX
-    }
-
-    /// Shows the loading indicator when members are being fetched
-    fn show_loading_indicator(&mut self, cx: &mut Cx) {
-        // Clear any existing items
-        self.cmd_text_input.clear_items(cx);
-
-        // Create loading indicator widget
-        let Some(ptr) = self.loading_indicator else { return };
-        let loading_item = widget_ref_from_live_ptr(cx, Some(ptr));
-
-        // Start the loading animation
-        loading_item.bouncing_dots(cx, ids!(loading_animation)).start_animation(cx);
-
-        // Add the loading indicator to the popup
-        self.cmd_text_input.add_item(cx, loading_item);
-
-        // Setup popup dimensions for loading state
-        let popup = self.cmd_text_input.view(cx, ids!(popup));
-        let header_view = self.cmd_text_input.view(cx, ids!(popup.header_view));
-
-        // Ensure header is visible
-        header_view.set_visible(cx, true);
-
-        // Don't manually set popup height for loading - let it auto-size based on content
-        // This avoids conflicts with list: { height: Fill }
-        popup.set_visible(cx, true);
-
-        // Maintain text input focus
-        if self.is_searching {
-            self.cmd_text_input.text_input_ref().set_key_focus(cx);
-        }
-    }
-
-    /// Shows the no matches indicator when no users match the search
-    fn show_no_matches_indicator(&mut self, cx: &mut Cx) {
-        // Clear any existing items
-        self.cmd_text_input.clear_items(cx);
-
-        // Create no matches indicator widget
-        let Some(ptr) = self.no_matches_indicator else { return };
-        let no_matches_item = widget_ref_from_live_ptr(cx, Some(ptr));
-
-        // Add the no matches indicator to the popup
-        self.cmd_text_input.add_item(cx, no_matches_item);
-
-        // Setup popup dimensions for no matches state
-        let popup = self.cmd_text_input.view(cx, ids!(popup));
-        let header_view = self.cmd_text_input.view(cx, ids!(popup.header_view));
-
-        // Ensure header is visible
-        header_view.set_visible(cx, true);
-        let _ = popup;
-
-        // Maintain text input focus so user can continue typing
-        if self.is_searching {
-            self.cmd_text_input.text_input_ref().set_key_focus(cx);
-        }
-    }
-
-    /// Cleanup helper for closing mention popup
-    fn close_mention_popup(&mut self, cx: &mut Cx) {
-        self.current_mention_start_index = None;
-        self.is_searching = false;
-        self.members_loading = false; // Reset loading state when closing popup
-
-        // Clear list items to avoid keeping old content when popup is shown again
-        self.cmd_text_input.clear_items(cx);
-
-        // Get popup and header view references
-        let popup = self.cmd_text_input.view(cx, ids!(popup));
-        let header_view = self.cmd_text_input.view(cx, ids!(popup.header_view));
-
-        // Force hide header view - necessary when handling deletion operations
-        // When backspace-deleting mentions, we want to completely hide the header
-        header_view.set_visible(cx, false);
-
-        // Hide the entire popup
-        popup.set_visible(cx, false);
-        let _ = popup;
-
-        // Ensure header view is reset to visible next time it's triggered
-        // This will happen before update_user_list is called in handle_text_change
-
-        self.cmd_text_input.request_text_input_focus();
-        self.redraw(cx);
-    }
-
-    /// Sets the text content
-    pub fn set_text(&mut self, cx: &mut Cx, text: &str) {
-        self.cmd_text_input.text_input_ref().set_text(cx, text);
-        self.redraw(cx);
-    }
-
-    /// Sets whether the current user can notify the entire room (@room mention)
+    /// Sets whether the current user can notify the entire room (@room mention).
     pub fn set_can_notify_room(&mut self, can_notify: bool) {
         self.can_notify_room = can_notify;
     }
 
-    /// Gets whether the current user can notify the entire room (@room mention)
+    /// Gets whether the current user can notify the entire room (@room mention).
     pub fn can_notify_room(&self) -> bool {
         self.can_notify_room
+    }
+
+    /// Handle pill close button click events.
+    fn handle_pill_events(&mut self, _cx: &mut Cx, _event: &Event) {
+        // TODO: Implement pill close button event handling
+    }
+
+    /// Re-render the pill widgets.
+    fn render_pills(&mut self, _cx: &mut Cx) {
+        // TODO: Implement pill rendering
     }
 }
 
 impl MentionableTextInputRef {
     /// Returns a reference to the inner `TextInput` widget.
     pub fn text_input_ref(&self) -> TextInputRef {
-        self.borrow()
-            .map(|inner| inner.cmd_text_input.text_input_ref())
-            .unwrap_or_default()
+        self.child_by_path(ids!(persistent.center.text_input)).as_text_input()
     }
 
-    /// Sets whether the current user can notify the entire room (@room mention)
+    /// Sets whether the current user can notify the entire room (@room mention).
     pub fn set_can_notify_room(&self, can_notify: bool) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_can_notify_room(can_notify);
         }
     }
 
-    /// Gets whether the current user can notify the entire room (@room mention)
+    /// Gets whether the current user can notify the entire room (@room mention).
     pub fn can_notify_room(&self) -> bool {
         self.borrow().is_some_and(|inner| inner.can_notify_room())
     }
@@ -1477,16 +584,16 @@ impl MentionableTextInputRef {
         format!("{}{}", mention_prefix, entered_text)
     }
 
-    /// Processes entered text and creates a message with mentions based on detected message type.
-    /// This method handles /html, /plain prefixes and defaults to markdown.
-    /// Pill mentions are converted to markdown links and prepended to the message.
+    /// Creates a message from the entered text.
+    ///
+    /// This mock version handles `/html` and `/plain` prefixes
+    /// but does not track or extract @mentions (since the mention popup is disabled).
     pub fn create_message_with_mentions(&self, entered_text: &str) -> RoomMessageEventContent {
         if let Some(html_text) = entered_text.strip_prefix("/html") {
             let full_text = self.build_text_with_pill_mentions(html_text);
             let message = RoomMessageEventContent::text_html(&full_text, &full_text);
             message.add_mentions(self.get_mentions_from_pills_and_text(&full_text))
         } else if let Some(plain_text) = entered_text.strip_prefix("/plain") {
-            // Plain text messages don't support mentions
             RoomMessageEventContent::text_plain(plain_text)
         } else {
             let full_text = self.build_text_with_pill_mentions(entered_text);
@@ -1510,5 +617,4 @@ impl MentionableTextInputRef {
     pub fn has_pills(&self) -> bool {
         self.borrow().is_some_and(|inner| !inner.selected_pills.is_empty())
     }
-
 }

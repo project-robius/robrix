@@ -11,7 +11,7 @@ use crate::{
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, ImageViewerWidgetRefExt, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -27,11 +27,11 @@ script_mod! {
                 window.inner_size: vec2(1280, 800)
                 window.title: "Robrix"
                 pass.clear_color: #FFFFFF00
-                caption_bar: {
-                    caption_label: {
-                        label: {
-                            margin: Inset{left: 65},
-                            align: Align{x: 0.5},
+                caption_bar +: {
+                    draw_bg.color: #F3F3F3
+                    caption_label +: {
+                        label +: {
+                            draw_text +: { color: #0 }
                             text: "Robrix"
                         }
                     }
@@ -39,9 +39,14 @@ script_mod! {
             
 
                 body +: {
-                    padding: 0,
+                    padding: Inset{
+                        top: (mod.widgets.SAFE_INSET_PAD_TOP),
+                        bottom: (mod.widgets.SAFE_INSET_PAD_BOTTOM),
+                        left: (mod.widgets.SAFE_INSET_PAD_LEFT),
+                        right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
+                    }
 
-                    View {
+                    overlay_container := View {
                         width: Fill, height: Fill,
                         flow: Overlay,
 
@@ -59,10 +64,11 @@ script_mod! {
                             login_screen := LoginScreen {}
                         }
 
-                        image_viewer_overlay := View {
-                            visible: false,
-                            width: Fill, height: Fill,
-                            image_viewer_modal_inner := ImageViewer {}
+                        image_viewer_modal := Modal {
+                            content +: {
+                                width: Fill, height: Fill,
+                                image_viewer_modal_inner := ImageViewer {}
+                            }
                         }
                         
                         // Context menus should be shown in front of other UI elements,
@@ -75,10 +81,7 @@ script_mod! {
                             content +: {
                                 invite_confirmation_modal_inner := PositiveConfirmationModal {
                                     wrapper +: { buttons_view +: { accept_button +: {
-                                        draw_icon +: {
-                                            svg: (ICON_INVITE),
-                                            color: (COLOR_PRIMARY),
-                                        }
+                                        draw_icon +: { svg: (ICON_INVITE) }
                                         icon_walk: Walk{width: 28, height: Fit, margin: Inset{left: -10, right: 2} }
                                     } } }
                                 }
@@ -139,6 +142,8 @@ script_mod! {
 
                         // Tooltips must be shown in front of all other UI elements,
                         // since they can be shown as a hover atop any other widget.
+                        // This tooltip widget handles TooltipActions directly by itself,
+                        // so we don't need to call show/hide ourselves.
                         app_tooltip := CalloutTooltip {}
                     }
                 } // end of body
@@ -198,9 +203,6 @@ impl MatchEvent for App {
         // such that background threads/tasks will be able to can access it.
         let _app_data_dir = crate::app_data_dir();
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
-
-        // Set the global singleton for PopupList so other modules can enqueue toasts.
-        crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
 
         if let Err(e) = persistence::load_window_state(self.ui.window(cx, ids!(main_window)), cx) {
             error!("Failed to load window state: {}", e);
@@ -276,15 +278,30 @@ impl MatchEvent for App {
                 continue;
             }
 
+            // If a login failure occurs mid-session (e.g., an expired/revoked token detected
+            // by `handle_session_changes`), navigate back to the login screen.
+            // When not yet logged in, the login_screen widget handles displaying the failure modal.
+            if let Some(LoginAction::LoginFailure(_)) = action.downcast_ref() {
+                if self.app_state.logged_in {
+                    log!("Received LoginAction::LoginFailure while logged in; showing login screen.");
+                    self.app_state.logged_in = false;
+                    self.update_login_visibility(cx);
+                    self.ui.redraw(cx);
+                }
+                // Do NOT continue here — let the action propagate to the LoginScreen widget,
+                // which will open the login_status_modal to show the failure message.
+            }
+
             // Handle an action requesting to open the new message context menu.
             if let MessageAction::OpenMessageContextMenu { details, abs_pos } = action.as_widget_action().cast() {
                 self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
                 let new_message_context_menu = self.ui.new_message_context_menu(cx, ids!(new_message_context_menu));
                 let expected_dimensions = new_message_context_menu.show(cx, details);
-                // Ensure the context menu does not spill over the window's bounds.
-                let rect = self.ui.window(cx, ids!(main_window)).area().rect(cx);
-                let pos_x = min(abs_pos.x, rect.size.x - expected_dimensions.x);
-                let pos_y = min(abs_pos.y, rect.size.y - expected_dimensions.y);
+                // Use the overlay container's rect (not the window's) to correctly position
+                // the context menu relative to the body area, which excludes the caption bar.
+                let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
+                let pos_x = min(abs_pos.x - rect.pos.x, rect.size.x - expected_dimensions.x);
+                let pos_y = min(abs_pos.y - rect.pos.y, rect.size.y - expected_dimensions.y);
                 let margin = Inset {
                     left: pos_x as f64,
                     top: pos_y as f64,
@@ -304,10 +321,11 @@ impl MatchEvent for App {
                 self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
                 let room_context_menu = self.ui.room_context_menu(cx, ids!(room_context_menu));
                 let expected_dimensions = room_context_menu.show(cx, details);
-                // Ensure the context menu does not spill over the window's bounds.
-                let rect = self.ui.window(cx, ids!(main_window)).area().rect(cx);
-                let pos_x = min(pos.x, rect.size.x - expected_dimensions.x);
-                let pos_y = min(pos.y, rect.size.y - expected_dimensions.y);
+                // Use the overlay container's rect (not the window's) to correctly position
+                // the context menu relative to the body area, which excludes the caption bar.
+                let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
+                let pos_x = min(pos.x - rect.pos.x, rect.size.x - expected_dimensions.x);
+                let pos_y = min(pos.y - rect.pos.y, rect.size.y - expected_dimensions.y);
                 let margin = Inset {
                     left: pos_x as f64,
                     top: pos_y as f64,
@@ -318,24 +336,6 @@ impl MatchEvent for App {
                 script_apply_eval!(cx, main_content_view, {
                     margin: #(margin)
                 });
-                self.ui.redraw(cx);
-                continue;
-            }
-
-            // A new room has been selected, update the app state and navigate to the main content view.
-            if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
-                // Set the Stack Navigation header to show the name of the newly-selected room.
-                self.ui
-                    .label(cx, ids!(main_content_view.header.content.title_container.title))
-                    .set_text(cx, &selected_room.display_name());
-
-                self.app_state.selected_room = Some(selected_room);
-
-                // Navigate to the main content view
-                cx.widget_action(
-                    self.ui.widget_uid(), 
-                    StackNavigationAction::Push(id!(main_content_view))
-                );
                 self.ui.redraw(cx);
                 continue;
             }
@@ -388,30 +388,6 @@ impl MatchEvent for App {
                 _ => {}
             }
 
-            // Handle actions for showing or hiding the tooltip.
-            match action.as_widget_action().cast() {
-                TooltipAction::HoverIn { text, widget_rect, options } => {
-                    // Don't show any tooltips if the message context menu is currently shown.
-                    if self.ui.new_message_context_menu(cx, ids!(new_message_context_menu)).is_currently_shown(cx) {
-                        self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
-                    }
-                    else {
-                        self.ui.callout_tooltip(cx, ids!(app_tooltip)).show_with_options(
-                            cx,
-                            &text,
-                            widget_rect,
-                            options,
-                        );
-                    }
-                    continue;
-                }
-                TooltipAction::HoverOut => {
-                    self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
-                    continue;
-                }
-                _ => {}
-            }
-
             // Handle actions needed to open/close the join/leave room modal.
             match action.downcast_ref() {
                 Some(JoinLeaveRoomModalAction::Open { kind, show_tip }) => {
@@ -445,34 +421,12 @@ impl MatchEvent for App {
                 continue;
             }
             match action.downcast_ref() {
-                Some(ImageViewerAction::Show(state)) => {
-                    let mut image_viewer = self.ui.image_viewer(cx, ids!(image_viewer_modal_inner));
-                    match state {
-                        LoadState::Loading(texture, metadata) => {
-                            image_viewer.show_loading(cx, texture.clone(), metadata);
-                            let overlay = self.ui.view(cx, ids!(image_viewer_overlay));
-                            overlay.set_visible(cx, true);
-                            cx.set_key_focus(overlay.area());
-                            // Block scrolling immediately so scroll events don't
-                            // pierce through to the timeline before the next draw.
-                            cx.block_scrolling_except_within(Area::Empty);
-                        }
-                        LoadState::Loaded(data) => {
-                            image_viewer.show_loaded(cx, data);
-                        }
-                        LoadState::Error(error) => {
-                            image_viewer.show_error(cx, error);
-                        }
-                        LoadState::FinishedBackgroundDecoding => {
-                            // Handled internally by the ImageViewer's Signal handler.
-                        }
-                    }
+                Some(ImageViewerAction::Show(LoadState::Loading(_, _))) => {
+                    self.ui.modal(cx, ids!(image_viewer_modal)).open(cx);
                     continue;
                 }
                 Some(ImageViewerAction::Hide) => {
-                    self.ui.view(cx, ids!(image_viewer_overlay)).set_visible(cx, false);
-                    cx.revert_key_focus();
-                    cx.unblock_scrolling();
+                    self.ui.modal(cx, ids!(image_viewer_modal)).close(cx);
                     continue;
                 }
                 _ => {}
@@ -620,7 +574,11 @@ fn clear_all_app_state(cx: &mut Cx) {
 impl AppMain for App {
     fn script_mod(vm: &mut ScriptVm) -> makepad_widgets::ScriptValue {
         // Order matters: base widgets first, then app widgets, then app UI.
-        makepad_widgets::script_mod(vm);
+        makepad_widgets::theme_mod(vm);
+        // script_eval!(vm, {
+        //     mod.theme = mod.themes.light
+        // });
+        makepad_widgets::widgets_mod(vm);
         makepad_code_editor::script_mod(vm);
         crate::shared::script_mod(vm);
 
@@ -683,37 +641,6 @@ impl AppMain for App {
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
 
-        /*
-         * TODO: I'd like for this to work, but it doesn't behave as expected.
-         *       The context menu fails to draw properly when a draw event is passed to it.
-         *       Also, once we do get this to work, we should remove the
-         *       Hit::FingerScroll event handler in the new_message_context_menu widget.
-         *
-        // We only forward "interactive hit" events to the underlying UI view
-        // if none of the various overlay views are visible.
-        // Currently, the only overlay view that captures interactive events is
-        // the new message context menu.
-        // We always forward "non-interactive hit" events to the inner UI view.
-        // We check which overlay views are visible in the order of those views' z-ordering,
-        // such that the top-most views get a chance to handle the event first.
-
-        let new_message_context_menu = self.ui.new_message_context_menu(cx, ids!(new_message_context_menu));
-        let is_interactive_hit = utils::is_interactive_hit_event(event);
-        let is_pane_shown: bool;
-        if new_message_context_menu.is_currently_shown(cx) {
-            is_pane_shown = true;
-            new_message_context_menu.handle_event(cx, event, scope);
-        }
-        else {
-            is_pane_shown = false;
-        }
-
-        if !is_pane_shown || !is_interactive_hit {
-            // Forward the event to the inner UI view.
-            self.ui.handle_event(cx, event, scope);
-        }
-         *
-         */
     }
 }
 
@@ -799,6 +726,8 @@ impl App {
             closure(cx);
         }
     }
+
+
 }
 
 /// App-wide state that is stored persistently across multiple app runs
@@ -830,10 +759,8 @@ pub struct AppState {
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct SavedDockState {
     /// All items contained in the dock, keyed by their room or space ID.
-    #[serde(skip, default)]
     pub dock_items: HashMap<LiveId, DockItem>,
     /// The rooms that are currently open, keyed by their room or space ID.
-    #[serde(skip, default)]
     pub open_rooms: HashMap<LiveId, SelectedRoom>,
     /// The order in which the rooms were opened, in chronological order
     /// from first opened (at the beginning) to last opened (at the end).

@@ -21,16 +21,25 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.EditingContent = View {
+    mod.widgets.EditingContent = RoundedView {
         width: Fill,
-        height: Fit
-        align: Align{x: 0.5, y: 1.0}, // centered horizontally, bottom-aligned
+        height: Fit,
         padding: Inset{ left: 20, right: 20, top: 10, bottom: 10 }
-        margin: Inset{top: 2}
         spacing: 10,
         flow: Down,
 
-        show_bg: false // don't cover up the RoomInputBar
+        // this must match the RoomInputBar exactly such that it overlaps atop it.
+        margin: Inset{left: -4, right: -4, bottom: -4 }
+        show_bg: true,
+        draw_bg +: {
+            color: (COLOR_PRIMARY)
+            border_radius: 5.0
+            border_color: (COLOR_SECONDARY)
+            border_size: 2.0
+            // shadow_color: #0006
+            // shadow_radius: 0.0
+            // shadow_offset: vec2(0.0,0.0)
+        }
 
         View {
             width: Fill, height: Fit
@@ -49,39 +58,25 @@ script_mod! {
                 text: "Editing:"
             }
 
-            cancel_button := RobrixIconButton {
+            cancel_button := RobrixNegativeIconButton {
                 width: Fit,
                 height: Fit,
                 padding: 13,
                 spacing: 0,
                 margin: Inset{left: 5, right: 5},
 
-                draw_bg +: {
-                    border_color: (COLOR_FG_DANGER_RED),
-                    color: (COLOR_BG_DANGER_RED)
-                }
-                draw_icon +: {
-                    svg: (ICON_CLOSE),
-                    color: (COLOR_FG_DANGER_RED)
-                }
+                draw_icon.svg: (ICON_CLOSE)
                 icon_walk: Walk{width: 16, height: 16, margin: 0}
             }
 
-            accept_button := RobrixIconButton {
+            accept_button := RobrixPositiveIconButton {
                 width: Fit,
                 height: Fit,
                 padding: 13,
                 spacing: 0,
                 margin: Inset{left: 5},
 
-                draw_bg +: {
-                    border_color: (COLOR_FG_ACCEPT_GREEN),
-                    color: (COLOR_BG_ACCEPT_GREEN)
-                }
-                draw_icon +: {
-                    svg: (ICON_CHECKMARK)
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
+                draw_icon.svg: (ICON_CHECKMARK)
                 icon_walk: Walk{width: 16, height: 16, margin: 0}
             }
         }
@@ -90,41 +85,38 @@ script_mod! {
 
         edit_text_input := MentionableTextInput {
             width: Fill
-            height: Fit
+            height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
             margin: Inset{ bottom: 5, top: 5 }
         }
     }
 
 
     mod.widgets.EditingPane = #(EditingPane::register_widget(vm)) {
+        ..mod.widgets.RoundedView
+
         visible: false,
         width: Fill,
-        height: Fit
+        height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
         align: Align{x: 0.5, y: 1.0}
-        // TODO: FIXME: this is a hack to make the editing pane
-        //              able to slide out of the bottom of the screen.
-        //              (Waiting on a Makepad-level fix for this.)
-        margin: Inset{top: 1000}
 
         editing_content := mod.widgets.EditingContent { }
+        
+        slide: 1.0,
 
         animator: Animator{
             panel: {
                 default: @hide
                 show: AnimatorState{
                     redraw: true,
-                    from: {all: Forward {duration: 0.8}}
+                    from: {all: Forward {duration: 0.5}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
-                    apply: { margin: Inset{top: 0} }
+                    apply: { slide: 0.0 }
                 }
                 hide: AnimatorState{
                     redraw: true,
-                    from: {all: Forward {duration: 0.8}}
+                    from: {all: Forward {duration: 0.5}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
-                    // TODO: FIXME: this is a hack to make the editing pane
-                    //              able to slide out of the bottom of the screen.
-                    //              (Waiting on a Makepad-level fix for this.)
-                    apply: { margin: Inset{top: 1000} }
+                    apply: { slide: 1.0 }
                 }
             }
         }
@@ -134,7 +126,9 @@ script_mod! {
 /// Action emitted by the EditingPane widget.
 #[derive(Clone, Default, Debug)]
 pub enum EditingPaneAction {
-    /// The editing pane has been closed/hidden.
+    /// The editing pane's hide animation has started.
+    HideAnimationStarted,
+    /// The editing pane has been fully closed/hidden.
     Hidden,
     #[default]
     None,
@@ -159,42 +153,57 @@ pub struct EditingPane {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
     #[apply_default] animator: Animator,
+    #[live] slide: f32,
 
     #[rust] info: Option<EditingPaneInfo>,
     #[rust] is_animating_out: bool,
+    #[rust] last_content_height: f64,
+    /// A pending next-frame request used to force a parent relayout
+    /// after the hide animation completes.
+    #[rust] next_frame: NextFrame,
 }
 
 impl Widget for EditingPane {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // Handle the next-frame event scheduled after hide animation completes.
+        // This forces a full redraw cycle so the parent relayouts properly.
+        if self.next_frame.is_event(event).is_some() {
+            cx.redraw_all();
+        }
+
         self.view.handle_event(cx, event, scope);
 
         if !self.visible { return; }
 
         let animator_action = self.animator_handle_event(cx, event);
         if animator_action.must_redraw() {
-            self.redraw(cx);
-        }
-        // If the animator is in the `hide` state and has finished animating out,
-        // that means it has fully animated off-screen and can be set to invisible.
-        if self.animator_in_state(cx, ids!(panel.hide)) {
-            match (
-                self.is_animating_out,
-                matches!(animator_action, AnimatorAction::Animating { .. }),
-            ) {
-                (true, false) => {
-                    self.visible = false;
-                    self.info = None;
-                    cx.widget_action(self.widget_uid(),  EditingPaneAction::Hidden);
-                    cx.revert_key_focus();
-                    self.redraw(cx);
-                    return;
-                },
-                (false, true) => {
-                    self.is_animating_out = true;
-                    return;
-                },
-                _ => {},
+            // During hide, redraw the entire UI so the parent RoomInputBar
+            // can animate the input_bar height in its draw_walk.
+            // During show, only this widget needs to redraw.
+            if self.is_animating_out {
+                cx.redraw_all();
+            } else {
+                self.redraw(cx);
             }
+        }
+        // If we started animating the hide, check if the track has finished.
+        // `is_track_animating` returns false once the track has fully completed,
+        // even on the same frame that returned the last `Animating` action.
+        if self.is_animating_out {
+            if !self.animator.is_track_animating(id!(panel)) {
+                self.visible = false;
+                self.is_animating_out = false;
+                self.info = None;
+                cx.widget_action(self.widget_uid(), EditingPaneAction::Hidden);
+                cx.revert_key_focus();
+                self.redraw(cx);
+                self.next_frame = cx.new_next_frame();
+                return;
+            }
+        } else if self.animator_in_state(cx, ids!(panel.hide))
+            && matches!(animator_action, AnimatorAction::Animating { .. })
+        {
+            self.is_animating_out = true;
         }
 
         if let Event::Actions(actions) = event {
@@ -209,6 +218,7 @@ impl Widget for EditingPane {
                 || edit_text_input.escaped(actions)
             {
                 self.animator_play(cx, ids!(panel.hide));
+                cx.widget_action(self.widget_uid(), EditingPaneAction::HideAnimationStarted);
                 self.redraw(cx);
                 return;
             }
@@ -297,6 +307,7 @@ impl Widget for EditingPane {
                                             None,
                                         );
                                         self.animator_play(cx, ids!(panel.hide));
+                                        cx.widget_action(self.widget_uid(), EditingPaneAction::HideAnimationStarted);
                                         self.redraw(cx);
                                         return;
                                     },
@@ -381,11 +392,53 @@ impl Widget for EditingPane {
         }
     }
 
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, mut walk: Walk) -> DrawStep {
         if self.info.is_none() {
             self.visible = false;
         };
-        self.view.draw_walk(cx, scope, walk)
+
+        // Animate both the layout height and content position simultaneously:
+        // 1. walk.height grows from 0 to ch (and shrinks back during hide),
+        //    so the RoomInputBar border grows/shrinks smoothly.
+        // 2. Balanced margins on editing_content slide it within the pane:
+        //    margin.top pushes content below the clip boundary,
+        //    margin.bottom compensates so the Fit height stays constant.
+        //    The pane's show_bg provides the clipping.
+        let ch = self.last_content_height;
+        if self.slide > 0.001 {
+            let offset = if ch > 0.0 {
+                ch * self.slide as f64
+            } else {
+                10000.0
+            };
+            if let Some(mut ec) = self.view(cx, ids!(editing_content)).borrow_mut() {
+                ec.walk.margin.top = offset;
+                ec.walk.margin.bottom = -offset;
+            }
+            // Animate the layout height alongside the content slide,
+            // so the RoomInputBar border grows/shrinks smoothly.
+            if ch > 0.0 {
+                walk.height = Size::Fixed((ch * (1.0 - self.slide as f64)).max(0.0));
+            } else {
+                walk.height = Size::Fixed(0.0);
+            }
+        } else {
+            // Fully shown or not animating: reset margins.
+            if let Some(mut ec) = self.view(cx, ids!(editing_content)).borrow_mut() {
+                ec.walk.margin.top = 0.0;
+                ec.walk.margin.bottom = 0.0;
+            }
+        }
+
+        let step = self.view.draw_walk(cx, scope, walk);
+
+        // Read area rect AFTER drawing to capture this frame's layout.
+        let ec_height = self.view(cx, ids!(editing_content)).area().rect(cx).size.y;
+        if ec_height > 0.0 {
+            self.last_content_height = ec_height;
+        }
+
+        step
     }
 }
 
@@ -416,6 +469,7 @@ impl EditingPane {
         match edit_result {
             Ok(()) => {
                 self.animator_play(cx, ids!(panel.hide));
+                cx.widget_action(self.widget_uid(), EditingPaneAction::HideAnimationStarted);
             },
             Err(e) => {
                 enqueue_popup_notification(
@@ -453,7 +507,7 @@ impl EditingPane {
             enqueue_popup_notification(
                 "That message cannot be edited.",
                 PopupKind::Error,
-                None,
+                Some(4.0),
             );
             return;
         }
@@ -465,6 +519,7 @@ impl EditingPane {
         });
 
         self.visible = true;
+        self.is_animating_out = false;
         self.button(cx, ids!(accept_button)).reset_hover(cx);
         self.button(cx, ids!(cancel_button)).reset_hover(cx);
         self.animator_play(cx, ids!(panel.show));
@@ -477,6 +532,8 @@ impl EditingPane {
             Cursor { index: text_len, prefer_next_row: false },
             false,
         );
+        // TODO: this doesn't work, likely because of Makepad's bug in which you cannot
+        // give key focus to a widget that hasn't been drawn yet (as it has no Area).
         inner_text_input.set_key_focus(cx);
         self.redraw(cx);
     }
@@ -508,6 +565,7 @@ impl EditingPane {
             timeline_kind,
         });
         self.visible = true;
+        self.is_animating_out = false;
         self.button(cx, ids!(accept_button)).reset_hover(cx);
         self.button(cx, ids!(cancel_button)).reset_hover(cx);
         self.animator_play(cx, ids!(panel.show));
@@ -527,6 +585,11 @@ impl EditingPaneRef {
             return false;
         };
         inner.is_currently_shown(cx)
+    }
+
+    /// Returns the current slide value (0.0 = fully shown, 1.0 = fully hidden).
+    pub fn slide(&self) -> f32 {
+        self.borrow().map_or(1.0, |inner| inner.slide)
     }
 
     /// See [`EditingPane::handle_edit_result()`].
@@ -549,6 +612,14 @@ impl EditingPaneRef {
         )
     }
 
+    /// Returns whether this `EditingPane`'s hide animation started in the given actions.
+    pub fn was_hide_animation_started(&self, actions: &Actions) -> bool {
+        matches!(
+            actions.find_widget_action(self.widget_uid()).cast_ref(),
+            EditingPaneAction::HideAnimationStarted,
+        )
+    }
+
     /// See [`EditingPane::show()`].
     pub fn show(
         &self,
@@ -556,9 +627,7 @@ impl EditingPaneRef {
         event_tl_item: EventTimelineItem,
         timeline_kind: TimelineKind,
     ) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
+        let Some(mut inner) = self.borrow_mut() else { return; };
         inner.show(cx, event_tl_item, timeline_kind);
     }
 
@@ -589,7 +658,14 @@ impl EditingPaneRef {
         inner.animator_cut(cx, ids!(panel.hide));
         inner.is_animating_out = false;
         inner.info = None;
-        inner.redraw(cx);
+        // Reset editing_content margins in case we interrupted an animation.
+        if let Some(mut ec) = inner.view(cx, ids!(editing_content)).borrow_mut() {
+            ec.walk.margin.top = 0.0;
+            ec.walk.margin.bottom = 0.0;
+        }
+        // Redraw all so the parent RoomInputBar restores the input_bar
+        // height (its draw_walk reads the slide value, which is now 1.0).
+        cx.redraw_all();
     }
 }
 

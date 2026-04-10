@@ -11,8 +11,9 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-
-    mod.widgets.IMG_APP_LOGO = crate_resource("self://resources/robrix_logo_alpha.png")
+    mod.widgets.IMG_APP_LOGO = crate_resource("self://resources/icon_512.png")
+    mod.widgets.ICON_EYE_OPEN   = crate_resource("self://resources/icons/eye_open.svg")
+    mod.widgets.ICON_EYE_CLOSED = crate_resource("self://resources/icons/eye_closed.svg")
 
     mod.widgets.SsoButton = RoundedView {
         width: Fit,
@@ -50,28 +51,28 @@ script_mod! {
         show_bg: true,
         draw_bg +: {
             color: COLOR_SECONDARY
-            // color: COLOR_PRIMARY // TODO: once Makepad supports `Fill {max: 375}`, change this back to COLOR_PRIMARY
         }
 
         ScrollYView {
             width: Fill, height: Fill,
-            // Note: *do NOT* vertically center this, it will break scrolling.
-            align: Align{x: 0.5}
+            flow: Down, // Required for vertical scrolling to work.
+            align: Align{x: 0.5, y: 0.5}
             show_bg: true,
             draw_bg.color: (COLOR_SECONDARY)
-            // draw_bg.color: (COLOR_PRIMARY) // TODO: once Makepad supports `Fill {max: 375}`, change this back to COLOR_PRIMARY
-   
+
             // allow the view to be scrollable but hide the actual scroll bar
             scroll_bars: {
+                show_scroll_x: false, show_scroll_y: true,
                 scroll_bar_y: {
                     bar_size: 0.0
                     min_handle_size: 0.0
+                    drag_scrolling: true
                 }
             }
 
             RoundedView {
-                margin: Inset{top: 40, bottom: 40}
-                width: Fill // TODO: once Makepad supports it, use `Fill {max: 375}`
+                margin: Inset{top: 50, bottom: 50}
+                width: Fill
                 height: Fit
                 align: Align{x: 0.5, y: 0.5}
                 flow: Overlay,
@@ -83,12 +84,10 @@ script_mod! {
                 }
 
                 View {
-                    width: Fill // TODO: once Makepad supports it, use `Fill {max: 375}`
+                    width: Fill
                     height: Fit
                     flow: Down
                     align: Align{x: 0.5, y: 0.5}
-                    padding: Inset{top: 30, bottom: 30}
-                    margin: Inset{top: 40, bottom: 40}
                     spacing: 15.0
 
                     logo_image := Image {
@@ -115,12 +114,57 @@ script_mod! {
                         empty_text: "User ID"
                     }
 
-                    password_input := RobrixTextInput {
+                    View {
                         width: 275, height: Fit
-                        flow: Right, // do not wrap
-                        padding: 10,
-                        empty_text: "Password"
-                        is_password: true,
+                        flow: Overlay,
+
+                        password_input := RobrixTextInput {
+                            width: Fill, height: Fit
+                            flow: Right, // do not wrap
+                            padding: Inset{top: 10, bottom: 10, left: 10, right: 40}
+                            empty_text: "Password"
+                            is_password: true,
+                        }
+
+                        View {
+                            width: Fill, height: Fill
+                            align: Align{x: 1.0, y: 0.5}
+
+                            show_password_button := Button {
+                                width: 36, height: 36,
+                                padding: 6,
+                                draw_bg +: {
+                                    color: #0000
+                                    color_hover: #0000
+                                    color_down: #0000
+                                    border_size: 0.0
+                                }
+                                draw_icon +: {
+                                    svg: (mod.widgets.ICON_EYE_CLOSED),
+                                    color: #8C8C8C,
+                                }
+                                icon_walk: Walk{width: 20, height: 20}
+                                text: ""
+                            }
+
+                            hide_password_button := Button {
+                                visible: false,
+                                width: 36, height: 36,
+                                padding: 6,
+                                draw_bg +: {
+                                    color: #0000
+                                    color_hover: #0000
+                                    color_down: #0000
+                                    border_size: 0.0
+                                }
+                                draw_icon +: {
+                                    svg: (mod.widgets.ICON_EYE_OPEN),
+                                    color: #8C8C8C,
+                                }
+                                icon_walk: Walk{width: 20, height: 20}
+                                text: ""
+                            }
+                        }
                     }
 
                     View {
@@ -145,9 +189,7 @@ script_mod! {
                             spacing: 0.0,
                             align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
 
-                            left_line := LineH {
-                                draw_bg.color: #C8C8C8
-                            }
+                            LineH { draw_bg.color: #C8C8C8 }
 
                             Label {
                                 width: Fit, height: Fit
@@ -159,9 +201,7 @@ script_mod! {
                                 text: "Homeserver URL (optional)"
                             }
 
-                            right_line := LineH {
-                                draw_bg.color: #C8C8C8
-                            }
+                            LineH { draw_bg.color: #C8C8C8 }
                         }
                     }
                     
@@ -172,19 +212,15 @@ script_mod! {
                         padding: 10
                         margin: Inset{top: 5, bottom: 10}
                         align: Align{x: 0.5, y: 0.5}
-                        draw_bg.color: (COLOR_ACTIVE_PRIMARY)
-                        draw_text +: {
-                            color: (COLOR_PRIMARY)
-                            text_style: REGULAR_TEXT {}
-                        }
                         text: "Login"
                     }
 
-                    left_line := LineH {
+                    LineH {
                         width: 275
                         margin: Inset{bottom: -5}
                         draw_bg.color: #C8C8C8
                     }
+
                     Label {
                         width: Fit, height: Fit
                         padding: 0,
@@ -239,9 +275,7 @@ script_mod! {
                         spacing: 0.0,
                         align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
 
-                        left_line := LineH {
-                            draw_bg.color: #C8C8C8
-                        }
+                        LineH { draw_bg.color: #C8C8C8 }
 
                         Label {
                             width: Fit, height: Fit
@@ -253,9 +287,7 @@ script_mod! {
                             text: "Don't have an account?"
                         }
 
-                        right_line := LineH {
-                            draw_bg.color: #C8C8C8
-                        }
+                        LineH { draw_bg.color: #C8C8C8 }
                     }
                     
                     signup_button := RobrixIconButton {
@@ -263,12 +295,6 @@ script_mod! {
                         padding: Inset{left: 15, right: 15, top: 10, bottom: 10}
                         margin: Inset{bottom: 5}
                         align: Align{x: 0.5, y: 0.5}
-                        draw_bg.color: (COLOR_ACTIVE_PRIMARY)
-                        draw_text +: {
-                            color: (COLOR_PRIMARY)
-                            text_style: REGULAR_TEXT {}
-                        }
-
                         text: "Sign up here"
                     }
                 }
@@ -276,8 +302,6 @@ script_mod! {
                 // The modal that pops up to display login status messages,
                 // such as when the user is logging in or when there is an error.
                 login_status_modal := Modal {
-                    // width: Fit, height: Fit,
-                    // align: Align{x: 0.5, y: 0.5},
                     can_dismiss: false,
                     content +: {
                         login_status_modal_inner := mod.widgets.LoginStatusModal {}
@@ -294,6 +318,8 @@ static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-fo
 pub struct LoginScreen {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
+    /// Whether the password field is currently showing plaintext.
+    #[rust] password_visible: bool,
     /// Boolean to indicate if the SSO login process is still in flight
     #[rust] sso_pending: bool,
     /// The URL to redirect to after logging in with SSO.
@@ -322,6 +348,17 @@ impl MatchEvent for LoginScreen {
 
         let login_status_modal = self.view.modal(cx, ids!(login_status_modal));
         let login_status_modal_inner = self.view.login_status_modal(cx, ids!(login_status_modal_inner));
+
+        // Handle toggling password visibility
+        let show_pw_button = self.view.button(cx, ids!(show_password_button));
+        let hide_pw_button = self.view.button(cx, ids!(hide_password_button));
+        if show_pw_button.clicked(actions) || hide_pw_button.clicked(actions) {
+            self.password_visible = !self.password_visible;
+            password_input.toggle_is_password(cx);
+            show_pw_button.set_visible(cx, !self.password_visible);
+            hide_pw_button.set_visible(cx, self.password_visible);
+            self.redraw(cx);
+        }
 
         if signup_button.clicked(actions) {
             log!("Opening URL \"{}\"", MATRIX_SIGN_UP_URL);
@@ -417,12 +454,14 @@ impl MatchEvent for LoginScreen {
                 }
                 Some(LoginAction::SsoPending(pending)) => {
                     let mask = if *pending { 1.0 } else { 0.0 };
+                    let cursor = if *pending { MouseCursor::NotAllowed } else { MouseCursor::Hand };
                     for view_ref in self.view_set(cx, button_set).iter() {
-                        let Some(view_mut) = view_ref.borrow_mut() else { continue };
+                        let Some(mut view_mut) = view_ref.borrow_mut() else { continue };
                         let mut image = view_mut.image(cx, ids!(image));
                         script_apply_eval!(cx, image, {
                             draw_bg.mask: #(mask)
                         });
+                        view_mut.cursor = Some(cursor);
                     }
                     self.sso_pending = *pending;
                     self.redraw(cx);

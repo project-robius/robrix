@@ -5,6 +5,12 @@ script_mod! {
     use mod.widgets.*
 
     mod.widgets.RobrixSplitter = Splitter {
+        // size: theme.splitter_size
+        // min_horizontal: theme.splitter_min_horizontal
+        // max_horizontal: theme.splitter_max_horizontal
+        // min_vertical: theme.splitter_min_vertical
+        // max_vertical: theme.splitter_max_vertical
+
         draw_bg +: {
             color: COLOR_SECONDARY
             color_hover: COLOR_ROBRIX_PURPLE

@@ -67,22 +67,72 @@ script_mod! {
         width: Fill, height: Fit,
         flow: Down,
 
-        collapsible_button := View {
+        collapsible_buttons := View {
             width: Fill, height: Fit,
             flow: Right,
             align: Align{x: 0.5, y: 0.5},
             padding: Inset{top: 4},
             visible: false,
-                expand_collapse_button := Button {
-                    width: Fit, height: Fit,
-                    padding: Inset{top: 2, bottom: 2, left: 8, right: 8},
-                    draw_text +: {
-                        text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
-                            font_size: 10.0,
-                        },
-                        color: #666666,
-                    }
-                text: "▼ Show more links"
+
+            expand_button := RobrixIconButton {
+                width: Fit, height: Fit,
+                spacing: 4,
+                padding: Inset{top: 4, bottom: 4, left: 8, right: 8},
+                draw_icon +: {
+                    svg: (ICON_TRIANGLE_DOWN)
+                    color: #666666
+                }
+                icon_walk: Walk{width: 10, height: 10}
+                draw_text +: {
+                    text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
+                        font_size: 10.0,
+                    },
+                    color: #666666,
+                    color_hover: #666666,
+                    color_down: #666666,
+                }
+                draw_bg +: {
+                    color: (COLOR_BG_PREVIEW)
+                    color_hover: (COLOR_BG_PREVIEW_HOVER)
+                    color_down: #A8DBBF
+                    border_size: 1.0
+                    border_color: #CCCCCC
+                    border_color_hover: #CCCCCC
+                    border_color_down: #CCCCCC
+                    border_radius: 4.0
+                }
+                text: "Show more links"
+            }
+
+            collapse_button := RobrixIconButton {
+                visible: false,
+                width: Fit, height: Fit,
+                spacing: 4,
+                padding: Inset{top: 4, bottom: 4, left: 8, right: 8},
+                draw_icon +: {
+                    svg: (ICON_TRIANGLE_UP)
+                    color: #666666
+                }
+                icon_walk: Walk{width: 10, height: 10}
+                draw_text +: {
+                    text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
+                        font_size: 10.0,
+                    },
+                    color: #666666,
+                    color_hover: #666666,
+                    color_down: #666666,
+                }
+                draw_bg +: {
+                    color: (COLOR_BG_PREVIEW)
+                    color_hover: (COLOR_BG_PREVIEW_HOVER)
+                    color_down: #A8DBBF
+                    border_size: 1.0
+                    border_color: #CCCCCC
+                    border_color_hover: #CCCCCC
+                    border_color_down: #CCCCCC
+                    border_radius: 4.0
+                }
+                text: "Show fewer links"
             }
         }
 
@@ -121,24 +171,24 @@ script_mod! {
 
                     title_label := LinkLabel {
                         width: Fit, height: Fit,
+                        flow: Flow.Right{wrap: true},
                         draw_text +: {
                             text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
                                 font_size: 12.0,
                             },
                             color: #x0000EE,
-                            flow: Flow.Right{wrap: true},
                             color_hover: (COLOR_LINK_HOVER),
                         }
                     }
 
                     site_name_label := Label {
                         width: Fit, height: Fit,
+                        flow: Flow.Right{wrap: true},
                         draw_text +: {
                             text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
                                 font_size: 12.0,
                             },
                             color: #666666,
-                            flow: Flow.Right{wrap: true},
                         }
                     }
                 }
@@ -148,13 +198,15 @@ script_mod! {
 
                     description_label := Label {
                         width: Fill, height: Fit,
+                        flow: Flow.Right{wrap: true},
                         padding: Inset{ left: 0.0 }
+                        max_lines: 2
+                        text_overflow: Ellipsis
                         draw_text +: {
                             text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
                                 font_size: 11.0,
                             },
                             color: #666666,
-                            flow: Flow.Right{wrap: true},
                         }
                     }
                 }
@@ -174,7 +226,7 @@ pub struct LinkPreview {
     #[layout]
     layout: Layout,
     #[rust]
-    show_collapsible_button: bool,
+    show_collapsible_buttons: bool,
     #[rust]
     is_expanded: bool,
     #[rust]
@@ -185,8 +237,9 @@ impl Widget for LinkPreview {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // Handle collapsible button clicks
         if let Event::Actions(actions) = event {
-            let expand_button = self.view.button(cx, ids!(collapsible_button.expand_collapse_button));
-            if expand_button.clicked(actions) {
+            let expand_btn = self.view.button(cx, ids!(collapsible_buttons.expand_button));
+            let collapse_btn = self.view.button(cx, ids!(collapsible_buttons.collapse_button));
+            if expand_btn.clicked(actions) || collapse_btn.clicked(actions) {
                 self.is_expanded = !self.is_expanded;
                 self.update_button_and_visibility(cx);
                 cx.redraw_all();
@@ -254,16 +307,22 @@ impl LinkPreview {
     }
 
     fn update_button_and_visibility(&mut self, cx: &mut Cx) {
-        if self.show_collapsible_button {
-            self.view.view(cx, ids!(collapsible_button)).set_visible(cx, true);
-            let button_ref = self.view.button(cx, ids!(collapsible_button.expand_collapse_button));
+        if self.show_collapsible_buttons {
+            self.view.view(cx, ids!(collapsible_buttons)).set_visible(cx, true);
+            let expand_btn = self.view.button(cx, ids!(collapsible_buttons.expand_button));
+            let collapse_btn = self.view.button(cx, ids!(collapsible_buttons.collapse_button));
             if self.is_expanded {
-                button_ref.set_text(cx, "▲ Show fewer links");
+                expand_btn.set_visible(cx, false);
+                collapse_btn.set_visible(cx, true);
             } else {
-                button_ref.set_text(cx, &format!("▼ Show {} more links", self.hidden_links_count));
+                expand_btn.set_text(cx, &format!("Show {} more links", self.hidden_links_count));
+                expand_btn.set_visible(cx, true);
+                collapse_btn.set_visible(cx, false);
             }
+            expand_btn.reset_hover(cx);
+            collapse_btn.reset_hover(cx);
         } else {
-            self.view.view(cx, ids!(collapsible_button)).set_visible(cx, false);
+            self.view.view(cx, ids!(collapsible_buttons)).set_visible(cx, false);
         }
     }
 }
@@ -293,13 +352,15 @@ impl LinkPreviewRef {
     /// This function is usually called when the link preview is updated.
     /// If the link preview is updated, and the collapsible button should be shown,
     /// this function should be called.
-    fn show_collapsible_button(&mut self, cx: &mut Cx, hidden_count: usize) {
+    fn show_collapsible_buttons(&mut self, cx: &mut Cx, hidden_count: usize) {
          if let Some(mut inner) = self.borrow_mut() {
-            inner.show_collapsible_button = true;
+            inner.show_collapsible_buttons = true;
             inner.hidden_links_count = hidden_count;
-            let button_ref = inner.view.button(cx, ids!(collapsible_button.expand_collapse_button));
-            button_ref.set_text(cx, &format!("▼ Show {} more links", inner.hidden_links_count));
-            inner.view.view(cx, ids!(collapsible_button)).set_visible(cx, true);
+            let expand_btn = inner.view.button(cx, ids!(collapsible_buttons.expand_button));
+            expand_btn.set_text(cx, &format!("Show {} more links", inner.hidden_links_count));
+            expand_btn.set_visible(cx, true);
+            inner.view.button(cx, ids!(collapsible_buttons.collapse_button)).set_visible(cx, false);
+            inner.view.view(cx, ids!(collapsible_buttons)).set_visible(cx, true);
         }
     }
 
@@ -442,7 +503,7 @@ impl LinkPreviewRef {
         }
         if views.len() > MAX_LINK_PREVIEWS_BY_EXPAND {
             let hidden_count = views.len() - MAX_LINK_PREVIEWS_BY_EXPAND;
-            self.show_collapsible_button(cx, hidden_count);
+            self.show_collapsible_buttons(cx, hidden_count);
         }
         self.set_children(views);
         fully_drawn_count == accepted_link_count
@@ -592,6 +653,22 @@ impl LinkPreviewCache {
         }
     }
 
+    /// Removes all `Requested` and `Failed` entries from the link preview cache,
+    /// allowing them to be re-fetched.
+    ///
+    /// This should be called when the app transitions from offline back to online,
+    /// because any in-flight requests that were submitted while offline have likely
+    /// failed, leaving stale entries that permanently block re-fetching.
+    pub fn clear_all_pending_and_failed_requests(&mut self) {
+        self.cache.retain(|_, entry| {
+            if let Ok(guard) = entry.lock() {
+                matches!(guard.entry, LinkPreviewCacheEntry::LoadedLinkPreview(_))
+            } else {
+                true // Keep entries we can't lock
+            }
+        });
+    }
+
     /// Removes cache entries older than the specified duration
     pub fn cleanup_old_entries(&mut self, max_age: Duration) {
         let now = Instant::now();
@@ -629,7 +706,7 @@ fn insert_into_cache(
             if let LinkPreviewError::RateLimited = error_type {
                 LinkPreviewCacheEntry::Requested
             } else {
-                error!("Failed to fetch link preview data for {url}: {e:?}");
+                warning!("Failed to fetch link preview data for {url}: {e:?}");
                 LinkPreviewCacheEntry::Failed(error_type)
             }
         }

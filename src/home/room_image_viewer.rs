@@ -4,7 +4,7 @@ use matrix_sdk::{
     media::MediaFormat,
     ruma::events::room::{message::MessageType, MediaSource},
 };
-use reqwest::StatusCode;
+use matrix_sdk::reqwest::StatusCode;
 
 use crate::{media_cache::{MediaCache, MediaCacheEntry}, shared::image_viewer::{ImageViewerAction, ImageViewerError, LoadState}};
 

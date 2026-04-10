@@ -8,7 +8,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::{home::invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, room::BasicRoomDetails, shared::popup_list::{PopupKind, enqueue_popup_notification}, sliding_sync::{MatrixRequest, submit_async_request}, space_service_sync::{SpaceRequest, SpaceRoomListAction}, utils::{self, RoomNameId}};
+use crate::{home::invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, room::BasicRoomDetails, shared::{popup_list::{PopupKind, enqueue_popup_notification}, styles::{apply_negative_button_style, apply_neutral_button_style, apply_positive_button_style, apply_primary_button_style}}, sliding_sync::{MatrixRequest, submit_async_request}, space_service_sync::{SpaceRequest, SpaceRoomListAction}, utils::{self, RoomNameId}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -40,7 +40,6 @@ script_mod! {
                     draw_text +: {
                         text_style: TITLE_TEXT {font_size: 13},
                         color: #000
-                        flow: Flow.Right{wrap: true}
                     }
                 }
             }
@@ -52,12 +51,12 @@ script_mod! {
 
                 description := Label {
                     width: Fill
+                    flow: Flow.Right{wrap: true}
                     draw_text +: {
                         text_style: REGULAR_TEXT {
                             font_size: 11.5,
                         },
                         color: #000
-                        flow: Flow.Right{wrap: true}
                     }
                 }
 
@@ -68,44 +67,22 @@ script_mod! {
                     align: Align{x: 1.0, y: 0.5}
                     spacing: 20
 
-                    cancel_button := RobrixIconButton {
+                    cancel_button := RobrixNegativeIconButton {
                         width: 120,
                         align: Align{x: 0.5, y: 0.5}
                         padding: 15,
-                        draw_icon +: {
-                            svg: (ICON_FORBIDDEN)
-                            color: (COLOR_FG_DANGER_RED),
-                        }
+                        draw_icon.svg: (ICON_FORBIDDEN)
                         icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-        
-                        draw_bg +: {
-                            border_color: (COLOR_FG_DANGER_RED),
-                            color: (COLOR_BG_DANGER_RED)
-                        }
                         text: "Cancel"
-                        draw_text +: {
-                            color: (COLOR_FG_DANGER_RED),
-                        }
                     }
 
-                    accept_button := RobrixIconButton {
+                    accept_button := RobrixPositiveIconButton {
                         width: 120,
                         align: Align{x: 0.5, y: 0.5}
                         padding: 15,
-                        draw_icon +: {
-                            svg: (ICON_CHECKMARK)
-                            color: (COLOR_FG_ACCEPT_GREEN),
-                        }
+                        draw_icon.svg: (ICON_CHECKMARK)
                         icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-
-                        draw_bg +: {
-                            border_color: (COLOR_FG_ACCEPT_GREEN),
-                            color: (COLOR_BG_ACCEPT_GREEN)
-                        }
                         text: "Yes"
-                        draw_text +: {
-                            color: (COLOR_FG_ACCEPT_GREEN),
-                        }
                     }
                 }
 
@@ -126,7 +103,6 @@ script_mod! {
                                 font_size: 9,
                             },
                             color: #A,
-                            flow: Flow.Right{wrap: true}
                         }
                         text: "Tip: hold Shift when clicking a button to bypass this prompt."
                     }
@@ -447,20 +423,9 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
         if let Some(success) = new_final_success {
             self.final_success = Some(success);
             needs_redraw = true;
-            script_apply_eval!(cx, accept_button, {
-                enabled: true
-                text: "Okay"
-                draw_bg +: {
-                    color: mod.widgets.COLOR_ACTIVE_PRIMARY,
-                    border_color: mod.widgets.COLOR_ACTIVE_PRIMARY
-                }
-                draw_text +: {
-                    color: mod.widgets.COLOR_PRIMARY
-                }
-                draw_icon +: {
-                    color: mod.widgets.COLOR_PRIMARY
-                }
-            });
+            accept_button.set_enabled(cx, true);
+            accept_button.set_text(cx, "Okay");
+            apply_primary_button_style(cx, &mut accept_button);
             accept_button.reset_hover(cx);
             cancel_button.set_visible(cx, false);
         }
@@ -555,20 +520,25 @@ impl JoinLeaveRoomModal {
         }
 
         let mut accept_button = self.button(cx, ids!(accept_button));
-        let cancel_button = self.button(cx, ids!(cancel_button));
+        let mut cancel_button = self.button(cx, ids!(cancel_button));
         accept_button.set_text(cx, "Yes");
-        script_apply_eval!(cx, accept_button, {
-            draw_bg +: {
-                border_color: mod.widgets.COLOR_FG_ACCEPT_GREEN,
-                color: mod.widgets.COLOR_BG_ACCEPT_GREEN
-            }
-            draw_text +: {
-                color: mod.widgets.COLOR_FG_ACCEPT_GREEN
-            }
-            draw_icon +: {
-                color: mod.widgets.COLOR_FG_ACCEPT_GREEN
-            }
-        });
+
+        let is_negative = matches!(kind,
+            JoinLeaveModalKind::RejectInvite(_)
+            | JoinLeaveModalKind::LeaveRoom(_)
+            | JoinLeaveModalKind::LeaveSpace { .. }
+        );
+
+        if is_negative {
+            // Negative action: accept button is red, cancel button is gray/neutral.
+            apply_negative_button_style(cx, &mut accept_button);
+            apply_neutral_button_style(cx, &mut cancel_button);
+        } else {
+            // Positive action: accept button is green, cancel button is red/negative.
+            apply_positive_button_style(cx, &mut accept_button);
+            apply_negative_button_style(cx, &mut cancel_button);
+        }
+
         accept_button.set_enabled(cx, true);
         accept_button.set_visible(cx, true);
         accept_button.reset_hover(cx);

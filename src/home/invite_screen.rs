@@ -21,6 +21,12 @@ script_mod! {
     mod.widgets.InviteScreen = set_type_default() do #(InviteScreen::register_widget(vm)) {
         ..mod.widgets.SolidView
 
+        // make this a ScrollYView
+        scroll_bars: mod.widgets.ScrollBars {
+            show_scroll_x: false show_scroll_y: true
+            scroll_bar_y.drag_scrolling: true
+        }
+
         width: Fill,
         height: Fill,
         flow: Down,
@@ -68,7 +74,6 @@ script_mod! {
                         font_size: 15,
                     },
                     color: #000
-                    flow: Flow.Right{wrap: true}
                 }
             }
 
@@ -83,7 +88,6 @@ script_mod! {
                         font_size: 10,
                     },
                     color: #888
-                    flow: Flow.Right{wrap: true},
                 }
             }
 
@@ -104,7 +108,6 @@ script_mod! {
                     font_size: 15,
                 },
                 color: #000
-                flow: Flow.Right{wrap: true}
             }
         }
 
@@ -138,7 +141,6 @@ script_mod! {
                         font_size: 18,
                     },
                     color: #000
-                    flow: Flow.Right{wrap: true},
                 }
             }
         }
@@ -152,42 +154,20 @@ script_mod! {
             margin: Inset{top: 20}
             spacing: 40
 
-            cancel_button := RobrixIconButton {
+            cancel_button := RobrixNegativeIconButton {
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
-                draw_icon +: {
-                    svg: (ICON_FORBIDDEN)
-                    color: (COLOR_FG_DANGER_RED),
-                }
+                draw_icon.svg: (ICON_FORBIDDEN)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-
-                draw_bg +: {
-                    border_color: (COLOR_FG_DANGER_RED)
-                    color: (COLOR_BG_DANGER_RED)
-                }
                 text: "Reject Invite"
-                draw_text +: {
-                    color: (COLOR_FG_DANGER_RED),
-                }
             }
 
-            accept_button := RobrixIconButton {
+            accept_button := RobrixPositiveIconButton {
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
-                draw_icon +: {
-                    svg: (ICON_CHECKMARK)
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
+                draw_icon.svg: (ICON_CHECKMARK)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-
-                draw_bg +: {
-                    border_color: (COLOR_FG_ACCEPT_GREEN)
-                    color: (COLOR_BG_ACCEPT_GREEN)
-                }
                 text: "Join Room"
-                draw_text +: {
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
             }
         }
 
@@ -199,7 +179,6 @@ script_mod! {
             draw_text +: {
                 color: (COLOR_FG_ACCEPT_GREEN),
                 text_style: theme.font_bold {font_size: 12}
-                flow: Flow.Right{wrap: true},
             }
             text: ""
         }

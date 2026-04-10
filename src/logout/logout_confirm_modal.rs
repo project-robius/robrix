@@ -46,12 +46,12 @@ script_mod! {
             message := Label {
                 width: Fill,
                 margin: Inset{top: 10, bottom: 20},
+                flow: Flow.Right{wrap: true},
                 draw_text +: {
                     text_style: REGULAR_TEXT {
                         font_size: 14,
                     },
                     color: #000000,
-                    flow: Flow.Right{wrap: true}
                 },
                 text: "Are you sure you want to logout?"
             }
@@ -63,32 +63,19 @@ script_mod! {
                 align: Align{x: 0.5, y: 0.5},
                 spacing: 10.0,
 
-                cancel_button := RobrixIconButton {
+                cancel_button := RobrixNeutralIconButton {
                     width: Fit, height: Fit,
                     padding: 10,
-                    draw_bg +: {
-                        color: (COLOR_SECONDARY)
-                    },
                     text: "Cancel"
-                    draw_text +: {
-                        color: (COLOR_TEXT)
-                        text_style: REGULAR_TEXT {font_size: 14}
-                    },
+                    draw_text.text_style: REGULAR_TEXT {font_size: 14}
                 }
 
-                confirm_button := RobrixIconButton {
+                confirm_button := RobrixNegativeIconButton {
                     width: Fit, height: Fit,
                     padding: 10,
-                    draw_bg +: { color: (COLOR_BG_DANGER_RED)},
-                    draw_icon +: {
-                        svg: (ICON_LOGOUT)
-                        color: (COLOR_FG_DANGER_RED),
-                    },
+                    draw_icon.svg: (ICON_LOGOUT)
                     text: "Logout Now"
-                    draw_text +: {
-                        color: (COLOR_FG_DANGER_RED)
-                        text_style: REGULAR_TEXT {font_size: 14}
-                    },
+                    draw_text.text_style: REGULAR_TEXT {font_size: 14}
                 }
             }
         }

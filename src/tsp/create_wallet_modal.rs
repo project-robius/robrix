@@ -40,7 +40,6 @@ script_mod! {
                     draw_text +: {
                         text_style: TITLE_TEXT {font_size: 13},
                         color: #000
-                        flow: Flow.Right{wrap: true}
                     }
                     text: "Create New TSP Wallet"
                 }
@@ -102,7 +101,7 @@ script_mod! {
                     wallet_file_name_input := RobrixTextInput {
                         width: Fill, height: Fit,
                         flow: Right, // do not wrap
-                        padding: Inset{top: 3, bottom: 3}
+                        padding: Inset { left: 10, right: 10, top: 5, bottom: 5 }
                         empty_text: "my_wallet_file",
                         draw_text +: {
                             text_style: REGULAR_TEXT {font_size: 10.0}
@@ -145,44 +144,22 @@ script_mod! {
                 align: Align{x: 1.0, y: 0.5}
                 spacing: 20
 
-                cancel_button := RobrixIconButton {
+                cancel_button := RobrixNegativeIconButton {
                     width: 100,
                     align: Align{x: 0.5, y: 0.5}
                     padding: 15,
-                    draw_icon +: {
-                        svg: (ICON_FORBIDDEN)
-                        color: (COLOR_FG_DANGER_RED),
-                    }
+                    draw_icon.svg: (ICON_FORBIDDEN)
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-    
-                    draw_bg +: {
-                        border_color: (COLOR_FG_DANGER_RED),
-                        color: (COLOR_BG_DANGER_RED)
-                    }
                     text: "Cancel"
-                    draw_text +: {
-                        color: (COLOR_FG_DANGER_RED),
-                    }
                 }
 
-                accept_button := RobrixIconButton {
+                accept_button := RobrixPositiveIconButton {
                     width: 140
                     align: Align{x: 0.5, y: 0.5}
                     padding: 15,
-                    draw_icon +: {
-                        svg: (ICON_CHECKMARK)
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
+                    draw_icon.svg: (ICON_CHECKMARK)
                     icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-
-                    draw_bg +: {
-                        border_color: (COLOR_FG_ACCEPT_GREEN),
-                        color: (COLOR_BG_ACCEPT_GREEN)
-                    }
                     text: "Create Wallet"
-                    draw_text +: {
-                        color: (COLOR_FG_ACCEPT_GREEN),
-                    }
                 }
             }
 
@@ -192,7 +169,6 @@ script_mod! {
                 flow: Flow.Right{wrap: true},
                 align: Align{x: 0.5, y: 0.0}
                 draw_text +: {
-                    flow: Flow.Right{wrap: true}
                     text_style: REGULAR_TEXT {font_size: 11},
                     color: #000
                 }

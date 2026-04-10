@@ -24,11 +24,17 @@ script_mod! {
 
         visible: false,
         width: Fill,
-        height: Fit
+        height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
         flow: Down,
         align: Align{x: 0.5}
         padding: 20,
         spacing: 8
+
+        // make this a ScrollYView
+        scroll_bars: mod.widgets.ScrollBars {
+            show_scroll_x: false show_scroll_y: true
+            scroll_bar_y.drag_scrolling: true
+        }
 
         show_bg: true
         draw_bg +: {
@@ -42,25 +48,13 @@ script_mod! {
             draw_text +: {
                 color: (TYPING_NOTICE_TEXT_COLOR),
                 text_style: REGULAR_TEXT {font_size: 11}
-                flow: Flow.Right{wrap: true},
             }
         }
 
-        join_successor_button := RobrixIconButton {
+        join_successor_button := RobrixPositiveIconButton {
             padding: 15,
-            draw_icon +: {
-                svg: (ICON_JOIN_ROOM),
-                color: (COLOR_FG_ACCEPT_GREEN),
-            }
+            draw_icon.svg: (ICON_JOIN_ROOM)
             icon_walk: Walk{width: 17, height: 17, margin: Inset{left: -2, right: -1} }
-
-            draw_bg +: {
-                border_color: (COLOR_FG_ACCEPT_GREEN)
-                color: (COLOR_BG_ACCEPT_GREEN)
-            }
-            draw_text +: {
-                color: (COLOR_FG_ACCEPT_GREEN),
-            }
         }
 
         successor_room_avatar := Avatar {
@@ -82,7 +76,6 @@ script_mod! {
             draw_text +: {
                 text_style: TITLE_TEXT { font_size: 12 }
                 color: (COLOR_TEXT)
-                flow: Flow.Right{wrap: true},
             }
         }
     }
@@ -196,12 +189,12 @@ impl TombstoneFooter {
                                 cx,
                                 None,
                                 None,
-                                room_preview.room_name_id.name_for_avatar().as_deref().unwrap_or("?"),
+                                room_preview.room_name_id.name_for_avatar().unwrap_or("?"),
                             );
                         }
                     }
                 }
-                match room_preview.room_name_id.name_for_avatar().as_deref() {
+                match room_preview.room_name_id.name_for_avatar() {
                     Some(n) => successor_room_name.set_text(cx, n),
                     _ => successor_room_name.set_text(cx, &format!("Unnamed Room, ID: {}", room_preview.room_name_id.room_id())),
                 }

@@ -32,11 +32,12 @@ script_mod! {
 
     mod.widgets.RoomName = Label {
         width: Fill, height: Fit
-        flow: Right, // do not wrap
+        flow: Flow.Right{wrap: false},
         padding: 0,
+        max_lines: 1
+        text_overflow: Ellipsis
         draw_text +: {
             color: #000,
-            flow: Flow.Right{wrap: true},
             text_style: USERNAME_TEXT_STYLE { font_size: 10. }
         }
         text: "[Room name unknown]"
@@ -45,12 +46,10 @@ script_mod! {
     mod.widgets.RoomsListEntryTimestamp = Label {
         padding: Inset{top: 1},
         width: Fit, height: Fit
-        flow: Right, // do not wrap
+        flow: Flow.Right{wrap: false},
         draw_text +: {
             color: (TIMESTAMP_TEXT_COLOR)
-            text_style: TIMESTAMP_TEXT_STYLE {
-                font_size: 7.5
-            },
+            text_style: TIMESTAMP_TEXT_STYLE { font_size: 7.5 }
         }
     }
 
@@ -60,15 +59,19 @@ script_mod! {
             html_view +: {
                 html +: {
                     font_size: 9.3
-                    text_style_normal: theme.font_regular { font_size: 9.3 }
-                    text_style_italic: theme.font_italic { font_size: 9.3 }
-                    text_style_bold: theme.font_bold { font_size: 9.3 }
-                    text_style_bold_italic: theme.font_bold_italic { font_size: 9.3 }
-                    text_style_fixed: theme.font_code { font_size: 9.3 }
+                    max_lines: 2
+                    text_overflow: Ellipsis
+                    text_style_normal +: { font_size: 9.3 }
+                    text_style_italic +: { font_size: 9.3 }
+                    text_style_bold +: { font_size: 9.3 }
+                    text_style_bold_italic +: { font_size: 9.3 }
+                    text_style_fixed +: { font_size: 9.3 }
                 }
             }
             plaintext_view +: {
                 pt_label +: {
+                    max_lines: 2
+                    text_overflow: Ellipsis
                     draw_text +: {
                         text_style: theme.font_regular { font_size: 9.5 },
                     }
@@ -198,10 +201,18 @@ script_mod! {
 }
 
 /// An entry in the rooms list.
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct RoomsListEntry {
     #[deref] view: View,
     #[rust] room_id: Option<OwnedRoomId>,
+}
+
+impl ScriptHook for RoomsListEntry {
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            self.set_adaptive_variant_selector(cx);
+        })
+    }
 }
 
 /// Widget actions that are emitted by a RoomsListEntry.
@@ -215,8 +226,8 @@ pub enum RoomsListEntryAction {
     None,
 }
 
-impl Widget for RoomsListEntry {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+impl RoomsListEntry {
+    fn set_adaptive_variant_selector(&self, cx: &mut Cx) {
         self.view
             .adaptive_view(cx, ids!(adaptive_preview))
             .set_variant_selector(|_cx, parent_size| match parent_size.x {
@@ -224,7 +235,11 @@ impl Widget for RoomsListEntry {
                 width if width <= 200.0 => id!(IconAndName),
                 _ => id!(FullPreview),
             });
+    }
+}
 
+impl Widget for RoomsListEntry {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let uid = self.widget_uid();
         let rooms_list_props = scope.props.get::<RoomsListScopeProps>().unwrap();
 
@@ -336,8 +351,8 @@ impl RoomsListEntryContent {
         // Hide the timestamp field, and use the latest message field to show the inviter.
         self.view.label(cx, ids!(timestamp)).set_text(cx, "");
         let inviter_string = match &room_info.inviter_info {
-            Some(InviterInfo { user_id, display_name: Some(dn), .. }) => format!("Invited by <b>{dn}</b> ({user_id})"),
-            Some(InviterInfo { user_id, .. }) => format!("Invited by {user_id}"),
+            Some(InviterInfo { user_id, display_name: Some(dn), .. }) => format!("Invited by <b>{}</b> ({})", htmlize::escape_text(dn), htmlize::escape_text(user_id.as_str())),
+            Some(InviterInfo { user_id, .. }) => format!("Invited by {}", htmlize::escape_text(user_id.as_str())),
             None => String::from("You were invited"),
         };
         self.view.html_or_plaintext(cx, ids!(latest_message)).show_html(cx, &inviter_string);
@@ -394,8 +409,70 @@ impl RoomsListEntryContent {
 
     /// Updates the styling of the preview based on whether the room is selected or not.
     pub fn update_preview_colors(&mut self, cx: &mut Cx, is_selected: bool) {
-        // TODO WTF THIS REMOVED THE WHOLE FUNCTION!!!
-        // RESTORE THIS: <https://github.com/project-robius/robrix/blob/182a9c4dba2b00c87b934f61f1ba449f8fa6a2eb/src/home/rooms_list_entry.rs#L407>
+        let message_text_color;
+        let room_name_color;
+        let timestamp_color;
+        let code_bg_color;
+
+        // TODO: use script-defined theme color instead of redefining constants below
+        if is_selected {
+            message_text_color = vec4(1., 1., 1., 1.); // COLOR_PRIMARY
+            room_name_color = vec4(1., 1., 1., 1.); // COLOR_PRIMARY
+            timestamp_color = vec4(1., 1., 1., 1.); // COLOR_PRIMARY
+            code_bg_color = vec4(0.3, 0.3, 0.3, 1.0); // a darker gray used for the background of code blocks and quote blocks
+        } else {
+            message_text_color = vec4(0.267, 0.267, 0.267, 1.0); // MESSAGE_TEXT_COLOR
+            room_name_color = vec4(0., 0., 0., 1.0);
+            timestamp_color = vec4(0.6, 0.6, 0.6, 1.0);
+            code_bg_color = vec4(0.929, 0.929, 0.929, 1.0); // #EDEDED
+        }
+
+        // Toggle the background color via the animator (handles selected/deselected bg).
         self.animator_toggle(cx, is_selected, Animate::No, ids!(selected.on), ids!(selected.off));
+
+        // Update text colors for room name.
+        let mut room_name_label = self.view.label(cx, ids!(room_name));
+        script_apply_eval!(cx, room_name_label, {
+            draw_text +: {
+                color: #(room_name_color)
+            }
+        });
+
+        // Update text colors for timestamp.
+        let mut timestamp_label = self.view.label(cx, ids!(timestamp));
+        script_apply_eval!(cx, timestamp_label, {
+            draw_text +: {
+                color: #(timestamp_color)
+            }
+        });
+
+        // Update text colors for the latest message preview (both HTML and plaintext variants).
+        let mut html_widget = self.view.html(cx, ids!(latest_message.html_view.html));
+        script_apply_eval!(cx, html_widget, {
+            font_color: #(message_text_color),
+            draw_text +: { color: #(message_text_color) },
+            draw_block +: {
+                quote_bg_color: #(code_bg_color),
+                code_color: #(code_bg_color),
+            }
+        });
+
+        // When selected, set link color to None so links inherit font_color (white)
+        // for better contrast against the blue selected background.
+        // When not selected, restore the default blue link color.
+        self.view
+            .html_or_plaintext(cx, ids!(latest_message))
+            .set_link_color(cx, if is_selected {
+                None
+            } else {
+                Some(vec4(0., 0., 0.933, 1.0)) // #0000EE, default HtmlLink color
+            });
+
+        let mut pt_label = self.view.label(cx, ids!(latest_message.plaintext_view.pt_label));
+        script_apply_eval!(cx, pt_label, {
+            draw_text +: {
+                color: #(message_text_color)
+            }
+        });
     }
 }

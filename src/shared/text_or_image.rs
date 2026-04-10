@@ -25,8 +25,8 @@ script_mod! {
 
             label := Label {
                 width: Fill, height: Fit,
+                flow: Flow.Right{wrap: true},
                 draw_text +: {
-                    flow: Flow.Right{wrap: true},
                     text_style: MESSAGE_TEXT_STYLE { }
                     color: (MESSAGE_TEXT_COLOR),
                 }
