@@ -146,6 +146,8 @@ script_mod! {
 
                         // Tooltips must be shown in front of all other UI elements,
                         // since they can be shown as a hover atop any other widget.
+                        // This tooltip widget handles TooltipActions directly by itself,
+                        // so we don't need to call show/hide ourselves.
                         app_tooltip := CalloutTooltip {}
                     }
                 } // end of body
@@ -433,30 +435,6 @@ impl MatchEvent for App {
                     if let Some((dest_room, room_to_close)) = self.waiting_to_navigate_to_room.take() {
                         self.navigate_to_room(cx, room_to_close.as_ref(), &dest_room);
                     }
-                    continue;
-                }
-                _ => {}
-            }
-
-            // Handle actions for showing or hiding the tooltip.
-            match action.as_widget_action().cast() {
-                TooltipAction::HoverIn { text, widget_rect, options } => {
-                    // Don't show any tooltips if the message context menu is currently shown.
-                    if self.ui.new_message_context_menu(cx, ids!(new_message_context_menu)).is_currently_shown(cx) {
-                        self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
-                    }
-                    else {
-                        self.ui.callout_tooltip(cx, ids!(app_tooltip)).show_with_options(
-                            cx,
-                            &text,
-                            widget_rect,
-                            options,
-                        );
-                    }
-                    continue;
-                }
-                TooltipAction::HoverOut => {
-                    self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
                     continue;
                 }
                 _ => {}

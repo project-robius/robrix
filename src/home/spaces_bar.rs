@@ -13,7 +13,7 @@ use matrix_sdk::{RoomDisplayName, RoomState};
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 
 use crate::{
-    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, room_filter_input_bar::MainFilterAction}, utils::{self, RoomNameId}
+    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, navigation_bar_button::NavigationBarButton, room_filter_input_bar::MainFilterAction}, utils::{self, RoomNameId}
 };
 
 script_mod! {
@@ -23,9 +23,12 @@ script_mod! {
     // The duration of the animation when showing/hiding the SpacesBar (in Mobile view mode only).
     mod.widgets.SPACES_BAR_ANIMATION_DURATION_SECS = 0.25
 
-    // An entry in the list of all spaces, which shown the Space's avatar and name.
+    // An entry in the list of all spaces, which shows the Space's avatar and name.
+    // Inherits hover/selected styling and click handling from
+    // `mod.widgets.NavigationBarButton`. The space-name tooltip is set
+    // dynamically per-entry from Rust via `set_metadata`.
     mod.widgets.SpacesBarEntry = set_type_default() do #(SpacesBarEntry::register_widget(vm)) {
-        // ..mod.widgets.RoundedView // TODO: I don't think this is needed if we use our own draw_bg shader
+        ..mod.widgets.NavigationBarButton
 
         width: (NAVIGATION_TAB_BAR_SIZE - 5),
         height: (NAVIGATION_TAB_BAR_SIZE - 5),
@@ -33,50 +36,6 @@ script_mod! {
         padding: 5,
         margin: 3,
         align: Align{x: 0.5, y: 0.5}
-        cursor: MouseCursor.Hand
-
-        show_bg: true
-        draw_bg +: {
-            hover: instance(0.0)
-            active: instance(0.0)
-
-            color: instance(#0000)
-            color_hover: instance((COLOR_NAVIGATION_TAB_BG_HOVER))
-            color_active: instance((COLOR_NAVIGATION_TAB_BG_ACTIVE))
-
-            border_color: instance(#0000)
-            border_size: uniform(0.0)
-            border_radius: uniform(4.0)
-            border_inset: uniform(vec4(0.0))
-
-            get_color: fn() -> vec4 {
-                return mix(
-                    mix(
-                        self.color,
-                        self.color_hover,
-                        self.hover
-                    ),
-                    self.color_active,
-                    self.active
-                )
-            }
-
-            pixel: fn() {
-                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
-                sdf.box(
-                    self.border_inset.x + self.border_size,
-                    self.border_inset.y + self.border_size,
-                    self.rect_size.x - (self.border_inset.x + self.border_inset.z + self.border_size * 2.0),
-                    self.rect_size.y - (self.border_inset.y + self.border_inset.w + self.border_size * 2.0),
-                    max(1.0, self.border_radius)
-                )
-                sdf.fill_keep(self.get_color())
-                if self.border_size > 0.0 {
-                    sdf.stroke(self.border_color, self.border_size)
-                }
-                return sdf.result;
-            }
-        }
 
         avatar := Avatar {
             width: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE
@@ -95,7 +54,6 @@ script_mod! {
 
         space_name := Label {
             width: Fill,
-            // height: Fit
             height: 0,
             flow: Flow.Right{wrap: false}, // do not wrap
             padding: 0,
@@ -103,72 +61,8 @@ script_mod! {
             max_lines: 1
             text_overflow: Ellipsis
             draw_text +: {
-                active: instance(0.0)
-                hover: instance(0.0)
-                down: instance(0.0)
-
                 color: (COLOR_NAVIGATION_TAB_FG)
-                color_hover: uniform(COLOR_NAVIGATION_TAB_FG_HOVER)
-                color_active: uniform(COLOR_NAVIGATION_TAB_FG_ACTIVE)
-
-                // text_style: theme.font_bold {font_size: 9}
                 text_style: REGULAR_TEXT {font_size: 9}
-
-                get_color: fn() {
-                    return mix(
-                        mix(
-                            self.color,
-                            self.color_hover,
-                            self.hover
-                        ),
-                        self.color_active,
-                        self.active
-                    )
-                }
-            }
-        }
-
-        animator: Animator {
-            hover: {
-                default: @off
-                off: AnimatorState{
-                    from: {all: Forward {duration: 0.15}}
-                    apply: {
-                        draw_bg: {down: [{time: 0.0, value: 0.0}], hover: 0.0}
-                        space_name: { draw_text: {down: [{time: 0.0, value: 0.0}], hover: 0.0} }
-                    }
-                }
-                on: AnimatorState{
-                    from: {all: Snap}
-                    apply: {
-                        draw_bg: {down: [{time: 0.0, value: 0.0}], hover: 1.0}
-                        space_name: { draw_text: {down: [{time: 0.0, value: 0.0}], hover: 1.0} }
-                    }
-                }
-                down: AnimatorState{
-                    from: {all: Forward {duration: 0.2}}
-                    apply: {
-                        draw_bg: {down: [{time: 0.0, value: 1.0}], hover: 1.0,}
-                        space_name: { draw_text: {down: [{time: 0.0, value: 1.0}], hover: 1.0,} }
-                    }
-                }
-            }
-            active: {
-                default: @off
-                off: AnimatorState{
-                    from: {all: Snap}
-                    apply: {
-                        draw_bg: {active: 0.0}
-                        space_name: { draw_text: {active: 0.0} }
-                    }
-                }
-                on: AnimatorState{
-                    from: {all: Snap}
-                    apply: {
-                        draw_bg: {active: 1.0}
-                        space_name: { draw_text: {active: 1.0} }
-                    }
-                }
             }
         }
     }
@@ -252,102 +146,58 @@ pub enum SpacesBarAction {
 }
 
 
-#[derive(Script, ScriptHook, Widget, Animator)]
+/// An entry in the SpacesBar, displaying a single joined space's avatar and name.
+///
+/// `SpacesBarEntry` derefs into [`NavigationBarButton`], inheriting its hover
+/// and selected background animations and click handling. The entry's tooltip
+/// (the space's display name) is delivered via `NavigationBarButton`'s built-in
+/// `tooltip_text`, which is set per-entry in [`SpacesBarEntry::set_metadata`].
+#[derive(Script, ScriptHook, Widget)]
 pub struct SpacesBarEntry {
-    #[source] source: ScriptObjectRef,
-    #[deref] view: View,
-    #[apply_default] animator: Animator,
+    #[deref] inner: NavigationBarButton,
 
     #[rust] space_name_id: Option<RoomNameId>,
 }
 
 impl Widget for SpacesBarEntry {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
-        if self.animator_handle_event(cx, event).must_redraw() {
-            self.redraw(cx);
-        }
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // Forward to the inner NavigationBarButton, which handles hover/selected
+        // animations, the built-in tooltip, and emits Clicked / SecondaryClicked
+        // actions on tap and right-click / long-press.
+        self.inner.handle_event(cx, event, scope);
 
-        let area = self.draw_bg.area();
-        let emit_hover_in_action = |this: &Self, cx: &mut Cx| {
-            let is_desktop = cx.display_context.is_desktop();
-            cx.widget_action(
-                this.widget_uid(), 
-                TooltipAction::HoverIn {
-                    widget_rect: area.rect(cx),
-                    text: this.space_name_id.as_ref().map_or(
-                        String::from("Unknown Space Name"),
-                        |sni| sni.to_string(),
-                    ),
-                    options: CalloutTooltipOptions {
-                        position: if is_desktop {
-                            TooltipPosition::Right
-                        } else {
-                            TooltipPosition::Top
-                        },
-                        ..Default::default()
-                    },
-                },
-            );
-        };
-
-        match event.hits(cx, area) {
-            Hit::FingerHoverIn(_) => {
-                self.animator_play(cx, ids!(hover.on));
-                emit_hover_in_action(self, cx);
-            }
-            Hit::FingerHoverOut(_) => {
-                self.animator_play(cx, ids!(hover.off));
-                cx.widget_action(
-                    self.widget_uid(), 
-                    TooltipAction::HoverOut,
-                );
-            }
-            Hit::FingerDown(fe) => {
-                self.animator_play(cx, ids!(hover.down));
-                if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
-                    if let Some(space_name_id) = self.space_name_id.clone() {
-                        cx.widget_action(
-                            self.widget_uid(), 
-                            SpacesBarAction::ButtonSecondaryClicked { space_name_id },
-                        );
-                    }
-                }
-            }
-            Hit::FingerLongPress(_lp) => {
-                self.animator_play(cx, ids!(hover.down));
-                emit_hover_in_action(self, cx);
+        // Translate the inner button's generic click actions into
+        // SpacesBarAction variants that include this entry's space identity.
+        if let Event::Actions(actions) = event {
+            if self.inner.clicked(actions) {
                 if let Some(space_name_id) = self.space_name_id.clone() {
                     cx.widget_action(
-                        self.widget_uid(), 
-                        SpacesBarAction::ButtonSecondaryClicked { space_name_id },
-                    );
-                }
-            }
-            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                self.animator_play(cx, ids!(hover.on));
-                if let Some(space_name_id) = self.space_name_id.clone() {
-                    cx.widget_action(
-                        self.widget_uid(), 
+                        self.widget_uid(),
                         SpacesBarAction::ButtonClicked { space_name_id },
                     );
                 }
             }
-            Hit::FingerUp(fe) if !fe.is_over => {
-                self.animator_play(cx, ids!(hover.off));
+            if self.inner.secondary_clicked(actions) {
+                if let Some(space_name_id) = self.space_name_id.clone() {
+                    cx.widget_action(
+                        self.widget_uid(),
+                        SpacesBarAction::ButtonSecondaryClicked { space_name_id },
+                    );
+                }
             }
-            _ => {}
         }
     }
-    
+
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.view.draw_walk(cx, scope, walk)
+        self.inner.draw_walk(cx, scope, walk)
     }
 }
 
 impl SpacesBarEntry {
     fn set_metadata(&mut self, cx: &mut Cx, space_name_id: RoomNameId, is_selected: bool) {
+        self.inner.set_tooltip_text(space_name_id.to_string());
         self.space_name_id = Some(space_name_id);
-        self.animator_toggle(cx, is_selected, Animate::No, ids!(active.on), ids!(active.off));
+        self.inner.set_selected(cx, is_selected);
     }
 }
 impl SpacesBarEntryRef {

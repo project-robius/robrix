@@ -151,6 +151,8 @@ impl MainDesktopUI {
         let room_tab_id = room.tab_id();
         if self.open_rooms.contains_key(&room_tab_id) {
             dock.select_tab(cx, room_tab_id);
+            // Lazily initialize the tab's widget if it was deferred during dock restoration.
+            self.init_tab_if_needed(cx, room_tab_id);
             self.most_recently_selected_room = Some(room);
             return;
         }
@@ -250,6 +252,9 @@ impl MainDesktopUI {
         dock.close_tab(cx, tab_id);
         self.tab_to_close = None;
         self.open_rooms.remove(&tab_id);
+        // The dock auto-selects an adjacent tab after closing, which may be
+        // an uninitialized tab that was deferred during dock restoration.
+        self.init_all_visible_tabs(cx);
     }
 
     /// Closes all tabs
@@ -358,39 +363,14 @@ impl MainDesktopUI {
 
         if let Some(mut dock) = dock.borrow_mut() {
             dock.load_state(cx, dock_items.clone());
-            // Populate the content within each restored dock tab.
-            if !self.open_rooms.is_empty() {
-                for (head_live_id, (_, widget)) in dock.items().iter() {
-                    match self.open_rooms.get(head_live_id) {
-                        Some(SelectedRoom::JoinedRoom { room_name_id }) => {
-                            widget.as_room_screen().set_displayed_room(
-                                cx,
-                                room_name_id,
-                                None,
-                            );
-                        }
-                        Some(SelectedRoom::InvitedRoom { room_name_id }) => {
-                            widget.as_invite_screen().set_displayed_invite(
-                                cx,
-                                room_name_id,
-                            );
-                        }
-                        Some(SelectedRoom::Space { space_name_id }) => {
-                            widget.as_space_lobby_screen().set_displayed_space(
-                                cx,
-                                space_name_id,
-                            );
-                        }
-                        Some(SelectedRoom::Thread { room_name_id, thread_root_event_id }) => {
-                            widget.as_room_screen().set_displayed_room(
-                                cx,
-                                room_name_id,
-                                Some(thread_root_event_id.clone()),
-                            );
-                        }
-                        None => { }
-                    }
-                }
+            // Lazily populate the content within each restored dock tab:
+            // only initialize the currently-visible tabs (selected in each pane),
+            // and defer the rest until the user actually clicks on their tab.
+            // This avoids an O(N) cost of calling `set_displayed_room()` for
+            // every open tab, which would block the UI thread for several seconds
+            // when restoring the dock (e.g., after switching from Mobile to Desktop view).
+            for (tab_id, widget) in dock.visible_items() {
+                Self::init_tab_widget(cx, &self.open_rooms, &tab_id, &widget);
             }
         } else {
             error!("BUG: failed to borrow dock widget to restore state upon LoadDockFromAppState action.");
@@ -405,6 +385,80 @@ impl MainDesktopUI {
         }
         app_state.selected_room = selected_room;
         self.redraw(cx);
+    }
+
+    /// Initializes a single dock tab's widget content based on the room it represents.
+    ///
+    /// This is extracted as a helper so it can be called both during dock restoration
+    /// (for the selected tab only) and lazily when the user clicks on an uninitialized tab.
+    fn init_tab_widget(
+        cx: &mut Cx,
+        open_rooms: &HashMap<LiveId, SelectedRoom>,
+        tab_live_id: &LiveId,
+        widget: &WidgetRef,
+    ) {
+        match open_rooms.get(tab_live_id) {
+            Some(SelectedRoom::JoinedRoom { room_name_id }) => {
+                widget.as_room_screen().set_displayed_room(
+                    cx,
+                    room_name_id,
+                    None,
+                );
+            }
+            Some(SelectedRoom::InvitedRoom { room_name_id }) => {
+                widget.as_invite_screen().set_displayed_invite(
+                    cx,
+                    room_name_id,
+                );
+            }
+            Some(SelectedRoom::Space { space_name_id }) => {
+                widget.as_space_lobby_screen().set_displayed_space(
+                    cx,
+                    space_name_id,
+                );
+            }
+            Some(SelectedRoom::Thread { room_name_id, thread_root_event_id }) => {
+                widget.as_room_screen().set_displayed_room(
+                    cx,
+                    room_name_id,
+                    Some(thread_root_event_id.clone()),
+                );
+            }
+            None => { }
+        }
+    }
+
+    /// Lazily initializes a tab's widget if it hasn't been initialized yet.
+    ///
+    /// This is called when a tab becomes visible (e.g., via user click or sidebar selection)
+    /// that was restored from saved state but whose widget content was deferred
+    /// to avoid blocking the UI thread.
+    ///
+    /// It is safe to call this on an already-initialized tab, as the underlying
+    /// `set_displayed_*` methods short-circuit when the content is already set.
+    fn init_tab_if_needed(&self, cx: &mut Cx, tab_id: LiveId) {
+        if !self.open_rooms.contains_key(&tab_id) {
+            return;
+        }
+        let dock = self.view.dock(cx, ids!(dock));
+        let Some(mut dock) = dock.borrow_mut() else { return };
+        if let Some((_, (_, widget))) = dock.items().iter().find(|(id, _)| **id == tab_id) {
+            Self::init_tab_widget(cx, &self.open_rooms, &tab_id, widget);
+        }
+    }
+
+    /// Initializes all currently-visible (selected-in-their-pane) tabs that
+    /// haven't been initialized yet.
+    ///
+    /// This is useful after operations that may change which tabs are visible
+    /// without going through explicit tab selection (e.g., closing a tab causes
+    /// the dock to auto-select an adjacent tab).
+    fn init_all_visible_tabs(&self, cx: &mut Cx) {
+        let dock = self.view.dock(cx, ids!(dock));
+        let Some(mut dock) = dock.borrow_mut() else { return };
+        for (tab_id, widget) in dock.visible_items() {
+            Self::init_tab_widget(cx, &self.open_rooms, &tab_id, &widget);
+        }
     }
 }
 
@@ -452,6 +506,8 @@ impl WidgetMatchEvent for MainDesktopUI {
                         cx.action(AppStateAction::RoomFocused(selected_room.clone()));
                         self.most_recently_selected_room = Some(selected_room.clone());
                     }
+                    // Lazily initialize this tab's widget if it was deferred during dock restoration.
+                    self.init_tab_if_needed(cx, tab_id);
                     should_save_dock_action = true;
                 }
                 DockAction::TabCloseWasPressed(tab_id) => {
@@ -486,6 +542,9 @@ impl WidgetMatchEvent for MainDesktopUI {
                     } = &drop_event.items[0] {
                         self.view.dock(cx, ids!(dock)).drop_move(cx, drop_event.abs, *internal_id);
                     }
+                    // A drag-drop may create a new split pane, revealing an
+                    // uninitialized tab that was deferred during dock restoration.
+                    self.init_all_visible_tabs(cx);
                     should_save_dock_action = true;
                 }
                 _ => (),
