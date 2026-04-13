@@ -54,7 +54,12 @@ use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new
 const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 100;
 
 /// The max size (width or height) of a blurhash image to decode.
-const BLURHASH_IMAGE_MAX_SIZE: u32 = 500;
+/// Blurhash is a blurred placeholder — it is designed to be decoded at a small
+/// size and then stretched by the GPU. Decoding at large sizes is extremely
+/// expensive (CPU-bound, O(width*height)) and completely unnecessary since the
+/// result is inherently blurry. A 32×32 decode is ~240x faster than 500×500
+/// while being visually indistinguishable when scaled up.
+const BLURHASH_IMAGE_MAX_SIZE: u32 = 32;
 
 static UNNAMED_ROOM: &str = "Unnamed Room";
 
@@ -522,6 +527,11 @@ script_mod! {
 
             auto_tail: true, // set to `true` to lock the view to the last item.
             max_pull_down: 0.0, // set to `0.0` to disable the pulldown bounce animation.
+            // TODO: enable `reuse_items: true` once Makepad's Html/TextFlow widget
+            //   properly resets all internal state during `script_apply(Reload)`.
+            //   Currently, stale TextFlow layout state (particularly related to
+            //   list items) leaks through when a widget is recycled, causing
+            //   excessive whitespace in HTML messages with `<ul>`/`<ol>` lists.
 
             // Below, we must place all of the possible templates (views) that can be used in the portal list.
             Message := mod.widgets.Message {}
