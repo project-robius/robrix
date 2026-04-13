@@ -93,7 +93,7 @@ script_mod! {
         width: Fill,
         spacing: 0.0
 
-        auto_tail: false, 
+        auto_tail: false,
         max_pull_down: 0.0,
         scroll_bar: ScrollBar {  // hide the scroll bar
             bar_size: 0.0,
