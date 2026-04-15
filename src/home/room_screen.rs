@@ -3090,11 +3090,20 @@ fn populate_message_view(
                     } else {
                         let html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
                         // Apply gray color to all text styles for notice messages.
+                        // This covers both rendering paths in HtmlOrPlaintext: the rich
+                        // `html_view.html` widget (used when the message has an HTML body)
+                        // and the `plaintext_view.pt_label` (used for plain-text notices).
                         let mut html_widget = html_or_plaintext_ref.html(cx, ids!(html_view.html));
                         script_apply_eval!(cx, html_widget, {
                             font_color: mod.widgets.COLOR_MESSAGE_NOTICE_TEXT,
                             draw_block +: {
                                 quote_fg_color: mod.widgets.COLOR_MESSAGE_NOTICE_TEXT,
+                            }
+                        });
+                        let mut pt_label = html_or_plaintext_ref.label(cx, ids!(plaintext_view.pt_label));
+                        script_apply_eval!(cx, pt_label, {
+                            draw_text +: {
+                                color: mod.widgets.COLOR_MESSAGE_NOTICE_TEXT
                             }
                         });
                         let mut link_preview_ref =
