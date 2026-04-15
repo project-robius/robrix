@@ -3833,6 +3833,7 @@ fn populate_file_message_content(
         .map(|bytes| format!("  ({})", ByteSize::b(bytes.into())))
         .unwrap_or_default();
     let caption = file_content.formatted_caption()
+        .filter(|fb| fb.format == MessageFormat::Html)
         .map(|fb| format!("<br><i>{}</i>", fb.body))
         .or_else(|| file_content.caption().map(|c| format!("<br><i>{}</i>", htmlize::escape_text(c))))
         .unwrap_or_default();
@@ -3873,6 +3874,7 @@ fn populate_audio_message_content(
         ))
         .unwrap_or_default();
     let caption = audio.formatted_caption()
+        .filter(|fb| fb.format == MessageFormat::Html)
         .map(|fb| format!("<br><i>{}</i>", fb.body))
         .or_else(|| audio.caption().map(|c| format!("<br><i>{}</i>", htmlize::escape_text(c))))
         .unwrap_or_default();
@@ -3917,6 +3919,7 @@ fn populate_video_message_content(
         ))
         .unwrap_or_default();
     let caption = video.formatted_caption()
+        .filter(|fb| fb.format == MessageFormat::Html)
         .map(|fb| format!("<br><i>{}</i>", fb.body))
         .or_else(|| video.caption().map(|c| format!("<br><i>{}</i>", htmlize::escape_text(c))))
         .unwrap_or_default();
