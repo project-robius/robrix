@@ -1038,21 +1038,21 @@ impl Widget for SpaceLobbyScreen {
                     }
 
                     // Handle receiving top-level space details (join rule, member count).
-                    Some(SpaceRoomListAction::TopLevelSpaceDetails(sr)) => {
-                        if self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == &sr.room_id) {
-                            self.space_avatar_state = AvatarState::Known(sr.avatar_url.clone());
-                            self.space_avatar_state.update_from_cache(cx); // prefetch the avatar image
-                            self.view.label(cx, ids!(header.space_info_row.space_info_label)).set_text(cx, &format!(
-                                "{}  ·  {} {}",
-                                match sr.join_rule {
-                                    Some(JoinRuleSummary::Public) => "🌐  Public space",
-                                    _ => "🔒  Private space",
-                                },
-                                sr.num_joined_members,
-                                if sr.num_joined_members == 1 { "member" } else { "members" }
-                            ));
-                            self.redraw(cx);
-                        }
+                    Some(SpaceRoomListAction::TopLevelSpaceDetails(sr))
+                        if self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == &sr.room_id) =>
+                    {
+                        self.space_avatar_state = AvatarState::Known(sr.avatar_url.clone());
+                        self.space_avatar_state.update_from_cache(cx); // prefetch the avatar image
+                        self.view.label(cx, ids!(header.space_info_row.space_info_label)).set_text(cx, &format!(
+                            "{}  ·  {} {}",
+                            match sr.join_rule {
+                                Some(JoinRuleSummary::Public) => "🌐  Public space",
+                                _ => "🔒  Private space",
+                            },
+                            sr.num_joined_members,
+                            if sr.num_joined_members == 1 { "member" } else { "members" }
+                        ));
+                        self.redraw(cx);
                     }
 
                     // Handle a change to the set of children in this space or any of its child subspaces.

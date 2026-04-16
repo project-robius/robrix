@@ -528,10 +528,8 @@ impl WidgetMatchEvent for MainDesktopUI {
                     );
                 }
                 // When dragging a tab, allow it to be dragged
-                DockAction::Drag(drag_event) => {
-                    if drag_event.items.len() == 1 {
-                        self.view.dock(cx, ids!(dock)).accept_drag(cx, drag_event, DragResponse::Move);
-                    }
+                DockAction::Drag(drag_event) if drag_event.items.len() == 1 => {
+                    self.view.dock(cx, ids!(dock)).accept_drag(cx, drag_event, DragResponse::Move);
                 }
                 // When dropping a tab, move it to the new position
                 DockAction::Drop(drop_event) => {

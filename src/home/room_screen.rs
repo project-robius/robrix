@@ -4671,16 +4671,14 @@ impl Widget for Message {
         // because we don't want any widgets within the replied-to message to be
         // clickable or otherwise interactive.
         match event.hits(cx, self.view(cx, ids!(replied_to_message)).area()) {
-            Hit::FingerDown(fe) => {
-                if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
-                    cx.widget_action(
-                        details.room_screen_widget_uid, 
-                        MessageAction::OpenMessageContextMenu {
-                            details: details.clone(),
-                            abs_pos: fe.abs,
-                        }
-                    );
-                }
+            Hit::FingerDown(fe) if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) => {
+                cx.widget_action(
+                    details.room_screen_widget_uid,
+                    MessageAction::OpenMessageContextMenu {
+                        details: details.clone(),
+                        abs_pos: fe.abs,
+                    }
+                );
             }
             Hit::FingerLongPress(lp) => {
                 cx.widget_action(
