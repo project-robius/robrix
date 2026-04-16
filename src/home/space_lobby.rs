@@ -1056,17 +1056,17 @@ impl Widget for SpaceLobbyScreen {
                     }
 
                     // Handle a change to the set of children in this space or any of its child subspaces.
-                    Some(SpaceRoomListAction::UpdatedChildren { space_id, parent_chain, .. }) => {
+                    Some(SpaceRoomListAction::UpdatedChildren { space_id, parent_chain, .. })
                         if self.space_name_id.as_ref().is_some_and(|sni|
                             sni.room_id() == space_id
                             || parent_chain.iter().any(|ancestor_id| sni.room_id() == ancestor_id)
-                        ) {
-                            if let Some(sender) = &self.space_request_sender {
-                                let _ = sender.send(SpaceRequest::GetDetailedChildren {
-                                    space_id: space_id.clone(),
-                                    parent_chain: parent_chain.clone(),
-                                });
-                            }
+                        ) =>
+                    {
+                        if let Some(sender) = &self.space_request_sender {
+                            let _ = sender.send(SpaceRequest::GetDetailedChildren {
+                                space_id: space_id.clone(),
+                                parent_chain: parent_chain.clone(),
+                            });
                         }
                     }
                     _ => { }

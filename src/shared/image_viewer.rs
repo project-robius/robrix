@@ -539,11 +539,9 @@ impl Widget for ImageViewer {
         // preventing rotated_image.area() from receiving them.
         // Position checks distinguish image vs. background interactions.
         match event.hits(cx, self.view.area()) {
-            Hit::FingerHoverIn(he) => {
-                if rotated_image.area().rect(cx).contains(he.abs) {
-                    self.mouse_cursor_hover_over_image = true;
-                    cx.set_cursor(MouseCursor::Hand);
-                }
+            Hit::FingerHoverIn(he) if rotated_image.area().rect(cx).contains(he.abs) => {
+                self.mouse_cursor_hover_over_image = true;
+                cx.set_cursor(MouseCursor::Hand);
             }
             Hit::FingerHoverOut(_) => {
                 self.mouse_cursor_hover_over_image = false;
