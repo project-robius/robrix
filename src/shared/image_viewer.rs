@@ -539,11 +539,9 @@ impl Widget for ImageViewer {
         // preventing rotated_image.area() from receiving them.
         // Position checks distinguish image vs. background interactions.
         match event.hits(cx, self.view.area()) {
-            Hit::FingerHoverIn(he) => {
-                if rotated_image.area().rect(cx).contains(he.abs) {
-                    self.mouse_cursor_hover_over_image = true;
-                    cx.set_cursor(MouseCursor::Hand);
-                }
+            Hit::FingerHoverIn(he) if rotated_image.area().rect(cx).contains(he.abs) => {
+                self.mouse_cursor_hover_over_image = true;
+                cx.set_cursor(MouseCursor::Hand);
             }
             Hit::FingerHoverOut(_) => {
                 self.mouse_cursor_hover_over_image = false;
@@ -576,22 +574,20 @@ impl Widget for ImageViewer {
                     self.show_overlay_ui(cx, true);
                 }
             }
-            Hit::FingerDown(fe) => {
-                if fe.is_primary_hit() {
-                    let click_pos = fe.abs;
-                    let on_image = rotated_image.area().rect(cx).contains(click_pos);
-                    let on_buttons = button_group_rounded_view.area().rect(cx).contains(click_pos);
-                    let on_metadata = self.view.view(cx, ids!(metadata_rounded_view))
-                        .area().rect(cx).contains(click_pos);
-                    if on_image {
-                        self.drag_state.drag_start = fe.abs;
-                        if self.drag_state.pan_offset.is_none() {
-                            self.drag_state.pan_offset = Some(DVec2::default());
-                        }
-                    } else if !on_buttons && !on_metadata {
-                        self.reset(cx);
-                        cx.action(ImageViewerAction::Hide);
+            Hit::FingerDown(fe) if fe.is_primary_hit() => {
+                let click_pos = fe.abs;
+                let on_image = rotated_image.area().rect(cx).contains(click_pos);
+                let on_buttons = button_group_rounded_view.area().rect(cx).contains(click_pos);
+                let on_metadata = self.view.view(cx, ids!(metadata_rounded_view))
+                    .area().rect(cx).contains(click_pos);
+                if on_image {
+                    self.drag_state.drag_start = fe.abs;
+                    if self.drag_state.pan_offset.is_none() {
+                        self.drag_state.pan_offset = Some(DVec2::default());
                     }
+                } else if !on_buttons && !on_metadata {
+                    self.reset(cx);
+                    cx.action(ImageViewerAction::Hide);
                 }
             }
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() => {
