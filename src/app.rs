@@ -478,9 +478,9 @@ impl MatchEvent for App {
 
             // Handle EventSourceModalAction to open/close the event source modal.
             match action.downcast_ref() {
-                Some(EventSourceModalAction::Open { room_id, event_id, original_json }) => {
+                Some(EventSourceModalAction::Open { room_id, event_id, latest_json }) => {
                     self.ui.event_source_modal(cx, ids!(event_source_modal_inner))
-                        .show(cx, room_id.clone(), event_id.clone(), original_json.clone());
+                        .show(cx, room_id.clone(), event_id.clone(), latest_json.clone());
                     self.ui.modal(cx, ids!(event_source_modal)).open(cx);
                     continue;
                 }
