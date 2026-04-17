@@ -121,11 +121,10 @@ impl Widget for CollapsibleHeader {
             Hit::FingerDown(..) => {
                 cx.set_key_focus(self.view.area());
             }
-            Hit::FingerUp(fe) => {
-                if !rooms_list_props.was_scrolling && fe.is_over && fe.is_primary_hit() && fe.was_tap() {
-                    self.toggle_collapse(cx, scope);
-                }
+            Hit::FingerUp(fe) if !rooms_list_props.was_scrolling && fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                self.toggle_collapse(cx, scope);
             }
+            Hit::FingerUp(_) => { }
             _ => { }
         }
         self.view.handle_event(cx, event, scope);

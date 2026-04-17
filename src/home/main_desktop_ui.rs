@@ -534,11 +534,10 @@ impl WidgetMatchEvent for MainDesktopUI {
                     );
                 }
                 // When dragging a tab, allow it to be dragged
-                DockAction::Drag(drag_event) => {
-                    if drag_event.items.len() == 1 {
-                        self.view.dock(cx, ids!(dock)).accept_drag(cx, drag_event, DragResponse::Move);
-                    }
+                DockAction::Drag(drag_event) if drag_event.items.len() == 1 => {
+                    self.view.dock(cx, ids!(dock)).accept_drag(cx, drag_event, DragResponse::Move);
                 }
+                DockAction::Drag(_) => {}
                 // When dropping a tab, move it to the new position
                 DockAction::Drop(drop_event) => {
                     // from inside the dock, otherwise it's an external file
@@ -578,12 +577,11 @@ impl WidgetMatchEvent for MainDesktopUI {
                     let app_state = scope.data.get_mut::<AppState>().unwrap();
                     self.save_dock_state_to(cx, app_state);
                 }
-                Some(MainDesktopUiAction::CloseRoomTabs { room_id }) => {
-                    if self.close_room_tabs(cx, room_id) {
-                        self.redraw(cx);
-                        should_save_dock_action = true;
-                    }
+                Some(MainDesktopUiAction::CloseRoomTabs { room_id }) if self.close_room_tabs(cx, room_id) => {
+                    self.redraw(cx);
+                    should_save_dock_action = true;
                 }
+                Some(MainDesktopUiAction::CloseRoomTabs { .. }) => {}
                 _ => {}
             }
         }

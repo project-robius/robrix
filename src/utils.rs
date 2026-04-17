@@ -695,17 +695,20 @@ pub fn ends_with_href(text: &str) -> bool {
     // Search backwards for a single quote, double quote, or an equals sign.
     match substr.as_bytes().last() {
         Some(b'\'' | b'"') => {
-            if substr
+            let Some(before_quote) = substr
                 .get(.. substr.len().saturating_sub(1))
-                .map(|s| {
-                    substr = s.trim_end();
-                    substr.as_bytes().last() == Some(&b'=')
-                })
-                .unwrap_or(false)
-            {
-                substr = &substr[..substr.len().saturating_sub(1)];
-            } else {
+                .map(str::trim_end)
+            else {
                 return false;
+            };
+
+            match before_quote.as_bytes().last() {
+                Some(b'=') => {
+                    substr = &before_quote[..before_quote.len().saturating_sub(1)];
+                }
+                _ => {
+                    return false;
+                }
             }
         }
         Some(b'=') => {

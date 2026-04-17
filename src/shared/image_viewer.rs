@@ -532,15 +532,15 @@ impl Widget for ImageViewer {
                 cx.stop_timer(self.hide_ui_timer);
                 self.animator_cut(cx, ids!(ui_animator.show));
             }
-            Hit::FingerHoverOut(fe) => {
-                // FingerHoverOut is triggered when the cursor enters into the button.
-                // Hence we need to check if the cursor is actually inside the button group.
+            Hit::FingerHoverOut(fe)
                 if !self.ui_visible_toggle
                     && !button_group_rounded_view.area().rect(cx).contains(fe.abs)
-                {
-                    self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
-                }
+                => {
+                // FingerHoverOut is triggered when the cursor enters into the button.
+                // Hence we need to check if the cursor is actually inside the button group.
+                self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
             }
+            Hit::FingerHoverOut(_) => {}
             _ => {}
         }
         match event.hits(cx, self.view.view(cx, ids!(metadata_rounded_view)).area()) {
@@ -555,15 +555,14 @@ impl Widget for ImageViewer {
         }
         // Handle cursor changes on mouse hover
         match event.hits(cx, rotated_image.area()) {
-            Hit::FingerDown(fe) => {
-                if fe.is_primary_hit() {
-                    self.drag_state.drag_start = fe.abs;
-                    // Initialize pan_offset with current position if not set
-                    if self.drag_state.pan_offset.is_none() {
-                        self.drag_state.pan_offset = Some(DVec2::default());
-                    }
+            Hit::FingerDown(fe) if fe.is_primary_hit() => {
+                self.drag_state.drag_start = fe.abs;
+                // Initialize pan_offset with current position if not set
+                if self.drag_state.pan_offset.is_none() {
+                    self.drag_state.pan_offset = Some(DVec2::default());
                 }
             }
+            Hit::FingerDown(_) => {}
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() => {
                 // Only reset pan_offset on double-tap, not single tap
                 if fe.tap_count == 2 {
@@ -607,16 +606,16 @@ impl Widget for ImageViewer {
                 self.mouse_cursor_hover_over_image = false;
                 cx.set_cursor(MouseCursor::Default);
             }
-            Hit::FingerHoverOver(_) => {
+            Hit::FingerHoverOver(_)
                 if !self.ui_visible_toggle
                     && !self.animator.in_state(cx, ids!(ui_animator.show))
-                {
-                    self.animator_cut(cx, ids!(ui_animator.hide));
-                    self.animator_play(cx, ids!(ui_animator.show));
-                    cx.stop_timer(self.hide_ui_timer);
-                    self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
-                }
+                => {
+                self.animator_cut(cx, ids!(ui_animator.hide));
+                self.animator_play(cx, ids!(ui_animator.show));
+                cx.stop_timer(self.hide_ui_timer);
+                self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
             }
+            Hit::FingerHoverOver(_) => {}
             _ => {}
         }
         if let Event::Scroll(scroll_event) = event {

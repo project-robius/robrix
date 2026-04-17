@@ -268,7 +268,7 @@ frameworks = []
 info_plist_path = "./packaging/Info.plist"
 entitlements = "./packaging/Entitlements.plist"
 # signing_identity = "Developer ID Application: GOSIM FOUNDATION LTD. (HMX6XGJZ3R)"
-signing_identity = "="
+# signing_identity = "="
 
 
 ## Configuration for `cargo packager`'s generation of a macOS `.dmg`.

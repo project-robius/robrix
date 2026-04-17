@@ -489,12 +489,10 @@ fn push_indent_html(out: &mut String, width: usize) {
 }
 
 fn starts_with_chars(chars: &[char], start: usize, needle: &str) -> bool {
-    let mut idx = start;
-    for needle_ch in needle.chars() {
+    for (idx, needle_ch) in (start..).zip(needle.chars()) {
         if chars.get(idx).copied() != Some(needle_ch) {
             return false;
         }
-        idx += 1;
     }
     true
 }
