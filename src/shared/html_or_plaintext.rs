@@ -384,7 +384,7 @@ impl Widget for MatrixLinkPill {
             }
         }
 
-        // To catch updates Redraw upon a UI Signal in order to catch updates to a user profile.
+        // Redraw upon a UI Signal to catch updates to a user profile.
         if matches!(event, Event::Signal) && matches!(self.matrix_id, Some(MatrixId::User(_))) {
             self.redraw(cx);
         }
@@ -430,24 +430,22 @@ impl MatrixLinkPill {
         self.via = via.to_vec();
 
         let is_room_mention = link_text == "@room";
+        let is_self_mention = matches!(matrix_id, MatrixId::User(uid) if current_user_id().is_some_and(|u| &u == uid));
 
-        // Apply red background for @room mentions.
-        if is_room_mention {
+        // Reset pill bg to default black, then apply red for mentions.
+        // This prevents stale red from persisting if a cached widget is
+        // reused for a different (non-mention) link after a message edit.
+        {
             let mut pill_bg = self.view(cx, ids!(pill_bg));
-            script_apply_eval!(cx, pill_bg, {
-                draw_bg +: { color: #d91b38 }
-            });
+            if is_room_mention || is_self_mention {
+                script_apply_eval!(cx, pill_bg, { draw_bg +: { color: #d91b38 } });
+            } else {
+                script_apply_eval!(cx, pill_bg, { draw_bg +: { color: #000 } });
+            }
         }
 
         // Handle a user ID link by querying the user profile cache.
         if let MatrixId::User(user_id) = matrix_id {
-            // Apply red background for current user mentions.
-            if current_user_id().is_some_and(|u| &u == user_id) {
-                let mut pill_bg = self.view(cx, ids!(pill_bg));
-                script_apply_eval!(cx, pill_bg, {
-                    draw_bg +: { color: #d91b38 }
-                });
-            }
 
             let (name, avatar_uri) = match user_profile_cache::with_user_profile(
                 cx,

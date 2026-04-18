@@ -3044,13 +3044,11 @@ fn populate_message_view(
     // Sometimes we need to call this up-front, so we save the result in this variable
     // to avoid having to call it twice.
     let mut set_username_and_get_avatar_retval = None;
-    let has_room_mention = matches!(
-        &msg_like_content.kind,
-        MsgLikeKind::Message(msg) if msg.mentions().is_some_and(|m| m.room)
-    );
+    let mut has_room_mention = false;
     let (item, used_cached_item) = match &msg_like_content.kind {
         MsgLikeKind::Message(msg) => {
             let room_mention_room_id = if msg.mentions().is_some_and(|m| m.room) {
+                has_room_mention = true;
                 Some(timeline_kind.room_id())
             } else {
                 None
@@ -3656,7 +3654,9 @@ fn populate_text_message_content(
     /// link to the room so it renders as a red room pill with the room's avatar.
     fn apply_room_mention<'a>(html: Cow<'a, str>, room_id: Option<&OwnedRoomId>) -> Cow<'a, str> {
         if let Some(room_id) = room_id {
-            if html.contains("@room") {
+            // Only replace @room if it's NOT already inside an <a> tag
+            // (some clients pre-link @room in the formatted_body).
+            if html.contains("@room") && !html.contains("\">@room</a>") {
                 return Cow::Owned(html.replace(
                     "@room",
                     &format!("<a href=\"https://matrix.to/#/{room_id}\">@room</a>"),
