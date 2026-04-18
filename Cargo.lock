@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "ab_glyph_rasterizer"
 version = "0.1.8"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "accessory"
@@ -610,7 +610,7 @@ dependencies = [
 [[package]]
 name = "bitflags"
 version = "2.10.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "bitmaps"
@@ -728,7 +728,7 @@ checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
 [[package]]
 name = "bytemuck"
 version = "1.25.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "byteorder"
@@ -739,7 +739,7 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 [[package]]
 name = "byteorder"
 version = "1.5.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "bytes"
@@ -1941,7 +1941,7 @@ dependencies = [
 [[package]]
 name = "fxhash"
 version = "0.2.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "byteorder 1.5.0 (git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment)",
 ]
@@ -2790,7 +2790,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.53.4",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -2937,7 +2937,7 @@ dependencies = [
 [[package]]
 name = "makepad-apple-sys"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-objc-sys",
 ]
@@ -2945,12 +2945,12 @@ dependencies = [
 [[package]]
 name = "makepad-byteorder-lite"
 version = "0.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "makepad-code-editor"
 version = "2.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-widgets",
 ]
@@ -2958,7 +2958,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-wasm-bridge"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -2966,7 +2966,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-widget"
 version = "2.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -2975,7 +2975,7 @@ dependencies = [
 [[package]]
 name = "makepad-draw"
 version = "2.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "ab_glyph_rasterizer",
  "fxhash",
@@ -2997,7 +2997,7 @@ dependencies = [
 [[package]]
 name = "makepad-error-log"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-micro-serde",
 ]
@@ -3005,22 +3005,22 @@ dependencies = [
 [[package]]
 name = "makepad-filesystem-watcher"
 version = "0.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "makepad-futures"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "makepad-futures-legacy"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "makepad-html"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-live-id",
 ]
@@ -3034,7 +3034,7 @@ checksum = "9775cbec5fa0647500c3e5de7c850280a88335d1d2d770e5aa2332b801ba7064"
 [[package]]
 name = "makepad-latex-math"
 version = "0.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "ttf-parser",
 ]
@@ -3042,7 +3042,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-live-id-macros",
  "serde",
@@ -3051,7 +3051,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id-macros"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -3059,7 +3059,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-reload-core"
 version = "0.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-filesystem-watcher",
 ]
@@ -3067,7 +3067,7 @@ dependencies = [
 [[package]]
 name = "makepad-math"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-micro-serde",
 ]
@@ -3075,12 +3075,12 @@ dependencies = [
 [[package]]
 name = "makepad-micro-proc-macro"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "makepad-micro-serde"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-serde-derive",
@@ -3089,7 +3089,7 @@ dependencies = [
 [[package]]
 name = "makepad-micro-serde-derive"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -3097,7 +3097,7 @@ dependencies = [
 [[package]]
 name = "makepad-network"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-apple-sys",
  "makepad-error-log",
@@ -3111,12 +3111,12 @@ dependencies = [
 [[package]]
 name = "makepad-objc-sys"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "makepad-platform"
 version = "2.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "ash",
  "bitflags 2.10.0 (git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment)",
@@ -3152,12 +3152,12 @@ dependencies = [
 [[package]]
 name = "makepad-regex"
 version = "0.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "makepad-script"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-error-log",
  "makepad-html",
@@ -3171,7 +3171,7 @@ dependencies = [
 [[package]]
 name = "makepad-script-derive"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -3179,7 +3179,7 @@ dependencies = [
 [[package]]
 name = "makepad-script-std"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-network",
  "makepad-script",
@@ -3188,12 +3188,12 @@ dependencies = [
 [[package]]
 name = "makepad-shared-bytes"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "makepad-studio-protocol"
 version = "0.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "bitflags 2.10.0 (git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment)",
  "makepad-error-log",
@@ -3205,7 +3205,7 @@ dependencies = [
 [[package]]
 name = "makepad-svg"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-html",
  "makepad-live-id",
@@ -3214,7 +3214,7 @@ dependencies = [
 [[package]]
 name = "makepad-tsdf"
 version = "0.1.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-math",
  "makepad-micro-serde",
@@ -3223,7 +3223,7 @@ dependencies = [
 [[package]]
 name = "makepad-wasm-bridge"
 version = "1.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-derive-wasm-bridge",
  "makepad-live-id",
@@ -3232,7 +3232,7 @@ dependencies = [
 [[package]]
 name = "makepad-webp"
 version = "0.2.4"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-byteorder-lite",
 ]
@@ -3240,7 +3240,7 @@ dependencies = [
 [[package]]
 name = "makepad-widgets"
 version = "2.0.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-derive-widget",
  "makepad-draw",
@@ -3255,12 +3255,12 @@ dependencies = [
 [[package]]
 name = "makepad-zune-core"
 version = "0.5.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "makepad-zune-inflate"
 version = "0.2.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "simd-adler32",
 ]
@@ -3268,7 +3268,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-jpeg"
 version = "0.5.12"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-zune-core",
 ]
@@ -3276,7 +3276,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-png"
 version = "0.5.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "makepad-zune-core",
  "makepad-zune-inflate",
@@ -3663,7 +3663,7 @@ checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 [[package]]
 name = "memchr"
 version = "2.7.6"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "mime"
@@ -4392,7 +4392,7 @@ dependencies = [
 [[package]]
 name = "pulldown-cmark"
 version = "0.12.2"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "bitflags 2.10.0 (git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment)",
  "memchr 2.7.6 (git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment)",
@@ -5203,7 +5203,7 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 [[package]]
 name = "rustybuzz"
 version = "0.18.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "bitflags 2.10.0 (git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment)",
  "bytemuck",
@@ -5303,7 +5303,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 [[package]]
 name = "sdfer"
 version = "0.2.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "sealed"
@@ -5602,7 +5602,7 @@ dependencies = [
 [[package]]
 name = "simd-adler32"
 version = "0.3.8"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "siphasher"
@@ -5628,7 +5628,7 @@ dependencies = [
 [[package]]
 name = "smallvec"
 version = "1.15.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "socket2"
@@ -6409,7 +6409,7 @@ dependencies = [
 [[package]]
 name = "ttf-parser"
 version = "0.24.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "tungstenite"
@@ -6461,7 +6461,7 @@ checksum = "75b844d17643ee918803943289730bec8aac480150456169e647ed0b576ba539"
 [[package]]
 name = "unicase"
 version = "2.9.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "unicode-bidi"
@@ -6472,17 +6472,17 @@ checksum = "5c1cb5db39152898a79168971543b1cb5020dff7fe43c8dc468b0885f5e29df5"
 [[package]]
 name = "unicode-bidi"
 version = "0.3.18"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "unicode-bidi-mirroring"
 version = "0.3.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "unicode-ccc"
 version = "0.3.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "unicode-ident"
@@ -6493,7 +6493,7 @@ checksum = "f63a545481291138910575129486daeaf8ac54aee4387fe7906919f7830c7d9d"
 [[package]]
 name = "unicode-linebreak"
 version = "0.1.5"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "unicode-normalization"
@@ -6513,12 +6513,12 @@ checksum = "e70f2a8b45122e719eb623c01822704c4e0907e7e426a05927e1a1cfff5b75d0"
 [[package]]
 name = "unicode-properties"
 version = "0.1.4"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "unicode-script"
 version = "0.5.8"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "unicode-segmentation"
@@ -6529,7 +6529,7 @@ checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
 [[package]]
 name = "unicode-segmentation"
 version = "1.12.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "unicode-width"
@@ -6861,7 +6861,7 @@ dependencies = [
 [[package]]
 name = "wayland-backend"
 version = "0.3.12"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "downcast-rs",
  "libc",
@@ -6873,7 +6873,7 @@ dependencies = [
 [[package]]
 name = "wayland-client"
 version = "0.31.12"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "bitflags 2.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc",
@@ -6883,7 +6883,7 @@ dependencies = [
 [[package]]
 name = "wayland-egl"
 version = "0.32.9"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "wayland-backend",
  "wayland-sys",
@@ -6892,7 +6892,7 @@ dependencies = [
 [[package]]
 name = "wayland-protocols"
 version = "0.32.10"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "bitflags 2.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "wayland-backend",
@@ -6902,7 +6902,7 @@ dependencies = [
 [[package]]
 name = "wayland-sys"
 version = "0.31.8"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "log",
  "pkg-config",
@@ -7010,7 +7010,7 @@ dependencies = [
 [[package]]
 name = "windows"
 version = "0.62.2"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "windows-collections 0.3.2",
  "windows-core 0.62.2",
@@ -7029,7 +7029,7 @@ dependencies = [
 [[package]]
 name = "windows-collections"
 version = "0.3.2"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "windows-core 0.62.2",
 ]
@@ -7062,7 +7062,7 @@ dependencies = [
 [[package]]
 name = "windows-core"
 version = "0.62.2"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "windows-link 0.2.1",
  "windows-result 0.4.1",
@@ -7083,7 +7083,7 @@ dependencies = [
 [[package]]
 name = "windows-future"
 version = "0.3.2"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "windows-core 0.62.2",
 ]
@@ -7147,7 +7147,7 @@ checksum = "45e46c0661abb7180e7b9c281db115305d49ca1709ab8242adf09666d2173c65"
 [[package]]
 name = "windows-link"
 version = "0.2.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 
 [[package]]
 name = "windows-numerics"
@@ -7191,7 +7191,7 @@ dependencies = [
 [[package]]
 name = "windows-result"
 version = "0.4.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "windows-link 0.2.1",
 ]
@@ -7208,7 +7208,7 @@ dependencies = [
 [[package]]
 name = "windows-strings"
 version = "0.5.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#6bdfdcdc892fa2d27a8007bead9bd5a11ab47566"
+source = "git+https://github.com/kevinaboos/makepad?branch=textFLow_custom_widget_alignment#f760c33508ef077749e1fbf30d2f6c7a99fb5c54"
 dependencies = [
  "windows-link 0.2.1",
 ]
