@@ -7,7 +7,7 @@ use std::{
 };
 
 use makepad_widgets::*;
-use crate::{LivePtr, widget_ref_from_live_ptr};
+use crate::{LivePtr, utils, widget_ref_from_live_ptr};
 use matrix_sdk::ruma::{events::room::{ImageInfo, MediaSource}, OwnedMxcUri, UInt};
 use serde::Deserialize;
 use url::Url;
@@ -19,8 +19,6 @@ use crate::{
     sliding_sync::{submit_async_request, MatrixRequest, UrlPreviewError},
 };
 
-/// Maximum length for link preview descriptions before truncation
-const MAX_DESCRIPTION_LENGTH: usize = 180;
 /// Maximum number of cache entries before cleanup is triggered
 const MAX_CACHE_ENTRIES_BEFORE_CLEANUP: usize = 100;
 /// Maximum age for cache entries in seconds (1 hour)
@@ -165,7 +163,7 @@ script_mod! {
                 width: Fill, height: Fill,
                 flow: Down,
 
-                View {
+                inner_content_view := View {
                     width: Fit, height: Fit,
                     flow: Flow.Right{wrap: true},
 
@@ -193,21 +191,18 @@ script_mod! {
                     }
                 }
 
-                View {
-                    width: Fill, height: Fit,
 
-                    description_label := Label {
-                        width: Fill, height: Fit,
-                        flow: Flow.Right{wrap: true},
-                        padding: Inset{ left: 0.0 }
-                        max_lines: 2
-                        text_overflow: Ellipsis
-                        draw_text +: {
-                            text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
-                                font_size: 11.0,
-                            },
-                            color: #666666,
-                        }
+                description_label := Label {
+                    width: Fill, height: Fit,
+                    flow: Flow.Right{wrap: true},
+                    padding: Inset{ left: 0.0 }
+                    max_lines: 2
+                    text_overflow: Ellipsis
+                    draw_text +: {
+                        text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
+                            font_size: 11.0,
+                        },
+                        color: #666666,
                     }
                 }
             }
@@ -408,24 +403,19 @@ impl LinkPreviewRef {
         // Set site name
         if let Some(site_name) = &link_preview_data.site_name {
             view_ref
-                .view(cx, ids!(content_view))
                 .label(cx, ids!(site_name_label))
                 .set_text(cx, site_name);
         }
 
-        // Set description with size limit
-        if let Some(description) = &link_preview_data.description {
-            let mut description = description.clone();
-            description = description.replace("\n\n", " ");
-            let truncated_description = if description.len() > MAX_DESCRIPTION_LENGTH {
-                format!("{}...", &description[..(MAX_DESCRIPTION_LENGTH - 3)])
-            } else {
-                description
-            };
+        // Set description; the description_label uses max_lines: 2 with
+        // text_overflow: Ellipsis to wrap and truncate automatically.
+        // Collapse all whitespace runs into single spaces so hard line breaks
+        // don't burn one of the two available lines.
+        if let Some(description_raw) = &link_preview_data.description {
+            let description = utils::replace_linebreaks_separators(description_raw, false);
             view_ref
-                .view(cx, ids!(content_view))
                 .label(cx, ids!(description_label))
-                .set_text(cx, &truncated_description);
+                .set_text(cx, &description);
         }
 
         // Handle image through closure
