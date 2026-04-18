@@ -3044,8 +3044,17 @@ fn populate_message_view(
     // Sometimes we need to call this up-front, so we save the result in this variable
     // to avoid having to call it twice.
     let mut set_username_and_get_avatar_retval = None;
+    let has_room_mention = matches!(
+        &msg_like_content.kind,
+        MsgLikeKind::Message(msg) if msg.mentions().is_some_and(|m| m.room)
+    );
     let (item, used_cached_item) = match &msg_like_content.kind {
         MsgLikeKind::Message(msg) => {
+            let room_mention_room_id = if msg.mentions().is_some_and(|m| m.room) {
+                Some(timeline_kind.room_id())
+            } else {
+                None
+            };
             match msg.msgtype() {
                 MessageType::Text(TextMessageEventContent { body, formatted, .. }) => {
                     has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
@@ -3067,6 +3076,7 @@ fn populate_message_view(
                             &html_or_plaintext_ref,
                             body,
                             formatted.as_ref(),
+                            room_mention_room_id,
                             Some(&mut link_preview_ref),
                             Some(media_cache),
                             Some(link_preview_cache),
@@ -3113,6 +3123,7 @@ fn populate_message_view(
                             &html_or_plaintext_ref,
                             body,
                             formatted.as_ref(),
+                            room_mention_room_id,
                             Some(&mut link_preview_ref),
                             Some(media_cache),
                             Some(link_preview_cache),
@@ -3159,6 +3170,7 @@ fn populate_message_view(
                                 format: MessageFormat::Html,
                                 body: formatted,
                             }),
+                            room_mention_room_id,
                             Some(&mut link_preview_ref),
                             Some(media_cache),
                             Some(link_preview_cache),
@@ -3210,6 +3222,7 @@ fn populate_message_view(
                             &html_or_plaintext_ref,
                             &body,
                             formatted.as_ref(),
+                            room_mention_room_id,
                             Some(&mut link_preview_ref),
                             Some(media_cache),
                             Some(link_preview_cache),
@@ -3360,6 +3373,7 @@ fn populate_message_view(
                             &html_or_plaintext_ref,
                             &verification.body,
                             Some(&formatted),
+                            room_mention_room_id,
                             Some(&mut link_preview_ref),
                             Some(media_cache),
                             Some(link_preview_cache),
@@ -3521,7 +3535,7 @@ fn populate_message_view(
             pinned_events,
             has_html_body,
         ),
-        should_be_highlighted: event_tl_item.is_highlighted(),
+        should_be_highlighted: event_tl_item.is_highlighted() || has_room_mention,
     };
     item.as_message().set_data(message_details);
 
@@ -3633,10 +3647,25 @@ fn populate_text_message_content(
     message_content_widget: &HtmlOrPlaintextRef,
     body: &str,
     formatted_body: Option<&FormattedBody>,
+    room_mention_room_id: Option<&OwnedRoomId>,
     link_preview_ref: Option<&mut LinkPreviewRef>,
     media_cache: Option<&mut MediaCache>,
     link_preview_cache: Option<&mut LinkPreviewCache>,
 ) -> bool {
+    /// If this is a room mention, replace `@room` text in `html` with a pill
+    /// link to the room so it renders as a red room pill with the room's avatar.
+    fn apply_room_mention<'a>(html: Cow<'a, str>, room_id: Option<&OwnedRoomId>) -> Cow<'a, str> {
+        if let Some(room_id) = room_id {
+            if html.contains("@room") {
+                return Cow::Owned(html.replace(
+                    "@room",
+                    &format!("<a href=\"https://matrix.to/#/{room_id}\">@room</a>"),
+                ));
+            }
+        }
+        html
+    }
+
     // The message was HTML-formatted rich text.
     let mut links = Vec::new();
     if let Some(fb) = formatted_body.as_ref()
@@ -3647,12 +3676,14 @@ fn populate_text_message_content(
             true,
             Some(&mut links),
         );
-        message_content_widget.show_html(cx, linkified_html);
+        let html = apply_room_mention(linkified_html, room_mention_room_id);
+        message_content_widget.show_html(cx, html);
     }
     // The message was non-HTML plaintext.
     else {
         let linkified_html = utils::linkify_get_urls(body, false, Some(&mut links));
-        match linkified_html {
+        let html = apply_room_mention(linkified_html, room_mention_room_id);
+        match html {
             Cow::Owned(linkified_html) => message_content_widget.show_html(cx, &linkified_html),
             Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(cx, plaintext),
         }
@@ -4255,7 +4286,7 @@ pub fn populate_preview_of_timeline_item(
         match m.msgtype() {
             MessageType::Text(TextMessageEventContent { body, formatted, .. })
             | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
-                let _ = populate_text_message_content(cx, widget_out, body, formatted.as_ref(), None, None, None);
+                let _ = populate_text_message_content(cx, widget_out, body, formatted.as_ref(), None, None, None, None);
                 return;
             }
             _ => { } // fall through to the general case for all timeline items below.
