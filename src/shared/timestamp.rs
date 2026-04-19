@@ -11,8 +11,6 @@ script_mod! {
 
 
     mod.widgets.Timestamp = #(Timestamp::register_widget(vm)) {
-
-
         width: Fit, height: Fit
         flow: Right,
 
