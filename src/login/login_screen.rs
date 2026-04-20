@@ -116,52 +116,53 @@ script_mod! {
 
                     View {
                         width: 275, height: Fit
-                        flow: Overlay,
+                        flow: Overlay
+                        align: Align{x: 1.0, y: 0.5}
 
                         password_input := RobrixTextInput {
                             width: Fill, height: Fit
                             flow: Right, // do not wrap
-                            padding: Inset{top: 10, bottom: 10, left: 10, right: 40}
+                            padding: Inset{top: 10, bottom: 10, left: 10, right: 38}
                             empty_text: "Password"
                             is_password: true,
                         }
 
                         View {
-                            width: Fill, height: Fill
-                            align: Align{x: 1.0, y: 0.5}
+                            width: 38, height: Fill
+                            align: Align{x: 0.5, y: 0.5}
 
-                            show_password_button := Button {
-                                width: 36, height: 36,
-                                padding: 6,
+                            show_password_button := RobrixNeutralIconButton {
+                                width: Fit, height: Fit,
+                                align: Align{x: 0.5, y: 0.5}
+                                padding: 5
+                                spacing: 0
+                                margin: 0
                                 draw_bg +: {
-                                    color: #0000
-                                    color_hover: #0000
-                                    color_down: #0000
-                                    border_size: 0.0
+                                    color: (COLOR_SECONDARY * 1.05)
                                 }
                                 draw_icon +: {
                                     svg: (mod.widgets.ICON_EYE_CLOSED),
                                     color: #8C8C8C,
                                 }
-                                icon_walk: Walk{width: 20, height: 20}
+                                icon_walk: Walk{width: 18, height: 18, margin: 0}
                                 text: ""
                             }
 
-                            hide_password_button := Button {
+                            hide_password_button := RobrixNeutralIconButton {
                                 visible: false,
-                                width: 36, height: 36,
-                                padding: 6,
+                                align: Align{x: 0.5, y: 0.5}
+                                width: Fit, height: Fit,
+                                padding: 5
+                                spacing: 0
+                                margin: 0
                                 draw_bg +: {
-                                    color: #0000
-                                    color_hover: #0000
-                                    color_down: #0000
-                                    border_size: 0.0
+                                    color: (COLOR_SECONDARY * 1.05)
                                 }
                                 draw_icon +: {
                                     svg: (mod.widgets.ICON_EYE_OPEN),
                                     color: #8C8C8C,
                                 }
-                                icon_walk: Walk{width: 20, height: 20}
+                                icon_walk: Walk{width: 18, height: 18, margin: 0}
                                 text: ""
                             }
                         }
