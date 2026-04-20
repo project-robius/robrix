@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// The timeout for hiding the UI overlays after no user mouse/tap activity.
-const SHOW_UI_DURATION: f64 = 2.5;
+const SHOW_UI_DURATION: f64 = 3.0;
 
 /// Loads the given image `data` into an `ImageBuffer` as either a PNG or JPEG, using the `imghdr` library to determine which format it is.
 ///
@@ -763,30 +763,24 @@ impl MatchEvent for ImageViewer {
             self.reset(cx);
             cx.action(ImageViewerAction::Hide);
         }
+
+        let mut was_overlay_button_clicked = false;
         if self.view.button(cx, ids!(reset_button)).clicked(actions) {
+            was_overlay_button_clicked = true;
             self.reset(cx);
         }
-        if self
-            .view
-            .button(cx, ids!(zoom_out_button))
-            .clicked(actions)
-        {
+        if self.view.button(cx, ids!(zoom_out_button)).clicked(actions) {
+            was_overlay_button_clicked = true;
             self.adjust_zoom(cx, 1.0 / self.config.zoom_scale_factor);
         }
 
-        if self
-            .view
-            .button(cx, ids!(zoom_in_button))
-            .clicked(actions)
-        {
+        if self.view.button(cx, ids!(zoom_in_button)).clicked(actions) {
+            was_overlay_button_clicked = true;
             self.adjust_zoom(cx, self.config.zoom_scale_factor);
         }
 
-        if self
-            .view
-            .button(cx, ids!(rotate_cw_button))
-            .clicked(actions)
-        {
+        if self.view.button(cx, ids!(rotate_cw_button)).clicked(actions) {
+            was_overlay_button_clicked = true;
             if !self.is_animating_rotation {
                 self.is_animating_rotation = true;
                 if self.rotation_step == 3 {
@@ -797,11 +791,8 @@ impl MatchEvent for ImageViewer {
             }
         }
 
-        if self
-            .view
-            .button(cx, ids!(rotate_ccw_button))
-            .clicked(actions)
-        {
+        if self.view.button(cx, ids!(rotate_ccw_button)).clicked(actions) {
+            was_overlay_button_clicked = true;
             if !self.is_animating_rotation {
                 self.is_animating_rotation = true;
                 if self.rotation_step == 0 {
@@ -811,6 +802,14 @@ impl MatchEvent for ImageViewer {
                 self.rotation_step = (self.rotation_step - 1) % 4; // Rotate 90 degrees clockwise
                 self.update_rotation_animation(cx);
             }
+        }
+
+        // Restart the auto-hide timer if any overlay button was clicked. If the
+        // mouse is still over the overlay the hover handler keeps the timer
+        // stopped anyway.
+        if was_overlay_button_clicked && !self.mouse_over_overlay_ui {
+            cx.stop_timer(self.hide_ui_timer);
+            self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
         }
 
         for action in actions.iter() {
