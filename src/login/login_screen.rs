@@ -34,10 +34,10 @@ script_mod! {
         draw_bg +: {
             mask: instance(0.0)
             pixel: fn() {
-                let color = self.get_color();
-                let gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
-                let grayed = mix(color, vec4(gray, gray, gray, color.a), self.mask);
-                return grayed;
+                let color = mix(self.get_color(), #3, self.async_load)
+                let gray = dot(color.rgb, vec3(0.299, 0.587, 0.114))
+                let grayed = mix(color, vec4(gray, gray, gray, color.a), self.mask)
+                return Pal.premul(vec4(grayed.xyz, grayed.w * self.opacity))
             }
         }
     }
