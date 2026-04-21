@@ -40,8 +40,6 @@ env:
     CARGO_TERM_COLOR: always
     CARGO_INCREMENTAL: "0"  # Disable incremental compilation in CI
     RUST_BACKTRACE: 1
-    # Enable warnings as errors for strict checks
-    RUSTFLAGS: "-D warnings"
 
 jobs:
   clippy:

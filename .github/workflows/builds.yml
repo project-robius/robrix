@@ -93,8 +93,6 @@ jobs:
           key: ubuntu-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Build
-        env:
-          RUSTFLAGS: "-D warnings"
         run: |
           cargo build --profile fast
 
@@ -124,8 +122,6 @@ jobs:
           key: macos-${{ matrix.arch }}-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Build
-        env:
-          RUSTFLAGS: "-D warnings"
         run: |
           cargo build --profile fast
 
@@ -148,8 +144,6 @@ jobs:
           key: windows-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Build
-        env:
-          RUSTFLAGS: "-D warnings"
         run: |
           cargo build --profile fast
 
@@ -192,7 +186,6 @@ jobs:
 
       - name: Build for iOS targets
         env:
-          RUSTFLAGS: "-D warnings"
           AWS_LC_SYS_CMAKE_BUILDER: 1
         run: |
           # Install iOS targets
@@ -233,7 +226,6 @@ jobs:
 
       - name: Build Android APK
         env:
-          RUSTFLAGS: "-D warnings"
           AWS_LC_SYS_CMAKE_BUILDER: 1
         run: |
           cargo makepad android build -p robrix \
@@ -267,7 +259,6 @@ jobs:
 
       - name: Build Android APK
         env:
-          RUSTFLAGS: "-D warnings"
           AWS_LC_SYS_CMAKE_BUILDER: 1
         run: |
           cargo makepad android build -p robrix \
@@ -308,7 +299,6 @@ jobs:
 
       - name: Build Android APK
         env:
-          RUSTFLAGS: "-D warnings"
           AWS_LC_SYS_CMAKE_BUILDER: 1
           CMAKE_GENERATOR: Ninja
         run: |

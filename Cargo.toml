@@ -294,6 +294,8 @@ non_local_definitions = "forbid"
 unsafe_op_in_unsafe_fn = "forbid"
 unnameable_types = "warn"
 unused_import_braces = "warn"
+unused = { level = "deny", priority = -1 }
+dead_code = "deny"
 
 ## Configuration for clippy lints.
 [lints.clippy]
