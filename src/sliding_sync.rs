@@ -1397,7 +1397,7 @@ async fn matrix_worker_task(
                                     room_member,
                                 });
                             } else {
-                                log!("User profile request: user {user_id} was not a member of room {room_id}");
+                                // log!("User profile request: user {user_id} was not a member of room {room_id}");
                             }
                         } else {
                             log!("User profile request: client could not get room with ID {room_id}");

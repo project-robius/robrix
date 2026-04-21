@@ -111,7 +111,7 @@ The following table shows which host systems can currently be used to build Robr
    ```
 
 3. Perform the following one-time setup steps:
-   1. If running on a real iOS device, enable your iPhone's Developer Mode:
+   1. If running on a real iOS device, [enable Developer Mode on your device](https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device):
       Settings → Privacy & Security → Developer Mode → turn on Developer Mode and reboot.
    2. Ensure your Apple Developer account is properly set up on your Mac.
    3. Create an empty "dummy" project in Xcode:
