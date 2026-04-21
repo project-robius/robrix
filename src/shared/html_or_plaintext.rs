@@ -61,7 +61,7 @@ script_mod! {
                     color: #f,
                     // line_spacing 1.0 prevents the label's row height from
                     // inflating the pill vertically (pill is single-line).
-                    text_style: MESSAGE_TEXT_STYLE { font_size: (MESSAGE_FONT_SIZE + 1), line_spacing: 1.0 },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: (MESSAGE_FONT_SIZE), line_spacing: 1.0 },
                 }
                 text: "Unknown",
             }
@@ -86,7 +86,6 @@ script_mod! {
     mod.widgets.RobrixHtmlLink = #(RobrixHtmlLink::register_widget(vm)) {
         width: Fit, height: Fit,
         align: Align{ y: 0.5 },
-        cursor: MouseCursor.Hand,
 
         html_link := HtmlLink {
             hover_color: (COLOR_LINK_HOVER)
@@ -143,7 +142,7 @@ script_mod! {
         text_style_fixed: theme.font_code {
             font_size: (MESSAGE_FONT_SIZE)
             line_spacing: (MESSAGE_TEXT_LINE_SPACING)
-            // top_drop: 0.21
+            top_drop: 0.11
         }
         draw_block +: {
             line_color: (MESSAGE_TEXT_COLOR)
@@ -389,11 +388,18 @@ impl Widget for MatrixLinkPill {
             self.redraw(cx);
         }
 
-        if let Hit::FingerUp(fe) = event.hits(cx, self.area()) {
-            if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
+        // Handle hover (to set the cursor) and click in a single hit-test,
+        // avoiding the overhead of event-propagation to all child widgets.
+        match event.hits(cx, self.area()) {
+            Hit::FingerHoverIn(_) | Hit::FingerHoverOver(_) => {
+                if let Some(cursor) = self.cursor {
+                    cx.set_cursor(cursor);
+                }
+            }
+            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
                 if let Some(matrix_id) = self.matrix_id.clone() {
                     cx.widget_action(
-                        self.widget_uid(), 
+                        self.widget_uid(),
                         RobrixHtmlLinkAction::ClickedMatrixLink {
                             matrix_id,
                             via: self.via.clone(),
@@ -403,6 +409,7 @@ impl Widget for MatrixLinkPill {
                     );
                 }
             }
+            _ => (),
         }
     }
 

@@ -32,6 +32,7 @@ use crate::{
         user_profile_cache,
     },
     room::{BasicRoomDetails, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
+    settings::app_settings_data::{AppSettingsAction, ThumbnailMaxHeight},
     shared::{
         avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
@@ -329,16 +330,30 @@ script_mod! {
         }
     }
 
+    // Max height of the image inside an ImageMessage / CondensedImageMessage
+    // timeline item. The "Maximum Image Thumbnail Height" App Setting
+    // overwrites this value on the script heap at runtime (see
+    // `AppPreferences::on_thumbnail_max_height_changed`) and triggers a
+    // script re-apply, so both existing and newly-instantiated image
+    // widgets pick up the new cap.
+    mod.widgets.IMAGE_MSG_MAX_HEIGHT = 200.0
+
     // The view used for each static image-based message event in a room's timeline.
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
     mod.widgets.ImageMessage = mod.widgets.Message {
         body +: {
             content +: {
-                width: Fill,
-                height: Fit
-                padding: Inset{ left: 10.0 }
-
-                message := TextOrImage { }
+                message := TextOrImage {
+                    // Cap the height on the `Image` itself (not the outer view) so
+                    // that `ImageFit.Smallest` scales the texture proportionally
+                    // instead of the outer view just clipping the drawn pixels.
+                    image_view +: { image +: {
+                        height: Fit{max: FitBound.Abs((mod.widgets.IMAGE_MSG_MAX_HEIGHT))}
+                    } }
+                    default_image_view +: { image +: {
+                        height: Fit{max: FitBound.Abs((mod.widgets.IMAGE_MSG_MAX_HEIGHT))}
+                    } }
+                }
                 View {
                     width: Fill,
                     height: Fit,
@@ -358,7 +373,14 @@ script_mod! {
     mod.widgets.CondensedImageMessage = mod.widgets.CondensedMessage {
         body +: {
             content +: {
-                message := TextOrImage { }
+                message := TextOrImage {
+                    image_view +: { image +: {
+                        height: Fit{max: FitBound.Abs((mod.widgets.IMAGE_MSG_MAX_HEIGHT))}
+                    } }
+                    default_image_view +: { image +: {
+                        height: Fit{max: FitBound.Abs((mod.widgets.IMAGE_MSG_MAX_HEIGHT))}
+                    } }
+                }
                 View {
                     width: Fill,
                     height: Fit,
@@ -651,6 +673,30 @@ impl Drop for RoomScreen {
 }
 
 impl ScriptHook for RoomScreen {
+    fn on_after_apply(
+        &mut self,
+        vm: &mut ScriptVm,
+        _apply: &Apply,
+        _scope: &mut Scope,
+        _value: ScriptValue,
+    ) {
+        // RoomScreens created lazily — e.g., when HomeScreen's `AdaptiveView`
+        // first switches to the Mobile variant, or a Dock tab is opened —
+        // inherit their inner `PortalList`'s `ImageMessage` /
+        // `CondensedImageMessage` template from whatever was baked into the
+        // enclosing `Timeline` object at the time that template was captured
+        // (HomeScreen's / Dock's script_mod apply, both of which run before
+        // `AppPreferences::broadcast_all` reassigns the module-level
+        // entries at restore time). Pull the current `mod.widgets.<name>`
+        // into this list's templates map so newly-populated items use the
+        // active cap.
+        vm.with_cx_mut(|cx| {
+            let list_ref = self.portal_list(cx, ids!(timeline.list));
+            list_ref.refresh_widgets_mod_template(cx, live_id!(ImageMessage));
+            list_ref.refresh_widgets_mod_template(cx, live_id!(CondensedImageMessage));
+        });
+    }
+
     fn on_after_reload(&mut self, vm: &mut ScriptVm) {
         vm.with_cx_mut(|cx| {
             if let Some(tl_state) = &mut self.tl_state.as_mut() {
@@ -829,6 +875,12 @@ impl Widget for RoomScreen {
                             tl.link_preview_cache.clear_all_pending_and_failed_requests();
                         }
                     }
+                    continue;
+                }
+
+                // Handle changes to the max thumbnail height preference.
+                if let Some(AppSettingsAction::ThumbnailMaxHeightChanged(new_height)) = action.downcast_ref() {
+                    self.apply_thumbnail_max_height(cx, *new_height);
                     continue;
                 }
 
@@ -1269,6 +1321,53 @@ impl Widget for RoomScreen {
 impl RoomScreen {
     fn room_id(&self) -> Option<&OwnedRoomId> {
         self.room_name_id.as_ref().map(|r| r.room_id())
+    }
+
+    /// Pushes the given [`ThumbnailMaxHeight`] onto every image widget this
+    /// room's timeline currently owns — both the currently-active items AND
+    /// the widgets sitting in PortalList's reusable pool — and refreshes
+    /// the PortalList's captured template objects so that items instantiated
+    /// in the future (or re-applied when pulled back out of the pool) also
+    /// use the new cap.
+    fn apply_thumbnail_max_height(&mut self, cx: &mut Cx, new_thumb: ThumbnailMaxHeight) {
+        let max_px = new_thumb.to_pixels();
+        let list_ref = self.portal_list(cx, ids!(timeline.list));
+
+        // 1. Refresh the PortalList's captured template objects from
+        //    `mod.widgets.ImageMessage` / `.CondensedImageMessage`. The
+        //    module-level templates were just re-assigned by
+        //    `AppPreferences::on_thumbnail_max_height_changed`, so this
+        //    picks up the new cap for both future items and items
+        //    re-applied from the reusable pool on scroll-back.
+        let r1 = list_ref.refresh_widgets_mod_template(cx, live_id!(ImageMessage));
+        let r2 = list_ref.refresh_widgets_mod_template(cx, live_id!(CondensedImageMessage));
+        log!("apply_thumbnail_max_height: refresh_widgets_mod_template: ImageMessage={r1}, CondensedImageMessage={r2}");
+
+        // 2. Immediately push the new cap into every image widget currently
+        //    held by this list — both active entries and pooled widgets —
+        //    so visible thumbnails resize right away rather than waiting
+        //    for the next populate/scroll.
+        let image_refs: Vec<_> = list_ref
+            .borrow()
+            .map(|list| {
+                list.all_items_and_pool()
+                    .filter_map(|(template, widget)| {
+                        if template == live_id!(ImageMessage)
+                            || template == live_id!(CondensedImageMessage)
+                        {
+                            Some(widget.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        for widget in image_refs {
+            widget.text_or_image(cx, ids!(content.message))
+                .set_image_max_height(cx, max_px);
+        }
+        self.redraw(cx);
     }
 
     /// Processes all pending background updates to the currently-shown timeline.
@@ -3639,6 +3738,7 @@ fn populate_message_view(
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
 /// Also populates link previews if a link_preview_ref is provided.
+///
 /// Returns whether the text items were fully drawn.
 fn populate_text_message_content(
     cx: &mut Cx,
