@@ -66,3 +66,24 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check for typos
         uses: crate-ci/typos@master
+
+  check_patches:
+    if: github.event.pull_request.draft == false
+    name: check patches
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Forbid local path patches in Cargo.toml
+        # Local `path = ...` in a [patch.*] block is useful for upstream
+        # debugging but breaks CI and every teammate's checkout when
+        # accidentally committed. Upstream patches must use `git = ...`.
+        run: |
+          awk '
+            /^[[:space:]]*#/ {next}
+            /^[[:space:]]*\[patch/ {in_patch=1; next}
+            /^[[:space:]]*\[/ {in_patch=0}
+            in_patch && /path[[:space:]]*=/ {
+              print "::error file=Cargo.toml,line=" NR "::local path patch found: " $0
+              exit 1
+            }
+          ' Cargo.toml
