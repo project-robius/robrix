@@ -85,7 +85,9 @@ jobs:
             libwayland-dev libxkbcommon-dev
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -114,7 +116,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -136,7 +140,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -159,10 +165,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust stable and nightly
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust (pinned via rust-toolchain.toml)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
+          rustflags: ""
 
       - name: Install Rust nightly
         run: |
@@ -210,7 +216,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
 
       - name: Setup cargo-makepad
         uses: ./.github/actions/setup-cargo-makepad
@@ -243,7 +251,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
 
       - name: Setup cargo-makepad
         uses: ./.github/actions/setup-cargo-makepad
@@ -279,7 +289,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2

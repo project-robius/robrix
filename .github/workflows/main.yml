@@ -48,8 +48,9 @@ jobs:
     runs-on: macos-14  ## avoids having to install Linux deps
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
+          rustflags: ""
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:

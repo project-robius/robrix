@@ -1,2 +1,17 @@
+# Rust Toolchain Pin
+#
+# Pinning to an exact version gives us reproducible CI builds and keeps
+# toolchain upgrades as explicit, deliberate events rather than passive drift.
+#
+# Upgrade process (every 6-8 weeks, or when a feature requires a newer toolchain):
+#   1. Find the latest stable release: https://forge.rust-lang.org/
+#   2. Update `channel` below to the new version.
+#   3. Locally run: `cargo build --profile fast` + `cargo clippy --workspace --all-features`.
+#   4. Fix any new lint hits (edit the code, or adjust [lints.clippy] in Cargo.toml).
+#   5. Open a "chore: bump rust-toolchain to X.Y.Z" PR.
+#
+# CI honors this pin because all workflow files use
+# actions-rust-lang/setup-rust-toolchain@v1, which reads this file.
+
 [toolchain]
-channel = "stable"
+channel = "1.94.0"

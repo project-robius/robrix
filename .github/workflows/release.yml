@@ -85,6 +85,79 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  clippy_report:
+    name: Clippy Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libssl-dev \
+            libsqlite3-dev \
+            pkg-config \
+            llvm \
+            clang \
+            libclang-dev \
+            libxcursor-dev \
+            libx11-dev \
+            libasound2-dev \
+            libpulse-dev \
+            libwayland-dev libxkbcommon-dev
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-clippy-report
+
+      - name: Run clippy
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo clippy --workspace --all-features 2>&1 | tee clippy.log
+
+      - name: Summarize and enforce gate
+        if: always()
+        shell: bash
+        run: |
+          echo "## Clippy Gate for $(git rev-parse --short HEAD)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          # Count warnings via the #[warn(...)] annotation line that clippy
+          # emits for each flagged lint. This is more accurate than counting
+          # "^warning:" header lines because cargo itself can emit meta-warnings
+          # (e.g. "warning: skipping duplicate package ...") that are not lints.
+          warn_count=$(grep -cE '#\[warn\(' clippy.log || true)
+          error_count=$(grep -cE '^error:' clippy.log || true)
+          echo "- Warnings: ${warn_count:-0}" >> $GITHUB_STEP_SUMMARY
+          echo "- Errors: ${error_count:-0}" >> $GITHUB_STEP_SUMMARY
+          if [[ "${warn_count:-0}" -gt 0 ]]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Warning categories" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -oE '#\[warn\([^)]+\)\]' clippy.log | sed -E 's/#\[warn\((.*)\)\]/\1/' | sort | uniq -c | sort -rn >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          # Hard gate: any warning or error here fails this job, which
+          # cascades through create_release.needs to block every build
+          # and publish step. Release cannot ship with dirty clippy state.
+          if [[ "${warn_count:-0}" -gt 0 || "${error_count:-0}" -gt 0 ]]; then
+            echo "::error::Clippy gate failed: ${warn_count:-0} warning(s), ${error_count:-0} error(s). See summary above."
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clippy-log
+          path: clippy.log
+          retention-days: 30
+
   check_tag_version:
     name: Check Release Tag and Cargo.toml Version Consistency
     runs-on: ubuntu-latest
@@ -167,9 +240,9 @@ jobs:
 
   create_release:
     name: Create Release
-    needs: [check_tag_version, determine_matrices]
+    needs: [check_tag_version, determine_matrices, clippy_report]
     if: >-
-      ${{ always() && (
+      ${{ always() && needs.clippy_report.result == 'success' && (
         (github.event_name == 'push' && needs.check_tag_version.result == 'success') ||
         (github.event_name == 'workflow_dispatch' &&
           github.event.inputs.create_release == 'true' &&
@@ -265,7 +338,9 @@ jobs:
             libwayland-dev libxkbcommon-dev
 
       - name: Install Rust Stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
 
       - name: Package (desktop)
         uses: project-robius/makepad-packaging-action@v1
@@ -295,7 +370,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust Stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
 
       - name: Package (macos)
         uses: project-robius/makepad-packaging-action@v1
@@ -331,7 +408,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust Stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
 
       - name: Package (windows)
         uses: project-robius/makepad-packaging-action@v1
@@ -358,7 +437,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust Stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
 
       - name: Package (android)
         uses: project-robius/makepad-packaging-action@v1
@@ -385,7 +466,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust Stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
 
       - name: Package (iOS)
         uses: project-robius/makepad-packaging-action@v1
