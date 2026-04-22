@@ -667,27 +667,32 @@ impl RoomInputBar {
             let (sender, receiver) = std::sync::mpsc::channel();
             self.pending_file_load = Some(receiver);
 
-            // Spawn background thread to generate thumbnail (for images)
+            // Spawn background thread to read file and generate thumbnail (for images)
             let path_clone = selected_file_path.clone();
             let mime_clone = mime.clone();
             cx.spawn_thread(move || {
+                // Read the file data in the background thread (not on UI thread)
+                let file_data = match std::fs::read(&path_clone) {
+                    Ok(data) => data,
+                    Err(e) => {
+                        makepad_widgets::error!("Failed to read file: {e}");
+                        if sender.send(None).is_err() {
+                            makepad_widgets::error!("Failed to send error to UI: receiver dropped");
+                        }
+                        SignalToUI::set_ui_signal();
+                        return;
+                    }
+                };
+
                 // Generate thumbnail for images
                 let (thumbnail, dimensions) = if crate::image_utils::is_displayable_image(mime_clone.as_ref()) {
-                    match std::fs::read(&path_clone) {
-                        Ok(data) => {
-                            match crate::image_utils::generate_thumbnail(&data) {
-                                Ok((thumb_data, width, height)) => (
-                                    Some(ThumbnailData { data: thumb_data, width, height }),
-                                    Some((width, height))
-                                ),
-                                Err(e) => {
-                                    makepad_widgets::error!("Failed to generate thumbnail: {e}");
-                                    (None, None)
-                                }
-                            }
-                        }
+                    match crate::image_utils::generate_thumbnail(&file_data) {
+                        Ok((thumb_data, width, height)) => (
+                            Some(ThumbnailData { data: thumb_data, width, height }),
+                            Some((width, height))
+                        ),
                         Err(e) => {
-                            makepad_widgets::error!("Failed to read file for thumbnail: {e}");
+                            makepad_widgets::error!("Failed to generate thumbnail: {e}");
                             (None, None)
                         }
                     }
@@ -701,6 +706,7 @@ impl RoomInputBar {
                         file_size,
                         file_path: path_clone,
                     },
+                    data: file_data,
                     thumbnail,
                     dimensions,
                 };
@@ -962,9 +968,10 @@ enum ShowEditingPaneBehavior {
 }
 
 /// Converts `FileLoadedData` from background thread to `FileData` for the modal.
+///
+/// The file data has already been read in the background thread,
+/// so this is a cheap conversion that doesn't block the UI thread.
 fn convert_loaded_data_to_file_data(loaded: FileLoadedData) -> FileData {
-    // Read the file data from the path
-    let data = std::fs::read(&loaded.metadata.file_path).unwrap_or_default();
     let name = loaded.metadata.file_path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -974,7 +981,7 @@ fn convert_loaded_data_to_file_data(loaded: FileLoadedData) -> FileData {
         path: loaded.metadata.file_path,
         name,
         mime_type: loaded.metadata.mime.to_string(),
-        data,
+        data: loaded.data,
         size: loaded.metadata.file_size,
         thumbnail: loaded.thumbnail,
     }

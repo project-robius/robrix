@@ -207,6 +207,8 @@ pub struct FilePreviewerMetaData {
 pub struct FileLoadedData {
     /// Metadata about the file (path, size, MIME type).
     pub metadata: FilePreviewerMetaData,
+    /// The raw file data read from disk.
+    pub data: Vec<u8>,
     /// Optional thumbnail for image files.
     pub thumbnail: Option<ThumbnailData>,
     /// Optional dimensions for image/video files, width and height in pixels.

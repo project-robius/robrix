@@ -1722,9 +1722,9 @@ async fn matrix_worker_task(
                     // TODO: Add proper reply support for attachments
                     let _ = replied_to; // Suppress unused warning for now
 
-                    // Parse MIME type
+                    // Parse MIME type, falling back to octet-stream for unknown types
                     let content_type: Mime = file_data.mime_type.parse()
-                        .unwrap_or_else(|_| "application/octet-stream".parse().unwrap());
+                        .unwrap_or(mime::APPLICATION_OCTET_STREAM);
 
                     // Create a progress observable to track upload progress
                     let send_progress: SharedObservable<matrix_sdk::TransmissionProgress> = Default::default();
