@@ -153,7 +153,7 @@ pub fn plaintext_body_of_timeline_item(
                     sticker.content().body.clone()
                 }
                 MsgLikeKind::Poll(poll_state) => {
-                    format!("[Poll]: {}", 
+                    format!("[Poll]: {}",
                         poll_state.fallback_text().unwrap_or_else(|| poll_state.results().question)
                     )
                 }
@@ -201,10 +201,10 @@ pub fn plaintext_body_of_timeline_item(
                 .format_with(&utils::get_or_fetch_event_sender(event_tl_item, None), false)
         }
         TimelineItemContent::FailedToParseMessageLike { event_type, error } => {
-            format!("Failed to parse {} message. Error: {}", event_type, error)
+            format!("Failed to parse {} message. Error: {}", event_type.to_string(), error.to_string())
         }
         TimelineItemContent::FailedToParseState { event_type, error, state_key } => {
-            format!("Failed to parse {} state; key: {}. Error: {}", event_type, state_key, error)
+            format!("Failed to parse {} state; key: {}. Error: {}", event_type.to_string(), state_key.to_string(), error.to_string())
         }
         TimelineItemContent::CallInvite => String::from("[Call Invitation]"),
         TimelineItemContent::RtcNotification => String::from("[RTC Call Notification]"),
