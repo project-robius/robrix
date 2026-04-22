@@ -2,8 +2,10 @@
 //! and cancel/retry buttons.
 
 use makepad_widgets::*;
+use matrix_sdk::ruma::OwnedRoomId;
 use tokio::task::AbortHandle;
 
+use crate::home::room_screen::RoomScreenProps;
 use crate::shared::file_upload_modal::FileData;
 use crate::shared::progress_bar::ProgressBarWidgetRefExt;
 
@@ -117,7 +119,10 @@ pub enum UploadProgressViewAction {
     /// User cancelled the upload.
     Cancelled,
     /// User requested retry of a failed upload.
-    Retry(FileData),
+    Retry {
+        file_data: FileData,
+        room_id: OwnedRoomId,
+    },
 }
 
 /// A widget showing upload progress with cancel/retry functionality.
@@ -149,9 +154,13 @@ impl Widget for UploadProgressView {
             // Handle retry button
             if self.button(cx, ids!(retry_button)).clicked(actions) {
                 if let UploadViewState::Error { file_data, .. } = &self.state {
-                    let file_data = file_data.clone();
-                    cx.widget_action(self.widget_uid(), UploadProgressViewAction::Retry(file_data));
-                    self.hide(cx);
+                    if let Some(room_screen_props) = scope.props.get::<RoomScreenProps>() {
+                        let room_id = room_screen_props.room_name_id.room_id().clone();
+                        cx.widget_action(self.widget_uid(), UploadProgressViewAction::Retry {
+                            file_data: file_data.clone(),
+                            room_id,
+                        });
+                    }
                 }
             }
         }

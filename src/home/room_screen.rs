@@ -44,7 +44,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputAction;
 
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, upload_progress::UploadProgressViewAction};
 
 /// The maximum number of timeline items to search through
 /// when looking for a particular event.
@@ -829,6 +829,23 @@ impl Widget for RoomScreen {
                             tl.link_preview_cache.clear_all_pending_and_failed_requests();
                         }
                     }
+                    continue;
+                }
+
+                // Handle retry action from upload progress view.
+                if let UploadProgressViewAction::Retry { file_data, room_id } = action.as_widget_action().cast() {
+                    let Some(tl) = self.tl_state.as_ref() else { continue };
+                    // Only handle if this action is for the current room.
+                    if tl.kind.room_id() != &room_id { continue };
+                    let room_input_bar = self.view.room_input_bar(cx, ids!(room_input_bar));
+                    room_input_bar.show_upload_progress(cx, &file_data.name);
+                    submit_async_request(MatrixRequest::SendAttachment {
+                        timeline_kind: tl.kind.clone(),
+                        file_data,
+                        replied_to: None,
+                        #[cfg(feature = "tsp")]
+                        sign_with_tsp: room_input_bar.is_tsp_signing_enabled(cx),
+                    });
                     continue;
                 }
 
