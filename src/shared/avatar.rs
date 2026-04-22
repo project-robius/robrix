@@ -103,9 +103,9 @@ impl Widget for Avatar {
             Hit::FingerDown(_fde) => {
                 cx.set_key_focus(area);
             }
-            Hit::FingerUp(fue) => if fue.is_over && fue.is_primary_hit() && fue.was_tap() {
+            Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() && fue.was_tap() => {
                 cx.widget_action(
-                    widget_uid, 
+                    widget_uid,
                     ShowUserProfileAction::ShowUserProfile(info),
                 );
             }

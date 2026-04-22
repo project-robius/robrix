@@ -423,8 +423,8 @@ pub fn stringify_pagination_error(
             return format!("Failed to load earlier messages in \"{room_name}\": \
                 pagination is not supported in this timeline focus mode.");
         }
-        TimelineError::PaginationError(PaginationError::Paginator(PaginatorError::SdkError(sdk_error)))
-        | TimelineError::EventCacheError(EventCacheError::BackpaginationError(sdk_error)) =>
+        TimelineError::PaginationError(PaginationError::Pagination(PaginatorError::SdkError(sdk_error)))
+        | TimelineError::EventCacheError(EventCacheError::PaginationError(sdk_error)) =>
         {
             if let Some(message) = match_sdk_error(sdk_error) {
                 return message; 
@@ -694,7 +694,7 @@ pub fn ends_with_href(text: &str) -> bool {
     let mut substr = text.trim_end();
     // Search backwards for a single quote, double quote, or an equals sign.
     match substr.as_bytes().last() {
-        Some(b'\'' | b'"') => {
+        Some(b'\'' | b'"')
             if substr
                 .get(.. substr.len().saturating_sub(1))
                 .map(|s| {
@@ -702,11 +702,8 @@ pub fn ends_with_href(text: &str) -> bool {
                     substr.as_bytes().last() == Some(&b'=')
                 })
                 .unwrap_or(false)
-            {
-                substr = &substr[..substr.len().saturating_sub(1)];
-            } else {
-                return false;
-            }
+        => {
+            substr = &substr[..substr.len().saturating_sub(1)];
         }
         Some(b'=') => {
             substr = &substr[..substr.len().saturating_sub(1)];

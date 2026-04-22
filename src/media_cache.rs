@@ -2,7 +2,7 @@ use std::{ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, OwnedMxcUri}, Error, HttpError};
-use reqwest::StatusCode;
+use matrix_sdk::reqwest::StatusCode;
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
 
 /// The value type in the media cache, one per Matrix URI.
@@ -165,6 +165,30 @@ impl MediaCache {
             update_sender: self.timeline_update_sender.clone(),
         });
         post_request_retval
+    }
+
+    /// Removes all `Requested` and `Failed` entries from the media cache,
+    /// allowing them to be re-fetched.
+    ///
+    /// This should be called when the app transitions from offline back to online,
+    /// because any in-flight requests that were submitted while offline have likely
+    /// failed, leaving stale entries that permanently block re-fetching.
+    pub fn clear_all_pending_and_failed_requests(&mut self) {
+        self.cache.retain(|_, value| {
+            // Remove `Requested`/`Failed` sub-entries, keeping `Loaded` ones.
+            if let Some(ref entry_ref) = value.full_file {
+                if !matches!(*entry_ref.lock().unwrap(), MediaCacheEntry::Loaded(_)) {
+                    value.full_file = None;
+                }
+            }
+            if let Some((ref entry_ref, _)) = value.thumbnail {
+                if !matches!(*entry_ref.lock().unwrap(), MediaCacheEntry::Loaded(_)) {
+                    value.thumbnail = None;
+                }
+            }
+            // Keep the top-level entry only if at least one sub-entry remains.
+            value.full_file.is_some() || value.thumbnail.is_some()
+        });
     }
 
     /// Removes a specific media format from the cache for the given MXC URI.

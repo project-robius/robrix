@@ -36,7 +36,7 @@ use crate::{
         collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory},
         jump_to_bottom_button::UnreadMessageCount,
         popup_list::{PopupKind, enqueue_popup_notification},
-        room_filter_input_bar::RoomFilterAction,
+        room_filter_input_bar::MainFilterAction,
     },
     sliding_sync::{MatrixLinkAction, MatrixRequest, PaginationDirection, TimelineKind, submit_async_request},
     space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction}, utils::{RoomNameId, VecDiff},
@@ -651,10 +651,9 @@ impl RoomsList {
                             continue;
                         }
                         enqueue_popup_notification(
-                            format!("{} was changed from {} to {}.",
+                            format!("Note: \"{}\" is now a {} room.",
                                 room.room_name_id,
-                                if room.is_direct { "direct" } else { "regular" },
-                                if is_direct { "direct" } else { "regular" }
+                                if is_direct { "direct" } else { "non-direct" },
                             ),
                             PopupKind::Info,
                             Some(5.0),
@@ -792,8 +791,7 @@ impl RoomsList {
                         self.invited_rooms_indexes.first_room_index + invited_index
                     }
                     else { continue };
-                    // Scroll to just above the room to make it more obviously visible.
-                    portal_list.smooth_scroll_to(cx, portal_list_index.saturating_sub(1), speed, Some(15));
+                    portal_list.smooth_scroll_to(cx, portal_list_index, speed, Some(15), 10.0);
                 }
                 RoomsListUpdate::SpaceRequestSender(sender) => {
                     self.space_request_sender = Some(sender);
@@ -1263,7 +1261,9 @@ impl Widget for RoomsList {
         // Second, handle any other actions that came from other widgets/components.
         if let Event::Actions(actions) = event {
             for action in actions {
-                if let RoomFilterAction::Changed(keywords) = action.as_widget_action().cast_ref() {
+                // Only handle filter changes from the home screen's filter bar,
+                // not from any other RoomFilterInputBar instance (e.g., SpaceLobbyScreen's).
+                if let Some(MainFilterAction::Changed(keywords)) = action.downcast_ref() {
                     self.regenerate_display_filter_and_sort_fn(keywords);
                     self.update_displayed_rooms(cx, true);
                     continue;

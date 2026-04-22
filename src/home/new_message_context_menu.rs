@@ -301,7 +301,12 @@ impl Widget for NewMessageContextMenu {
             self.visible = false;
         };
 
-        self.view.draw_walk(cx, scope, walk)
+        let step = self.view.draw_walk(cx, scope, walk);
+        if self.visible {
+            let main_content_area = self.view(cx, ids!(main_content)).area();
+            cx.block_scrolling_except_within(main_content_area);
+        }
+        step
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
@@ -314,7 +319,6 @@ impl Widget for NewMessageContextMenu {
         // 1. The back navigational gesture/action occurs (e.g., Back on Android),
         // 2. The escape key is pressed if this menu has key focus,
         // 3. The user clicks/touches outside the main_content view area.
-        // 4. The user scrolls anywhere.
         let close_menu = {
             event.back_pressed()
             || match event.hits_with_capture_overload(cx, area, true) {
@@ -331,7 +335,6 @@ impl Widget for NewMessageContextMenu {
                 Hit::FingerUp(fue) if fue.is_over => {
                     !self.view(cx, ids!(main_content)).area().rect(cx).contains(fue.abs)
                 }
-                Hit::FingerScroll(_) => true,
                 _ => false,
             }
         };
@@ -590,6 +593,7 @@ impl NewMessageContextMenu {
         self.visible = false;
         self.details = None;
         cx.revert_key_focus();
+        cx.unblock_scrolling();
         self.redraw(cx);
     }
 }

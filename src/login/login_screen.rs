@@ -11,8 +11,9 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-
-    mod.widgets.IMG_APP_LOGO = crate_resource("self://resources/robrix_logo_alpha.png")
+    mod.widgets.IMG_APP_LOGO = crate_resource("self://resources/icon_512.png")
+    mod.widgets.ICON_EYE_OPEN   = crate_resource("self://resources/icons/eye_open.svg")
+    mod.widgets.ICON_EYE_CLOSED = crate_resource("self://resources/icons/eye_closed.svg")
 
     mod.widgets.SsoButton = RoundedView {
         width: Fit,
@@ -33,10 +34,10 @@ script_mod! {
         draw_bg +: {
             mask: instance(0.0)
             pixel: fn() {
-                let color = self.get_color();
-                let gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
-                let grayed = mix(color, vec4(gray, gray, gray, color.a), self.mask);
-                return grayed;
+                let color = mix(self.get_color(), #3, self.async_load)
+                let gray = dot(color.rgb, vec3(0.299, 0.587, 0.114))
+                let grayed = mix(color, vec4(gray, gray, gray, color.a), self.mask)
+                return Pal.premul(vec4(grayed.xyz, grayed.w * self.opacity))
             }
         }
     }
@@ -50,28 +51,28 @@ script_mod! {
         show_bg: true,
         draw_bg +: {
             color: COLOR_SECONDARY
-            // color: COLOR_PRIMARY // TODO: once Makepad supports `Fill {max: 375}`, change this back to COLOR_PRIMARY
         }
 
         ScrollYView {
             width: Fill, height: Fill,
-            // Note: *do NOT* vertically center this, it will break scrolling.
-            align: Align{x: 0.5}
+            flow: Down, // Required for vertical scrolling to work.
+            align: Align{x: 0.5, y: 0.5}
             show_bg: true,
             draw_bg.color: (COLOR_SECONDARY)
-            // draw_bg.color: (COLOR_PRIMARY) // TODO: once Makepad supports `Fill {max: 375}`, change this back to COLOR_PRIMARY
-   
+
             // allow the view to be scrollable but hide the actual scroll bar
             scroll_bars: {
+                show_scroll_x: false, show_scroll_y: true,
                 scroll_bar_y: {
                     bar_size: 0.0
                     min_handle_size: 0.0
+                    drag_scrolling: true
                 }
             }
 
             RoundedView {
-                margin: Inset{top: 40, bottom: 40}
-                width: Fill // TODO: once Makepad supports it, use `Fill {max: 375}`
+                margin: Inset{top: 50, bottom: 50}
+                width: Fill
                 height: Fit
                 align: Align{x: 0.5, y: 0.5}
                 flow: Overlay,
@@ -83,12 +84,10 @@ script_mod! {
                 }
 
                 View {
-                    width: Fill // TODO: once Makepad supports it, use `Fill {max: 375}`
+                    width: Fill
                     height: Fit
                     flow: Down
                     align: Align{x: 0.5, y: 0.5}
-                    padding: Inset{top: 30, bottom: 30}
-                    margin: Inset{top: 40, bottom: 40}
                     spacing: 15.0
 
                     logo_image := Image {
@@ -115,12 +114,58 @@ script_mod! {
                         empty_text: "User ID"
                     }
 
-                    password_input := RobrixTextInput {
+                    View {
                         width: 275, height: Fit
-                        flow: Right, // do not wrap
-                        padding: 10,
-                        empty_text: "Password"
-                        is_password: true,
+                        flow: Overlay
+                        align: Align{x: 1.0, y: 0.5}
+
+                        password_input := RobrixTextInput {
+                            width: Fill, height: Fit
+                            flow: Right, // do not wrap
+                            padding: Inset{top: 10, bottom: 10, left: 10, right: 38}
+                            empty_text: "Password"
+                            is_password: true,
+                        }
+
+                        View {
+                            width: 38, height: Fill
+                            align: Align{x: 0.5, y: 0.5}
+
+                            show_password_button := RobrixNeutralIconButton {
+                                width: Fit, height: Fit,
+                                align: Align{x: 0.5, y: 0.5}
+                                padding: 5
+                                spacing: 0
+                                margin: 0
+                                draw_bg +: {
+                                    color: (COLOR_SECONDARY * 1.05)
+                                }
+                                draw_icon +: {
+                                    svg: (mod.widgets.ICON_EYE_CLOSED),
+                                    color: #8C8C8C,
+                                }
+                                icon_walk: Walk{width: 18, height: 18, margin: 0}
+                                text: ""
+                            }
+
+                            hide_password_button := RobrixNeutralIconButton {
+                                visible: false,
+                                align: Align{x: 0.5, y: 0.5}
+                                width: Fit, height: Fit,
+                                padding: 5
+                                spacing: 0
+                                margin: 0
+                                draw_bg +: {
+                                    color: (COLOR_SECONDARY * 1.05)
+                                }
+                                draw_icon +: {
+                                    svg: (mod.widgets.ICON_EYE_OPEN),
+                                    color: #8C8C8C,
+                                }
+                                icon_walk: Walk{width: 18, height: 18, margin: 0}
+                                text: ""
+                            }
+                        }
                     }
 
                     View {
@@ -258,8 +303,6 @@ script_mod! {
                 // The modal that pops up to display login status messages,
                 // such as when the user is logging in or when there is an error.
                 login_status_modal := Modal {
-                    // width: Fit, height: Fit,
-                    // align: Align{x: 0.5, y: 0.5},
                     can_dismiss: false,
                     content +: {
                         login_status_modal_inner := mod.widgets.LoginStatusModal {}
@@ -276,6 +319,8 @@ static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-fo
 pub struct LoginScreen {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
+    /// Whether the password field is currently showing plaintext.
+    #[rust] password_visible: bool,
     /// Boolean to indicate if the SSO login process is still in flight
     #[rust] sso_pending: bool,
     /// The URL to redirect to after logging in with SSO.
@@ -304,6 +349,17 @@ impl MatchEvent for LoginScreen {
 
         let login_status_modal = self.view.modal(cx, ids!(login_status_modal));
         let login_status_modal_inner = self.view.login_status_modal(cx, ids!(login_status_modal_inner));
+
+        // Handle toggling password visibility
+        let show_pw_button = self.view.button(cx, ids!(show_password_button));
+        let hide_pw_button = self.view.button(cx, ids!(hide_password_button));
+        if show_pw_button.clicked(actions) || hide_pw_button.clicked(actions) {
+            self.password_visible = !self.password_visible;
+            password_input.toggle_is_password(cx);
+            show_pw_button.set_visible(cx, !self.password_visible);
+            hide_pw_button.set_visible(cx, self.password_visible);
+            self.redraw(cx);
+        }
 
         if signup_button.clicked(actions) {
             log!("Opening URL \"{}\"", MATRIX_SIGN_UP_URL);

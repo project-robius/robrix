@@ -21,12 +21,13 @@ use matrix_sdk::{
     }
 };
 use matrix_sdk_ui::timeline::{
-    self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, MemberProfileChange, MembershipChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, LiveLocationState, MemberProfileChange, MembershipChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}, owned_room_id};
 
+use matrix_sdk_ui::sync_service::State;
 use crate::{
-    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::{RoomsListAction, RoomsListRef}, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::{RoomsListAction, RoomsListRef}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
@@ -53,7 +54,12 @@ use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new
 const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 100;
 
 /// The max size (width or height) of a blurhash image to decode.
-const BLURHASH_IMAGE_MAX_SIZE: u32 = 500;
+/// Blurhash is a blurred placeholder — it is designed to be decoded at a small
+/// size and then stretched by the GPU. Decoding at large sizes is extremely
+/// expensive (CPU-bound, O(width*height)) and completely unnecessary since the
+/// result is inherently blurry. A 32×32 decode is ~240x faster than 500×500
+/// while being visually indistinguishable when scaled up.
+const BLURHASH_IMAGE_MAX_SIZE: u32 = 32;
 
 static UNNAMED_ROOM: &str = "Unnamed Room";
 
@@ -123,6 +129,8 @@ script_mod! {
 
         thread_summary_latest := MessageHtml {
             flow: Right,
+            max_lines: 2
+            text_overflow: Ellipsis
         }
     }
 
@@ -252,6 +260,8 @@ script_mod! {
                         flow: Right, // do not wrap
                         padding: 0,
                         margin: Inset{bottom: 9.0, top: 20.0, right: 10.0,}
+                        max_lines: 1
+                        text_overflow: Ellipsis
                         draw_text +: {
                             text_style: USERNAME_TEXT_STYLE {},
                             color: (USERNAME_TEXT_COLOR)
@@ -517,6 +527,11 @@ script_mod! {
 
             auto_tail: true, // set to `true` to lock the view to the last item.
             max_pull_down: 0.0, // set to `0.0` to disable the pulldown bounce animation.
+            // TODO: enable `reuse_items: true` once Makepad's Html/TextFlow widget
+            //   properly resets all internal state during `script_apply(Reload)`.
+            //   Currently, stale TextFlow layout state (particularly related to
+            //   list items) leaks through when a widget is recycled, causing
+            //   excessive whitespace in HTML messages with `<ul>`/`<ol>` lists.
 
             // Below, we must place all of the possible templates (views) that can be used in the portal list.
             Message := mod.widgets.Message {}
@@ -803,6 +818,18 @@ impl Widget for RoomScreen {
                             None,
                         );
                     }
+                }
+
+                // When transitioning from offline to online, clear stale `Requested`/`Failed`
+                // entries from per-room caches so they can be re-fetched.
+                if let Some(RoomsListHeaderAction::StateUpdate(new_state)) = action.downcast_ref() {
+                    if !matches!(new_state, State::Offline) {
+                        if let Some(tl) = self.tl_state.as_mut() {
+                            tl.media_cache.clear_all_pending_and_failed_requests();
+                            tl.link_preview_cache.clear_all_pending_and_failed_requests();
+                        }
+                    }
+                    continue;
                 }
 
                 // Handle the highlight animation for a message.
@@ -1139,6 +1166,15 @@ impl Widget for RoomScreen {
                                             utd,
                                             item_drawn_status,
                                         ),
+                                        MsgLikeKind::LiveLocation(live_loc) => populate_small_state_event(
+                                            cx,
+                                            list,
+                                            item_id,
+                                            &tl_state.kind,
+                                            event_tl_item,
+                                            live_loc,
+                                            item_drawn_status,
+                                        ),
                                         MsgLikeKind::Other(other) => populate_small_state_event(
                                             cx,
                                             list,
@@ -1415,11 +1451,7 @@ impl RoomScreen {
                         // NOTE: this code was copied from the `MessageAction::JumpToRelated` handler;
                         //       we should deduplicate them at some point.
                         let speed = 50.0;
-                        // Scroll to the message right above the replied-to message.
-                        // FIXME: `smooth_scroll_to` should accept a scroll offset parameter too,
-                        //       so that we can scroll to the replied-to message and have it
-                        //       appear beneath the top of the viewport.
-                        portal_list.smooth_scroll_to(cx, index.saturating_sub(1), speed, None);
+                        portal_list.smooth_scroll_to(cx, index, speed, None, 10.0);
                         // start highlight animation.
                         tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
                             item_id: index
@@ -2024,9 +2056,9 @@ impl RoomScreen {
                         );
                         continue;
                     };
-                    // Get the original JSON from the event and pretty-print it
-                    let original_json: Option<String> = event_tl_item
-                        .original_json()
+                    // Get the latest JSON from the event and pretty-print it
+                    let latest_json: Option<String> = event_tl_item
+                        .latest_json()
                         .and_then(|raw_event| serde_json::to_value(raw_event).ok())
                         .and_then(|value| serde_json::to_string_pretty(&value).ok());
 
@@ -2035,7 +2067,7 @@ impl RoomScreen {
                     cx.action(super::event_source_modal::EventSourceModalAction::Open {
                         room_id: tl.kind.room_id().clone(),
                         event_id,
-                        original_json,
+                        latest_json,
                     });
                 }
                 MessageAction::JumpToRelated(details) => {
@@ -2152,11 +2184,7 @@ impl RoomScreen {
         if let Some(index) = related_msg_tl_index {
             // log!("The related message {replied_to_event} was immediately found in room {}, scrolling to from index {reply_message_item_id} --> {index} (first ID {}).", tl.kind.room_id(), portal_list.first_id());
             let speed = 50.0;
-            // Scroll to the message right *before* the replied-to message.
-            // FIXME: `smooth_scroll_to` should accept a "scroll offset" (first scroll) parameter too,
-            //       so that we can scroll to the replied-to message and have it
-            //       appear beneath the top of the viewport.
-            portal_list.smooth_scroll_to(cx, index.saturating_sub(1), speed, None);
+            portal_list.smooth_scroll_to(cx, index, speed, None, 10.0);
             // start highlight animation.
             tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
                 item_id: index
@@ -3060,8 +3088,15 @@ fn populate_message_view(
     // Sometimes we need to call this up-front, so we save the result in this variable
     // to avoid having to call it twice.
     let mut set_username_and_get_avatar_retval = None;
+    let mut has_room_mention = false;
     let (item, used_cached_item) = match &msg_like_content.kind {
         MsgLikeKind::Message(msg) => {
+            let room_mention_room_id = if msg.mentions().is_some_and(|m| m.room) {
+                has_room_mention = true;
+                Some(timeline_kind.room_id())
+            } else {
+                None
+            };
             match msg.msgtype() {
                 MessageType::Text(TextMessageEventContent { body, formatted, .. }) => {
                     has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
@@ -3083,6 +3118,7 @@ fn populate_message_view(
                             &html_or_plaintext_ref,
                             body,
                             formatted.as_ref(),
+                            room_mention_room_id,
                             Some(&mut link_preview_ref),
                             Some(media_cache),
                             Some(link_preview_cache),
@@ -3106,11 +3142,20 @@ fn populate_message_view(
                     } else {
                         let html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
                         // Apply gray color to all text styles for notice messages.
+                        // This covers both rendering paths in HtmlOrPlaintext: the rich
+                        // `html_view.html` widget (used when the message has an HTML body)
+                        // and the `plaintext_view.pt_label` (used for plain-text notices).
                         let mut html_widget = html_or_plaintext_ref.html(cx, ids!(html_view.html));
                         script_apply_eval!(cx, html_widget, {
                             font_color: mod.widgets.COLOR_MESSAGE_NOTICE_TEXT,
                             draw_block +: {
                                 quote_fg_color: mod.widgets.COLOR_MESSAGE_NOTICE_TEXT,
+                            }
+                        });
+                        let mut pt_label = html_or_plaintext_ref.label(cx, ids!(plaintext_view.pt_label));
+                        script_apply_eval!(cx, pt_label, {
+                            draw_text +: {
+                                color: mod.widgets.COLOR_MESSAGE_NOTICE_TEXT
                             }
                         });
                         let mut link_preview_ref =
@@ -3120,6 +3165,7 @@ fn populate_message_view(
                             &html_or_plaintext_ref,
                             body,
                             formatted.as_ref(),
+                            room_mention_room_id,
                             Some(&mut link_preview_ref),
                             Some(media_cache),
                             Some(link_preview_cache),
@@ -3166,6 +3212,7 @@ fn populate_message_view(
                                 format: MessageFormat::Html,
                                 body: formatted,
                             }),
+                            room_mention_room_id,
                             Some(&mut link_preview_ref),
                             Some(media_cache),
                             Some(link_preview_cache),
@@ -3217,6 +3264,7 @@ fn populate_message_view(
                             &html_or_plaintext_ref,
                             &body,
                             formatted.as_ref(),
+                            room_mention_room_id,
                             Some(&mut link_preview_ref),
                             Some(media_cache),
                             Some(link_preview_cache),
@@ -3367,6 +3415,7 @@ fn populate_message_view(
                             &html_or_plaintext_ref,
                             &verification.body,
                             Some(&formatted),
+                            room_mention_room_id,
                             Some(&mut link_preview_ref),
                             Some(media_cache),
                             Some(link_preview_cache),
@@ -3528,7 +3577,7 @@ fn populate_message_view(
             pinned_events,
             has_html_body,
         ),
-        should_be_highlighted: event_tl_item.is_highlighted(),
+        should_be_highlighted: event_tl_item.is_highlighted() || has_room_mention,
     };
     item.as_message().set_data(message_details);
 
@@ -3640,10 +3689,27 @@ fn populate_text_message_content(
     message_content_widget: &HtmlOrPlaintextRef,
     body: &str,
     formatted_body: Option<&FormattedBody>,
+    room_mention_room_id: Option<&OwnedRoomId>,
     link_preview_ref: Option<&mut LinkPreviewRef>,
     media_cache: Option<&mut MediaCache>,
     link_preview_cache: Option<&mut LinkPreviewCache>,
 ) -> bool {
+    /// If this is a room mention, replace `@room` text in `html` with a pill
+    /// link to the room so it renders as a red room pill with the room's avatar.
+    fn apply_room_mention<'a>(html: Cow<'a, str>, room_id: Option<&OwnedRoomId>) -> Cow<'a, str> {
+        if let Some(room_id) = room_id {
+            // Only replace @room if it's NOT already inside an <a> tag
+            // (some clients pre-link @room in the formatted_body).
+            if html.contains("@room") && !html.contains("\">@room</a>") {
+                return Cow::Owned(html.replace(
+                    "@room",
+                    &format!("<a href=\"https://matrix.to/#/{room_id}\">@room</a>"),
+                ));
+            }
+        }
+        html
+    }
+
     // The message was HTML-formatted rich text.
     let mut links = Vec::new();
     if let Some(fb) = formatted_body.as_ref()
@@ -3654,12 +3720,14 @@ fn populate_text_message_content(
             true,
             Some(&mut links),
         );
-        message_content_widget.show_html(cx, linkified_html);
+        let html = apply_room_mention(linkified_html, room_mention_room_id);
+        message_content_widget.show_html(cx, html);
     }
     // The message was non-HTML plaintext.
     else {
         let linkified_html = utils::linkify_get_urls(body, false, Some(&mut links));
-        match linkified_html {
+        let html = apply_room_mention(linkified_html, room_mention_room_id);
+        match html {
             Cow::Owned(linkified_html) => message_content_widget.show_html(cx, &linkified_html),
             Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(cx, plaintext),
         }
@@ -3840,8 +3908,9 @@ fn populate_file_message_content(
         .map(|bytes| format!("  ({})", ByteSize::b(bytes.into())))
         .unwrap_or_default();
     let caption = file_content.formatted_caption()
+        .filter(|fb| fb.format == MessageFormat::Html)
         .map(|fb| format!("<br><i>{}</i>", fb.body))
-        .or_else(|| file_content.caption().map(|c| format!("<br><i>{c}</i>")))
+        .or_else(|| file_content.caption().map(|c| format!("<br><i>{}</i>", htmlize::escape_text(c))))
         .unwrap_or_default();
 
     // TODO: add a button to download the file
@@ -3872,7 +3941,7 @@ fn populate_audio_message_content(
                 .unwrap_or_default(),
             info.mimetype
                 .as_ref()
-                .map(|m| format!("  {m},"))
+                .map(|m| format!("  {},", htmlize::escape_text(m)))
                 .unwrap_or_default(),
             info.size
                 .map(|bytes| format!("  ({}),", ByteSize::b(bytes.into())))
@@ -3880,8 +3949,9 @@ fn populate_audio_message_content(
         ))
         .unwrap_or_default();
     let caption = audio.formatted_caption()
+        .filter(|fb| fb.format == MessageFormat::Html)
         .map(|fb| format!("<br><i>{}</i>", fb.body))
-        .or_else(|| audio.caption().map(|c| format!("<br><i>{c}</i>")))
+        .or_else(|| audio.caption().map(|c| format!("<br><i>{}</i>", htmlize::escape_text(c))))
         .unwrap_or_default();
 
     // TODO: add an audio to play the audio file
@@ -3913,7 +3983,7 @@ fn populate_video_message_content(
                 .unwrap_or_default(),
             info.mimetype
                 .as_ref()
-                .map(|m| format!("  {m},"))
+                .map(|m| format!("  {},", htmlize::escape_text(m)))
                 .unwrap_or_default(),
             info.size
                 .map(|bytes| format!("  ({}),", ByteSize::b(bytes.into())))
@@ -3924,8 +3994,9 @@ fn populate_video_message_content(
         ))
         .unwrap_or_default();
     let caption = video.formatted_caption()
+        .filter(|fb| fb.format == MessageFormat::Html)
         .map(|fb| format!("<br><i>{}</i>", fb.body))
-        .or_else(|| video.caption().map(|c| format!("<br><i>{c}</i>")))
+        .or_else(|| video.caption().map(|c| format!("<br><i>{}</i>", htmlize::escape_text(c))))
         .unwrap_or_default();
 
     // TODO: add an video to play the video file
@@ -4259,7 +4330,7 @@ pub fn populate_preview_of_timeline_item(
         match m.msgtype() {
             MessageType::Text(TextMessageEventContent { body, formatted, .. })
             | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
-                let _ = populate_text_message_content(cx, widget_out, body, formatted.as_ref(), None, None, None);
+                let _ = populate_text_message_content(cx, widget_out, body, formatted.as_ref(), None, None, None, None);
                 return;
             }
             _ => { } // fall through to the general case for all timeline items below.
@@ -4327,6 +4398,27 @@ impl SmallStateEventContent for EncryptedMessage {
 }
 
 // For other message-like content (custom message-like events).
+impl SmallStateEventContent for LiveLocationState {
+    fn populate_item_content(
+        &self,
+        cx: &mut Cx,
+        _list: &mut PortalList,
+        _item_id: usize,
+        item: WidgetRef,
+        _event_tl_item: &EventTimelineItem,
+        username: &str,
+        _item_drawn_status: ItemDrawnStatus,
+        mut new_drawn_status: ItemDrawnStatus,
+    ) -> (WidgetRef, ItemDrawnStatus) {
+        item.label(cx, ids!(content)).set_text(
+            cx,
+            &format!("{username} shared a live location."),
+        );
+        new_drawn_status.content_drawn = true;
+        (item, new_drawn_status)
+    }
+}
+
 impl SmallStateEventContent for OtherMessageLike {
     fn populate_item_content(
         &self,
@@ -4666,16 +4758,14 @@ impl Widget for Message {
         // because we don't want any widgets within the replied-to message to be
         // clickable or otherwise interactive.
         match event.hits(cx, self.view(cx, ids!(replied_to_message)).area()) {
-            Hit::FingerDown(fe) => {
-                if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
-                    cx.widget_action(
-                        details.room_screen_widget_uid, 
-                        MessageAction::OpenMessageContextMenu {
-                            details: details.clone(),
-                            abs_pos: fe.abs,
-                        }
-                    );
-                }
+            Hit::FingerDown(fe) if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) => {
+                cx.widget_action(
+                    details.room_screen_widget_uid,
+                    MessageAction::OpenMessageContextMenu {
+                        details: details.clone(),
+                        abs_pos: fe.abs,
+                    }
+                );
             }
             Hit::FingerLongPress(lp) => {
                 cx.widget_action(

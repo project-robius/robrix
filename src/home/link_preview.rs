@@ -7,7 +7,7 @@ use std::{
 };
 
 use makepad_widgets::*;
-use crate::{LivePtr, widget_ref_from_live_ptr};
+use crate::{LivePtr, utils, widget_ref_from_live_ptr};
 use matrix_sdk::ruma::{events::room::{ImageInfo, MediaSource}, OwnedMxcUri, UInt};
 use serde::Deserialize;
 use url::Url;
@@ -19,8 +19,6 @@ use crate::{
     sliding_sync::{submit_async_request, MatrixRequest, UrlPreviewError},
 };
 
-/// Maximum length for link preview descriptions before truncation
-const MAX_DESCRIPTION_LENGTH: usize = 180;
 /// Maximum number of cache entries before cleanup is triggered
 const MAX_CACHE_ENTRIES_BEFORE_CLEANUP: usize = 100;
 /// Maximum age for cache entries in seconds (1 hour)
@@ -165,7 +163,7 @@ script_mod! {
                 width: Fill, height: Fill,
                 flow: Down,
 
-                View {
+                inner_content_view := View {
                     width: Fit, height: Fit,
                     flow: Flow.Right{wrap: true},
 
@@ -193,19 +191,18 @@ script_mod! {
                     }
                 }
 
-                View {
-                    width: Fill, height: Fit,
 
-                    description_label := Label {
-                        width: Fill, height: Fit,
-                        flow: Flow.Right{wrap: true},
-                        padding: Inset{ left: 0.0 }
-                        draw_text +: {
-                            text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
-                                font_size: 11.0,
-                            },
-                            color: #666666,
-                        }
+                description_label := Label {
+                    width: Fill, height: Fit,
+                    flow: Flow.Right{wrap: true},
+                    padding: Inset{ left: 0.0 }
+                    max_lines: 2
+                    text_overflow: Ellipsis
+                    draw_text +: {
+                        text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
+                            font_size: 11.0,
+                        },
+                        color: #666666,
                     }
                 }
             }
@@ -229,6 +226,10 @@ pub struct LinkPreview {
     is_expanded: bool,
     #[rust]
     hidden_links_count: usize,
+    /// Tracks the URLs that were last used to populate this widget's children,
+    /// so we can skip expensive widget recreation when the same links are shown.
+    #[rust]
+    last_populated_links: Vec<String>,
 }
 
 impl Widget for LinkPreview {
@@ -402,24 +403,19 @@ impl LinkPreviewRef {
         // Set site name
         if let Some(site_name) = &link_preview_data.site_name {
             view_ref
-                .view(cx, ids!(content_view))
                 .label(cx, ids!(site_name_label))
                 .set_text(cx, site_name);
         }
 
-        // Set description with size limit
-        if let Some(description) = &link_preview_data.description {
-            let mut description = description.clone();
-            description = description.replace("\n\n", " ");
-            let truncated_description = if description.len() > MAX_DESCRIPTION_LENGTH {
-                format!("{}...", &description[..(MAX_DESCRIPTION_LENGTH - 3)])
-            } else {
-                description
-            };
+        // Set description; the description_label uses max_lines: 2 with
+        // text_overflow: Ellipsis to wrap and truncate automatically.
+        // Collapse all whitespace runs into single spaces so hard line breaks
+        // don't burn one of the two available lines.
+        if let Some(description_raw) = &link_preview_data.description {
+            let description = utils::replace_linebreaks_separators(description_raw, false);
             view_ref
-                .view(cx, ids!(content_view))
                 .label(cx, ids!(description_label))
-                .set_text(cx, &truncated_description);
+                .set_text(cx, &description);
         }
 
         // Handle image through closure
@@ -465,17 +461,16 @@ impl LinkPreviewRef {
     {
         const SKIPPED_DOMAINS: &[&str] = &["matrix.to", "matrix.io"];
         const MAX_LINK_PREVIEWS_BY_EXPAND: usize = 2;
-        let mut fully_drawn_count = 0;
-        let mut accepted_link_count = 0;
-        let mut views = Vec::new();
+
+        // Build the list of accepted URLs (after dedup + domain filtering)
+        // to check if we can skip the expensive widget recreation.
+        let mut accepted_urls: Vec<String> = Vec::new();
         let mut seen_urls = std::collections::HashSet::new();
-        
         for link in links {
             let url_string = link.to_string();
             if seen_urls.contains(&url_string) {
                 continue;
             }
-            
             if let Some(domain) = link.host_str() {
                 if SKIPPED_DOMAINS
                     .iter()
@@ -484,12 +479,28 @@ impl LinkPreviewRef {
                     continue;
                 }
             }
-            
             seen_urls.insert(url_string.clone());
-            accepted_link_count += 1;
+            accepted_urls.push(url_string);
+        }
+
+        // If the links haven't changed and children are already populated,
+        // skip the expensive widget recreation entirely.
+        if let Some(inner) = self.borrow() {
+            if accepted_urls == inner.last_populated_links && !inner.children.is_empty() {
+                return true;
+            }
+        }
+
+        let mut fully_drawn_count = 0;
+        let accepted_link_count = accepted_urls.len();
+        let mut views = Vec::with_capacity(accepted_link_count);
+
+        for (url_string, link) in accepted_urls.iter().zip(
+            links.iter().filter(|l| accepted_urls.contains(&l.to_string()))
+        ) {
             let (view_ref, was_image_drawn) = self.populate_view(
                 cx,
-                link_preview_cache.get_or_fetch_link_preview(url_string),
+                link_preview_cache.get_or_fetch_link_preview(url_string.clone()),
                 link,
                 media_cache,
                 |cx, text_or_image_ref, image_info_source, original_source, body, media_cache| {
@@ -502,6 +513,9 @@ impl LinkPreviewRef {
         if views.len() > MAX_LINK_PREVIEWS_BY_EXPAND {
             let hidden_count = views.len() - MAX_LINK_PREVIEWS_BY_EXPAND;
             self.show_collapsible_buttons(cx, hidden_count);
+        }
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.last_populated_links = accepted_urls;
         }
         self.set_children(views);
         fully_drawn_count == accepted_link_count
@@ -649,6 +663,22 @@ impl LinkPreviewCache {
             }
             Entry::Occupied(occupied) => occupied.get().lock().unwrap().entry.clone(),
         }
+    }
+
+    /// Removes all `Requested` and `Failed` entries from the link preview cache,
+    /// allowing them to be re-fetched.
+    ///
+    /// This should be called when the app transitions from offline back to online,
+    /// because any in-flight requests that were submitted while offline have likely
+    /// failed, leaving stale entries that permanently block re-fetching.
+    pub fn clear_all_pending_and_failed_requests(&mut self) {
+        self.cache.retain(|_, entry| {
+            if let Ok(guard) = entry.lock() {
+                matches!(guard.entry, LinkPreviewCacheEntry::LoadedLinkPreview(_))
+            } else {
+                true // Keep entries we can't lock
+            }
+        });
     }
 
     /// Removes cache entries older than the specified duration

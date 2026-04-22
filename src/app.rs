@@ -32,32 +32,22 @@ script_mod! {
                     draw_bg.color: #F3F3F3
                     caption_label +: {
                         label +: {
-                            align: Align{x: 0.5},
                             draw_text +: { color: #0 }
                             text: "Robrix"
                         }
-                    }
-                    windows_buttons +: {
-                         // Note: these are the background colors of the buttons used in Windows:
-                        // * idle: Clear, for all three buttons.
-                        // * hover: #E9E9E9 for minimize and maximize, #E81123 for close.
-                        // * down: either darker (on light mode) or lighter (on dark mode).
-                        //
-                        // However, the DesktopButton widget doesn't support drawing a background color yet,
-                        // so these colors are the colors of the icon itself, not the background highlight.
-                        // When it supports that, we will keep the icon color always black,
-                        // and change the background color instead based on the above colors.
-                        min +: { draw_bg +: {color: #0, color_hover: #9, color_down: #3} }
-                        max +: { draw_bg +: {color: #0, color_hover: #9, color_down: #3} }
-                        close +: { draw_bg +: {color: #0, color_hover: #E81123, color_down: #FF0015} }
                     }
                 }
             
 
                 body +: {
-                    padding: 0,
+                    padding: Inset{
+                        top: (mod.widgets.SAFE_INSET_PAD_TOP),
+                        bottom: (mod.widgets.SAFE_INSET_PAD_BOTTOM),
+                        left: (mod.widgets.SAFE_INSET_PAD_LEFT),
+                        right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
+                    }
 
-                    View {
+                    overlay_container := View {
                         width: Fill, height: Fill,
                         flow: Overlay,
 
@@ -162,6 +152,8 @@ script_mod! {
 
                         // Tooltips must be shown in front of all other UI elements,
                         // since they can be shown as a hover atop any other widget.
+                        // This tooltip widget handles TooltipActions directly by itself,
+                        // so we don't need to call show/hide ourselves.
                         app_tooltip := CalloutTooltip {}
                     }
                 } // end of body
@@ -204,19 +196,6 @@ impl MatchEvent for App {
         // only init logging/tracing once
         let _ = tracing_subscriber::fmt::try_init();
 
-        // Override Makepad's new default-JSON logger. We just want regular formatting.
-        fn regular_log(file_name: &str, line_start: u32, column_start: u32, _line_end: u32, _column_end: u32, message: String, level: LogLevel) {
-            let l = match level {
-                LogLevel::Panic   => "[!]",
-                LogLevel::Error   => "[E]",
-                LogLevel::Warning => "[W]",
-                LogLevel::Log     => "[I]",
-                LogLevel::Wait    => "[.]",
-            };
-            println!("{l} {file_name}:{}:{}: {message}", line_start + 1, column_start + 1);
-        }
-        *LOG_WITH_LEVEL.write().unwrap() = regular_log;
-
         // Initialize the project directory here from the main UI thread
         // such that background threads/tasks will be able to can access it.
         let _app_data_dir = crate::app_data_dir();
@@ -224,15 +203,6 @@ impl MatchEvent for App {
 
         if let Err(e) = persistence::load_window_state(self.ui.window(cx, ids!(main_window)), cx) {
             error!("Failed to load window state: {}", e);
-        }
-
-        // Hide the caption bar on macOS and Linux, which use native window chrome.
-        // On Windows (with custom chrome), the caption bar is needed.
-        if matches!(cx.os_type(), OsType::Macos | OsType::LinuxWindow(_) | OsType::LinuxDirect) {
-            let mut window = self.ui.window(cx, ids!(main_window));
-            script_apply_eval!(cx, window, {
-                show_caption_bar: false
-            });
         }
 
         self.update_login_visibility(cx);
@@ -315,7 +285,8 @@ impl MatchEvent for App {
                     self.update_login_visibility(cx);
                     self.ui.redraw(cx);
                 }
-                continue;
+                // Do NOT continue here — let the action propagate to the LoginScreen widget,
+                // which will open the login_status_modal to show the failure message.
             }
 
             // Handle file upload modal actions
@@ -353,10 +324,11 @@ impl MatchEvent for App {
                 self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
                 let new_message_context_menu = self.ui.new_message_context_menu(cx, ids!(new_message_context_menu));
                 let expected_dimensions = new_message_context_menu.show(cx, details);
-                // Ensure the context menu does not spill over the window's bounds.
-                let rect = self.ui.window(cx, ids!(main_window)).area().rect(cx);
-                let pos_x = min(abs_pos.x, rect.size.x - expected_dimensions.x);
-                let pos_y = min(abs_pos.y, rect.size.y - expected_dimensions.y);
+                // Use the overlay container's rect (not the window's) to correctly position
+                // the context menu relative to the body area, which excludes the caption bar.
+                let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
+                let pos_x = min(abs_pos.x - rect.pos.x, rect.size.x - expected_dimensions.x);
+                let pos_y = min(abs_pos.y - rect.pos.y, rect.size.y - expected_dimensions.y);
                 let margin = Inset {
                     left: pos_x as f64,
                     top: pos_y as f64,
@@ -376,10 +348,11 @@ impl MatchEvent for App {
                 self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
                 let room_context_menu = self.ui.room_context_menu(cx, ids!(room_context_menu));
                 let expected_dimensions = room_context_menu.show(cx, details);
-                // Ensure the context menu does not spill over the window's bounds.
-                let rect = self.ui.window(cx, ids!(main_window)).area().rect(cx);
-                let pos_x = min(pos.x, rect.size.x - expected_dimensions.x);
-                let pos_y = min(pos.y, rect.size.y - expected_dimensions.y);
+                // Use the overlay container's rect (not the window's) to correctly position
+                // the context menu relative to the body area, which excludes the caption bar.
+                let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
+                let pos_x = min(pos.x - rect.pos.x, rect.size.x - expected_dimensions.x);
+                let pos_y = min(pos.y - rect.pos.y, rect.size.y - expected_dimensions.y);
                 let margin = Inset {
                     left: pos_x as f64,
                     top: pos_y as f64,
@@ -437,30 +410,6 @@ impl MatchEvent for App {
                     if let Some((dest_room, room_to_close)) = self.waiting_to_navigate_to_room.take() {
                         self.navigate_to_room(cx, room_to_close.as_ref(), &dest_room);
                     }
-                    continue;
-                }
-                _ => {}
-            }
-
-            // Handle actions for showing or hiding the tooltip.
-            match action.as_widget_action().cast() {
-                TooltipAction::HoverIn { text, widget_rect, options } => {
-                    // Don't show any tooltips if the message context menu is currently shown.
-                    if self.ui.new_message_context_menu(cx, ids!(new_message_context_menu)).is_currently_shown(cx) {
-                        self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
-                    }
-                    else {
-                        self.ui.callout_tooltip(cx, ids!(app_tooltip)).show_with_options(
-                            cx,
-                            &text,
-                            widget_rect,
-                            options,
-                        );
-                    }
-                    continue;
-                }
-                TooltipAction::HoverOut => {
-                    self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
                     continue;
                 }
                 _ => {}
@@ -569,9 +518,9 @@ impl MatchEvent for App {
 
             // Handle EventSourceModalAction to open/close the event source modal.
             match action.downcast_ref() {
-                Some(EventSourceModalAction::Open { room_id, event_id, original_json }) => {
+                Some(EventSourceModalAction::Open { room_id, event_id, latest_json }) => {
                     self.ui.event_source_modal(cx, ids!(event_source_modal_inner))
-                        .show(cx, room_id.clone(), event_id.clone(), original_json.clone());
+                        .show(cx, room_id.clone(), event_id.clone(), latest_json.clone());
                     self.ui.modal(cx, ids!(event_source_modal)).open(cx);
                     continue;
                 }
@@ -720,37 +669,6 @@ impl AppMain for App {
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
 
-        /*
-         * TODO: I'd like for this to work, but it doesn't behave as expected.
-         *       The context menu fails to draw properly when a draw event is passed to it.
-         *       Also, once we do get this to work, we should remove the
-         *       Hit::FingerScroll event handler in the new_message_context_menu widget.
-         *
-        // We only forward "interactive hit" events to the underlying UI view
-        // if none of the various overlay views are visible.
-        // Currently, the only overlay view that captures interactive events is
-        // the new message context menu.
-        // We always forward "non-interactive hit" events to the inner UI view.
-        // We check which overlay views are visible in the order of those views' z-ordering,
-        // such that the top-most views get a chance to handle the event first.
-
-        let new_message_context_menu = self.ui.new_message_context_menu(cx, ids!(new_message_context_menu));
-        let is_interactive_hit = utils::is_interactive_hit_event(event);
-        let is_pane_shown: bool;
-        if new_message_context_menu.is_currently_shown(cx) {
-            is_pane_shown = true;
-            new_message_context_menu.handle_event(cx, event, scope);
-        }
-        else {
-            is_pane_shown = false;
-        }
-
-        if !is_pane_shown || !is_interactive_hit {
-            // Forward the event to the inner UI view.
-            self.ui.handle_event(cx, event, scope);
-        }
-         *
-         */
     }
 }
 

@@ -9,7 +9,9 @@ use makepad_widgets::*;
 use matrix_sdk_ui::sync_service::State;
 
 use crate::{
+    avatar_cache,
     home::navigation_tab_bar::{NavigationBarAction, SelectedTab},
+    profile::user_profile_cache,
     shared::{
         image_viewer::{ImageViewerAction, ImageViewerError, LoadState},
         popup_list::{PopupKind, enqueue_popup_notification},
@@ -64,7 +66,7 @@ script_mod! {
                         svg: (ICON_CLOUD_OFFLINE),
                         color: (COLOR_FG_DANGER_RED),
                     }
-                    icon_walk: Walk{width: 35, height: Fit, margin: Inset{left: -5, bottom: 4}}
+                    icon_walk: Walk{width: 25, height: Fit, margin: Inset{left: 1, bottom: 1}}
                 }
             }
 
@@ -118,10 +120,27 @@ impl Widget for RoomsListHeader {
                             enqueue_popup_notification(
                                 "Cannot reach the Matrix homeserver. Please check your connection.",
                                 PopupKind::Error,
-                                None,
+                                Some(4.0),
                             );
                             // Since there is no timeout for fetching media, send an action to ImageViewer when syncing is offline.
                             cx.action(ImageViewerAction::Show(LoadState::Error(ImageViewerError::Offline)));
+                        } else if matches!(self.sync_state, State::Offline) {
+                            // Transitioning away from Offline: reset to the default
+                            // loading state so the sync indicator can take over again.
+                            self.view.view(cx, ids!(loading_spinner)).set_visible(cx, true);
+                            self.view.view(cx, ids!(synced_icon)).set_visible(cx, false);
+                            self.view.view(cx, ids!(offline_icon)).set_visible(cx, false);
+
+                            // Clear stale `Requested`/`Failed` entries from global caches,
+                            // as any requests submitted while offline have likely failed,
+                            // leaving entries that permanently block re-fetching.
+                            // Note: per-room caches (media, link preview) are cleared
+                            // by RoomScreen in response to the StateUpdate action.
+                            user_profile_cache::clear_all_pending_requests();
+                            avatar_cache::clear_all_pending_and_failed_requests();
+                            // Now that we're no longer offline, we also need to tell the
+                            // ProfileIcon to refresh itself and fetch our own user's profile again.
+                            SignalToUI::set_ui_signal();
                         }
                         self.sync_state = new_state.clone();
                         self.redraw(cx);

@@ -108,7 +108,7 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    mod.widgets.UI_ANIMATION_DURATION_SECS = 0.5
+    mod.widgets.UI_ANIMATION_DURATION_SECS = 0.4
 
     mod.widgets.ROTATION_ANIMATION_DURATION_SECS = 0.2
 
@@ -118,7 +118,11 @@ script_mod! {
         align: Align{x: 0.5, y: 0.5},
         spacing: 0,
         padding: 0,
-        draw_bg.color: (COLOR_SECONDARY * 0.925)
+        draw_bg +: {
+            color: (COLOR_SECONDARY * 0.925)
+            color_hover: (COLOR_SECONDARY * 0.825)
+            color_down: (COLOR_SECONDARY * 0.7)
+        }
         draw_icon +: {
             svg: (ICON_ZOOM_OUT),
             color: #000
@@ -195,13 +199,13 @@ script_mod! {
 
         metadata_view := View {
             width: Fill, height: Fill,
-            margin: 20,
+            margin: Inset{top: 20, left: 20, right: 20, bottom: 20},
             align: Align{x: 0.0, y: 1.0},
             metadata_rounded_view := RoundedView {
                 width: Fill, height: Fit
                 flow: Right
                 align: Align{y: 0.5, x: 0.0}
-                padding: 13
+                padding: Inset{top: 13, bottom: 8, left: 13, right: 13}
                 spacing: 8,
 
                 show_bg: true
@@ -210,14 +214,13 @@ script_mod! {
                     color: (COLOR_IMAGE_VIEWER_META_BACKGROUND)
                 }
 
-                // Display user profile view below the button group when the width is not enough.
-                user_profile_view := View {
-                    width: Fit,
-                    height: Fit,
-                    flow: Right,
-                    spacing: 13,
-                    align: Align{ y: 0.5 }
-                    
+                avatar_timestamp_view := View {
+                    width: Fit
+                    height: Fit
+                    flow: Down
+                    spacing: 2
+                    align: Align{x: 0.5, y: 0.0}
+
                     avatar := Avatar {
                         width: 45, height: 45,
                         text_view +: {
@@ -228,55 +231,54 @@ script_mod! {
                             }
                         }
                     }
-
-                    content := View {
-                        width: Fit
+                    timestamp := Timestamp {
+                        width: Fit,
                         height: Fit,
-                        align: Align{ y: 0.5 }
-                        spacing: 3
-                        flow: Down,
-
-                        username := Label {
-                            width: Fit
-                            height: Fit,
-                            padding: 0
-                            margin: 0
-                            flow: Right
+                        ts_label := Label {
                             draw_text +: {
-                                text_style: REGULAR_TEXT {font_size: 12},
+                                text_style: theme.font_regular {font_size: 9.5},
                                 color: (COLOR_TEXT)
-                            }
-                        }
-
-                        timestamp_view := View {
-                            width: Fit
-                            height: Fit
-
-                            timestamp := Timestamp {
-                                width: Fit,
-                                height: Fit,
-                                ts_label := Label {
-                                    draw_text +: {
-                                        text_style: theme.font_regular {font_size: 9.5},
-                                        color: (COLOR_TEXT)
-                                    }
-                                }
                             }
                         }
                     }
                 }
 
-                // Display image name and size below the user_profile_view if the width is not enough.
-                image_name_and_size_view := View {
-                    width: Fill
+                username_label_view := View {
+                    width: Fill{weight: 0.35},
+                    // width: Fill,
                     height: Fit,
-                    align: Align{x: 0.5, y: 0.5}
+                    flow: Right,
+                    align: Align{ y: 0.5 }
+
+                    username := Label {
+                        width: Fill,
+                        height: Fit,
+                        padding: 0
+                        margin: 0
+                        flow: Flow.Right{wrap: true}
+                        max_lines: 2
+                        text_overflow: Ellipsis
+                        draw_text +: {
+                            text_style: REGULAR_TEXT {font_size: 12},
+                            color: (COLOR_TEXT)
+                        }
+                    }
+                }
+
+                // Display image name and size below the username when the width is not enough.
+                image_name_and_size_view := View {
+                    width: Fill{weight: 0.65},
+                    // width: Fill
+                    height: Fit,
+                    align: Align{x: 0, y: 0.5}
                     flow: Right
                     image_name_and_size := Label {
                         width: Fill,
                         height: Fit,
-                        align: Align{x: 0.5, y: 0.5}
+                        align: Align{x: 0, y: 0.5}
                         flow: Flow.Right{wrap: true}
+                        max_lines: 2
+                        text_overflow: Ellipsis
                         draw_text +: {
                             text_style: REGULAR_TEXT {font_size: 13},
                             color: (COLOR_TEXT),
@@ -402,27 +404,17 @@ script_mod! {
             ui_animator: {
                 default: @hide
                 show: AnimatorState{
-                    redraw: false,
+                    redraw: true,
                     from: { all: Forward { duration: (mod.widgets.UI_ANIMATION_DURATION_SECS) } }
                     apply: {
-                        button_group_view: {
-                            margin: Inset{ top: 20 }
-                        }
-                        metadata_view: {
-                            margin: Inset{ bottom: 20 }
-                        }
+                        ui_overlay_slide: 0.0
                     }
                 }
                 hide: AnimatorState{
-                    redraw: false,
+                    redraw: true,
                     from: { all: Forward { duration: (mod.widgets.UI_ANIMATION_DURATION_SECS) } }
                     apply: {
-                        button_group_view: {
-                            margin: Inset{ top: -200 }
-                        }
-                        metadata_view: {
-                            margin: Inset{ bottom: -300 }
-                        }
+                        ui_overlay_slide: 1.0
                     }
                 }
             }
@@ -474,10 +466,22 @@ struct ImageViewer {
     #[rust] texture: Option<Texture>,
     /// The event to trigger displaying with the loaded image after peek_walk_turtle of the widget.
     #[rust] next_frame: NextFrame,
-    /// Whether to display the UI overlay, including buttons and metadata.
-    #[rust] ui_visible_toggle: bool,
-    /// Timer used to animate-out (hide) the UI view after the latest user input.
+    /// Whether the UI overlay (buttons + metadata) is currently visible or animating to visible.
+    #[rust] ui_overlay_visible: bool,
+    /// Whether the mouse is hovering over the overlay UI (buttons or metadata).
+    /// When true, the auto-hide timer should not run.
+    #[rust] mouse_over_overlay_ui: bool,
+    /// Whether the hide animation is currently playing. When it finishes,
+    /// the overlay views are set to invisible.
+    #[rust] is_hiding_overlay: bool,
+    /// Animated slide value for the UI overlay: 0.0 = fully visible, 1.0 = fully hidden.
+    /// The animator interpolates this value; `draw_walk` uses it to position the views.
+    #[live] ui_overlay_slide: f32,
+    /// Timer used to animate-out (hide) the UI overlay after no user mouse/tap activity.
     #[rust] hide_ui_timer: Timer,
+    /// Last known mouse position, used to distinguish actual mouse movement
+    /// from the continuous `FingerHoverOver` events that fire every frame.
+    #[rust] last_mouse_pos: DVec2,
     #[rust] capped_dimension: DVec2,
 }
 
@@ -523,68 +527,86 @@ impl Widget for ImageViewer {
             }
         }
 
-        // Handle hover events for UI elements without consuming the main image events
-        // We'll track hover state in the FingerMove event within the image handling
+        // Handle hover events for UI overlay elements.
+        // Only hit-test these when the overlay is visible; when hidden, their areas
+        // persist from the last draw and would consume events before rotated_image.
         let rotated_image = self.view.image(cx, ids!(rotated_image));
         let button_group_rounded_view = self.view.view(cx, ids!(button_group_rounded_view));
-        match event.hits(cx, button_group_rounded_view.area()) {
-            Hit::FingerHoverIn(_) if !self.ui_visible_toggle => {
-                cx.stop_timer(self.hide_ui_timer);
-                self.animator_cut(cx, ids!(ui_animator.show));
+        // All hit events (hover + finger) must use self.view.area() because the inner
+        // View's handle_event captures events on its own area first (due to its animator),
+        // preventing rotated_image.area() from receiving them.
+        // Position checks distinguish image vs. background interactions.
+        match event.hits(cx, self.view.area()) {
+            Hit::FingerHoverIn(he) if rotated_image.area().rect(cx).contains(he.abs) => {
+                self.mouse_cursor_hover_over_image = true;
+                cx.set_cursor(MouseCursor::Hand);
             }
-            Hit::FingerHoverOut(fe) => {
-                // FingerHoverOut is triggered when the cursor enters into the button.
-                // Hence we need to check if the cursor is actually inside the button group.
-                if !self.ui_visible_toggle
-                    && !button_group_rounded_view.area().rect(cx).contains(fe.abs)
-                {
-                    self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
+            Hit::FingerHoverOut(_) => {
+                self.mouse_cursor_hover_over_image = false;
+                cx.set_cursor(MouseCursor::Default);
+            }
+            Hit::FingerHoverOver(he) => {
+                // Update cursor based on position over image.
+                let on_image = rotated_image.area().rect(cx).contains(he.abs);
+                if on_image != self.mouse_cursor_hover_over_image {
+                    self.mouse_cursor_hover_over_image = on_image;
+                    cx.set_cursor(if on_image { MouseCursor::Hand } else { MouseCursor::Default });
+                }
+                // Track whether cursor is over the overlay UI elements.
+                let on_overlay = button_group_rounded_view.area().rect(cx).contains(he.abs)
+                    || self.view.view(cx, ids!(metadata_rounded_view)).area().rect(cx).contains(he.abs);
+                if on_overlay != self.mouse_over_overlay_ui {
+                    self.mouse_over_overlay_ui = on_overlay;
+                    if on_overlay {
+                        cx.stop_timer(self.hide_ui_timer);
+                    } else {
+                        self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
+                    }
+                }
+                // FingerHoverOver fires every frame the cursor is over the area,
+                // even without actual movement. Only react to real mouse movement.
+                let dist = (he.abs - self.last_mouse_pos).length();
+                let mouse_moved = dist > 0.5;
+                self.last_mouse_pos = he.abs;
+                if mouse_moved {
+                    self.show_overlay_ui(cx, true);
                 }
             }
-            _ => {}
-        }
-        match event.hits(cx, self.view.view(cx, ids!(metadata_rounded_view)).area()) {
-            Hit::FingerHoverIn(_) if !self.ui_visible_toggle => {
-                cx.stop_timer(self.hide_ui_timer);
-                self.animator_cut(cx, ids!(ui_animator.show));
-            }
-            Hit::FingerHoverOut(_) if !self.ui_visible_toggle => {
-                self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
-            }
-            _ => {}
-        }
-        // Handle cursor changes on mouse hover
-        match event.hits(cx, rotated_image.area()) {
-            Hit::FingerDown(fe) => {
-                if fe.is_primary_hit() {
+            Hit::FingerDown(fe) if fe.is_primary_hit() => {
+                let click_pos = fe.abs;
+                let on_image = rotated_image.area().rect(cx).contains(click_pos);
+                let on_buttons = button_group_rounded_view.area().rect(cx).contains(click_pos);
+                let on_metadata = self.view.view(cx, ids!(metadata_rounded_view))
+                    .area().rect(cx).contains(click_pos);
+                if on_image {
                     self.drag_state.drag_start = fe.abs;
-                    // Initialize pan_offset with current position if not set
                     if self.drag_state.pan_offset.is_none() {
                         self.drag_state.pan_offset = Some(DVec2::default());
                     }
+                } else if !on_buttons && !on_metadata {
+                    self.reset(cx);
+                    cx.action(ImageViewerAction::Hide);
                 }
             }
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() => {
-                // Only reset pan_offset on double-tap, not single tap
-                if fe.tap_count == 2 {
-                    self.drag_state.pan_offset = Some(DVec2::default());
-                    let mut rotated_image_container = self.view.image(cx, ids!(rotated_image));
-                    script_apply_eval!(cx, rotated_image_container, {
-                        margin +: { top: 0.0, left: 0.0 },
-                    });
-                    rotated_image_container.redraw(cx);
+                let on_image = rotated_image.area().rect(cx).contains(fe.abs);
+                if on_image {
+                    // Only reset pan_offset on double-tap, not single tap
+                    if fe.tap_count == 2 {
+                        self.drag_state.pan_offset = Some(DVec2::default());
+                        let mut rotated_image_container = self.view.image(cx, ids!(rotated_image));
+                        script_apply_eval!(cx, rotated_image_container, {
+                            margin +: { top: 0.0, left: 0.0 },
+                        });
+                        rotated_image_container.redraw(cx);
+                    }
+                    // Tap toggles the overlay UI visibility.
+                    if self.ui_overlay_visible {
+                        self.hide_overlay_ui(cx);
+                    } else {
+                        self.show_overlay_ui(cx, true);
+                    }
                 }
-                self.ui_visible_toggle = !self.ui_visible_toggle;
-                if self.ui_visible_toggle {
-                    self.animator_play(cx, ids!(ui_animator.show));
-                } else {
-                    self.animator_play(cx, ids!(ui_animator.hide));
-                }
-                cx.stop_timer(self.hide_ui_timer);
-            }
-            Hit::FingerHoverIn(_) => {
-                self.mouse_cursor_hover_over_image = true;
-                cx.set_cursor(MouseCursor::Hand);
             }
             Hit::FingerMove(fe) => {
                 if let Some(current_offset) = self.drag_state.pan_offset {
@@ -597,37 +619,22 @@ impl Widget for ImageViewer {
                         width: #(size.x),
                         height: #(size.y)
                     });
-
-                    // Update pan_offset with new position
                     self.drag_state.pan_offset = Some(new_offset);
                 }
                 self.drag_state.drag_start = fe.abs;
-            }
-            Hit::FingerHoverOut(_) => {
-                self.mouse_cursor_hover_over_image = false;
-                cx.set_cursor(MouseCursor::Default);
-            }
-            Hit::FingerHoverOver(_) => {
-                if !self.ui_visible_toggle
-                    && !self.animator.in_state(cx, ids!(ui_animator.show))
-                {
-                    self.animator_cut(cx, ids!(ui_animator.hide));
-                    self.animator_play(cx, ids!(ui_animator.show));
-                    cx.stop_timer(self.hide_ui_timer);
-                    self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
-                }
             }
             _ => {}
         }
         if let Event::Scroll(scroll_event) = event {
             if self.mouse_cursor_hover_over_image {
                 let scroll_delta = scroll_event.scroll.y;
+                // Scale the zoom factor proportionally to the scroll magnitude,
+                // clamped so each scroll tick produces a gentle zoom step.
+                let normalized = (scroll_delta.abs() / 200.0).clamp(0.005, 0.06);
                 if scroll_delta > 0.0 {
-                    // Scroll up = Zoom in
-                    self.adjust_zoom(cx, self.config.zoom_scale_factor);
+                    self.adjust_zoom(cx, 1.0 + normalized);
                 } else if scroll_delta < 0.0 {
-                    // Scroll down = Zoom out
-                    self.adjust_zoom(cx, 1.0 / self.config.zoom_scale_factor);
+                    self.adjust_zoom(cx, 1.0 / (1.0 + normalized));
                 }
             }
         }
@@ -683,6 +690,19 @@ impl Widget for ImageViewer {
         }
 
         let animator_action = self.animator_handle_event(cx, event);
+        if animator_action.must_redraw() {
+            self.view.redraw(cx);
+        }
+
+        // When the hide animation finishes, make the overlay views invisible
+        // so their stale areas don't consume events.
+        if self.is_hiding_overlay && !self.animator.is_track_animating(id!(ui_animator)) {
+            self.is_hiding_overlay = false;
+            self.view.view(cx, ids!(button_group_view)).set_visible(cx, false);
+            self.view.view(cx, ids!(metadata_view)).set_visible(cx, false);
+            self.view.redraw(cx);
+        }
+
         if self.next_frame.is_event(event).is_some() {
             self.display_using_texture(cx);
         }
@@ -707,7 +727,7 @@ impl Widget for ImageViewer {
         }
 
         if self.hide_ui_timer.is_event(event).is_some() {
-            self.animator_play(cx, ids!(ui_animator.hide));
+            self.hide_overlay_ui(cx);
         }
     }
 
@@ -717,6 +737,22 @@ impl Widget for ImageViewer {
             self.image_container_size = rect.size;
             self.next_frame = cx.new_next_frame();
         }
+
+        // Use the animated `ui_overlay_slide` value to position the overlay views.
+        // slide=0.0 → fully visible (margins at their DSL defaults).
+        // slide=1.0 → fully hidden (margins push views off-screen).
+        let slide = self.ui_overlay_slide as f64;
+        let button_top = 20.0 - (slide * 220.0); // 20 → -200
+        let meta_bottom = 20.0 - (slide * 320.0); // 20 → -300
+        let mut bg = self.view(cx, ids!(button_group_view));
+        script_apply_eval!(cx, bg, {
+            margin +: { top: #(button_top), right: 20.0 }
+        });
+        let mut mv = self.view(cx, ids!(metadata_view));
+        script_apply_eval!(cx, mv, {
+            margin +: { top: 20.0, left: 20.0, right: 20.0, bottom: #(meta_bottom) }
+        });
+
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -727,30 +763,24 @@ impl MatchEvent for ImageViewer {
             self.reset(cx);
             cx.action(ImageViewerAction::Hide);
         }
+
+        let mut was_overlay_button_clicked = false;
         if self.view.button(cx, ids!(reset_button)).clicked(actions) {
+            was_overlay_button_clicked = true;
             self.reset(cx);
         }
-        if self
-            .view
-            .button(cx, ids!(zoom_out_button))
-            .clicked(actions)
-        {
+        if self.view.button(cx, ids!(zoom_out_button)).clicked(actions) {
+            was_overlay_button_clicked = true;
             self.adjust_zoom(cx, 1.0 / self.config.zoom_scale_factor);
         }
 
-        if self
-            .view
-            .button(cx, ids!(zoom_in_button))
-            .clicked(actions)
-        {
+        if self.view.button(cx, ids!(zoom_in_button)).clicked(actions) {
+            was_overlay_button_clicked = true;
             self.adjust_zoom(cx, self.config.zoom_scale_factor);
         }
 
-        if self
-            .view
-            .button(cx, ids!(rotate_cw_button))
-            .clicked(actions)
-        {
+        if self.view.button(cx, ids!(rotate_cw_button)).clicked(actions) {
+            was_overlay_button_clicked = true;
             if !self.is_animating_rotation {
                 self.is_animating_rotation = true;
                 if self.rotation_step == 3 {
@@ -761,11 +791,8 @@ impl MatchEvent for ImageViewer {
             }
         }
 
-        if self
-            .view
-            .button(cx, ids!(rotate_ccw_button))
-            .clicked(actions)
-        {
+        if self.view.button(cx, ids!(rotate_ccw_button)).clicked(actions) {
+            was_overlay_button_clicked = true;
             if !self.is_animating_rotation {
                 self.is_animating_rotation = true;
                 if self.rotation_step == 0 {
@@ -775,6 +802,14 @@ impl MatchEvent for ImageViewer {
                 self.rotation_step = (self.rotation_step - 1) % 4; // Rotate 90 degrees clockwise
                 self.update_rotation_animation(cx);
             }
+        }
+
+        // Restart the auto-hide timer if any overlay button was clicked. If the
+        // mouse is still over the overlay the hover handler keeps the timer
+        // stopped anyway.
+        if was_overlay_button_clicked && !self.mouse_over_overlay_ui {
+            cx.stop_timer(self.hide_ui_timer);
+            self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
         }
 
         for action in actions.iter() {
@@ -805,19 +840,52 @@ impl MatchEvent for ImageViewer {
 }
 
 impl ImageViewer {
+    /// Shows the UI overlay (buttons + metadata) and optionally starts the auto-hide timer.
+    fn show_overlay_ui(&mut self, cx: &mut Cx, start_auto_hide_timer: bool) {
+        if !self.ui_overlay_visible {
+            self.ui_overlay_visible = true;
+            self.is_hiding_overlay = false;
+            self.view.view(cx, ids!(button_group_view)).set_visible(cx, true);
+            self.view.view(cx, ids!(metadata_view)).set_visible(cx, true);
+            self.animator_play(cx, ids!(ui_animator.show));
+            self.view.redraw(cx);
+        }
+        cx.stop_timer(self.hide_ui_timer);
+        if start_auto_hide_timer && !self.mouse_over_overlay_ui {
+            self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
+        }
+    }
+
+    /// Hides the UI overlay (buttons + metadata) with an animated slide-out.
+    /// The views are kept visible during animation; `handle_event` sets them
+    /// invisible once the animation finishes.
+    fn hide_overlay_ui(&mut self, cx: &mut Cx) {
+        self.ui_overlay_visible = false;
+        self.is_hiding_overlay = true;
+        cx.stop_timer(self.hide_ui_timer);
+        self.animator_play(cx, ids!(ui_animator.hide));
+        self.view.redraw(cx);
+    }
+
     /// Reset state.
     pub fn reset(&mut self, cx: &mut Cx) {
         self.rotation_step = 0; // Reset to upright (0°)
         self.is_animating_rotation = false; // Reset animation state
         self.previous_pinch_distance = None; // Reset pinch tracking
         self.mouse_cursor_hover_over_image = false; // Reset hover state
+        self.last_mouse_pos = DVec2::default();
         self.receiver = None;
         self.is_loaded = false;
         self.image_container_size = DVec2::new();
-        self.ui_visible_toggle = false;
+        self.ui_overlay_visible = true;
+        self.mouse_over_overlay_ui = false;
+        self.is_hiding_overlay = false;
         cx.stop_timer(self.hide_ui_timer);
-        self.animator_cut(cx, ids!(ui_animator.show));
         self.hide_ui_timer = Timer::empty();
+        self.view.view(cx, ids!(button_group_view)).set_visible(cx, true);
+        self.view.view(cx, ids!(metadata_view)).set_visible(cx, true);
+        // Snap to fully visible (no animation on reset).
+        self.animator_cut(cx, ids!(ui_animator.show));
         self.reset_drag_state(cx);
         self.animator_cut(cx, ids!(mode.upright));
         let rotated_image_ref = self
@@ -887,8 +955,7 @@ impl ImageViewer {
             let _ = sender.send(get_png_or_jpg_image_buffer(image_bytes_clone));
             SignalToUI::set_ui_signal();
         });
-        cx.stop_timer(self.hide_ui_timer);
-        self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
+        self.show_overlay_ui(cx, true);
     }
 
     /// Displays an image in the image viewer widget using the provided texture.
@@ -993,7 +1060,12 @@ impl ImageViewer {
         footer.view(cx, ids!(image_viewer_forbidden_view))
             .set_visible(cx, false);
         footer.set_visible(cx, true);
-        self.ui_visible_toggle = true;
+        // Snap the overlay to visible immediately on initial open (no animation).
+        self.ui_overlay_visible = true;
+        self.is_hiding_overlay = false;
+        self.view.view(cx, ids!(button_group_view)).set_visible(cx, true);
+        self.view.view(cx, ids!(metadata_view)).set_visible(cx, true);
+        self.animator_cut(cx, ids!(ui_animator.show));
         cx.stop_timer(self.hide_ui_timer);
         self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
     }
@@ -1024,29 +1096,23 @@ impl ImageViewer {
 
     /// Sets the metadata view in the image viewer with the provided metadata.
     ///
-    /// The metadata view is updated with the truncated image name and the human-readable size of the image.
-    ///
-    /// The image name is truncated to 24 characters and appended with "..." if it exceeds the limit.
-    /// The human-readable size is calculated based on the image size in bytes.
+    /// The image_name_and_size and username labels handle their own overflow
+    /// via `max_lines: 2` + `text_overflow: Ellipsis` in the layout.
     pub fn set_metadata(&mut self, cx: &mut Cx, metadata: &ImageViewerMetaData) {
         let meta_view = self.view.view(cx, ids!(metadata_view));
-        let truncated_name = truncate_image_name(&metadata.image_name);
         let human_readable_size = format_file_size(metadata.image_file_size);
-        let display_text = format!("{} ({})", truncated_name, human_readable_size);
+        let display_text = format!("{} ({})", metadata.image_name, human_readable_size);
         meta_view
             .label(cx, ids!(image_name_and_size))
             .set_text(cx, &display_text);
         if let Some(timestamp) = metadata.timestamp {
             meta_view
-                .view(cx, ids!(user_profile_view.content.timestamp_view))
-                .set_visible(cx, true);
-            meta_view
-                .timestamp(cx, ids!(user_profile_view.content.timestamp_view.timestamp))
+                .timestamp(cx, ids!(avatar_timestamp_view.timestamp))
                 .set_date_time(cx, timestamp);
         }
 
         if let Some((timeline_kind, event_timeline_item)) = &metadata.avatar_parameter {
-            let (sender, _) = self.view.avatar(cx, ids!(user_profile_view.avatar)).set_avatar_and_get_username(
+            let (sender, _) = self.view.avatar(cx, ids!(avatar_timestamp_view.avatar)).set_avatar_and_get_username(
                 cx,
                 timeline_kind,
                 event_timeline_item.sender(),
@@ -1054,15 +1120,9 @@ impl ImageViewer {
                 event_timeline_item.event_id(),
                 false,
             );
-            if sender.len() > MAX_USERNAME_LENGTH {
-                meta_view
-                    .label(cx, ids!(user_profile_view.content.username))
-                    .set_text(cx, &format!("{}...", &sender[..MAX_USERNAME_LENGTH - 3]));
-            } else {
-                meta_view
-                    .label(cx, ids!(user_profile_view.content.username))
-                    .set_text(cx, &sender);
-            };
+            meta_view
+                .label(cx, ids!(username_label_view.username))
+                .set_text(cx, &sender);
         }
     }
 }
@@ -1140,38 +1200,6 @@ pub struct ImageViewerMetaData {
     pub image_name: String,
     // Image size in bytes
     pub image_file_size: u64,
-}
-
-/// Maximum image name length to be displayed
-const MAX_IMAGE_NAME_LENGTH: usize = 50;
-/// Maximum username length to be displayed
-const MAX_USERNAME_LENGTH: usize = 50;
-
-/// Truncate image name while preserving file extension
-fn truncate_image_name(image_name: &str) -> String {
-    let max_length = MAX_IMAGE_NAME_LENGTH;
-
-    if image_name.len() <= max_length {
-        return image_name.to_string();
-    }
-
-    // Find the last dot to separate name and extension
-    if let Some(dot_pos) = image_name.rfind('.') {
-        let name_part = &image_name[..dot_pos];
-        let extension = &image_name[dot_pos..];
-
-        // Reserve space for "..." and the extension
-        let available_length = max_length.saturating_sub(3 + extension.len());
-
-        if available_length > 0 && name_part.len() > available_length {
-            format!("{}...{}", &name_part[..available_length], extension)
-        } else {
-            image_name.to_string()
-        }
-    } else {
-        // No extension found, just truncate the name
-        format!("{}...", &image_name[..max_length.saturating_sub(3)])
-    }
 }
 
 /// Convert bytes to human-readable file size format

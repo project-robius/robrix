@@ -4,28 +4,31 @@
 //! The bar is positioned either within the left side bar (in the wide "Desktop" view mode)
 //! or along the bottom of the app window (in the narrow "Mobile" view mode).
 //!
+//! All the buttons in this bar — including the `ProfileIcon` and the entries
+//! in the embedded `SpacesBar` — are instances of the unified
+//! [`NavigationBarButton`](crate::shared::navigation_bar_button::NavigationBarButton)
+//! base widget, which provides hover and "selected" background animations.
+//!
 //! Their order in Mobile view (horizontally from left to right) is:
 //! 1. Home (house icon): the main view that shows all rooms across all spaces.
 //! 2. Add Room (plus sign icon): a separate view that allows adding (joining) existing rooms,
 //!    exploring public rooms, or creating new rooms/spaces.
 //! 3. Spaces: a button that toggles the `SpacesBar` (shows/hides it).
-//!    * This is NOT a regular radio button, it's a separate toggle. 
+//!    * This is NOT a regular radio button, it's a separate toggle.
 //!    * This is only shown in Mobile view mode, because the `SpacesBar` is always shown
 //!      within the NavigationTabBar itself in Desktop view mode.
-//! 4. Activity (an inbox, alert bell, or notifications icon): a separate view that shows
-//!    a list of notifications, mentions, invitations, etc.
-//! 5. Profile/Settings (user profile avatar): the existing `ProfileIcon` with a
-//!    verification badge.
-//!    * Upon click, this shows the SettingsScreen as normal.
+//! 4. Profile/Settings (user profile avatar): the `ProfileIcon` with a
+//!    verification badge. This single button serves as both the user-avatar
+//!    indicator and the entry point to the SettingsScreen.
+//!    * Upon click, this shows the SettingsScreen as normal, and is visually
+//!      marked as the selected tab.
 //!
 //! The order in Desktop view (vertically from top to bottom) is:
-//! 1. Home
-//! 2. Add/Join
-//! 3. ----- separator -----
+//! 1. Profile/Settings
+//! 2. Home
+//! 3. Add/Join
+//! 4. ----- separator -----
 //!      SpacesBar content
-//!    ----- separator -----
-//! 4. Activity/Inbox
-//! 5. Profile/Settings
 //!
 
 use makepad_widgets::*;
@@ -35,7 +38,7 @@ use crate::{
         user_profile::UserProfile,
         user_profile_cache::{self, UserProfileUpdate},
     }, shared::{
-        avatar::{AvatarState, AvatarWidgetExt}, styles::*, verification_badge::VerificationBadgeWidgetExt
+        avatar::{AvatarState, AvatarWidgetExt}, navigation_bar_button::{NavigationBarButton, NavigationBarButtonWidgetExt}, styles::*, verification_badge::VerificationBadgeWidgetExt
     }, sliding_sync::{current_user_id, AccountDataAction}, utils::{self, RoomNameId}
 };
 
@@ -44,93 +47,116 @@ script_mod! {
     use mod.widgets.*
 
 
-    // A RadioButton styled to fit within our NavigationTabBar.
-    // Use RadioButtonTab as the base to stay aligned with current widgets/studio behavior.
-    mod.widgets.NavigationTabButton = RadioButtonTab {
+    // The base layout/sizing for the icon-style buttons in the NavigationTabBar.
+    // Inherits hover/selected styling from `mod.widgets.NavigationBarButton`
+    // (defined in `src/shared/navigation_bar_button.rs`).
+    mod.widgets.NavigationTabButton = mod.widgets.NavigationBarButton {
         width: Fill,
         height: (NAVIGATION_TAB_BAR_SIZE - 5),
         padding: 5,
         margin: 3,
         align: Align{x: 0.5, y: 0.5}
         flow: Down,
-        text: "",
-
-        icon_walk: Walk{
-            margin: 0,
-            width: (NAVIGATION_TAB_BAR_SIZE / 2.2),
-            height: (NAVIGATION_TAB_BAR_SIZE / 2.2)
-        }
-        // Fully hide the text with zero size, zero margin, and zero spacing
-        label_walk: Walk{margin: 0, width: 0, height: 0}
-        spacing: 0,
-
-        draw_bg +: {
-            color: (COLOR_NAVIGATION_TAB_BG)
-            color_hover: (COLOR_NAVIGATION_TAB_BG_HOVER)
-            color_down: (COLOR_NAVIGATION_TAB_BG_HOVER)
-            color_active: (COLOR_NAVIGATION_TAB_BG_ACTIVE)
-            color_focus: (COLOR_NAVIGATION_TAB_BG_ACTIVE)
-
-            border_size: 0.0
-            border_radius: 4.0
-            border_color: #0000
-            border_color_hover: #0000
-            border_color_down: #0000
-            border_color_active: #0000
-            border_color_focus: #0000
-        }
-
-        draw_text +: {
-            color: (COLOR_NAVIGATION_TAB_FG)
-            color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
-            color_down: (COLOR_NAVIGATION_TAB_FG_HOVER)
-            color_active: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
-            color_focus: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
-
-            text_style: theme.font_bold {font_size: 9}
-        }
-
-        draw_icon +: {
-            color: (COLOR_NAVIGATION_TAB_FG)
-            color_hover: (COLOR_NAVIGATION_TAB_FG_HOVER)
-            color_down: (COLOR_NAVIGATION_TAB_FG_HOVER)
-            color_active: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
-            color_focus: (COLOR_NAVIGATION_TAB_FG_ACTIVE)
-        }
     }
 
     mod.widgets.ProfileIcon = #(ProfileIcon::register_widget(vm)) {
+        // Inherit hover/selected styling directly from NavigationBarButton
+        // (not via NavigationTabButton, to avoid inheriting its padding/margin
+        // which would squeeze ProfileIcon's avatar+badge layout).
+        ..mod.widgets.NavigationBarButton
+
+        // ProfileIcon emits its own dynamic tooltip (with verification badge info)
+        // from Rust, so leave the built-in tooltip text empty.
+        tooltip_text: ""
+
+        // Match the drawn bg bounds of `NavigationTabButton` (height and
+        // margin) so that ProfileIcon's hover/selected highlight is the same
+        // size and shape as the other buttons in the tab bar.
         width: Fill,
-        height: (NAVIGATION_TAB_BAR_SIZE - 8)
-        flow: Overlay
+        height: (NAVIGATION_TAB_BAR_SIZE - 5)
+        padding: 0,
+        margin: 3,
         align: Align{ x: 0.5, y: 0.5 }
 
-        our_own_avatar := Avatar {
-            width: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE
-            height: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE
-            // If no avatar picture, use white text on a dark background.
-            text_view +: {
-                draw_bg.color: (COLOR_FG_DISABLED),
-                text +: {
-                    draw_text +: {
-                        text_style: theme.font_regular { font_size: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_FONT_SIZE },
-                        color: (COLOR_PRIMARY),
+        // The avatar and verification badge are wrapped in a sub-container that
+        // is *larger* than the avatar (sized to match ProfileIcon's drawn bg
+        // bounds), so the avatar can be centered while the badge sits in the
+        // gap between the avatar's edge and the wrapper's corner. This places
+        // the badge at the avatar's outer top-right (overlapping the corner)
+        // independently of the parent ProfileIcon's width.
+        avatar_with_badge := View {
+            width: (NAVIGATION_TAB_BAR_SIZE - 5)
+            height: (NAVIGATION_TAB_BAR_SIZE - 5)
+            flow: Overlay
+            align: Align { x: 0.5, y: 0.5 }
+
+            our_own_avatar := Avatar {
+                width: (mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE)
+                height: (mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE)
+                // If no avatar picture, use white text on a dark background.
+                text_view +: {
+                    draw_bg.color: (COLOR_FG_DISABLED),
+                    text +: {
+                        draw_text +: {
+                            text_style: theme.font_regular { font_size: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_FONT_SIZE },
+                            color: (COLOR_PRIMARY),
+                        }
                     }
                 }
             }
-        }
 
-        View {
-            align: Align { x: 0.5, y: 0.0 }
-            margin: Inset{ left: (mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE * 0.9) }
-            verification_badge := VerificationBadge {}
+            // A Fill-sized View that aligns the badge (which is Fit-sized)
+            // to the top-right corner of the wrapper. Since the wrapper is
+            // larger than the avatar, the badge ends up sitting near the
+            // avatar's outer top-right corner, half-overlapping the avatar.
+            // The right/top margin nudges the badge a few pixels south-west
+            // so it sits visually centered on the avatar's corner.
+            View {
+                width: Fill,
+                height: Fill,
+                align: Align { x: 1.0, y: 0.0 }
+                margin: Inset { left: 0, bottom: 0, top: 2, right: 2 }
+                verification_badge := VerificationBadge {}
+            }
         }
     }
 
     mod.widgets.HomeButton = mod.widgets.NavigationTabButton {
-        draw_icon +: { svg: (ICON_HOME) }
+        tooltip_text: "All Rooms"
+        Icon {
+            margin: 0,
+            icon_walk: Walk {
+                margin: 0,
+                width: (NAVIGATION_TAB_BAR_SIZE / 2.2),
+                height: (NAVIGATION_TAB_BAR_SIZE / 2.2)
+            }
+            draw_icon +: {
+                color: (COLOR_NAVIGATION_TAB_FG)
+                svg: (ICON_HOME)
+            }
+        }
     }
 
+    mod.widgets.AddRoomButton = mod.widgets.NavigationTabButton {
+        tooltip_text: "Add/Join Room"
+        Icon {
+            margin: 0,
+            icon_walk: Walk {
+                margin: 0,
+                width: (NAVIGATION_TAB_BAR_SIZE / 2.2),
+                height: (NAVIGATION_TAB_BAR_SIZE / 2.2)
+            }
+            draw_icon +: {
+                color: (COLOR_NAVIGATION_TAB_FG)
+                svg: (ICON_ADD)
+            }
+        }
+    }
+
+    // Note: `ToggleSpacesBarButton` is intentionally NOT a `NavigationBarButton`.
+    // Its toggling is independent of the navigation selection (it doesn't
+    // show a "selected" state and doesn't affect the other buttons), so it
+    // continues to use `RobrixNeutralIconButton` as its base.
     mod.widgets.ToggleSpacesBarButton = RobrixNeutralIconButton {
         width: Fill,
         padding: 16
@@ -147,22 +173,14 @@ script_mod! {
         }
     }
 
-    mod.widgets.SettingsButton = mod.widgets.NavigationTabButton {
-        draw_icon +: { svg: (ICON_SETTINGS) }
-    }
-
-    mod.widgets.AddRoomButton = mod.widgets.NavigationTabButton {
-        draw_icon +: { svg: (ICON_ADD) }
-    }
-
     mod.widgets.Separator = LineH { margin: 8 }
 
     mod.widgets.NavigationTabBar = #(NavigationTabBar::register_widget(vm)) {
         Desktop := RoundedView {
             flow: Down,
             align: Align{x: 0.5}
-            padding: Inset{top: 40., bottom: 8}
-            width: (NAVIGATION_TAB_BAR_SIZE), 
+            padding: Inset{top: 8., bottom: 8}
+            width: (NAVIGATION_TAB_BAR_SIZE),
             height: Fill
 
             draw_bg +: {
@@ -184,12 +202,6 @@ script_mod! {
 
             CachedWidget {
                 root_spaces_bar := mod.widgets.SpacesBar {}
-            }
-
-            mod.widgets.Separator {}
-
-            CachedWidget {
-                settings_button := mod.widgets.SettingsButton {}
             }
         }
 
@@ -214,21 +226,27 @@ script_mod! {
             toggle_spaces_bar_button := mod.widgets.ToggleSpacesBarButton {}
 
             CachedWidget {
-                settings_button := mod.widgets.SettingsButton {}
-            }
-            CachedWidget {
                 profile_icon := mod.widgets.ProfileIcon {}
             }
         }
     }
 }
 
-/// The icon in the NavigationTabBar that show the user's avatar.
+/// The icon in the NavigationTabBar that shows the user's avatar.
 ///
-/// Clicking on this icon will open the settings screen.
+/// This widget serves as both the visual user-avatar indicator AND the
+/// entry point to the SettingsScreen — clicking it opens settings and
+/// marks this button as the currently-selected navigation tab.
+///
+/// `ProfileIcon` derefs into [`NavigationBarButton`], so it inherits the
+/// hover/selected background animations and emits
+/// `NavigationBarButtonAction::Clicked` on tap (handled by `NavigationTabBar`
+/// to navigate to the Settings screen). Its dynamic tooltip (which includes
+/// verification badge state) is emitted by this widget itself rather than
+/// using `NavigationBarButton`'s built-in `tooltip_text`.
 #[derive(Script, Widget)]
 pub struct ProfileIcon {
-    #[deref] view: View,
+    #[deref] inner: NavigationBarButton,
     #[rust] own_profile: Option<UserProfile>,
 }
 
@@ -269,7 +287,7 @@ impl Widget for ProfileIcon {
                 }
             }
             if needs_redraw {
-                self.view.redraw(cx);
+                self.inner.redraw(cx);
             }
         }
 
@@ -279,13 +297,13 @@ impl Widget for ProfileIcon {
             for action in actions {
                 if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
                     self.own_profile = get_own_profile(cx);
-                    self.view.redraw(cx);
+                    self.inner.redraw(cx);
                     continue;
                 }
 
                 if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
                     self.own_profile = None;
-                    self.view.redraw(cx);
+                    self.inner.redraw(cx);
                     continue;
                 }
 
@@ -298,7 +316,7 @@ impl Widget for ProfileIcon {
                             user_profile_cache::enqueue_user_profile_update(
                                 UserProfileUpdate::UserProfileOnly(p.clone())
                             );
-                            self.view.redraw(cx);
+                            self.inner.redraw(cx);
                         }
                         continue;
                     }
@@ -309,7 +327,7 @@ impl Widget for ProfileIcon {
                             user_profile_cache::enqueue_user_profile_update(
                                 UserProfileUpdate::UserProfileOnly(p.clone())
                             );
-                            self.view.redraw(cx);
+                            self.inner.redraw(cx);
                         }
                         continue;
                     }
@@ -323,7 +341,7 @@ impl Widget for ProfileIcon {
                             user_profile_cache::enqueue_user_profile_update(
                                 UserProfileUpdate::UserProfileOnly(p.clone())
                             );
-                            self.view.redraw(cx);
+                            self.inner.redraw(cx);
                         }
                         continue;
                     }
@@ -336,10 +354,18 @@ impl Widget for ProfileIcon {
             }
         }
 
-        let area = self.view.area();
+        // Forward to the inner NavigationBarButton, which handles hover/selected
+        // animations and emits `NavigationBarButtonAction::Clicked` on tap.
+        self.inner.handle_event(cx, event, scope);
+
+        // Emit ProfileIcon's own dynamic tooltip (which includes verification
+        // badge state). This is in addition to (not instead of) the inner
+        // button's hit handling: calling `event.hits()` twice on the same area
+        // is safe in Makepad — both calls return the same hit.
+        let area = self.inner.view.area();
         match event.hits(cx, area) {
             Hit::FingerLongPress(_) | Hit::FingerHoverIn(_) => {
-                let (verification_str, bg_color) = self.view
+                let (verification_str, bg_color) = self.inner.view
                     .verification_badge(cx, ids!(verification_badge))
                     .tooltip_content();
                 let text = self.own_profile.as_ref().map_or_else(
@@ -354,7 +380,7 @@ impl Widget for ProfileIcon {
                     options.bg_color = c;
                 }
                 cx.widget_action(
-                    self.widget_uid(), 
+                    self.widget_uid(),
                     TooltipAction::HoverIn {
                         text,
                         widget_rect: area.rect(cx),
@@ -367,12 +393,10 @@ impl Widget for ProfileIcon {
             }
             _ => { }
         };
-
-        self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let our_own_avatar = self.view.avatar(cx, ids!(our_own_avatar));
+        let our_own_avatar = self.inner.view.avatar(cx, ids!(our_own_avatar));
         let Some(own_profile) = self.own_profile.as_ref() else {
             // If we don't have a profile, default to an unknown avatar.
             our_own_avatar.show_text(
@@ -381,7 +405,7 @@ impl Widget for ProfileIcon {
                 None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
                 "",
             );
-            return self.view.draw_walk(cx, scope, walk);
+            return self.inner.draw_walk(cx, scope, walk);
         };
 
         let mut drew_avatar = false;
@@ -401,7 +425,16 @@ impl Widget for ProfileIcon {
             );
         }
 
-        self.view.draw_walk(cx, scope, walk)
+        self.inner.draw_walk(cx, scope, walk)
+    }
+}
+
+impl ProfileIconRef {
+    /// Visually marks this `ProfileIcon` as selected (or not).
+    /// Forwards to [`NavigationBarButton::set_selected`].
+    pub fn set_selected(&self, cx: &mut Cx, is_selected: bool) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.inner.set_selected(cx, is_selected);
     }
 }
 
@@ -422,10 +455,43 @@ impl ScriptHook for NavigationTabBar {
         vm.with_cx_mut(|cx| {
             // Programmatically select the Home button as active on startup,
             // because animator default overrides in the DSL don't take effect.
-            if let Some(mut rb) = self.view.radio_button(cx, ids!(home_button)).borrow_mut() {
-                rb.animator_play(cx, ids!(active.on));
-            }
+            self.view
+                .navigation_bar_button(cx, ids!(home_button))
+                .set_selected(cx, true);
         });
+    }
+}
+
+impl NavigationTabBar {
+    /// Updates which navigation tab button is visually marked as selected,
+    /// enforcing radio-button-like mutual exclusion across the four
+    /// navigation tab buttons.
+    fn apply_selected_tab(&mut self, cx: &mut Cx, tab: &SelectedTab) {
+        let home    = self.view.navigation_bar_button(cx, ids!(home_button));
+        let add     = self.view.navigation_bar_button(cx, ids!(add_room_button));
+        let profile = self.view.profile_icon(cx, ids!(profile_icon));
+        match tab {
+            SelectedTab::Home => {
+                home.set_selected(cx, true);
+                add.set_selected(cx, false);
+                profile.set_selected(cx, false);
+            }
+            SelectedTab::AddRoom => {
+                home.set_selected(cx, false);
+                add.set_selected(cx, true);
+                profile.set_selected(cx, false);
+            }
+            SelectedTab::Settings => {
+                home.set_selected(cx, false);
+                add.set_selected(cx, false);
+                profile.set_selected(cx, true);
+            }
+            SelectedTab::Space { .. } => {
+                home.set_selected(cx, false);
+                add.set_selected(cx, false);
+                profile.set_selected(cx, false);
+            }
+        }
     }
 }
 
@@ -434,17 +500,28 @@ impl Widget for NavigationTabBar {
         self.view.handle_event(cx, event, scope);
 
         if let Event::Actions(actions) = event {
-            // Handle one of the radio buttons being clicked (selected).
-            let radio_button_set = self.view.radio_button_set(cx, ids_array!(
-                home_button,
-                add_room_button,
-                settings_button,
-            ));
-            match radio_button_set.selected(cx, actions) {
-                Some(0) => cx.action(NavigationBarAction::GoToHome),
-                Some(1) => cx.action(NavigationBarAction::GoToAddRoom),
-                Some(2) => cx.action(NavigationBarAction::OpenSettings),
-                _ => { }
+            // Handle clicks on each of the navigation tab buttons.
+            // Each click both updates the visual selection and emits the
+            // corresponding `NavigationBarAction` for downstream handling.
+            if self.view.navigation_bar_button(cx, ids!(home_button)).clicked(actions) {
+                self.apply_selected_tab(cx, &SelectedTab::Home);
+                cx.action(NavigationBarAction::GoToHome);
+            }
+            else if self.view.navigation_bar_button(cx, ids!(add_room_button)).clicked(actions) {
+                self.apply_selected_tab(cx, &SelectedTab::AddRoom);
+                cx.action(NavigationBarAction::GoToAddRoom);
+            }
+            else {
+                // ProfileIcon's inner NavigationBarButton emits the click action,
+                // and ProfileIcon derefs into it, so the same `clicked()` check works.
+                let profile_icon_ref = self.view.profile_icon(cx, ids!(profile_icon));
+                let profile_clicked = profile_icon_ref
+                    .borrow()
+                    .is_some_and(|p| p.inner.clicked(actions));
+                if profile_clicked {
+                    self.apply_selected_tab(cx, &SelectedTab::Settings);
+                    cx.action(NavigationBarAction::OpenSettings);
+                }
             }
 
             if self.view.button(cx, ids!(toggle_spaces_bar_button)).clicked(actions) {
@@ -454,20 +531,9 @@ impl Widget for NavigationTabBar {
 
             for action in actions {
                 // If another widget programmatically selected a new tab,
-                // update our radio buttons accordingly.
+                // update our buttons' visual selection state accordingly.
                 if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
-                    match tab {
-                        SelectedTab::Home     => self.view.radio_button(cx, ids!(home_button)).select(cx, scope),
-                        SelectedTab::AddRoom  => self.view.radio_button(cx, ids!(add_room_button)).select(cx, scope),
-                        SelectedTab::Settings => self.view.radio_button(cx, ids!(settings_button)).select(cx, scope),
-                        SelectedTab::Space { .. } => {
-                            for rb in radio_button_set.iter() {
-                                if let Some(mut rb_inner) = rb.borrow_mut() {
-                                    rb_inner.animator_play(cx, ids!(active.off));
-                                }
-                            }
-                        }
-                    }
+                    self.apply_selected_tab(cx, tab);
                     continue;
                 }
             }

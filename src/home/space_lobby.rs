@@ -13,11 +13,14 @@ use makepad_widgets::*;
 use makepad_widgets::animator::Animate;
 use matrix_sdk::{RoomDisplayName, RoomState, ruma::OwnedRoomId};
 use matrix_sdk_ui::spaces::SpaceRoom;
-use ruma::room::JoinRuleSummary;
+use ruma::{OwnedRoomAliasId, room::JoinRuleSummary};
 use tokio::sync::mpsc::UnboundedSender;
 use crate::shared::avatar::AvatarState;
 use crate::shared::expand_arrow::ExpandArrow;
 use crate::utils::replace_linebreaks_separators;
+/// The horizontal indent width (in pixels) per tree level.
+const TREE_INDENT_WIDTH: f64 = 44.0;
+
 use crate::{
     app::AppStateAction,
     avatar_cache::{self, AvatarCacheEntry},
@@ -27,7 +30,10 @@ use crate::{
     },
     join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction},
     room::BasicRoomDetails,
-    shared::avatar::{AvatarWidgetExt, AvatarWidgetRefExt},
+    shared::{
+        avatar::{AvatarWidgetExt, AvatarWidgetRefExt},
+        room_filter_input_bar::RoomFilterInputBarWidgetExt,
+    },
     space_service_sync::{SpaceRequest, SpaceRoomExt, SpaceRoomListAction},
     utils::{self, RoomNameId},
 };
@@ -191,7 +197,7 @@ script_mod! {
     }
 
     mod.widgets.TreeLines = #(TreeLines::register_widget(vm)) {
-        width: 0, height: Fill
+        width: Fill, height: Fill { min: 32 }
 
         draw_bg: DrawTreeLine {
             indent_width: 44.0
@@ -202,9 +208,10 @@ script_mod! {
             pixel: fn() {
                 let pos = self.pos * self.rect_size;
                 let indent = self.indent_width;
-                // Yes, this should be 0.5, but 0.6 makes it line up nicely
-                // with the middle of the parent-level avatar, which is better.
-                let half_indent = indent * 0.6;
+                // Offset to center each vertical line under the parent-level avatar.
+                // Derived from: main_entry left padding (8) + expand_icon space (14)
+                // + half avatar width (16) = 38.
+                let half_indent = 38.0;
                 let line_width = 1.0;
                 let half_line = 0.5;
 
@@ -220,7 +227,7 @@ script_mod! {
                         if mask_bit > 0.5 {
                             // Draw full vertical line
                             if abs(pos.x - (f32(i) * indent + half_indent)) < half_line && pos.y < self.rect_size.y {
-                                c = vec4(0.8, 0.8, 0.8, 1.0);
+                                c = #888;
                                 break;
                             }
                         }
@@ -232,14 +239,16 @@ script_mod! {
                         // strict abs() < 0.5 check always hits exactly one pixel regardless
                         // of whether rect_size.y is even or odd.
                         let hy = floor(self.rect_size.y * 0.5) + 0.5;
-                        if abs(pos.y - hy) < half_line && pos.x > (f32(i) * indent + half_indent) {
-                            c = vec4(0.8, 0.8, 0.8, 1.0);
+                        // Extend horizontal line to the center of the expand_icon:
+                        // spacer_end + left_padding(8) - expand_margin_left(6) + expand_width(16)/2 = +10
+                        if abs(pos.y - hy) < half_line && pos.x > (f32(i) * indent + half_indent) && pos.x < ((f32(i) + 1.0) * indent + 10.0) {
+                            c = #888;
                             break;
                         }
                         
                         // Vertical line (L shape)
                         if abs(pos.x - (f32(i) * indent + half_indent)) < half_line && pos.y < (self.rect_size.y * (1.0 - 0.5 * self.is_last)) {
-                            c = vec4(0.8, 0.8, 0.8, 1.0);
+                            c = #888;
                             break;
                         }
                     }
@@ -251,13 +260,10 @@ script_mod! {
 
     // Entry for a child subspace (can be expanded)
     mod.widgets.SubspaceEntry = #(SubspaceEntry::register_widget(vm)) {
-
         width: Fill,
-        height: 44,
-        flow: Right,
-        align: Align{y: 0.5}
-        padding: Inset{left: 8, right: 12}
-        cursor: MouseCursor.Hand
+        height: Fit,
+        flow: Overlay
+        align: Align{x: 1.0, y: 0.5}
 
         show_bg: true
         draw_bg +: {
@@ -269,52 +275,94 @@ script_mod! {
             }
         }
 
-        // The connecting hierarchical lines on the left.
-        tree_lines := mod.widgets.TreeLines {}
+        main_entry := View {
+            width: Fill,
+            height: Fit,
+            flow: Right
+            align: Align{x: 0, y: 0.5}
+            padding: Inset{top: 8, bottom: 8, left: 8, right: 12}
+            cursor: MouseCursor.Hand
 
-        // Expand/collapse arrow (animated triangle)
-        expand_icon := mod.widgets.ExpandArrow {
-            width: 16,
-            height: 16,
-            margin: Inset{ left: -6, right: 4 }
-            draw_bg.border_radius: 1.5 // less rounded
+            // Invisible spacer whose width is set dynamically to match
+            // the tree indent level, replacing tree_lines' layout role.
+            indent_spacer := View { width: 0, height: Fit }
+
+            // Expand/collapse arrow (animated triangle)
+            expand_icon := mod.widgets.ExpandArrow {
+                width: 16,
+                height: 16,
+                margin: Inset{ left: -6, right: 4 }
+                draw_bg.color: #888
+                draw_bg.border_radius: 1.5 // less rounded
+            }
+
+            avatar := Avatar { width: 32, height: 32, margin: Inset{right: 8} }
+
+            content := View {
+                width: Fill
+                height: Fit
+                flow: Down
+                align: Align { y: 0.5 }
+                spacing: 5,
+
+                name_label := Label {
+                    width: Fill, height: Fit,
+                    margin: 0
+                    padding: 0
+                    flow: Flow.Right{wrap: true}
+                    max_lines: 2
+                    text_overflow: Ellipsis
+                    draw_text +: { text_style: REGULAR_TEXT {font_size: 10.5}, color: #1a1a1a }
+                }
+
+                suggested_tag := RoundedView {
+                    visible: false
+                    width: Fit, height: Fit,
+                    padding: Inset { left: 6, right: 6, top: 3, bottom: 3 }
+                    show_bg: true
+                    draw_bg +: {
+                        color: #E8F4FD
+                        border_radius: 3.0
+                        border_size: 0.75
+                        border_color: (COLOR_INFO_BLUE)
+                    }
+                    suggested_label := Label {
+                        padding: 0
+                        margin: 0
+                        width: Fit, height: Fit,
+                        text: "Suggested"
+                        draw_text +: { text_style: REGULAR_TEXT {font_size: 8.5}, color: (COLOR_INFO_BLUE) }
+                    }
+                }
+
+                info_label := Label {
+                    width: Fill, height: Fit,
+                    margin: 0
+                    padding: 0
+                    flow: Flow.Right{wrap: true}
+                    max_lines: 2
+                    text_overflow: Ellipsis
+                    draw_text +: { text_style: REGULAR_TEXT {font_size: 8.5}, color: #737373 }
+                }
+            }
         }
 
-        avatar := Avatar { width: 32, height: 32, margin: Inset{right: 8} }
-
-        content := View {
-            width: Fill
-            height: Fit
-            flow: Down
-            align: Align { y: 0.5 }
-            spacing: 5,
-
-            name_label := Label {
-                width: Fill, height: Fit,
-                flow: Right
-                margin: 0
-                padding: 0
-                flow: Flow.Right{wrap: false}
-                draw_text +: { text_style: REGULAR_TEXT {font_size: 10.5}, color: #1a1a1a }
-            }
-            info_label := Label {
-                width: Fill, height: Fit,
-                flow: Right
-                margin: 0
-                padding: 0
-                flow: Flow.Right{wrap: false}
-                draw_text +: { text_style: REGULAR_TEXT {font_size: 8.5}, color: #737373 }
-            }
-        }
-
-        buttons_view := View {
+        buttons_view := RoundedView {
+            visible: false
             width: Fit,
             height: Fit,
             flow: Right,
             spacing: 8,
+            padding: Inset { left: 8, right: 8, top: 4, bottom: 4 }
             align: Align{x: 1.0, y: 0.5}
-            margin: Inset{left: 8}
-            visible: false
+            margin: Inset{right: 16}
+
+            show_bg: true
+            draw_bg +: {
+                color: #f5f5f5
+                border_radius: 4.0
+                border_size: 0
+            }
 
             join_button := RobrixPositiveIconButton {
                 width: Fit,
@@ -344,6 +392,10 @@ script_mod! {
             }
         }
 
+        // The connecting hierarchical lines on the left, placed last in
+        // the Overlay so the parent's Fit height (from main_entry) is
+        // already resolved when tree_lines is laid out.
+        tree_lines := mod.widgets.TreeLines {}
 
         animator: Animator{
             hover: {
@@ -356,11 +408,12 @@ script_mod! {
 
     // Entry for a child room within a space, which cannot be expanded.
     mod.widgets.RoomEntry = mod.widgets.SubspaceEntry {
-        cursor: MouseCursor.Default
-
-        expand_icon := View {
-            width: 10
-            height: 16
+        main_entry +: {
+            cursor: MouseCursor.Default
+            expand_icon := View {
+                width: 10
+                height: 16
+            }
         }
     }
 
@@ -392,35 +445,46 @@ script_mod! {
         }
     }
 
-    // Small loading indicator shown inline when loading subspace children
+    // Small loading indicator shown inline when loading subspace children.
+    // Uses the same Overlay + spacer pattern as SubspaceEntry so tree lines
+    // span the full row height and the content is indented correctly.
     mod.widgets.SubspaceLoadingEntry = View {
         width: Fill, height: 36,
-        flow: Right,
-        align: Align{ y: 0.5 }
-        padding: Inset{left: 8, right: 12}
+        flow: Overlay,
+        align: Align{ x: 0, y: 0.5 }
 
-        // Tree lines replace the spacer
+        loading_content := View {
+            width: Fill, height: Fit,
+            flow: Right,
+            align: Align{ x: 0, y: 0.5 }
+            padding: Inset{left: 8, right: 12}
+
+            // Spacer for tree indent (width set dynamically in draw_item)
+            indent_spacer := View { width: 0, height: Fit }
+
+            loading_spinner := LoadingSpinner {
+                width: 14,
+                height: 14,
+                margin: Inset{left: 10, right: 4}
+                draw_bg +: {
+                    color: (COLOR_ACTIVE_PRIMARY)
+                    border_size: 2.0
+                }
+            }
+
+            label := Label {
+                width: Fit,
+                height: Fit,
+                draw_text +: {
+                    text_style: REGULAR_TEXT {font_size: 9},
+                    color: #888,
+                }
+                text: "Loading..."
+            }
+        }
+
+        // Tree lines drawn last so parent height is resolved
         tree_lines := mod.widgets.TreeLines {}
-
-        loading_spinner := LoadingSpinner {
-            width: 14,
-            height: 14,
-            margin: Inset{left: 8, right: 10}
-            draw_bg +: {
-                color: (COLOR_ACTIVE_PRIMARY)
-                border_size: 2.0
-            }
-        }
-
-        label := Label {
-            width: Fit,
-            height: Fit,
-            draw_text +: {
-                text_style: REGULAR_TEXT {font_size: 9},
-                color: #888,
-            }
-            text: "Loading..."
-        }
     }
 
     // The main view that shows the lobby (homepage) for a space.
@@ -445,16 +509,31 @@ script_mod! {
             show_bg: true,
             draw_bg.color: (COLOR_BG_PREVIEW)
 
-            space_info_label := Label {
+            space_info_row := View {
                 width: Fill,
                 height: Fit,
-                flow: Right, // do not wrap
-                margin: Inset{left: 2}
-                draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: 10},
-                    color: #737373,
+                flow: Right,
+                spacing: 10,
+                align: Align { y: 0.5 }
+
+                space_info_label := Label {
+                    width: Fit,
+                    height: Fit,
+                    flow: Right, // do not wrap
+                    margin: Inset{left: 2}
+                    draw_text +: {
+                        text_style: REGULAR_TEXT {font_size: 10},
+                        color: #737373,
+                    }
+                    text: "Welcome to the space:"
                 }
-                text: "Welcome to the space:"
+
+                // Filter input bar for searching rooms/spaces in this space
+                filter_bar := mod.widgets.RoomFilterInputBar {
+                    input +: {
+                        empty_text: "Filter this space..."
+                    }
+                }
             }
             
             parent_space_row := View {
@@ -604,10 +683,20 @@ impl Widget for TreeLines {
     fn handle_event(&mut self, _cx: &mut Cx, _event: &Event, _scope: &mut Scope) { }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
-        let indent_pixel = (self.draw_bg.level + 1.0) * self.draw_bg.indent_width;
         let mut walk = walk;
-        walk.width = Size::Fixed(indent_pixel as f64);
-        
+        // When used in a non-Overlay flow (e.g., SubspaceLoadingEntry's Right flow),
+        // set the width to the indent area. When width is Fill (Overlay case),
+        // the shader handles clipping via indent_width.
+        if !walk.width.is_fill() {
+            let indent_pixel = (self.draw_bg.level + 1.0) * self.draw_bg.indent_width;
+            walk.width = Size::Fixed(indent_pixel as f64);
+        }
+        // Use the parent's resolved height so tree lines span the full row,
+        // even when our height is Fill inside a Fit parent.
+        let parent_h = cx.turtle().height();
+        if parent_h.is_finite() && parent_h > 0.0 {
+            walk.height = Size::Fixed(parent_h);
+        }
         self.draw_bg.draw_walk(cx, walk);
         DrawStep::done()
     }
@@ -623,6 +712,10 @@ pub struct SubspaceEntry {
     #[rust] room_id: Option<OwnedRoomId>,
     #[rust] is_space: bool,
     #[rust] show_buttons_view: bool,
+    /// Whether `show_buttons_view` was set by a tap (touch) rather than mouse hover.
+    /// On mobile (no hover events), tapping toggles button visibility;
+    /// on desktop, hover handles it and taps fire the normal action.
+    #[rust] buttons_shown_by_tap: bool,
     #[rust] is_expanded: bool,
 }
 
@@ -666,6 +759,7 @@ impl Widget for SubspaceEntry {
                 self.animator_play(cx, ids!(hover.on));
                 if !self.show_buttons_view {
                     self.show_buttons_view = true;
+                    self.buttons_shown_by_tap = false;
                     self.view.child_by_path(ids!(buttons_view)).set_visible(cx, true);
                     self.redraw(cx);
                 }
@@ -675,6 +769,7 @@ impl Widget for SubspaceEntry {
             Hit::FingerHoverOver(_) if !self.show_buttons_view => {
                 self.animator_play(cx, ids!(hover.on));
                 self.show_buttons_view = true;
+                self.buttons_shown_by_tap = false;
                 self.view.child_by_path(ids!(buttons_view)).set_visible(cx, true);
                 self.redraw(cx);
             }
@@ -687,6 +782,7 @@ impl Widget for SubspaceEntry {
                 if !entry_rect.contains(fe.abs) && !is_over_buttons_view {
                     self.animator_play(cx, ids!(hover.off));
                     self.show_buttons_view = false;
+                    self.buttons_shown_by_tap = false;
                     self.view.child_by_path(ids!(buttons_view)).set_visible(cx, false);
                     self.redraw(cx);
                 }
@@ -697,24 +793,51 @@ impl Widget for SubspaceEntry {
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
                 let is_within_buttons_view = self.show_buttons_view
                     && self.view.child_by_path(ids!(buttons_view)).area().rect(cx).contains(fe.abs);
-                if !is_within_buttons_view {
-                    if let Some(room_id) = self.room_id.as_ref() {
-                        if self.is_space {
-                            // Toggle expansion and animate the arrow
-                            self.is_expanded = !self.is_expanded;
-                            if let Some(mut arrow) = self.view.child_by_path(ids!(expand_icon)).borrow_mut::<ExpandArrow>() {
-                                arrow.set_is_open(cx, self.is_expanded, Animate::Yes);
-                            }
+                if is_within_buttons_view {
+                    // Let individual button handlers deal with taps on the buttons.
+                }
+                // On touch devices, tapping on the avatar or to its left
+                // always expands/collapses a space (bypasses button toggle).
+                else if fe.is_touch() && self.is_space {
+                    let avatar_rect = self.view.child_by_path(ids!(main_entry.avatar)).area().rect(cx);
+                    let tap_in_expand_region = fe.abs.x <= avatar_rect.pos.x + avatar_rect.size.x;
+                    if tap_in_expand_region {
+                        self.is_expanded = !self.is_expanded;
+                        if let Some(mut arrow) = self.view.child_by_path(ids!(main_entry.expand_icon)).borrow_mut::<ExpandArrow>() {
+                            arrow.set_is_open(cx, self.is_expanded, Animate::Yes);
+                        }
+                        if let Some(room_id) = self.room_id.as_ref() {
                             cx.widget_action(
                                 self.widget_uid(),
                                 SubspaceEntryAction::SpaceClicked { space_id: room_id.clone() },
                             );
-                        } else {
-                            cx.widget_action(
-                                self.widget_uid(),
-                                SubspaceEntryAction::RoomClicked { room_id: room_id.clone() },
-                            );
                         }
+                    } else {
+                        // Touch tap on the text area: toggle buttons visibility.
+                        self.toggle_buttons_for_tap(cx);
+                    }
+                }
+                // On touch devices for rooms (not spaces): tap toggles buttons.
+                else if fe.is_touch() {
+                    self.toggle_buttons_for_tap(cx);
+                }
+                // Non-touch (desktop): fire the normal entry action,
+                // since hover already handles button visibility.
+                else if let Some(room_id) = self.room_id.as_ref() {
+                    if self.is_space {
+                        self.is_expanded = !self.is_expanded;
+                        if let Some(mut arrow) = self.view.child_by_path(ids!(main_entry.expand_icon)).borrow_mut::<ExpandArrow>() {
+                            arrow.set_is_open(cx, self.is_expanded, Animate::Yes);
+                        }
+                        cx.widget_action(
+                            self.widget_uid(),
+                            SubspaceEntryAction::SpaceClicked { space_id: room_id.clone() },
+                        );
+                    } else {
+                        cx.widget_action(
+                            self.widget_uid(),
+                            SubspaceEntryAction::RoomClicked { room_id: room_id.clone() },
+                        );
                     }
                 }
             }
@@ -763,11 +886,30 @@ impl Widget for SubspaceEntry {
     }
 }
 
+impl SubspaceEntry {
+    /// Toggles the buttons_view visibility for a touch tap.
+    fn toggle_buttons_for_tap(&mut self, cx: &mut Cx) {
+        if self.show_buttons_view {
+            self.animator_play(cx, ids!(hover.off));
+            self.show_buttons_view = false;
+            self.buttons_shown_by_tap = false;
+            self.view.child_by_path(ids!(buttons_view)).set_visible(cx, false);
+        } else {
+            self.animator_play(cx, ids!(hover.on));
+            self.show_buttons_view = true;
+            self.buttons_shown_by_tap = true;
+            self.view.child_by_path(ids!(buttons_view)).set_visible(cx, true);
+        }
+        self.redraw(cx);
+    }
+}
+
 /// The subset of info in [`SpaceRoom`] that we display for each room/space.
 #[derive(Debug)]
 struct SpaceRoomInfo {
     id: OwnedRoomId,
     name: String,
+    canonical_alias: Option<OwnedRoomAliasId>,
     topic: Option<String>,
     avatar: AvatarState,
     num_joined_members: u64,
@@ -776,6 +918,8 @@ struct SpaceRoomInfo {
     join_rule: Option<JoinRuleSummary>,
     /// If `Some`, this is a space. If `None`, it's a room.
     children_count: Option<u64>,
+    /// Whether the room is suggested by the space administrators.
+    suggested: bool,
 }
 impl SpaceRoomInfo {
     fn is_space(&self) -> bool {
@@ -787,6 +931,7 @@ impl From<&SpaceRoom> for SpaceRoomInfo {
         SpaceRoomInfo {
             id: space_room.room_id.clone(),
             name: space_room.display_name.clone(),
+            canonical_alias: space_room.canonical_alias.clone(),
             topic: space_room.topic.as_ref().map(|t| {
                 replace_linebreaks_separators(t.trim(), false).into_owned()
             }),
@@ -795,6 +940,7 @@ impl From<&SpaceRoom> for SpaceRoomInfo {
             state: space_room.state,
             join_rule: space_room.join_rule.clone(),
             children_count: space_room.is_space().then_some(space_room.children_count),
+            suggested: space_room.suggested,
         }
     }
 }
@@ -802,6 +948,7 @@ impl From<SpaceRoom> for SpaceRoomInfo {
     fn from(space_room: SpaceRoom) -> Self {
         SpaceRoomInfo {
             children_count: space_room.is_space().then_some(space_room.children_count),
+            canonical_alias: space_room.canonical_alias,
             id: space_room.room_id,
             name: space_room.display_name,
             topic: space_room.topic.map(|t| {
@@ -811,6 +958,7 @@ impl From<SpaceRoom> for SpaceRoomInfo {
             num_joined_members: space_room.num_joined_members,
             state: space_room.state,
             join_rule: space_room.join_rule,
+            suggested: space_room.suggested,
         }
     }
 }
@@ -866,6 +1014,9 @@ pub struct SpaceLobbyScreen {
 
     /// Whether we are currently loading the initial data.
     #[rust] is_loading: bool,
+
+    /// The current filter keywords entered by the user, if any.
+    #[rust] filter_keywords: String,
 }
 
 impl Widget for SpaceLobbyScreen {
@@ -887,35 +1038,35 @@ impl Widget for SpaceLobbyScreen {
                     }
 
                     // Handle receiving top-level space details (join rule, member count).
-                    Some(SpaceRoomListAction::TopLevelSpaceDetails(sr)) => {
-                        if self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == &sr.room_id) {
-                            self.space_avatar_state = AvatarState::Known(sr.avatar_url.clone());
-                            self.space_avatar_state.update_from_cache(cx); // prefetch the avatar image
-                            self.view.label(cx, ids!(header.space_info_label)).set_text(cx, &format!(
-                                "{}  ·  {} {}",
-                                match sr.join_rule {
-                                    Some(JoinRuleSummary::Public) => "🌐  Public space",
-                                    _ => "🔒  Private space",
-                                },
-                                sr.num_joined_members,
-                                if sr.num_joined_members == 1 { "member" } else { "members" }
-                            ));
-                            self.redraw(cx);
-                        }
+                    Some(SpaceRoomListAction::TopLevelSpaceDetails(sr))
+                        if self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == &sr.room_id) =>
+                    {
+                        self.space_avatar_state = AvatarState::Known(sr.avatar_url.clone());
+                        self.space_avatar_state.update_from_cache(cx); // prefetch the avatar image
+                        self.view.label(cx, ids!(header.space_info_row.space_info_label)).set_text(cx, &format!(
+                            "{}  ·  {} {}",
+                            match sr.join_rule {
+                                Some(JoinRuleSummary::Public) => "🌐  Public space",
+                                _ => "🔒  Private space",
+                            },
+                            sr.num_joined_members,
+                            if sr.num_joined_members == 1 { "member" } else { "members" }
+                        ));
+                        self.redraw(cx);
                     }
 
                     // Handle a change to the set of children in this space or any of its child subspaces.
-                    Some(SpaceRoomListAction::UpdatedChildren { space_id, parent_chain, .. }) => {
+                    Some(SpaceRoomListAction::UpdatedChildren { space_id, parent_chain, .. })
                         if self.space_name_id.as_ref().is_some_and(|sni|
                             sni.room_id() == space_id
                             || parent_chain.iter().any(|ancestor_id| sni.room_id() == ancestor_id)
-                        ) {
-                            if let Some(sender) = &self.space_request_sender {
-                                let _ = sender.send(SpaceRequest::GetDetailedChildren {
-                                    space_id: space_id.clone(),
-                                    parent_chain: parent_chain.clone(),
-                                });
-                            }
+                        ) =>
+                    {
+                        if let Some(sender) = &self.space_request_sender {
+                            let _ = sender.send(SpaceRequest::GetDetailedChildren {
+                                space_id: space_id.clone(),
+                                parent_chain: parent_chain.clone(),
+                            });
                         }
                     }
                     _ => { }
@@ -975,6 +1126,16 @@ impl Widget for SpaceLobbyScreen {
                     cx.action(InviteModalAction::Open(space_name_id.clone()));
                 }
             }
+
+            // Handle changes to this screen's own filter input bar.
+            if let Some(keywords) = self.view.room_filter_input_bar(cx, ids!(filter_bar)).changed(actions) {
+                self.filter_keywords = keywords;
+                self.rebuild_tree_entries();
+                // Reset scroll to the top when filter changes.
+                let portal_list = self.view.portal_list(cx, ids!(tree_list));
+                portal_list.set_first_id_and_scroll(0, 0.0);
+                self.redraw(cx);
+            }
         }
     }
 
@@ -1020,7 +1181,12 @@ impl Widget for SpaceLobbyScreen {
                 // No entries found
                 else if entry_count == 0 && item_id == 0 {
                     let item = list.item(cx, item_id, id!(status_label));
-                    item.child_by_path(ids!(label)).as_label().set_text(cx, "No rooms or spaces found.");
+                    let msg = if self.filter_keywords.is_empty() {
+                        "No rooms or spaces found."
+                    } else {
+                        "No matching rooms or spaces."
+                    };
+                    item.child_by_path(ids!(label)).as_label().set_text(cx, msg);
                     item.child_by_path(ids!(loading_spinner)).set_visible(cx, false);
                     item
                 }
@@ -1044,6 +1210,7 @@ impl Widget for SpaceLobbyScreen {
                                     inner.is_expanded = is_expanded;
                                     if id_changed {
                                         inner.show_buttons_view = false;
+                                        inner.buttons_shown_by_tap = false;
                                     }
                                     show_buttons_view = inner.show_buttons_view;
                                 }
@@ -1051,7 +1218,7 @@ impl Widget for SpaceLobbyScreen {
                                 // Snap expand arrow to correct state without animation
                                 // when item is reused or state changed externally
                                 if need_snap {
-                                    if let Some(mut arrow) = item.child_by_path(ids!(expand_icon)).borrow_mut::<ExpandArrow>() {
+                                    if let Some(mut arrow) = item.child_by_path(ids!(main_entry.expand_icon)).borrow_mut::<ExpandArrow>() {
                                         arrow.set_is_open(cx, is_expanded, Animate::No);
                                     }
                                 }
@@ -1065,6 +1232,7 @@ impl Widget for SpaceLobbyScreen {
                                     inner.is_space = false;
                                     if id_changed {
                                         inner.show_buttons_view = false;
+                                        inner.buttons_shown_by_tap = false;
                                     }
                                     show_buttons_view = inner.show_buttons_view;
                                 }
@@ -1077,10 +1245,10 @@ impl Widget for SpaceLobbyScreen {
                             item.child_by_path(ids!(buttons_view.view_button)).set_visible(cx, show_view_button);
 
                             // Below, draw things that are common to child rooms and subspaces.
-                            item.child_by_path(ids!(content.name_label)).as_label().set_text(cx, &info.name);
+                            item.child_by_path(ids!(main_entry.content.name_label)).as_label().set_text(cx, &info.name);
 
                             // Display avatar from stored data, or fetch from cache, or show initials
-                            let avatar_ref = item.child_by_path(ids!(avatar)).as_avatar();
+                            let avatar_ref = item.child_by_path(ids!(main_entry.avatar)).as_avatar();
                             let first_char = utils::user_name_first_letter(&info.name);
                             let mut drew_avatar = false;
 
@@ -1115,16 +1283,28 @@ impl Widget for SpaceLobbyScreen {
                                 avatar_ref.show_text(cx, None, None, first_char.unwrap_or("#"));
                             }
 
+                            let indent_width = TREE_INDENT_WIDTH as f32;
                             if let Some(mut lines) = item.child_by_path(ids!(tree_lines)).borrow_mut::<TreeLines>() {
                                 lines.draw_bg.level = *level as f32;
                                 lines.draw_bg.is_last = if *is_last { 1.0 } else { 0.0 };
                                 lines.draw_bg.parent_mask = *parent_mask as f32;
-                                lines.draw_bg.indent_width = 44.0;
+                                lines.draw_bg.indent_width = indent_width;
                             }
+                            // Set the indent spacer width to match the tree indentation.
+                            let indent_pixel = (*level as f64 + 1.0) * TREE_INDENT_WIDTH;
+                            if let Some(mut spacer) = item.child_by_path(ids!(main_entry.indent_spacer)).borrow_mut::<View>() {
+                                spacer.walk.width = Size::Fixed(indent_pixel);
+                            }
+
+                            // Show "Suggested" tag if recommended and not already joined
+                            let show_suggested = info.suggested
+                                && !matches!(info.state, Some(RoomState::Joined));
+                            item.child_by_path(ids!(main_entry.content.suggested_tag))
+                                .set_visible(cx, show_suggested);
 
                             // Build the info label with join status, member count, and topic
                             // Note: Public/Private is intentionally not shown per-item to reduce clutter
-                            let info_label = item.child_by_path(ids!(content.info_label)).as_label();
+                            let info_label = item.child_by_path(ids!(main_entry.content.info_label)).as_label();
                             let mut info_parts = Vec::new();
 
                             // Add join status for rooms we haven't joined
@@ -1158,7 +1338,9 @@ impl Widget for SpaceLobbyScreen {
 
                             // Add topic if available (Label handles truncation via flow: Flow.Right{wrap: false})
                             if let Some(topic) = &info.topic {
-                                info_parts.push(topic.to_string());
+                                if !topic.is_empty() {
+                                    info_parts.push(topic.to_string());
+                                }
                             }
 
                             info_label.set_text(cx, &info_parts.join("  |  "));
@@ -1168,12 +1350,18 @@ impl Widget for SpaceLobbyScreen {
                         TreeEntry::Loading { level, parent_mask } => {
                             // Draw loading indicator for subspace
                             let item = list.item(cx, item_id, id!(subspace_loading));
+                            let indent_width = TREE_INDENT_WIDTH as f32;
                             // Configure tree lines
                             if let Some(mut lines) = item.child_by_path(ids!(tree_lines)).borrow_mut::<TreeLines>() {
                                 lines.draw_bg.level = *level as f32;
                                 lines.draw_bg.is_last = 1.0;
                                 lines.draw_bg.parent_mask = *parent_mask as f32;
-                                lines.draw_bg.indent_width = 44.0;
+                                lines.draw_bg.indent_width = indent_width;
+                            }
+                            // Set the indent spacer width to match the tree indentation.
+                            let indent_pixel = (*level as f64 + 1.0) * TREE_INDENT_WIDTH;
+                            if let Some(mut spacer) = item.child_by_path(ids!(loading_content.indent_spacer)).borrow_mut::<View>() {
+                                spacer.walk.width = Size::Fixed(indent_pixel);
                             }
                             item
                         }
@@ -1245,22 +1433,211 @@ impl SpaceLobbyScreen {
         self.redraw(cx);
     }
 
-    /// Rebuild the flattened tree entries based on the current expansion state.
+    /// Rebuild the flattened tree entries based on the current expansion state,
+    /// and then apply the current filter keywords (if any).
     fn rebuild_tree_entries(&mut self) {
         let Some(space_name_id) = &self.space_name_id else { return };
         let root_space_id = space_name_id.room_id().clone();
-        // Build tree starting from root
         let mut new_tree_entries = Vec::new();
-        Self::build_tree_for_space(
-            &self.children_cache,
-            &self.expanded_spaces,
-            &self.loading_subspaces,
-            &mut new_tree_entries,
-            &root_space_id,
-            0,
-            0,
-        );
+
+        if self.filter_keywords.is_empty() {
+            // No filter: build tree respecting expansion state.
+            Self::build_tree_for_space(
+                &self.children_cache,
+                &self.expanded_spaces,
+                &self.loading_subspaces,
+                &mut new_tree_entries,
+                &root_space_id,
+                0,
+                0,
+            );
+        } else {
+            // Filter active: build tree showing all matching entries
+            // plus their ancestor spaces to preserve hierarchy context.
+            let kw = self.filter_keywords.to_lowercase();
+            Self::build_filtered_tree(
+                &self.children_cache,
+                &mut new_tree_entries,
+                &root_space_id,
+                &kw,
+                0,
+                0,
+            );
+        }
+
         self.tree_entries = new_tree_entries;
+    }
+
+    /// Returns whether the given [`SpaceRoomInfo`] matches the filter keywords.
+    fn matches_filter(info: &SpaceRoomInfo, keywords: &str) -> bool {
+        info.name.to_lowercase().contains(keywords)
+            || info.id.as_str().to_lowercase().contains(keywords)
+            || info.canonical_alias.as_ref()
+                .is_some_and(|a| a.as_str().to_lowercase().contains(keywords))
+            || info.topic.as_ref()
+                .is_some_and(|t| t.to_lowercase().contains(keywords))
+    }
+
+    /// Recursively build a filtered tree that includes only entries matching
+    /// the keywords, plus any ancestor spaces needed to preserve the hierarchy.
+    ///
+    /// Returns `true` if any matching entry was added within this subtree.
+    fn build_filtered_tree(
+        children_cache: &HashMap<OwnedRoomId, Vector<SpaceRoom>>,
+        tree_entries: &mut Vec<TreeEntry>,
+        space_id: &OwnedRoomId,
+        keywords: &str,
+        level: usize,
+        parent_mask: u32,
+    ) -> bool {
+        let Some(children) = children_cache.get(space_id) else { return false };
+
+        // Sort identically to the unfiltered tree: spaces first, then rooms, both alphabetically.
+        let mut sorted_children: Vec<_> = children.iter().collect();
+        sorted_children.sort_by(|a, b| {
+            match (a.is_space(), b.is_space()) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()),
+            }
+        });
+
+        // First pass: determine which children have matches (self or descendants)
+        // so we can correctly compute `is_last` for tree line drawing.
+        let matched_indices: Vec<usize> = sorted_children.iter().enumerate().filter_map(|(i, child)| {
+            let info = SpaceRoomInfo::from(*child);
+            let self_matches = Self::matches_filter(&info, keywords);
+            let has_matching_descendants = child.is_space()
+                && children_cache.contains_key(&child.room_id)
+                && Self::subtree_has_match(children_cache, &child.room_id, keywords);
+            if self_matches || has_matching_descendants {
+                Some(i)
+            } else {
+                None
+            }
+        }).collect();
+
+        if matched_indices.is_empty() {
+            return false;
+        }
+
+        // Second pass: emit entries for matched children, preserving hierarchy.
+        for (pos, &child_idx) in matched_indices.iter().enumerate() {
+            let child = sorted_children[child_idx];
+            let is_last = pos == matched_indices.len() - 1;
+            let info = SpaceRoomInfo::from(child);
+            let self_matches = Self::matches_filter(&info, keywords);
+
+            let child_mask = if is_last {
+                parent_mask
+            } else {
+                parent_mask | (1 << level)
+            };
+
+            if child.is_space() && children_cache.contains_key(&child.room_id) {
+                // For spaces: always include if self matches or descendants match.
+                tree_entries.push(TreeEntry::Item {
+                    info,
+                    level,
+                    is_last,
+                    parent_mask,
+                });
+                // Recurse into child space: if the space itself matches,
+                // show ALL of its children (unfiltered); otherwise show only
+                // the matching descendants.
+                if self_matches {
+                    // Show all children of a matching space (no further filtering).
+                    Self::build_tree_for_space_ignoring_expansion(
+                        children_cache,
+                        tree_entries,
+                        &child.room_id,
+                        level + 1,
+                        child_mask,
+                    );
+                } else {
+                    // Space doesn't match, but some descendant does — recurse with filter.
+                    Self::build_filtered_tree(
+                        children_cache,
+                        tree_entries,
+                        &child.room_id,
+                        keywords,
+                        level + 1,
+                        child_mask,
+                    );
+                }
+            } else if self_matches {
+                // Non-space room or space without cached children: include only if it matches.
+                tree_entries.push(TreeEntry::Item {
+                    info,
+                    level,
+                    is_last,
+                    parent_mask,
+                });
+            }
+        }
+
+        true
+    }
+
+    /// Returns `true` if any entry in the subtree rooted at `space_id` matches the keywords.
+    fn subtree_has_match(
+        children_cache: &HashMap<OwnedRoomId, Vector<SpaceRoom>>,
+        space_id: &OwnedRoomId,
+        keywords: &str,
+    ) -> bool {
+        let Some(children) = children_cache.get(space_id) else { return false };
+        children.iter().any(|child| {
+            let info = SpaceRoomInfo::from(child);
+            Self::matches_filter(&info, keywords)
+                || (child.is_space() && Self::subtree_has_match(children_cache, &child.room_id, keywords))
+        })
+    }
+
+    /// Like [`build_tree_for_space`] but ignores expansion state — shows all children.
+    /// Used to display the full contents of a space that itself matched the filter.
+    fn build_tree_for_space_ignoring_expansion(
+        children_cache: &HashMap<OwnedRoomId, Vector<SpaceRoom>>,
+        tree_entries: &mut Vec<TreeEntry>,
+        space_id: &OwnedRoomId,
+        level: usize,
+        parent_mask: u32,
+    ) {
+        let Some(children) = children_cache.get(space_id) else { return };
+
+        let mut sorted_children: Vec<_> = children.iter().collect();
+        sorted_children.sort_by(|a, b| {
+            match (a.is_space(), b.is_space()) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()),
+            }
+        });
+
+        let count = sorted_children.len();
+        for (i, child) in sorted_children.into_iter().enumerate() {
+            let is_last = i == count - 1;
+            tree_entries.push(TreeEntry::Item {
+                info: SpaceRoomInfo::from(child),
+                level,
+                is_last,
+                parent_mask,
+            });
+
+            if child.is_space() && children_cache.contains_key(&child.room_id) {
+                let child_mask = if is_last {
+                    parent_mask
+                } else {
+                    parent_mask | (1 << level)
+                };
+                Self::build_tree_for_space_ignoring_expansion(
+                    children_cache,
+                    tree_entries,
+                    &child.room_id,
+                    level + 1,
+                    child_mask,
+                );
+            }
+        }
     }
 
     /// Recursively build the tree of spaces and their expanded children such that they
@@ -1380,8 +1757,13 @@ impl SpaceLobbyScreen {
 
         // Clear the main content until we receive the async space info responses.
         self.tree_entries.clear();
-        self.view.label(cx, ids!(header.space_info_label)).set_text(cx, "");
+        self.view.label(cx, ids!(header.space_info_row.space_info_label)).set_text(cx, "");
         self.is_loading = true;
+
+        // Clear the filter bar when switching to a new space.
+        self.filter_keywords.clear();
+        self.view.text_input(cx, ids!(filter_bar.input)).set_text(cx, "");
+        self.view.button(cx, ids!(filter_bar.clear_button)).set_visible(cx, false);
 
         // Restore UI state if we've viewed this space before, otherwise start fresh
         self.expanded_spaces = SPACE_LOBBY_STATES.with_borrow(|states| {

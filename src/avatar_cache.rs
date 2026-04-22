@@ -84,6 +84,18 @@ pub fn get_or_fetch_avatar(
     })
 }
 
+/// Removes all `Requested` and `Failed` entries from the avatar cache,
+/// allowing them to be re-fetched.
+///
+/// This should be called when the app transitions from offline back to online,
+/// because any in-flight requests that were submitted while offline have likely
+/// failed, leaving stale entries that permanently block re-fetching.
+pub fn clear_all_pending_and_failed_requests() {
+    AVATAR_NEW_CACHE.with_borrow_mut(|cache| {
+        cache.retain(|_, entry| matches!(entry, AvatarCacheEntry::Loaded(_)));
+    });
+}
+
 /// Clears cached avatars.
 /// This function requires passing in a reference to `Cx`,
 /// which acts as a guarantee that this function must only be called by the main UI thread.

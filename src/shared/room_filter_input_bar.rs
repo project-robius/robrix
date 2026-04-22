@@ -1,8 +1,5 @@
-//! A text input used to filter the rooms list
+//! A text input used to filter a list of rooms/spaces
 //! with a search icon and a button to clear the input.
-//!
-//! This is a dedicated widget instead of a general "SearchBar" so it can be
-//! reused consistently across both Desktop and Mobile layouts.
 
 use makepad_widgets::*;
 
@@ -54,6 +51,7 @@ script_mod! {
 
         clear_button := RobrixNeutralIconButton {
             visible: false,
+            margin: 0
             padding: Inset{top: 5, bottom: 5, left: 9, right: 9},
             spacing: 0,
             align: Align{x: 0.5, y: 0.5}
@@ -63,7 +61,7 @@ script_mod! {
     }
 }
 
-/// A text input (with a search icon and cancel button) used to filter the rooms list.
+/// A text input (with a search icon and cancel button) used to filter a list of rooms/spaces.
 ///
 /// See the module-level docs for more detail.
 #[derive(Script, ScriptHook, Widget)]
@@ -73,18 +71,30 @@ pub struct RoomFilterInputBar {
 
 /// Actions emitted by the `RoomFilterInputBar` based on user interaction with it.
 #[derive(Clone, Debug, Default)]
-pub enum RoomFilterAction {
+pub enum FilterAction {
     /// The user has changed the text entered into the filter bar.
     Changed(String),
     #[default]
     None,
 }
 
-impl ActionDefaultRef for RoomFilterAction {
+impl ActionDefaultRef for FilterAction {
     fn default_ref() -> &'static Self {
-        static DEFAULT: RoomFilterAction = RoomFilterAction::None;
+        static DEFAULT: FilterAction = FilterAction::None;
         &DEFAULT
     }
+}
+
+/// An action emitted by the HomeScreen or RoomsSideBar when the keywords in the
+/// main filter input bar (for rooms and spaces) changes.
+///
+/// This is a separate action type from [`FilterAction`] so that consumers
+/// like `RoomsList` and `SpacesBar` only react to filter changes from
+/// the home screen's filter bar, ignoring other filter bar instances.
+#[derive(Debug)]
+pub enum MainFilterAction {
+    /// The user changed the home screen's filter text to the given keywords.
+    Changed(String),
 }
 
 impl Widget for RoomFilterInputBar {
@@ -95,6 +105,27 @@ impl Widget for RoomFilterInputBar {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl RoomFilterInputBar {
+    /// Returns `Some(keywords)` if the filter text in this filter input bar
+    /// was changed in the given `actions`.
+    /// The returned keywords are already trimmed of whitespace.
+    pub fn changed(&self, actions: &Actions) -> Option<String> {
+        if let Some(item) = actions.find_widget_action(self.widget_uid()) {
+            if let FilterAction::Changed(keywords) = item.cast() {
+                return Some(keywords);
+            }
+        }
+        None
+    }
+}
+
+impl RoomFilterInputBarRef {
+    /// See [`RoomFilterInputBar::changed()`].
+    pub fn changed(&self, actions: &Actions) -> Option<String> {
+        self.borrow().and_then(|inner| inner.changed(actions))
     }
 }
 
@@ -116,7 +147,7 @@ impl WidgetMatchEvent for RoomFilterInputBar {
             clear_button.reset_hover(cx);
             cx.widget_action(
                 self.widget_uid(), 
-                RoomFilterAction::Changed(keywords)
+                FilterAction::Changed(keywords)
             );
         }
 
@@ -126,7 +157,7 @@ impl WidgetMatchEvent for RoomFilterInputBar {
             input.set_key_focus(cx);
             cx.widget_action(
                 self.widget_uid(), 
-                RoomFilterAction::Changed(String::new())
+                FilterAction::Changed(String::new())
             );
         }
     }
