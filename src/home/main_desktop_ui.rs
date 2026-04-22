@@ -3,7 +3,7 @@ use ruma::OwnedRoomId;
 use tokio::sync::Notify;
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, settings::app_settings_data::AppSettingsAction, utils::RoomNameId};
+use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, utils::RoomNameId};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
 
 script_mod! {
@@ -346,18 +346,6 @@ impl MainDesktopUI {
     /// defined in the DSL: one splitter with the RoomsList on the left and a Welcome tab on the right.
     fn load_dock_state_from(&mut self, cx: &mut Cx, app_state: &mut AppState) {
         let dock = self.view.dock(cx, ids!(dock));
-        // The Dock captures `room_screen := mod.widgets.RoomScreen {}` at its
-        // initial DSL apply. If `AppPreferences::broadcast_all` re-assigned
-        // `mod.widgets.RoomScreen` before this widget even existed (MainDesktopUI
-        // is lazy-initialized inside a PageFlip), the Dock's captured template
-        // is stale. Refresh it here so the tabs we're about to create use the
-        // current preferences.
-        let refreshed = dock.refresh_widgets_mod_template(
-            cx,
-            live_id!(room_screen),
-            live_id!(RoomScreen),
-        );
-        log!("load_dock_state_from: refresh_widgets_mod_template(room_screen <- RoomScreen) -> {refreshed}");
         let to_restore_opt = if let Some(ss) = self.selected_space.as_ref() {
             app_state.saved_dock_state_per_space.get(ss)
         } else {
@@ -586,24 +574,6 @@ impl WidgetMatchEvent for MainDesktopUI {
                     self.save_dock_state_to(cx, app_state);
                 }
                 _ => {}
-            }
-
-            // The Dock captures `room_screen := mod.widgets.RoomScreen {}` at its
-            // initial DSL apply, so a preference change that re-assigns
-            // `mod.widgets.RoomScreen` (e.g., a new thumbnail max height) doesn't
-            // affect tabs opened later. Refresh the captured template so that
-            // closing and reopening a room tab picks up the new cap.
-            if matches!(
-                action.downcast_ref(),
-                Some(AppSettingsAction::ThumbnailMaxHeightChanged(_)),
-            ) {
-                let refreshed = self.view.dock(cx, ids!(dock))
-                    .refresh_widgets_mod_template(
-                        cx,
-                        live_id!(room_screen),
-                        live_id!(RoomScreen),
-                    );
-                log!("MainDesktopUI: refresh_widgets_mod_template(room_screen <- RoomScreen) -> {refreshed}");
             }
         }
 

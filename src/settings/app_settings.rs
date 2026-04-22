@@ -147,7 +147,7 @@ script_mod! {
                     width: 50, height: Fit
                     margin: Inset{top: 1, bottom: 1}
                     padding: Inset{left: 8, right: 8, top: 5, bottom: 5}
-                    empty_text: "500"
+                    empty_text: "300"
                 }
 
                 Label {

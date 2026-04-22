@@ -102,33 +102,6 @@ impl Widget for TextOrImage {
 }
 
 impl TextOrImage {
-    /// Caps the image to display at a maximum height (in logical pixels).
-    ///
-    /// If `None`, there is no max, and the height will be `Size::fit()`.
-    ///
-    /// The cap is applied to the inner `Image` widgets (for both the loaded
-    /// image and the default placeholder), not the outer view, so that
-    /// `ImageFit::Smallest` scales the texture proportionally instead of
-    /// the outer view clipping the drawn pixels.
-    pub fn set_image_max_height(&mut self, cx: &mut Cx, max_height_px: Option<u32>) {
-        let new_height = match max_height_px {
-            Some(h) => Size::Fit {
-                min: None,
-                max: Some(FitBound::Abs(h as f64)),
-            },
-            None => Size::fit(),
-        };
-        for path in [
-            ids!(image_view.image),
-            ids!(default_image_view.image),
-        ] {
-            let image = self.view.image(cx, path);
-            if let Some(mut inner) = image.borrow_mut() {
-                inner.walk.height = new_height;
-            }
-        }
-    }
-
     /// Sets the text content, which will be displayed on future draw operations.
     ///
     /// ## Arguments
@@ -185,13 +158,6 @@ impl TextOrImage {
 }
 
 impl TextOrImageRef {
-    /// See [TextOrImage::set_image_max_height()].
-    pub fn set_image_max_height(&self, cx: &mut Cx, max_height_px: Option<u32>) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.set_image_max_height(cx, max_height_px);
-        }
-    }
-
     /// See [TextOrImage::show_text()].
     pub fn show_text<T: AsRef<str>>(&self, cx: &mut Cx, text: T) {
         if let Some(mut inner) = self.borrow_mut() {

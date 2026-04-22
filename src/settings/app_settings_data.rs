@@ -104,9 +104,6 @@ impl AppPreferences {
     /// after every `Event::LiveEdit` so a hot-reloaded `script_mod!` block
     /// doesn't clobber our runtime heap overrides.
     pub fn broadcast_all(&self, cx: &mut Cx) {
-        log!("AppPreferences::broadcast_all: view_mode={:?}, send_on_enter={}, thumbnail_max_height={:?}",
-            self.view_mode, self.send_on_enter, self.thumbnail_max_height,
-        );
         self.on_view_mode_changed(cx);
         self.on_send_on_enter_changed(cx);
         self.on_thumbnail_max_height_changed(cx);
@@ -169,10 +166,14 @@ impl ThumbnailMaxHeight {
 }
 
 /// Actions emitted when an app-wide preference changes so other parts of the
-/// app can react (e.g., apply a new view mode or redraw thumbnails).
+/// app can react.
+///
+/// Note: the thumbnail max-height preference is *not* an action — it mutates
+/// the shared `mod.widgets.IMG_MSG_FIT` heap object in place and relies on
+/// `cx.request_script_reapply()` to propagate the change to every Image
+/// widget via `Apply::Reload`.
 #[derive(Debug, Clone)]
 pub enum AppSettingsAction {
     ViewModeChanged(ViewModeOverride),
     SendOnEnterChanged(bool),
-    ThumbnailMaxHeightChanged(ThumbnailMaxHeight),
 }
