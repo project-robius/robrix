@@ -68,22 +68,26 @@ impl AppPreferences {
     /// `Size::script_apply` re-reads `max` from the shared `IMG_MSG_FIT`
     /// object and updates the widget's `walk.height`.
     ///
-    /// For `ThumbnailMaxHeight::Unlimited` we set `max` to
-    /// `FitBound.Abs(f64::MAX)` so no effective cap is applied.
-    ///
-    /// The `use mod.prelude.widgets.*` at the top is required — without
-    /// it, `FitBound` isn't in scope at runtime `script_eval!` time.
+    /// For `ThumbnailMaxHeight::Unlimited` we set `max` to `nil`, which
+    /// `Option<FitBound>::script_apply` maps to `None` — i.e. `Fit{max: None}`,
+    /// truly unbounded.
     pub fn on_thumbnail_max_height_changed(&self, cx: &mut Cx) {
-        let max_height = self
-            .thumbnail_max_height
-            .to_pixels()
-            .map_or(f64::MAX, |p| p as f64);
-
-        script_eval!(cx, {
-            use mod.prelude.widgets.*
-
-            mod.widgets.IMG_MSG_FIT.max = FitBound.Abs(#(max_height))
-        });
+        match self.thumbnail_max_height.to_pixels() {
+            Some(px) => {
+                let px = px as f64;
+                // The `use mod.prelude.widgets.*` is required so `FitBound`
+                // resolves in runtime script scope.
+                script_eval!(cx, {
+                    use mod.prelude.widgets.*
+                    mod.widgets.IMG_MSG_FIT.max = FitBound.Abs(#(px))
+                });
+            }
+            None => {
+                script_eval!(cx, {
+                    mod.widgets.IMG_MSG_FIT.max = nil
+                });
+            }
+        }
 
         // The shared `IMG_MSG_FIT.max` was mutated in place; every widget
         // whose `walk.height` referenced this object needs a tree re-apply
