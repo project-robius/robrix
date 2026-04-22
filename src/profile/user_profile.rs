@@ -66,8 +66,6 @@ script_mod! {
 
 
 
-    mod.widgets.ICON_DOUBLE_CHAT = crate_resource("self://resources/icons/double_chat.svg")
-
     let UserProfileView = ScrollXYView {
         width: Fill,
         height: Fill,

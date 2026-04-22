@@ -5,6 +5,9 @@ use crate::{
     home::{
         invite_screen::InviteScreenWidgetExt,
         navigation_tab_bar::{NavigationBarAction, SelectedTab},
+        room_action_bar::{
+            RoomActionBarAction, RoomActionBarWidgetExt, handle_default_action_stub,
+        },
         room_screen::RoomScreenWidgetExt,
         rooms_list::RoomsListAction,
         space_lobby::SpaceLobbyScreenWidgetExt,
@@ -30,7 +33,11 @@ script_mod! {
         width: Fill, height: Fill
         draw_bg.color: (COLOR_PRIMARY)
         header +: {
-            height: (mod.widgets.STACK_VIEW_HEADER_HEIGHT),
+            // `Fit` lets the header grow from one row (45px) to two rows
+            // (90px) when the `RoomActionBar` inside is expanded. The
+            // enclosing `HomeScreen` updates the body's top margin in step
+            // with this animation (see `RoomActionBarAction::ExpansionToggled`).
+            height: Fit,
             padding: 0
             align: Align{y: 0.5}
 
@@ -117,33 +124,29 @@ script_mod! {
                 }
             }
 
-            content +: {
-                height: (mod.widgets.STACK_VIEW_HEADER_HEIGHT)
-                align: Align{y: 0.5}
-                button_container +: {
-                    padding: 0,
-                    margin: 0
-                    left_button +: {
-                        width: Fit, height: Fit,
-                        padding: Inset{left: 20, right: 23, top: 10, bottom: 10}
-                        margin: Inset{left: 8, right: 0, top: 0, bottom: 0}
-                        draw_icon +: { color: (ROOM_NAME_TEXT_COLOR) }
-                        icon_walk: Walk{width: 13, height: Fit}
-                        spacing: 0
-                        text: ""
-                    }
-                }
-                title_container +: {
-                    // padding: Inset{top: 8}
-                    title +: {
-                        draw_text +: {
-                            color: (ROOM_NAME_TEXT_COLOR)
-                        }
-                    }
-                }
+            // The `RoomActionBar` owns the entire header content: back
+            // button, room-name label, inline action buttons, the chevron
+            // expand/collapse trigger, and the full-width row-2 overflow.
+            // We fully replace the base's `content` (`:=` rather than `+:`)
+            // because the widget manages its own internal flow and the
+            // base's `title_container` / `button_container` children would
+            // otherwise contribute confusing extra nodes.
+            //
+            // The back button is named `left_button` inside the widget so
+            // the base `StackNavigationView` keeps emitting
+            // `StackNavigationAction::Pop` for its click.
+            content := mod.widgets.RoomActionBar {
+                width: Fill
+                height: Fit
             }
         }
         body +: {
+            // Starts at one-row height (45). `HomeScreen` bumps this to 90
+            // when the active room's action bar fires
+            // `RoomActionBarAction::ExpansionToggled{is_expanded: true}`,
+            // and back to 45 on collapse — in sync with the header's
+            // animated height so the message list tracks the header's
+            // bottom edge.
             margin: Inset{top: (mod.widgets.STACK_VIEW_HEADER_HEIGHT)}
         }
     }
@@ -519,6 +522,35 @@ impl Widget for HomeScreen {
                     _ => {}
                 }
 
+                // Room action bar click from the mobile StackNavigationView
+                // header. The desktop path captures these inside RoomScreen;
+                // on mobile the action bar lives in the header — a sibling of
+                // RoomScreen — so the action bubbles up to us.
+                if let Some(RoomActionBarAction::ButtonClicked { id })
+                    = action.downcast_ref()
+                {
+                    handle_default_action_stub(*id);
+                    continue;
+                }
+
+                // Keep the active stack view's body-top margin in sync with
+                // the header height as the `RoomActionBar` animates between
+                // one and two rows. Only relevant on mobile; on desktop the
+                // bar lives inside `room_top_header` (`height: Fit`) which
+                // grows naturally.
+                if let Some(RoomActionBarAction::ExpansionToggled { is_expanded })
+                    = action.downcast_ref()
+                {
+                    let depth = self.view.stack_navigation(cx, ids!(view_stack)).depth();
+                    let margin_top = if *is_expanded {
+                        crate::home::room_action_bar::ROOM_ACTION_BAR_EXPANDED_HEIGHT
+                    } else {
+                        crate::home::room_action_bar::ROOM_ACTION_BAR_ROW_HEIGHT
+                    };
+                    self.set_mobile_body_margin_top_at_depth(cx, depth, margin_top);
+                    continue;
+                }
+
                 // When a stack navigation pop is initiated (back button pressed),
                 // pop the mobile nav stack so it stays in sync with StackNavigation.
                 if let StackNavigationAction::Pop = action.as_widget_action().cast() {
@@ -610,7 +642,7 @@ impl HomeScreen {
     ) {
         let new_depth = self.view.stack_navigation(cx, ids!(view_stack)).depth();
 
-        let view_id = match &selected_room {
+        let (view_id, show_action_buttons) = match &selected_room {
             SelectedRoom::JoinedRoom { room_name_id }
             | SelectedRoom::Thread { room_name_id, .. } => {
                 let (view_id, room_screen_id) = Self::room_ids_for_depth(new_depth);
@@ -622,25 +654,32 @@ impl HomeScreen {
                 self.view
                     .room_screen(cx, &[room_screen_id])
                     .set_displayed_room(cx, room_name_id, thread_root);
-                view_id
+                (view_id, true)
             }
             SelectedRoom::InvitedRoom { room_name_id } => {
                 self.view
                     .invite_screen(cx, ids!(invite_screen))
                     .set_displayed_invite(cx, room_name_id);
-                id!(invite_view)
+                (id!(invite_view), false)
             }
             SelectedRoom::Space { space_name_id } => {
                 self.view
                     .space_lobby_screen(cx, ids!(space_lobby_screen))
                     .set_displayed_space(cx, space_name_id);
-                id!(space_lobby_view)
+                (id!(space_lobby_view), false)
             }
         };
 
-        // Set the header title for the view being pushed.
-        let title_path = &[view_id, live_id!(header), live_id!(content), live_id!(title_container), live_id!(title)];
-        self.view.label(cx, title_path).set_text(cx, &selected_room.display_name());
+        // Configure this stack view's header `RoomActionBar`: back
+        // button is always visible on mobile; room-name label reflects
+        // the display name. Action buttons are shown only for actual
+        // room views — invites and space lobbies hide them since
+        // search / threads / members / info don't apply there.
+        let action_bar_path = &[view_id, live_id!(header), live_id!(content)];
+        let action_bar = self.view.room_action_bar(cx, action_bar_path);
+        action_bar.set_back_button_visible(cx, true);
+        action_bar.set_action_buttons_visible(cx, show_action_buttons);
+        action_bar.set_room_name(cx, &selected_room.display_name());
 
         // Save the current selected_room onto the navigation stack before replacing it.
         if let Some(prev) = app_state.selected_room.take() {
@@ -651,6 +690,25 @@ impl HomeScreen {
         // Push the view onto the mobile navigation stack.
         self.view.stack_navigation(cx, ids!(view_stack)).push(cx, view_id);
         self.view.redraw(cx);
+    }
+
+    /// Applies a body-top margin to the stack view at the given depth so
+    /// the message list stays flush with the bottom of its header as the
+    /// header's `RoomActionBar` animates between one and two rows.
+    fn set_mobile_body_margin_top_at_depth(
+        &mut self,
+        cx: &mut Cx,
+        depth: usize,
+        margin_top_px: f64,
+    ) {
+        if depth == 0 || depth > Self::ROOM_VIEW_IDS.len() {
+            return;
+        }
+        let view_id = Self::ROOM_VIEW_IDS[depth - 1];
+        let mut body = self.view.view(cx, &[view_id, live_id!(body)]);
+        script_apply_eval!(cx, body, {
+            margin: Inset{top: #(margin_top_px)}
+        });
     }
 }
 

@@ -38,6 +38,9 @@ use crate::{
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
+use crate::home::room_action_bar::{
+    RoomActionBarAction, RoomActionBarWidgetExt, handle_default_action_stub,
+};
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
 use crate::shared::mentionable_text_input::MentionableTextInputAction;
@@ -556,6 +559,22 @@ script_mod! {
         flow: Down,
         spacing: 0.0
 
+        // Desktop-only top header. The `RoomActionBar` now owns the full
+        // header layout (title + action buttons + optional expand/collapse
+        // row), so this wrapper just gives it a background and `height: Fit`
+        // so it can grow from one row to two when the bar is expanded.
+        // Hidden on mobile, where the enclosing `StackNavigationView`
+        // header hosts its own `RoomActionBar` (with the back button shown).
+        room_top_header := View {
+            width: Fill
+            height: Fit
+            flow: Down
+            show_bg: true
+            draw_bg +: { color: (COLOR_PRIMARY) }
+
+            room_action_bar := mod.widgets.RoomActionBar {}
+        }
+
         room_screen_wrapper := SolidView {
             width: Fill, height: Fill,
             flow: Overlay,
@@ -999,6 +1018,17 @@ impl Widget for RoomScreen {
                     return false;
                 }
 
+                // A button on this RoomScreen's own action bar was tapped
+                // (either inline or via the shared overflow menu). Only our
+                // own bar's clicks reach here because `capture_actions` scopes
+                // them to this widget.
+                if let Some(RoomActionBarAction::ButtonClicked { id })
+                    = action.downcast_ref()
+                {
+                    handle_default_action_stub(*id);
+                    return false;
+                }
+
                 // Handle the action that requests to show the user profile sliding pane.
                 if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
                     self.show_user_profile(
@@ -1062,6 +1092,14 @@ impl Widget for RoomScreen {
 
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // The top header (room name + action bar) is only shown on desktop.
+        // On mobile, the enclosing `StackNavigationView` header takes over;
+        // see `RobrixContentView` in `home_screen.rs`.
+        let show_top_header = cx.display_context.is_desktop();
+        self.view
+            .view(cx, ids!(room_top_header))
+            .set_visible(cx, show_top_header);
+
         // If the room isn't loaded yet, we show the restore status label only.
         if !self.is_loaded {
             let Some(room_name) = &self.room_name_id else {
@@ -2471,6 +2509,16 @@ impl RoomScreen {
         );
     }
 
+    /// Updates the desktop top-header's `RoomActionBar` to display the
+    /// given room: hides the back-button region (desktop has no back
+    /// button) and sets the title. The widget owns its own action
+    /// buttons statically, so nothing else needs configuring.
+    fn update_top_header_for_room(&mut self, cx: &mut Cx, room_name_id: &RoomNameId) {
+        let action_bar = self.view.room_action_bar(cx, ids!(room_top_header.room_action_bar));
+        action_bar.set_back_button_visible(cx, false);
+        action_bar.set_room_name(cx, &room_name_id.to_string());
+    }
+
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
     pub fn set_displayed_room(
         &mut self,
@@ -2488,6 +2536,12 @@ impl RoomScreen {
                 room_id: room_name_id.room_id().clone(),
             }
         };
+
+        // Keep the desktop top-header's label and the action bar in sync
+        // with the room being displayed. Safe to call regardless of the
+        // "already displayed" early-return below because the same string
+        // would be re-applied.
+        self.update_top_header_for_room(cx, room_name_id);
 
         // If this timeline is already displayed, we don't need to do anything major,
         // but we do need update the `room_name_id` in case it has changed, or it has been cleared.
