@@ -330,13 +330,20 @@ script_mod! {
         }
     }
 
-    // Max height of the image inside an ImageMessage / CondensedImageMessage
-    // timeline item. The "Maximum Image Thumbnail Height" App Setting
-    // overwrites this value on the script heap at runtime (see
-    // `AppPreferences::on_thumbnail_max_height_changed`) and triggers a
-    // script re-apply, so both existing and newly-instantiated image
-    // widgets pick up the new cap.
-    mod.widgets.IMAGE_MSG_MAX_HEIGHT = 200.0
+    // A single, shared `Size::Fit{max: ...}` object on the script heap,
+    // referenced by every `Image` widget inside an `ImageMessage` /
+    // `CondensedImageMessage`. Having one heap object instead of many
+    // lets the "Maximum Image Thumbnail Height" App Setting mutate just
+    // this object's `max` field at runtime (see
+    // `AppPreferences::on_thumbnail_max_height_changed`) — every widget
+    // whose `walk.height` referenced this object observes the change
+    // through the same heap slot on the next `Event::ScriptReapply`.
+    //
+    // This sidesteps the override-chain divergence that would otherwise
+    // make the mutation invisible to derived templates (e.g., the
+    // `ImageMessage := mod.widgets.ImageMessage {}` local alias inside a
+    // PortalList's `list`).
+    mod.widgets.IMG_MSG_FIT = Fit{max: FitBound.Abs(200.0)}
 
     // The view used for each static image-based message event in a room's timeline.
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
@@ -348,10 +355,10 @@ script_mod! {
                     // that `ImageFit.Smallest` scales the texture proportionally
                     // instead of the outer view just clipping the drawn pixels.
                     image_view +: { image +: {
-                        height: Fit{max: FitBound.Abs((mod.widgets.IMAGE_MSG_MAX_HEIGHT))}
+                        height: (mod.widgets.IMG_MSG_FIT)
                     } }
                     default_image_view +: { image +: {
-                        height: Fit{max: FitBound.Abs((mod.widgets.IMAGE_MSG_MAX_HEIGHT))}
+                        height: (mod.widgets.IMG_MSG_FIT)
                     } }
                 }
                 View {
@@ -375,10 +382,10 @@ script_mod! {
             content +: {
                 message := TextOrImage {
                     image_view +: { image +: {
-                        height: Fit{max: FitBound.Abs((mod.widgets.IMAGE_MSG_MAX_HEIGHT))}
+                        height: (mod.widgets.IMG_MSG_FIT)
                     } }
                     default_image_view +: { image +: {
-                        height: Fit{max: FitBound.Abs((mod.widgets.IMAGE_MSG_MAX_HEIGHT))}
+                        height: (mod.widgets.IMG_MSG_FIT)
                     } }
                 }
                 View {

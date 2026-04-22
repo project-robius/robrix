@@ -596,6 +596,21 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        // On a file-driven hot-reload (`Event::LiveEdit`), Makepad re-runs
+        // `script_mod!` which reasserts source-defined defaults (e.g.
+        // `mod.widgets.IMAGE_MSG_MAX_HEIGHT = 200.0`). That wipes any
+        // runtime preference overrides we previously pushed into the heap
+        // via `script_eval!`. Re-broadcast the current preferences so
+        // those overrides are re-established, then `broadcast_all`'s
+        // `request_script_reapply` triggers a follow-up `ScriptReapply`
+        // pass (handled inside the same `run_live_edit_if_needed` tick)
+        // so widgets pick the overrides up. `Event::ScriptReapply` itself
+        // must NOT trigger another broadcast — that would loop.
+        if let Event::LiveEdit = event {
+            log!("App::handle_event: LiveEdit → re-broadcasting preferences");
+            self.app_state.app_prefs.broadcast_all(cx);
+        }
+
         if let Event::Shutdown = event {
             let window_ref = self.ui.window(cx, ids!(main_window));
             if let Err(e) = persistence::save_window_state(window_ref, cx) {
