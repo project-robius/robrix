@@ -35,10 +35,9 @@ impl Default for AppPreferences {
 impl AppPreferences {
     /// Propagates the current `view_mode` to listening widgets.
     ///
-    /// Call this whenever `view_mode` has just changed. `HomeScreen` picks
-    /// this up and reinstalls the `AdaptiveView`'s variant selector
-    /// accordingly.
+    /// Call this whenever the `view_mode` setting has just changed.
     pub fn on_view_mode_changed(&self, cx: &mut Cx) {
+        cx.global::<ViewModeGlobal>().0 = self.view_mode;
         cx.action(AppSettingsAction::ViewModeChanged(self.view_mode));
     }
 
@@ -137,6 +136,24 @@ impl ViewModeOverride {
             Self::ForceNarrow => 2,
         }
     }
+
+    /// Returns a closure for use in `AdaptiveView::set_variant_selector`
+    /// that selects this view mode override.
+    pub fn variant_selector(self) -> impl FnMut(&mut Cx, &Vec2d) -> LiveId + 'static {
+        move |cx: &mut Cx, _parent_size: &Vec2d| match self {
+            Self::Automatic => {
+                if cx.display_context.is_desktop()
+                    || !cx.display_context.is_screen_size_known()
+                {
+                    live_id!(Desktop)
+                } else {
+                    live_id!(Mobile)
+                }
+            }
+            Self::ForceWide => live_id!(Desktop),
+            Self::ForceNarrow => live_id!(Mobile),
+        }
+    }
 }
 
 /// The maximum height (in pixels) of image thumbnails in the room timeline.
@@ -176,4 +193,22 @@ impl ThumbnailMaxHeight {
 pub enum AppSettingsAction {
     ViewModeChanged(ViewModeOverride),
     SendOnEnterChanged(bool),
+}
+
+/// A `Cx` global holding the current view mode override.
+///
+/// This gets updated via [`AppPreferences::on_view_mode_changed`].
+#[derive(Default, Clone, Copy)]
+pub struct ViewModeGlobal(pub ViewModeOverride);
+
+/// Returns whether the UI should currently behave as the wide "desktop"
+/// layout, honoring any `ForceWide` / `ForceNarrow` user override.
+pub fn effective_is_desktop(cx: &mut Cx) -> bool {
+    match cx.global::<ViewModeGlobal>().0 {
+        ViewModeOverride::ForceWide => true,
+        ViewModeOverride::ForceNarrow => false,
+        ViewModeOverride::Automatic => {
+            cx.display_context.is_desktop() || !cx.display_context.is_screen_size_known()
+        }
+    }
 }

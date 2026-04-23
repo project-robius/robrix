@@ -566,26 +566,9 @@ impl HomeScreen {
     /// current [`ViewModeOverride`] preference. `Automatic` falls back to the
     /// default width-based selector.
     fn apply_view_mode(&mut self, cx: &mut Cx, mode: ViewModeOverride) {
-        let adaptive = self.view.adaptive_view(cx, ids!(main_adaptive_view));
-        match mode {
-            ViewModeOverride::Automatic => {
-                adaptive.set_variant_selector(|cx, _parent_size| {
-                    if cx.display_context.is_desktop()
-                        || !cx.display_context.is_screen_size_known()
-                    {
-                        live_id!(Desktop)
-                    } else {
-                        live_id!(Mobile)
-                    }
-                });
-            }
-            ViewModeOverride::ForceWide => {
-                adaptive.set_variant_selector(|_cx, _parent_size| live_id!(Desktop));
-            }
-            ViewModeOverride::ForceNarrow => {
-                adaptive.set_variant_selector(|_cx, _parent_size| live_id!(Mobile));
-            }
-        }
+        self.view
+            .adaptive_view(cx, ids!(main_adaptive_view))
+            .set_variant_selector(mode.variant_selector());
         self.applied_view_mode = mode;
     }
 

@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    room::FetchedRoomAvatar, shared::{
+    room::FetchedRoomAvatar, settings::app_settings_data::effective_is_desktop, shared::{
         avatar::AvatarWidgetExt,
         html_or_plaintext::HtmlOrPlaintextWidgetExt, unread_badge::UnreadBadgeWidgetExt as _,
     }, utils::{self, relative_format}
@@ -66,6 +66,32 @@ script_mod! {
                     text_style_bold +: { font_size: 9.3 }
                     text_style_bold_italic +: { font_size: 9.3 }
                     text_style_fixed +: { font_size: 9.3 }
+                    // Scale down the pill (title font, avatar size, avatar text)
+                    // by the same factor as the message font (9.3 / 11).
+                    a +: {
+                        matrix_link_view +: {
+                            matrix_link +: {
+                                pill_bg +: {
+                                    draw_bg +: { border_radius: 5.0 }
+                                    avatar +: {
+                                        width: 13.53, height: 13.53,
+                                        text_view +: {
+                                            text +: {
+                                                draw_text +: {
+                                                    text_style +: { font_size: 7.61 }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    title +: {
+                                        draw_text +: {
+                                            text_style +: { font_size: 9.3 }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             plaintext_view +: {
@@ -73,7 +99,7 @@ script_mod! {
                     max_lines: 2
                     text_overflow: Ellipsis
                     draw_text +: {
-                        text_style: theme.font_regular { font_size: 9.5 },
+                        text_style: theme.font_regular { font_size: 9.3 },
                     }
                     text: "[No recent messages]"
                 }
@@ -397,7 +423,7 @@ impl RoomsListEntryContent {
             }
         }
 
-        if cx.display_context.is_desktop() {
+        if effective_is_desktop(cx) {
             self.update_preview_colors(cx, is_selected);
         } else {
             // Mobile doesn't have a selected state. Always use the default colors.
