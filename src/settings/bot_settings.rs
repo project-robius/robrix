@@ -604,8 +604,10 @@ mod tests {
 
     #[test]
     fn test_app_service_health_uses_custom_octos_service_url_when_configured() {
-        let mut bot_settings = BotSettingsState::default();
-        bot_settings.octos_service_url = "https://octos.example.com:9443".into();
+        let bot_settings = BotSettingsState {
+            octos_service_url: "https://octos.example.com:9443".into(),
+            ..Default::default()
+        };
 
         assert_eq!(
             bot_settings.resolved_octos_service_url(),
@@ -692,8 +694,10 @@ mod tests {
 
     #[test]
     fn test_app_service_health_check_is_ui_only() {
-        let mut bot_settings = BotSettingsState::default();
-        bot_settings.enabled = true;
+        let bot_settings = BotSettingsState {
+            enabled: true,
+            ..Default::default()
+        };
         let before = bot_settings.clone();
 
         let mut state = OctosHealthState::default();

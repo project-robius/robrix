@@ -1083,7 +1083,7 @@ mod tests {
         assert_eq!(generate_sort_key("@@@"), (2, "@@@".to_string()));
 
         // Test ordering: alphabetic -> numeric -> symbols
-        let mut names = vec![
+        let mut names = [
             ("!!!alice", generate_sort_key("!!!alice")),
             ("0user", generate_sort_key("0user")),
             ("alice", generate_sort_key("alice")),

@@ -497,6 +497,20 @@ fn starts_with_chars(chars: &[char], start: usize, needle: &str) -> bool {
     true
 }
 
+impl EventSourceModalRef {
+    /// Shows the modal with the given event details and JSON source.
+    pub fn show(
+        &self,
+        cx: &mut Cx,
+        room_id: OwnedRoomId,
+        event_id: Option<OwnedEventId>,
+        original_json: Option<String>,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.show(cx, room_id, event_id, original_json);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::format_event_source_html;
@@ -523,19 +537,5 @@ mod tests {
 
         assert!(html.contains("&lt;b&gt;拿捏中&lt;/b&gt;&lt;br&gt;ok"));
         assert!(!html.contains("<b>拿捏中</b>"));
-    }
-}
-
-impl EventSourceModalRef {
-    /// Shows the modal with the given event details and JSON source.
-    pub fn show(
-        &self,
-        cx: &mut Cx,
-        room_id: OwnedRoomId,
-        event_id: Option<OwnedEventId>,
-        original_json: Option<String>,
-    ) {
-        let Some(mut inner) = self.borrow_mut() else { return };
-        inner.show(cx, room_id, event_id, original_json);
     }
 }

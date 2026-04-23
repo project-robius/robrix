@@ -55,6 +55,10 @@ script_mod! {
         font_size: (10),
     }
 
+    mod.widgets.BOLD_TEXT = theme.font_bold {
+        font_size: (13),
+    }
+
     mod.widgets.TEXT_SUB = theme.font_regular {
         font_size: (10),
     }

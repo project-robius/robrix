@@ -557,7 +557,6 @@ script_mod! {
                         empty_text: "Filter this space..."
                     }
                 }
-                text: ""
             }
             
             parent_space_row := View {
