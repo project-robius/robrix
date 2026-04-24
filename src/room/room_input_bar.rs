@@ -21,7 +21,7 @@ use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedRoomId};
-use crate::{app::AppState, home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, settings::app_settings_data::{AppPreferencesGlobal, AppSettingsAction}, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -161,7 +161,7 @@ script_mod! {
 }
 
 /// Main component for message input with @mention support
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct RoomInputBar {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
@@ -174,9 +174,17 @@ pub struct RoomInputBar {
     /// Cached natural Fit height of the input_bar, used as the animation
     /// target when the editing pane is being hidden.
     #[rust] input_bar_natural_height: f64,
-    /// The last-applied `AppPreferences::send_on_enter` value for the message
-    /// text input. `None` until applied for the first time.
-    #[rust] applied_send_on_enter: Option<bool>,
+}
+
+impl ScriptHook for RoomInputBar {
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            let send_on_enter = cx.global::<AppPreferencesGlobal>().0.send_on_enter;
+            self.mentionable_text_input(cx, ids!(mentionable_text_input))
+                .text_input_ref()
+                .set_submit_on_enter(send_on_enter);
+        });
+    }
 }
 
 impl Widget for RoomInputBar {
@@ -208,27 +216,22 @@ impl Widget for RoomInputBar {
         }
 
         if let Event::Actions(actions) = event {
-            let send_on_enter = scope
-                .data
-                .get::<AppState>()
-                .map(|app_state| app_state.app_prefs.send_on_enter)
-                .unwrap_or(true);
-            self.handle_actions(cx, actions, room_screen_props, send_on_enter);
+            // Handle changes to the `send_on_enter` preference.
+            for action in actions {
+                if let Some(AppSettingsAction::SendOnEnterChanged(v)) = action.downcast_ref() {
+                    self.mentionable_text_input(cx, ids!(mentionable_text_input))
+                        .text_input_ref()
+                        .set_submit_on_enter(*v);
+                }
+            }
+
+            self.handle_actions(cx, actions, room_screen_props);
         }
 
         self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // Ensure the message text input's Enter-key behavior reflects the
-        // user's current preference, before any key press is processed.
-        if let Some(app_state) = scope.data.get::<AppState>() {
-            let text_input_ref = self
-                .mentionable_text_input(cx, ids!(mentionable_text_input))
-                .text_input_ref();
-            self.sync_send_on_enter(&text_input_ref, app_state.app_prefs.send_on_enter);
-        }
-
         // Shrink the input_bar's height as the editing pane slides in,
         // and grow it back as the editing pane slides out.
         // slide=1.0 → editing pane hidden → input_bar at full Fit height.
@@ -267,14 +270,9 @@ impl RoomInputBar {
         cx: &mut Cx,
         actions: &Actions,
         room_screen_props: &RoomScreenProps,
-        send_on_enter: bool,
     ) {
         let mentionable_text_input = self.mentionable_text_input(cx, ids!(mentionable_text_input));
         let text_input = mentionable_text_input.text_input_ref();
-
-        // Keep the message text input's send-on-enter behavior in sync with
-        // the user's App Settings preference.
-        self.sync_send_on_enter(&text_input, send_on_enter);
 
         // Clear the replying-to preview pane if the "cancel reply" button was clicked
         // or if the `Escape` key was pressed within the message input box.
@@ -551,15 +549,6 @@ impl RoomInputBar {
         } else {
             tombstone_footer.hide(cx);
             input_bar.set_visible(cx, true);
-        }
-    }
-
-    /// Applies the user's `send_on_enter` preference to the given text input.
-    /// No-op if the preference hasn't changed since it was last applied.
-    fn sync_send_on_enter(&mut self, text_input: &TextInputRef, desired: bool) {
-        if self.applied_send_on_enter != Some(desired) {
-            text_input.set_submit_on_enter(desired);
-            self.applied_send_on_enter = Some(desired);
         }
     }
 

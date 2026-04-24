@@ -10,7 +10,7 @@
 use makepad_widgets::*;
 
 use crate::home::rooms_list::RoomsListWidgetExt;
-use crate::settings::app_settings_data::{AppSettingsAction, ViewModeGlobal, ViewModeOverride};
+use crate::settings::app_settings_data::{AppPreferencesGlobal, AppSettingsAction, ViewModeOverride};
 use crate::shared::room_filter_input_bar::{MainFilterAction, RoomFilterInputBarWidgetExt};
 
 script_mod! {
@@ -150,12 +150,10 @@ impl ScriptHook for RoomsSideBar {
             cx.set_global(self.view.rooms_list(cx, ids!(rooms_list)));
 
             // The RoomsSideBar is re-instantiated every time the HomeScreen's
-            // AdaptiveView swaps between Desktop and Mobile (it's not wrapped
-            // in a CachedWidget in the Mobile variant), so the `ViewModeChanged`
-            // broadcast that fires once at app-state restore does not reach
-            // this fresh instance. Seed it from the shared `ViewModeGlobal`
-            // instead.
-            let mode = cx.global::<ViewModeGlobal>().0;
+            // AdaptiveView switches between Desktop and Mobile view modes
+            // (cuz it's not wrapped in a CachedWidget).
+            // Thus we just re-read the current value here and apply it.
+            let mode = cx.global::<AppPreferencesGlobal>().0.view_mode;
             self.apply_view_mode(mode);
         });
     }

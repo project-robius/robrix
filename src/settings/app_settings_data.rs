@@ -6,12 +6,12 @@ use serde::{Deserialize, Serialize};
 /// App-wide user preferences controlled by the App Settings UI.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppPreferences {
-    /// Forces the HomeScreen `AdaptiveView` into a specific layout,
-    /// or falls back to the default automatic width-based selection.
+    /// Forces the HomeScreen `AdaptiveView` into a particular layout,
+    /// or falls back to the default automatic width-based layout.
     #[serde(default)]
     pub view_mode: ViewModeOverride,
-    /// When `true` (default), plain Enter sends the message (Shift+Enter inserts a newline).
-    /// When `false`, Cmd+Enter (macOS) / Ctrl+Enter (other platforms) sends the
+    /// * If `true` (default), plain Enter sends the message (Shift+Enter inserts a newline).
+    /// * If `false`, Cmd+Enter (macOS) / Ctrl+Enter (other platforms) sends the
     /// message and plain Enter inserts a newline.
     #[serde(default)]
     pub send_on_enter: bool,
@@ -19,7 +19,8 @@ pub struct AppPreferences {
     #[serde(default)]
     pub thumbnail_max_height: ThumbnailMaxHeight,
 
-    // Note: if you add a new preference here, be sure to update `broadcast_all()`.
+    // Note: if you add a new preference here, be sure to add a new
+    // function `on_<NEW_PREFERENCE>_changed` and update `broadcast_all()`.
 }
 
 impl Default for AppPreferences {
@@ -33,24 +34,23 @@ impl Default for AppPreferences {
 }
 
 impl AppPreferences {
-    /// Propagates the current `view_mode` to listening widgets.
+    /// Broadcasts the current `view_mode` to listening widgets.
     ///
     /// Call this whenever the `view_mode` setting has just changed.
     pub fn on_view_mode_changed(&self, cx: &mut Cx) {
-        cx.global::<ViewModeGlobal>().0 = self.view_mode;
+        cx.global::<AppPreferencesGlobal>().0.view_mode = self.view_mode;
         cx.action(AppSettingsAction::ViewModeChanged(self.view_mode));
     }
 
-    /// Propagates the current `send_on_enter` value to listening widgets.
+    /// Broadcasts the current `send_on_enter` value to listening widgets.
     ///
-    /// Call this whenever `send_on_enter` has just changed. `RoomInputBar`
-    /// picks this up on its next draw to configure the message
-    /// `TextInput`'s submit-on-Enter behavior.
+    /// Call this whenever `send_on_enter` has just changed.
     pub fn on_send_on_enter_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.send_on_enter = self.send_on_enter;
         cx.action(AppSettingsAction::SendOnEnterChanged(self.send_on_enter));
     }
 
-    /// Propagates the current `thumbnail_max_height` to listening widgets.
+    /// Broadcasts the current `thumbnail_max_height` to listening widgets.
     ///
     /// Approach: `mod.widgets.IMG_MSG_FIT` is a single shared
     /// `Size::Fit{max: ...}` heap object referenced by every Image widget
@@ -71,6 +71,7 @@ impl AppPreferences {
     /// `Option<FitBound>::script_apply` maps to `None` — i.e. `Fit{max: None}`,
     /// truly unbounded.
     pub fn on_thumbnail_max_height_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.thumbnail_max_height = self.thumbnail_max_height;
         match self.thumbnail_max_height.to_pixels() {
             Some(px) => {
                 let px = px as f64;
@@ -88,15 +89,13 @@ impl AppPreferences {
             }
         }
 
-        // The shared `IMG_MSG_FIT.max` was mutated in place; every widget
-        // whose `walk.height` referenced this object needs a tree re-apply
-        // pass to re-read the new value. The flag is coalesced — multiple
-        // calls in the same frame result in exactly one
-        // `Event::ScriptReapply`.
+        // Now that we've updated the `IMG_MSG_FIT.max` object in place,
+        // we need to instruct every widget that uses this object to re-read
+        // the new value and update their whole widget tree accordingly.
         cx.request_script_reapply();
     }
 
-    /// Propagates every preference to listening widgets in one go.
+    /// Broadcasts every preference to listening widgets.
     ///
     /// Used at app-state restore so every listener picks up the loaded
     /// values without having to poll `AppState` every draw, and also
@@ -195,16 +194,20 @@ pub enum AppSettingsAction {
     SendOnEnterChanged(bool),
 }
 
-/// A `Cx` global holding the current view mode override.
+/// A `Cx` global mirror of the current [`AppPreferences`].
 ///
-/// This gets updated via [`AppPreferences::on_view_mode_changed`].
-#[derive(Default, Clone, Copy)]
-pub struct ViewModeGlobal(pub ViewModeOverride);
+/// Kept in sync by the individual `on_*_changed` methods (and thus by
+/// [`AppPreferences::broadcast_all`] at app-state restore). Widgets that
+/// need to read a preference value at construction time — where
+/// `scope.data` is not yet populated with `AppState` — can read it from
+/// here via `cx.global::<AppPreferencesGlobal>()`.
+#[derive(Default, Clone)]
+pub struct AppPreferencesGlobal(pub AppPreferences);
 
 /// Returns whether the UI should currently behave as the wide "desktop"
 /// layout, honoring any `ForceWide` / `ForceNarrow` user override.
 pub fn effective_is_desktop(cx: &mut Cx) -> bool {
-    match cx.global::<ViewModeGlobal>().0 {
+    match cx.global::<AppPreferencesGlobal>().0.view_mode {
         ViewModeOverride::ForceWide => true,
         ViewModeOverride::ForceNarrow => false,
         ViewModeOverride::Automatic => {
