@@ -217,6 +217,16 @@ pub enum RoomsListUpdate {
     HideRoom {
         room_id: OwnedRoomId,
     },
+    /// Clear the hidden flag for the given room and restore it into the
+    /// appropriate displayed list if it is now eligible.
+    ///
+    /// Semantic dual of [`RoomsListUpdate::HideRoom`]. Used by sliding-sync
+    /// `update_room` when a still-Joined room's display eligibility flips
+    /// from hidden back to displayable (e.g., a freshly-created DM whose
+    /// `display_name` finally transitions from `Empty` to `Calculated`).
+    UnhideRoom {
+        room_id: OwnedRoomId,
+    },
     /// Scroll to the given room.
     ScrollToRoom(OwnedRoomId),
     /// The background space service is now listening for requests,
@@ -895,6 +905,26 @@ impl RoomsList {
                     }
                     else if let Some(i) = self.displayed_invited_rooms.iter().position(|r| r == &room_id) {
                         self.displayed_invited_rooms.remove(i);
+                    }
+                }
+                RoomsListUpdate::UnhideRoom { room_id } => {
+                    let was_hidden = self.hidden_rooms.remove(&room_id);
+                    if !was_hidden {
+                        continue;
+                    }
+                    if let Some(room) = self.all_joined_rooms.get(&room_id) {
+                        let is_direct = room.is_direct;
+                        let should_display = should_display_room!(self, &room_id, room);
+                        if should_display {
+                            let displayed_list = if is_direct {
+                                &mut self.displayed_direct_rooms
+                            } else {
+                                &mut self.displayed_regular_rooms
+                            };
+                            if !displayed_list.contains(&room_id) {
+                                displayed_list.push(room_id);
+                            }
+                        }
                     }
                 }
                 RoomsListUpdate::ScrollToRoom(room_id) => {

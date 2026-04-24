@@ -1430,7 +1430,12 @@ impl MatchEvent for App {
 
             // Handle DirectMessageRoomActions
             match action.downcast_ref() {
-                Some(DirectMessageRoomAction::FoundExisting { room_name_id, .. }) => {
+                Some(DirectMessageRoomAction::FoundExisting { user_id, room_name_id }) => {
+                    self.app_state.bot_settings.bind_dm_target_if_needed(
+                        room_name_id.room_id().to_owned(),
+                        user_id.as_ref(),
+                        current_user_id().as_deref(),
+                    );
                     self.navigate_to_room(cx, None, &BasicRoomDetails::RoomId(room_name_id.clone()));
                 }
                 Some(DirectMessageRoomAction::DidNotExist { user_profile }) => {
@@ -1482,7 +1487,12 @@ impl MatchEvent for App {
                         None,
                     );
                 }
-                Some(DirectMessageRoomAction::NewlyCreated { room_name_id, .. }) => {
+                Some(DirectMessageRoomAction::NewlyCreated { user_profile, room_name_id }) => {
+                    self.app_state.bot_settings.bind_dm_target_if_needed(
+                        room_name_id.room_id().to_owned(),
+                        user_profile.user_id.as_ref(),
+                        current_user_id().as_deref(),
+                    );
                     self.navigate_to_room(cx, None, &BasicRoomDetails::RoomId(room_name_id.clone()));
                 }
                 _ => {}
@@ -2324,6 +2334,38 @@ impl BotSettingsState {
         }
     }
 
+    /// Auto-binds a DM room when it targets the configured app-service bot or a known bot.
+    ///
+    /// Returns `true` if a bot binding should exist for this room/target pair.
+    pub fn bind_dm_target_if_needed(
+        &mut self,
+        room_id: OwnedRoomId,
+        target_user_id: &UserId,
+        current_user_id: Option<&UserId>,
+    ) -> bool {
+        if !self.enabled {
+            return false;
+        }
+
+        let matches_configured_bot = self
+            .resolved_bot_user_id(current_user_id)
+            .ok()
+            .is_some_and(|configured_bot_user_id|
+                configured_bot_user_id.as_str() == target_user_id.as_str()
+            );
+        let matches_known_bot = self
+            .known_bot_user_ids
+            .iter()
+            .any(|known_bot_user_id| known_bot_user_id.as_str() == target_user_id.as_str());
+
+        if !(matches_configured_bot || matches_known_bot) {
+            return false;
+        }
+
+        self.set_room_bound(room_id, Some(target_user_id.to_owned()), true);
+        true
+    }
+
     /// Updates the remark for a specific room bot binding.
     ///
     /// Returns `true` if a binding existed and was updated.
@@ -2787,6 +2829,51 @@ mod tests {
                 remark: String::new(),
             }]
         );
+    }
+
+    #[test]
+    fn dm_target_matching_configured_bot_auto_binds_new_room() {
+        let current_user_id = UserId::parse("@alice:example.org").unwrap();
+        let bot_user_id = UserId::parse("@octosbot:example.org").unwrap();
+        let room_id = "!dm:example.org".parse::<OwnedRoomId>().unwrap();
+        let mut settings = BotSettingsState {
+            enabled: true,
+            botfather_user_id: "octosbot".into(),
+            ..BotSettingsState::default()
+        };
+
+        let auto_bound = settings.bind_dm_target_if_needed(
+            room_id.clone(),
+            bot_user_id.as_ref(),
+            Some(current_user_id.as_ref()),
+        );
+
+        assert!(auto_bound);
+        assert_eq!(
+            settings.bound_bot_user_ids(room_id.as_ref()),
+            vec![bot_user_id.to_owned()]
+        );
+    }
+
+    #[test]
+    fn ordinary_dm_target_does_not_auto_bind_new_room() {
+        let current_user_id = UserId::parse("@alice:example.org").unwrap();
+        let ordinary_user_id = UserId::parse("@bob:example.org").unwrap();
+        let room_id = "!dm:example.org".parse::<OwnedRoomId>().unwrap();
+        let mut settings = BotSettingsState {
+            enabled: true,
+            botfather_user_id: "octosbot".into(),
+            ..BotSettingsState::default()
+        };
+
+        let auto_bound = settings.bind_dm_target_if_needed(
+            room_id.clone(),
+            ordinary_user_id.as_ref(),
+            Some(current_user_id.as_ref()),
+        );
+
+        assert!(!auto_bound);
+        assert!(settings.bound_bot_user_ids(room_id.as_ref()).is_empty());
     }
 }
 
