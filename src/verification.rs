@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::sync::Arc;
 use futures_util::StreamExt;
 use makepad_widgets::{log, Cx};
@@ -76,13 +77,13 @@ async fn dump_devices(user_id: &UserId, client: &Client) -> String {
     let mut devices = String::new();
     for device in client.encryption().get_user_devices(user_id).await.unwrap().devices() {
         let current = client.device_id().is_some_and(|id| id == device.device_id());
-        devices.push_str(&format!(
-            "    {:<10} {:<30} {:<}{}\n",
+        let _ = writeln!(&mut devices,
+            "    {:<10} {:<30} {:<}{}",
             device.device_id(),
             device.display_name().unwrap_or("(unknown name)"),
             if device.is_verified() { "✅" } else { "❌" },
             if current { " <-- this device" } else { "" },
-        ));
+        );
     }
     format!("Currently-known devices of user {user_id}:\n{}",
         if devices.is_empty() { "    (none)" } else { &devices },
