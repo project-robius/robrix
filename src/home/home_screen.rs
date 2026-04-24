@@ -10,7 +10,7 @@ use crate::{
         space_lobby::SpaceLobbyScreenWidgetExt,
     },
     settings::{
-        app_settings_data::{AppSettingsAction, ViewModeOverride},
+        app_preferences::{AppPreferencesAction, ViewModeOverride},
         settings_screen::SettingsScreenWidgetRefExt,
     },
     shared::room_filter_input_bar::{MainFilterAction, RoomFilterInputBarWidgetExt},
@@ -432,7 +432,7 @@ pub struct HomeScreen {
 
     /// The most recently applied view-mode override, used to short-circuit
     /// redundant `AdaptiveView` selector reinstalls when an
-    /// [`AppSettingsAction::ViewModeChanged`] action repeats the current
+    /// [`AppPreferencesAction::ViewModeChanged`] action repeats the current
     /// value (e.g., the unconditional broadcast on app-state restore).
     #[rust] applied_view_mode: ViewModeOverride,
 }
@@ -514,7 +514,7 @@ impl Widget for HomeScreen {
                 }
 
                 // React to App Settings changes that affect the HomeScreen layout.
-                if let Some(AppSettingsAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
+                if let Some(AppPreferencesAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
                     if *new_mode != self.applied_view_mode {
                         self.apply_view_mode(cx, *new_mode);
                         self.view.redraw(cx);

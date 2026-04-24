@@ -10,7 +10,7 @@
 use makepad_widgets::*;
 
 use crate::home::rooms_list::RoomsListWidgetExt;
-use crate::settings::app_settings_data::{AppPreferencesGlobal, AppSettingsAction, ViewModeOverride};
+use crate::settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction, ViewModeOverride};
 use crate::shared::room_filter_input_bar::{MainFilterAction, RoomFilterInputBarWidgetExt};
 
 script_mod! {
@@ -176,7 +176,7 @@ impl Widget for RoomsSideBar {
             }
 
             for action in actions {
-                if let Some(AppSettingsAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
+                if let Some(AppPreferencesAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
                     if *new_mode != self.applied_view_mode {
                         self.apply_view_mode(*new_mode);
                         self.view.redraw(cx);

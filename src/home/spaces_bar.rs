@@ -13,7 +13,7 @@ use matrix_sdk::{RoomDisplayName, RoomState};
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 
 use crate::{
-    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, settings::app_settings_data::{effective_is_desktop, AppSettingsAction, ViewModeOverride}, shared::{avatar::AvatarWidgetRefExt, navigation_bar_button::NavigationBarButton, room_filter_input_bar::MainFilterAction}, utils::{self, RoomNameId}
+    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, settings::app_preferences::{effective_is_desktop, AppPreferencesAction, ViewModeOverride}, shared::{avatar::AvatarWidgetRefExt, navigation_bar_button::NavigationBarButton, room_filter_input_bar::MainFilterAction}, utils::{self, RoomNameId}
 };
 
 script_mod! {
@@ -390,7 +390,7 @@ impl Widget for SpacesBar {
                     continue;
                 }
 
-                if let Some(AppSettingsAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
+                if let Some(AppPreferencesAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
                     if *new_mode != self.applied_view_mode {
                         self.apply_view_mode(*new_mode);
                         self.view.redraw(cx);

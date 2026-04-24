@@ -12,7 +12,7 @@ use matrix_sdk_ui::timeline::{EventTimelineItem, MsgLikeKind, TimelineEventItemI
 
 use crate::shared::mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt};
 use crate::{
-    settings::app_settings_data::{AppPreferencesGlobal, AppSettingsAction},
+    settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction},
     shared::popup_list::{enqueue_popup_notification, PopupKind},
     sliding_sync::{submit_async_request, MatrixRequest, TimelineKind},
 };
@@ -187,7 +187,7 @@ impl Widget for EditingPane {
 
         if let Event::Actions(actions) = event {
             for action in actions {
-                if let Some(AppSettingsAction::SendOnEnterChanged(v)) = action.downcast_ref() {
+                if let Some(AppPreferencesAction::SendOnEnterChanged(v)) = action.downcast_ref() {
                     self.mentionable_text_input(cx, ids!(editing_content.edit_text_input))
                         .text_input_ref()
                         .set_submit_on_enter(*v);

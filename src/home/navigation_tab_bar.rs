@@ -41,7 +41,7 @@ use crate::{
         user_profile::UserProfile,
         user_profile_cache::{self, UserProfileUpdate},
     },
-    settings::app_settings_data::{effective_is_desktop, AppSettingsAction, ViewModeOverride},
+    settings::app_preferences::{effective_is_desktop, AppPreferencesAction, ViewModeOverride},
     shared::{
         avatar::{AvatarState, AvatarWidgetExt},
         navigation_bar_button::{NavigationBarButton, NavigationBarButtonWidgetExt},
@@ -558,7 +558,7 @@ impl Widget for NavigationTabBar {
                     continue;
                 }
 
-                if let Some(AppSettingsAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
+                if let Some(AppPreferencesAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
                     if *new_mode != self.applied_view_mode {
                         self.apply_view_mode(*new_mode);
                         self.view.redraw(cx);

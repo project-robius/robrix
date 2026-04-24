@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    room::FetchedRoomAvatar, settings::app_settings_data::effective_is_desktop, shared::{
+    room::FetchedRoomAvatar, settings::app_preferences::effective_is_desktop, shared::{
         avatar::AvatarWidgetExt,
         html_or_plaintext::HtmlOrPlaintextWidgetExt, unread_badge::UnreadBadgeWidgetExt as _,
     }, utils::{self, relative_format}

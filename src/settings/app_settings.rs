@@ -4,7 +4,7 @@ use makepad_widgets::*;
 
 use crate::{
     app::AppState,
-    settings::app_settings_data::{AppPreferences, ThumbnailMaxHeight, ViewModeOverride},
+    settings::app_preferences::{AppPreferences, ThumbnailMaxHeight, ViewModeOverride},
     shared::popup_list::{enqueue_popup_notification, PopupKind},
 };
 
@@ -23,9 +23,6 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-
-    // A description label shown below a section title to explain what the
-    // controls in that section do.
     mod.widgets.SettingsSectionDescription = Label {
         width: Fill, height: Fit
         flow: Flow.Right{wrap: true}
@@ -53,11 +50,9 @@ script_mod! {
             color: (COLOR_PRIMARY),
             color_hover: (COLOR_BG_PREVIEW),
             color_active: (COLOR_BG_PREVIEW),
-            color_2: vec4(-1.0, -1.0, -1.0, -1.0),
             border_color: vec4(0.0, 0.0, 0.0, 0.0),
             border_color_hover: vec4(0.0, 0.0, 0.0, 0.0),
             border_color_active: vec4(0.0, 0.0, 0.0, 0.0),
-            border_color_2: vec4(-1.0, -1.0, -1.0, -1.0),
             border_size: 0.0,
             border_radius: 3.0,
             mark_color: vec4(0.0, 0.0, 0.0, 0.0),
@@ -66,8 +61,6 @@ script_mod! {
     }
 
     // The popup list shown when a RobrixSettingsDropDown is opened.
-    // Fixed width matches the dropdown's 260px — `Fit` collapses here because
-    // the menu items use `width: Fill`.
     mod.widgets.RobrixSettingsPopupMenu = PopupMenu {
         width: 260, height: Fit
         padding: 4,
@@ -76,9 +69,7 @@ script_mod! {
 
         draw_bg +: {
             color: (COLOR_PRIMARY),
-            color_2: vec4(-1.0, -1.0, -1.0, -1.0),
             border_color: (COLOR_SECONDARY_DARKER),
-            border_color_2: vec4(-1.0, -1.0, -1.0, -1.0),
             border_size: 1.0,
             border_radius: 4.0,
         }
@@ -109,12 +100,10 @@ script_mod! {
             color_hover: (COLOR_PRIMARY),
             color_down: (COLOR_PRIMARY),
             color_focus: (COLOR_PRIMARY),
-            color_2: vec4(-1.0, -1.0, -1.0, -1.0),
             border_color: (COLOR_SECONDARY_DARKER),
             border_color_hover: (COLOR_ACTIVE_PRIMARY),
             border_color_focus: (COLOR_ACTIVE_PRIMARY_DARKER),
             border_color_down: (COLOR_ACTIVE_PRIMARY_DARKER),
-            border_color_2: vec4(-1.0, -1.0, -1.0, -1.0),
             border_size: 1.0,
             border_radius: 4.0,
             arrow_color: (MESSAGE_TEXT_COLOR),
@@ -204,7 +193,7 @@ script_mod! {
     }
 
 
-    // The view containing Robrix app-wide settings.
+    // The view containing Robrix app-wide preferences/settings.
     mod.widgets.AppSettings = #(AppSettings::register_widget(vm)) {
         width: Fill, height: Fit
         flow: Down,
@@ -315,7 +304,7 @@ script_mod! {
 ///
 /// Field-level state lives in [`AppState::app_prefs`]; this widget reads and
 /// writes that state in response to user interactions and emits
-/// [`AppSettingsAction`]s so other widgets can apply changes live.
+/// [`AppPreferencesAction`]s so other widgets can apply changes live.
 #[derive(Script, ScriptHook, Widget)]
 pub struct AppSettings {
     #[deref] view: View,
@@ -338,7 +327,6 @@ impl AppSettings {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         let app_state = scope.data.get_mut::<AppState>().unwrap();
 
-        // --- View mode dropdown ---
         let view_mode_dropdown = self.view.drop_down(cx, ids!(view_mode_dropdown));
         if let Some(index) = view_mode_dropdown.changed(actions) {
             let new_mode = ViewModeOverride::from_index(index);
@@ -353,11 +341,9 @@ impl AppSettings {
             }
         }
 
-        // --- Send-on-enter toggle ---
         let send_toggle = self.view.check_box(cx, ids!(send_on_cmd_enter_toggle));
         if let Some(cmd_enter_active) = send_toggle.changed(actions) {
-            // Toggle label reads "Send with Cmd/Ctrl + Enter":
-            // checked -> Cmd/Ctrl+Enter sends, so `send_on_enter` is false.
+            // The toggle's "active" state is the invsert of `send_on_enter`.
             let new_send_on_enter = !cmd_enter_active;
             if new_send_on_enter != app_state.app_prefs.send_on_enter {
                 app_state.app_prefs.send_on_enter = new_send_on_enter;
@@ -371,7 +357,6 @@ impl AppSettings {
             }
         }
 
-        // --- Thumbnail radio buttons ---
         let radios = self.view.radio_button_set(cx, ids_array!(
             thumb_small_radio,
             thumb_medium_radio,
@@ -408,14 +393,9 @@ impl AppSettings {
             }
         }
 
-        // --- Custom thumbnail value input ---
-        //
-        // Only commit the value when the user presses Enter or blurs the
-        // input — not on every keystroke — so mid-typing values like "4"
-        // (before "400") don't briefly become the active setting.
+        // Only process the custom thumbnail input when the user presses Enter
+        // or moves key focus away from the input, not on every keypress.
         if custom_input.returned(actions).is_some() || custom_input.key_focus_lost(actions) {
-            // Only act while Custom is selected. Otherwise typing shouldn't
-            // override the Small/Medium/Unlimited choice.
             let custom_selected = matches!(
                 app_state.app_prefs.thumbnail_max_height,
                 ThumbnailMaxHeight::Custom(_)

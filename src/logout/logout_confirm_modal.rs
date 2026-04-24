@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use makepad_widgets::*;
 use tokio::sync::Notify;
-use crate::settings::app_settings_data::effective_is_desktop;
+use crate::settings::app_preferences::effective_is_desktop;
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
 use super::logout_state_machine::is_logout_past_point_of_no_return;
 

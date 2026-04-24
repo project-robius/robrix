@@ -1,4 +1,4 @@
-//! App-wide settings/preferences and related types.
+//! App-wide preferences and related types.
 
 use makepad_widgets::*;
 use serde::{Deserialize, Serialize};
@@ -36,10 +36,10 @@ impl Default for AppPreferences {
 impl AppPreferences {
     /// Broadcasts the current `view_mode` to listening widgets.
     ///
-    /// Call this whenever the `view_mode` setting has just changed.
+    /// Call this whenever the `view_mode` preference has just changed.
     pub fn on_view_mode_changed(&self, cx: &mut Cx) {
         cx.global::<AppPreferencesGlobal>().0.view_mode = self.view_mode;
-        cx.action(AppSettingsAction::ViewModeChanged(self.view_mode));
+        cx.action(AppPreferencesAction::ViewModeChanged(self.view_mode));
     }
 
     /// Broadcasts the current `send_on_enter` value to listening widgets.
@@ -47,7 +47,7 @@ impl AppPreferences {
     /// Call this whenever `send_on_enter` has just changed.
     pub fn on_send_on_enter_changed(&self, cx: &mut Cx) {
         cx.global::<AppPreferencesGlobal>().0.send_on_enter = self.send_on_enter;
-        cx.action(AppSettingsAction::SendOnEnterChanged(self.send_on_enter));
+        cx.action(AppPreferencesAction::SendOnEnterChanged(self.send_on_enter));
     }
 
     /// Broadcasts the current `thumbnail_max_height` to listening widgets.
@@ -189,7 +189,7 @@ impl ThumbnailMaxHeight {
 /// `cx.request_script_reapply()` to propagate the change to every Image
 /// widget via `Apply::Reload`.
 #[derive(Debug, Clone)]
-pub enum AppSettingsAction {
+pub enum AppPreferencesAction {
     ViewModeChanged(ViewModeOverride),
     SendOnEnterChanged(bool),
 }
