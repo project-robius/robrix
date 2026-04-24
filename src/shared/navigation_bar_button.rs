@@ -32,6 +32,8 @@
 
 use makepad_widgets::*;
 
+use crate::settings::app_preferences::effective_is_desktop;
+
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
@@ -165,7 +167,7 @@ impl Widget for NavigationBarButton {
             );
             // If a built-in tooltip text is set, additionally emit a TooltipAction.
             if this.tooltip_text.is_empty() { return; }
-            let is_desktop = cx.display_context.is_desktop();
+            let is_desktop = effective_is_desktop(cx);
             cx.widget_action(
                 widget_uid,
                 TooltipAction::HoverIn {

@@ -34,12 +34,22 @@
 use makepad_widgets::*;
 use serde::{Deserialize, Serialize};
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, login::login_screen::LoginAction, logout::logout_confirm_modal::LogoutAction, profile::{
+    avatar_cache::{self, AvatarCacheEntry},
+    login::login_screen::LoginAction,
+    logout::logout_confirm_modal::LogoutAction,
+    profile::{
         user_profile::UserProfile,
         user_profile_cache::{self, UserProfileUpdate},
-    }, shared::{
-        avatar::{AvatarState, AvatarWidgetExt}, navigation_bar_button::{NavigationBarButton, NavigationBarButtonWidgetExt}, styles::*, verification_badge::VerificationBadgeWidgetExt
-    }, sliding_sync::{current_user_id, AccountDataAction}, utils::{self, RoomNameId}
+    },
+    settings::app_preferences::{effective_is_desktop, AppPreferencesAction, ViewModeOverride},
+    shared::{
+        avatar::{AvatarState, AvatarWidgetExt},
+        navigation_bar_button::{NavigationBarButton, NavigationBarButtonWidgetExt},
+        styles::*,
+        verification_badge::VerificationBadgeWidgetExt
+    },
+    sliding_sync::{current_user_id, AccountDataAction},
+    utils::{self, RoomNameId},
 };
 
 script_mod! {
@@ -373,7 +383,7 @@ impl Widget for ProfileIcon {
                     |p| format!("Logged in as \"{}\".\n\n{}", p.displayable_name(), verification_str)
                 );
                 let mut options = CalloutTooltipOptions {
-                    position: if cx.display_context.is_desktop() { TooltipPosition::Right} else { TooltipPosition::Top},
+                    position: if effective_is_desktop(cx) { TooltipPosition::Right } else { TooltipPosition::Top },
                     ..Default::default()
                 };
                 if let Some(c) = bg_color {
@@ -448,6 +458,9 @@ pub struct NavigationTabBar {
     #[deref] view: AdaptiveView,
 
     #[rust] is_spaces_bar_shown: bool,
+
+    /// The most recently applied view-mode override,
+    #[rust] applied_view_mode: ViewModeOverride,
 }
 
 impl ScriptHook for NavigationTabBar {
@@ -463,6 +476,14 @@ impl ScriptHook for NavigationTabBar {
 }
 
 impl NavigationTabBar {
+    /// Installs a variant selector on our root `AdaptiveView` that honors the
+    /// given [`ViewModeOverride`] preference. `Automatic` falls back to the
+    /// default width-based selector.
+    fn apply_view_mode(&mut self, mode: ViewModeOverride) {
+        self.view.set_variant_selector(mode.variant_selector());
+        self.applied_view_mode = mode;
+    }
+
     /// Updates which navigation tab button is visually marked as selected,
     /// enforcing radio-button-like mutual exclusion across the four
     /// navigation tab buttons.
@@ -535,6 +556,13 @@ impl Widget for NavigationTabBar {
                 if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
                     self.apply_selected_tab(cx, tab);
                     continue;
+                }
+
+                if let Some(AppPreferencesAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
+                    if *new_mode != self.applied_view_mode {
+                        self.apply_view_mode(*new_mode);
+                        self.view.redraw(cx);
+                    }
                 }
             }
         }

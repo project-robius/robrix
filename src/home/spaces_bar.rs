@@ -13,7 +13,7 @@ use matrix_sdk::{RoomDisplayName, RoomState};
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 
 use crate::{
-    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, shared::{avatar::AvatarWidgetRefExt, navigation_bar_button::NavigationBarButton, room_filter_input_bar::MainFilterAction}, utils::{self, RoomNameId}
+    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, settings::app_preferences::{effective_is_desktop, AppPreferencesAction, ViewModeOverride}, shared::{avatar::AvatarWidgetRefExt, navigation_bar_button::NavigationBarButton, room_filter_input_bar::MainFilterAction}, utils::{self, RoomNameId}
 };
 
 script_mod! {
@@ -336,6 +336,16 @@ pub struct SpacesBar {
     /// The ID of the currently-selected space in this SpacesBar.
     /// Only one space can be selected at once.
     #[rust] selected_space: Option<OwnedRoomId>,
+
+    /// The most recently applied view-mode override.
+    #[rust] applied_view_mode: ViewModeOverride,
+}
+
+impl SpacesBar {
+    fn apply_view_mode(&mut self, mode: ViewModeOverride) {
+        self.view.set_variant_selector(mode.variant_selector());
+        self.applied_view_mode = mode;
+    }
 }
 
 impl Widget for SpacesBar {
@@ -379,6 +389,14 @@ impl Widget for SpacesBar {
                     }
                     continue;
                 }
+
+                if let Some(AppPreferencesAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
+                    if *new_mode != self.applied_view_mode {
+                        self.apply_view_mode(*new_mode);
+                        self.view.redraw(cx);
+                    }
+                    continue;
+                }
             }
         }
     }
@@ -391,7 +409,7 @@ impl Widget for SpacesBar {
 
             // AdaptiveView + CachedWidget does not properly handle DSL-level style overrides,
             // so we must manually apply the different style choices here when drawing it.
-            if cx.display_context.is_desktop() {
+            if effective_is_desktop(cx) {
                 script_apply_eval!(cx, list, {
                     flow: #(Flow::Down),
                 });

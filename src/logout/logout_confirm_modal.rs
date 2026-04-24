@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use makepad_widgets::*;
 use tokio::sync::Notify;
+use crate::settings::app_preferences::effective_is_desktop;
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
 use super::logout_state_machine::is_logout_past_point_of_no_return;
 
@@ -210,7 +211,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                 cancel_button.set_text(cx, "Abort");
                 cancel_button.set_enabled(cx, true);
 
-                submit_async_request(MatrixRequest::Logout { is_desktop: cx.display_context.is_desktop() });
+                submit_async_request(MatrixRequest::Logout { is_desktop: effective_is_desktop(cx) });
                 needs_redraw = true;
             }
         }

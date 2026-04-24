@@ -21,7 +21,7 @@ use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction}, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -161,7 +161,7 @@ script_mod! {
 }
 
 /// Main component for message input with @mention support
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct RoomInputBar {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
@@ -174,6 +174,17 @@ pub struct RoomInputBar {
     /// Cached natural Fit height of the input_bar, used as the animation
     /// target when the editing pane is being hidden.
     #[rust] input_bar_natural_height: f64,
+}
+
+impl ScriptHook for RoomInputBar {
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            let send_on_enter = cx.global::<AppPreferencesGlobal>().0.send_on_enter;
+            self.mentionable_text_input(cx, ids!(mentionable_text_input))
+                .text_input_ref()
+                .set_submit_on_enter(send_on_enter);
+        });
+    }
 }
 
 impl Widget for RoomInputBar {
@@ -190,7 +201,7 @@ impl Widget for RoomInputBar {
                     .and_then(|(event_tl_item, _)| event_tl_item.event_id().map(ToOwned::to_owned))
                 {
                     cx.widget_action(
-                        room_screen_props.room_screen_widget_uid, 
+                        room_screen_props.room_screen_widget_uid,
                         MessageAction::JumpToEvent(event_id),
                     );
                 } else {
@@ -205,6 +216,15 @@ impl Widget for RoomInputBar {
         }
 
         if let Event::Actions(actions) = event {
+            // Handle changes to the `send_on_enter` preference.
+            for action in actions {
+                if let Some(AppPreferencesAction::SendOnEnterChanged(v)) = action.downcast_ref() {
+                    self.mentionable_text_input(cx, ids!(mentionable_text_input))
+                        .text_input_ref()
+                        .set_submit_on_enter(*v);
+                }
+            }
+
             self.handle_actions(cx, actions, room_screen_props);
         }
 
@@ -324,9 +344,12 @@ impl RoomInputBar {
             }
         }
 
-        // Handle the send message button being clicked or Cmd/Ctrl + Return being pressed.
+        // Handle the send message button being clicked, or a `Returned` action
+        // from the message text input. The text input only emits `Returned`
+        // for the key combination chosen by the user in App Settings (plus
+        // Cmd/Ctrl+Enter, which always submits).
         if self.button(cx, ids!(send_message_button)).clicked(actions)
-            || text_input.returned(actions).is_some_and(|(_, m)| m.is_primary())
+            || text_input.returned(actions).is_some()
         {
             let entered_text = mentionable_text_input.text().trim().to_string();
             if !entered_text.is_empty() {

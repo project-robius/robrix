@@ -100,6 +100,7 @@ impl Widget for TextOrImage {
         self.view.draw_walk(cx, scope, walk)
     }
 }
+
 impl TextOrImage {
     /// Sets the text content, which will be displayed on future draw operations.
     ///
