@@ -199,6 +199,9 @@ pub struct RoomInputBar {
     /// The pending file load operation, if any. Contains the receiver channel
     /// for receiving the loaded file data from a background thread.
     #[rust] pending_file_load: Option<crate::shared::file_upload_modal::FileLoadReceiver>,
+    /// The TimelineKind captured when a file picker is opened, to ensure the file
+    /// is uploaded to the correct room/thread even if the user switches rooms.
+    #[rust] pending_file_timeline_kind: Option<TimelineKind>,
 }
 
 impl Widget for RoomInputBar {
@@ -241,11 +244,15 @@ impl Widget for RoomInputBar {
                     Ok(Some(loaded_data)) => {
                         // Convert FileLoadedData to FileData for the modal
                         let file_data = convert_loaded_data_to_file_data(loaded_data);
-                        Cx::post_action(FilePreviewerAction::Show(file_data));
+                        // Use the captured TimelineKind from when the file picker was opened
+                        if let Some(timeline_kind) = self.pending_file_timeline_kind.take() {
+                            Cx::post_action(FilePreviewerAction::Show { file_data, timeline_kind });
+                        }
                         remove_receiver = true;
                     }
                     Ok(None) => {
                         // File loading failed, hide modal if shown
+                        self.pending_file_timeline_kind = None;
                         remove_receiver = true;
                     }
                     Err(std::sync::mpsc::TryRecvError::Empty) => {
@@ -253,6 +260,7 @@ impl Widget for RoomInputBar {
                     }
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                         // Channel disconnected
+                        self.pending_file_timeline_kind = None;
                         remove_receiver = true;
                     }
                 }
@@ -321,7 +329,7 @@ impl RoomInputBar {
         // Handle the add attachment button being clicked.
         if self.button(cx, ids!(send_attachment_button)).clicked(actions) {
             log!("Add attachment button clicked; opening file picker...");
-            self.open_file_picker(cx);
+            self.open_file_picker(cx, room_screen_props.timeline_kind.clone());
         }
 
         // Handle the add location button being clicked.
@@ -629,8 +637,11 @@ impl RoomInputBar {
     }
 
     /// Opens the native file picker dialog to select a file for upload.
+    ///
+    /// The `timeline_kind` is captured at this moment to ensure the file is uploaded
+    /// to the correct room/thread, even if the user switches rooms while the modal is open.
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
-    fn open_file_picker(&mut self, cx: &mut Cx) {
+    fn open_file_picker(&mut self, cx: &mut Cx, timeline_kind: TimelineKind) {
         // Run file dialog on main thread (required for non-windowed environments)
         let dialog = rfd::FileDialog::new()
             .set_title("Select file to upload")
@@ -639,6 +650,8 @@ impl RoomInputBar {
             .add_filter("Documents", &["pdf", "doc", "docx", "txt", "rtf"]);
 
         if let Some(selected_file_path) = dialog.pick_file() {
+            // Store the timeline_kind for when the file finishes loading
+            self.pending_file_timeline_kind = Some(timeline_kind);
             // Get file metadata
             let file_size = match std::fs::metadata(&selected_file_path) {
                 Ok(metadata) => metadata.len(),
@@ -685,19 +698,18 @@ impl RoomInputBar {
                 };
 
                 // Generate thumbnail for images
-                let (thumbnail, dimensions) = if crate::image_utils::is_displayable_image(mime_clone.as_ref()) {
+                let thumbnail = if crate::image_utils::is_displayable_image(mime_clone.as_ref()) {
                     match crate::image_utils::generate_thumbnail(&file_data) {
-                        Ok((thumb_data, width, height)) => (
-                            Some(ThumbnailData { data: thumb_data, width, height }),
-                            Some((width, height))
-                        ),
+                        Ok((thumb_data, width, height)) => {
+                            Some(ThumbnailData { data: thumb_data, width, height })
+                        },
                         Err(e) => {
                             makepad_widgets::error!("Failed to generate thumbnail: {e}");
-                            (None, None)
+                            None
                         }
                     }
                 } else {
-                    (None, None)
+                    None
                 };
 
                 let loaded_data = FileLoadedData {
@@ -708,7 +720,6 @@ impl RoomInputBar {
                     },
                     data: file_data,
                     thumbnail,
-                    dimensions,
                 };
 
                 if sender.send(Some(loaded_data)).is_err() {
@@ -721,7 +732,7 @@ impl RoomInputBar {
 
     /// Shows a "not supported" message on mobile platforms.
     #[cfg(any(target_os = "ios", target_os = "android"))]
-    fn open_file_picker(&mut self, _cx: &mut Cx) {
+    fn open_file_picker(&mut self, _cx: &mut Cx, _timeline_kind: TimelineKind) {
         enqueue_popup_notification(
             "File uploads are not yet supported on this platform.",
             PopupKind::Error,

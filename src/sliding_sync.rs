@@ -1718,10 +1718,6 @@ async fn matrix_worker_task(
                     log!("Sending attachment to {timeline_kind}: {} ({} bytes)...",
                         file_data.name, file_data.size);
 
-                    // For now, we'll just send the attachment without reply support
-                    // TODO: Add proper reply support for attachments
-                    let _ = replied_to; // Suppress unused warning for now
-
                     // Parse MIME type, falling back to octet-stream for unknown types
                     let content_type: Mime = file_data.mime_type.parse()
                         .unwrap_or(mime::APPLICATION_OCTET_STREAM);
@@ -1754,7 +1750,8 @@ async fn matrix_worker_task(
 
                     // Use the Room's send_attachment method directly
                     let room = timeline.room();
-                    let config = AttachmentConfig::new();
+                    let config = AttachmentConfig::new()
+                        .reply(replied_to);
 
                     let send_future = room.send_attachment(
                         &file_data.name,

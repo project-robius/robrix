@@ -6,6 +6,7 @@
 use makepad_widgets::*;
 use std::path::PathBuf;
 
+use crate::sliding_sync::TimelineKind;
 use crate::utils::format_file_size;
 
 script_mod! {
@@ -15,19 +16,17 @@ script_mod! {
     mod.widgets.FileUploadModal = set_type_default() do #(FileUploadModal::register_widget(vm)) {
         ..mod.widgets.RoundedView
 
-        width: 400,
+        width: 450,
         height: Fit,
         flow: Down,
-        padding: 20,
+        padding: Inset{top: 20, right: 25, bottom: 20, left: 25},
         spacing: 15,
 
         show_bg: true,
         draw_bg +: {
             color: (COLOR_PRIMARY)
             border_radius: 8.0
-            shadow_color: #00000044
-            shadow_radius: 10.0
-            shadow_offset: vec2(0.0, 2.0)
+            border_size: 0.0
         }
 
         // Header
@@ -121,10 +120,10 @@ script_mod! {
 
             file_name_label := Label {
                 width: Fill,
-                flow: Flow.Right{wrap: true},
                 draw_text +: {
                     text_style: REGULAR_TEXT { font_size: 11 },
-                    color: (COLOR_TEXT)
+                    color: (COLOR_TEXT),
+                    wrap: Word,
                 }
                 text: ""
             }
@@ -211,8 +210,6 @@ pub struct FileLoadedData {
     pub data: Vec<u8>,
     /// Optional thumbnail for image files.
     pub thumbnail: Option<ThumbnailData>,
-    /// Optional dimensions for image/video files, width and height in pixels.
-    pub dimensions: Option<(u32, u32)>,
 }
 
 /// Type alias for the receiver that gets loaded file data from a background thread.
@@ -224,12 +221,18 @@ pub enum FilePreviewerAction {
     /// No action.
     #[default]
     None,
-    /// Show the file upload modal with the given file data.
-    Show(FileData),
+    /// Show the file upload modal with the given file data and target timeline.
+    Show {
+        file_data: FileData,
+        timeline_kind: TimelineKind,
+    },
     /// Hide the file upload modal.
     Hide,
-    /// User confirmed the upload.
-    UploadConfirmed(FileData),
+    /// User confirmed the upload to the specified timeline.
+    UploadConfirmed {
+        file_data: FileData,
+        timeline_kind: TimelineKind,
+    },
     /// User cancelled the upload.
     Cancelled,
 }
@@ -242,6 +245,8 @@ pub struct FileUploadModal {
 
     /// The current file data being previewed.
     #[rust] file_data: Option<FileData>,
+    /// The target timeline for the upload, captured when the modal is shown.
+    #[rust] timeline_kind: Option<TimelineKind>,
 }
 
 impl Widget for FileUploadModal {
@@ -257,8 +262,8 @@ impl Widget for FileUploadModal {
 
             // Handle upload button
             if self.button(cx, ids!(upload_button)).clicked(actions) {
-                if let Some(file_data) = self.file_data.take() {
-                    Cx::post_action(FilePreviewerAction::UploadConfirmed(file_data));
+                if let (Some(file_data), Some(timeline_kind)) = (self.file_data.take(), self.timeline_kind.take()) {
+                    Cx::post_action(FilePreviewerAction::UploadConfirmed { file_data, timeline_kind });
                     Cx::post_action(FilePreviewerAction::Hide);
                 }
             }
@@ -273,8 +278,8 @@ impl Widget for FileUploadModal {
 }
 
 impl FileUploadModal {
-    /// Sets the file data and updates the preview UI.
-    pub fn set_file_data(&mut self, cx: &mut Cx, file_data: FileData) {
+    /// Sets the file data and target timeline, and updates the preview UI.
+    pub fn set_file_data(&mut self, cx: &mut Cx, file_data: FileData, timeline_kind: TimelineKind) {
         // Update file name label
         self.label(cx, ids!(file_name_label))
             .set_text(cx, &file_data.name);
@@ -292,7 +297,6 @@ impl FileUploadModal {
         let file_icon_container = self.view.view(cx, ids!(file_icon_container));
 
         if is_image {
-            makepad_widgets::log!("FileUploadModal: Loading image preview, data size: {} bytes, mime: {}", file_data.data.len(), file_data.mime_type);
             // Hide file icon first
             file_icon_container.set_visible(cx, false);
 
@@ -304,7 +308,6 @@ impl FileUploadModal {
                 file_icon_container.set_visible(cx, true);
                 self.update_file_type_label(cx, &file_data.mime_type);
             } else {
-                makepad_widgets::log!("FileUploadModal: Image loaded successfully");
                 // Set container visible after loading
                 image_preview_container.set_visible(cx, true);
             }
@@ -315,6 +318,7 @@ impl FileUploadModal {
         }
 
         self.file_data = Some(file_data);
+        self.timeline_kind = Some(timeline_kind);
         self.redraw(cx);
     }
 
@@ -331,10 +335,10 @@ impl FileUploadModal {
 }
 
 impl FileUploadModalRef {
-    /// Sets the file data and updates the preview UI.
-    pub fn set_file_data(&self, cx: &mut Cx, file_data: FileData) {
+    /// Sets the file data and target timeline, and updates the preview UI.
+    pub fn set_file_data(&self, cx: &mut Cx, file_data: FileData, timeline_kind: TimelineKind) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_file_data(cx, file_data);
+            inner.set_file_data(cx, file_data, timeline_kind);
         }
     }
 }

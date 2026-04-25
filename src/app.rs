@@ -291,9 +291,9 @@ impl MatchEvent for App {
 
             // Handle file upload modal actions
             match action.downcast_ref() {
-                Some(FilePreviewerAction::Show(file_data)) => {
+                Some(FilePreviewerAction::Show { file_data, timeline_kind }) => {
                     self.ui.file_upload_modal(cx, ids!(file_upload_modal_inner))
-                        .set_file_data(cx, file_data.clone());
+                        .set_file_data(cx, file_data.clone(), timeline_kind.clone());
                     self.ui.modal(cx, ids!(file_upload_modal)).open(cx);
                     continue;
                 }
@@ -301,15 +301,11 @@ impl MatchEvent for App {
                     self.ui.modal(cx, ids!(file_upload_modal)).close(cx);
                     continue;
                 }
-                Some(FilePreviewerAction::UploadConfirmed(file_data)) => {
-                    // Send the file upload request to the currently selected room
-                    if let Some(selected_room) = &self.app_state.selected_room {
-                        if let Some(timeline_kind) = selected_room.timeline_kind() {
-                            if let Some(sender) = get_timeline_update_sender(&timeline_kind) {
-                                let _ = sender.send(TimelineUpdate::FileUploadConfirmed(file_data.clone()));
-                                SignalToUI::set_ui_signal();
-                            }
-                        }
+                Some(FilePreviewerAction::UploadConfirmed { file_data, timeline_kind }) => {
+                    // Send the file upload request to the timeline captured when the modal was opened
+                    if let Some(sender) = get_timeline_update_sender(timeline_kind) {
+                        let _ = sender.send(TimelineUpdate::FileUploadConfirmed(file_data.clone()));
+                        SignalToUI::set_ui_signal();
                     }
                     continue;
                 }

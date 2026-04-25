@@ -832,15 +832,23 @@ impl Widget for RoomScreen {
                     continue;
                 }
 
+                // Handle cancel action from upload progress view.
+                // The upload progress view already hides itself and aborts the upload,
+                // so we just need to acknowledge the action here.
+                if let UploadProgressViewAction::Cancelled = action.as_widget_action().cast() {
+                    // Nothing additional to do - the widget handles hiding itself
+                    continue;
+                }
+
                 // Handle retry action from upload progress view.
-                if let UploadProgressViewAction::Retry { file_data, room_id } = action.as_widget_action().cast() {
+                if let UploadProgressViewAction::Retry { file_data, timeline_kind } = action.as_widget_action().cast() {
                     let Some(tl) = self.tl_state.as_ref() else { continue };
-                    // Only handle if this action is for the current room.
-                    if tl.kind.room_id() != &room_id { continue };
+                    // Only handle if this action is for the current room/thread.
+                    if tl.kind != timeline_kind { continue };
                     let room_input_bar = self.view.room_input_bar(cx, ids!(room_input_bar));
                     room_input_bar.show_upload_progress(cx, &file_data.name);
                     submit_async_request(MatrixRequest::SendAttachment {
-                        timeline_kind: tl.kind.clone(),
+                        timeline_kind,
                         file_data,
                         replied_to: None,
                         #[cfg(feature = "tsp")]
