@@ -1709,10 +1709,13 @@ async fn matrix_worker_task(
                     log!("BUG: {timeline_kind} not found for send attachment request");
                     continue;
                 };
-
+                let sender_clone = sender.clone();
                 // Spawn a new async task to send the attachment.
-                let _send_attachment_task = Handle::current().spawn(async move {
-                    use matrix_sdk::attachment::AttachmentConfig;
+                let send_attachment_task = Handle::current().spawn(async move {
+                    use matrix_sdk::attachment::{
+                        AttachmentConfig, AttachmentInfo,
+                        BaseFileInfo, BaseImageInfo, BaseVideoInfo, BaseAudioInfo,
+                    };
                     use eyeball::SharedObservable;
 
                     log!("Sending attachment to {timeline_kind}: {} ({} bytes)...",
@@ -1722,19 +1725,47 @@ async fn matrix_worker_task(
                     let content_type: Mime = file_data.mime_type.parse()
                         .unwrap_or(mime::APPLICATION_OCTET_STREAM);
 
+                    // Create AttachmentInfo based on the MIME type
+                    let info = match content_type.type_() {
+                        mime::IMAGE => AttachmentInfo::Image(BaseImageInfo {
+                            // TODO: Extract actual dimensions from image data
+                            width: None,
+                            height: None,
+                            size: Some(file_data.size.try_into().unwrap_or(u32::MAX).into()),
+                            blurhash: None,
+                            is_animated: None,
+                        }),
+                        mime::VIDEO => AttachmentInfo::Video(BaseVideoInfo {
+                            // TODO: Extract actual dimensions and duration from video
+                            width: None,
+                            height: None,
+                            duration: None,
+                            size: Some(file_data.size.try_into().unwrap_or(u32::MAX).into()),
+                            blurhash: None,
+                        }),
+                        mime::AUDIO => AttachmentInfo::Audio(BaseAudioInfo {
+                            // TODO: Extract actual duration from audio
+                            duration: None,
+                            size: Some(file_data.size.try_into().unwrap_or(u32::MAX).into()),
+                            waveform: None,
+                        }),
+                        _ => AttachmentInfo::File(BaseFileInfo {
+                            size: Some(file_data.size.try_into().unwrap_or(u32::MAX).into()),
+                        }),
+                    };
+
                     // Create a progress observable to track upload progress
                     let send_progress: SharedObservable<matrix_sdk::TransmissionProgress> = Default::default();
                     let progress_subscriber = send_progress.subscribe();
-
+                    let sender_clone_for_thread = sender_clone.clone();
                     // Spawn a task to handle progress updates
-                    let sender_clone = sender.clone();
                     Handle::current().spawn(async move {
                         let mut subscriber = progress_subscriber;
                         loop {
                             let progress = subscriber.get();
                             let current: u64 = progress.current as u64;
                             let total: u64 = progress.total as u64;
-                            if sender_clone.send(TimelineUpdate::FileUploadUpdate {
+                            if sender_clone_for_thread.send(TimelineUpdate::FileUploadUpdate {
                                 current,
                                 total,
                             }).is_err() {
@@ -1751,25 +1782,30 @@ async fn matrix_worker_task(
                     // Use the Room's send_attachment method directly
                     let room = timeline.room();
                     let config = AttachmentConfig::new()
+                        .info(info)
                         .reply(replied_to);
+
+                    // Clone the data Arc for sending (cheap reference count increment).
+                    // We keep file_data intact for potential error retry.
+                    let data_vec = (*file_data.data).clone();
 
                     let send_future = room.send_attachment(
                         &file_data.name,
                         &content_type,
-                        file_data.data.clone(),
+                        data_vec,
                         config,
                     ).with_send_progress_observable(send_progress);
 
                     match send_future.await {
                         Ok(_response) => {
                             log!("Successfully sent attachment to {timeline_kind}.");
-                            let _ = sender.send(TimelineUpdate::FileUploadComplete);
+                            let _ = sender_clone.send(TimelineUpdate::FileUploadComplete);
                         }
                         Err(e) => {
                             error!("Failed to send attachment to {timeline_kind}: {e:?}");
-                            let _ = sender.send(TimelineUpdate::FileUploadError {
+                            let _ = sender_clone.send(TimelineUpdate::FileUploadError {
                                 error: format!("{e}"),
-                                file_data: file_data.clone(),
+                                file_data,
                             });
                             enqueue_popup_notification(
                                 format!("Failed to upload file: {e}"),
@@ -1781,6 +1817,7 @@ async fn matrix_worker_task(
 
                     SignalToUI::set_ui_signal();
                 });
+                let _ = sender.send(TimelineUpdate::FileUploadAbortHandle(send_attachment_task.abort_handle()));
             }
 
             MatrixRequest::ReadReceipt { timeline_kind, event_id, receipt_type } => {
@@ -2274,19 +2311,6 @@ pub fn take_timeline_endpoints(kind: &TimelineKind) -> Option<TimelineEndpoints>
         request_sender,
         successor_room: details.timeline.room().successor_room(),
     })
-}
-
-/// Returns a clone of the timeline update sender for the given timeline.
-///
-/// This can be called multiple times, as it only clones the sender.
-pub fn get_timeline_update_sender(kind: &TimelineKind) -> Option<crossbeam_channel::Sender<TimelineUpdate>> {
-    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-    let jrd = all_joined_rooms.get(kind.room_id())?;
-    let details = match kind {
-        TimelineKind::MainRoom { .. } => &jrd.main_timeline,
-        TimelineKind::Thread { thread_root_event_id, .. } => jrd.thread_timelines.get(thread_root_event_id)?,
-    };
-    Some(details.timeline_update_sender.clone())
 }
 
 const DEFAULT_HOMESERVER: &str = "matrix.org";

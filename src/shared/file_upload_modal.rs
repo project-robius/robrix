@@ -3,11 +3,15 @@
 //! This modal shows a preview of the file (image thumbnail or file icon)
 //! along with file metadata and upload/cancel buttons.
 
+use bytesize::ByteSize;
 use makepad_widgets::*;
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use crate::sliding_sync::TimelineKind;
-use crate::utils::format_file_size;
+use crate::home::room_screen::TimelineUpdate;
+
+/// Type alias for the sender used to send timeline updates.
+pub type TimelineUpdateSender = crossbeam_channel::Sender<TimelineUpdate>;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -16,12 +20,14 @@ script_mod! {
     mod.widgets.FileUploadModal = set_type_default() do #(FileUploadModal::register_widget(vm)) {
         ..mod.widgets.RoundedView
 
-        width: 450,
-        height: Fit,
-        flow: Down,
-        padding: Inset{top: 20, right: 25, bottom: 20, left: 25},
-        spacing: 15,
-
+        width: Fill { max: 1000 }
+        // TODO: i'd like for this height to be Fit with a max of Rel { base: Full, factor: 0.90 },
+        //       but Makepad doesn't allow Fit views with a max to be scrolled.
+        height: Fill // { max: 1400 }
+        margin: 40,
+        align: Align{x: 0.5, y: 0}
+        flow: Down
+        padding: Inset{top: 20, right: 25, bottom: 20, left: 25}
         show_bg: true,
         draw_bg +: {
             color: (COLOR_PRIMARY)
@@ -58,10 +64,10 @@ script_mod! {
             }
         }
 
-        // Preview area
+        // Preview area - fills available space with image/icon centered
         preview_container := View {
             width: Fill,
-            height: 200,
+            height: Fill,
             flow: Overlay,
             align: Align{x: 0.5, y: 0.5},
 
@@ -71,12 +77,10 @@ script_mod! {
             // Image preview container (visible when file is an image)
             image_preview_container := View {
                 visible: false,
-                width: Fill,
-                height: Fill,
-                align: Align{x: 0.5, y: 0.5},
-                // cannot center align for tall images
+                width: Fill,                                                                                                           
+                height: Fill, 
                 image_preview := Image {
-                    width: Fill,
+                    width: Fill,                                                                                                             
                     height: Fill,
                     fit: ImageFit.Smallest,
                 }
@@ -170,8 +174,8 @@ pub struct FileData {
     pub name: String,
     /// The MIME type of the file.
     pub mime_type: String,
-    /// The raw file data.
-    pub data: Vec<u8>,
+    /// The raw file data (wrapped in Arc to avoid copying large files).
+    pub data: Arc<Vec<u8>>,
     /// The file size in bytes.
     pub size: u64,
     /// Optional thumbnail data for images (JPEG bytes).
@@ -206,10 +210,8 @@ pub struct FilePreviewerMetaData {
 pub struct FileLoadedData {
     /// Metadata about the file (path, size, MIME type).
     pub metadata: FilePreviewerMetaData,
-    /// The raw file data read from disk.
-    pub data: Vec<u8>,
-    /// Optional thumbnail for image files.
-    pub thumbnail: Option<ThumbnailData>,
+    /// The raw file data read from disk (wrapped in Arc to avoid copying large files).
+    pub data: Arc<Vec<u8>>,
 }
 
 /// Type alias for the receiver that gets loaded file data from a background thread.
@@ -221,20 +223,14 @@ pub enum FilePreviewerAction {
     /// No action.
     #[default]
     None,
-    /// Show the file upload modal with the given file data and target timeline.
+    /// Show the file upload modal with the given file data and timeline update sender.
+    /// The sender is captured at file selection time to ensure uploads go to the correct room.
     Show {
         file_data: FileData,
-        timeline_kind: TimelineKind,
+        timeline_update_sender: TimelineUpdateSender,
     },
     /// Hide the file upload modal.
     Hide,
-    /// User confirmed the upload to the specified timeline.
-    UploadConfirmed {
-        file_data: FileData,
-        timeline_kind: TimelineKind,
-    },
-    /// User cancelled the upload.
-    Cancelled,
 }
 
 /// A modal for previewing and confirming file uploads.
@@ -245,8 +241,8 @@ pub struct FileUploadModal {
 
     /// The current file data being previewed.
     #[rust] file_data: Option<FileData>,
-    /// The target timeline for the upload, captured when the modal is shown.
-    #[rust] timeline_kind: Option<TimelineKind>,
+    /// The sender to use for sending timeline updates when upload is confirmed.
+    #[rust] timeline_update_sender: Option<TimelineUpdateSender>,
 }
 
 impl Widget for FileUploadModal {
@@ -256,14 +252,17 @@ impl Widget for FileUploadModal {
             if self.button(cx, ids!(close_button)).clicked(actions)
                 || self.button(cx, ids!(cancel_button)).clicked(actions)
             {
-                Cx::post_action(FilePreviewerAction::Cancelled);
+                self.file_data = None;
+                self.timeline_update_sender = None;
                 Cx::post_action(FilePreviewerAction::Hide);
             }
 
             // Handle upload button
             if self.button(cx, ids!(upload_button)).clicked(actions) {
-                if let (Some(file_data), Some(timeline_kind)) = (self.file_data.take(), self.timeline_kind.take()) {
-                    Cx::post_action(FilePreviewerAction::UploadConfirmed { file_data, timeline_kind });
+                if let (Some(file_data), Some(sender)) = (self.file_data.take(), self.timeline_update_sender.take()) {
+                    // Send the file upload request directly to the timeline
+                    let _ = sender.send(TimelineUpdate::FileUploadConfirmed(file_data));
+                    SignalToUI::set_ui_signal();
                     Cx::post_action(FilePreviewerAction::Hide);
                 }
             }
@@ -278,15 +277,15 @@ impl Widget for FileUploadModal {
 }
 
 impl FileUploadModal {
-    /// Sets the file data and target timeline, and updates the preview UI.
-    pub fn set_file_data(&mut self, cx: &mut Cx, file_data: FileData, timeline_kind: TimelineKind) {
+    /// Sets the file data and timeline update sender, and updates the preview UI.
+    pub fn set_file_data(&mut self, cx: &mut Cx, file_data: FileData, timeline_update_sender: TimelineUpdateSender) {
         // Update file name label
         self.label(cx, ids!(file_name_label))
             .set_text(cx, &file_data.name);
 
         // Update file size label
         self.label(cx, ids!(file_size_label))
-            .set_text(cx, &format_file_size(file_data.size));
+            .set_text(cx, &ByteSize::b(file_data.size).to_string());
 
         // Determine if this is an image
         let is_image = crate::image_utils::is_displayable_image(&file_data.mime_type);
@@ -318,7 +317,7 @@ impl FileUploadModal {
         }
 
         self.file_data = Some(file_data);
-        self.timeline_kind = Some(timeline_kind);
+        self.timeline_update_sender = Some(timeline_update_sender);
         self.redraw(cx);
     }
 
@@ -335,10 +334,10 @@ impl FileUploadModal {
 }
 
 impl FileUploadModalRef {
-    /// Sets the file data and target timeline, and updates the preview UI.
-    pub fn set_file_data(&self, cx: &mut Cx, file_data: FileData, timeline_kind: TimelineKind) {
+    /// Sets the file data and timeline update sender, and updates the preview UI.
+    pub fn set_file_data(&self, cx: &mut Cx, file_data: FileData, timeline_update_sender: TimelineUpdateSender) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_file_data(cx, file_data, timeline_kind);
+            inner.set_file_data(cx, file_data, timeline_update_sender);
         }
     }
 }

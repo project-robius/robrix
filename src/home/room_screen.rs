@@ -981,6 +981,7 @@ impl Widget for RoomScreen {
                     timeline_kind: tl.kind.clone(),
                     room_members,
                     room_avatar_url,
+                    timeline_update_sender: Some(tl.update_sender.clone()),
                 }
             } else if let Some(room_name) = &self.room_name_id {
                 // Fallback case: we have a room_name but no tl_state yet
@@ -991,6 +992,7 @@ impl Widget for RoomScreen {
                         .expect("BUG: room_name_id was set but timeline_kind was missing"),
                     room_members: None,
                     room_avatar_url: None,
+                    timeline_update_sender: None,
                 }
             } else {
                 // No room selected yet, skip event handling that requires room context
@@ -1006,6 +1008,7 @@ impl Widget for RoomScreen {
                     timeline_kind: TimelineKind::MainRoom { room_id },
                     room_members: None,
                     room_avatar_url: None,
+                    timeline_update_sender: None,
                 }
             };
             let mut room_scope = Scope::with_props(&room_props);
@@ -1645,15 +1648,14 @@ impl RoomScreen {
                 TimelineUpdate::LinkPreviewFetched => {}
                 TimelineUpdate::FileUploadConfirmed(file_data) => {
                     let room_input_bar = self.view.room_input_bar(cx, ids!(room_input_bar));
-                    if let Some(replied_to) = room_input_bar.handle_file_upload_confirmed(cx, &file_data.name) {
-                        submit_async_request(MatrixRequest::SendAttachment {
-                            timeline_kind: tl.kind.clone(),
-                            file_data,
-                            replied_to,
-                            #[cfg(feature = "tsp")]
-                            sign_with_tsp: room_input_bar.is_tsp_signing_enabled(cx),
-                        });
-                    }
+                    let replied_to = room_input_bar.handle_file_upload_confirmed(cx, &file_data.name);
+                    submit_async_request(MatrixRequest::SendAttachment {
+                        timeline_kind: tl.kind.clone(),
+                        file_data,
+                        replied_to,
+                        #[cfg(feature = "tsp")]
+                        sign_with_tsp: room_input_bar.is_tsp_signing_enabled(cx),
+                    });
                 }
                 TimelineUpdate::FileUploadUpdate { current, total } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
@@ -2323,6 +2325,7 @@ impl RoomScreen {
                 content_drawn_since_last_update: RangeSet::new(),
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
+                update_sender: update_sender.clone(),
                 request_sender,
                 media_cache: MediaCache::new(Some(update_sender.clone())),
                 link_preview_cache: LinkPreviewCache::new(Some(update_sender)),
@@ -2690,6 +2693,9 @@ pub struct RoomScreenProps {
     pub timeline_kind: TimelineKind,
     pub room_members: Option<Arc<Vec<RoomMember>>>,
     pub room_avatar_url: Option<OwnedMxcUri>,
+    /// The sender for timeline updates, used for file uploads and other UI-initiated updates.
+    /// This is `None` when the timeline hasn't been fully loaded yet.
+    pub timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 }
 
 
@@ -2895,6 +2901,10 @@ struct TimelineUiState {
     /// in a sync context and the sender runs in an async context,
     /// which is okay because a sender on an unbounded channel never needs to block.
     update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
+
+    /// The channel sender for timeline updates for this room.
+    /// This is used to send upload confirmations and other UI-initiated updates.
+    update_sender: crossbeam_channel::Sender<TimelineUpdate>,
 
     /// The sender for timeline requests from a RoomScreen showing this room
     /// to the background async task that handles this room's timeline updates.

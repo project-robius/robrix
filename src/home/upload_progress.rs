@@ -1,6 +1,7 @@
 //! A widget that displays upload progress with a progress bar, status label,
 //! and cancel/retry buttons.
 
+use bytesize::ByteSize;
 use makepad_widgets::*;
 use tokio::task::AbortHandle;
 
@@ -200,6 +201,9 @@ impl UploadProgressView {
 
     /// Updates the progress value.
     pub fn set_progress(&mut self, cx: &mut Cx, current: u64, total: u64) {
+        if let UploadViewState::Error{ message: _, file_data: _ } = self.state {
+            return
+        }
         self.progress = if total > 0 {
             (current as f32 / total as f32).clamp(0.0, 1.0)
         } else {
@@ -214,8 +218,8 @@ impl UploadProgressView {
         let status = format!(
             "Uploading... {}% ({} / {})",
             percent,
-            crate::utils::format_file_size(current),
-            crate::utils::format_file_size(total)
+            ByteSize::b(current),
+            ByteSize::b(total)
         );
         self.label(cx, ids!(status_label)).set_text(cx, &status);
 
