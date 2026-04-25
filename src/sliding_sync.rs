@@ -27,7 +27,7 @@ use tokio::{
     sync::{broadcast, mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
 };
 use url::Url;
-use std::{borrow::Cow, cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, DerefMut, Not}, path:: Path, sync::{Arc, LazyLock, Mutex, atomic::{AtomicBool, Ordering}}, time::Duration};
+use std::{borrow::Cow, cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, DerefMut, Not}, path::{Path, PathBuf}, sync::{Arc, LazyLock, Mutex, atomic::{AtomicBool, Ordering}}, time::Duration};
 use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
@@ -104,7 +104,8 @@ async fn build_client(
     // which allows multiple clients to run simultaneously.
     let now = chrono::Local::now();
     let db_subfolder_name: String = format!("db_{}", now.format("%F_%H_%M_%S_%f"));
-    let db_path = data_dir.join(db_subfolder_name);
+    let db_path = data_dir.join(&db_subfolder_name);
+    log!("Building new client with db at: {}", db_path.display());
 
     // Generate a random passphrase.
     let passphrase: String = {
@@ -157,7 +158,11 @@ async fn build_client(
         client,
         ClientSessionPersisted {
             homeserver: homeserver_url,
-            db_path,
+            // Store only the relative subfolder name. The absolute path is reconstructed
+            // on restore by joining this with the current `app_data_dir()`. This avoids
+            // baking in a sandbox path that becomes stale on iOS, where the app's
+            // container UUID changes across reinstalls/redeploys.
+            db_path: PathBuf::from(db_subfolder_name),
             passphrase,
         },
     ))
@@ -1985,23 +1990,12 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
         tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
     }).handle().clone();
 
-    // Proactively build a Matrix Client in the background so that the SSO Server
-    // can have a quicker start if needed (as it's rather slow to build this client).
-    rt_handle.spawn(async move {
-        match build_client(&Cli::default(), app_data_dir()).await {
-            Ok(client_and_session) => {
-                DEFAULT_SSO_CLIENT.lock().unwrap()
-                    .get_or_insert(client_and_session);
-            }
-            Err(e) => error!("Error: could not create DEFAULT_SSO_CLIENT object: {e}"),
-        };
-        DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
-        Cx::post_action(LoginAction::SsoPending(false));
-    });
-
     let rt = rt_handle.clone();
     // Spawn the main async task that drives the Matrix client SDK, which itself will
     // start and monitor other related background tasks.
+    // The proactive `DEFAULT_SSO_CLIENT` pre-build is gated inside that task on
+    // whether the user actually needs to log in — otherwise it would create an
+    // orphaned sqlite db on disk every cold start.
     rt_handle.spawn(start_matrix_client_login_and_sync(rt));
 
     Ok(rt_handle)
@@ -2344,6 +2338,29 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
     // On subsequent iterations of the login loop (after a post-auth setup failure), it is `None`,
     // which causes the loop to wait for the user to submit a new manual login request.
     let mut initial_client_opt = new_login_opt;
+
+    // Only proactively build the `DEFAULT_SSO_CLIENT` if we'll actually be showing
+    // the login screen. Building it eagerly when a session is being restored just
+    // creates an orphaned sqlite db on disk every cold start (the pre-built client
+    // is dropped by the post-login cleanup at line `DEFAULT_SSO_CLIENT.take()`).
+    // If we skip the build, still notify so any later SSO attempt doesn't deadlock
+    // on `DEFAULT_SSO_CLIENT_NOTIFIER.notified()`; the SSO handler already builds
+    // a fresh client when `DEFAULT_SSO_CLIENT` is `None`.
+    if initial_client_opt.is_none() {
+        rt.spawn(async move {
+            match build_client(&Cli::default(), app_data_dir()).await {
+                Ok(client_and_session) => {
+                    DEFAULT_SSO_CLIENT.lock().unwrap()
+                        .get_or_insert(client_and_session);
+                }
+                Err(e) => error!("Error: could not create DEFAULT_SSO_CLIENT object: {e}"),
+            };
+            DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
+            Cx::post_action(LoginAction::SsoPending(false));
+        });
+    } else {
+        DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
+    }
 
     'login_loop: loop {
         let (client, _sync_token) = match initial_client_opt.take() {

@@ -438,9 +438,13 @@ impl AppSettings {
             .set_selected_item(cx, prefs.view_mode.to_index());
 
         // Send-on-enter toggle (checked means the primary modifier + Enter sends).
+        // `Animate::No` routes through `animator_cut` so the shader uniform is
+        // always force-re-applied — `Animate::Yes` would early-out on
+        // `Event::ScriptReapply` paths where the animator's `current_state`
+        // still matches the target but the reload has reset the uniform.
         let send_toggle = self.view.check_box(cx, ids!(send_on_cmd_enter_toggle));
         send_toggle.set_text(SEND_SHORTCUT_TOGGLE_LABEL);
-        send_toggle.set_active(cx, !prefs.send_on_enter);
+        send_toggle.set_active(cx, !prefs.send_on_enter, Animate::No);
         Self::update_send_shortcut_description(cx, &self.view, prefs.send_on_enter);
 
         // Thumbnail radios.
@@ -450,10 +454,10 @@ impl AppSettings {
             ThumbnailMaxHeight::Unlimited => (false, false, true, false, String::new()),
             ThumbnailMaxHeight::Custom(v) => (false, false, false, true, v.to_string()),
         };
-        self.view.radio_button(cx, ids!(thumb_small_radio)).set_active(cx, small);
-        self.view.radio_button(cx, ids!(thumb_medium_radio)).set_active(cx, medium);
-        self.view.radio_button(cx, ids!(thumb_unlimited_radio)).set_active(cx, unlimited);
-        self.view.radio_button(cx, ids!(thumb_custom_radio)).set_active(cx, custom);
+        self.view.radio_button(cx, ids!(thumb_small_radio)).set_active(cx, small, Animate::No);
+        self.view.radio_button(cx, ids!(thumb_medium_radio)).set_active(cx, medium, Animate::No);
+        self.view.radio_button(cx, ids!(thumb_unlimited_radio)).set_active(cx, unlimited, Animate::No);
+        self.view.radio_button(cx, ids!(thumb_custom_radio)).set_active(cx, custom, Animate::No);
         self.view.text_input(cx, ids!(thumb_custom_input)).set_text(cx, &custom_text);
         Self::set_thumb_custom_input_state(cx, &self.view, custom);
     }

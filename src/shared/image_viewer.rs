@@ -4,6 +4,7 @@
 //! ImageViewerRef has 4 public methods, `configure_zoom`, `show_loading`, `show_loaded` and `reset`.
 use std::sync::{mpsc::Receiver, Arc};
 
+use bytesize::ByteSize;
 use chrono::{DateTime, Local};
 use makepad_widgets::{
     event::TouchUpdateEvent,
@@ -199,7 +200,11 @@ script_mod! {
 
         metadata_view := View {
             width: Fill, height: Fill,
-            margin: Inset{top: 20, left: 20, right: 20, bottom: 20},
+            // Margins set here are placeholders — the actual values (including safe-area
+            // insets) are computed and applied in Rust during `draw_walk` via
+            // `script_apply_eval!`, because the slide-in/out animation also writes to
+            // these properties. See ImageViewer::draw_walk for the canonical values.
+            margin: Inset{top: 20, left: 20, right: 20, bottom: 20}
             align: Align{x: 0.0, y: 1.0},
             metadata_rounded_view := RoundedView {
                 width: Fill, height: Fit
@@ -291,6 +296,8 @@ script_mod! {
         button_group_view := View {
             width: Fill, height: Fit
             flow: Right
+            // Margins set here are placeholders — actual values (including safe-area
+            // insets) are computed in Rust during `draw_walk` via `script_apply_eval!`.
             margin: Inset{top: 20, right: 20}
             align: Align{x: 1.0, y: 0.5},
 
@@ -739,18 +746,37 @@ impl Widget for ImageViewer {
         }
 
         // Use the animated `ui_overlay_slide` value to position the overlay views.
-        // slide=0.0 → fully visible (margins at their DSL defaults).
+        // slide=0.0 → fully visible (margins at their visible-state values).
         // slide=1.0 → fully hidden (margins push views off-screen).
+        //
+        // Each visible-state margin is `max(20.0, safe_inset)` so the overlays clear the
+        // device's Dynamic Island / notch / home indicator. ImageViewer is shown via
+        // Modal which calls `cx.begin_root_turtle_for_pass` and bypasses the window
+        // body's padding (modal.rs), so we MUST apply the safe insets here in Rust;
+        // setting them in the DSL has no effect because this `script_apply_eval!`
+        // overrides those values on every draw.
         let slide = self.ui_overlay_slide as f64;
-        let button_top = 20.0 - (slide * 220.0); // 20 → -200
-        let meta_bottom = 20.0 - (slide * 320.0); // 20 → -300
+        let insets = cx.display_context.safe_area_insets;
+        let button_top_visible = 20.0_f64.max(insets.top);
+        let button_right        = 20.0_f64.max(insets.right);
+        let meta_top            = 20.0_f64.max(insets.top);
+        let meta_left           = 20.0_f64.max(insets.left);
+        let meta_right          = 20.0_f64.max(insets.right);
+        let meta_bottom_visible = 20.0_f64.max(insets.bottom);
+        let button_top = button_top_visible - (slide * 220.0); // visible → -200
+        let meta_bottom = meta_bottom_visible - (slide * 320.0); // visible → -300
         let mut bg = self.view(cx, ids!(button_group_view));
         script_apply_eval!(cx, bg, {
-            margin +: { top: #(button_top), right: 20.0 }
+            margin +: { top: #(button_top), right: #(button_right) }
         });
         let mut mv = self.view(cx, ids!(metadata_view));
         script_apply_eval!(cx, mv, {
-            margin +: { top: 20.0, left: 20.0, right: 20.0, bottom: #(meta_bottom) }
+            margin +: {
+                top: #(meta_top),
+                left: #(meta_left),
+                right: #(meta_right),
+                bottom: #(meta_bottom),
+            }
         });
 
         self.view.draw_walk(cx, scope, walk)
@@ -1100,8 +1126,7 @@ impl ImageViewer {
     /// via `max_lines: 2` + `text_overflow: Ellipsis` in the layout.
     pub fn set_metadata(&mut self, cx: &mut Cx, metadata: &ImageViewerMetaData) {
         let meta_view = self.view.view(cx, ids!(metadata_view));
-        let human_readable_size = format_file_size(metadata.image_file_size);
-        let display_text = format!("{} ({})", metadata.image_name, human_readable_size);
+        let display_text = format!("{} ({})", metadata.image_name, ByteSize::b(metadata.image_file_size));
         meta_view
             .label(cx, ids!(image_name_and_size))
             .set_text(cx, &display_text);
@@ -1202,25 +1227,3 @@ pub struct ImageViewerMetaData {
     pub image_file_size: u64,
 }
 
-/// Convert bytes to human-readable file size format
-fn format_file_size(bytes: u64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-
-    if bytes == 0 {
-        return "0 B".to_string();
-    }
-
-    let mut size = bytes as f64;
-    let mut unit_index = 0;
-
-    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_index += 1;
-    }
-
-    if unit_index == 0 {
-        format!("{} {}", bytes, UNITS[unit_index])
-    } else {
-        format!("{:.1} {}", size, UNITS[unit_index])
-    }
-}

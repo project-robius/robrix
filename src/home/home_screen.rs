@@ -123,6 +123,15 @@ script_mod! {
             content +: {
                 height: (mod.widgets.STACK_VIEW_HEADER_HEIGHT)
                 align: Align{y: 0.5}
+                // Inset the header controls (back button, title) by the safe area so they
+                // don't render under a side cutout, while the header background (with its
+                // shadow in draw_bg above) still extends edge-to-edge — matching the iOS
+                // UINavigationBar pattern where the bar background spans the full width
+                // and items anchor to the safe-area layout guide.
+                padding: Inset{
+                    left: (mod.widgets.SAFE_INSET_PAD_LEFT),
+                    right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
+                }
                 button_container +: {
                     padding: 0,
                     margin: 0
@@ -147,7 +156,22 @@ script_mod! {
             }
         }
         body +: {
+            // Top margin leaves room for the StackNavigationView's header.
+            // Left/right/bottom padding respects the device safe area so room / invite /
+            // space-lobby screens don't render under the Dynamic Island, notch, or home
+            // indicator. The bottom inset matters here because pushed StackNavigationViews
+            // are drawn fullscreen by StackNavigation and bypass the root_view's
+            // NavigationTabBar (which would otherwise own the bottom edge), so each
+            // pushed view must apply its own bottom inset to keep the message-input bar
+            // and similar bottom-anchored controls clear of the home indicator.
+            // Top safe-inset above the header is handled by StackNavigation itself
+            // (stack_navigation.rs uses `safe_top.max(parent_rect.pos.y)` in fullscreen mode).
             margin: Inset{top: (mod.widgets.STACK_VIEW_HEADER_HEIGHT)}
+            padding: Inset{
+                left: (mod.widgets.SAFE_INSET_PAD_LEFT),
+                right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
+                bottom: (mod.widgets.SAFE_INSET_PAD_BOTTOM),
+            }
         }
     }
 
@@ -157,7 +181,16 @@ script_mod! {
 
         width: Fill,
         height: (NAVIGATION_TAB_BAR_SIZE)
-        margin: Inset{left: 4, right: 4}
+        // 4px decorative gap + safe-area inset so the SpacesBar doesn't render under a
+        // side cutout in iPhone landscape. Using addition (rather than `max()`) because
+        // DSL `max()` with `mod.widgets.X` heap paths does not evaluate reliably (see
+        // image_viewer.rs::draw_walk for context). On desktop the safe inset is 0, so
+        // this collapses to the original 4px; on mobile devices with a side cutout the
+        // SpacesBar gets the cutout's inset plus 4px of decorative breathing room.
+        margin: Inset{
+            left: (4.0 + mod.widgets.SAFE_INSET_PAD_LEFT),
+            right: (4.0 + mod.widgets.SAFE_INSET_PAD_RIGHT),
+        }
         show_bg: true
         draw_bg +: {
             color: (COLOR_PRIMARY_DARKER)
@@ -219,6 +252,18 @@ script_mod! {
                 // the main desktop UI or the settings screen.
                 home_screen_page_flip := PageFlip {
                     width: Fill, height: Fill
+                    // Bottom padding absorbs the BOTTOM safe-area inset (home indicator).
+                    // Pages with their own background color (settings_page, add_room_page)
+                    // would otherwise extend under the home indicator and show COLOR_PRIMARY
+                    // (white) there. With this padding, the pages stop above the inset and
+                    // the parent Desktop SolidView's COLOR_SECONDARY fills the inset strip,
+                    // matching the NavigationTabBar's color for a seamless bottom edge.
+                    // Right padding respects a right-side cutout (e.g., iPhone landscape
+                    // running in Desktop mode); left is owned by the NavigationTabBar.
+                    padding: Inset{
+                        bottom: (mod.widgets.SAFE_INSET_PAD_BOTTOM),
+                        right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
+                    }
 
                     lazy_init: true,
                     active_page: @home_page
@@ -240,30 +285,68 @@ script_mod! {
                                 room_filter_input_bar := RoomFilterInputBar {}
                             }
 
-                            search_messages_button := SearchMessagesButton {
-                                // make this button match/align with the RoomFilterInputBar
-                                height: 32.5,
-                                margin: Inset{right: 2}
-                            }
+                            // Hide this until it's implemented.
+                            // search_messages_button := SearchMessagesButton {
+                            //     // make this button match/align with the RoomFilterInputBar
+                            //     height: 32.5,
+                            //     margin: Inset{right: 2}
+                            // }
                         }
 
                         mod.widgets.MainDesktopUI {}
                     }
 
-                    settings_page := SolidView {
+                    // The settings and add-room pages use RoundedView rather than a flat
+                    // SolidView, with a small margin that reveals the outer Desktop
+                    // SolidView's COLOR_SECONDARY background on all sides. This creates a
+                    // "floating card" look that visually matches the RobrixDock on the
+                    // home page (whose tab panels are similarly framed in COLOR_SECONDARY),
+                    // softens the otherwise-sharp seam with the NavigationTabBar at the
+                    // top-right, and rounds the visible inside-screen corners.
+                    settings_page := RoundedView {
                         width: Fill, height: Fill
+                        // Small asymmetric margin matches the home page's visual frame:
+                        // top: 2 (gap under the window body's top padding / status-bar area),
+                        // left: 1 (thin COLOR_SECONDARY strip separating card from NavigationTabBar),
+                        // right: 0 / bottom: 0 (flush with body right-inset and the home-indicator
+                        // strip owned by home_screen_page_flip's padding). 4px corner radius
+                        // matches the dock's round_corner shader (dock.rs sdf.box r=4).
+                        // Top/left tuned to visually match the home page's RobrixDock;
+                        // right/bottom stay flush with home_screen_page_flip's padded inner
+                        // area (which already applies SAFE_INSET_PAD_RIGHT and
+                        // SAFE_INSET_PAD_BOTTOM at its level), so the outer Desktop
+                        // COLOR_SECONDARY frame fills the safe-area strips uniformly.
+                        margin: Inset{top: 3, left: 1, right: 0, bottom: 0}
                         show_bg: true,
-                        draw_bg.color: (COLOR_PRIMARY)
+                        draw_bg +: {
+                            color: (COLOR_PRIMARY)
+                            border_radius: 4.0
+                        }
 
                         CachedWidget {
                             settings_screen := mod.widgets.SettingsScreen {}
                         }
                     }
 
-                    add_room_page := SolidView {
+                    add_room_page := RoundedView {
                         width: Fill, height: Fill
+                        // Small asymmetric margin matches the home page's visual frame:
+                        // top: 2 (gap under the window body's top padding / status-bar area),
+                        // left: 1 (thin COLOR_SECONDARY strip separating card from NavigationTabBar),
+                        // right: 0 / bottom: 0 (flush with body right-inset and the home-indicator
+                        // strip owned by home_screen_page_flip's padding). 4px corner radius
+                        // matches the dock's round_corner shader (dock.rs sdf.box r=4).
+                        // Top/left tuned to visually match the home page's RobrixDock;
+                        // right/bottom stay flush with home_screen_page_flip's padded inner
+                        // area (which already applies SAFE_INSET_PAD_RIGHT and
+                        // SAFE_INSET_PAD_BOTTOM at its level), so the outer Desktop
+                        // COLOR_SECONDARY frame fills the safe-area strips uniformly.
+                        margin: Inset{top: 3, left: 1, right: 0, bottom: 0}
                         show_bg: true,
-                        draw_bg.color: (COLOR_PRIMARY)
+                        draw_bg +: {
+                            color: (COLOR_PRIMARY)
+                            border_radius: 4.0
+                        }
 
                         CachedWidget {
                             add_room_screen := mod.widgets.AddRoomScreen {}
@@ -288,6 +371,15 @@ script_mod! {
                         // the main list of rooms or the settings screen.
                         home_screen_page_flip := PageFlip {
                             width: Fill, height: Fill
+                            // Left/right safe-area insets applied at the page-flip level so all
+                            // three pages (home, settings, add_room) respect device cutouts
+                            // (Dynamic Island in landscape, camera notch, etc.). The
+                            // NavigationTabBar handles its own left/right insets separately and
+                            // sits below this, outside the page flip.
+                            padding: Inset{
+                                left: (mod.widgets.SAFE_INSET_PAD_LEFT),
+                                right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
+                            }
 
                             lazy_init: true,
                             active_page: @home_page

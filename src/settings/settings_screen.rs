@@ -98,6 +98,22 @@ impl Widget for SettingsScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
 
+        // `Event::ScriptReapply` walks the widget tree with `Apply::Reload`,
+        // which snaps every DSL-bound widget field in this screen back to
+        // the defaults baked into the `script_mod!` blocks (dropdown index,
+        // toggle state, radio selection, user_id label, display_name input,
+        // avatar image). Any preference change that uses
+        // `cx.request_script_reapply()` to broadcast itself — currently the
+        // thumbnail-height radios — would therefore clobber the UI state
+        // of every unrelated control. Re-apply the cached preferences and
+        // profile so the screen stays in sync.
+        if let Event::ScriptReapply = event {
+            if let Some(app_state) = scope.data.get::<AppState>() {
+                self.view.account_settings(cx, ids!(account_settings)).populate(cx, None);
+                self.view.app_settings(cx, ids!(app_settings)).populate(cx, &app_state.app_prefs);
+            }
+        }
+
         // Close the pane if:
         // 1. The close button is clicked,
         // 2. The back navigational gesture/action occurs (e.g., Back on Android),
@@ -172,7 +188,7 @@ impl SettingsScreen {
             error!("Failed to get own profile for settings screen.");
             return;
         };
-        self.view.account_settings(cx, ids!(account_settings)).populate(cx, profile);
+        self.view.account_settings(cx, ids!(account_settings)).populate(cx, Some(profile));
         self.view.app_settings(cx, ids!(app_settings)).populate(cx, &app_state.app_prefs);
         self.view.button(cx, ids!(close_button)).reset_hover(cx);
         cx.set_key_focus(self.view.area());

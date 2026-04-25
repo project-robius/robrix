@@ -509,12 +509,30 @@ impl AccountSettings {
         );
     }
 
-    /// Show and initializes the account settings within the SettingsScreen.
-    pub fn populate(&mut self, cx: &mut Cx, own_profile: UserProfile) {
+    /// Populates the account settings within the SettingsScreen.
+    ///
+    /// If `new_profile` is `Some`, it replaces the cached profile and is
+    /// used to drive the UI. If `None`, the currently-cached profile in
+    /// `self.own_profile` is used — this is the path taken by
+    /// `Event::ScriptReapply`, which wipes DSL-bound widget state back to
+    /// `script_mod!` defaults; the `#[rust] own_profile` field survives
+    /// that reload, so no cache lookup or avatar fetch is needed.
+    pub fn populate(&mut self, cx: &mut Cx, new_profile: Option<UserProfile>) {
+        if let Some(new_profile) = new_profile {
+            self.own_profile = Some(new_profile);
+        }
+        let Some(own_profile) = self.own_profile.as_ref() else {
+            error!("BUG: AccountSettings::populate() called with no cached profile.");
+            return;
+        };
+
         self.view.label(cx, ids!(user_id))
             .set_text(cx, own_profile.user_id.as_str());
         self.view.text_input(cx, ids!(display_name_input))
             .set_text(cx, own_profile.username.as_deref().unwrap_or_default());
+        // `own_profile`'s borrow ends here (NLL) — the &mut self calls below
+        // need the struct's field borrow on `own_profile` to have dropped.
+
         Self::enable_display_name_buttons(
             cx,
             false,
@@ -522,7 +540,6 @@ impl AccountSettings {
             &self.view.button(cx, ids!(cancel_display_name_button)),
         );
 
-        self.own_profile = Some(own_profile);
         self.populate_avatar_views(cx);
 
         self.view.button(cx, ids!(upload_avatar_button)).reset_hover(cx);
@@ -639,10 +656,10 @@ impl AccountSettings {
 }
 
 impl AccountSettingsRef {
-    /// See [`AccountSettings::show()`].
-    pub fn populate(&self, cx: &mut Cx, own_profile: UserProfile) {
+    /// See [`AccountSettings::populate()`].
+    pub fn populate(&self, cx: &mut Cx, new_profile: Option<UserProfile>) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.populate(cx, own_profile);
+        inner.populate(cx, new_profile);
     }
 }
 

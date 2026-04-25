@@ -163,23 +163,24 @@ script_mod! {
         }
     }
 
-    // Note: `ToggleSpacesBarButton` is intentionally NOT a `NavigationBarButton`.
-    // Its toggling is independent of the navigation selection (it doesn't
-    // show a "selected" state and doesn't affect the other buttons), so it
-    // continues to use `RobrixNeutralIconButton` as its base.
-    mod.widgets.ToggleSpacesBarButton = RobrixNeutralIconButton {
-        width: Fill,
-        padding: 16
-        spacing: 0,
-        align: Align{x: 0.5, y: 0.5}
-        draw_icon +: {
-            svg: (ICON_SQUARES)
-            color: (COLOR_NAVIGATION_TAB_FG)
-        }
-        icon_walk: Walk{
-            width: (NAVIGATION_TAB_BAR_SIZE / 2.2),
-            height: (NAVIGATION_TAB_BAR_SIZE / 2.2),
-            margin: 0
+    // The toggle is built on `NavigationTabButton` so it shares the same
+    // size/padding/margin and hover background animation as the other tab
+    // buttons. Its toggling is independent of the navigation selection
+    // (no "selected" state, doesn't affect the other buttons), so the parent
+    // simply never calls `set_selected` on it.
+    mod.widgets.ToggleSpacesBarButton = mod.widgets.NavigationTabButton {
+        tooltip_text: "Toggle Spaces"
+        Icon {
+            margin: 0,
+            icon_walk: Walk {
+                margin: 0,
+                width: (NAVIGATION_TAB_BAR_SIZE / 2.2),
+                height: (NAVIGATION_TAB_BAR_SIZE / 2.2)
+            }
+            draw_icon +: {
+                color: (COLOR_NAVIGATION_TAB_FG)
+                svg: (ICON_SQUARES)
+            }
         }
     }
 
@@ -189,8 +190,18 @@ script_mod! {
         Desktop := RoundedView {
             flow: Down,
             align: Align{x: 0.5}
-            padding: Inset{top: 8., bottom: 8}
-            width: (NAVIGATION_TAB_BAR_SIZE),
+            // The bar extends its width and internal padding to absorb the LEFT safe-area
+            // inset (e.g., iPhone landscape with a side cutout), so its own background
+            // fills the inset region edge-to-edge rather than showing the window clear color.
+            // Bottom padding absorbs the bottom safe-area inset (home indicator) for the
+            // same reason. Top inset is handled by the Window body's padding.
+            // On desktop platforms all safe insets are 0, so this reduces to the prior layout.
+            padding: Inset{
+                top: 8.,
+                bottom: (8.0 + mod.widgets.SAFE_INSET_PAD_BOTTOM),
+                left: (mod.widgets.SAFE_INSET_PAD_LEFT),
+            }
+            width: (mod.widgets.NAVIGATION_TAB_BAR_SIZE + mod.widgets.SAFE_INSET_PAD_LEFT),
             height: Fill
 
             draw_bg +: {
@@ -219,7 +230,18 @@ script_mod! {
             flow: Right
             align: Align{x: 0.5, y: 0.5}
             width: Fill,
-            height: (NAVIGATION_TAB_BAR_SIZE)
+            // The bar extends its height and internal bottom padding to absorb the BOTTOM
+            // safe-area inset (home indicator) so its background fills the inset region
+            // edge-to-edge. Left padding absorbs the LEFT safe-area inset for devices with
+            // a side cutout in landscape. The bar is already `width: Fill`, so its
+            // background naturally extends to the screen edges on the left/right.
+            // On desktop platforms all safe insets are 0, so this reduces to the prior layout.
+            height: (mod.widgets.NAVIGATION_TAB_BAR_SIZE + mod.widgets.SAFE_INSET_PAD_BOTTOM),
+            padding: Inset{
+                bottom: (mod.widgets.SAFE_INSET_PAD_BOTTOM),
+                left: (mod.widgets.SAFE_INSET_PAD_LEFT),
+                right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
+            }
 
             draw_bg +: {
                 color: (COLOR_SECONDARY)
@@ -545,7 +567,7 @@ impl Widget for NavigationTabBar {
                 }
             }
 
-            if self.view.button(cx, ids!(toggle_spaces_bar_button)).clicked(actions) {
+            if self.view.navigation_bar_button(cx, ids!(toggle_spaces_bar_button)).clicked(actions) {
                 self.is_spaces_bar_shown = !self.is_spaces_bar_shown;
                 cx.action(NavigationBarAction::ToggleSpacesBar);
             }

@@ -44,8 +44,8 @@ script_mod! {
             body: "<p>You can enter a room/space address using either:</p>
                 <ul>
                   <li> An <i>alias</i>, starting with <code>#</code>, like <code>#robrix:matrix.org</code>.</li>
-                  <li> An <i>ID</i>, starting with <code>!</code>, like <code>!moVNEIUPxJZpxRHDUv:matrix.org</code>.</li>
-                  <li> A Matrix link, like <code>https:matrix.to/...</code> or <code>matrix:...</code>.</li>
+                  <li> An <i>ID</i>, starting with <code>!</code>, like <code>!room_id:matrix.org</code>.</li>
+                  <li> A Matrix link, like <code>matrix:...</code> or <code>https:matrix.to/...</code>.</li>
                 </ul>
             "
         }
