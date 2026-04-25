@@ -60,6 +60,30 @@ script_mod! {
                     text_style_bold +: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
                     text_style_bold_italic +: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
                     text_style_fixed +: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) }
+                    a +: {
+                        matrix_link_view +: {
+                            matrix_link +: {
+                                pill_bg +: {
+                                    draw_bg +: { border_radius: 5.0 }
+                                    avatar +: {
+                                        width: 13.53, height: 13.53,
+                                        text_view +: {
+                                            text +: {
+                                                draw_text +: {
+                                                    text_style +: { font_size: 7.61 }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    title +: {
+                                        draw_text +: {
+                                            text_style +: { font_size: 9.3 }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             plaintext_view +: {

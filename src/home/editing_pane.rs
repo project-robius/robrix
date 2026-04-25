@@ -12,6 +12,7 @@ use matrix_sdk_ui::timeline::{EventTimelineItem, MsgLikeKind, TimelineEventItemI
 
 use crate::shared::mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt};
 use crate::{
+    settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction},
     shared::popup_list::{enqueue_popup_notification, PopupKind},
     sliding_sync::{submit_async_request, MatrixRequest, TimelineKind},
 };
@@ -148,7 +149,7 @@ struct EditingPaneInfo {
 }
 
 /// A view that slides in from the bottom of the screen to allow editing a message.
-#[derive(Script, ScriptHook, Widget, Animator)]
+#[derive(Script, Widget, Animator)]
 pub struct EditingPane {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
@@ -158,9 +159,20 @@ pub struct EditingPane {
     #[rust] info: Option<EditingPaneInfo>,
     #[rust] is_animating_out: bool,
     #[rust] last_content_height: f64,
-    /// A pending next-frame request used to force a parent relayout
-    /// after the hide animation completes.
+    /// Used to force this widget's parent to do a re-draw
+    /// after the hide animation completes on this pane.
     #[rust] next_frame: NextFrame,
+}
+
+impl ScriptHook for EditingPane {
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            let send_on_enter = cx.global::<AppPreferencesGlobal>().0.send_on_enter;
+            self.mentionable_text_input(cx, ids!(editing_content.edit_text_input))
+                .text_input_ref()
+                .set_submit_on_enter(send_on_enter);
+        });
+    }
 }
 
 impl Widget for EditingPane {
@@ -172,6 +184,16 @@ impl Widget for EditingPane {
         }
 
         self.view.handle_event(cx, event, scope);
+
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                if let Some(AppPreferencesAction::SendOnEnterChanged(v)) = action.downcast_ref() {
+                    self.mentionable_text_input(cx, ids!(editing_content.edit_text_input))
+                        .text_input_ref()
+                        .set_submit_on_enter(*v);
+                }
+            }
+        }
 
         if !self.visible { return; }
 
@@ -207,7 +229,6 @@ impl Widget for EditingPane {
         }
 
         if let Event::Actions(actions) = event {
-
             let edit_text_input = self
                 .mentionable_text_input(cx, ids!(editing_content.edit_text_input))
                 .text_input_ref();
@@ -226,7 +247,7 @@ impl Widget for EditingPane {
             let Some(info) = self.info.as_ref() else { return };
 
             if self.button(cx, ids!(accept_button)).clicked(actions)
-                || edit_text_input.returned(actions).is_some_and(|(_, m)| m.is_primary())
+                || edit_text_input.returned(actions).is_some()
             {
                 let edited_text = edit_text_input.text().trim().to_string();
                 let edited_content = match info.event_tl_item.content() {

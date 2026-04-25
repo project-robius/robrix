@@ -192,6 +192,14 @@ script_mod! {
     // Ensure all settings buttons have a consistent height
     mod.widgets.SETTINGS_BUTTON_HEIGHT = 40
 
+    // The font size used for regular (non-title, non-subsection) text
+    // within any settings screen (e.g., dropdown labels, radio/toggle
+    // labels, inline helper text inside a control).
+    mod.widgets.SETTINGS_REGULAR_FONT_SIZE = 11
+    mod.widgets.SETTINGS_REGULAR_TEXT_STYLE = theme.font_regular {
+        font_size: (mod.widgets.SETTINGS_REGULAR_FONT_SIZE),
+    }
+
 
     // A text input widget styled for Robrix.
     mod.widgets.RobrixTextInput = TextInput {

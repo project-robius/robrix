@@ -9,7 +9,10 @@ use crate::{
         rooms_list::RoomsListAction,
         space_lobby::SpaceLobbyScreenWidgetExt,
     },
-    settings::settings_screen::SettingsScreenWidgetRefExt,
+    settings::{
+        app_preferences::{AppPreferencesAction, ViewModeOverride},
+        settings_screen::SettingsScreenWidgetRefExt,
+    },
     shared::room_filter_input_bar::{MainFilterAction, RoomFilterInputBarWidgetExt},
 };
 
@@ -190,7 +193,7 @@ script_mod! {
     // rooms list, room screens, and the settings screen as an overlay.
     // It adapts to both desktop and mobile layouts.
     mod.widgets.HomeScreen = #(HomeScreen::register_widget(vm)) {
-        AdaptiveView {
+        main_adaptive_view := AdaptiveView {
             // NOTE: within each of these sub views, we used `CachedWidget` wrappers
             //       to ensure that there is only a single global instance of each
             //       of those widgets, which means they maintain their state
@@ -426,6 +429,12 @@ pub struct HomeScreen {
     /// A stack of previously-selected rooms for mobile stack navigation.
     /// When a view is popped off the stack, the previous `selected_room` is restored.
     #[rust] mobile_room_nav_stack: Vec<SelectedRoom>,
+
+    /// The most recently applied view-mode override, used to short-circuit
+    /// redundant `AdaptiveView` selector reinstalls when an
+    /// [`AppPreferencesAction::ViewModeChanged`] action repeats the current
+    /// value (e.g., the unconditional broadcast on app-state restore).
+    #[rust] applied_view_mode: ViewModeOverride,
 }
 
 impl Widget for HomeScreen {
@@ -479,7 +488,7 @@ impl Widget for HomeScreen {
                             if let Some(settings_page) = self.update_active_page_from_selection(cx, app_state) {
                                 settings_page
                                     .settings_screen(cx, ids!(settings_screen))
-                                    .populate(cx, None);
+                                    .populate(cx, None, app_state);
                                 self.view.redraw(cx);
                             } else {
                                 error!("BUG: failed to set active page to show settings screen.");
@@ -502,6 +511,14 @@ impl Widget for HomeScreen {
                     // We're the ones who emitted this action, so we don't need to handle it again.
                     Some(NavigationBarAction::TabSelected(_))
                     | None => { }
+                }
+
+                // React to App Settings changes that affect the HomeScreen layout.
+                if let Some(AppPreferencesAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
+                    if *new_mode != self.applied_view_mode {
+                        self.apply_view_mode(cx, *new_mode);
+                        self.view.redraw(cx);
+                    }
                 }
 
                 // Handle mobile stack navigation actions (push/pop room views).
@@ -545,6 +562,16 @@ impl Widget for HomeScreen {
 }
 
 impl HomeScreen {
+    /// Installs a variant selector on the main `AdaptiveView` that honors the
+    /// current [`ViewModeOverride`] preference. `Automatic` falls back to the
+    /// default width-based selector.
+    fn apply_view_mode(&mut self, cx: &mut Cx, mode: ViewModeOverride) {
+        self.view
+            .adaptive_view(cx, ids!(main_adaptive_view))
+            .set_variant_selector(mode.variant_selector());
+        self.applied_view_mode = mode;
+    }
+
     fn update_active_page_from_selection(
         &mut self,
         cx: &mut Cx,

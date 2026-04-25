@@ -19,13 +19,22 @@ script_mod! {
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
 
-                // Body: dark gray by default, transitions to purple on hover/drag
+                // Body: dark gray by default (matches the default dark theme's
+                // `color_bg_app`), transitions to purple on hover/drag.
+                // Mildly rounded corners soften the edges where panels meet.
                 let body_color = mix(
-                    theme.color_bg_app
+                    #4D4D4D
                     mix(self.color_hover, self.color_drag, self.drag)
                     self.hover
                 )
-                sdf.clear(body_color)
+                sdf.box(
+                    0.0,
+                    0.0,
+                    self.rect_size.x,
+                    self.rect_size.y,
+                    1.5
+                )
+                sdf.fill(body_color)
 
                 // Draw the grab bar shape
                 if self.is_vertical > 0.5 {

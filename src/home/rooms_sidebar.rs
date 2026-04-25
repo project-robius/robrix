@@ -10,6 +10,7 @@
 use makepad_widgets::*;
 
 use crate::home::rooms_list::RoomsListWidgetExt;
+use crate::settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction, ViewModeOverride};
 use crate::shared::room_filter_input_bar::{MainFilterAction, RoomFilterInputBarWidgetExt};
 
 script_mod! {
@@ -136,6 +137,9 @@ script_mod! {
 #[derive(Script, Widget)]
 pub struct RoomsSideBar {
     #[deref] view: AdaptiveView,
+
+    /// The most recently applied view-mode override.
+    #[rust] applied_view_mode: ViewModeOverride,
 }
 
 impl ScriptHook for RoomsSideBar {
@@ -144,9 +148,24 @@ impl ScriptHook for RoomsSideBar {
             // Here we set the global singleton for the RoomsList widget,
             // which is used to access the list of rooms from anywhere in the app.
             cx.set_global(self.view.rooms_list(cx, ids!(rooms_list)));
+
+            // The RoomsSideBar is re-instantiated every time the HomeScreen's
+            // AdaptiveView switches between Desktop and Mobile view modes
+            // (cuz it's not wrapped in a CachedWidget).
+            // Thus we just re-read the current value here and apply it.
+            let mode = cx.global::<AppPreferencesGlobal>().0.view_mode;
+            self.apply_view_mode(mode);
         });
     }
 }
+
+impl RoomsSideBar {
+    fn apply_view_mode(&mut self, mode: ViewModeOverride) {
+        self.view.set_variant_selector(mode.variant_selector());
+        self.applied_view_mode = mode;
+    }
+}
+
 impl Widget for RoomsSideBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // If the main room filter input bar changed keywords, re-emit that action
@@ -154,6 +173,15 @@ impl Widget for RoomsSideBar {
         if let Event::Actions(actions) = event {
             if let Some(keywords) = self.view.room_filter_input_bar(cx, ids!(room_filter_input_bar)).changed(actions) {
                 cx.action(MainFilterAction::Changed(keywords));
+            }
+
+            for action in actions {
+                if let Some(AppPreferencesAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
+                    if *new_mode != self.applied_view_mode {
+                        self.apply_view_mode(*new_mode);
+                        self.view.redraw(cx);
+                    }
+                }
             }
         }
         self.view.handle_event(cx, event, scope);

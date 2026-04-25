@@ -329,16 +329,37 @@ script_mod! {
         }
     }
 
+    // A single, shared `Size::Fit{max: ...}` object on the script heap,
+    // referenced by every `Image` widget inside an `ImageMessage` /
+    // `CondensedImageMessage`. Having one heap object instead of many
+    // lets the "Maximum Image Thumbnail Height" App Setting mutate just
+    // this object's `max` field at runtime (see
+    // `AppPreferences::on_thumbnail_max_height_changed`) — every widget
+    // whose `walk.height` referenced this object observes the change
+    // through the same heap slot on the next `Event::ScriptReapply`.
+    //
+    // This sidesteps the override-chain divergence that would otherwise
+    // make the mutation invisible to derived templates (e.g., the
+    // `ImageMessage := mod.widgets.ImageMessage {}` local alias inside a
+    // PortalList's `list`).
+    mod.widgets.IMG_MSG_FIT = Fit{max: FitBound.Abs(200.0)}
+
     // The view used for each static image-based message event in a room's timeline.
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
     mod.widgets.ImageMessage = mod.widgets.Message {
         body +: {
             content +: {
-                width: Fill,
-                height: Fit
-                padding: Inset{ left: 10.0 }
-
-                message := TextOrImage { }
+                message := TextOrImage {
+                    // Cap the height on the `Image` itself (not the outer view) so
+                    // that `ImageFit.Smallest` scales the texture proportionally
+                    // instead of the outer view just clipping the drawn pixels.
+                    image_view +: { image +: {
+                        height: (mod.widgets.IMG_MSG_FIT)
+                    } }
+                    default_image_view +: { image +: {
+                        height: (mod.widgets.IMG_MSG_FIT)
+                    } }
+                }
                 View {
                     width: Fill,
                     height: Fit,
@@ -358,7 +379,14 @@ script_mod! {
     mod.widgets.CondensedImageMessage = mod.widgets.CondensedMessage {
         body +: {
             content +: {
-                message := TextOrImage { }
+                message := TextOrImage {
+                    image_view +: { image +: {
+                        height: (mod.widgets.IMG_MSG_FIT)
+                    } }
+                    default_image_view +: { image +: {
+                        height: (mod.widgets.IMG_MSG_FIT)
+                    } }
+                }
                 View {
                     width: Fill,
                     height: Fit,
@@ -3718,6 +3746,7 @@ fn populate_message_view(
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
 /// Also populates link previews if a link_preview_ref is provided.
+///
 /// Returns whether the text items were fully drawn.
 fn populate_text_message_content(
     cx: &mut Cx,

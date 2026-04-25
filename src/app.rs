@@ -11,11 +11,12 @@ use crate::{
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, file_upload_modal::{FilePreviewerAction, FileUploadModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, settings::app_preferences::AppPreferences, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
 };
+use crate::shared::file_upload_modal::{FileUploadModalWidgetRefExt, FilePreviewerAction};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -257,7 +258,7 @@ impl MatchEvent for App {
                     continue;
                 }
                 Some(LogoutAction::ClearAppState { on_clear_appstate }) =>  {
-                    // Clear user profile cache, invited_rooms timeline states 
+                    // Clear user profile cache, invited_rooms timeline states
                     clear_all_app_state(cx);
                     // Reset all app state to its default.
                     self.app_state = Default::default();
@@ -378,6 +379,11 @@ impl MatchEvent for App {
                     let logged_in_actual = self.app_state.logged_in;
                     self.app_state = app_state.clone();
                     self.app_state.logged_in = logged_in_actual;
+                    // Broadcast the restored preferences first so listeners
+                    // (e.g. the Dock's captured `room_screen` template) are
+                    // refreshed before `LoadDockFromAppState` instantiates
+                    // any tabs from them.
+                    self.app_state.app_prefs.broadcast_all(cx);
                     cx.action(MainDesktopUiAction::LoadDockFromAppState);
                     continue;
                 }
@@ -587,9 +593,9 @@ impl AppMain for App {
     fn script_mod(vm: &mut ScriptVm) -> makepad_widgets::ScriptValue {
         // Order matters: base widgets first, then app widgets, then app UI.
         makepad_widgets::theme_mod(vm);
-        // script_eval!(vm, {
-        //     mod.theme = mod.themes.light
-        // });
+        script_eval!(vm, {
+            mod.theme = mod.themes.light
+        });
         makepad_widgets::widgets_mod(vm);
         makepad_code_editor::script_mod(vm);
         crate::shared::script_mod(vm);
@@ -617,6 +623,20 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        // On a file-driven hot-reload (`Event::LiveEdit`), Makepad re-runs
+        // `script_mod!` which reasserts source-defined defaults (e.g.
+        // `mod.widgets.IMG_MSG_FIT = Fit{max: FitBound.Abs(200.0)}`). That
+        // wipes runtime preference overrides we pushed into the heap via
+        // `script_eval!`. Re-broadcast the current preferences so those
+        // overrides are re-established; the `request_script_reapply` inside
+        // `broadcast_all` triggers a follow-up `Event::ScriptReapply` pass
+        // (handled inside the same `run_live_edit_if_needed` tick) so
+        // widgets pick the overrides up. `Event::ScriptReapply` itself must
+        // NOT trigger another broadcast — that would loop.
+        if let Event::LiveEdit = event {
+            self.app_state.app_prefs.broadcast_all(cx);
+        }
+
         if let Event::Shutdown = event {
             let window_ref = self.ui.window(cx, ids!(main_window));
             if let Err(e) = persistence::save_window_state(window_ref, cx) {
@@ -766,6 +786,9 @@ pub struct AppState {
     pub saved_dock_state_per_space: HashMap<OwnedRoomId, SavedDockState>,
     /// Whether a user is currently logged in to Robrix or not.
     pub logged_in: bool,
+    /// App-wide user preferences/settings.
+    #[serde(default)]
+    pub app_prefs: AppPreferences,
 }
 
 /// A snapshot of the main dock: all state needed to restore the dock tabs/layout.

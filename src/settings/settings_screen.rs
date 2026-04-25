@@ -1,7 +1,7 @@
 
 use makepad_widgets::*;
 
-use crate::{home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, profile::user_profile::UserProfile, settings::account_settings::AccountSettingsWidgetExt};
+use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, profile::user_profile::UserProfile, settings::{account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -53,6 +53,11 @@ script_mod! {
 
                 // The account settings section.
                 account_settings := AccountSettings {}
+
+                LineH { width: 400, padding: 10, margin: Inset{top: 20, bottom: 5} }
+
+                // The Robrix app settings section.
+                app_settings := AppSettings {}
 
                 LineH { width: 400, padding: 10, margin: Inset{top: 20, bottom: 5} }
 
@@ -162,12 +167,13 @@ impl Widget for SettingsScreen {
 
 impl SettingsScreen {
     /// Fetches the current user's profile and uses it to populate the settings screen.
-    pub fn populate(&mut self, cx: &mut Cx, own_profile: Option<UserProfile>) {
+    pub fn populate(&mut self, cx: &mut Cx, own_profile: Option<UserProfile>, app_state: &AppState) {
         let Some(profile) = own_profile.or_else(|| get_own_profile(cx)) else {
             error!("Failed to get own profile for settings screen.");
             return;
         };
         self.view.account_settings(cx, ids!(account_settings)).populate(cx, profile);
+        self.view.app_settings(cx, ids!(app_settings)).populate(cx, &app_state.app_prefs);
         self.view.button(cx, ids!(close_button)).reset_hover(cx);
         cx.set_key_focus(self.view.area());
         self.redraw(cx);
@@ -176,8 +182,8 @@ impl SettingsScreen {
 
 impl SettingsScreenRef {
     /// See [`SettingsScreen::populate()`].
-    pub fn populate(&self, cx: &mut Cx, own_profile: Option<UserProfile>) {
+    pub fn populate(&self, cx: &mut Cx, own_profile: Option<UserProfile>, app_state: &AppState) {
         let Some(mut inner) = self.borrow_mut() else { return; };
-        inner.populate(cx, own_profile);
+        inner.populate(cx, own_profile, app_state);
     }
 }
