@@ -16,7 +16,7 @@ use crate::{
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt, mark_invite_modal_closed}, invite_screen::{InviteScreenWidgetRefExt, LeaveRoomResultAction}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, RoomScreenWidgetRefExt, TimelineUpdate, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, space_lobby::SpaceLobbyScreenWidgetRefExt, spaces_bar::SpacesBarRef
     }, i18n::{AppLanguage, tr_fmt, tr_key}, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::{user_profile::UserProfile, user_profile_cache::clear_user_profile_cache}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, file_upload_modal::{FilePreviewerAction, FileUploadModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, room_filter_input_bar::FilterAction}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RemoteDirectorySearchKind, RemoteDirectorySearchResult, TimelineKind, AccountSwitchAction, current_user_id, get_client, submit_async_request, get_timeline_update_sender}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::{user_profile::UserProfile, user_profile_cache::clear_user_profile_cache}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, file_upload_modal::{FilePreviewerAction, FileUploadModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, room_filter_input_bar::FilterAction}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RemoteDirectorySearchKind, RemoteDirectorySearchResult, TimelineKind, AccountSwitchAction, current_user_id, get_client, submit_async_request, get_timeline_update_sender}, updater::{UpdateCheckOutcome, check_for_updates, load_skipped_update_version, save_skipped_update_version, update_release_page_url}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -320,6 +320,75 @@ script_mod! {
                             }
                         }
 
+                        update_available_modal := Modal {
+                            content +: {
+                                update_available_modal_inner := RoundedView {
+                                    width: 460
+                                    height: Fit
+                                    flow: Down
+                                    padding: Inset{top: 24, right: 24, bottom: 20, left: 24}
+                                    spacing: 10
+                                    show_bg: true
+                                    draw_bg +: {
+                                        color: (COLOR_PRIMARY)
+                                        border_radius: 6.0
+                                    }
+
+                                    update_available_title := Label {
+                                        width: Fill
+                                        height: Fit
+                                        flow: Flow.Right{wrap: true}
+                                        draw_text +: {
+                                            text_style: TITLE_TEXT {font_size: 13}
+                                            color: #000
+                                        }
+                                        text: "Update Available"
+                                    }
+
+                                    update_available_body := Label {
+                                        width: Fill
+                                        height: Fit
+                                        flow: Flow.Right{wrap: true}
+                                        draw_text +: {
+                                            text_style: REGULAR_TEXT {font_size: 11.5}
+                                            color: #000
+                                        }
+                                        text: ""
+                                    }
+
+                                    update_available_buttons := View {
+                                        width: Fill
+                                        height: Fit
+                                        flow: Right
+                                        align: Align{x: 1.0, y: 0.5}
+                                        margin: Inset{top: 8}
+                                        spacing: 10
+
+                                        update_skip_button := RobrixNeutralIconButton {
+                                            width: Fit
+                                            padding: 13
+                                            icon_walk: Walk{width: 0, height: 0, margin: 0}
+                                            text: "Skip This Version"
+                                        }
+
+                                        update_cancel_button := RobrixNeutralIconButton {
+                                            width: 100
+                                            padding: 13
+                                            icon_walk: Walk{width: 0, height: 0, margin: 0}
+                                            text: "Cancel"
+                                        }
+
+                                        update_upgrade_button := RobrixPositiveIconButton {
+                                            width: 100
+                                            padding: 13
+                                            icon_walk: Walk{width: 0, height: 0, margin: 0}
+                                            text: "Upgrade"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         PopupList {}
 
                         // Tooltips must be shown in front of all other UI elements,
@@ -381,6 +450,9 @@ pub struct App {
     #[rust] room_filter_modal_results: Vec<RoomFilterResultTarget>,
     #[rust(Timer::empty())] room_filter_debounce_timer: Timer,
     #[rust] pending_room_filter_keywords: String,
+    #[rust] auto_update_check_started: bool,
+    #[rust] skipped_update_version: Option<String>,
+    #[rust] update_prompt_versions: Option<(String, String)>,
 }
 
 impl ScriptHook for App {
@@ -640,6 +712,8 @@ impl MatchEvent for App {
 
         self.update_login_visibility(cx);
         self.sync_app_language(cx);
+        self.skipped_update_version = load_skipped_update_version();
+        self.start_auto_update_check(cx);
 
         log!("App::Startup: starting matrix sdk loop");
         let _tokio_rt_handle = crate::sliding_sync::start_matrix_tokio().unwrap();
@@ -679,6 +753,43 @@ impl MatchEvent for App {
         let positive_confirmation_modal_inner = self.ui.confirmation_modal(cx, ids!(positive_confirmation_modal_inner));
         if let Some(_accepted) = positive_confirmation_modal_inner.closed(actions) {
             self.ui.modal(cx, ids!(positive_confirmation_modal)).close(cx);
+        }
+
+        if self.ui.button(cx, ids!(update_available_modal_inner.update_upgrade_button)).clicked(actions) {
+            let latest_version = self.update_prompt_versions
+                .as_ref()
+                .map(|(_, latest_version)| latest_version.clone());
+            self.skipped_update_version = None;
+            if let Err(error) = save_skipped_update_version(None) {
+                error!("Failed to clear skipped update version. Error: {error}");
+            }
+            if let Some(latest_version) = latest_version {
+                let release_page_url = update_release_page_url(&latest_version);
+                if let Err(e) = robius_open::Uri::new(&release_page_url).open() {
+                    error!("Failed to open update URL {:?}. Error: {:?}", release_page_url, e);
+                    enqueue_popup_notification(
+                        tr_fmt(self.app_state.app_language, "room_screen.popup.open_url_failed", &[("url", release_page_url.as_str())]),
+                        PopupKind::Error,
+                        Some(10.0),
+                    );
+                }
+            }
+            self.update_prompt_versions = None;
+            self.ui.modal(cx, ids!(update_available_modal)).close(cx);
+        }
+        if self.ui.button(cx, ids!(update_available_modal_inner.update_cancel_button)).clicked(actions) {
+            self.update_prompt_versions = None;
+            self.ui.modal(cx, ids!(update_available_modal)).close(cx);
+        }
+        if self.ui.button(cx, ids!(update_available_modal_inner.update_skip_button)).clicked(actions) {
+            if let Some((_, latest_version)) = self.update_prompt_versions.as_ref() {
+                self.skipped_update_version = Some(latest_version.clone());
+                if let Err(error) = save_skipped_update_version(Some(latest_version.as_str())) {
+                    error!("Failed to persist skipped update version. Error: {error}");
+                }
+            }
+            self.update_prompt_versions = None;
+            self.ui.modal(cx, ids!(update_available_modal)).close(cx);
         }
 
         if let Some(clicked_index) = self.clicked_room_filter_result_index(cx, actions) {
@@ -755,6 +866,24 @@ impl MatchEvent for App {
         }
 
         for action in actions {
+            if let Some(AppUpdateAction::AutoCheckFinished(result)) = action.downcast_ref() {
+                if let UpdateCheckOutcome::UpdateAvailable { current_version, latest_version } = result {
+                    self.show_update_prompt_if_needed(cx, current_version, latest_version, true);
+                } else if let UpdateCheckOutcome::Error(error) = result {
+                    warning!("Automatic update check failed: {error}");
+                }
+                continue;
+            }
+            if let Some(AppUpdateAction::ShowUpdatePrompt { current_version, latest_version, from_auto_check }) = action.downcast_ref() {
+                self.show_update_prompt_if_needed(
+                    cx,
+                    current_version.as_str(),
+                    latest_version.as_str(),
+                    *from_auto_check,
+                );
+                continue;
+            }
+
             match action.downcast_ref() {
                 Some(LogoutConfirmModalAction::Open) => {
                     self.ui.logout_confirm_modal(cx, ids!(logout_confirm_modal_inner)).reset_state(cx);
@@ -1622,6 +1751,66 @@ impl App {
         live_id!(result_item_4), live_id!(result_item_5),
         live_id!(result_item_6), live_id!(result_item_7),
     ];
+
+    fn start_auto_update_check(&mut self, cx: &mut Cx) {
+        if self.auto_update_check_started {
+            return;
+        }
+        self.auto_update_check_started = true;
+        cx.spawn_thread(move || {
+            let result = check_for_updates();
+            Cx::post_action(AppUpdateAction::AutoCheckFinished(result));
+        });
+    }
+
+    fn show_update_prompt_if_needed(
+        &mut self,
+        cx: &mut Cx,
+        current_version: &str,
+        latest_version: &str,
+        from_auto_check: bool,
+    ) {
+        if from_auto_check
+            && self.skipped_update_version
+                .as_deref()
+                .is_some_and(|skipped_version| skipped_version == latest_version)
+        {
+            return;
+        }
+
+        self.update_prompt_versions = Some((current_version.to_owned(), latest_version.to_owned()));
+        self.ui
+            .label(cx, ids!(update_available_modal_inner.update_available_title))
+            .set_text(cx, tr_key(self.app_state.app_language, "settings.update.modal.title"));
+        self.ui
+            .label(cx, ids!(update_available_modal_inner.update_available_body))
+            .set_text(
+                cx,
+                &tr_fmt(self.app_state.app_language, "settings.update.modal.body", &[
+                    ("latest", latest_version),
+                    ("current", current_version),
+                ]),
+            );
+        self.ui
+            .button(cx, ids!(update_available_modal_inner.update_skip_button))
+            .set_text(cx, tr_key(self.app_state.app_language, "settings.update.modal.button.skip"));
+        self.ui
+            .button(cx, ids!(update_available_modal_inner.update_cancel_button))
+            .set_text(cx, tr_key(self.app_state.app_language, "settings.update.modal.button.cancel"));
+        self.ui
+            .button(cx, ids!(update_available_modal_inner.update_upgrade_button))
+            .set_text(cx, tr_key(self.app_state.app_language, "settings.update.modal.button.upgrade"));
+        self.ui
+            .button(cx, ids!(update_available_modal_inner.update_skip_button))
+            .reset_hover(cx);
+        self.ui
+            .button(cx, ids!(update_available_modal_inner.update_cancel_button))
+            .reset_hover(cx);
+        self.ui
+            .button(cx, ids!(update_available_modal_inner.update_upgrade_button))
+            .reset_hover(cx);
+        self.ui.modal(cx, ids!(update_available_modal)).open(cx);
+    }
 
     fn sync_app_language(&self, cx: &mut Cx) {
         let app_language = self.app_state.app_language;
@@ -2918,6 +3107,21 @@ pub enum AppStateAction {
         destination_room: BasicRoomDetails,
     },
     None,
+}
+
+/// Actions related to application updates.
+///
+/// These are *NOT* widget actions.
+#[derive(Debug)]
+pub enum AppUpdateAction {
+    /// Result of the background update check triggered automatically on startup.
+    AutoCheckFinished(UpdateCheckOutcome),
+    /// Request to show the update prompt modal.
+    ShowUpdatePrompt {
+        current_version: String,
+        latest_version: String,
+        from_auto_check: bool,
+    },
 }
 
 /// An action to show the generic top-level positive confirmation modal.

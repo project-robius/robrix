@@ -14,6 +14,50 @@ pub enum UpdateCheckOutcome {
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 const DEFAULT_UPDATER_ENDPOINT: &str = "https://github.com/Project-Robius-China/robrix2/releases/latest/download/latest.json";
+const RELEASES_BASE_URL: &str = "https://github.com/Project-Robius-China/robrix2/releases";
+const SKIPPED_UPDATE_VERSION_FILE_NAME: &str = "skipped_update_version";
+
+pub fn update_release_page_url(version: &str) -> String {
+    let version = version.trim();
+    if version.is_empty() {
+        return format!("{RELEASES_BASE_URL}/latest");
+    }
+    format!("{RELEASES_BASE_URL}/tag/v{version}")
+}
+
+pub fn load_skipped_update_version() -> Option<String> {
+    let value = std::fs::read_to_string(
+        crate::app_data_dir().join(SKIPPED_UPDATE_VERSION_FILE_NAME),
+    ).ok()?;
+    let value = value.trim();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_owned())
+    }
+}
+
+pub fn save_skipped_update_version(skipped_version: Option<&str>) -> Result<(), String> {
+    let path = crate::app_data_dir().join(SKIPPED_UPDATE_VERSION_FILE_NAME);
+    let version = skipped_version
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    match version {
+        Some(version) => {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|error| format!("Failed to create updater state directory: {error}"))?;
+            }
+            std::fs::write(path, version)
+                .map_err(|error| format!("Failed to save skipped update version: {error}"))
+        }
+        None => match std::fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!("Failed to clear skipped update version: {error}")),
+        }
+    }
+}
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn parse_latest_version_payload(payload_text: &str) -> Result<Option<String>, String> {
