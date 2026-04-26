@@ -77,12 +77,9 @@ impl ScriptHook for RoomFilterInputBar {
         _scope: &mut Scope,
         _value: ScriptValue,
     ) {
-        // The clear button's visibility mirrors "the input has text" — that's
-        // runtime state, not something the DSL knows about. So when the
-        // widget tree is re-applied (e.g. after a preference change), the
-        // apply walk resets the button to the DSL's `visible: false` and we
-        // lose it. Re-derive visibility from the input's current text here
-        // so it survives.
+        // The clear button mirrors "input has text" — runtime state, not DSL.
+        // Re-derive it after every apply walk so the DSL's `visible: false`
+        // doesn't reset it.
         if !apply.is_script_reapply() {
             return;
         }

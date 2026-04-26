@@ -318,16 +318,13 @@ impl ScriptHook for AppSettings {
         _scope: &mut Scope,
         _value: ScriptValue,
     ) {
-        // The apply walk just reset every code-set field in this subtree
-        // back to its DSL default — toggle label, description text,
-        // dropdown index, custom-input read-only flag. Restore them right
-        // here, during the apply walk, before any draw can fire. Doing it
-        // later in `handle_event(Event::ScriptReapply)` is too late and
-        // produces a one-frame flicker to the DSL defaults.
+        // The apply walk just reset every code-set field here to its DSL
+        // default. Restore them inline (before any draw) — doing it later
+        // in `handle_event` produces a one-frame flicker.
         //
-        // We pull prefs from the global mirror cuz the apply walk runs
-        // with an empty `Scope` (no `AppState`). The mirror is kept in
-        // sync by every `on_*_changed` call in `app_preferences.rs`.
+        // Prefs come from the global mirror cuz the apply walk runs with
+        // an empty `Scope`. The mirror is kept in sync by `on_*_changed`
+        // in `app_preferences.rs`.
         if !apply.is_script_reapply() {
             return;
         }
@@ -456,22 +453,18 @@ impl AppSettings {
         }
     }
 
-    /// Populates the widget from the given preferences. Called when the
-    /// settings screen is first shown or when fresh prefs arrive.
+    /// Populates the widget from the given prefs. Called on initial open
+    /// or when fresh prefs arrive.
     ///
-    /// Don't call this from the `Event::ScriptReapply` path — code-set
-    /// fields get handled in [`Self::on_after_apply`] during the apply
-    /// walk, and animator-driven fields get restored by the codegen
-    /// chain on their own.
+    /// Don't call from `Event::ScriptReapply` — code-set fields get
+    /// handled in [`Self::on_after_apply`], and animator-driven fields
+    /// are restored by the codegen apply chain.
     pub fn populate(&mut self, cx: &mut Cx, prefs: &AppPreferences) {
         Self::populate_safe(cx, &self.view, prefs);
 
-        // The animator setup below uses `set_active(Animate::No)`, which
-        // routes through `animator_cut` → `cx.with_vm`. That would panic
-        // if called from an `on_after_apply` hook, but it's fine here cuz
-        // we're outside any apply walk (settings open / fresh prefs).
-        // The ScriptReapply path doesn't need these calls anyway — the
-        // codegen apply chain restores animator state automatically.
+        // The animator setup below uses `set_active(Animate::No)` →
+        // `animator_cut` → `cx.with_vm`, which would panic from
+        // `on_after_apply`. Fine here cuz we're outside any apply walk.
         let send_toggle = self.view.check_box(cx, ids!(send_on_cmd_enter_toggle));
         send_toggle.set_active(cx, !prefs.send_on_enter, Animate::No);
 
@@ -485,25 +478,21 @@ impl AppSettings {
         self.view.radio_button(cx, ids!(thumb_medium_radio)).set_active(cx, medium, Animate::No);
         self.view.radio_button(cx, ids!(thumb_unlimited_radio)).set_active(cx, unlimited, Animate::No);
         self.view.radio_button(cx, ids!(thumb_custom_radio)).set_active(cx, custom, Animate::No);
-        // `populate_safe` above already set `is_read_only`; we pair it
-        // with the animator's disabled state here so the input lands in
-        // the right state on first paint. Both are needed on this initial
-        // path — only `is_read_only` is needed on ScriptReapply.
+        // `populate_safe` set `is_read_only`; pair it with the animator's
+        // disabled state here so the input lands in the right state on
+        // first paint. ScriptReapply only needs `is_read_only`.
         Self::set_thumb_custom_input_disabled(cx, &self.view, custom);
 
-        // We only write `thumb_custom_input`'s text on this initial path.
-        // `on_after_apply` deliberately leaves it alone so any in-progress
-        // edit the user is typing survives a ScriptReapply walk.
+        // Only write `thumb_custom_input`'s text on initial populate.
+        // `on_after_apply` leaves it alone so in-progress edits survive.
         self.view.text_input(cx, ids!(thumb_custom_input)).set_text(cx, &custom_text);
     }
 
-    /// Restores the code-set fields that the apply walk just reset
-    /// back to their DSL defaults: toggle label, description Label,
-    /// dropdown selected index, custom-input read-only flag. None of
-    /// these go through `cx.with_vm`, so it's safe to call from inside
-    /// an `on_after_apply` hook (which is exactly what we want — doing
-    /// it synchronously during the apply walk, before any draw, is what
-    /// prevents the one-frame flicker to DSL defaults).
+    /// Restores the code-set fields the apply walk just reset to DSL
+    /// defaults: toggle label, description, dropdown index, custom-input
+    /// read-only flag. None go through `cx.with_vm`, so this is safe to
+    /// call from `on_after_apply` — doing it inline is what prevents the
+    /// one-frame flicker.
     fn populate_safe(cx: &mut Cx, view: &View, prefs: &AppPreferences) {
         view.drop_down(cx, ids!(view_mode_dropdown))
             .set_selected_item(cx, prefs.view_mode.to_index());
@@ -525,24 +514,21 @@ impl AppSettings {
         view.label(cx, ids!(send_shortcut_description)).set_text(cx, text);
     }
 
-    /// Sets `thumb_custom_input.is_read_only` based on whether the custom
-    /// radio is selected. `is_read_only` is a plain `#[live] bool` that
-    /// the apply walk resets to the DSL default, so we have to re-set it
-    /// ourselves. Safe to call from anywhere — it's just a field write
-    /// plus a redraw, no `cx.with_vm`.
+    /// Sets `is_read_only` based on whether the custom radio is selected.
+    /// It's a plain `#[live] bool` the apply walk resets to the DSL
+    /// default, so we re-set it ourselves. Safe anywhere — just a field
+    /// write plus redraw.
     fn set_thumb_custom_input_read_only(cx: &mut Cx, view: &View, enabled: bool) {
         view.text_input(cx, ids!(thumb_custom_input))
             .set_is_read_only(cx, !enabled);
     }
 
-    /// Sets `thumb_custom_input`'s disabled animator state.
+    /// Sets the disabled animator state.
     ///
-    /// **NOT safe to call from inside `on_after_apply`** — `set_disabled`
-    /// goes through `animator_toggle` → `cx.with_vm`, which panics when
-    /// the script VM is already swapped out by the surrounding apply
-    /// walk. Only call this from outside an apply (settings open / fresh
-    /// prefs / action handlers). The ScriptReapply path doesn't need it
-    /// anyway — the codegen apply chain restores animator state itself.
+    /// **Not safe inside `on_after_apply`** — `set_disabled` goes through
+    /// `animator_toggle` → `cx.with_vm`, which panics when the VM is
+    /// swapped out. Only call from outside an apply walk. ScriptReapply
+    /// doesn't need it — the codegen chain restores animator state itself.
     fn set_thumb_custom_input_disabled(cx: &mut Cx, view: &View, enabled: bool) {
         view.text_input(cx, ids!(thumb_custom_input))
             .set_disabled(cx, !enabled);

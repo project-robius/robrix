@@ -158,10 +158,9 @@ async fn build_client(
         client,
         ClientSessionPersisted {
             homeserver: homeserver_url,
-            // Store only the relative subfolder name. The absolute path is reconstructed
-            // on restore by joining this with the current `app_data_dir()`. This avoids
-            // baking in a sandbox path that becomes stale on iOS, where the app's
-            // container UUID changes across reinstalls/redeploys.
+            // Store the relative subfolder name only — the absolute path is
+            // rebuilt on restore. Avoids baking in a sandbox path that goes
+            // stale on iOS (container UUID changes across reinstalls).
             db_path: PathBuf::from(db_subfolder_name),
             passphrase,
         },
@@ -1991,11 +1990,11 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
     }).handle().clone();
 
     let rt = rt_handle.clone();
-    // Spawn the main async task that drives the Matrix client SDK, which itself will
-    // start and monitor other related background tasks.
-    // The proactive `DEFAULT_SSO_CLIENT` pre-build is gated inside that task on
-    // whether the user actually needs to log in — otherwise it would create an
-    // orphaned sqlite db on disk every cold start.
+    // Spawn the main async task that drives the Matrix client SDK and
+    // monitors the related background tasks. (The `DEFAULT_SSO_CLIENT`
+    // pre-build is gated inside that task on whether the user actually
+    // needs to log in — otherwise it leaves an orphaned sqlite db on
+    // disk every cold start.)
     rt_handle.spawn(start_matrix_client_login_and_sync(rt));
 
     Ok(rt_handle)
@@ -2339,13 +2338,11 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
     // which causes the loop to wait for the user to submit a new manual login request.
     let mut initial_client_opt = new_login_opt;
 
-    // Only proactively build the `DEFAULT_SSO_CLIENT` if we'll actually be showing
-    // the login screen. Building it eagerly when a session is being restored just
-    // creates an orphaned sqlite db on disk every cold start (the pre-built client
-    // is dropped by the post-login cleanup at line `DEFAULT_SSO_CLIENT.take()`).
-    // If we skip the build, still notify so any later SSO attempt doesn't deadlock
-    // on `DEFAULT_SSO_CLIENT_NOTIFIER.notified()`; the SSO handler already builds
-    // a fresh client when `DEFAULT_SSO_CLIENT` is `None`.
+    // Only pre-build `DEFAULT_SSO_CLIENT` if we'll actually show the login
+    // screen. Building it eagerly during session restore just leaves an
+    // orphaned sqlite db every cold start. If we skip the build, still
+    // notify so a later SSO attempt doesn't deadlock on the notifier —
+    // the SSO handler builds a fresh client itself if it's still `None`.
     if initial_client_opt.is_none() {
         rt.spawn(async move {
             match build_client(&Cli::default(), app_data_dir()).await {

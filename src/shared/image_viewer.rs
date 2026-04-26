@@ -200,10 +200,8 @@ script_mod! {
 
         metadata_view := View {
             width: Fill, height: Fill,
-            // Margins set here are placeholders — the actual values (including safe-area
-            // insets) are computed and applied in Rust during `draw_walk` via
-            // `script_apply_eval!`, because the slide-in/out animation also writes to
-            // these properties. See ImageViewer::draw_walk for the canonical values.
+            // Placeholder — real values are set in Rust via `script_apply_eval!`
+            // during `draw_walk` (the slide animation writes here too).
             margin: Inset{top: 20, left: 20, right: 20, bottom: 20}
             align: Align{x: 0.0, y: 1.0},
             metadata_rounded_view := RoundedView {
@@ -296,8 +294,7 @@ script_mod! {
         button_group_view := View {
             width: Fill, height: Fit
             flow: Right
-            // Margins set here are placeholders — actual values (including safe-area
-            // insets) are computed in Rust during `draw_walk` via `script_apply_eval!`.
+            // Placeholder — see `metadata_view` above.
             margin: Inset{top: 20, right: 20}
             align: Align{x: 1.0, y: 0.5},
 
@@ -745,16 +742,13 @@ impl Widget for ImageViewer {
             self.next_frame = cx.new_next_frame();
         }
 
-        // Use the animated `ui_overlay_slide` value to position the overlay views.
-        // slide=0.0 → fully visible (margins at their visible-state values).
-        // slide=1.0 → fully hidden (margins push views off-screen).
+        // Position the overlays from the animated `ui_overlay_slide`.
+        // 0.0 = fully visible, 1.0 = fully off-screen.
         //
-        // Each visible-state margin is `max(20.0, safe_inset)` so the overlays clear the
-        // device's Dynamic Island / notch / home indicator. ImageViewer is shown via
-        // Modal which calls `cx.begin_root_turtle_for_pass` and bypasses the window
-        // body's padding (modal.rs), so we MUST apply the safe insets here in Rust;
-        // setting them in the DSL has no effect because this `script_apply_eval!`
-        // overrides those values on every draw.
+        // Visible-state margin is `max(20.0, safe_inset)` so the overlays
+        // clear cutouts. Has to be done in Rust cuz Modal bypasses the
+        // window body's padding, and `script_apply_eval!` overrides the
+        // DSL values every draw anyway.
         let slide = self.ui_overlay_slide as f64;
         let insets = cx.display_context.safe_area_insets;
         let button_top_visible = 20.0_f64.max(insets.top);

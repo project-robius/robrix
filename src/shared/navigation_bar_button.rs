@@ -62,12 +62,10 @@ script_mod! {
             border_radius: uniform(4.0)
             border_inset: uniform(vec4(0.0))
 
-            // The "rest" state is fully transparent; we fade `color_hover` in/out
-            // by scaling its own alpha by `hover` rather than mix()ing toward a
-            // separate transparent constant. mix()ing toward `#0000` linearly
-            // interpolates the RGB toward black, which (combined with the
-            // changing alpha) makes the alpha-blended result momentarily DARKER
-            // mid-fade than at full hover — visible as a flicker on hover-out.
+            // Fade `color_hover` in/out by scaling its own alpha rather than
+            // mix()ing toward `#0000`. mix()ing pulls RGB toward black, which
+            // combined with the dropping alpha makes the blend briefly DARKER
+            // mid-fade — visible as a flicker on hover-out.
             get_color: fn() -> vec4 {
                 let hover_color = vec4(self.color_hover.xyz, self.color_hover.w * self.hover)
                 return mix(hover_color, self.color_active, self.active)
@@ -205,11 +203,9 @@ impl Widget for NavigationBarButton {
                     cx.widget_action(widget_uid, NavigationBarButtonAction::SecondaryClicked);
                 }
             }
-            // Reset to the off state if the finger/mouse drags off the button
-            // mid-press. This is critical for items inside a `PortalList`: once
-            // the list commits a drag-scroll, it suppresses `FingerUp` from
-            // reaching children, so without this branch the button would stay
-            // visually pressed forever after a tap-and-drag gesture.
+            // Reset if the finger drags off mid-press. Critical inside a
+            // `PortalList` — once it commits a drag-scroll it eats `FingerUp`
+            // from children, leaving the button stuck pressed otherwise.
             Hit::FingerMove(fe) if !fe.is_over => {
                 self.animator_play(cx, ids!(hover.off));
                 if !fe.device.has_hovers() {
@@ -225,20 +221,17 @@ impl Widget for NavigationBarButton {
                 if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
                     cx.widget_action(widget_uid, NavigationBarButtonAction::Clicked);
                 }
-                // Pick the resting visual state. On a hover-capable device (mouse),
-                // land on `hover.on` if the cursor is still over the button so it
-                // remains visibly hovered after a click. Otherwise — touch devices
-                // (no follow-up `FingerHoverOut`), or any release outside the
-                // button's bounds — reset to `hover.off`. This also covers the
-                // `is_over && !was_tap()` case (e.g. release after a long press),
-                // which previously left the animator stuck in `hover.down`.
+                // Pick the resting state. On a mouse with cursor still over
+                // the button, stay on `hover.on`. Otherwise (touch, or release
+                // off the button) reset to `hover.off`. This also catches
+                // `is_over && !was_tap()` (e.g. release after a long press),
+                // which used to leave the animator stuck in `hover.down`.
                 if fe.device.has_hovers() && fe.is_over {
                     self.animator_play(cx, ids!(hover.on));
                 } else {
                     self.animator_play(cx, ids!(hover.off));
-                    // On touch, no FingerHoverOut follows, so dismiss any tooltip
-                    // that a long-press may have opened. (HoverIn is emitted from
-                    // FingerLongPress above.)
+                    // No FingerHoverOut on touch, so manually dismiss any
+                    // long-press tooltip. (HoverIn is emitted above.)
                     if !fe.device.has_hovers() {
                         emit_hover_out(self, cx);
                     }

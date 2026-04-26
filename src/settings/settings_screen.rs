@@ -98,13 +98,11 @@ impl Widget for SettingsScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
 
-        // The ScriptReapply walk preserves text fields (String /
-        // ArcStringMut bail out on it), but it still resets animator-driven
-        // controls and `script_apply_eval`-driven things (avatar image,
-        // button colors) back to their DSL defaults. So we re-apply just
-        // those here. Crucially, do NOT re-`set_text` any user-editable
-        // input — that would wipe out a partially-typed display name or
-        // custom thumbnail size.
+        // ScriptReapply preserves text fields (String / ArcStringMut bail
+        // out), but still resets animator-driven controls and
+        // `script_apply_eval`-driven bits (avatar, button colors). Re-apply
+        // just those — never re-`set_text` user-editable inputs, that
+        // wipes in-progress edits.
         if let Event::ScriptReapply = event {
             if let Some(app_state) = scope.data.get::<AppState>() {
                 self.populate_subwidgets(cx, PopulateMode::AfterReapply, None, app_state);
@@ -191,18 +189,14 @@ impl SettingsScreen {
         self.redraw(cx);
     }
 
-    /// Single place that decides which sub-widgets get (re)synced and how.
-    /// Both the initial-open path and the `Event::ScriptReapply` path
-    /// route through here, so adding a new sub-widget that participates
-    /// in either sync only requires editing this match.
+    /// Single place deciding which sub-widgets get (re)synced and how.
+    /// Both the initial-open and `Event::ScriptReapply` paths route here.
     ///
-    /// `AppSettings` is intentionally missing from the `AfterReapply` arm —
-    /// it restores itself synchronously from its own `on_after_apply` hook
-    /// (during the apply walk, before any draw fires), which is what
-    /// avoids the flicker the late path used to produce. `AccountSettings`
-    /// still needs the late path for its `script_apply_eval`-driven bits
-    /// (button colors, avatar repaint) cuz those can't run from inside an
-    /// `on_after_apply` (the VM is swapped out there).
+    /// `AppSettings` is missing from `AfterReapply` on purpose — it
+    /// restores itself inline from `on_after_apply` to avoid the flicker
+    /// the late path used to produce. `AccountSettings` still needs the
+    /// late path for its `script_apply_eval`-driven bits (button colors,
+    /// avatar) cuz those can't run from inside `on_after_apply`.
     fn populate_subwidgets(
         &mut self,
         cx: &mut Cx,

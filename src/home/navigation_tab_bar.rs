@@ -163,11 +163,9 @@ script_mod! {
         }
     }
 
-    // The toggle is built on `NavigationTabButton` so it shares the same
-    // size/padding/margin and hover background animation as the other tab
-    // buttons. Its toggling is independent of the navigation selection
-    // (no "selected" state, doesn't affect the other buttons), so the parent
-    // simply never calls `set_selected` on it.
+    // Built on `NavigationTabButton` so it shares the size/padding and
+    // hover animation. Its toggling is independent of navigation selection,
+    // so the parent never calls `set_selected` on it.
     mod.widgets.ToggleSpacesBarButton = mod.widgets.NavigationTabButton {
         tooltip_text: "Toggle Spaces"
         Icon {
@@ -190,12 +188,10 @@ script_mod! {
         Desktop := RoundedView {
             flow: Down,
             align: Align{x: 0.5}
-            // The bar extends its width and internal padding to absorb the LEFT safe-area
-            // inset (e.g., iPhone landscape with a side cutout), so its own background
-            // fills the inset region edge-to-edge rather than showing the window clear color.
-            // Bottom padding absorbs the bottom safe-area inset (home indicator) for the
-            // same reason. Top inset is handled by the Window body's padding.
-            // On desktop platforms all safe insets are 0, so this reduces to the prior layout.
+            // Grow the bar's width/padding to absorb the LEFT safe-area inset
+            // so its background fills that strip instead of the window's clear
+            // color. Bottom padding does the same for the home-indicator inset.
+            // Top is handled by the Window body. On desktop all insets are 0.
             padding: Inset{
                 top: 8.,
                 bottom: (8.0 + mod.widgets.SAFE_INSET_PAD_BOTTOM),
@@ -230,12 +226,9 @@ script_mod! {
             flow: Right
             align: Align{x: 0.5, y: 0.5}
             width: Fill,
-            // The bar extends its height and internal bottom padding to absorb the BOTTOM
-            // safe-area inset (home indicator) so its background fills the inset region
-            // edge-to-edge. Left padding absorbs the LEFT safe-area inset for devices with
-            // a side cutout in landscape. The bar is already `width: Fill`, so its
-            // background naturally extends to the screen edges on the left/right.
-            // On desktop platforms all safe insets are 0, so this reduces to the prior layout.
+            // Grow the bar's height/bottom padding to absorb the home-indicator
+            // inset; left padding handles a side cutout in landscape. Already
+            // `width: Fill`, so the background extends edge-to-edge on l/r.
             height: (mod.widgets.NAVIGATION_TAB_BAR_SIZE + mod.widgets.SAFE_INSET_PAD_BOTTOM),
             padding: Inset{
                 bottom: (mod.widgets.SAFE_INSET_PAD_BOTTOM),

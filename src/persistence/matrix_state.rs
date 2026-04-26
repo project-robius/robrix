@@ -22,9 +22,9 @@ pub struct ClientSessionPersisted {
     /// The URL of the homeserver of the user.
     pub homeserver: String,
 
-    /// The database path. New session files store this as a subfolder name
-    /// relative to `app_data_dir()`; legacy session files may contain an
-    /// absolute path. `restore_session` handles both forms.
+    /// The database path. New sessions store this as a relative subfolder
+    /// (joined with `app_data_dir()` at restore time); legacy sessions
+    /// may have an absolute path. `restore_session` handles both.
     pub db_path: PathBuf,
 
     /// The passphrase of the database.
@@ -179,11 +179,10 @@ pub async fn restore_session(
         title: "Connecting to homeserver".into(),
         status: status_str,
     });
-    // Resolve the db path against the current `app_data_dir()`. New session files
-    // store only the db's subfolder name (relative). Legacy session files stored an
-    // absolute path that may now be stale (notably on iOS, where the sandbox
-    // container UUID changes across reinstalls/redeploys), so fall back to the
-    // basename joined with the current data dir if the absolute path is gone.
+    // Resolve the db path against the current `app_data_dir()`. Legacy
+    // sessions stored an absolute path that may now be stale on iOS
+    // (sandbox UUID changes across reinstalls), so if it's gone, fall
+    // back to its basename joined with the current data dir.
     let db_path = if client_session.db_path.is_absolute() {
         if client_session.db_path.exists() {
             client_session.db_path.clone()

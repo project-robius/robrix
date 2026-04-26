@@ -227,12 +227,9 @@ impl ScriptHook for AccountSettings {
         _scope: &mut Scope,
         _value: ScriptValue,
     ) {
-        // Restore the user_id label inline (during the apply walk, before any
-        // draw fires) so the user never sees the DSL placeholder flash.
-        // Anything that goes through `cx.with_vm` (button enable colors,
-        // avatar repaint) can't live here cuz the script VM isn't available
-        // from this `on_after_apply` — those get restored a tick later via
-        // `restore_after_reapply`.
+        // Restore user_id inline so the DSL placeholder never flashes.
+        // Anything that goes through `cx.with_vm` (button colors, avatar)
+        // can't run here — handled later in `restore_after_reapply`.
         if !apply.is_script_reapply() {
             return;
         }
@@ -538,14 +535,12 @@ impl AccountSettings {
     }
 
     /// Populates the account settings within the SettingsScreen.
+    /// Pass `Some(new_profile)` to replace the cached profile, or `None`
+    /// to use the existing `self.own_profile`.
     ///
-    /// If `new_profile` is `Some`, it replaces the cached profile.
-    /// Otherwise the existing `self.own_profile` is used.
-    ///
-    /// Don't call this from the `Event::ScriptReapply` path —
-    /// it unconditionally `set_text`s the `display_name_input`,
-    /// which would wipe out any in-progress edit the user has typed.
-    /// Use [`Self::restore_after_reapply`] there instead.
+    /// Don't call this from `Event::ScriptReapply` — it unconditionally
+    /// `set_text`s `display_name_input`, wiping any in-progress edit.
+    /// Use [`Self::restore_after_reapply`] there.
     pub fn populate(&mut self, cx: &mut Cx, new_profile: Option<UserProfile>) {
         if let Some(new_profile) = new_profile {
             self.own_profile = Some(new_profile);
@@ -553,18 +548,16 @@ impl AccountSettings {
         self.populate_inner(cx, PopulateMode::Initial);
     }
 
-    /// Restores widget state after an `Event::ScriptReapply` walk has
-    /// reset DSL-bound fields back to the `script_mod!` defaults.
-    /// See [`PopulateMode::AfterReapply`] for what this re-applies and
-    /// what it deliberately leaves alone.
+    /// Restores widget state after `Event::ScriptReapply` reset DSL-bound
+    /// fields to their `script_mod!` defaults. See
+    /// [`PopulateMode::AfterReapply`] for what's re-applied vs left alone.
     pub fn restore_after_reapply(&mut self, cx: &mut Cx) {
         self.populate_inner(cx, PopulateMode::AfterReapply);
     }
 
-    /// Shared core for `populate` and `restore_after_reapply`. The two
-    /// modes only differ at the text-input writes and the display-name
-    /// button enable logic — everything else (avatar repaint,
-    /// `reset_hover` sweep, redraw) is the same.
+    /// Shared core. The two modes only differ at the text-input writes
+    /// and display-name button enable logic — avatar repaint, hover
+    /// sweep, and redraw are the same.
     fn populate_inner(&mut self, cx: &mut Cx, mode: PopulateMode) {
         let Some(own_profile) = self.own_profile.as_ref() else {
             if matches!(mode, PopulateMode::Initial) {
@@ -575,17 +568,14 @@ impl AccountSettings {
 
         let cached_user_id = own_profile.user_id.as_str().to_owned();
         let cached_name = own_profile.username.clone().unwrap_or_default();
-        // We clone here so the `own_profile` borrow on `self` ends —
-        // the `&mut self` calls further down would otherwise conflict.
+        // Clones release the `own_profile` borrow before the `&mut self`
+        // calls below.
 
-        // `display_name_input` is user-editable, so the two modes have to
-        // diverge here:
-        //   * Initial: authoritatively write the cached username, set the
-        //     user_id label, and start the accept/cancel buttons disabled.
-        //   * AfterReapply: leave the input alone so any in-progress edit
-        //     survives, skip user_id (already restored above in
-        //     `on_after_apply`), and re-derive the button enable state from
-        //     whether the input still matches the cached username.
+        // `display_name_input` is user-editable, so the modes diverge:
+        //   * Initial: write cached username + user_id, buttons disabled.
+        //   * AfterReapply: leave the input alone (preserve in-progress
+        //     edits), skip user_id (already restored in `on_after_apply`),
+        //     re-derive button enable from whether input still matches.
         let modified = match mode {
             PopulateMode::Initial => {
                 self.view.label(cx, ids!(user_id))

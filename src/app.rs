@@ -39,16 +39,11 @@ script_mod! {
             
 
                 body +: {
-                    // Only the TOP safe-area inset is applied at the body level, because top
-                    // is shared by every screen (status bar / notch avoidance) and no bar
-                    // owns the top edge. Bottom, left, and right are delegated to the
-                    // content containers that touch those edges — NavigationTabBar owns its
-                    // respective edge per variant, and page content applies its own l/r/b
-                    // insets where appropriate. This is the canonical edge-to-edge mobile
-                    // pattern (UIKit safeAreaLayoutGuide / Compose systemBars / Flutter
-                    // SafeArea): each container manages its own edge so bar backgrounds fill
-                    // the inset region rather than leaving a bare clear-color strip.
-                    // On desktop platforms all four insets are 0 so this has no effect there.
+                    // Only TOP is applied here — top is shared by every screen
+                    // and no bar owns it. Bottom/left/right are delegated to
+                    // whatever content touches those edges (NavigationTabBar,
+                    // page content), so bar backgrounds fill the inset strip
+                    // instead of leaving a bare clear-color band.
                     padding: Inset{
                         top: (mod.widgets.SAFE_INSET_PAD_TOP),
                         bottom: 0,
