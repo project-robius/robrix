@@ -77,7 +77,7 @@ impl ScriptHook for RoomFilterInputBar {
         _scope: &mut Scope,
         _value: ScriptValue,
     ) {
-        // The clear button mirrors "input has text" — runtime state, not DSL.
+        // The clear button mirrors "input has text", which is runtime state, not DSL.
         // Re-derive it after every apply walk so the DSL's `visible: false`
         // doesn't reset it.
         if !apply.is_script_reapply() {

@@ -200,8 +200,8 @@ script_mod! {
 
         metadata_view := View {
             width: Fill, height: Fill,
-            // Placeholder — real values are set in Rust via `script_apply_eval!`
-            // during `draw_walk` (the slide animation writes here too).
+            // Placeholder. Real values are set in Rust via `script_apply_eval!`
+            // during `draw_walk`, since the slide animation writes here too.
             margin: Inset{top: 20, left: 20, right: 20, bottom: 20}
             align: Align{x: 0.0, y: 1.0},
             metadata_rounded_view := RoundedView {
@@ -294,7 +294,7 @@ script_mod! {
         button_group_view := View {
             width: Fill, height: Fit
             flow: Right
-            // Placeholder — see `metadata_view` above.
+            // Placeholder, see `metadata_view` above.
             margin: Inset{top: 20, right: 20}
             align: Align{x: 1.0, y: 0.5},
 

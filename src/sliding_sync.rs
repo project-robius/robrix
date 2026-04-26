@@ -158,7 +158,7 @@ async fn build_client(
         client,
         ClientSessionPersisted {
             homeserver: homeserver_url,
-            // Store the relative subfolder name only — the absolute path is
+            // Store the relative subfolder name only. The absolute path is
             // rebuilt on restore. Avoids baking in a sandbox path that goes
             // stale on iOS (container UUID changes across reinstalls).
             db_path: PathBuf::from(db_subfolder_name),
@@ -1993,8 +1993,8 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
     // Spawn the main async task that drives the Matrix client SDK and
     // monitors the related background tasks. (The `DEFAULT_SSO_CLIENT`
     // pre-build is gated inside that task on whether the user actually
-    // needs to log in — otherwise it leaves an orphaned sqlite db on
-    // disk every cold start.)
+    // needs to log in. Otherwise it leaves an orphaned sqlite db on disk
+    // every cold start.)
     rt_handle.spawn(start_matrix_client_login_and_sync(rt));
 
     Ok(rt_handle)
@@ -2341,8 +2341,8 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
     // Only pre-build `DEFAULT_SSO_CLIENT` if we'll actually show the login
     // screen. Building it eagerly during session restore just leaves an
     // orphaned sqlite db every cold start. If we skip the build, still
-    // notify so a later SSO attempt doesn't deadlock on the notifier —
-    // the SSO handler builds a fresh client itself if it's still `None`.
+    // notify so a later SSO attempt doesn't deadlock on the notifier.
+    // The SSO handler builds a fresh client itself if it's still `None`.
     if initial_client_opt.is_none() {
         rt.spawn(async move {
             match build_client(&Cli::default(), app_data_dir()).await {

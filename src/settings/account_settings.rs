@@ -229,7 +229,7 @@ impl ScriptHook for AccountSettings {
     ) {
         // Restore user_id inline so the DSL placeholder never flashes.
         // Anything that goes through `cx.with_vm` (button colors, avatar)
-        // can't run here — handled later in `restore_after_reapply`.
+        // can't run here, so it's handled later in `restore_after_reapply`.
         if !apply.is_script_reapply() {
             return;
         }
@@ -538,9 +538,9 @@ impl AccountSettings {
     /// Pass `Some(new_profile)` to replace the cached profile, or `None`
     /// to use the existing `self.own_profile`.
     ///
-    /// Don't call this from `Event::ScriptReapply` — it unconditionally
-    /// `set_text`s `display_name_input`, wiping any in-progress edit.
-    /// Use [`Self::restore_after_reapply`] there.
+    /// Don't call this from `Event::ScriptReapply`, since it unconditionally
+    /// `set_text`s `display_name_input`, which would wipe any in-progress edit.
+    /// Use [`Self::restore_after_reapply`] for that path.
     pub fn populate(&mut self, cx: &mut Cx, new_profile: Option<UserProfile>) {
         if let Some(new_profile) = new_profile {
             self.own_profile = Some(new_profile);
@@ -556,8 +556,8 @@ impl AccountSettings {
     }
 
     /// Shared core. The two modes only differ at the text-input writes
-    /// and display-name button enable logic — avatar repaint, hover
-    /// sweep, and redraw are the same.
+    /// and display-name button enable logic. Avatar repaint, hover sweep,
+    /// and redraw are the same.
     fn populate_inner(&mut self, cx: &mut Cx, mode: PopulateMode) {
         let Some(own_profile) = self.own_profile.as_ref() else {
             if matches!(mode, PopulateMode::Initial) {
@@ -568,14 +568,14 @@ impl AccountSettings {
 
         let cached_user_id = own_profile.user_id.as_str().to_owned();
         let cached_name = own_profile.username.clone().unwrap_or_default();
-        // Clones release the `own_profile` borrow before the `&mut self`
-        // calls below.
+        // Cloning here releases the `own_profile` borrow,
+        // so the `&mut self` calls below don't conflict.
 
         // `display_name_input` is user-editable, so the modes diverge:
-        //   * Initial: write cached username + user_id, buttons disabled.
-        //   * AfterReapply: leave the input alone (preserve in-progress
-        //     edits), skip user_id (already restored in `on_after_apply`),
-        //     re-derive button enable from whether input still matches.
+        //   * Initial: write the cached username + user_id, buttons start disabled.
+        //   * AfterReapply: leave the input alone to preserve in-progress edits,
+        //     skip user_id (already restored in `on_after_apply`),
+        //     and re-derive the button enable state from whether the input still matches.
         let modified = match mode {
             PopulateMode::Initial => {
                 self.view.label(cx, ids!(user_id))

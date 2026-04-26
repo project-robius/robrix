@@ -188,10 +188,8 @@ script_mod! {
         Desktop := RoundedView {
             flow: Down,
             align: Align{x: 0.5}
-            // Grow the bar's width/padding to absorb the LEFT safe-area inset
-            // so its background fills that strip instead of the window's clear
-            // color. Bottom padding does the same for the home-indicator inset.
-            // Top is handled by the Window body. On desktop all insets are 0.
+            // Similar to how we do it for the mobile mode view, but now
+            // the bar is on the left, so we add left padding and extra width.
             padding: Inset{
                 top: 8.,
                 bottom: (8.0 + mod.widgets.SAFE_INSET_PAD_BOTTOM),
@@ -226,9 +224,9 @@ script_mod! {
             flow: Right
             align: Align{x: 0.5, y: 0.5}
             width: Fill,
-            // Grow the bar's height/bottom padding to absorb the home-indicator
-            // inset; left padding handles a side cutout in landscape. Already
-            // `width: Fill`, so the background extends edge-to-edge on l/r.
+            // On mobile, the nav bar is at the bottom, so we let it fill the entire space
+            // *including* drawing within the safe inset areas,
+            // and the bottom-pad its content so the buttons aren't drawn in the safe areas.
             height: (mod.widgets.NAVIGATION_TAB_BAR_SIZE + mod.widgets.SAFE_INSET_PAD_BOTTOM),
             padding: Inset{
                 bottom: (mod.widgets.SAFE_INSET_PAD_BOTTOM),

@@ -63,9 +63,9 @@ script_mod! {
             border_inset: uniform(vec4(0.0))
 
             // Fade `color_hover` in/out by scaling its own alpha rather than
-            // mix()ing toward `#0000`. mix()ing pulls RGB toward black, which
-            // combined with the dropping alpha makes the blend briefly DARKER
-            // mid-fade — visible as a flicker on hover-out.
+            // mix()ing toward `#0000`. mix()ing pulls RGB toward black,
+            // which combined with the dropping alpha makes the blend briefly
+            // DARKER mid-fade, visible as a flicker on hover-out.
             get_color: fn() -> vec4 {
                 let hover_color = vec4(self.color_hover.xyz, self.color_hover.w * self.hover)
                 return mix(hover_color, self.color_active, self.active)
@@ -204,8 +204,8 @@ impl Widget for NavigationBarButton {
                 }
             }
             // Reset if the finger drags off mid-press. Critical inside a
-            // `PortalList` — once it commits a drag-scroll it eats `FingerUp`
-            // from children, leaving the button stuck pressed otherwise.
+            // `PortalList`, since once it commits a drag-scroll it eats
+            // `FingerUp` from children, leaving the button stuck pressed.
             Hit::FingerMove(fe) if !fe.is_over => {
                 self.animator_play(cx, ids!(hover.off));
                 if !fe.device.has_hovers() {
@@ -221,7 +221,7 @@ impl Widget for NavigationBarButton {
                 if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
                     cx.widget_action(widget_uid, NavigationBarButtonAction::Clicked);
                 }
-                // Pick the resting state. On a mouse with cursor still over
+                // Pick the resting state. On a mouse with the cursor still over
                 // the button, stay on `hover.on`. Otherwise (touch, or release
                 // off the button) reset to `hover.off`. This also catches
                 // `is_over && !was_tap()` (e.g. release after a long press),
