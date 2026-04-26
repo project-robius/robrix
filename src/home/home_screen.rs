@@ -466,11 +466,38 @@ script_mod! {
 
 
 /// A simple wrapper around the SpacesBar that allows us to animate showing or hiding it.
-#[derive(Script, ScriptHook, Widget, Animator)]
+#[derive(Script, Widget, Animator)]
 pub struct SpacesBarWrapper {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
     #[apply_default] animator: Animator,
+}
+
+impl ScriptHook for SpacesBarWrapper {
+    fn on_after_apply(
+        &mut self,
+        vm: &mut ScriptVm,
+        apply: &Apply,
+        scope: &mut Scope,
+        _value: ScriptValue,
+    ) {
+        // When the widget tree is re-applied (e.g. after a preference change),
+        // the deref `view` resets its height to the DSL default,
+        // which clashes with whatever animator state we were in (shown, hidden).
+        // Thus, we re-apply the current animator state to prevent a hidden SpacesBar
+        // from briefly becoming shown before being hidden again.
+        // Note that we can't just call `animator_cut` cuz that uses the script VM
+        // which is unavailable from this `on_after_apply`
+        if !apply.is_script_reapply() {
+            return;
+        }
+        if let Some(state_apply) = self
+            .animator
+            .current_state_apply(live_id!(spaces_bar_animator))
+        {
+            self.script_apply(vm, &Apply::Animate, scope, state_apply.into());
+        }
+    }
 }
 
 impl Widget for SpacesBarWrapper {
@@ -757,9 +784,11 @@ impl HomeScreen {
             }
         };
 
-        // Set the header title for the view being pushed.
-        let title_path = &[view_id, live_id!(header), live_id!(content), live_id!(title_container), live_id!(title)];
-        self.view.label(cx, title_path).set_text(cx, &selected_room.display_name());
+        // Set the header title once. `set_title` stores it on the
+        // `StackNavigationView` itself, which re-asserts it on every apply walk
+        // (rotation, preference change, AdaptiveView swap, etc.).
+        let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
+        stack_navigation.set_title(cx, view_id, &selected_room.display_name());
 
         // Save the current selected_room onto the navigation stack before replacing it.
         if let Some(prev) = app_state.selected_room.take() {
@@ -768,7 +797,7 @@ impl HomeScreen {
         app_state.selected_room = Some(selected_room);
 
         // Push the view onto the mobile navigation stack.
-        self.view.stack_navigation(cx, ids!(view_stack)).push(cx, view_id);
+        stack_navigation.push(cx, view_id);
         self.view.redraw(cx);
     }
 }

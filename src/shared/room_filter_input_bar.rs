@@ -64,9 +64,32 @@ script_mod! {
 /// A text input (with a search icon and cancel button) used to filter a list of rooms/spaces.
 ///
 /// See the module-level docs for more detail.
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct RoomFilterInputBar {
     #[deref] view: View,
+}
+
+impl ScriptHook for RoomFilterInputBar {
+    fn on_after_apply(
+        &mut self,
+        _vm: &mut ScriptVm,
+        apply: &Apply,
+        _scope: &mut Scope,
+        _value: ScriptValue,
+    ) {
+        // The clear button's visibility mirrors "the input has text" — that's
+        // runtime state, not something the DSL knows about. So when the
+        // widget tree is re-applied (e.g. after a preference change), the
+        // apply walk resets the button to the DSL's `visible: false` and we
+        // lose it. Re-derive visibility from the input's current text here
+        // so it survives.
+        if !apply.is_script_reapply() {
+            return;
+        }
+        let cx = _vm.cx_mut();
+        let has_text = !self.text_input(cx, ids!(input)).text().is_empty();
+        self.button(cx, ids!(clear_button)).set_visible(cx, has_text);
+    }
 }
 
 /// Actions emitted by the `RoomFilterInputBar` based on user interaction with it.

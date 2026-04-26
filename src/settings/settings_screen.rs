@@ -1,7 +1,7 @@
 
 use makepad_widgets::*;
 
-use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, profile::user_profile::UserProfile, settings::{account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt}};
+use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, profile::user_profile::UserProfile, settings::{PopulateMode, account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -98,19 +98,16 @@ impl Widget for SettingsScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
 
-        // `Event::ScriptReapply` walks the widget tree with `Apply::Reload`,
-        // which snaps every DSL-bound widget field in this screen back to
-        // the defaults baked into the `script_mod!` blocks (dropdown index,
-        // toggle state, radio selection, user_id label, display_name input,
-        // avatar image). Any preference change that uses
-        // `cx.request_script_reapply()` to broadcast itself — currently the
-        // thumbnail-height radios — would therefore clobber the UI state
-        // of every unrelated control. Re-apply the cached preferences and
-        // profile so the screen stays in sync.
+        // The ScriptReapply walk preserves text fields (String /
+        // ArcStringMut bail out on it), but it still resets animator-driven
+        // controls and `script_apply_eval`-driven things (avatar image,
+        // button colors) back to their DSL defaults. So we re-apply just
+        // those here. Crucially, do NOT re-`set_text` any user-editable
+        // input — that would wipe out a partially-typed display name or
+        // custom thumbnail size.
         if let Event::ScriptReapply = event {
             if let Some(app_state) = scope.data.get::<AppState>() {
-                self.view.account_settings(cx, ids!(account_settings)).populate(cx, None);
-                self.view.app_settings(cx, ids!(app_settings)).populate(cx, &app_state.app_prefs);
+                self.populate_subwidgets(cx, PopulateMode::AfterReapply, None, app_state);
             }
         }
 
@@ -188,11 +185,40 @@ impl SettingsScreen {
             error!("Failed to get own profile for settings screen.");
             return;
         };
-        self.view.account_settings(cx, ids!(account_settings)).populate(cx, Some(profile));
-        self.view.app_settings(cx, ids!(app_settings)).populate(cx, &app_state.app_prefs);
+        self.populate_subwidgets(cx, PopulateMode::Initial, Some(profile), app_state);
         self.view.button(cx, ids!(close_button)).reset_hover(cx);
         cx.set_key_focus(self.view.area());
         self.redraw(cx);
+    }
+
+    /// Single place that decides which sub-widgets get (re)synced and how.
+    /// Both the initial-open path and the `Event::ScriptReapply` path
+    /// route through here, so adding a new sub-widget that participates
+    /// in either sync only requires editing this match.
+    ///
+    /// `AppSettings` is intentionally missing from the `AfterReapply` arm —
+    /// it restores itself synchronously from its own `on_after_apply` hook
+    /// (during the apply walk, before any draw fires), which is what
+    /// avoids the flicker the late path used to produce. `AccountSettings`
+    /// still needs the late path for its `script_apply_eval`-driven bits
+    /// (button colors, avatar repaint) cuz those can't run from inside an
+    /// `on_after_apply` (the VM is swapped out there).
+    fn populate_subwidgets(
+        &mut self,
+        cx: &mut Cx,
+        mode: PopulateMode,
+        profile: Option<UserProfile>,
+        app_state: &AppState,
+    ) {
+        match mode {
+            PopulateMode::Initial => {
+                self.view.account_settings(cx, ids!(account_settings)).populate(cx, profile);
+                self.view.app_settings(cx, ids!(app_settings)).populate(cx, &app_state.app_prefs);
+            }
+            PopulateMode::AfterReapply => {
+                self.view.account_settings(cx, ids!(account_settings)).restore_after_reapply(cx);
+            }
+        }
     }
 }
 
