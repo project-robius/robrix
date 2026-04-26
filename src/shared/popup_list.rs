@@ -331,10 +331,15 @@ script_mod! {
 
     // A widget that displays a vertical list of popups at the top right corner of the screen.
     // The progress bar slides from right to left.
+    // The margins are to ensure that popups don't get rendered in the device safe inset area.
     mod.widgets.PopupList = View {
         width: Fill,
         height: Fill,
-        margin: Inset{ top: 10 }
+        margin: Inset{
+            top: 10,
+            left: (mod.widgets.SAFE_INSET_PAD_LEFT),
+            right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
+        }
         align: Align{x: 0.99, }
         popup_notification := mod.widgets.RobrixPopupNotificationRightToLeftProgress {}
     }

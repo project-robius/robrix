@@ -39,11 +39,16 @@ script_mod! {
             
 
                 body +: {
+                    // Only TOP is applied here, since top is shared by every screen
+                    // and no bar owns it. Bottom/left/right are delegated to whatever
+                    // content touches those edges (NavigationTabBar, page content),
+                    // so bar backgrounds fill the inset strip instead of leaving
+                    // a bare clear-color band.
                     padding: Inset{
                         top: (mod.widgets.SAFE_INSET_PAD_TOP),
-                        bottom: (mod.widgets.SAFE_INSET_PAD_BOTTOM),
-                        left: (mod.widgets.SAFE_INSET_PAD_LEFT),
-                        right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
                     }
 
                     overlay_container := View {

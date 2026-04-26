@@ -54,7 +54,6 @@ script_mod! {
             hover: instance(0.0)
             active: instance(0.0)
 
-            color: instance(#0000)
             color_hover: instance((COLOR_NAVIGATION_TAB_BG_HOVER))
             color_active: instance((COLOR_NAVIGATION_TAB_BG_ACTIVE))
 
@@ -63,16 +62,13 @@ script_mod! {
             border_radius: uniform(4.0)
             border_inset: uniform(vec4(0.0))
 
+            // Fade `color_hover` in/out by scaling its own alpha rather than
+            // mix()ing toward `#0000`. mix()ing pulls RGB toward black,
+            // which combined with the dropping alpha makes the blend briefly
+            // DARKER mid-fade, visible as a flicker on hover-out.
             get_color: fn() -> vec4 {
-                return mix(
-                    mix(
-                        self.color,
-                        self.color_hover,
-                        self.hover
-                    ),
-                    self.color_active,
-                    self.active
-                )
+                let hover_color = vec4(self.color_hover.xyz, self.color_hover.w * self.hover)
+                return mix(hover_color, self.color_active, self.active)
             }
 
             pixel: fn() {
@@ -97,15 +93,15 @@ script_mod! {
                 default: @off
                 off: AnimatorState{
                     from: {all: Forward {duration: 0.15}}
-                    apply: { draw_bg: {down: [{time: 0.0, value: 0.0}], hover: 0.0} }
+                    apply: { draw_bg: {hover: 0.0} }
                 }
                 on: AnimatorState{
                     from: {all: Snap}
-                    apply: { draw_bg: {down: [{time: 0.0, value: 0.0}], hover: 1.0} }
+                    apply: { draw_bg: {hover: 1.0} }
                 }
                 down: AnimatorState{
-                    from: {all: Forward {duration: 0.2}}
-                    apply: { draw_bg: {down: [{time: 0.0, value: 1.0}], hover: 1.0} }
+                    from: {all: Snap}
+                    apply: { draw_bg: {hover: 1.0} }
                 }
             }
             active: {
@@ -207,17 +203,39 @@ impl Widget for NavigationBarButton {
                     cx.widget_action(widget_uid, NavigationBarButtonAction::SecondaryClicked);
                 }
             }
+            // Reset if the finger drags off mid-press. Critical inside a
+            // `PortalList`, since once it commits a drag-scroll it eats
+            // `FingerUp` from children, leaving the button stuck pressed.
+            Hit::FingerMove(fe) if !fe.is_over => {
+                self.animator_play(cx, ids!(hover.off));
+                if !fe.device.has_hovers() {
+                    emit_hover_out(self, cx);
+                }
+            }
             Hit::FingerLongPress(_) => {
                 self.animator_play(cx, ids!(hover.down));
                 emit_hover_in(self, cx);
                 cx.widget_action(widget_uid, NavigationBarButtonAction::SecondaryClicked);
             }
-            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                self.animator_play(cx, ids!(hover.on));
-                cx.widget_action(widget_uid, NavigationBarButtonAction::Clicked);
-            }
-            Hit::FingerUp(fe) if !fe.is_over => {
-                self.animator_play(cx, ids!(hover.off));
+            Hit::FingerUp(fe) => {
+                if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
+                    cx.widget_action(widget_uid, NavigationBarButtonAction::Clicked);
+                }
+                // Pick the resting state. On a mouse with the cursor still over
+                // the button, stay on `hover.on`. Otherwise (touch, or release
+                // off the button) reset to `hover.off`. This also catches
+                // `is_over && !was_tap()` (e.g. release after a long press),
+                // which used to leave the animator stuck in `hover.down`.
+                if fe.device.has_hovers() && fe.is_over {
+                    self.animator_play(cx, ids!(hover.on));
+                } else {
+                    self.animator_play(cx, ids!(hover.off));
+                    // No FingerHoverOut on touch, so manually dismiss any
+                    // long-press tooltip. (HoverIn is emitted above.)
+                    if !fe.device.has_hovers() {
+                        emit_hover_out(self, cx);
+                    }
+                }
             }
             _ => {}
         }

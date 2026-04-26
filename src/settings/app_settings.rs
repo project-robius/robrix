@@ -4,7 +4,7 @@ use makepad_widgets::*;
 
 use crate::{
     app::AppState,
-    settings::app_preferences::{AppPreferences, ThumbnailMaxHeight, ViewModeOverride},
+    settings::app_preferences::{AppPreferences, AppPreferencesGlobal, ThumbnailMaxHeight, ViewModeOverride},
     shared::popup_list::{enqueue_popup_notification, PopupKind},
 };
 
@@ -305,9 +305,33 @@ script_mod! {
 /// Field-level state lives in [`AppState::app_prefs`]; this widget reads and
 /// writes that state in response to user interactions and emits
 /// [`AppPreferencesAction`]s so other widgets can apply changes live.
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct AppSettings {
     #[deref] view: View,
+}
+
+impl ScriptHook for AppSettings {
+    fn on_after_apply(
+        &mut self,
+        vm: &mut ScriptVm,
+        apply: &Apply,
+        _scope: &mut Scope,
+        _value: ScriptValue,
+    ) {
+        // The apply walk just reset every code-set field here to its DSL default.
+        // Restore them inline before any draw fires, since doing it later
+        // in `handle_event` would produce a one-frame flicker.
+        //
+        // Prefs come from the global mirror cuz the apply walk runs with
+        // an empty `Scope`. The mirror is kept in sync by `on_*_changed`
+        // in `app_preferences.rs`.
+        if !apply.is_script_reapply() {
+            return;
+        }
+        let cx = vm.cx_mut();
+        let prefs = cx.global::<AppPreferencesGlobal>().0.clone();
+        Self::populate_safe(cx, &self.view, &prefs);
+    }
 }
 
 impl Widget for AppSettings {
@@ -377,7 +401,8 @@ impl AppSettings {
                 _ => ThumbnailMaxHeight::default(),
             };
             let custom_now = matches!(new_thumb, ThumbnailMaxHeight::Custom(_));
-            Self::set_thumb_custom_input_state(cx, &self.view, custom_now);
+            Self::set_thumb_custom_input_read_only(cx, &self.view, custom_now);
+            Self::set_thumb_custom_input_disabled(cx, &self.view, custom_now);
             if new_thumb != app_state.app_prefs.thumbnail_max_height {
                 app_state.app_prefs.thumbnail_max_height = new_thumb;
                 app_state.app_prefs.on_thumbnail_max_height_changed(cx);
@@ -428,34 +453,55 @@ impl AppSettings {
         }
     }
 
-    /// Populates the widget from the given preferences.
+    /// Populates the widget from the given prefs. Called on initial open
+    /// or when fresh prefs arrive.
     ///
-    /// This should be called whenever the settings screen is shown.
+    /// Don't call from `Event::ScriptReapply`. Code-set fields are handled
+    /// in [`Self::on_after_apply`], and animator-driven fields are restored
+    /// by the codegen apply chain.
     pub fn populate(&mut self, cx: &mut Cx, prefs: &AppPreferences) {
-        // View mode dropdown.
-        self.view
-            .drop_down(cx, ids!(view_mode_dropdown))
-            .set_selected_item(cx, prefs.view_mode.to_index());
+        Self::populate_safe(cx, &self.view, prefs);
 
-        // Send-on-enter toggle (checked means the primary modifier + Enter sends).
+        // The animator setup below uses `set_active(Animate::No)` →
+        // `animator_cut` → `cx.with_vm`, which would panic from
+        // `on_after_apply`. Fine here cuz we're outside any apply walk.
         let send_toggle = self.view.check_box(cx, ids!(send_on_cmd_enter_toggle));
-        send_toggle.set_text(SEND_SHORTCUT_TOGGLE_LABEL);
-        send_toggle.set_active(cx, !prefs.send_on_enter);
-        Self::update_send_shortcut_description(cx, &self.view, prefs.send_on_enter);
+        send_toggle.set_active(cx, !prefs.send_on_enter, Animate::No);
 
-        // Thumbnail radios.
         let (small, medium, unlimited, custom, custom_text) = match prefs.thumbnail_max_height {
             ThumbnailMaxHeight::Small => (true, false, false, false, String::new()),
             ThumbnailMaxHeight::Medium => (false, true, false, false, String::new()),
             ThumbnailMaxHeight::Unlimited => (false, false, true, false, String::new()),
             ThumbnailMaxHeight::Custom(v) => (false, false, false, true, v.to_string()),
         };
-        self.view.radio_button(cx, ids!(thumb_small_radio)).set_active(cx, small);
-        self.view.radio_button(cx, ids!(thumb_medium_radio)).set_active(cx, medium);
-        self.view.radio_button(cx, ids!(thumb_unlimited_radio)).set_active(cx, unlimited);
-        self.view.radio_button(cx, ids!(thumb_custom_radio)).set_active(cx, custom);
+        self.view.radio_button(cx, ids!(thumb_small_radio)).set_active(cx, small, Animate::No);
+        self.view.radio_button(cx, ids!(thumb_medium_radio)).set_active(cx, medium, Animate::No);
+        self.view.radio_button(cx, ids!(thumb_unlimited_radio)).set_active(cx, unlimited, Animate::No);
+        self.view.radio_button(cx, ids!(thumb_custom_radio)).set_active(cx, custom, Animate::No);
+        // `populate_safe` set `is_read_only`; pair it with the animator's
+        // disabled state here so the input lands in the right state on
+        // first paint. ScriptReapply only needs `is_read_only`.
+        Self::set_thumb_custom_input_disabled(cx, &self.view, custom);
+
+        // Only write `thumb_custom_input`'s text on initial populate.
+        // `on_after_apply` leaves it alone so in-progress edits survive.
         self.view.text_input(cx, ids!(thumb_custom_input)).set_text(cx, &custom_text);
-        Self::set_thumb_custom_input_state(cx, &self.view, custom);
+    }
+
+    /// Restores the code-set fields the apply walk just reset to DSL defaults:
+    /// toggle label, description, dropdown index, custom-input read-only flag.
+    /// None of these go through `cx.with_vm`, so it's safe to call from
+    /// `on_after_apply`. Doing it inline is what prevents the one-frame flicker.
+    fn populate_safe(cx: &mut Cx, view: &View, prefs: &AppPreferences) {
+        view.drop_down(cx, ids!(view_mode_dropdown))
+            .set_selected_item(cx, prefs.view_mode.to_index());
+
+        view.check_box(cx, ids!(send_on_cmd_enter_toggle))
+            .set_text(SEND_SHORTCUT_TOGGLE_LABEL);
+        Self::update_send_shortcut_description(cx, view, prefs.send_on_enter);
+
+        let custom_active = matches!(prefs.thumbnail_max_height, ThumbnailMaxHeight::Custom(_));
+        Self::set_thumb_custom_input_read_only(cx, view, custom_active);
     }
 
     fn update_send_shortcut_description(cx: &mut Cx, view: &View, send_on_enter: bool) {
@@ -467,12 +513,28 @@ impl AppSettings {
         view.label(cx, ids!(send_shortcut_description)).set_text(cx, text);
     }
 
-    fn set_thumb_custom_input_state(cx: &mut Cx, view: &View, enabled: bool) {
-        let custom_input = view.text_input(cx, ids!(thumb_custom_input));
-        custom_input.set_disabled(cx, !enabled);
-        custom_input.set_is_read_only(cx, !enabled);
+    /// Sets `is_read_only` based on whether the custom radio is selected.
+    /// It's a plain `#[live] bool` the apply walk resets to the DSL default,
+    /// so we re-set it ourselves. Safe anywhere, since it's just a field
+    /// write plus a redraw.
+    fn set_thumb_custom_input_read_only(cx: &mut Cx, view: &View, enabled: bool) {
+        view.text_input(cx, ids!(thumb_custom_input))
+            .set_is_read_only(cx, !enabled);
+    }
+
+    /// Sets the disabled animator state.
+    ///
+    /// **Not safe inside `on_after_apply`**. `set_disabled` goes through
+    /// `animator_toggle` → `cx.with_vm`, which panics when the VM is
+    /// swapped out. Only call this from outside an apply walk.
+    /// ScriptReapply doesn't need it, since the codegen chain restores
+    /// animator state itself.
+    fn set_thumb_custom_input_disabled(cx: &mut Cx, view: &View, enabled: bool) {
+        view.text_input(cx, ids!(thumb_custom_input))
+            .set_disabled(cx, !enabled);
     }
 }
+
 
 impl AppSettingsRef {
     /// See [`AppSettings::populate`].
