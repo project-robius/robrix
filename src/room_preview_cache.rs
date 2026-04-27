@@ -3,7 +3,7 @@
 //! The cache currently just stores part of the room preview info:
 //! the room's ID, display name, and avatar.
 //!
-//! Currently we treate cache entries as stale after 24 hours, but this
+//! Currently we treat cache entries as stale after 24 hours, but this
 //! is a placeholder for proper invalidation based on subscribing to
 //! updates for any rooms in the cache.
 
