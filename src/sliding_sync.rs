@@ -378,16 +378,13 @@ impl std::fmt::Display for TimelineKind {
     }
 }
 
-/// How the worker should deliver the result of a [`MatrixRequest::GetRoomPreview`].
+/// The desired response for a [`MatrixRequest::GetRoomPreview`].
 #[derive(Clone, Debug)]
 pub enum RoomPreviewResponseMode {
-    /// Posts a [`RoomPreviewAction::Fetched`] action with the result, success
-    /// or error. Used by interactive flows like the "join room" UI.
+    /// Posts a [`RoomPreviewAction::Fetched`] action with the result.
     Action,
-    /// Stores the result in the [`crate::room_preview_cache`] on success;
-    /// logs and drops on error (the cache entry stays `Requested` until
-    /// `clear_all_pending_requests()` is called on offline→online recovery).
-    /// Used by `RobrixHtmlLink` pills.
+    /// Enqueues the result to be inserted into the [`crate::room_preview_cache`],
+    /// if successful.
     RoomPreviewCache,
 }
 
