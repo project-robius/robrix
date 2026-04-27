@@ -6,17 +6,17 @@
 use std::{fs::{File, OpenOptions}, io::Write, sync::Mutex};
 use std::{cell::RefCell, collections::HashMap};
 use makepad_widgets::*;
-use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedUserId, RoomId, UserId, events::room::message::RoomMessageEventContent}};
+use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId, events::room::message::RoomMessageEventContent}};
 use serde::{Deserialize, Serialize};
 use url::Url;
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry, clear_avatar_cache}, home::{
+    avatar_cache::{self, clear_avatar_cache}, home::{
         add_room::{CreateRoomModalAction, CreateRoomModalWidgetRefExt, StartChatModalAction, StartChatModalWidgetRefExt},
         bot_binding_modal::{BotBindingModalAction, BotBindingModalWidgetRefExt},
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt, mark_invite_modal_closed}, invite_screen::{InviteScreenWidgetRefExt, LeaveRoomResultAction}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, RoomScreenWidgetRefExt, TimelineUpdate, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, space_lobby::SpaceLobbyScreenWidgetRefExt, spaces_bar::SpacesBarRef
     }, i18n::{AppLanguage, tr_fmt, tr_key}, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::{user_profile::UserProfile, user_profile_cache::clear_user_profile_cache}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, file_upload_modal::{FilePreviewerAction, FileUploadModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, room_filter_input_bar::FilterAction}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RemoteDirectorySearchKind, RemoteDirectorySearchResult, TimelineKind, AccountSwitchAction, current_user_id, get_client, submit_async_request, get_timeline_update_sender}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, file_upload_modal::{FilePreviewerAction, FileUploadModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, room_filter_input_bar::FilterAction, room_filter_search_results::{RoomFilterResultAction, RoomFilterResultTarget, RoomFilterSearchResultsListWidgetRefExt}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RemoteDirectorySearchKind, RemoteDirectorySearchResult, TimelineKind, AccountSwitchAction, current_user_id, get_client, submit_async_request, get_timeline_update_sender}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -25,61 +25,6 @@ use crate::{
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
-
-    let RoomFilterResultItem = View {
-        visible: false
-        width: Fill
-        height: 48
-        flow: Overlay
-
-        row := View {
-            width: Fill
-            height: Fill
-            flow: Right
-            align: Align{y: 0.5}
-            spacing: 8
-            padding: Inset{left: 8, right: 8, top: 5, bottom: 5}
-
-            avatar := Avatar { width: 30, height: 30 }
-
-            text_col := View {
-                width: Fill
-                height: Fit
-                flow: Down
-                spacing: 0
-
-                name_label := Label {
-                    width: Fill
-                    height: Fit
-                    draw_text +: {
-                        color: (COLOR_TEXT)
-                        text_style: REGULAR_TEXT {font_size: 10}
-                    }
-                }
-
-                id_label := Label {
-                    width: Fill
-                    height: Fit
-                    draw_text +: {
-                        color: (COLOR_TEXT_INPUT_IDLE)
-                        text_style: REGULAR_TEXT {font_size: 8.5}
-                    }
-                }
-            }
-        }
-
-        click_button := RobrixNeutralIconButton {
-            width: Fill
-            height: Fill
-            text: ""
-            icon_walk: Walk{width: 0, height: 0}
-            draw_bg +: {
-                color: #0000
-                color_hover: #FFFFFF22
-                color_down: #FFFFFF11
-            }
-        }
-    }
 
     load_all_resources() do #(App::script_component(vm)) {
         ui: Root {
@@ -244,21 +189,7 @@ script_mod! {
                                                 }
                                             }
 
-                                            search_results_list := View {
-                                                width: Fill,
-                                                height: Fit,
-                                                flow: Down
-                                                spacing: 3
-
-                                                result_item_0 := RoomFilterResultItem {}
-                                                result_item_1 := RoomFilterResultItem {}
-                                                result_item_2 := RoomFilterResultItem {}
-                                                result_item_3 := RoomFilterResultItem {}
-                                                result_item_4 := RoomFilterResultItem {}
-                                                result_item_5 := RoomFilterResultItem {}
-                                                result_item_6 := RoomFilterResultItem {}
-                                                result_item_7 := RoomFilterResultItem {}
-                                            }
+                                            search_results_list := RoomFilterSearchResultsList {}
                                         }
                                     }
                                 }
@@ -334,15 +265,6 @@ script_mod! {
 
 app_main!(App);
 
-#[derive(Clone)]
-enum RoomFilterResultTarget {
-    LocalSpace { room_name_id: RoomNameId, avatar: FetchedRoomAvatar },
-    LocalRoom { room_name_id: RoomNameId, avatar: FetchedRoomAvatar },
-    RemoteSpace { space_name_id: RoomNameId, avatar_uri: Option<OwnedMxcUri> },
-    RemoteRoom { room_name_id: RoomNameId, avatar_uri: Option<OwnedMxcUri> },
-    RemoteUser(UserProfile),
-}
-
 #[derive(Clone, Debug)]
 pub enum RoomFilterRemoteSearchAction {
     Results {
@@ -378,7 +300,6 @@ pub struct App {
     /// A stack of previously-selected rooms for mobile navigation.
     /// When a view is popped off the stack, the previous `selected_room` is restored from here.
     #[rust] mobile_room_nav_stack: Vec<SelectedRoom>,
-    #[rust] room_filter_modal_results: Vec<RoomFilterResultTarget>,
     #[rust(Timer::empty())] room_filter_debounce_timer: Timer,
     #[rust] pending_room_filter_keywords: String,
 }
@@ -652,7 +573,9 @@ impl MatchEvent for App {
 
     fn handle_signal(&mut self, cx: &mut Cx) {
         avatar_cache::process_avatar_updates(cx);
-        self.refresh_room_filter_modal_result_buttons(cx);
+        // Redraw search results list to pick up newly-loaded avatars
+        self.ui.view(cx, ids!(room_filter_modal_inner.search_results_scroll.search_results.search_results_list))
+            .redraw(cx);
     }
 
     fn handle_timer(&mut self, cx: &mut Cx, event: &TimerEvent) {
@@ -681,29 +604,30 @@ impl MatchEvent for App {
             self.ui.modal(cx, ids!(positive_confirmation_modal)).close(cx);
         }
 
-        if let Some(clicked_index) = self.clicked_room_filter_result_index(cx, actions) {
-            if let Some(target) = self.room_filter_modal_results.get(clicked_index).cloned() {
+        // Handle search result clicks from the FlatList-based search results widget
+        for action in actions {
+            if let Some(RoomFilterResultAction::Clicked(target)) = action.downcast_ref() {
                 self.ui.modal(cx, ids!(room_filter_modal)).close(cx);
                 match target {
                     RoomFilterResultTarget::LocalSpace { room_name_id: space_name_id, .. }
                     => {
-                        cx.action(NavigationBarAction::GoToSpace { space_name_id });
+                        cx.action(NavigationBarAction::GoToSpace { space_name_id: space_name_id.clone() });
                     }
                     RoomFilterResultTarget::LocalRoom { room_name_id, .. }
                     => {
-                        self.navigate_to_room(cx, None, &BasicRoomDetails::RoomId(room_name_id));
+                        self.navigate_to_room(cx, None, &BasicRoomDetails::RoomId(room_name_id.clone()));
                     }
                     RoomFilterResultTarget::RemoteSpace { space_name_id, .. } => {
                         self.open_join_from_search_result(
                             cx,
-                            BasicRoomDetails::Name(space_name_id),
+                            BasicRoomDetails::Name(space_name_id.clone()),
                             true,
                         );
                     }
                     RoomFilterResultTarget::RemoteRoom { room_name_id, .. } => {
                         self.open_join_from_search_result(
                             cx,
-                            BasicRoomDetails::Name(room_name_id),
+                            BasicRoomDetails::Name(room_name_id.clone()),
                             false,
                         );
                     }
@@ -713,7 +637,7 @@ impl MatchEvent for App {
                                 user_profile.user_id.as_ref(),
                                 current_user_id().as_deref(),
                             ),
-                            user_profile,
+                            user_profile: user_profile.clone(),
                             allow_create: false,
                         });
                     }
@@ -910,30 +834,28 @@ impl MatchEvent for App {
                     if room_filter_input.text().trim() != query.trim() {
                         continue;
                     }
-                    self.room_filter_modal_results.clear();
+                    let search_results_list = self.ui.room_filter_search_results_list(cx, ids!(room_filter_modal_inner.search_results_scroll.search_results.search_results_list));
+                    let mut new_results = Vec::new();
                     for result in results {
                         match result {
                             RemoteDirectorySearchResult::User(user_profile) => {
-                                self.room_filter_modal_results.push(RoomFilterResultTarget::RemoteUser(user_profile.clone()));
+                                new_results.push(RoomFilterResultTarget::RemoteUser(user_profile.clone()));
                             }
                             RemoteDirectorySearchResult::Room { room_name_id, avatar_uri } => {
-                                self.room_filter_modal_results.push(RoomFilterResultTarget::RemoteRoom {
+                                new_results.push(RoomFilterResultTarget::RemoteRoom {
                                     room_name_id: room_name_id.clone(),
                                     avatar_uri: avatar_uri.clone(),
                                 });
                             }
                             RemoteDirectorySearchResult::Space { space_name_id, avatar_uri } => {
-                                self.room_filter_modal_results.push(RoomFilterResultTarget::RemoteSpace {
+                                new_results.push(RoomFilterResultTarget::RemoteSpace {
                                     space_name_id: space_name_id.clone(),
                                     avatar_uri: avatar_uri.clone(),
                                 });
                             }
                         }
-                        if self.room_filter_modal_results.len() >= Self::ROOM_FILTER_RESULT_ITEM_IDS.len() {
-                            break;
-                        }
                     }
-                    if self.room_filter_modal_results.is_empty() {
+                    if new_results.is_empty() {
                         self.set_room_filter_modal_empty_state(
                             cx,
                             &tr_fmt(self.app_state.app_language, "app.room_filter.no_server_results", &[
@@ -944,7 +866,7 @@ impl MatchEvent for App {
                     } else {
                         self.set_room_filter_modal_empty_state(cx, "", false);
                     }
-                    self.refresh_room_filter_modal_result_buttons(cx);
+                    search_results_list.set_results(cx, new_results);
                     continue;
                 }
                 Some(RoomFilterRemoteSearchAction::Failed { query, kind: _, error }) => {
@@ -952,8 +874,8 @@ impl MatchEvent for App {
                     if room_filter_input.text().trim() != query.trim() {
                         continue;
                     }
-                    self.room_filter_modal_results.clear();
-                    self.refresh_room_filter_modal_result_buttons(cx);
+                    let search_results_list = self.ui.room_filter_search_results_list(cx, ids!(room_filter_modal_inner.search_results_scroll.search_results.search_results_list));
+                    search_results_list.clear(cx);
                     self.set_room_filter_modal_empty_state(
                         cx,
                         &tr_fmt(self.app_state.app_language, "app.room_filter.search_remote_failed", &[
@@ -1616,13 +1538,6 @@ impl AppMain for App {
 }
 
 impl App {
-    const ROOM_FILTER_RESULT_ITEM_IDS: [LiveId; 8] = [
-        live_id!(result_item_0), live_id!(result_item_1),
-        live_id!(result_item_2), live_id!(result_item_3),
-        live_id!(result_item_4), live_id!(result_item_5),
-        live_id!(result_item_6), live_id!(result_item_7),
-    ];
-
     fn sync_app_language(&self, cx: &mut Cx) {
         let app_language = self.app_state.app_language;
         self.ui.label(cx, ids!(room_filter_modal_inner.search_results_title))
@@ -1662,16 +1577,6 @@ impl App {
         }
         self.ui.view(cx, ids!(login_screen_view)).set_visible(cx, show_login);
         self.ui.view(cx, ids!(home_screen_view)).set_visible(cx, show_home);
-    }
-
-    fn clicked_room_filter_result_index(&self, cx: &mut Cx, actions: &Actions) -> Option<usize> {
-        let list_view = self.ui.view(cx, ids!(room_filter_modal_inner.search_results_scroll.search_results.search_results_list));
-        for (index, item_id) in Self::ROOM_FILTER_RESULT_ITEM_IDS.iter().enumerate() {
-            if list_view.button(cx, &[*item_id, live_id!(click_button)]).clicked(actions) {
-                return Some(index);
-            }
-        }
-        None
     }
 
     fn clicked_room_filter_remote_option(&self, cx: &mut Cx, actions: &Actions) -> Option<RemoteDirectorySearchKind> {
@@ -1719,149 +1624,21 @@ impl App {
             .set_visible(cx, show_remote_options);
     }
 
-    fn set_room_filter_result_avatar(
-        &self,
-        cx: &mut Cx,
-        avatar_ref: &crate::shared::avatar::AvatarRef,
-        fallback_text: &str,
-        local_avatar: Option<&FetchedRoomAvatar>,
-        remote_avatar_uri: Option<&OwnedMxcUri>,
-        remote_avatar_state: Option<&AvatarState>,
-    ) {
-        if let Some(local_avatar) = local_avatar {
-            match local_avatar {
-                FetchedRoomAvatar::Text(text) => {
-                    avatar_ref.show_text(cx, None, None, text);
-                }
-                FetchedRoomAvatar::Image(image_data) => {
-                    let res = avatar_ref.show_image(
-                        cx,
-                        None,
-                        |cx, img_ref| crate::utils::load_png_or_jpg(&img_ref, cx, image_data),
-                    );
-                    if res.is_err() {
-                        avatar_ref.show_text(cx, None, None, fallback_text);
-                    }
-                }
-            }
-            return;
-        }
-
-        if let Some(avatar_state) = remote_avatar_state {
-            if let Some(image_data) = avatar_state.data() {
-                let res = avatar_ref.show_image(
-                    cx,
-                    None,
-                    |cx, img_ref| crate::utils::load_png_or_jpg(&img_ref, cx, image_data),
-                );
-                if res.is_ok() {
-                    return;
-                }
-            }
-            if let Some(uri) = avatar_state.uri() {
-                if let AvatarCacheEntry::Loaded(image_data) = avatar_cache::get_or_fetch_avatar(cx, uri) {
-                    let res = avatar_ref.show_image(
-                        cx,
-                        None,
-                        |cx, img_ref| crate::utils::load_png_or_jpg(&img_ref, cx, &image_data),
-                    );
-                    if res.is_ok() {
-                        return;
-                    }
-                }
-            }
-        }
-
-        if let Some(uri) = remote_avatar_uri {
-            if let AvatarCacheEntry::Loaded(image_data) = avatar_cache::get_or_fetch_avatar(cx, uri) {
-                let res = avatar_ref.show_image(
-                    cx,
-                    None,
-                    |cx, img_ref| crate::utils::load_png_or_jpg(&img_ref, cx, &image_data),
-                );
-                if res.is_ok() {
-                    return;
-                }
-            }
-        }
-
-        avatar_ref.show_text(cx, None, None, fallback_text);
-    }
-
-    fn refresh_room_filter_modal_result_buttons(&self, cx: &mut Cx) {
-        let list_view = self.ui.view(cx, ids!(room_filter_modal_inner.search_results_scroll.search_results.search_results_list));
-        for (index, item_id) in Self::ROOM_FILTER_RESULT_ITEM_IDS.iter().enumerate() {
-            let item = list_view.view(cx, &[*item_id]);
-            if let Some(target) = self.room_filter_modal_results.get(index) {
-                let (name, raw_id) = match target {
-                    RoomFilterResultTarget::LocalSpace { room_name_id, .. }
-                    | RoomFilterResultTarget::LocalRoom { room_name_id, .. } => {
-                        (room_name_id.to_string(), room_name_id.room_id().to_string())
-                    }
-                    RoomFilterResultTarget::RemoteSpace { space_name_id, .. }
-                    | RoomFilterResultTarget::RemoteRoom { room_name_id: space_name_id, .. } => {
-                        (space_name_id.to_string(), space_name_id.room_id().to_string())
-                    }
-                    RoomFilterResultTarget::RemoteUser(user_profile) => {
-                        (user_profile.displayable_name().to_owned(), user_profile.user_id.to_string())
-                    }
-                };
-
-                item.label(cx, ids!(row.text_col.name_label)).set_text(cx, &name);
-                item.label(cx, ids!(row.text_col.id_label)).set_text(cx, &raw_id);
-
-                let avatar_ref = item.avatar(cx, ids!(row.avatar));
-                match target {
-                    RoomFilterResultTarget::LocalSpace { avatar, .. }
-                    | RoomFilterResultTarget::LocalRoom { avatar, .. } => {
-                        self.set_room_filter_result_avatar(cx, &avatar_ref, &name, Some(avatar), None, None);
-                    }
-                    RoomFilterResultTarget::RemoteSpace { avatar_uri, .. }
-                    | RoomFilterResultTarget::RemoteRoom { avatar_uri, .. } => {
-                        self.set_room_filter_result_avatar(cx, &avatar_ref, &name, None, avatar_uri.as_ref(), None);
-                    }
-                    RoomFilterResultTarget::RemoteUser(user_profile) => {
-                        self.set_room_filter_result_avatar(
-                            cx,
-                            &avatar_ref,
-                            &name,
-                            None,
-                            None,
-                            Some(&user_profile.avatar_state),
-                        );
-                    }
-                }
-
-                item.set_visible(cx, true);
-            } else {
-                item.set_visible(cx, false);
-            }
-        }
-    }
-
     fn update_room_filter_modal_results(&mut self, cx: &mut Cx, keywords: &str) {
         let keywords = keywords.trim();
-        self.room_filter_modal_results.clear();
+        let mut results = Vec::new();
 
         if !keywords.is_empty() {
             let space_items = cx.get_global::<SpacesBarRef>()
                 .get_matching_space_items(keywords, 4);
             let room_items = cx.get_global::<RoomsListRef>()
-                .get_matching_room_items(keywords, 8);
+                .get_matching_room_items(keywords, 12);
 
             for (room_name_id, avatar) in space_items {
-                self.room_filter_modal_results.push(RoomFilterResultTarget::LocalSpace { room_name_id, avatar });
-                if self.room_filter_modal_results.len() >= Self::ROOM_FILTER_RESULT_ITEM_IDS.len() {
-                    break;
-                }
+                results.push(RoomFilterResultTarget::LocalSpace { room_name_id, avatar });
             }
-            if self.room_filter_modal_results.len() < Self::ROOM_FILTER_RESULT_ITEM_IDS.len() {
-                for (room_name_id, avatar) in room_items {
-                    self.room_filter_modal_results.push(RoomFilterResultTarget::LocalRoom { room_name_id, avatar });
-                    if self.room_filter_modal_results.len() >= Self::ROOM_FILTER_RESULT_ITEM_IDS.len() {
-                        break;
-                    }
-                }
+            for (room_name_id, avatar) in room_items {
+                results.push(RoomFilterResultTarget::LocalRoom { room_name_id, avatar });
             }
         }
 
@@ -1871,7 +1648,7 @@ impl App {
                 tr_key(self.app_state.app_language, "app.room_filter.empty_hint"),
                 false,
             );
-        } else if self.room_filter_modal_results.is_empty() {
+        } else if results.is_empty() {
             self.set_room_filter_modal_empty_state(
                 cx,
                 &tr_fmt(
@@ -1885,7 +1662,8 @@ impl App {
             self.set_room_filter_modal_empty_state(cx, "", false);
         }
 
-        self.refresh_room_filter_modal_result_buttons(cx);
+        let search_results_list = self.ui.room_filter_search_results_list(cx, ids!(room_filter_modal_inner.search_results_scroll.search_results.search_results_list));
+        search_results_list.set_results(cx, results);
     }
 
     /// Navigates to the given `destination_room`, optionally closing the `room_to_close`.
