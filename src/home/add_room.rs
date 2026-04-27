@@ -5,7 +5,7 @@ use makepad_widgets::*;
 use matrix_sdk::RoomState;
 use ruma::{IdParseError, MatrixToUri, MatrixUri, OwnedRoomOrAliasId, OwnedServerName, matrix_uri::MatrixId, room::{JoinRuleSummary, RoomType}};
 
-use crate::{app::AppStateAction, home::invite_screen::JoinRoomResultAction, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{avatar::AvatarWidgetRefExt, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, submit_async_request}, utils};
+use crate::{app::AppStateAction, home::invite_screen::JoinRoomResultAction, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{avatar::AvatarWidgetRefExt, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, RoomPreviewResponseMode, submit_async_request}, utils};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -402,7 +402,11 @@ impl Widget for AddRoomScreen {
                             room_or_alias_id: room_or_alias_id.clone(),
                             via: via.clone(),
                         };
-                        submit_async_request(MatrixRequest::GetRoomPreview { room_or_alias_id, via });
+                        submit_async_request(MatrixRequest::GetRoomPreview {
+                            room_or_alias_id,
+                            via,
+                            response_mode: RoomPreviewResponseMode::Action,
+                        });
                     }
                     Err(e) => {
                         let err_str = format!("Could not parse the text as a valid room address.\nError: {e}.");
