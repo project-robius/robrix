@@ -650,14 +650,6 @@ impl RoomsList {
                         if was_direct == is_direct {
                             continue;
                         }
-                        enqueue_popup_notification(
-                            format!("Note: \"{}\" is now a {} room.",
-                                room.room_name_id,
-                                if is_direct { "direct" } else { "non-direct" },
-                            ),
-                            PopupKind::Info,
-                            Some(5.0),
-                        );
 
                         // Remove the room from the previous list (direct or regular).
                         let list_to_remove_from = if was_direct {

@@ -63,7 +63,7 @@ impl AppPreferences {
     /// copies.
     ///
     /// `cx.request_script_reapply()` then fires `Event::ScriptReapply`,
-    /// which walks the widget tree with `Apply::Reload`. Each Image's
+    /// which walks the widget tree with `Apply::ScriptReapply`. Each Image's
     /// `Size::script_apply` re-reads `max` from the shared `IMG_MSG_FIT`
     /// object and updates the widget's `walk.height`.
     ///

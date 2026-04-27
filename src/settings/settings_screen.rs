@@ -1,7 +1,7 @@
 
 use makepad_widgets::*;
 
-use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, profile::user_profile::UserProfile, settings::{account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt}};
+use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, profile::user_profile::UserProfile, settings::{PopulateMode, account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -98,6 +98,16 @@ impl Widget for SettingsScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
 
+        // ScriptReapply preserves text fields (String / ArcStringMut bail out),
+        // but still resets animator-driven controls and `script_apply_eval`-driven
+        // bits (avatar, button colors). Re-apply just those.
+        // Never re-`set_text` user-editable inputs here, that would wipe in-progress edits.
+        if let Event::ScriptReapply = event {
+            if let Some(app_state) = scope.data.get::<AppState>() {
+                self.populate_subwidgets(cx, PopulateMode::AfterReapply, None, app_state);
+            }
+        }
+
         // Close the pane if:
         // 1. The close button is clicked,
         // 2. The back navigational gesture/action occurs (e.g., Back on Android),
@@ -172,11 +182,36 @@ impl SettingsScreen {
             error!("Failed to get own profile for settings screen.");
             return;
         };
-        self.view.account_settings(cx, ids!(account_settings)).populate(cx, profile);
-        self.view.app_settings(cx, ids!(app_settings)).populate(cx, &app_state.app_prefs);
+        self.populate_subwidgets(cx, PopulateMode::Initial, Some(profile), app_state);
         self.view.button(cx, ids!(close_button)).reset_hover(cx);
         cx.set_key_focus(self.view.area());
         self.redraw(cx);
+    }
+
+    /// Single place deciding which sub-widgets get (re)synced and how.
+    /// Both the initial-open and `Event::ScriptReapply` paths route here.
+    ///
+    /// `AppSettings` is missing from `AfterReapply` on purpose, since it
+    /// restores itself inline from `on_after_apply` to avoid the flicker
+    /// the late path used to produce. `AccountSettings` still needs the
+    /// late path for its `script_apply_eval`-driven bits (button colors,
+    /// avatar), cuz those can't run from inside `on_after_apply`.
+    fn populate_subwidgets(
+        &mut self,
+        cx: &mut Cx,
+        mode: PopulateMode,
+        profile: Option<UserProfile>,
+        app_state: &AppState,
+    ) {
+        match mode {
+            PopulateMode::Initial => {
+                self.view.account_settings(cx, ids!(account_settings)).populate(cx, profile);
+                self.view.app_settings(cx, ids!(app_settings)).populate(cx, &app_state.app_prefs);
+            }
+            PopulateMode::AfterReapply => {
+                self.view.account_settings(cx, ids!(account_settings)).restore_after_reapply(cx);
+            }
+        }
     }
 }
 

@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use makepad_widgets::{text::selection::Cursor, *};
 
-use crate::{app::ConfirmDeleteAction, avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, MatrixRequest, submit_async_request}, utils};
+use crate::{app::ConfirmDeleteAction, avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, settings::PopulateMode, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, MatrixRequest, submit_async_request}, utils};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -212,11 +212,36 @@ script_mod! {
 }
 
 /// The view containing all user account-related settings.
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct AccountSettings {
     #[deref] view: View,
 
     #[rust] own_profile: Option<UserProfile>,
+}
+
+impl ScriptHook for AccountSettings {
+    fn on_after_apply(
+        &mut self,
+        vm: &mut ScriptVm,
+        apply: &Apply,
+        _scope: &mut Scope,
+        _value: ScriptValue,
+    ) {
+        // Restore user_id inline so the DSL placeholder never flashes.
+        // Anything that goes through `cx.with_vm` (button colors, avatar)
+        // can't run here, so it's handled later in `restore_after_reapply`.
+        if !apply.is_script_reapply() {
+            return;
+        }
+        let Some(own_profile) = self.own_profile.as_ref() else {
+            return;
+        };
+        let cached_user_id = own_profile.user_id.as_str().to_owned();
+        let cx = vm.cx_mut();
+        self.view
+            .label(cx, ids!(user_id))
+            .set_text(cx, &cached_user_id);
+    }
 }
 
 impl Widget for AccountSettings {
@@ -509,20 +534,68 @@ impl AccountSettings {
         );
     }
 
-    /// Show and initializes the account settings within the SettingsScreen.
-    pub fn populate(&mut self, cx: &mut Cx, own_profile: UserProfile) {
-        self.view.label(cx, ids!(user_id))
-            .set_text(cx, own_profile.user_id.as_str());
-        self.view.text_input(cx, ids!(display_name_input))
-            .set_text(cx, own_profile.username.as_deref().unwrap_or_default());
+    /// Populates the account settings within the SettingsScreen.
+    /// Pass `Some(new_profile)` to replace the cached profile, or `None`
+    /// to use the existing `self.own_profile`.
+    ///
+    /// Don't call this from `Event::ScriptReapply`, since it unconditionally
+    /// `set_text`s `display_name_input`, which would wipe any in-progress edit.
+    /// Use [`Self::restore_after_reapply`] for that path.
+    pub fn populate(&mut self, cx: &mut Cx, new_profile: Option<UserProfile>) {
+        if let Some(new_profile) = new_profile {
+            self.own_profile = Some(new_profile);
+        }
+        self.populate_inner(cx, PopulateMode::Initial);
+    }
+
+    /// Restores widget state after `Event::ScriptReapply` reset DSL-bound
+    /// fields to their `script_mod!` defaults. See
+    /// [`PopulateMode::AfterReapply`] for what's re-applied vs left alone.
+    pub fn restore_after_reapply(&mut self, cx: &mut Cx) {
+        self.populate_inner(cx, PopulateMode::AfterReapply);
+    }
+
+    /// Shared core. The two modes only differ at the text-input writes
+    /// and display-name button enable logic. Avatar repaint, hover sweep,
+    /// and redraw are the same.
+    fn populate_inner(&mut self, cx: &mut Cx, mode: PopulateMode) {
+        let Some(own_profile) = self.own_profile.as_ref() else {
+            if matches!(mode, PopulateMode::Initial) {
+                error!("BUG: AccountSettings::populate() called with no cached profile.");
+            }
+            return;
+        };
+
+        let cached_user_id = own_profile.user_id.as_str().to_owned();
+        let cached_name = own_profile.username.clone().unwrap_or_default();
+        // Cloning here releases the `own_profile` borrow,
+        // so the `&mut self` calls below don't conflict.
+
+        // `display_name_input` is user-editable, so the modes diverge:
+        //   * Initial: write the cached username + user_id, buttons start disabled.
+        //   * AfterReapply: leave the input alone to preserve in-progress edits,
+        //     skip user_id (already restored in `on_after_apply`),
+        //     and re-derive the button enable state from whether the input still matches.
+        let modified = match mode {
+            PopulateMode::Initial => {
+                self.view.label(cx, ids!(user_id))
+                    .set_text(cx, &cached_user_id);
+                self.view.text_input(cx, ids!(display_name_input))
+                    .set_text(cx, &cached_name);
+                false
+            }
+            PopulateMode::AfterReapply => {
+                self.view.text_input(cx, ids!(display_name_input)).text() != cached_name
+            }
+        };
+
         Self::enable_display_name_buttons(
             cx,
-            false,
+            modified,
             &self.view.button(cx, ids!(accept_display_name_button)),
             &self.view.button(cx, ids!(cancel_display_name_button)),
         );
 
-        self.own_profile = Some(own_profile);
         self.populate_avatar_views(cx);
 
         self.view.button(cx, ids!(upload_avatar_button)).reset_hover(cx);
@@ -639,10 +712,16 @@ impl AccountSettings {
 }
 
 impl AccountSettingsRef {
-    /// See [`AccountSettings::show()`].
-    pub fn populate(&self, cx: &mut Cx, own_profile: UserProfile) {
+    /// See [`AccountSettings::populate()`].
+    pub fn populate(&self, cx: &mut Cx, new_profile: Option<UserProfile>) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.populate(cx, own_profile);
+        inner.populate(cx, new_profile);
+    }
+
+    /// See [`AccountSettings::restore_after_reapply()`].
+    pub fn restore_after_reapply(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.restore_after_reapply(cx);
     }
 }
 

@@ -163,23 +163,22 @@ script_mod! {
         }
     }
 
-    // Note: `ToggleSpacesBarButton` is intentionally NOT a `NavigationBarButton`.
-    // Its toggling is independent of the navigation selection (it doesn't
-    // show a "selected" state and doesn't affect the other buttons), so it
-    // continues to use `RobrixNeutralIconButton` as its base.
-    mod.widgets.ToggleSpacesBarButton = RobrixNeutralIconButton {
-        width: Fill,
-        padding: 16
-        spacing: 0,
-        align: Align{x: 0.5, y: 0.5}
-        draw_icon +: {
-            svg: (ICON_SQUARES)
-            color: (COLOR_NAVIGATION_TAB_FG)
-        }
-        icon_walk: Walk{
-            width: (NAVIGATION_TAB_BAR_SIZE / 2.2),
-            height: (NAVIGATION_TAB_BAR_SIZE / 2.2),
-            margin: 0
+    // Built on `NavigationTabButton` so it shares the size/padding and
+    // hover animation. Its toggling is independent of navigation selection,
+    // so the parent never calls `set_selected` on it.
+    mod.widgets.ToggleSpacesBarButton = mod.widgets.NavigationTabButton {
+        tooltip_text: "Toggle Spaces"
+        Icon {
+            margin: 0,
+            icon_walk: Walk {
+                margin: 0,
+                width: (NAVIGATION_TAB_BAR_SIZE / 2.2),
+                height: (NAVIGATION_TAB_BAR_SIZE / 2.2)
+            }
+            draw_icon +: {
+                color: (COLOR_NAVIGATION_TAB_FG)
+                svg: (ICON_SQUARES)
+            }
         }
     }
 
@@ -189,8 +188,14 @@ script_mod! {
         Desktop := RoundedView {
             flow: Down,
             align: Align{x: 0.5}
-            padding: Inset{top: 8., bottom: 8}
-            width: (NAVIGATION_TAB_BAR_SIZE),
+            // Similar to how we do it for the mobile mode view, but now
+            // the bar is on the left, so we add left padding and extra width.
+            padding: Inset{
+                top: 8.,
+                bottom: (8.0 + mod.widgets.SAFE_INSET_PAD_BOTTOM),
+                left: (mod.widgets.SAFE_INSET_PAD_LEFT),
+            }
+            width: (mod.widgets.NAVIGATION_TAB_BAR_SIZE + mod.widgets.SAFE_INSET_PAD_LEFT),
             height: Fill
 
             draw_bg +: {
@@ -219,7 +224,15 @@ script_mod! {
             flow: Right
             align: Align{x: 0.5, y: 0.5}
             width: Fill,
-            height: (NAVIGATION_TAB_BAR_SIZE)
+            // On mobile, the nav bar is at the bottom, so we let it fill the entire space
+            // *including* drawing within the safe inset areas,
+            // and the bottom-pad its content so the buttons aren't drawn in the safe areas.
+            height: (mod.widgets.NAVIGATION_TAB_BAR_SIZE + mod.widgets.SAFE_INSET_PAD_BOTTOM),
+            padding: Inset{
+                bottom: (mod.widgets.SAFE_INSET_PAD_BOTTOM),
+                left: (mod.widgets.SAFE_INSET_PAD_LEFT),
+                right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
+            }
 
             draw_bg +: {
                 color: (COLOR_SECONDARY)
@@ -545,7 +558,7 @@ impl Widget for NavigationTabBar {
                 }
             }
 
-            if self.view.button(cx, ids!(toggle_spaces_bar_button)).clicked(actions) {
+            if self.view.navigation_bar_button(cx, ids!(toggle_spaces_bar_button)).clicked(actions) {
                 self.is_spaces_bar_shown = !self.is_spaces_bar_shown;
                 cx.action(NavigationBarAction::ToggleSpacesBar);
             }

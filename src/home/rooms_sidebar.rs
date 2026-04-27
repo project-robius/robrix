@@ -112,7 +112,8 @@ script_mod! {
                         room_filter_input_bar := RoomFilterInputBar {}
                     }
 
-                    search_messages_button := SearchMessagesButton { }
+                    // Hide this until it's implemented.
+                    // search_messages_button := SearchMessagesButton { }
                 }
             }
 

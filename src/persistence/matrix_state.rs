@@ -22,7 +22,9 @@ pub struct ClientSessionPersisted {
     /// The URL of the homeserver of the user.
     pub homeserver: String,
 
-    /// The path of the database.
+    /// The database path. New sessions store this as a relative subfolder
+    /// (joined with `app_data_dir()` at restore time); legacy sessions
+    /// may have an absolute path. `restore_session` handles both.
     pub db_path: PathBuf,
 
     /// The passphrase of the database.
@@ -177,10 +179,36 @@ pub async fn restore_session(
         title: "Connecting to homeserver".into(),
         status: status_str,
     });
+    // Resolve the db path against the current `app_data_dir()`. Legacy
+    // sessions stored an absolute path that may now be stale on iOS
+    // (sandbox UUID changes across reinstalls), so if it's gone, fall
+    // back to its basename joined with the current data dir.
+    let db_path = if client_session.db_path.is_absolute() {
+        if client_session.db_path.exists() {
+            client_session.db_path.clone()
+        } else if let Some(name) = client_session.db_path.file_name() {
+            let relocated = app_data_dir().join(name);
+            log!(
+                "Stored db_path '{}' no longer exists; using '{}'",
+                client_session.db_path.display(),
+                relocated.display(),
+            );
+            relocated
+        } else {
+            client_session.db_path.clone()
+        }
+    } else {
+        app_data_dir().join(&client_session.db_path)
+    };
+    log!(
+        "Restoring session for {user_id} with db at: {} (stored as: {})",
+        db_path.display(),
+        client_session.db_path.display(),
+    );
     // Build the client with the previous settings from the session.
     let client = Client::builder()
         .homeserver_url(client_session.homeserver)
-        .sqlite_store(client_session.db_path, Some(&client_session.passphrase))
+        .sqlite_store(db_path, Some(&client_session.passphrase))
         .with_threading_support(matrix_sdk::ThreadingSupport::Enabled {
             with_subscriptions: true,
         })

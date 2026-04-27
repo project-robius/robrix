@@ -123,6 +123,10 @@ script_mod! {
             content +: {
                 height: (mod.widgets.STACK_VIEW_HEADER_HEIGHT)
                 align: Align{y: 0.5}
+                padding: Inset{
+                    left: (mod.widgets.SAFE_INSET_PAD_LEFT),
+                    right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
+                }
                 button_container +: {
                     padding: 0,
                     margin: 0
@@ -147,7 +151,14 @@ script_mod! {
             }
         }
         body +: {
+            // The top margin leaves room for the stack nav header.
+            // The other padding is for safe inset areas.
             margin: Inset{top: (mod.widgets.STACK_VIEW_HEADER_HEIGHT)}
+            padding: Inset{
+                left: (mod.widgets.SAFE_INSET_PAD_LEFT),
+                right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
+                bottom: (mod.widgets.SAFE_INSET_PAD_BOTTOM),
+            }
         }
     }
 
@@ -157,7 +168,10 @@ script_mod! {
 
         width: Fill,
         height: (NAVIGATION_TAB_BAR_SIZE)
-        margin: Inset{left: 4, right: 4}
+        margin: Inset{
+            left: (4.0 + mod.widgets.SAFE_INSET_PAD_LEFT),
+            right: (4.0 + mod.widgets.SAFE_INSET_PAD_RIGHT),
+        }
         show_bg: true
         draw_bg +: {
             color: (COLOR_PRIMARY_DARKER)
@@ -219,6 +233,13 @@ script_mod! {
                 // the main desktop UI or the settings screen.
                 home_screen_page_flip := PageFlip {
                     width: Fill, height: Fill
+                    // We only need bottom and right-side padding,
+                    // as the others are handled by the parent widget
+                    // or by the navigation bar.
+                    padding: Inset{
+                        bottom: (mod.widgets.SAFE_INSET_PAD_BOTTOM),
+                        right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
+                    }
 
                     lazy_init: true,
                     active_page: @home_page
@@ -240,30 +261,41 @@ script_mod! {
                                 room_filter_input_bar := RoomFilterInputBar {}
                             }
 
-                            search_messages_button := SearchMessagesButton {
-                                // make this button match/align with the RoomFilterInputBar
-                                height: 32.5,
-                                margin: Inset{right: 2}
-                            }
+                            // Hide this until it's implemented.
+                            // search_messages_button := SearchMessagesButton {
+                            //     // make this button match/align with the RoomFilterInputBar
+                            //     height: 32.5,
+                            //     margin: Inset{right: 2}
+                            // }
                         }
 
                         mod.widgets.MainDesktopUI {}
                     }
 
-                    settings_page := SolidView {
+                    settings_page := RoundedView {
                         width: Fill, height: Fill
+                        // This weird margin is just to make it line up with the home_page content.
+                        margin: Inset{top: 3, left: 1, right: 0, bottom: 0}
                         show_bg: true,
-                        draw_bg.color: (COLOR_PRIMARY)
+                        draw_bg +: {
+                            color: (COLOR_PRIMARY)
+                            border_radius: 4.0
+                        }
 
                         CachedWidget {
                             settings_screen := mod.widgets.SettingsScreen {}
                         }
                     }
 
-                    add_room_page := SolidView {
+                    add_room_page := RoundedView {
                         width: Fill, height: Fill
+                        // This weird margin is just to make it line up with the home_page content.
+                        margin: Inset{top: 3, left: 1, right: 0, bottom: 0}
                         show_bg: true,
-                        draw_bg.color: (COLOR_PRIMARY)
+                        draw_bg +: {
+                            color: (COLOR_PRIMARY)
+                            border_radius: 4.0
+                        }
 
                         CachedWidget {
                             add_room_screen := mod.widgets.AddRoomScreen {}
@@ -288,6 +320,10 @@ script_mod! {
                         // the main list of rooms or the settings screen.
                         home_screen_page_flip := PageFlip {
                             width: Fill, height: Fill
+                            padding: Inset{
+                                left: (mod.widgets.SAFE_INSET_PAD_LEFT),
+                                right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
+                            }
 
                             lazy_init: true,
                             active_page: @home_page
@@ -374,11 +410,38 @@ script_mod! {
 
 
 /// A simple wrapper around the SpacesBar that allows us to animate showing or hiding it.
-#[derive(Script, ScriptHook, Widget, Animator)]
+#[derive(Script, Widget, Animator)]
 pub struct SpacesBarWrapper {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
     #[apply_default] animator: Animator,
+}
+
+impl ScriptHook for SpacesBarWrapper {
+    fn on_after_apply(
+        &mut self,
+        vm: &mut ScriptVm,
+        apply: &Apply,
+        scope: &mut Scope,
+        _value: ScriptValue,
+    ) {
+        // When the widget tree is re-applied (e.g. after a preference change),
+        // the deref `view` resets its height to the DSL default,
+        // which clashes with whatever animator state we were in (shown, hidden).
+        // Thus, we re-apply the current animator state to prevent a hidden SpacesBar
+        // from briefly becoming shown before being hidden again.
+        // Note that we can't just call `animator_cut` cuz that uses the script VM
+        // which is unavailable from this `on_after_apply`
+        if !apply.is_script_reapply() {
+            return;
+        }
+        if let Some(state_apply) = self
+            .animator
+            .current_state_apply(live_id!(spaces_bar_animator))
+        {
+            self.script_apply(vm, &Apply::Animate, scope, state_apply.into());
+        }
+    }
 }
 
 impl Widget for SpacesBarWrapper {
@@ -665,9 +728,8 @@ impl HomeScreen {
             }
         };
 
-        // Set the header title for the view being pushed.
-        let title_path = &[view_id, live_id!(header), live_id!(content), live_id!(title_container), live_id!(title)];
-        self.view.label(cx, title_path).set_text(cx, &selected_room.display_name());
+        let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
+        stack_navigation.set_title(cx, view_id, &selected_room.display_name());
 
         // Save the current selected_room onto the navigation stack before replacing it.
         if let Some(prev) = app_state.selected_room.take() {
@@ -676,7 +738,7 @@ impl HomeScreen {
         app_state.selected_room = Some(selected_room);
 
         // Push the view onto the mobile navigation stack.
-        self.view.stack_navigation(cx, ids!(view_stack)).push(cx, view_id);
+        stack_navigation.push(cx, view_id);
         self.view.redraw(cx);
     }
 }
