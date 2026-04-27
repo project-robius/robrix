@@ -166,6 +166,9 @@ script_mod! {
                         }
                         bot_binding_modal := Modal {
                             content +: {
+                                height: Fill,
+                                width: Fill,
+                                align: Align{x: 0.5, y: 0.5},
                                 bot_binding_modal_inner := BotBindingModal {}
                             }
                         }
