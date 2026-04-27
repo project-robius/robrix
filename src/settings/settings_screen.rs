@@ -2,7 +2,7 @@
 use makepad_widgets::*;
 use url::Url;
 
-use crate::{app::{AppState, BotSettingsState}, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, i18n::{AppLanguage, I18nKey, language_dropdown_labels, tr, tr_fmt, tr_key}, persistence, profile::user_profile::UserProfile, settings::{account_settings::AccountSettingsWidgetExt, bot_settings::BotSettingsWidgetExt, translation_settings::TranslationSettingsWidgetExt}, shared::{expand_arrow::ExpandArrow, popup_list::{PopupKind, enqueue_popup_notification}, styles::{apply_neutral_button_style, apply_primary_button_style}}, sliding_sync::current_user_id, updater::{UpdateCheckOutcome, check_for_updates}};
+use crate::{app::{AppState, AppUpdateAction, BotSettingsState}, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, i18n::{AppLanguage, I18nKey, language_dropdown_labels, tr, tr_fmt, tr_key}, persistence, profile::user_profile::UserProfile, settings::{account_settings::AccountSettingsWidgetExt, bot_settings::BotSettingsWidgetExt, translation_settings::TranslationSettingsWidgetExt}, shared::{expand_arrow::ExpandArrow, popup_list::{PopupKind, enqueue_popup_notification}, styles::{apply_neutral_button_style, apply_primary_button_style}}, sliding_sync::current_user_id, updater::{UpdateCheckOutcome, check_for_updates}};
 
 const CONTRIBUTE_REPO_URL: &str = "https://github.com/Project-Robius-China/robrix2";
 
@@ -624,6 +624,7 @@ impl Widget for SettingsScreen {
         if self.app_language != app_language {
             self.set_app_language(cx, app_language);
         }
+        self.sync_update_widgets_text(cx);
         self.view.handle_event(cx, event, scope);
 
         // Close the pane if:
@@ -784,7 +785,7 @@ impl Widget for SettingsScreen {
                 match action.downcast_ref() {
                     Some(SettingsUpdateAction::CheckFinished(result)) => {
                         self.set_update_checking(cx, false);
-                        self.show_update_check_result(result);
+                        self.show_update_check_result(cx, result);
                     }
                     None => { }
                 }
@@ -1162,7 +1163,7 @@ impl SettingsScreen {
             .set_text(cx, check_button_text);
     }
 
-    fn show_update_check_result(&mut self, result: &UpdateCheckOutcome) {
+    fn show_update_check_result(&mut self, cx: &mut Cx, result: &UpdateCheckOutcome) {
         match result {
             UpdateCheckOutcome::UpToDate { current_version } => {
                 enqueue_popup_notification(
@@ -1174,14 +1175,11 @@ impl SettingsScreen {
                 );
             }
             UpdateCheckOutcome::UpdateAvailable { current_version, latest_version } => {
-                enqueue_popup_notification(
-                    tr_fmt(self.app_language, "settings.update.popup.available", &[
-                        ("latest", latest_version.as_str()),
-                        ("current", current_version.as_str()),
-                    ]),
-                    PopupKind::Warning,
-                    Some(5.0),
-                );
+                cx.action(AppUpdateAction::ShowUpdatePrompt {
+                    current_version: current_version.clone(),
+                    latest_version: latest_version.clone(),
+                    from_auto_check: false,
+                });
             }
             UpdateCheckOutcome::NotConfigured => {
                 enqueue_popup_notification(
@@ -1211,11 +1209,11 @@ impl SettingsScreen {
 
     /// Fetches the current user's profile and uses it to populate the settings screen.
     pub fn populate(&mut self, cx: &mut Cx, own_profile: Option<UserProfile>, bot_settings: &BotSettingsState, translation_config: &crate::room::translation::TranslationConfig, app_language: AppLanguage) {
-        let Some(profile) = own_profile.or_else(|| get_own_profile(cx)) else {
+        if let Some(profile) = own_profile.or_else(|| get_own_profile(cx)) {
+            self.view.account_settings(cx, ids!(account_settings)).populate(cx, profile);
+        } else {
             error!("Failed to get own profile for settings screen.");
-            return;
-        };
-        self.view.account_settings(cx, ids!(account_settings)).populate(cx, profile);
+        }
         self.view.bot_settings(cx, ids!(bot_settings)).populate(cx, bot_settings);
         self.load_saved_proxy_to_preferences_form(cx);
         self.view.translation_settings(cx, ids!(translation_settings)).populate(cx, translation_config);

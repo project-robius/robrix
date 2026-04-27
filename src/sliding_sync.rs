@@ -9,7 +9,7 @@ use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use mime::{IMAGE_JPEG, IMAGE_PNG};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, ListThreadsOptions, RelationsOptions, RoomMember}, ruma::{
+    config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, ListThreadsOptions, RelationsOptions, RoomMember, RoomMemberRole}, ruma::{
         api::{Direction, client::{
             account::register::v3::Request as RegistrationRequest,
             room::{Visibility, create_room::v3::{Request as CreateRoomRequest, RoomPreset}},
@@ -26,7 +26,7 @@ use matrix_sdk::{
             },
             space::{child::SpaceChildEventContent, parent::SpaceParentEventContent},
             InitialStateEvent, MessageLikeEventType, StateEventType
-        }, matrix_uri::MatrixId, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, uint
+        }, matrix_uri::MatrixId, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, int, uint
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
 };
 use matrix_sdk_ui::{
@@ -888,6 +888,14 @@ pub enum MatrixRequest {
         /// The room ID of the room where the user is a member,
         /// which is only needed because it isn't present in the `RoomMember` object.
         room_id: OwnedRoomId,
+    },
+    /// Request to change the room-member power level for a user.
+    SetRoomMemberPowerLevel {
+        room_id: OwnedRoomId,
+        user_id: OwnedUserId,
+        /// * `None` means reset to the room's default user power level.
+        /// * `Some` means set a role preset.
+        room_member_role: Option<RoomMemberRole>,
     },
     /// Request to upload and set the avatar of the current user's account.
     UploadAvatar {
@@ -2824,6 +2832,78 @@ async fn matrix_worker_task(
                         num_events: 50,
                         direction: PaginationDirection::Backwards,
                     });
+                });
+            }
+
+            MatrixRequest::SetRoomMemberPowerLevel { room_id, user_id, room_member_role } => {
+                let Some(client) = get_client() else { continue };
+                let _set_room_member_power_level_task = Handle::current().spawn(async move {
+                    let Some(room) = client.get_room(&room_id) else {
+                        enqueue_popup_notification(
+                            format!("Failed to update power level for {user_id}: room {room_id} not found."),
+                            PopupKind::Error,
+                            None,
+                        );
+                        return;
+                    };
+                    let Some(acting_user_id) = client.user_id() else {
+                        enqueue_popup_notification(
+                            "Failed to update power level: not logged in.",
+                            PopupKind::Error,
+                            None,
+                        );
+                        return;
+                    };
+
+                    let power_levels = match room.power_levels().await {
+                        Ok(power_levels) => power_levels,
+                        Err(e) => {
+                            enqueue_popup_notification(
+                                format!("Failed to load current power levels for room {room_id}: {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
+                            return;
+                        }
+                    };
+
+                    if !power_levels.user_can_change_user_power_level(acting_user_id, user_id.as_ref()) {
+                        enqueue_popup_notification(
+                            format!("You do not have permission to change power level for {user_id}."),
+                            PopupKind::Error,
+                            None,
+                        );
+                        return;
+                    }
+
+                    let new_level = match room_member_role {
+                        Some(RoomMemberRole::Moderator) => int!(50),
+                        Some(RoomMemberRole::Creator | RoomMemberRole::Administrator) => int!(100),
+                        Some(RoomMemberRole::User) | None => power_levels.users_default,
+                    };
+
+                    match room.update_power_levels(vec![(user_id.as_ref(), new_level)]).await {
+                        Ok(_) => {
+                            enqueue_popup_notification(
+                                format!("Updated power level for {user_id}."),
+                                PopupKind::Success,
+                                Some(3.0),
+                            );
+                            if let Ok(Some(new_room_member)) = room.get_member(user_id.as_ref()).await {
+                                enqueue_user_profile_update(UserProfileUpdate::RoomMemberOnly {
+                                    room_id: room_id.clone(),
+                                    room_member: new_room_member,
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            enqueue_popup_notification(
+                                format!("Failed to update power level for {user_id}: {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
+                        }
+                    }
                 });
             }
 
@@ -6392,7 +6472,7 @@ bitflags! {
         // const RoomMember = 1 << 46;
         // const RoomName = 1 << 47;
         const RoomPinnedEvents = 1 << 48;
-        // const RoomPowerLevels = 1 << 49;
+        const RoomPowerLevels = 1 << 49;
         // const RoomServerAcl = 1 << 50;
         // const RoomThirdPartyInvite = 1 << 51;
         // const RoomTombstone = 1 << 52;
@@ -6420,6 +6500,7 @@ impl UserPowerLevels {
         retval.set(UserPowerLevels::RoomRedaction, user_power >= power_levels.for_message(MessageLikeEventType::RoomRedaction));
         retval.set(UserPowerLevels::Sticker, user_power >= power_levels.for_message(MessageLikeEventType::Sticker));
         retval.set(UserPowerLevels::RoomPinnedEvents, user_power >= power_levels.for_state(StateEventType::RoomPinnedEvents));
+        retval.set(UserPowerLevels::RoomPowerLevels, power_levels.user_can_send_state(user_id, StateEventType::RoomPowerLevels));
         retval
     }
 
@@ -6480,6 +6561,10 @@ impl UserPowerLevels {
     #[doc(alias("unpin"))]
     pub fn can_pin(self) -> bool {
         self.contains(UserPowerLevels::RoomPinnedEvents)
+    }
+
+    pub fn can_change_room_power_levels(self) -> bool {
+        self.contains(UserPowerLevels::RoomPowerLevels)
     }
 }
 

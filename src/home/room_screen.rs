@@ -3975,6 +3975,18 @@ impl Widget for RoomInfoSlidingPane {
         }
 
         if let Event::Actions(actions) = event {
+            for action in actions {
+                if action.as_widget_action().widget_uid_eq(self.widget_uid()).is_none()
+                    && let RoomInfoPaneAction::OpenPeopleProfile(user_id) = action.as_widget_action().cast()
+                {
+                    cx.widget_action(
+                        self.widget_uid(),
+                        RoomInfoPaneAction::OpenPeopleProfile(user_id.clone()),
+                    );
+                    break;
+                }
+            }
+
             if self.button(cx, ids!(header.back_button)).clicked(actions) {
                 self.show_people_page = false;
                 self.redraw(cx);
@@ -4745,9 +4757,7 @@ impl Widget for RoomScreen {
                         }
                     }
                     RoomInfoPaneAction::ShowPeoplePage => {
-                        if let Some(tl) = self.tl_state.as_ref()
-                            && tl.room_members.is_none()
-                        {
+                        if let Some(tl) = self.tl_state.as_ref() {
                             submit_async_request(MatrixRequest::GetRoomMembers {
                                 timeline_kind: tl.kind.clone(),
                                 memberships: matrix_sdk::RoomMemberships::JOIN,
@@ -4767,6 +4777,8 @@ impl Widget for RoomScreen {
                                 .as_ref()
                                 .and_then(|member| member.avatar_url().map(ToOwned::to_owned))
                         );
+                        let can_change_room_power_levels = self.tl_state.as_ref()
+                            .is_some_and(|tl| tl.user_power.can_change_room_power_levels());
                         self.show_user_profile(
                             cx,
                             &user_profile_sliding_pane,
@@ -4781,6 +4793,7 @@ impl Widget for RoomScreen {
                                 },
                                 room_name: room_name_id.to_string(),
                                 room_member,
+                                can_change_room_power_levels,
                             },
                         );
                     }
@@ -5222,6 +5235,22 @@ impl Widget for RoomScreen {
 
                 // Handle the action that requests to show the user profile sliding pane.
                 if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
+                    let mut profile_and_room_id = profile_and_room_id;
+                    let room_member = self.tl_state.as_ref()
+                        .and_then(|tl| tl.room_members.as_ref())
+                        .and_then(|members| members.iter().find(|member| member.user_id() == profile_and_room_id.user_id).cloned());
+                    if let Some(room_member) = room_member.as_ref() {
+                        if profile_and_room_id.username.is_none() {
+                            profile_and_room_id.username = room_member.display_name().map(ToOwned::to_owned);
+                        }
+                        if !profile_and_room_id.avatar_state.has_avatar() {
+                            profile_and_room_id.avatar_state = AvatarState::Known(
+                                room_member.avatar_url().map(ToOwned::to_owned)
+                            );
+                        }
+                    }
+                    let can_change_room_power_levels = self.tl_state.as_ref()
+                        .is_some_and(|tl| tl.user_power.can_change_room_power_levels());
                     self.show_user_profile(
                         cx,
                         &user_profile_sliding_pane,
@@ -5231,7 +5260,8 @@ impl Widget for RoomScreen {
                                 || tr_key(self.app_language, "room_screen.fallback.unnamed_room").to_string(),
                                 |r| r.to_string(),
                             ),
-                            room_member: None,
+                            room_member,
+                            can_change_room_power_levels,
                         },
                     );
                 }
@@ -5896,8 +5926,30 @@ impl RoomScreen {
         self.close_leave_room_confirm_modal(cx);
     }
 
+    fn resolved_app_service_bot_user_id(
+        &self,
+        app_state: &AppState,
+        room_id: &OwnedRoomId,
+    ) -> Option<OwnedUserId> {
+        if let Some(bot_user_id) = app_state.bot_settings.bound_bot_user_id(room_id.as_ref()) {
+            return Some(bot_user_id.to_owned());
+        }
+
+        self.tl_state
+            .as_ref()
+            .filter(|tl| tl.kind.room_id() == room_id)
+            .and_then(|tl| tl.room_members.as_ref())
+            .and_then(|members|
+                detected_bot_binding_for_members(
+                    app_state,
+                    room_id,
+                    members.as_ref(),
+                )
+            )
+    }
+
     fn is_app_service_room_bound(&self, app_state: &AppState, room_id: &OwnedRoomId) -> bool {
-        app_state.bot_settings.is_room_bound(room_id)
+        self.resolved_app_service_bot_user_id(app_state, room_id).is_some()
     }
 
     fn send_app_service_feedback_message(&self, message: impl Into<String>) {
@@ -5942,7 +5994,8 @@ impl RoomScreen {
             );
             return false;
         }
-        if !self.is_app_service_room_bound(app_state, &room_id) {
+        let bound_bot_user_id = self.resolved_app_service_bot_user_id(app_state, &room_id);
+        if bound_bot_user_id.is_none() {
             self.send_app_service_feedback_message(
                 tr_key(self.app_language, "room_screen.popup.bot.bind_before_commands"),
             );
@@ -5953,10 +6006,7 @@ impl RoomScreen {
             timeline_kind,
             message: RoomMessageEventContent::text_plain(command),
             replied_to: None,
-            target_user_id: app_state
-                .bot_settings
-                .bound_bot_user_id(room_id.as_ref())
-                .map(ToOwned::to_owned),
+            target_user_id: bound_bot_user_id,
             explicit_room: false,
             #[cfg(feature = "tsp")]
             sign_with_tsp: false,
@@ -6203,34 +6253,43 @@ impl RoomScreen {
                         }
                     }
 
-                    if !self.pending_invited_users.is_empty() {
-                        let start = changed_indices.start.min(new_items.len());
-                        let end = changed_indices.end.min(new_items.len());
-                        let mut accepted_users: Vec<OwnedUserId> = Vec::new();
-                        for idx in start..end {
-                            let Some(new_item) = new_items.get(idx) else { continue };
-                            let TimelineItemKind::Event(event_tl_item) = new_item.kind() else { continue };
-                            let TimelineItemContent::MembershipChange(membership_change) = event_tl_item.content() else { continue };
-                            let accepted = matches!(
-                                membership_change.change(),
-                                Some(MembershipChange::InvitationAccepted)
-                                | Some(MembershipChange::Joined)
-                            );
-                            if accepted {
-                                let invited_user_id = event_tl_item.sender().to_owned();
-                                if self.pending_invited_users.contains(&invited_user_id) {
-                                    accepted_users.push(invited_user_id);
-                                }
+                    let start = changed_indices.start.min(new_items.len());
+                    let end = changed_indices.end.min(new_items.len());
+                    let mut accepted_users: Vec<OwnedUserId> = Vec::new();
+                    let mut room_members_changed = false;
+                    for idx in start..end {
+                        let Some(new_item) = new_items.get(idx) else { continue };
+                        let TimelineItemKind::Event(event_tl_item) = new_item.kind() else { continue };
+                        let TimelineItemContent::MembershipChange(membership_change) = event_tl_item.content() else { continue };
+                        if is_append {
+                            room_members_changed = true;
+                        }
+                        let accepted = matches!(
+                            membership_change.change(),
+                            Some(MembershipChange::InvitationAccepted)
+                            | Some(MembershipChange::Joined)
+                        );
+                        if accepted {
+                            let invited_user_id = event_tl_item.sender().to_owned();
+                            if self.pending_invited_users.contains(&invited_user_id) {
+                                accepted_users.push(invited_user_id);
                             }
                         }
-                        for accepted_user in accepted_users {
-                            self.pending_invited_users.remove(&accepted_user);
-                            enqueue_popup_notification(
-                                format!("{accepted_user} accepted the invite and joined."),
-                                PopupKind::Success,
-                                Some(4.0),
-                            );
-                        }
+                    }
+                    if room_members_changed {
+                        submit_async_request(MatrixRequest::GetRoomMembers {
+                            timeline_kind: tl.kind.clone(),
+                            memberships: matrix_sdk::RoomMemberships::JOIN,
+                            local_only: false,
+                        });
+                    }
+                    for accepted_user in accepted_users {
+                        self.pending_invited_users.remove(&accepted_user);
+                        enqueue_popup_notification(
+                            format!("{accepted_user} accepted the invite and joined."),
+                            PopupKind::Success,
+                            Some(4.0),
+                        );
                     }
 
                     if prior_items_changed {
@@ -6669,6 +6728,16 @@ impl RoomScreen {
                     let Some(room_name_id) = self.room_name_id.as_ref() else {
                         return false;
                     };
+                    let room_member = self.tl_state.as_ref()
+                        .and_then(|tl| tl.room_members.as_ref())
+                        .and_then(|members| members.iter().find(|member| member.user_id() == user_id).cloned());
+                    let username = room_member.as_ref()
+                        .and_then(|member| member.display_name().map(ToOwned::to_owned));
+                    let avatar_state = room_member.as_ref()
+                        .and_then(|member| member.avatar_url().map(ToOwned::to_owned))
+                        .map_or(AvatarState::Unknown, |avatar_url| AvatarState::Known(Some(avatar_url)));
+                    let can_change_room_power_levels = self.tl_state.as_ref()
+                        .is_some_and(|tl| tl.user_power.can_change_room_power_levels());
                     // There is no synchronous way to get the user's full profile info
                     // including the details of their room membership,
                     // so we fill in with the details we *do* know currently,
@@ -6682,14 +6751,15 @@ impl RoomScreen {
                             profile_and_room_id: UserProfileAndRoomId {
                                 user_profile: UserProfile {
                                     user_id: user_id.to_owned(),
-                                    username: None,
-                                    avatar_state: AvatarState::Unknown,
+                                    username,
+                                    avatar_state,
                                 },
                                 room_id: room_name_id.room_id().clone(),
                             },
                             room_name: room_name_id.to_string(),
                             // TODO: use the extra `via` parameters
-                            room_member: None,
+                            room_member,
+                            can_change_room_power_levels,
                         },
                     );
                     true
