@@ -2243,7 +2243,6 @@ async fn matrix_worker_task(
                 let _search_task = Handle::current().spawn(async move {
                     let query = query.trim().to_owned();
                     let action_kind = kind.clone();
-                    log!("Remote directory search request: kind={kind:?}, query=\"{query}\", limit={limit}");
                     if query.is_empty() {
                         Cx::post_action(RoomFilterRemoteSearchAction::Results {
                             query,
