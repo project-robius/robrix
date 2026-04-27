@@ -888,7 +888,7 @@ checksum = "c8efb64bd706a16a1bdde310ae86b351e4d21550d98d056f22f8a7f7a2183fec"
 [[package]]
 name = "bytemuck"
 version = "1.25.0"
-source = "git+https://github.com/makepad/makepad?branch=dev#18669f5a585f0e17f98718b3f0e69941db504605"
+source = "git+https://github.com/kevinaboos/makepad?branch=script_reapply_variant#4c9c85d94ae650d4ab2eafd615a88fe62ccf753f"
 
 [[package]]
 name = "byteorder"
@@ -900,6 +900,12 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 name = "byteorder"
 version = "1.5.0"
 source = "git+https://github.com/kevinaboos/makepad?branch=script_reapply_variant#4c9c85d94ae650d4ab2eafd615a88fe62ccf753f"
+
+[[package]]
+name = "byteorder-lite"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495"
 
 [[package]]
 name = "bytes"
@@ -3363,7 +3369,7 @@ dependencies = [
  "napi-ohos",
  "ohos-sys",
  "smallvec 1.15.1 (git+https://github.com/kevinaboos/makepad?branch=script_reapply_variant)",
- "wayland-client",
+ "wayland-client 0.31.12",
  "wayland-egl",
  "wayland-protocols 0.32.10",
  "windows 0.62.2",
@@ -3886,6 +3892,15 @@ checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 name = "memchr"
 version = "2.7.6"
 source = "git+https://github.com/kevinaboos/makepad?branch=script_reapply_variant#4c9c85d94ae650d4ab2eafd615a88fe62ccf753f"
+
+[[package]]
+name = "memoffset"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
+dependencies = [
+ "autocfg",
+]
 
 [[package]]
 name = "mime"
@@ -5553,7 +5568,7 @@ version = "0.18.0"
 source = "git+https://github.com/kevinaboos/makepad?branch=script_reapply_variant#4c9c85d94ae650d4ab2eafd615a88fe62ccf753f"
 dependencies = [
  "bitflags 2.10.0 (git+https://github.com/kevinaboos/makepad?branch=script_reapply_variant)",
- "bytemuck 1.25.0 (git+https://github.com/makepad/makepad?branch=dev)",
+ "bytemuck 1.25.0 (git+https://github.com/kevinaboos/makepad?branch=script_reapply_variant)",
  "makepad-error-log",
  "smallvec 1.15.1 (git+https://github.com/kevinaboos/makepad?branch=script_reapply_variant)",
  "ttf-parser",
