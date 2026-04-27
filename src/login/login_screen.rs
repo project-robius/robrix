@@ -165,13 +165,54 @@ script_mod! {
                     confirm_password_wrapper := View {
                         width: 275, height: Fit,
                         visible: false,
+                        flow: Overlay,
 
                         confirm_password_input := RobrixTextInput {
-                            width: 275, height: Fit
+                            width: Fill, height: Fit
                             flow: Right, // do not wrap
-                            padding: 10,
+                            padding: Inset{top: 10, bottom: 10, left: 10, right: 40}
                             empty_text: "Confirm password"
                             is_password: true,
+                        }
+
+                        View {
+                            width: Fill, height: Fill
+                            align: Align{x: 1.0, y: 0.5}
+
+                            show_confirm_password_button := Button {
+                                width: 36, height: 36,
+                                padding: 6,
+                                draw_bg +: {
+                                    color: #0000
+                                    color_hover: #0000
+                                    color_down: #0000
+                                    border_size: 0.0
+                                }
+                                draw_icon +: {
+                                    svg: (mod.widgets.ICON_EYE_CLOSED),
+                                    color: #8C8C8C,
+                                }
+                                icon_walk: Walk{width: 20, height: 20}
+                                text: ""
+                            }
+
+                            hide_confirm_password_button := Button {
+                                visible: false,
+                                width: 36, height: 36,
+                                padding: 6,
+                                draw_bg +: {
+                                    color: #0000
+                                    color_hover: #0000
+                                    color_down: #0000
+                                    border_size: 0.0
+                                }
+                                draw_icon +: {
+                                    svg: (mod.widgets.ICON_EYE_OPEN),
+                                    color: #8C8C8C,
+                                }
+                                icon_walk: Walk{width: 20, height: 20}
+                                text: ""
+                            }
                         }
                     }
 
@@ -587,6 +628,8 @@ pub struct LoginScreen {
     #[rust] signup_mode: bool,
     /// Whether the password field is currently showing plaintext.
     #[rust] password_visible: bool,
+    /// Whether the confirm password field is currently showing plaintext.
+    #[rust] confirm_password_visible: bool,
     /// Boolean to indicate if the SSO login process is still in flight
     #[rust] sso_pending: bool,
     /// The URL to redirect to after logging in with SSO.
@@ -960,6 +1003,17 @@ impl WidgetMatchEvent for LoginScreen {
             password_input.toggle_is_password(cx);
             show_pw_button.set_visible(cx, !self.password_visible);
             hide_pw_button.set_visible(cx, self.password_visible);
+            self.redraw(cx);
+        }
+
+        // Handle toggling confirm password visibility
+        let show_confirm_pw_button = self.view.button(cx, ids!(show_confirm_password_button));
+        let hide_confirm_pw_button = self.view.button(cx, ids!(hide_confirm_password_button));
+        if show_confirm_pw_button.clicked(actions) || hide_confirm_pw_button.clicked(actions) {
+            self.confirm_password_visible = !self.confirm_password_visible;
+            confirm_password_input.toggle_is_password(cx);
+            show_confirm_pw_button.set_visible(cx, !self.confirm_password_visible);
+            hide_confirm_pw_button.set_visible(cx, self.confirm_password_visible);
             self.redraw(cx);
         }
 
