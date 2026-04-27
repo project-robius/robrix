@@ -16,6 +16,7 @@ use crate::{
         VerificationModalWidgetRefExt,
     }
 };
+use crate::shared::file_upload_modal::{FileUploadModalWidgetRefExt, FilePreviewerAction};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -140,6 +141,16 @@ script_mod! {
                         delete_confirmation_modal := Modal {
                             content +: {
                                 delete_confirmation_modal_inner := NegativeConfirmationModal { }
+                            }
+                        }
+
+                        // A modal to preview and confirm file uploads.
+                        file_upload_modal := Modal {
+                            content +: {
+                                height: Fill,
+                                width: Fill,
+                                align: Align{x: 0.5, y: 0.5},
+                                file_upload_modal_inner := FileUploadModal {}
                             }
                         }
 
@@ -282,6 +293,21 @@ impl MatchEvent for App {
                 }
                 // Do NOT continue here — let the action propagate to the LoginScreen widget,
                 // which will open the login_status_modal to show the failure message.
+            }
+
+            // Handle file upload modal actions
+            match action.downcast_ref() {
+                Some(FilePreviewerAction::Show { file_data, timeline_update_sender }) => {
+                    self.ui.file_upload_modal(cx, ids!(file_upload_modal_inner))
+                        .set_file_data(cx, file_data.clone(), timeline_update_sender.clone());
+                    self.ui.modal(cx, ids!(file_upload_modal)).open(cx);
+                    continue;
+                }
+                Some(FilePreviewerAction::Hide) => {
+                    self.ui.modal(cx, ids!(file_upload_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
             }
 
             // Handle an action requesting to open the new message context menu.
@@ -589,6 +615,7 @@ impl AppMain for App {
         crate::home::location_preview::script_mod(vm);
         crate::home::tombstone_footer::script_mod(vm);
         crate::home::editing_pane::script_mod(vm);
+        crate::home::upload_progress::script_mod(vm);
         crate::room::script_mod(vm);
         crate::join_leave_room_modal::script_mod(vm);
         crate::verification_modal::script_mod(vm);

@@ -44,7 +44,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputAction;
 
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, upload_progress::UploadProgressViewAction};
 
 /// The maximum number of timeline items to search through
 /// when looking for a particular event.
@@ -860,6 +860,31 @@ impl Widget for RoomScreen {
                     continue;
                 }
 
+                // Handle cancel action from upload progress view.
+                // The upload progress view already hides itself and aborts the upload,
+                // so we just need to acknowledge the action here.
+                if let UploadProgressViewAction::Cancelled = action.as_widget_action().cast() {
+                    // Nothing additional to do - the widget handles hiding itself
+                    continue;
+                }
+
+                // Handle retry action from upload progress view.
+                if let UploadProgressViewAction::Retry { file_data, timeline_kind } = action.as_widget_action().cast() {
+                    let Some(tl) = self.tl_state.as_ref() else { continue };
+                    // Only handle if this action is for the current room/thread.
+                    if tl.kind != timeline_kind { continue };
+                    let room_input_bar = self.view.room_input_bar(cx, ids!(room_input_bar));
+                    room_input_bar.show_upload_progress(cx, &file_data.name);
+                    submit_async_request(MatrixRequest::SendAttachment {
+                        timeline_kind,
+                        file_data,
+                        replied_to: None,
+                        #[cfg(feature = "tsp")]
+                        sign_with_tsp: room_input_bar.is_tsp_signing_enabled(cx),
+                    });
+                    continue;
+                }
+
                 // Handle the highlight animation for a message.
                 let Some(tl) = self.tl_state.as_mut() else { continue };
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
@@ -984,6 +1009,7 @@ impl Widget for RoomScreen {
                     timeline_kind: tl.kind.clone(),
                     room_members,
                     room_avatar_url,
+                    timeline_update_sender: Some(tl.update_sender.clone()),
                 }
             } else if let Some(room_name) = &self.room_name_id {
                 // Fallback case: we have a room_name but no tl_state yet
@@ -994,6 +1020,7 @@ impl Widget for RoomScreen {
                         .expect("BUG: room_name_id was set but timeline_kind was missing"),
                     room_members: None,
                     room_avatar_url: None,
+                    timeline_update_sender: None,
                 }
             } else {
                 // No room selected yet, skip event handling that requires room context
@@ -1009,6 +1036,7 @@ impl Widget for RoomScreen {
                     timeline_kind: TimelineKind::MainRoom { room_id },
                     room_members: None,
                     room_avatar_url: None,
+                    timeline_update_sender: None,
                 }
             };
             let mut room_scope = Scope::with_props(&room_props);
@@ -1646,6 +1674,33 @@ impl RoomScreen {
                     tl.tombstone_info = Some(successor_room_details);
                 }
                 TimelineUpdate::LinkPreviewFetched => {}
+                TimelineUpdate::FileUploadConfirmed(file_data) => {
+                    let room_input_bar = self.view.room_input_bar(cx, ids!(room_input_bar));
+                    let replied_to = room_input_bar.handle_file_upload_confirmed(cx, &file_data.name);
+                    submit_async_request(MatrixRequest::SendAttachment {
+                        timeline_kind: tl.kind.clone(),
+                        file_data,
+                        replied_to,
+                        #[cfg(feature = "tsp")]
+                        sign_with_tsp: room_input_bar.is_tsp_signing_enabled(cx),
+                    });
+                }
+                TimelineUpdate::FileUploadUpdate { current, total } => {
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .set_upload_progress(cx, current, total);
+                }
+                TimelineUpdate::FileUploadAbortHandle(handle) => {
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .set_upload_abort_handle(handle);
+                }
+                TimelineUpdate::FileUploadError { error, file_data } => {
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .show_upload_error(cx, &error, file_data);
+                }
+                TimelineUpdate::FileUploadComplete => {
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .hide_upload_progress(cx);
+                }
             }
         }
 
@@ -2298,6 +2353,7 @@ impl RoomScreen {
                 content_drawn_since_last_update: RangeSet::new(),
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
+                update_sender: update_sender.clone(),
                 request_sender,
                 media_cache: MediaCache::new(Some(update_sender.clone())),
                 link_preview_cache: LinkPreviewCache::new(Some(update_sender)),
@@ -2665,6 +2721,9 @@ pub struct RoomScreenProps {
     pub timeline_kind: TimelineKind,
     pub room_members: Option<Arc<Vec<RoomMember>>>,
     pub room_avatar_url: Option<OwnedMxcUri>,
+    /// The sender for timeline updates, used for file uploads and other UI-initiated updates.
+    /// This is `None` when the timeline hasn't been fully loaded yet.
+    pub timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 }
 
 
@@ -2794,6 +2853,22 @@ pub enum TimelineUpdate {
     Tombstoned(SuccessorRoomDetails),
     /// A notice that link preview data for a URL has been fetched and is now available.
     LinkPreviewFetched,
+    /// User confirmed a file upload via the file upload modal.
+    FileUploadConfirmed(crate::shared::file_upload_modal::FileData),
+    /// Progress update for an ongoing file upload.
+    FileUploadUpdate {
+        current: u64,
+        total: u64,
+    },
+    /// The abort handle for an in-progress file upload.
+    FileUploadAbortHandle(tokio::task::AbortHandle),
+    /// An error occurred during file upload.
+    FileUploadError {
+        error: String,
+        file_data: crate::shared::file_upload_modal::FileData,
+    },
+    /// File upload completed successfully.
+    FileUploadComplete,
 }
 
 thread_local! {
@@ -2854,6 +2929,10 @@ struct TimelineUiState {
     /// in a sync context and the sender runs in an async context,
     /// which is okay because a sender on an unbounded channel never needs to block.
     update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
+
+    /// The channel sender for timeline updates for this room.
+    /// This is used to send upload confirmations and other UI-initiated updates.
+    update_sender: crossbeam_channel::Sender<TimelineUpdate>,
 
     /// The sender for timeline requests from a RoomScreen showing this room
     /// to the background async task that handles this room's timeline updates.

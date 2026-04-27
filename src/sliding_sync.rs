@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail, Result};
 use bitflags::bitflags;
+use mime::Mime;
 use clap::Parser;
 use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
@@ -573,6 +574,14 @@ pub enum MatrixRequest {
     SendMessage {
         timeline_kind: TimelineKind,
         message: RoomMessageEventContent,
+        replied_to: Option<Reply>,
+        #[cfg(feature = "tsp")]
+        sign_with_tsp: bool,
+    },
+    /// Request to send a file attachment to the given room.
+    SendAttachment {
+        timeline_kind: TimelineKind,
+        file_data: crate::shared::file_upload_modal::FileData,
         replied_to: Option<Reply>,
         #[cfg(feature = "tsp")]
         sign_with_tsp: bool,
@@ -1691,6 +1700,128 @@ async fn matrix_worker_task(
                     }
                     SignalToUI::set_ui_signal();
                 });
+            }
+
+            MatrixRequest::SendAttachment {
+                timeline_kind,
+                file_data,
+                replied_to,
+                #[cfg(feature = "tsp")]
+                sign_with_tsp: _sign_with_tsp,
+            } => {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+                    log!("BUG: {timeline_kind} not found for send attachment request");
+                    continue;
+                };
+                let sender_clone = sender.clone();
+                // Spawn a new async task to send the attachment.
+                let send_attachment_task = Handle::current().spawn(async move {
+                    use matrix_sdk::attachment::{
+                        AttachmentConfig, AttachmentInfo,
+                        BaseFileInfo, BaseImageInfo, BaseVideoInfo, BaseAudioInfo,
+                    };
+                    use eyeball::SharedObservable;
+
+                    log!("Sending attachment to {timeline_kind}: {} ({} bytes)...",
+                        file_data.name, file_data.size);
+
+                    // Parse MIME type, falling back to octet-stream for unknown types
+                    let content_type: Mime = file_data.mime_type.parse()
+                        .unwrap_or(mime::APPLICATION_OCTET_STREAM);
+
+                    // Create AttachmentInfo based on the MIME type
+                    let info = match content_type.type_() {
+                        mime::IMAGE => AttachmentInfo::Image(BaseImageInfo {
+                            // TODO: Extract actual dimensions from image data
+                            width: None,
+                            height: None,
+                            size: Some(file_data.size.try_into().unwrap_or(u32::MAX).into()),
+                            blurhash: None,
+                            is_animated: None,
+                        }),
+                        mime::VIDEO => AttachmentInfo::Video(BaseVideoInfo {
+                            // TODO: Extract actual dimensions and duration from video
+                            width: None,
+                            height: None,
+                            duration: None,
+                            size: Some(file_data.size.try_into().unwrap_or(u32::MAX).into()),
+                            blurhash: None,
+                        }),
+                        mime::AUDIO => AttachmentInfo::Audio(BaseAudioInfo {
+                            // TODO: Extract actual duration from audio
+                            duration: None,
+                            size: Some(file_data.size.try_into().unwrap_or(u32::MAX).into()),
+                            waveform: None,
+                        }),
+                        _ => AttachmentInfo::File(BaseFileInfo {
+                            size: Some(file_data.size.try_into().unwrap_or(u32::MAX).into()),
+                        }),
+                    };
+
+                    // Create a progress observable to track upload progress
+                    let send_progress: SharedObservable<matrix_sdk::TransmissionProgress> = Default::default();
+                    let progress_subscriber = send_progress.subscribe();
+                    let sender_clone_for_thread = sender_clone.clone();
+                    // Spawn a task to handle progress updates
+                    Handle::current().spawn(async move {
+                        let mut subscriber = progress_subscriber;
+                        loop {
+                            let progress = subscriber.get();
+                            let current: u64 = progress.current as u64;
+                            let total: u64 = progress.total as u64;
+                            if sender_clone_for_thread.send(TimelineUpdate::FileUploadUpdate {
+                                current,
+                                total,
+                            }).is_err() {
+                                break;
+                            }
+                            SignalToUI::set_ui_signal();
+                            // Wait for next update
+                            if subscriber.next().await.is_none() {
+                                break;
+                            }
+                        }
+                    });
+
+                    // Use the Room's send_attachment method directly
+                    let room = timeline.room();
+                    let config = AttachmentConfig::new()
+                        .info(info)
+                        .reply(replied_to);
+
+                    // Clone the data Arc for sending (cheap reference count increment).
+                    // We keep file_data intact for potential error retry.
+                    let data_vec = (*file_data.data).clone();
+
+                    let send_future = room.send_attachment(
+                        &file_data.name,
+                        &content_type,
+                        data_vec,
+                        config,
+                    ).with_send_progress_observable(send_progress);
+
+                    match send_future.await {
+                        Ok(_response) => {
+                            log!("Successfully sent attachment to {timeline_kind}.");
+                            let _ = sender_clone.send(TimelineUpdate::FileUploadComplete);
+                        }
+                        Err(e) => {
+                            error!("Failed to send attachment to {timeline_kind}: {e:?}");
+                            let _ = sender_clone.send(TimelineUpdate::FileUploadError {
+                                error: format!("{e}"),
+                                file_data,
+                            });
+                            enqueue_popup_notification(
+                                format!("Failed to upload file: {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
+                        }
+                    }
+
+                    SignalToUI::set_ui_signal();
+                });
+                let _ = sender.send(TimelineUpdate::FileUploadAbortHandle(send_attachment_task.abort_handle()));
             }
 
             MatrixRequest::ReadReceipt { timeline_kind, event_id, receipt_type } => {

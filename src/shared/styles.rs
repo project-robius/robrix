@@ -44,6 +44,8 @@ script_mod! {
     mod.widgets.ICON_WARNING          = crate_resource("self://resources/icons/warning.svg")
     mod.widgets.ICON_ZOOM_IN          = crate_resource("self://resources/icons/zoom_in.svg")
     mod.widgets.ICON_ZOOM_OUT         = crate_resource("self://resources/icons/zoom_out.svg")
+    mod.widgets.ICON_ADD_ATTACHMENT   = crate_resource("self://resources/icons/add_attachment.svg")
+    mod.widgets.ICON_FILE             = crate_resource("self://resources/icons/file.svg")
 
     mod.widgets.TITLE_TEXT = theme.font_regular {
         font_size: (13),
