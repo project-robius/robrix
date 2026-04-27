@@ -23,7 +23,7 @@ script_mod! {
     // Individual search result item template
     mod.widgets.RoomFilterSearchResultItem = #(RoomFilterSearchResultItem::register_widget(vm)) {
         width: Fill
-        height: 48
+        height: 55
         flow: Overlay
 
         row := View {
@@ -92,7 +92,7 @@ script_mod! {
             drag_scrolling: false
             scroll_bars +: { show_scroll_x: false, show_scroll_y: false }
 
-            result_item := RoomFilterSearchResultItem {}
+            result_item := mod.widgets.RoomFilterSearchResultItem {}
         }
     }
 }

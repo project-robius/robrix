@@ -191,7 +191,7 @@ script_mod! {
                                                 }
                                             }
 
-                                            search_results_list := RoomFilterSearchResultsList {}
+                                            search_results_list := mod.widgets.RoomFilterSearchResultsList {}
                                         }
                                     }
                                 }
