@@ -215,6 +215,60 @@ impl Widget for RoomInputBar {
             _ => {}
         }
 
+        let location_button_area = self.button(cx, ids!(location_button)).area();
+        match event.hits(cx, location_button_area) {
+            Hit::FingerHoverIn(_) | Hit::FingerLongPress(_) => {
+                cx.widget_action(
+                    self.widget_uid(),
+                    TooltipAction::HoverIn {
+                        text: "Send location".to_string(),
+                        widget_rect: location_button_area.rect(cx),
+                        options: CalloutTooltipOptions {
+                            position: TooltipPosition::Top,
+                            ..Default::default()
+                        },
+                    },
+                );
+            }
+            Hit::FingerHoverOut(_) => {
+                cx.widget_action(
+                    self.widget_uid(),
+                    TooltipAction::HoverOut,
+                );
+            }
+            _ => {}
+        }
+
+        let send_message_button_area = self.button(cx, ids!(send_message_button)).area();
+        match event.hits(cx, send_message_button_area) {
+            Hit::FingerHoverIn(_) | Hit::FingerLongPress(_) => {
+                let text_input_is_empty = self.mentionable_text_input(cx, ids!(mentionable_text_input)).text().trim().is_empty();
+                let tooltip_text = if text_input_is_empty {
+                    "Message is empty"
+                } else {
+                    "Send message"
+                };
+                cx.widget_action(
+                    self.widget_uid(),
+                    TooltipAction::HoverIn {
+                        text: tooltip_text.to_string(),
+                        widget_rect: send_message_button_area.rect(cx),
+                        options: CalloutTooltipOptions {
+                            position: TooltipPosition::Top,
+                            ..Default::default()
+                        },
+                    },
+                );
+            }
+            Hit::FingerHoverOut(_) => {
+                cx.widget_action(
+                    self.widget_uid(),
+                    TooltipAction::HoverOut,
+                );
+            }
+            _ => {}
+        }
+
         if let Event::Actions(actions) = event {
             // Handle changes to the `send_on_enter` preference.
             for action in actions {
