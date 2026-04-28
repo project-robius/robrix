@@ -1120,7 +1120,6 @@ impl ImageViewer {
     /// via `max_lines: 2` + `text_overflow: Ellipsis` in the layout.
     pub fn set_metadata(&mut self, cx: &mut Cx, metadata: &ImageViewerMetaData) {
         let meta_view = self.view.view(cx, ids!(metadata_view));
-        let display_text = format!("{} ({})", metadata.image_name, ByteSize::b(metadata.image_file_size));
         let human_readable_size = ByteSize::b(metadata.image_file_size).to_string();
         let display_text = format!("{} ({})", metadata.image_name, human_readable_size);
         meta_view
@@ -1221,27 +1220,4 @@ pub struct ImageViewerMetaData {
     pub image_name: String,
     // Image size in bytes
     pub image_file_size: u64,
-}
-
-/// Convert bytes to human-readable file size format
-fn format_file_size(bytes: u64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-
-    if bytes == 0 {
-        return "0 B".to_string();
-    }
-
-    let mut size = bytes as f64;
-    let mut unit_index = 0;
-
-    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_index += 1;
-    }
-
-    if unit_index == 0 {
-        format!("{} {}", bytes, UNITS[unit_index])
-    } else {
-        format!("{:.1} {}", size, UNITS[unit_index])
-    }
 }
