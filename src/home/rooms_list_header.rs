@@ -12,6 +12,7 @@ use crate::{
     avatar_cache,
     home::navigation_tab_bar::{NavigationBarAction, SelectedTab},
     profile::user_profile_cache,
+    room_preview_cache,
     shared::{
         image_viewer::{ImageViewerAction, ImageViewerError, LoadState},
         popup_list::{PopupKind, enqueue_popup_notification},
@@ -138,6 +139,7 @@ impl Widget for RoomsListHeader {
                             // by RoomScreen in response to the StateUpdate action.
                             user_profile_cache::clear_all_pending_requests();
                             avatar_cache::clear_all_pending_and_failed_requests();
+                            room_preview_cache::clear_all_pending_requests();
                             // Now that we're no longer offline, we also need to tell the
                             // ProfileIcon to refresh itself and fetch our own user's profile again.
                             SignalToUI::set_ui_signal();
