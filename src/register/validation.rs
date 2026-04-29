@@ -2,6 +2,53 @@
 
 use url::Url;
 
+/// Errors for Matrix localpart validation. Permissive grammar — matches the
+/// historical Matrix spec (lowercase alnum + `._=-/`), not the stricter
+/// MSC3967 recommendation. Enough for Phase 3a's target servers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LocalpartError {
+    Empty,
+    TooLong,
+    InvalidChars,
+}
+
+/// Validate a Matrix localpart (the part before `:` in `@alice:example.com`).
+/// Returns the trimmed localpart on success.
+pub fn validate_localpart(input: &str) -> Result<String, LocalpartError> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Err(LocalpartError::Empty);
+    }
+    if trimmed.len() > 255 {
+        return Err(LocalpartError::TooLong);
+    }
+    if !trimmed.chars().all(|c| matches!(c,
+        'a'..='z' | '0'..='9' | '.' | '_' | '=' | '-' | '/'
+    )) {
+        return Err(LocalpartError::InvalidChars);
+    }
+    Ok(trimmed.to_owned())
+}
+
+/// Password validation errors.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PasswordError {
+    Empty,
+    Mismatch,
+}
+
+/// Validate password + confirm-password pair. Phase 3a uses emptiness +
+/// equality checks; zxcvbn strength scoring is Phase 5 scope.
+pub fn validate_passwords_match(password: &str, confirm: &str) -> Result<(), PasswordError> {
+    if password.is_empty() || confirm.is_empty() {
+        return Err(PasswordError::Empty);
+    }
+    if password != confirm {
+        return Err(PasswordError::Mismatch);
+    }
+    Ok(())
+}
+
 /// Errors returned by homeserver URL normalization.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HomeserverUrlError {
@@ -103,5 +150,53 @@ mod tests {
     fn malformed_url_is_rejected() {
         let result = normalize_homeserver_url("http://  /not a url");
         assert!(matches!(result, Err(HomeserverUrlError::Invalid)));
+    }
+
+    #[test]
+    fn localpart_valid_simple() {
+        assert!(validate_localpart("alice").is_ok());
+        assert!(validate_localpart("bob.smith").is_ok());
+        assert!(validate_localpart("user_123").is_ok());
+    }
+
+    #[test]
+    fn localpart_empty_is_rejected() {
+        assert_eq!(validate_localpart(""), Err(LocalpartError::Empty));
+        assert_eq!(validate_localpart("   "), Err(LocalpartError::Empty));
+    }
+
+    #[test]
+    fn localpart_uppercase_is_rejected() {
+        assert!(matches!(
+            validate_localpart("Alice"),
+            Err(LocalpartError::InvalidChars)
+        ));
+    }
+
+    #[test]
+    fn localpart_too_long_is_rejected() {
+        let long = "a".repeat(256);
+        assert_eq!(validate_localpart(&long), Err(LocalpartError::TooLong));
+    }
+
+    #[test]
+    fn passwords_match_accepts_equal() {
+        assert!(validate_passwords_match("hunter2", "hunter2").is_ok());
+    }
+
+    #[test]
+    fn passwords_match_rejects_empty() {
+        assert_eq!(
+            validate_passwords_match("", ""),
+            Err(PasswordError::Empty),
+        );
+    }
+
+    #[test]
+    fn passwords_match_rejects_mismatch() {
+        assert_eq!(
+            validate_passwords_match("a", "b"),
+            Err(PasswordError::Mismatch),
+        );
     }
 }

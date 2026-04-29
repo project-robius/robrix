@@ -7,6 +7,7 @@ use makepad_widgets::ScriptVm;
 
 pub mod register_screen;
 pub mod register_status_modal;
+pub mod uiaa;
 pub mod validation;
 
 pub fn script_mod(vm: &mut ScriptVm) {
@@ -88,10 +89,18 @@ impl HsCapabilities {
 pub enum RegisterAction {
     /// User clicked the back button on RegisterScreen.
     NavigateToLogin,
-    /// Sliding-sync reports the result of capability discovery.
-    CapabilitiesDiscovered(HsCapabilities),
-    /// Capability discovery failed (network error, bad URL, 5xx).
-    DiscoveryFailed(String),
+    /// `requested_url` is echoed so the screen can drop out-of-order responses.
+    CapabilitiesDiscovered { requested_url: String, caps: Box<HsCapabilities> },
+    /// `requested_url` is echoed so the screen can drop out-of-order responses.
+    DiscoveryFailed { requested_url: String, error: String },
+    /// User submitted the RegistrationForm; first POST is in flight.
+    RegistrationSubmitted,
+    /// Registration completed and the client has been persisted via
+    /// `finalize_authenticated_client`. App.rs only needs to switch screens.
+    RegistrationSuccess,
+    /// Registration failed at any stage (network, validation, UIAA error).
+    /// The payload is a user-displayable message.
+    RegistrationFailed(String),
     #[default]
     None,
 }

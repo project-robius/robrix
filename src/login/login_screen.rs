@@ -4,8 +4,17 @@ use makepad_widgets::*;
 use url::Url;
 
 use crate::{app::AppState, i18n::{AppLanguage, tr_fmt, tr_key}, sliding_sync::{submit_async_request, AccountSwitchAction, LoginByPassword, LoginRequest, MatrixRequest}};
+use crate::register::RegisterAction;
 
 use super::login_status_modal::{LoginStatusModalAction, LoginStatusModalWidgetExt};
+
+fn should_show_login_failure_modal(
+    suppress_login_failure_modal: bool,
+    last_failure_message_shown: Option<&str>,
+    error: &str,
+) -> bool {
+    !suppress_login_failure_modal && last_failure_message_shown != Some(error)
+}
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -571,6 +580,8 @@ pub struct LoginScreen {
     #[rust] sso_redirect_url: Option<String>,
     /// The most recent login failure message shown to the user.
     #[rust] last_failure_message_shown: Option<String>,
+    /// Register flow owns login/setup failures while the login screen is hidden.
+    #[rust] suppress_login_failure_modal: bool,
     #[rust] app_language: AppLanguage,
     /// Boolean to indicate if we're in "add account" mode (adding another Matrix account).
     #[rust] adding_account: bool,
@@ -901,6 +912,9 @@ impl WidgetMatchEvent for LoginScreen {
         }
 
         if mode_toggle_button.clicked(actions) {
+            self.suppress_login_failure_modal = true;
+            self.last_failure_message_shown = None;
+            login_status_modal.close(cx);
             Cx::post_action(LoginAction::NavigateToRegister);
         }
 
@@ -971,8 +985,19 @@ impl WidgetMatchEvent for LoginScreen {
                 login_status_modal.close(cx);
             }
 
+            if let Some(RegisterAction::NavigateToLogin) = action.downcast_ref() {
+                self.suppress_login_failure_modal = false;
+                self.last_failure_message_shown = None;
+                login_status_modal.close(cx);
+            }
+
             // Handle login-related actions received from background async tasks.
             match action.downcast_ref() {
+                Some(LoginAction::ShowLoginScreen) => {
+                    self.suppress_login_failure_modal = false;
+                    self.last_failure_message_shown = None;
+                    login_status_modal.close(cx);
+                }
                 Some(LoginAction::CliAutoLogin { user_id, homeserver }) => {
                     self.last_failure_message_shown = None;
                     user_id_input.set_text(cx, user_id);
@@ -1003,6 +1028,7 @@ impl WidgetMatchEvent for LoginScreen {
                 Some(LoginAction::LoginSuccess) => {
                     // The main `App` component handles showing the main screen
                     // and hiding the login screen & login status modal.
+                    self.suppress_login_failure_modal = false;
                     self.last_failure_message_shown = None;
                     self.adding_account = false;
                     user_id_input.set_text(cx, "");
@@ -1015,8 +1041,17 @@ impl WidgetMatchEvent for LoginScreen {
                     login_status_modal.close(cx);
                     self.redraw(cx);
                 }
+                Some(LoginAction::ClearFailureState) => {
+                    self.last_failure_message_shown = None;
+                    login_status_modal.close(cx);
+                    self.redraw(cx);
+                }
                 Some(LoginAction::LoginFailure(error)) => {
-                    if self.last_failure_message_shown.as_deref() == Some(error.as_str()) {
+                    if !should_show_login_failure_modal(
+                        self.suppress_login_failure_modal,
+                        self.last_failure_message_shown.as_deref(),
+                        error,
+                    ) {
                         continue;
                     }
                     self.last_failure_message_shown = Some(error.clone());
@@ -1036,6 +1071,7 @@ impl WidgetMatchEvent for LoginScreen {
                     self.sso_redirect_url = Some(url.to_string());
                 }
                 Some(LoginAction::ShowAddAccountScreen) => {
+                    self.suppress_login_failure_modal = false;
                     self.adding_account = true;
                     self.reset_sso_state(cx);
                     // Update UI to "add account" mode
@@ -1047,6 +1083,7 @@ impl WidgetMatchEvent for LoginScreen {
                 }
                 Some(LoginAction::AddAccountSuccess) => {
                     // Reset the login screen state
+                    self.suppress_login_failure_modal = false;
                     self.adding_account = false;
                     self.reset_sso_state(cx);
                     user_id_input.set_text(cx, "");
@@ -1138,6 +1175,8 @@ pub enum LoginAction {
     AddAccountSuccess,
     /// A negative response from the backend Matrix task to the login screen.
     LoginFailure(String),
+    /// Clear any hidden login failure UI/state that should not leak across flows.
+    ClearFailureState,
     /// A login-related status message to display to the user.
     Status {
         title: String,
@@ -1172,4 +1211,24 @@ pub enum LoginAction {
     CancelAddAccount,
     #[default]
     None,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_show_login_failure_modal;
+
+    #[test]
+    fn login_failure_modal_is_suppressed_while_register_flow_is_active() {
+        assert!(!should_show_login_failure_modal(true, None, "boom"));
+    }
+
+    #[test]
+    fn duplicate_login_failure_message_is_suppressed() {
+        assert!(!should_show_login_failure_modal(false, Some("boom"), "boom"));
+    }
+
+    #[test]
+    fn fresh_login_failure_message_is_shown_when_not_suppressed() {
+        assert!(should_show_login_failure_modal(false, Some("old"), "boom"));
+    }
 }

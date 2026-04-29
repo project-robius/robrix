@@ -11,9 +11,14 @@
 
 use makepad_widgets::*;
 
+use crate::login::login_screen::LoginAction;
 use crate::register::{HsCapabilities, RegisterAction, RegisterMode};
 use crate::register::validation::{normalize_homeserver_url, HomeserverUrlError};
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
+
+fn can_start_capability_discovery(registration_pending: bool, awaiting_sync_startup: bool) -> bool {
+    !registration_pending && !awaiting_sync_startup
+}
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -145,6 +150,55 @@ script_mod! {
                         }
                     }
 
+                    registration_form := View {
+                        width: 275,
+                        height: Fit,
+                        flow: Down,
+                        spacing: 10,
+                        visible: false
+
+                        username_input := RobrixTextInput {
+                            width: 275, height: Fit,
+                            flow: Right,
+                            padding: Inset{top: 10, bottom: 10, left: 10, right: 10}
+                            empty_text: "Username"
+                        }
+
+                        password_input := RobrixTextInput {
+                            width: 275, height: Fit,
+                            flow: Right,
+                            padding: Inset{top: 10, bottom: 10, left: 10, right: 10}
+                            empty_text: "Password"
+                            is_password: true,
+                        }
+
+                        confirm_password_input := RobrixTextInput {
+                            width: 275, height: Fit,
+                            flow: Right,
+                            padding: Inset{top: 10, bottom: 10, left: 10, right: 10}
+                            empty_text: "Confirm password"
+                            is_password: true,
+                        }
+
+                        form_error_label := Label {
+                            width: Fill, height: Fit,
+                            visible: false
+                            draw_text +: {
+                                color: (COLOR_FG_DANGER_RED)
+                                text_style: REGULAR_TEXT {font_size: 10.5}
+                            }
+                            text: ""
+                        }
+
+                        submit_button := RobrixIconButton {
+                            width: 275, height: 40
+                            padding: 10
+                            margin: Inset{top: 5}
+                            align: Align{x: 0.5, y: 0.5}
+                            text: "Create Account"
+                        }
+                    }
+
                     LineH {
                         width: 275
                         margin: Inset{bottom: -5}
@@ -192,6 +246,18 @@ script_mod! {
 pub struct RegisterScreen {
     #[deref] view: View,
     #[rust] last_discovery: Option<HsCapabilities>,
+    /// Normalized user-typed URL that produced `last_discovery`. Kept
+    /// separate from `caps.base_url` because `.well-known` may rewrite the
+    /// host; comparing current input against `base_url` causes false mismatches.
+    #[rust] last_discovery_input_url: Option<String>,
+    /// Gates duplicate submits; mirrors `sso_pending`.
+    #[rust] registration_pending: bool,
+    /// Drives next_button "Checking..." feedback during slow `.well-known` probes.
+    #[rust] discovery_pending: bool,
+    /// Gates the `LoginFailure` arm: true only during the post-register
+    /// `SyncService::build()` window, which `app.rs` can't recover from
+    /// because state is still `LoggedOut`.
+    #[rust] awaiting_sync_startup: bool,
 }
 
 impl Widget for RegisterScreen {
@@ -209,17 +275,36 @@ impl WidgetMatchEvent for RegisterScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         let back = self.view.button(cx, ids!(back_button));
         let next = self.view.button(cx, ids!(next_button));
+        let submit = self.view.button(cx, ids!(submit_button));
 
         if back.clicked(actions) {
+            // In-flight request can't be cancelled; leaving now would
+            // auto-log the user into the account on its eventual success.
+            if self.registration_pending {
+                return;
+            }
+            self.discovery_pending = false;
+            self.view.button(cx, ids!(next_button)).set_text(cx, "Next");
             Cx::post_action(RegisterAction::NavigateToLogin);
             return;
         }
 
         if next.clicked(actions) {
+            if !can_start_capability_discovery(self.registration_pending, self.awaiting_sync_startup) {
+                return;
+            }
             let raw = self.view.text_input(cx, ids!(homeserver_input)).text();
             match normalize_homeserver_url(&raw) {
                 Ok(url) => {
+                    // Prevent submit-against-stale-server in the Next→response window.
+                    self.last_discovery = None;
+                    self.view.view(cx, ids!(registration_form)).set_visible(cx, false);
+                    self.clear_form_error(cx);
+
                     self.show_status(cx, "Checking server capabilities...");
+                    self.discovery_pending = true;
+                    self.view.button(cx, ids!(next_button)).set_text(cx, "Checking...");
+                    self.last_discovery_input_url = Some(url.clone());
                     submit_async_request(MatrixRequest::DiscoverHomeserverCapabilities { url });
                 }
                 Err(HomeserverUrlError::Empty) => {
@@ -234,12 +319,141 @@ impl WidgetMatchEvent for RegisterScreen {
             }
         }
 
-        // Capability discovery results.
+        let username_input = self.view.text_input(cx, ids!(username_input));
+        let password_input = self.view.text_input(cx, ids!(password_input));
+        let confirm_password_input = self.view.text_input(cx, ids!(confirm_password_input));
+
+        let submit_triggered = submit.clicked(actions)
+            || username_input.returned(actions).is_some()
+            || password_input.returned(actions).is_some()
+            || confirm_password_input.returned(actions).is_some();
+
+        if submit_triggered {
+            if self.registration_pending {
+                return;
+            }
+            use crate::register::validation::{
+                validate_localpart, validate_passwords_match, LocalpartError, PasswordError,
+            };
+
+            let username = username_input.text();
+            let password = password_input.text();
+            let confirm = confirm_password_input.text();
+
+            let localpart = match validate_localpart(&username) {
+                Ok(l) => l,
+                Err(LocalpartError::Empty) => {
+                    self.show_form_error(cx, "Please enter a username.");
+                    return;
+                }
+                Err(LocalpartError::TooLong) => {
+                    self.show_form_error(cx, "Username is too long (max 255 characters).");
+                    return;
+                }
+                Err(LocalpartError::InvalidChars) => {
+                    self.show_form_error(
+                        cx,
+                        "Username can contain only lowercase letters, digits, and . _ = - /",
+                    );
+                    return;
+                }
+            };
+
+            if let Err(e) = validate_passwords_match(&password, &confirm) {
+                match e {
+                    PasswordError::Empty => {
+                        self.show_form_error(cx, "Please enter and confirm a password.");
+                    }
+                    PasswordError::Mismatch => {
+                        self.show_form_error(cx, "Passwords don't match. Please re-enter.");
+                    }
+                }
+                return;
+            }
+
+            let Some(caps) = self.last_discovery.as_ref() else {
+                self.show_form_error(cx, "Please check the homeserver first (click Next).");
+                return;
+            };
+
+            // Stale-cache check: compare current input to the input that PRODUCED
+            // the cache, not `caps.base_url` (which `.well-known` may rewrite).
+            let current_raw = self.view.text_input(cx, ids!(homeserver_input)).text();
+            let current_url = match normalize_homeserver_url(&current_raw) {
+                Ok(u) => u,
+                Err(_) => {
+                    self.last_discovery = None;
+                    self.last_discovery_input_url = None;
+                    self.show_form_error(
+                        cx,
+                        "The homeserver URL looks invalid. Please fix it and click Next again.",
+                    );
+                    return;
+                }
+            };
+            let probed_input = self.last_discovery_input_url.as_deref().unwrap_or("");
+            if current_url != probed_input {
+                self.last_discovery = None;
+                self.last_discovery_input_url = None;
+                self.show_form_error(
+                    cx,
+                    "The homeserver changed since the last check. Click Next to verify this server before creating an account.",
+                );
+                return;
+            }
+
+            let homeserver_url = caps.base_url.clone();
+
+            self.clear_form_error(cx);
+            self.show_status(cx, "Creating your account...");
+            self.registration_pending = true;
+            submit.set_text(cx, "Creating...");
+            self.view.redraw(cx);
+            submit_async_request(MatrixRequest::RegisterViaUiaa {
+                username: localpart,
+                password,
+                homeserver_url,
+            });
+            return;
+        }
+
+        for action in actions {
+            match action.downcast_ref::<LoginAction>() {
+                Some(LoginAction::LoginSuccess) => {
+                    self.awaiting_sync_startup = false;
+                    self.view.view(cx, ids!(status_area)).set_visible(cx, false);
+                    self.view.label(cx, ids!(status_label)).set_text(cx, "");
+                }
+                Some(LoginAction::LoginFailure(msg)) if self.awaiting_sync_startup => {
+                    // Account already exists on the server; don't frame as registration failure.
+                    self.awaiting_sync_startup = false;
+                    Cx::post_action(LoginAction::ClearFailureState);
+                    self.show_status(
+                        cx,
+                        &format!(
+                            "Your account was created, but we couldn't start a session:\n{msg}\n\n\
+                             Please click ← Back to Login and sign in with your new account."
+                        ),
+                    );
+                }
+                _ => {}
+            }
+        }
+
         for action in actions {
             match action.downcast_ref::<RegisterAction>() {
-                Some(RegisterAction::CapabilitiesDiscovered(caps)) => {
+                Some(RegisterAction::CapabilitiesDiscovered { requested_url, caps }) => {
+                    // Drop out-of-order response from a superseded Next click.
+                    if self.last_discovery_input_url.as_deref() != Some(requested_url.as_str()) {
+                        continue;
+                    }
+                    self.discovery_pending = false;
+                    self.view.button(cx, ids!(next_button)).set_text(cx, "Next");
+                    let caps = caps.as_ref();
                     match caps.mode() {
                         RegisterMode::MasWebOnly => {
+                            self.view.view(cx, ids!(registration_form)).set_visible(cx, false);
+                            self.clear_form_error(cx);
                             match caps.mas_signup_url.as_deref() {
                                 Some(url) => match robius_open::Uri::new(url).open() {
                                     Ok(()) => {
@@ -268,12 +482,16 @@ impl WidgetMatchEvent for RegisterScreen {
                             }
                         }
                         RegisterMode::Uiaa => {
+                            self.view.view(cx, ids!(registration_form)).set_visible(cx, true);
+                            self.clear_form_error(cx);
                             self.show_status(
                                 cx,
-                                "This server allows direct account creation. Phase 3 will handle the form.",
+                                "This homeserver allows direct registration. Fill in your details below to create an account.",
                             );
                         }
                         RegisterMode::Disabled => {
+                            self.view.view(cx, ids!(registration_form)).set_visible(cx, false);
+                            self.clear_form_error(cx);
                             self.show_status(
                                 cx,
                                 "This server does not allow registration. Please choose a different homeserver \
@@ -283,9 +501,50 @@ impl WidgetMatchEvent for RegisterScreen {
                     }
                     self.last_discovery = Some(caps.clone());
                 }
-                Some(RegisterAction::DiscoveryFailed(err)) => {
-                    self.show_status(cx, &format!("Could not reach that server: {err}"));
+                Some(RegisterAction::DiscoveryFailed { requested_url, error }) => {
+                    if self.last_discovery_input_url.as_deref() != Some(requested_url.as_str()) {
+                        continue;
+                    }
+                    self.discovery_pending = false;
+                    self.view.button(cx, ids!(next_button)).set_text(cx, "Next");
+                    self.view.view(cx, ids!(registration_form)).set_visible(cx, false);
+                    self.clear_form_error(cx);
+                    self.show_status(cx, &format!("Could not reach that server: {error}"));
                     self.last_discovery = None;
+                    self.last_discovery_input_url = None;
+                }
+                Some(RegisterAction::RegistrationSubmitted) => {}
+                Some(RegisterAction::RegistrationSuccess) => {
+                    // Full reset: the same widget instance is reused on re-entry
+                    // (logout → "Sign up here"), so password fields must not linger.
+                    self.registration_pending = false;
+                    self.discovery_pending = false;
+                    self.view.button(cx, ids!(submit_button)).set_text(cx, "Create Account");
+                    self.view.button(cx, ids!(next_button)).set_text(cx, "Next");
+
+                    self.view.text_input(cx, ids!(password_input)).set_text(cx, "");
+                    self.view.text_input(cx, ids!(confirm_password_input)).set_text(cx, "");
+                    self.view.text_input(cx, ids!(username_input)).set_text(cx, "");
+                    self.view.text_input(cx, ids!(homeserver_input)).set_text(cx, "");
+
+                    self.last_discovery = None;
+                    self.last_discovery_input_url = None;
+                    self.view.view(cx, ids!(registration_form)).set_visible(cx, false);
+                    self.clear_form_error(cx);
+
+                    // Bridging feedback during the ~100-200ms SyncService::build window.
+                    self.show_status(cx, "Account created! Loading your account...");
+                    self.awaiting_sync_startup = true;
+                }
+                Some(RegisterAction::RegistrationFailed(err)) => {
+                    self.registration_pending = false;
+                    self.awaiting_sync_startup = false;
+                    self.view.button(cx, ids!(submit_button)).set_text(cx, "Create Account");
+                    self.show_form_error(cx, err);
+                    self.show_status(
+                        cx,
+                        "Registration didn't go through. Please check the error above and retry.",
+                    );
                 }
                 _ => {}
             }
@@ -298,5 +557,38 @@ impl RegisterScreen {
         self.view.view(cx, ids!(status_area)).set_visible(cx, true);
         self.view.label(cx, ids!(status_label)).set_text(cx, message);
         self.view.redraw(cx);
+    }
+
+    fn show_form_error(&mut self, cx: &mut Cx, message: &str) {
+        let label = self.view.label(cx, ids!(form_error_label));
+        label.set_text(cx, message);
+        label.set_visible(cx, true);
+        self.view.redraw(cx);
+    }
+
+    fn clear_form_error(&mut self, cx: &mut Cx) {
+        let label = self.view.label(cx, ids!(form_error_label));
+        label.set_text(cx, "");
+        label.set_visible(cx, false);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::can_start_capability_discovery;
+
+    #[test]
+    fn capability_discovery_blocks_while_registration_request_is_in_flight() {
+        assert!(!can_start_capability_discovery(true, false));
+    }
+
+    #[test]
+    fn capability_discovery_blocks_while_waiting_for_post_register_sync_startup() {
+        assert!(!can_start_capability_discovery(false, true));
+    }
+
+    #[test]
+    fn capability_discovery_allows_idle_register_screen() {
+        assert!(can_start_capability_discovery(false, false));
     }
 }

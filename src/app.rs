@@ -955,6 +955,9 @@ impl MatchEvent for App {
                 self.app_state.logged_in = true;
                 self.app_state.adding_account = false;
                 self.auth_ui_state = AuthUiState::LoggedIn;
+                // If the user reached this success via the register flow, also hide
+                // register_screen — update_login_visibility only manages login_screen_view.
+                self.ui.view(cx, ids!(register_screen_view)).set_visible(cx, false);
                 self.update_login_visibility(cx);
                 self.ui.redraw(cx);
                 continue;

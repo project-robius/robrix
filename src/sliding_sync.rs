@@ -434,6 +434,12 @@ async fn login(
         }
 
         LoginRequest::Register(registration) => {
+            // This arm drives BOTH signals intentionally:
+            //   - LoginAction::Status — a no-op when the login screen isn't visible
+            //     (the normal register flow); retained so the login-screen-based
+            //     LoginByCli path can still surface progress if ever re-wired.
+            //   - RegisterAction::* (dispatched at the failure sites and at the
+            //     finalize-success site below) — drives RegisterScreen state.
             let cli = Cli::from(RegisterAccount {
                 user_id: registration.user_id.clone(),
                 password: registration.password.clone(),
@@ -470,10 +476,14 @@ async fn login(
                             ))
                             .await
                         } else {
-                            bail!(unsupported_registration_flow_message(&uiaa_info.flows));
+                            let msg = unsupported_registration_flow_message(&uiaa_info.flows);
+                            Cx::post_action(crate::register::RegisterAction::RegistrationFailed(msg.clone()));
+                            bail!(msg);
                         }
                     } else {
-                        bail!(registration_uiaa_error_message(&error));
+                        let msg = registration_uiaa_error_message(&error);
+                        Cx::post_action(crate::register::RegisterAction::RegistrationFailed(msg.clone()));
+                        bail!(msg);
                     }
                 }
             }?;
@@ -485,11 +495,16 @@ async fn login(
                 );
                 enqueue_popup_notification(err_msg.clone(), PopupKind::Error, None);
                 enqueue_rooms_list_update(RoomsListUpdate::Status { status: err_msg.clone() });
+                Cx::post_action(crate::register::RegisterAction::RegistrationFailed(err_msg.clone()));
                 bail!(err_msg);
             }
 
-            finalize_authenticated_client(client, client_session, register_result.user_id.as_str(), false)
-                .await
+            let finalized = finalize_authenticated_client(client, client_session, register_result.user_id.as_str(), false)
+                .await;
+            if finalized.is_ok() {
+                Cx::post_action(crate::register::RegisterAction::RegistrationSuccess);
+            }
+            finalized
         }
 
         LoginRequest::LoginBySSOSuccess(client, client_session, is_add_account) => {
@@ -702,6 +717,30 @@ pub enum MatrixRequest {
     DiscoverHomeserverCapabilities {
         /// Already-normalized homeserver URL (has scheme, no trailing slash).
         url: String,
+    },
+    /// Register a new account on a UIAA server using the single-stage
+    /// `m.login.dummy` flow. `homeserver_url` is the already-normalized URL
+    /// from capability discovery.
+    ///
+    /// Success dispatches two actions in sequence:
+    ///   1. `RegisterAction::RegistrationSuccess` — fires immediately after
+    ///      `finalize_authenticated_client` persists the session. The
+    ///      RegisterScreen uses this to clear form state and stop showing
+    ///      the submission spinner.
+    ///   2. `LoginAction::LoginSuccess` — fires ~100-200ms later after the
+    ///      sync service finishes building. App.rs uses this to navigate
+    ///      from the register screen to the main UI, mirroring the login
+    ///      path exactly.
+    ///
+    /// Any failure dispatches a single `RegisterAction::RegistrationFailed(msg)`
+    /// with a user-displayable message.
+    ///
+    /// Proxy support is Phase 5 scope; this variant always uses the process
+    /// default proxy (if any) rather than a per-request override.
+    RegisterViaUiaa {
+        username: String,
+        password: String,
+        homeserver_url: String,
     },
     /// Request to switch to a different logged-in account.
     SwitchAccount {
@@ -1617,15 +1656,38 @@ async fn matrix_worker_task(
 
             MatrixRequest::DiscoverHomeserverCapabilities { url } => {
                 tokio::spawn(async move {
+                    let requested_url = url.clone();
                     match discover_homeserver_capabilities(&url).await {
                         Ok(caps) => {
-                            Cx::post_action(crate::register::RegisterAction::CapabilitiesDiscovered(caps));
+                            Cx::post_action(crate::register::RegisterAction::CapabilitiesDiscovered {
+                                requested_url,
+                                caps: Box::new(caps),
+                            });
                         }
                         Err(e) => {
-                            Cx::post_action(crate::register::RegisterAction::DiscoveryFailed(e.to_string()));
+                            Cx::post_action(crate::register::RegisterAction::DiscoveryFailed {
+                                requested_url,
+                                error: e.to_string(),
+                            });
                         }
                     }
                 });
+            }
+
+            MatrixRequest::RegisterViaUiaa { username, password, homeserver_url } => {
+                Cx::post_action(crate::register::RegisterAction::RegistrationSubmitted);
+                let register_request = LoginRequest::Register(RegisterAccount {
+                    user_id: username,
+                    password,
+                    homeserver: Some(homeserver_url),
+                    proxy: None,
+                });
+                if let Err(e) = login_sender.send(register_request).await {
+                    error!("Error sending register request to login_sender: {e:?}");
+                    Cx::post_action(crate::register::RegisterAction::RegistrationFailed(
+                        "Internal error: registration worker is unavailable. Please restart Robrix.".to_owned(),
+                    ));
+                }
             }
 
             MatrixRequest::SwitchAccount { user_id } => {
@@ -3781,8 +3843,16 @@ async fn matrix_worker_task(
         }
     }
 
-    error!("matrix_worker_task task ended unexpectedly");
-    bail!("matrix_worker_task task ended unexpectedly")
+    if worker_shutdown_is_unexpected(is_logout_in_progress(), is_account_switch_pending()) {
+        error!("matrix_worker_task task ended unexpectedly");
+        bail!("matrix_worker_task task ended unexpectedly")
+    }
+
+    Ok(())
+}
+
+fn worker_shutdown_is_unexpected(logout_in_progress: bool, account_switch_pending: bool) -> bool {
+    !logout_in_progress && !account_switch_pending
 }
 
 async fn attach_room_to_space(client: &Client, child_room: &Room, space_id: &OwnedRoomId) -> Result<()> {
@@ -6743,10 +6813,6 @@ async fn discover_homeserver_capabilities(
             Ok(info) => (true, Some(info)),
             Err(_) => (true, None),
         }
-    } else if status == matrix_sdk::reqwest::StatusCode::FORBIDDEN
-        && body.get("errcode").and_then(|v: &Value| v.as_str()) == Some("M_FORBIDDEN")
-    {
-        (false, None)
     } else {
         (false, None)
     };
@@ -6759,4 +6825,24 @@ async fn discover_homeserver_capabilities(
         sso_providers,
         mas_signup_url,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::worker_shutdown_is_unexpected;
+
+    #[test]
+    fn worker_shutdown_is_not_unexpected_during_logout() {
+        assert!(!worker_shutdown_is_unexpected(true, false));
+    }
+
+    #[test]
+    fn worker_shutdown_is_not_unexpected_during_account_switch() {
+        assert!(!worker_shutdown_is_unexpected(false, true));
+    }
+
+    #[test]
+    fn worker_shutdown_is_unexpected_without_controlled_teardown() {
+        assert!(worker_shutdown_is_unexpected(false, false));
+    }
 }
