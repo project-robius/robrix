@@ -77,15 +77,12 @@ script_mod! {
 
     // A DropDown styled to match other Robrix settings controls.
     mod.widgets.RobrixSettingsDropDown = DropDownFlat {
-        width: 239, height: (mod.widgets.SETTINGS_BUTTON_HEIGHT),
+        width: 218, height: (mod.widgets.SETTINGS_BUTTON_HEIGHT),
         padding: Inset{top: 8, bottom: 8, left: 12, right: 30}
         margin: Inset{left: 5, top: 5, bottom: 5}
         align: Align{x: 0.0, y: 0.5}
 
-        // NOTE: PopupMenuPosition enum variants aren't exposed to script, so
-        // we can't request `BelowInput`. The popup uses the default
-        // OnSelected placement — styled to stay readable either way.
-        popup_menu: mod.widgets.RobrixSettingsPopupMenu{}
+        popup_menu: mod.widgets.RobrixSettingsPopupMenu {}
 
         draw_text +: {
             color: (MESSAGE_TEXT_COLOR),

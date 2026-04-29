@@ -90,7 +90,7 @@ script_mod! {
             align: Align{ x: 0.5 }
             draw_text +: {
                 color: (MESSAGE_TEXT_COLOR),
-                text_style: REGULAR_TEXT {font_size: 8, line_spacing: 1.0}
+                text_style: REGULAR_TEXT {font_size: 8, line_spacing: 1.1}
             }
         }
     }

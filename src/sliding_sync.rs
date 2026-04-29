@@ -8,7 +8,7 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, RelationsOptions, RoomMember}, ruma::{
+    config::RequestConfig, encryption::{identities::Device, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, RelationsOptions, RoomMember}, ruma::{
         api::{Direction, client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}}, events::{
             relation::RelationType,
             room::{
@@ -315,6 +315,9 @@ pub enum AccountDataAction {
     DisplayNameChanged(Option<String>),
     /// Failed to update the user's display name.
     DisplayNameChangeFailed(String),
+    /// Result of [`MatrixRequest::GetOwnDevice`], in a `Box` because `Device` is large.
+    /// * `None` if not logged in or the crypto store isn't ready yet.
+    OwnDeviceFetched(Option<Box<Device>>),
 }
 
 /// Actions emitted in response to a [`MatrixRequest::OpenOrCreateDirectMessage`].
@@ -563,6 +566,9 @@ pub enum MatrixRequest {
         /// * If `None`, the display name will be removed.
         new_display_name: Option<String>,
     },
+    /// Request to fetch our own [`Device`].
+    /// The response is delivered via [`AccountDataAction::OwnDeviceFetched`].
+    GetOwnDevice,
     /// Request to fetch an Avatar image from the server.
     /// Upon completion of the async media request, the `on_fetched` function
     /// will be invoked with the content of an `AvatarUpdate`.
@@ -1343,6 +1349,20 @@ async fn matrix_worker_task(
                             Cx::post_action(AccountDataAction::DisplayNameChangeFailed(err_msg));
                         }
                     }
+                });
+            }
+
+            MatrixRequest::GetOwnDevice => {
+                let Some(client) = get_client() else { continue };
+                let _get_own_device_task = Handle::current().spawn(async move {
+                    let device = match client.encryption().get_own_device().await {
+                        Ok(device) => device,
+                        Err(e) => {
+                            error!("Failed to get own device: {e:?}");
+                            None
+                        }
+                    };
+                    Cx::post_action(AccountDataAction::OwnDeviceFetched(device.map(Box::new)));
                 });
             }
 

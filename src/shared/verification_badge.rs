@@ -186,16 +186,15 @@ impl VerificationBadgeRef {
     pub fn tooltip_content(&self) -> (&'static str, Option<Vec4>) {
         match self.borrow().map(|v| v.verification_state) {
             Some(VerificationState::Verified) => (
-                "This device is fully verified.",
+                "and verified ",
                 Some(COLOR_FG_ACCEPT_GREEN),
             ),
             Some(VerificationState::Unverified) => (
-                "This device is unverified. To view your encrypted message history, \
-                please verify Robrix from another client.",
+                "but not verified ",
                 Some(COLOR_FG_DANGER_RED),
             ),
             _ => (
-                "Verification state is unknown.",
+                "",
                 None,
             ),
         }
