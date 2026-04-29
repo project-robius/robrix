@@ -18,7 +18,7 @@ script_mod! {
 
         width: Fill, height: Fill,
         flow: Down,
-        padding: Inset{top: 5, left: 15, right: 15, bottom: 20},
+        padding: Inset{top: 5, left: 15, right: 15, bottom: 0},
 
         title := TitleLabel {
             text: "Add/Explore Rooms and Spaces"
@@ -241,6 +241,11 @@ script_mod! {
                     text: "Cancel"
                 }
             }
+        }
+
+        View {
+            width: Fill
+            height: 20
         }
         
     }
