@@ -57,46 +57,33 @@ script_mod! {
     use mod.widgets.*
 
 
-    // The base layout/sizing for the icon-style buttons in the NavigationTabBar.
-    // Inherits hover/selected styling from `mod.widgets.NavigationBarButton`
-    // (defined in `src/shared/navigation_bar_button.rs`).
+    // The base style definition for icon buttons in the NavigationTabBar.
     mod.widgets.NavigationTabButton = mod.widgets.NavigationBarButton {
         width: Fill,
-        height: (NAVIGATION_TAB_BAR_SIZE - 5),
+        height: (NAVIGATION_TAB_BAR_SIZE - 4),
         padding: 5,
-        margin: 3,
+        margin: 2,
         align: Align{x: 0.5, y: 0.5}
         flow: Down,
     }
 
     mod.widgets.ProfileIcon = #(ProfileIcon::register_widget(vm)) {
-        // Inherit hover/selected styling directly from NavigationBarButton
-        // (not via NavigationTabButton, to avoid inheriting its padding/margin
-        // which would squeeze ProfileIcon's avatar+badge layout).
         ..mod.widgets.NavigationBarButton
 
         // ProfileIcon emits its own dynamic tooltip (with verification badge info)
         // from Rust, so leave the built-in tooltip text empty.
         tooltip_text: ""
 
-        // Match the drawn bg bounds of `NavigationTabButton` (height and
-        // margin) so that ProfileIcon's hover/selected highlight is the same
-        // size and shape as the other buttons in the tab bar.
+        // Use the same size/shape bounds as other buttons in the NavigationTabBar
         width: Fill,
-        height: (NAVIGATION_TAB_BAR_SIZE - 5)
+        height: (NAVIGATION_TAB_BAR_SIZE - 4)
         padding: 0,
-        margin: 3,
+        margin: 2,
         align: Align{ x: 0.5, y: 0.5 }
 
-        // The avatar and verification badge are wrapped in a sub-container that
-        // is *larger* than the avatar (sized to match ProfileIcon's drawn bg
-        // bounds), so the avatar can be centered while the badge sits in the
-        // gap between the avatar's edge and the wrapper's corner. This places
-        // the badge at the avatar's outer top-right (overlapping the corner)
-        // independently of the parent ProfileIcon's width.
         avatar_with_badge := View {
-            width: (NAVIGATION_TAB_BAR_SIZE - 5)
-            height: (NAVIGATION_TAB_BAR_SIZE - 5)
+            width: (NAVIGATION_TAB_BAR_SIZE - 4)
+            height: (NAVIGATION_TAB_BAR_SIZE - 4)
             flow: Overlay
             align: Align { x: 0.5, y: 0.5 }
 
@@ -137,8 +124,8 @@ script_mod! {
             margin: 0,
             icon_walk: Walk {
                 margin: 0,
-                width: (NAVIGATION_TAB_BAR_SIZE / 2.2),
-                height: (NAVIGATION_TAB_BAR_SIZE / 2.2)
+                width: 30,
+                height: 30
             }
             draw_icon +: {
                 color: (COLOR_NAVIGATION_TAB_FG)
@@ -153,8 +140,8 @@ script_mod! {
             margin: 0,
             icon_walk: Walk {
                 margin: 0,
-                width: (NAVIGATION_TAB_BAR_SIZE / 2.2),
-                height: (NAVIGATION_TAB_BAR_SIZE / 2.2)
+                width: 30,
+                height: 30
             }
             draw_icon +: {
                 color: (COLOR_NAVIGATION_TAB_FG)
@@ -172,8 +159,8 @@ script_mod! {
             margin: 0,
             icon_walk: Walk {
                 margin: 0,
-                width: (NAVIGATION_TAB_BAR_SIZE / 2.2),
-                height: (NAVIGATION_TAB_BAR_SIZE / 2.2)
+                width: 30,
+                height: 30
             }
             draw_icon +: {
                 color: (COLOR_NAVIGATION_TAB_FG)
@@ -190,12 +177,16 @@ script_mod! {
             align: Align{x: 0.5}
             // Similar to how we do it for the mobile mode view, but now
             // the bar is on the left, so we add left padding and extra width.
+            // Right padding mirrors left so the inner content area stays
+            // horizontally centered within the bar's outer bounds when the
+            // platform reports a non-zero left safe-inset.
             padding: Inset{
                 top: 8.,
                 bottom: (8.0 + mod.widgets.SAFE_INSET_PAD_BOTTOM),
                 left: (mod.widgets.SAFE_INSET_PAD_LEFT),
+                right: (mod.widgets.SAFE_INSET_PAD_LEFT),
             }
-            width: (mod.widgets.NAVIGATION_TAB_BAR_SIZE + mod.widgets.SAFE_INSET_PAD_LEFT),
+            width: (mod.widgets.NAVIGATION_TAB_BAR_SIZE + 2 * mod.widgets.SAFE_INSET_PAD_LEFT),
             height: Fill
 
             draw_bg +: {

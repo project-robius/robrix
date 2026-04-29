@@ -52,7 +52,7 @@ script_mod! {
                     //     color_hover: #0f0,
                     // }
                 }
-                body:"<p>Our Matrix client is under heavy development. Currently, you can access the rooms and spaces that you've joined in other clients.</p>
+                body:"<p>Our Matrix client is under active development, so you may need to use other clients to perform admin actions like creating rooms, kicking/banning users, and starting verification requests.</p>
                 <p><br></p>
                 <p>But don't worry, we're constantly expanding the featureset of Robrix!</p>
                 <p><br></p>

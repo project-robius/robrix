@@ -168,8 +168,8 @@ script_mod! {
         heading_margin: Inset{ top: 1.0, bottom: 0.1 }
         paragraph_margin: Inset{ top: 0.33, bottom: 0.33 }
 
-        inline_code_padding: Inset{top: 3, bottom: 3, left: 4, right: 4 }
-        inline_code_margin: Inset{ left: 3, right: 3, bottom: 2, top: 2 }
+        inline_code_padding: Inset{top: 3, bottom: 3, left: 5, right: 5 }
+        inline_code_margin: Inset{ left: 0, right: 0, bottom: 2, top: 2 }
 
         font := mod.widgets.MatrixHtmlSpan { }
         span := mod.widgets.MatrixHtmlSpan { }

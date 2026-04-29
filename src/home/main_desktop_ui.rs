@@ -17,8 +17,7 @@ script_mod! {
             height: Fill,
             padding: 0,
             spacing: 0,
-            // Align the dock with the RoomFilterInputBar. Not sure why we need this...
-            margin: Inset{left: 1.75}
+            margin: 0
 
             tab_bar +: {
                 CloseableTab := mod.widgets.RobrixTab { closeable: true }

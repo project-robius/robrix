@@ -5,7 +5,7 @@
 //! 1. a narrow vertical strip, when in Desktop (widescreen) mode,
 //! 2. a wide, short horizontal strip, when in Mobile (narrowscreen) mode.
 
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
@@ -30,11 +30,19 @@ script_mod! {
     mod.widgets.SpacesBarEntry = set_type_default() do #(SpacesBarEntry::register_widget(vm)) {
         ..mod.widgets.NavigationBarButton
 
-        width: (NAVIGATION_TAB_BAR_SIZE - 5),
-        height: (NAVIGATION_TAB_BAR_SIZE - 5),
-        flow: Down
-        padding: 5,
-        margin: 3,
+        // Outer height + 2*margin must equal NAVIGATION_TAB_BAR_SIZE; otherwise
+        // the entry overflows the mobile spaces bar (height = NAVIGATION_TAB_BAR_SIZE)
+        // and the bottom of the rounded bg gets clipped asymmetrically.
+        width: (NAVIGATION_TAB_BAR_SIZE - 4),
+        height: (NAVIGATION_TAB_BAR_SIZE - 4),
+        // Flow.Overlay (rather than Down) so that the invisible `space_name` Label
+        // doesn't sit in the avatar's flow column and shift its centering.
+        flow: Overlay
+        // Padding is integer (4) and the bar size is even (54), so every
+        // dimension downstream is integer-aligned:
+        // entry-content = 50 - 8 = 42, avatar = 40, margin around avatar = 1.
+        padding: 4,
+        margin: 2,
         align: Align{x: 0.5, y: 0.5}
 
         avatar := Avatar {
@@ -57,6 +65,7 @@ script_mod! {
             height: 0,
             flow: Flow.Right{wrap: false}, // do not wrap
             padding: 0,
+            margin: 0,
             align: Align{x: 0.5}
             max_lines: 1
             text_overflow: Ellipsis
@@ -68,22 +77,34 @@ script_mod! {
     }
 
     mod.widgets.SpacesStatusLabel = View {
-        width: (NAVIGATION_TAB_BAR_SIZE),
-        height: (NAVIGATION_TAB_BAR_SIZE),
+        // Width can grow up to two entries' worth of space (so longer status
+        // text doesn't get cramped) but stays within one entry on Desktop
+        // since the bar is only NAVIGATION_TAB_BAR_SIZE wide there.
+        width: Fill { max: (NAVIGATION_TAB_BAR_SIZE * 2) },
+        // Height is Fit so the inner Label can wrap to as many lines as it
+        // needs on Desktop (where the narrow bar forces wrapping). For Mobile,
+        // cross-axis centering inside the bar is handled by the SpacesList's
+        // `align: Align{y: 0.5}` — see PortalList layout.align inheritance.
+        height: Fit
+        margin: 2,
         align: Align{ x: 0.5, y: 0.5 }
-        margin: Inset{top: 9, left: 0, bottom: 5}
-        padding: 4.0,
+        padding: 4,
 
+        // The Label is `height: Fit` (not Fill) so the parent View's
+        // `align: y: 0.5` is what vertically centers it. DrawText only
+        // honors `align.x` for its own layout — `align.y` on a Label is
+        // ignored, so a Fill-sized Label can never vertically center its
+        // own text.
         label := Label {
             padding: 0
             margin: 0
             width: Fill,
-            height: Fill
+            height: Fit,
             flow: Flow.Right{wrap: true},
-            align: Align{ x: 0.5, y: 0.5 }
+            align: Align{ x: 0.5 }
             draw_text +: {
                 color: (MESSAGE_TEXT_COLOR),
-                text_style: REGULAR_TEXT {font_size: 9}
+                text_style: REGULAR_TEXT {font_size: 8, line_spacing: 1.0}
             }
         }
     }
@@ -92,6 +113,13 @@ script_mod! {
         height: Fill,
         width: Fill,
         spacing: 0.0
+        // Center items on the cross axis so a Fit-sized status label gets
+        // vertically centered in Mobile (flow Right) and horizontally
+        // centered in Desktop (flow Down). Items whose cross-axis size
+        // matches the bar (entries) have no slack so this is a no-op for
+        // them. Requires PortalList to inherit `layout.align` for its inner
+        // item turtle (see makepad/widgets/src/portal_list.rs).
+        align: Align{x: 0.5, y: 0.5}
 
         auto_tail: false,
         max_pull_down: 0.0,
@@ -428,7 +456,7 @@ impl Widget for SpacesBar {
                         item.label(cx, ids!(label)).set_text(
                             cx,
                             if self.is_filtered {
-                                "Found no\nmatching spaces."
+                                "No spaces\nmatch."
                             } else {
                                 "Found no\njoined spaces."
                             }
@@ -481,12 +509,15 @@ impl Widget for SpacesBar {
                     }
                     else if portal_list_index == len {
                         let item = list.item(cx, portal_list_index, id!(StatusLabel));
-                        let descriptor = if self.is_filtered { "matching" } else { "joined" }; 
-                        let text = match len {
-                            0      => format!("Found no\n{descriptor} spaces."),
-                            1      => format!("Found 1\n{descriptor} space."),
-                            2..100 => format!("Found {len}\n{descriptor} spaces."),
-                            100..  => format!("Found 99+\n{descriptor} spaces."),
+                        let text: Cow<'static, str> = if self.is_filtered {
+                            let total = self.all_joined_spaces.len();
+                            format!("{len} of {total} spaces").into()
+                        } else {
+                            match len {
+                                0   => "Found no joined spaces.".into(),
+                                1   => "Found 1 joined space.".into(),
+                                2.. => format!("Found {len} joined spaces.").into(),
+                            }
                         };
                         item.label(cx, ids!(label)).set_text(cx, &text);
                         item
