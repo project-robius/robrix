@@ -177,9 +177,8 @@ script_mod! {
             align: Align{x: 0.5}
             // Similar to how we do it for the mobile mode view, but now
             // the bar is on the left, so we add left padding and extra width.
-            // Right padding mirrors left so the inner content area stays
-            // horizontally centered within the bar's outer bounds when the
-            // platform reports a non-zero left safe-inset.
+            // Right padding must equal the left padding so that the actual content
+            // is horizontally centered within the spaces bar.
             padding: Inset{
                 top: 8.,
                 bottom: (8.0 + mod.widgets.SAFE_INSET_PAD_BOTTOM),

@@ -30,17 +30,12 @@ script_mod! {
     mod.widgets.SpacesBarEntry = set_type_default() do #(SpacesBarEntry::register_widget(vm)) {
         ..mod.widgets.NavigationBarButton
 
-        // Outer height + 2*margin must equal NAVIGATION_TAB_BAR_SIZE; otherwise
-        // the entry overflows the mobile spaces bar (height = NAVIGATION_TAB_BAR_SIZE)
-        // and the bottom of the rounded bg gets clipped asymmetrically.
+        // `height + (2 * margin)`` must equal NAVIGATION_TAB_BAR_SIZE to avoid clipping
         width: (NAVIGATION_TAB_BAR_SIZE - 4),
         height: (NAVIGATION_TAB_BAR_SIZE - 4),
         // Flow.Overlay (rather than Down) so that the invisible `space_name` Label
         // doesn't sit in the avatar's flow column and shift its centering.
         flow: Overlay
-        // Padding is integer (4) and the bar size is even (54), so every
-        // dimension downstream is integer-aligned:
-        // entry-content = 50 - 8 = 42, avatar = 40, margin around avatar = 1.
         padding: 4,
         margin: 2,
         align: Align{x: 0.5, y: 0.5}
@@ -77,24 +72,15 @@ script_mod! {
     }
 
     mod.widgets.SpacesStatusLabel = View {
-        // Width can grow up to two entries' worth of space (so longer status
-        // text doesn't get cramped) but stays within one entry on Desktop
-        // since the bar is only NAVIGATION_TAB_BAR_SIZE wide there.
+        // We allow the status label to take up 2 entries' worth of horizontal space
+        // (only relevant in mobile view mode). 
         width: Fill { max: (NAVIGATION_TAB_BAR_SIZE * 2) },
-        // Height is Fit so the inner Label can wrap to as many lines as it
-        // needs on Desktop (where the narrow bar forces wrapping). For Mobile,
-        // cross-axis centering inside the bar is handled by the SpacesList's
-        // `align: Align{y: 0.5}` — see PortalList layout.align inheritance.
+        // Non-fixed height: let the label grow down (important on Desktop mode).
         height: Fit
         margin: 2,
         align: Align{ x: 0.5, y: 0.5 }
         padding: 4,
 
-        // The Label is `height: Fit` (not Fill) so the parent View's
-        // `align: y: 0.5` is what vertically centers it. DrawText only
-        // honors `align.x` for its own layout — `align.y` on a Label is
-        // ignored, so a Fill-sized Label can never vertically center its
-        // own text.
         label := Label {
             padding: 0
             margin: 0
@@ -112,13 +98,7 @@ script_mod! {
     mod.widgets.SpacesList = PortalList {
         height: Fill,
         width: Fill,
-        spacing: 0.0
-        // Center items on the cross axis so a Fit-sized status label gets
-        // vertically centered in Mobile (flow Right) and horizontally
-        // centered in Desktop (flow Down). Items whose cross-axis size
-        // matches the bar (entries) have no slack so this is a no-op for
-        // them. Requires PortalList to inherit `layout.align` for its inner
-        // item turtle (see makepad/widgets/src/portal_list.rs).
+        spacing: 0
         align: Align{x: 0.5, y: 0.5}
 
         auto_tail: false,

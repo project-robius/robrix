@@ -170,15 +170,9 @@ script_mod! {
     mod.widgets.COLOR_LINK_HOVER = #21B070
 
 
-    // Even on purpose: an odd bar size forces odd entry/button widths, which in
-    // turn requires odd-sized avatars for integer centering — but the Avatar's
-    // circle SDF (avatar.rs) computes radius = size / 2, so an odd avatar puts
-    // the circle's center on a half-pixel and renders with subtle (~1px) edge
-    // asymmetry. Even bar size lets every dimension downstream stay even.
+    // Use an even value for this, not odd, such that it can be divided in half,
+    // which is needed when calculating the value of other widgets that scale with this.
     mod.widgets.NAVIGATION_TAB_BAR_SIZE = 54
-    // Even integer so the Avatar's circle radius (size/2 = 20) lands on a whole
-    // pixel. With entry padding 4 and entry content 42, the avatar's centering
-    // margin is also integer ((42-40)/2 = 1).
     mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE = 40
     mod.widgets.NAVIGATION_TAB_BAR_AVATAR_FONT_SIZE = (mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE * 0.4)
 
