@@ -382,8 +382,8 @@ impl Widget for ProfileIcon {
                     .verification_badge(cx, ids!(verification_badge))
                     .tooltip_content();
                 let text = self.own_profile.as_ref().map_or_else(
-                    || format!("Not logged in.\n\n{}", verification_str),
-                    |p| format!("Logged in as \"{}\".\n\n{}", p.displayable_name(), verification_str)
+                    || String::from("Not logged in (or disconnected).\n\nClick/tap to access all settings."),
+                    |p| format!("Logged in {verification_str}as \"{}\".\n\nClick/tap to access all settings.", p.displayable_name()),
                 );
                 let mut options = CalloutTooltipOptions {
                     position: if effective_is_desktop(cx) { TooltipPosition::Right } else { TooltipPosition::Top },
