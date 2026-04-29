@@ -18,7 +18,7 @@ script_mod! {
 
         width: Fill, height: Fill,
         flow: Down,
-        padding: Inset{top: 5, left: 15, right: 15, bottom: 0},
+        padding: Inset{top: 5, left: 15, right: 15, bottom: 20},
 
         title := TitleLabel {
             text: "Add/Explore Rooms and Spaces"

@@ -14,9 +14,13 @@ script_mod! {
     use mod.widgets.*
 
     mod.widgets.VERIFICATION_YES = crate_resource("self://resources/icons/verification_yes.svg")
+    mod.widgets.VERIFICATION_YES_BG = crate_resource("self://resources/icons/verification_yes_bg.svg")
 
     mod.widgets.VERIFICATION_NO = crate_resource("self://resources/icons/verification_no.svg")
+    mod.widgets.VERIFICATION_NO_BG = crate_resource("self://resources/icons/verification_no_bg.svg")
+
     mod.widgets.VERIFICATION_UNK = crate_resource("self://resources/icons/verification_unk.svg")
+    mod.widgets.VERIFICATION_UNK_BG = crate_resource("self://resources/icons/verification_unk_bg.svg")
 
     mod.widgets.VerificationIcon = Icon {
         icon_walk: Walk {
@@ -27,10 +31,23 @@ script_mod! {
         margin: Inset{left: 0, right: 3, top: 2, bottom: 0}
     }
 
+    // Each verification icon is a colored shield with the inner glyph carved
+    // out (transparent). Stacked behind it is a white-tinted shield-only
+    // version of the same SVG so the avatar doesn't show through the carved
+    // glyph area — the white shows through instead.
     mod.widgets.IconYes = View {
 
         visible: false
         width: Fit, height: Fit
+        flow: Overlay
+        mod.widgets.VerificationIcon {
+            draw_icon +: {
+                svg: (mod.widgets.VERIFICATION_YES_BG),
+                get_color: fn() -> vec4 {
+                    return #xFFFFFFFF;
+                }
+            }
+        }
         mod.widgets.VerificationIcon {
             draw_icon +: {
                 svg: (mod.widgets.VERIFICATION_YES),
@@ -45,6 +62,15 @@ script_mod! {
 
         visible: false
         width: Fit, height: Fit
+        flow: Overlay
+        mod.widgets.VerificationIcon {
+            draw_icon +: {
+                svg: (mod.widgets.VERIFICATION_NO_BG),
+                get_color: fn() -> vec4 {
+                    return #xFFFFFFFF;
+                }
+            }
+        }
         mod.widgets.VerificationIcon {
             draw_icon +: {
                 svg: (mod.widgets.VERIFICATION_NO),
@@ -59,6 +85,15 @@ script_mod! {
 
         visible: false
         width: Fit, height: Fit
+        flow: Overlay
+        mod.widgets.VerificationIcon {
+            draw_icon +: {
+                svg: (mod.widgets.VERIFICATION_UNK_BG),
+                get_color: fn() -> vec4 {
+                    return #xFFFFFFFF;
+                }
+            }
+        }
         mod.widgets.VerificationIcon {
             draw_icon +: {
                 svg: (mod.widgets.VERIFICATION_UNK),

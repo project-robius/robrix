@@ -5,7 +5,7 @@
 //! 1. a narrow vertical strip, when in Desktop (widescreen) mode,
 //! 2. a wide, short horizontal strip, when in Mobile (narrowscreen) mode.
 
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
@@ -30,11 +30,14 @@ script_mod! {
     mod.widgets.SpacesBarEntry = set_type_default() do #(SpacesBarEntry::register_widget(vm)) {
         ..mod.widgets.NavigationBarButton
 
-        width: (NAVIGATION_TAB_BAR_SIZE - 5),
-        height: (NAVIGATION_TAB_BAR_SIZE - 5),
-        flow: Down
-        padding: 5,
-        margin: 3,
+        // `height + (2 * margin)`` must equal NAVIGATION_TAB_BAR_SIZE to avoid clipping
+        width: (NAVIGATION_TAB_BAR_SIZE - 4),
+        height: (NAVIGATION_TAB_BAR_SIZE - 4),
+        // Flow.Overlay (rather than Down) so that the invisible `space_name` Label
+        // doesn't sit in the avatar's flow column and shift its centering.
+        flow: Overlay
+        padding: 4,
+        margin: 2,
         align: Align{x: 0.5, y: 0.5}
 
         avatar := Avatar {
@@ -57,6 +60,7 @@ script_mod! {
             height: 0,
             flow: Flow.Right{wrap: false}, // do not wrap
             padding: 0,
+            margin: 0,
             align: Align{x: 0.5}
             max_lines: 1
             text_overflow: Ellipsis
@@ -68,22 +72,25 @@ script_mod! {
     }
 
     mod.widgets.SpacesStatusLabel = View {
-        width: (NAVIGATION_TAB_BAR_SIZE),
-        height: (NAVIGATION_TAB_BAR_SIZE),
+        // We allow the status label to take up 2 entries' worth of horizontal space
+        // (only relevant in mobile view mode). 
+        width: Fill { max: (NAVIGATION_TAB_BAR_SIZE * 2) },
+        // Non-fixed height: let the label grow down (important on Desktop mode).
+        height: Fit
+        margin: 2,
         align: Align{ x: 0.5, y: 0.5 }
-        margin: Inset{top: 9, left: 0, bottom: 5}
-        padding: 4.0,
+        padding: 4,
 
         label := Label {
             padding: 0
             margin: 0
             width: Fill,
-            height: Fill
+            height: Fit,
             flow: Flow.Right{wrap: true},
-            align: Align{ x: 0.5, y: 0.5 }
+            align: Align{ x: 0.5 }
             draw_text +: {
                 color: (MESSAGE_TEXT_COLOR),
-                text_style: REGULAR_TEXT {font_size: 9}
+                text_style: REGULAR_TEXT {font_size: 8, line_spacing: 1.0}
             }
         }
     }
@@ -91,7 +98,8 @@ script_mod! {
     mod.widgets.SpacesList = PortalList {
         height: Fill,
         width: Fill,
-        spacing: 0.0
+        spacing: 0
+        align: Align{x: 0.5, y: 0.5}
 
         auto_tail: false,
         max_pull_down: 0.0,
@@ -428,7 +436,7 @@ impl Widget for SpacesBar {
                         item.label(cx, ids!(label)).set_text(
                             cx,
                             if self.is_filtered {
-                                "Found no\nmatching spaces."
+                                "No spaces\nmatch."
                             } else {
                                 "Found no\njoined spaces."
                             }
@@ -481,12 +489,15 @@ impl Widget for SpacesBar {
                     }
                     else if portal_list_index == len {
                         let item = list.item(cx, portal_list_index, id!(StatusLabel));
-                        let descriptor = if self.is_filtered { "matching" } else { "joined" }; 
-                        let text = match len {
-                            0      => format!("Found no\n{descriptor} spaces."),
-                            1      => format!("Found 1\n{descriptor} space."),
-                            2..100 => format!("Found {len}\n{descriptor} spaces."),
-                            100..  => format!("Found 99+\n{descriptor} spaces."),
+                        let text: Cow<'static, str> = if self.is_filtered {
+                            let total = self.all_joined_spaces.len();
+                            format!("{len} of {total} spaces").into()
+                        } else {
+                            match len {
+                                0   => "Found no joined spaces.".into(),
+                                1   => "Found 1 joined space.".into(),
+                                2.. => format!("Found {len} joined spaces.").into(),
+                            }
                         };
                         item.label(cx, ids!(label)).set_text(cx, &text);
                         item
