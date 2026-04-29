@@ -47,6 +47,8 @@ pub mod i18n;
 
 /// Login screen
 pub mod login;
+/// Account registration flow
+pub mod register;
 /// Logout confirmation and state management
 pub mod logout;
 /// Core UI content: the main home screen (rooms list), room screen.

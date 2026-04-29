@@ -3,7 +3,7 @@ use std::ops::Not;
 use makepad_widgets::*;
 use url::Url;
 
-use crate::{app::AppState, i18n::{AppLanguage, tr_fmt, tr_key}, sliding_sync::{submit_async_request, AccountSwitchAction, LoginByPassword, LoginRequest, MatrixRequest, RegisterAccount}};
+use crate::{app::AppState, i18n::{AppLanguage, tr_fmt, tr_key}, sliding_sync::{submit_async_request, AccountSwitchAction, LoginByPassword, LoginRequest, MatrixRequest}};
 
 use super::login_status_modal::{LoginStatusModalAction, LoginStatusModalWidgetExt};
 
@@ -162,19 +162,6 @@ script_mod! {
                         }
                     }
 
-                    confirm_password_wrapper := View {
-                        width: 275, height: Fit,
-                        visible: false,
-
-                        confirm_password_input := RobrixTextInput {
-                            width: 275, height: Fit
-                            flow: Right, // do not wrap
-                            padding: 10,
-                            empty_text: "Confirm password"
-                            is_password: true,
-                        }
-                    }
-
                     View {
                         width: 275, height: Fit,
                         flow: Down,
@@ -222,61 +209,54 @@ script_mod! {
                         text: "Login"
                     }
 
-                    login_only_view := View {
-                        width: Fit, height: Fit,
-                        flow: Down,
-                        align: Align{x: 0.5, y: 0.5}
-                        spacing: 15.0
+                    LineH {
+                        width: 275
+                        margin: Inset{bottom: -5}
+                        draw_bg.color: #C8C8C8
+                    }
 
-                        LineH {
-                            width: 275
-                            margin: Inset{bottom: -5}
-                            draw_bg.color: #C8C8C8
+                    sso_prompt_label := Label {
+                        width: Fit, height: Fit
+                        padding: 0,
+                        draw_text +: {
+                            color: (COLOR_TEXT)
+                            text_style: TITLE_TEXT {font_size: 11.0}
                         }
+                        text: "Or, login with an SSO provider:"
+                    }
 
-                        sso_prompt_label := Label {
-                            width: Fit, height: Fit
-                            padding: 0,
-                            draw_text +: {
-                                color: (COLOR_TEXT)
-                                text_style: TITLE_TEXT {font_size: 11.0}
+                    sso_view := View {
+                        width: 275, height: Fit,
+                        margin: Inset{left: 30, right: 5} // make the inner view 240 pixels wide
+                        flow: Flow.Right{wrap: true},
+                        apple_button := mod.widgets.SsoButton {
+                            image := mod.widgets.SsoImage {
+                                src: crate_resource("self://resources/img/apple.png")
                             }
-                            text: "Or, login with an SSO provider:"
                         }
-
-                        sso_view := View {
-                            width: 275, height: Fit,
-                            margin: Inset{left: 30, right: 5} // make the inner view 240 pixels wide
-                            flow: Flow.Right{wrap: true},
-                            apple_button := mod.widgets.SsoButton {
-                                image := mod.widgets.SsoImage {
-                                    src: crate_resource("self://resources/img/apple.png")
-                                }
+                        facebook_button := mod.widgets.SsoButton {
+                            image := mod.widgets.SsoImage {
+                                src: crate_resource("self://resources/img/facebook.png")
                             }
-                            facebook_button := mod.widgets.SsoButton {
-                                image := mod.widgets.SsoImage {
-                                    src: crate_resource("self://resources/img/facebook.png")
-                                }
+                        }
+                        github_button := mod.widgets.SsoButton {
+                            image := mod.widgets.SsoImage {
+                                src: crate_resource("self://resources/img/github.png")
                             }
-                            github_button := mod.widgets.SsoButton {
-                                image := mod.widgets.SsoImage {
-                                    src: crate_resource("self://resources/img/github.png")
-                                }
+                        }
+                        gitlab_button := mod.widgets.SsoButton {
+                            image := mod.widgets.SsoImage {
+                                src: crate_resource("self://resources/img/gitlab.png")
                             }
-                            gitlab_button := mod.widgets.SsoButton {
-                                image := mod.widgets.SsoImage {
-                                    src: crate_resource("self://resources/img/gitlab.png")
-                                }
+                        }
+                        google_button := mod.widgets.SsoButton {
+                            image := mod.widgets.SsoImage {
+                                src: crate_resource("self://resources/img/google.png")
                             }
-                            google_button := mod.widgets.SsoButton {
-                                image := mod.widgets.SsoImage {
-                                    src: crate_resource("self://resources/img/google.png")
-                                }
-                            }
-                            twitter_button := mod.widgets.SsoButton {
-                                image := mod.widgets.SsoImage {
-                                    src: crate_resource("self://resources/img/x.png")
-                                }
+                        }
+                        twitter_button := mod.widgets.SsoButton {
+                            image := mod.widgets.SsoImage {
+                                src: crate_resource("self://resources/img/x.png")
                             }
                         }
                     }
@@ -583,8 +563,6 @@ script_mod! {
 pub struct LoginScreen {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
-    /// Whether the screen is showing the in-app sign-up flow.
-    #[rust] signup_mode: bool,
     /// Whether the password field is currently showing plaintext.
     #[rust] password_visible: bool,
     /// Boolean to indicate if the SSO login process is still in flight
@@ -637,45 +615,12 @@ impl LoginScreen {
         self.set_sso_pending_state(cx, false);
     }
 
-    fn sync_mode_texts(&mut self, cx: &mut Cx) {
-        self.view.label(cx, ids!(title)).set_text(cx,
-            if self.signup_mode {
-                tr_key(self.app_language, "login.title.create_account")
-            } else {
-                tr_key(self.app_language, "login.title.login_to_robrix")
-            }
-        );
-        self.view.button(cx, ids!(login_button)).set_text(cx,
-            if self.signup_mode {
-                tr_key(self.app_language, "login.button.create_account")
-            } else {
-                tr_key(self.app_language, "login.button.login")
-            }
-        );
-        self.view.label(cx, ids!(account_prompt_label)).set_text(cx,
-            if self.signup_mode {
-                tr_key(self.app_language, "login.account_prompt.already_have")
-            } else {
-                tr_key(self.app_language, "login.account_prompt.no_account")
-            }
-        );
-        self.view.button(cx, ids!(mode_toggle_button)).set_text(cx,
-            if self.signup_mode {
-                tr_key(self.app_language, "login.mode_toggle.back_to_login")
-            } else {
-                tr_key(self.app_language, "login.mode_toggle.sign_up_here")
-            }
-        );
-    }
-
     fn set_app_language(&mut self, cx: &mut Cx, app_language: AppLanguage) {
         self.app_language = app_language;
         self.view.text_input(cx, ids!(user_id_input))
             .set_empty_text(cx, tr_key(self.app_language, "login.input.user_id").to_string());
         self.view.text_input(cx, ids!(password_input))
             .set_empty_text(cx, tr_key(self.app_language, "login.input.password").to_string());
-        self.view.text_input(cx, ids!(confirm_password_input))
-            .set_empty_text(cx, tr_key(self.app_language, "login.input.confirm_password").to_string());
         self.view.text_input(cx, ids!(homeserver_input))
             .set_empty_text(cx, tr_key(self.app_language, "login.input.homeserver").to_string());
         self.view.text_input(cx, ids!(proxy_address_input))
@@ -707,7 +652,12 @@ impl LoginScreen {
         let login_status_modal_inner = self.view.login_status_modal(cx, ids!(login_status_modal_inner));
         login_status_modal_inner.set_title(cx, tr_key(self.app_language, "login_status_modal.title"));
         login_status_modal_inner.button_ref(cx).set_text(cx, tr_key(self.app_language, "login_status_modal.button.cancel"));
-        self.sync_mode_texts(cx);
+        self.view.label(cx, ids!(title))
+            .set_text(cx, tr_key(self.app_language, "login.title.login_to_robrix"));
+        self.view.button(cx, ids!(login_button))
+            .set_text(cx, tr_key(self.app_language, "login.button.login"));
+        self.view.label(cx, ids!(account_prompt_label))
+            .set_text(cx, tr_key(self.app_language, "login.account_prompt.no_account"));
     }
 
     fn set_use_proxy_enabled(&mut self, cx: &mut Cx, enabled: bool) {
@@ -825,18 +775,6 @@ impl LoginScreen {
         Ok(Some(proxy_url))
     }
 
-    fn set_signup_mode(&mut self, cx: &mut Cx, signup_mode: bool) {
-        self.signup_mode = signup_mode;
-        self.view.view(cx, ids!(confirm_password_wrapper)).set_visible(cx, signup_mode);
-        self.view.view(cx, ids!(login_only_view)).set_visible(cx, !signup_mode);
-        self.sync_mode_texts(cx);
-
-        if !signup_mode {
-            self.view.text_input(cx, ids!(confirm_password_input)).set_text(cx, "");
-        }
-
-        self.redraw(cx);
-    }
 }
 
 impl ScriptHook for LoginScreen {
@@ -883,7 +821,6 @@ impl WidgetMatchEvent for LoginScreen {
         let cancel_button = self.view.button(cx, ids!(cancel_button));
         let user_id_input = self.view.text_input(cx, ids!(user_id_input));
         let password_input = self.view.text_input(cx, ids!(password_input));
-        let confirm_password_input = self.view.text_input(cx, ids!(confirm_password_input));
         let homeserver_input = self.view.text_input(cx, ids!(homeserver_input));
 
         let login_status_modal = self.view.modal(cx, ids!(login_status_modal));
@@ -964,18 +901,16 @@ impl WidgetMatchEvent for LoginScreen {
         }
 
         if mode_toggle_button.clicked(actions) {
-            self.set_signup_mode(cx, !self.signup_mode);
+            Cx::post_action(LoginAction::NavigateToRegister);
         }
 
         if login_button.clicked(actions)
             || user_id_input.returned(actions).is_some()
             || password_input.returned(actions).is_some()
-            || (self.signup_mode && confirm_password_input.returned(actions).is_some())
             || homeserver_input.returned(actions).is_some()
         {
             let user_id = user_id_input.text().trim().to_owned();
             let password = password_input.text();
-            let confirm_password = confirm_password_input.text();
             let homeserver = homeserver_input.text().trim().to_owned();
             if user_id.is_empty() {
                 login_status_modal_inner.set_title(cx, tr_key(self.app_language, "login.status.missing_user_id.title"));
@@ -984,10 +919,6 @@ impl WidgetMatchEvent for LoginScreen {
             } else if password.is_empty() {
                 login_status_modal_inner.set_title(cx, tr_key(self.app_language, "login.status.missing_password.title"));
                 login_status_modal_inner.set_status(cx, tr_key(self.app_language, "login.status.missing_password.body"));
-                login_status_modal_inner.button_ref(cx).set_text(cx, tr_key(self.app_language, "login.status.okay"));
-            } else if self.signup_mode && password != confirm_password {
-                login_status_modal_inner.set_title(cx, tr_key(self.app_language, "login.status.password_mismatch.title"));
-                login_status_modal_inner.set_status(cx, tr_key(self.app_language, "login.status.password_mismatch.body"));
                 login_status_modal_inner.button_ref(cx).set_text(cx, tr_key(self.app_language, "login.status.okay"));
             } else {
                 let proxy = match self.build_proxy_url_from_form(cx) {
@@ -1008,36 +939,19 @@ impl WidgetMatchEvent for LoginScreen {
                     warning!("Failed to persist proxy configuration from login screen: {e}");
                 }
                 self.last_failure_message_shown = None;
-                login_status_modal_inner.set_title(cx, if self.signup_mode {
-                    tr_key(self.app_language, "login.status.creating_account.title")
-                } else {
-                    tr_key(self.app_language, "login.status.logging_in.title")
-                });
+                login_status_modal_inner.set_title(cx, tr_key(self.app_language, "login.status.logging_in.title"));
                 login_status_modal_inner.set_status(
                     cx,
-                    if self.signup_mode {
-                        tr_key(self.app_language, "login.status.creating_account.body")
-                    } else {
-                        tr_key(self.app_language, "login.status.logging_in.body")
-                    },
+                    tr_key(self.app_language, "login.status.logging_in.body"),
                 );
                 login_status_modal_inner.button_ref(cx).set_text(cx, tr_key(self.app_language, "login.status.cancel"));
-                submit_async_request(MatrixRequest::Login(if self.signup_mode {
-                    LoginRequest::Register(RegisterAccount {
-                        user_id,
-                        password,
-                        homeserver: homeserver.is_empty().not().then_some(homeserver),
-                        proxy: proxy.clone(),
-                    })
-                } else {
-                    LoginRequest::LoginByPassword(LoginByPassword {
-                        user_id,
-                        password,
-                        homeserver: homeserver.is_empty().not().then_some(homeserver),
-                        proxy: proxy.clone(),
-                        is_add_account: self.adding_account,
-                    })
-                }));
+                submit_async_request(MatrixRequest::Login(LoginRequest::LoginByPassword(LoginByPassword {
+                    user_id,
+                    password,
+                    homeserver: homeserver.is_empty().not().then_some(homeserver),
+                    proxy: proxy.clone(),
+                    is_add_account: self.adding_account,
+                })));
             }
             login_status_modal.open(cx);
             self.redraw(cx);
@@ -1090,11 +1004,9 @@ impl WidgetMatchEvent for LoginScreen {
                     // The main `App` component handles showing the main screen
                     // and hiding the login screen & login status modal.
                     self.last_failure_message_shown = None;
-                    self.set_signup_mode(cx, false);
                     self.adding_account = false;
                     user_id_input.set_text(cx, "");
                     password_input.set_text(cx, "");
-                    confirm_password_input.set_text(cx, "");
                     homeserver_input.set_text(cx, "");
                     // Reset title and buttons in case we were in add-account mode
                     self.view.label(cx, ids!(title)).set_text(cx, tr_key(self.app_language, "login.title.login_to_robrix"));
@@ -1108,11 +1020,7 @@ impl WidgetMatchEvent for LoginScreen {
                         continue;
                     }
                     self.last_failure_message_shown = Some(error.clone());
-                    login_status_modal_inner.set_title(cx, if self.signup_mode {
-                        tr_key(self.app_language, "login.status.account_creation_failed")
-                    } else {
-                        tr_key(self.app_language, "login.status.login_failed")
-                    });
+                    login_status_modal_inner.set_title(cx, tr_key(self.app_language, "login.status.login_failed"));
                     login_status_modal_inner.set_status(cx, error);
                     let login_status_modal_button = login_status_modal_inner.button_ref(cx);
                     login_status_modal_button.set_text(cx, tr_key(self.app_language, "login.status.okay"));
@@ -1257,6 +1165,9 @@ pub enum LoginAction {
     /// Request to show the login screen in "add account" mode.
     /// This is used when the user wants to add another Matrix account.
     ShowAddAccountScreen,
+    /// User clicked "Sign up here"; the main App should hide the
+    /// login screen and show RegisterScreen.
+    NavigateToRegister,
     /// Request to cancel adding an account and return to the previous screen.
     CancelAddAccount,
     #[default]

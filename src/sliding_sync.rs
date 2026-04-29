@@ -696,6 +696,13 @@ impl std::fmt::Display for TimelineKind {
 pub enum MatrixRequest {
     /// Request from the login screen to log in with the given credentials.
     Login(LoginRequest),
+    /// Probe a homeserver's registration capabilities.
+    /// Sent from RegisterScreen's Next button; result arrives via
+    /// `RegisterAction::CapabilitiesDiscovered` / `DiscoveryFailed`.
+    DiscoverHomeserverCapabilities {
+        /// Already-normalized homeserver URL (has scheme, no trailing slash).
+        url: String,
+    },
     /// Request to switch to a different logged-in account.
     SwitchAccount {
         user_id: OwnedUserId,
@@ -1606,6 +1613,19 @@ async fn matrix_worker_task(
                         )));
                     }
                 }
+            }
+
+            MatrixRequest::DiscoverHomeserverCapabilities { url } => {
+                tokio::spawn(async move {
+                    match discover_homeserver_capabilities(&url).await {
+                        Ok(caps) => {
+                            Cx::post_action(crate::register::RegisterAction::CapabilitiesDiscovered(caps));
+                        }
+                        Err(e) => {
+                            Cx::post_action(crate::register::RegisterAction::DiscoveryFailed(e.to_string()));
+                        }
+                    }
+                });
             }
 
             MatrixRequest::SwitchAccount { user_id } => {
@@ -6595,4 +6615,148 @@ pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
         }
         Err(_) => Err(anyhow!("Timed out waiting for UI-side app state cleanup")),
     }
+}
+
+/// Probe a homeserver's registration capabilities.
+///
+/// Fetches in order:
+/// 1. GET `.well-known/matrix/client` — discover base_url and MAS issuer (lenient)
+/// 2. GET `/_matrix/client/versions` — liveness check (fatal)
+/// 3. GET `/_matrix/client/v3/login` — enumerate SSO providers (non-fatal)
+/// 4. POST `/_matrix/client/v3/register` empty body — harvest UIAA flows (fatal)
+///
+/// Note: `matrix_sdk::reqwest::Response` does not expose `.json()`, so all
+/// response bodies are read as text and parsed via `serde_json::from_str`.
+async fn discover_homeserver_capabilities(
+    raw_url: &str,
+) -> anyhow::Result<crate::register::HsCapabilities> {
+    use crate::register::{HsCapabilities, IdentityProviderSummary};
+    use serde_json::Value;
+
+    let http = matrix_sdk::reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()?;
+
+    // Helper: read response text and parse as JSON Value, returning Null on any failure.
+    async fn body_json(resp: matrix_sdk::reqwest::Response) -> Value {
+        match resp.text().await {
+            Ok(text) => serde_json::from_str::<Value>(&text).unwrap_or(Value::Null),
+            Err(_) => Value::Null,
+        }
+    }
+
+    // Step 1: .well-known (lenient — default base_url = raw_url on failure).
+    let wk_url = format!("{raw_url}/.well-known/matrix/client");
+    let (base_url, is_mas, mas_signup_url) = match http.get(&wk_url).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            let body = body_json(resp).await;
+            let base = body
+                .get("m.homeserver")
+                .and_then(|m: &Value| m.get("base_url"))
+                .and_then(|v: &Value| v.as_str())
+                .unwrap_or(raw_url)
+                .trim_end_matches('/')
+                .to_string();
+            // Detect MAS and derive the signup URL in one pass. Prefer stable key.
+            // MAS exposes the self-registration form at `<issuer>/register` when
+            // open registration is enabled; closed deployments return a polite
+            // "registration not available" page at the same path. The MSC2965
+            // `account` field is for post-login account management (requires a
+            // session) — opening it while unauthenticated loops between
+            // /account/ and /login, so we do NOT use it here.
+            let (mas, mas_signup_url) = ["m.authentication", "org.matrix.msc2965.authentication"]
+                .iter()
+                .find_map(|key: &&str| {
+                    let issuer = body.get(*key)?.get("issuer").and_then(|v: &Value| v.as_str())?;
+                    let signup = format!("{}/register", issuer.trim_end_matches('/'));
+                    Some((true, Some(signup)))
+                })
+                .unwrap_or((false, None));
+            (base, mas, mas_signup_url)
+        }
+        _ => (raw_url.trim_end_matches('/').to_string(), false, None),
+    };
+
+    // Step 2: versions — liveness (fatal if unreachable).
+    let versions_url = format!("{base_url}/_matrix/client/versions");
+    http.get(&versions_url)
+        .send()
+        .await?
+        .error_for_status()
+        .map_err(|e| anyhow::anyhow!("homeserver unreachable: {e}"))?;
+
+    // Step 3: /v3/login — SSO providers (non-fatal on failure).
+    let login_url = format!("{base_url}/_matrix/client/v3/login");
+    let sso_providers = match http.get(&login_url).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            let body = body_json(resp).await;
+            body.get("flows")
+                .and_then(|f: &Value| f.as_array())
+                .map(|flows| {
+                    flows
+                        .iter()
+                        .filter(|f: &&Value| {
+                            f.get("type").and_then(|t: &Value| t.as_str()) == Some("m.login.sso")
+                        })
+                        .flat_map(|f: &Value| {
+                            f.get("identity_providers")
+                                .and_then(|ip: &Value| ip.as_array())
+                                .cloned()
+                                .unwrap_or_default()
+                        })
+                        .filter_map(|p: Value| {
+                            Some(IdentityProviderSummary {
+                                id: p.get("id")?.as_str()?.to_string(),
+                                name: p
+                                    .get("name")
+                                    .and_then(|n: &Value| n.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                icon_url: p
+                                    .get("icon")
+                                    .and_then(|v: &Value| v.as_str())
+                                    .map(String::from),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        }
+        _ => Vec::new(),
+    };
+
+    // Step 4: POST /register empty body — UIAA flow probe.
+    let register_url = format!("{base_url}/_matrix/client/v3/register");
+    let reg_resp = http
+        .post(&register_url)
+        .header("Content-Type", "application/json")
+        .body("{}")
+        .send()
+        .await?;
+
+    let status = reg_resp.status();
+    let body = body_json(reg_resp).await;
+
+    let (registration_enabled, uiaa_probe) = if status == matrix_sdk::reqwest::StatusCode::UNAUTHORIZED {
+        // Expected UIAA challenge.
+        match serde_json::from_value(body.clone()) {
+            Ok(info) => (true, Some(info)),
+            Err(_) => (true, None),
+        }
+    } else if status == matrix_sdk::reqwest::StatusCode::FORBIDDEN
+        && body.get("errcode").and_then(|v: &Value| v.as_str()) == Some("M_FORBIDDEN")
+    {
+        (false, None)
+    } else {
+        (false, None)
+    };
+
+    Ok(HsCapabilities {
+        base_url,
+        is_mas_native_oidc: is_mas,
+        registration_enabled,
+        uiaa_probe,
+        sso_providers,
+        mas_signup_url,
+    })
 }
