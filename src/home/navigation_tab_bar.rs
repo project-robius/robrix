@@ -464,16 +464,21 @@ pub struct NavigationTabBar {
 
     /// The most recently applied view-mode override,
     #[rust] applied_view_mode: ViewModeOverride,
+
+    /// The tab currently visually marked as selected.
+    #[rust] selected_tab: SelectedTab,
 }
 
 impl ScriptHook for NavigationTabBar {
     fn on_after_new(&mut self, vm: &mut ScriptVm) {
         vm.with_cx_mut(|cx| {
-            // Programmatically select the Home button as active on startup,
-            // because animator default overrides in the DSL don't take effect.
-            self.view
-                .navigation_bar_button(cx, ids!(home_button))
-                .set_selected(cx, true);
+            self.apply_selected_tab(cx, None);
+        });
+    }
+
+    fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            self.apply_selected_tab(cx, None);
         });
     }
 }
@@ -488,13 +493,17 @@ impl NavigationTabBar {
     }
 
     /// Updates which navigation tab button is visually marked as selected,
-    /// enforcing radio-button-like mutual exclusion across the four
-    /// navigation tab buttons.
-    fn apply_selected_tab(&mut self, cx: &mut Cx, tab: &SelectedTab) {
+    /// enforcing mutual exclusion across all buttons (like a radio button group).
+    ///
+    /// If `tab` is `None`, the existing selection is re-applied without changing it.
+    fn apply_selected_tab(&mut self, cx: &mut Cx, tab: Option<SelectedTab>) {
+        if let Some(t) = tab {
+            self.selected_tab = t;
+        }
         let home    = self.view.navigation_bar_button(cx, ids!(home_button));
         let add     = self.view.navigation_bar_button(cx, ids!(add_room_button));
         let profile = self.view.profile_icon(cx, ids!(profile_icon));
-        match tab {
+        match &self.selected_tab {
             SelectedTab::Home => {
                 home.set_selected(cx, true);
                 add.set_selected(cx, false);
@@ -528,11 +537,11 @@ impl Widget for NavigationTabBar {
             // Each click both updates the visual selection and emits the
             // corresponding `NavigationBarAction` for downstream handling.
             if self.view.navigation_bar_button(cx, ids!(home_button)).clicked(actions) {
-                self.apply_selected_tab(cx, &SelectedTab::Home);
+                self.apply_selected_tab(cx, Some(SelectedTab::Home));
                 cx.action(NavigationBarAction::GoToHome);
             }
             else if self.view.navigation_bar_button(cx, ids!(add_room_button)).clicked(actions) {
-                self.apply_selected_tab(cx, &SelectedTab::AddRoom);
+                self.apply_selected_tab(cx, Some(SelectedTab::AddRoom));
                 cx.action(NavigationBarAction::GoToAddRoom);
             }
             else {
@@ -543,7 +552,7 @@ impl Widget for NavigationTabBar {
                     .borrow()
                     .is_some_and(|p| p.inner.clicked(actions));
                 if profile_clicked {
-                    self.apply_selected_tab(cx, &SelectedTab::Settings);
+                    self.apply_selected_tab(cx, Some(SelectedTab::Settings));
                     cx.action(NavigationBarAction::OpenSettings);
                 }
             }
@@ -557,7 +566,7 @@ impl Widget for NavigationTabBar {
                 // If another widget programmatically selected a new tab,
                 // update our buttons' visual selection state accordingly.
                 if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
-                    self.apply_selected_tab(cx, tab);
+                    self.apply_selected_tab(cx, Some(tab.clone()));
                     continue;
                 }
 
