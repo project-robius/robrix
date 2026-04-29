@@ -11,13 +11,31 @@
 
 use makepad_widgets::*;
 
+use crate::homeserver::{CapabilityProbeAction, HsCapabilities};
 use crate::login::login_screen::LoginAction;
-use crate::register::{HsCapabilities, RegisterAction, RegisterMode};
+use crate::register::{RegisterAction, RegisterMode};
 use crate::register::validation::{normalize_homeserver_url, HomeserverUrlError};
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
 
 fn can_start_capability_discovery(registration_pending: bool, awaiting_sync_startup: bool) -> bool {
     !registration_pending && !awaiting_sync_startup
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum RegisterBackAction {
+    StayOnRegister,
+    LeaveAndDropPendingProbe,
+}
+
+fn register_back_action(
+    registration_pending: bool,
+    awaiting_sync_startup: bool,
+) -> RegisterBackAction {
+    if registration_pending || awaiting_sync_startup {
+        RegisterBackAction::StayOnRegister
+    } else {
+        RegisterBackAction::LeaveAndDropPendingProbe
+    }
 }
 
 script_mod! {
@@ -278,15 +296,17 @@ impl WidgetMatchEvent for RegisterScreen {
         let submit = self.view.button(cx, ids!(submit_button));
 
         if back.clicked(actions) {
-            // In-flight request can't be cancelled; leaving now would
-            // auto-log the user into the account on its eventual success.
-            if self.registration_pending {
-                return;
+            match register_back_action(self.registration_pending, self.awaiting_sync_startup) {
+                RegisterBackAction::StayOnRegister => return,
+                RegisterBackAction::LeaveAndDropPendingProbe => {
+                    self.discovery_pending = false;
+                    self.last_discovery = None;
+                    self.last_discovery_input_url = None;
+                    self.view.button(cx, ids!(next_button)).set_text(cx, "Next");
+                    Cx::post_action(RegisterAction::NavigateToLogin);
+                    return;
+                }
             }
-            self.discovery_pending = false;
-            self.view.button(cx, ids!(next_button)).set_text(cx, "Next");
-            Cx::post_action(RegisterAction::NavigateToLogin);
-            return;
         }
 
         if next.clicked(actions) {
@@ -305,7 +325,10 @@ impl WidgetMatchEvent for RegisterScreen {
                     self.discovery_pending = true;
                     self.view.button(cx, ids!(next_button)).set_text(cx, "Checking...");
                     self.last_discovery_input_url = Some(url.clone());
-                    submit_async_request(MatrixRequest::DiscoverHomeserverCapabilities { url });
+                    submit_async_request(MatrixRequest::DiscoverHomeserverCapabilities {
+                        url,
+                        proxy: None,
+                    });
                 }
                 Err(HomeserverUrlError::Empty) => {
                     self.show_status(cx, "Please enter a homeserver URL (e.g. matrix.org).");
@@ -441,8 +464,8 @@ impl WidgetMatchEvent for RegisterScreen {
         }
 
         for action in actions {
-            match action.downcast_ref::<RegisterAction>() {
-                Some(RegisterAction::CapabilitiesDiscovered { requested_url, caps }) => {
+            match action.downcast_ref::<CapabilityProbeAction>() {
+                Some(CapabilityProbeAction::Discovered { requested_url, caps }) => {
                     // Drop out-of-order response from a superseded Next click.
                     if self.last_discovery_input_url.as_deref() != Some(requested_url.as_str()) {
                         continue;
@@ -501,7 +524,7 @@ impl WidgetMatchEvent for RegisterScreen {
                     }
                     self.last_discovery = Some(caps.clone());
                 }
-                Some(RegisterAction::DiscoveryFailed { requested_url, error }) => {
+                Some(CapabilityProbeAction::Failed { requested_url, error }) => {
                     if self.last_discovery_input_url.as_deref() != Some(requested_url.as_str()) {
                         continue;
                     }
@@ -513,6 +536,12 @@ impl WidgetMatchEvent for RegisterScreen {
                     self.last_discovery = None;
                     self.last_discovery_input_url = None;
                 }
+                _ => {}
+            }
+        }
+
+        for action in actions {
+            match action.downcast_ref::<RegisterAction>() {
                 Some(RegisterAction::RegistrationSubmitted) => {}
                 Some(RegisterAction::RegistrationSuccess) => {
                     // Full reset: the same widget instance is reused on re-entry
@@ -575,7 +604,7 @@ impl RegisterScreen {
 
 #[cfg(test)]
 mod tests {
-    use super::can_start_capability_discovery;
+    use super::{RegisterBackAction, can_start_capability_discovery, register_back_action};
 
     #[test]
     fn capability_discovery_blocks_while_registration_request_is_in_flight() {
@@ -590,5 +619,29 @@ mod tests {
     #[test]
     fn capability_discovery_allows_idle_register_screen() {
         assert!(can_start_capability_discovery(false, false));
+    }
+
+    #[test]
+    fn back_navigation_stays_blocked_while_registration_request_is_in_flight() {
+        assert_eq!(
+            register_back_action(true, false),
+            RegisterBackAction::StayOnRegister,
+        );
+    }
+
+    #[test]
+    fn back_navigation_stays_blocked_while_waiting_for_sync_startup() {
+        assert_eq!(
+            register_back_action(false, true),
+            RegisterBackAction::StayOnRegister,
+        );
+    }
+
+    #[test]
+    fn back_navigation_leaves_and_drops_pending_probe_when_idle() {
+        assert_eq!(
+            register_back_action(false, false),
+            RegisterBackAction::LeaveAndDropPendingProbe,
+        );
     }
 }

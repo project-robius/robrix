@@ -3,8 +3,8 @@ use std::ops::Not;
 use makepad_widgets::*;
 use url::Url;
 
-use crate::{app::AppState, i18n::{AppLanguage, tr_fmt, tr_key}, sliding_sync::{submit_async_request, AccountSwitchAction, LoginByPassword, LoginRequest, MatrixRequest}};
-use crate::register::RegisterAction;
+use crate::{app::AppState, homeserver::{login_mode, CapabilityProbeAction, LoginMode}, i18n::{AppLanguage, tr_fmt, tr_key}, sliding_sync::{submit_async_request, AccountSwitchAction, LoginByPassword, LoginRequest, MatrixRequest}};
+use crate::register::{validation::normalize_homeserver_url, RegisterAction};
 
 use super::login_status_modal::{LoginStatusModalAction, LoginStatusModalWidgetExt};
 
@@ -14,6 +14,17 @@ fn should_show_login_failure_modal(
     error: &str,
 ) -> bool {
     !suppress_login_failure_modal && last_failure_message_shown != Some(error)
+}
+
+/// Whether the login_button click should trigger a homeserver capability
+/// probe before attempting to log in.
+///
+/// Pure predicate so the decision can be unit-tested without driving a
+/// LoginScreen instance: we probe whenever we haven't yet classified this
+/// homeserver into Password vs MasOidc, and no OIDC flow is already in
+/// flight (re-probing mid-OAuth would clobber the session we're building).
+fn should_probe_homeserver(login_mode: Option<LoginMode>, oidc_in_flight: bool) -> bool {
+    login_mode.is_none() && !oidc_in_flight
 }
 
 script_mod! {
@@ -216,6 +227,64 @@ script_mod! {
                         margin: Inset{top: 5, bottom: 10}
                         align: Align{x: 0.5, y: 0.5}
                         text: "Login"
+                    }
+
+                    // MAS (OIDC) login branch. Hidden by default; the Rust
+                    // side flips visibility on CapabilityProbeAction::Discovered
+                    // when login_mode resolves to MasOidc. Mirrors the register
+                    // screen's "browser sign-in" affordance so the two entry
+                    // points feel consistent.
+                    oidc_card := View {
+                        visible: false
+                        width: 275, height: Fit,
+                        flow: Down,
+                        spacing: 8,
+                        margin: Inset{top: 5, bottom: 10}
+
+                        oidc_info_title := Label {
+                            width: Fill, height: Fit
+                            draw_text +: {
+                                color: (COLOR_TEXT)
+                                text_style: TITLE_TEXT {font_size: 11.0}
+                            }
+                            text: "Browser sign-in required"
+                        }
+
+                        oidc_info_body := Label {
+                            width: Fill, height: Fit
+                            draw_text +: {
+                                color: #8C8C8C
+                                text_style: REGULAR_TEXT {font_size: 10.0}
+                            }
+                            text: ""
+                        }
+
+                        oidc_continue_button := RobrixIconButton {
+                            width: 275,
+                            height: 40
+                            padding: 10
+                            align: Align{x: 0.5, y: 0.5}
+                            text: "Continue in browser"
+                        }
+
+                        oidc_status_label := Label {
+                            visible: false
+                            width: Fill, height: Fit
+                            draw_text +: {
+                                color: (COLOR_TEXT)
+                                text_style: REGULAR_TEXT {font_size: 10.0}
+                            }
+                            text: ""
+                        }
+
+                        oidc_cancel_button := RobrixIconButton {
+                            visible: false
+                            width: 275,
+                            height: 40
+                            padding: 10
+                            align: Align{x: 0.5, y: 0.5}
+                            text: "Cancel sign-in"
+                        }
                     }
 
                     LineH {
@@ -586,6 +655,20 @@ pub struct LoginScreen {
     /// Boolean to indicate if we're in "add account" mode (adding another Matrix account).
     #[rust] adding_account: bool,
     #[rust] use_proxy_enabled: bool,
+    /// Classified login flavor for the current homeserver input, once a
+    /// capability probe has completed. None while unresolved or after the
+    /// user edits the homeserver field.
+    #[rust] login_mode: Option<LoginMode>,
+    /// Normalized URL we last dispatched a probe for. Used to (a) drop
+    /// out-of-order probe responses from superseded clicks, and (b) detect
+    /// when the user has edited the homeserver field since the last probe.
+    #[rust] last_discovery_input_url: Option<String>,
+    /// True between probe-dispatch and probe-result. Blocks duplicate probes
+    /// from rapid clicking and keeps the button's "Checking..." label honest.
+    #[rust] discovery_pending: bool,
+    /// True while the OIDC browser flow is in flight. Blocks re-probes and
+    /// re-entry into start_oidc_login from duplicate clicks.
+    #[rust] oidc_in_flight: bool,
 }
 
 impl LoginScreen {
@@ -786,6 +869,54 @@ impl LoginScreen {
         Ok(Some(proxy_url))
     }
 
+    fn clear_homeserver_classification(&mut self) {
+        self.login_mode = None;
+        self.last_discovery_input_url = None;
+        self.discovery_pending = false;
+    }
+
+    fn show_password_login_branch(&mut self, cx: &mut Cx) {
+        self.view.view(cx, ids!(oidc_card)).set_visible(cx, false);
+        self.view.text_input(cx, ids!(user_id_input)).set_visible(cx, true);
+        self.view.text_input(cx, ids!(password_input)).set_visible(cx, true);
+        self.view.button(cx, ids!(login_button)).set_visible(cx, true);
+        self.view.view(cx, ids!(sso_view)).set_visible(cx, true);
+        self.view.label(cx, ids!(sso_prompt_label)).set_visible(cx, true);
+        self.view.label(cx, ids!(oidc_info_title))
+            .set_text(cx, tr_key(self.app_language, "login.oidc.info_title"));
+        self.view.label(cx, ids!(oidc_info_body))
+            .set_text(cx, tr_key(self.app_language, "login.oidc.info_body"));
+        self.view.button(cx, ids!(oidc_continue_button))
+            .set_text(cx, tr_key(self.app_language, "login.button.continue_in_browser"));
+        self.view.button(cx, ids!(oidc_continue_button)).set_visible(cx, true);
+        self.view.label(cx, ids!(oidc_status_label)).set_visible(cx, false);
+        self.view.button(cx, ids!(oidc_cancel_button)).set_visible(cx, false);
+    }
+
+    fn show_oidc_login_branch(&mut self, cx: &mut Cx) {
+        self.view.button(cx, ids!(login_button)).set_visible(cx, false);
+        self.view.text_input(cx, ids!(user_id_input)).set_visible(cx, false);
+        self.view.text_input(cx, ids!(password_input)).set_visible(cx, false);
+        self.view.view(cx, ids!(sso_view)).set_visible(cx, false);
+        self.view.label(cx, ids!(sso_prompt_label)).set_visible(cx, false);
+        self.view.label(cx, ids!(oidc_info_title))
+            .set_text(cx, tr_key(self.app_language, "login.oidc.info_title"));
+        self.view.label(cx, ids!(oidc_info_body))
+            .set_text(cx, tr_key(self.app_language, "login.oidc.info_body"));
+        self.view.button(cx, ids!(oidc_continue_button))
+            .set_text(cx, tr_key(self.app_language, "login.button.continue_in_browser"));
+        self.view.button(cx, ids!(oidc_continue_button)).set_visible(cx, true);
+        self.view.label(cx, ids!(oidc_status_label)).set_visible(cx, false);
+        self.view.button(cx, ids!(oidc_cancel_button)).set_visible(cx, false);
+        self.view.view(cx, ids!(oidc_card)).set_visible(cx, true);
+    }
+
+    fn reset_oidc_screen_state(&mut self, cx: &mut Cx) {
+        self.oidc_in_flight = false;
+        self.clear_homeserver_classification();
+        self.show_password_login_branch(cx);
+    }
+
 }
 
 impl ScriptHook for LoginScreen {
@@ -853,6 +984,14 @@ impl WidgetMatchEvent for LoginScreen {
             self.set_use_proxy_enabled(cx, enabled);
         }
 
+        if homeserver_input.changed(actions).is_some() {
+            self.clear_homeserver_classification();
+            if !self.oidc_in_flight {
+                self.show_password_login_branch(cx);
+                self.redraw(cx);
+            }
+        }
+
         if self.view.button(cx, ids!(proxy_settings_save_button)).clicked(actions) {
             match self.build_proxy_url_from_form(cx) {
                 Ok(proxy_url) => {
@@ -891,10 +1030,10 @@ impl WidgetMatchEvent for LoginScreen {
         if cancel_button.clicked(actions) {
             self.adding_account = false;
             self.reset_sso_state(cx);
+            self.reset_oidc_screen_state(cx);
             // Reset the UI back to normal login mode
             self.view.label(cx, ids!(title)).set_text(cx, tr_key(self.app_language, "login.title.login_to_robrix"));
             cancel_button.set_visible(cx, false);
-            self.view.view(cx, ids!(sso_view)).set_visible(cx, true);
             mode_toggle_button.set_visible(cx, true);
             cx.action(LoginAction::CancelAddAccount);
             self.redraw(cx);
@@ -926,6 +1065,87 @@ impl WidgetMatchEvent for LoginScreen {
             let user_id = user_id_input.text().trim().to_owned();
             let password = password_input.text();
             let homeserver = homeserver_input.text().trim().to_owned();
+
+            // Defensive backstop for cases where the homeserver field was
+            // updated programmatically rather than through a Changed action.
+            // Compare normalized URLs so `matrix.org` and
+            // `https://matrix.org` count as the same probe target.
+            let normalized_homeserver = homeserver
+                .is_empty()
+                .not()
+                .then(|| normalize_homeserver_url(&homeserver).ok())
+                .flatten();
+            if self.last_discovery_input_url.as_deref() != normalized_homeserver.as_deref() {
+                self.clear_homeserver_classification();
+            }
+
+            // Defensive guard: in MAS mode the login_button should be hidden
+            // and Continue-in-browser is the active CTA. If a stale click
+            // reaches here, drop it rather than submit password-auth to a
+            // server that rejects it.
+            if matches!(self.login_mode, Some(LoginMode::MasOidc)) {
+                return;
+            }
+
+            // If the user typed a homeserver we haven't classified yet, run a
+            // capability probe before deciding between password and OIDC paths.
+            // An empty input means "use the default (matrix-client.matrix.org)" —
+            // preserve the existing zero-latency password path there rather than
+            // adding a probe round-trip.
+            if !homeserver.is_empty()
+                && !self.discovery_pending
+                && should_probe_homeserver(self.login_mode, self.oidc_in_flight)
+            {
+                if let Ok(normalized) = normalize_homeserver_url(&homeserver) {
+                    self.discovery_pending = true;
+                    self.last_discovery_input_url = Some(normalized.clone());
+                    self.view.button(cx, ids!(login_button)).set_text(
+                        cx,
+                        tr_key(self.app_language, "login.status.checking_homeserver.title"),
+                    );
+                    login_status_modal_inner.set_title(
+                        cx,
+                        tr_key(self.app_language, "login.status.checking_homeserver.title"),
+                    );
+                    login_status_modal_inner.set_status(
+                        cx,
+                        tr_key(self.app_language, "login.status.checking_homeserver.body"),
+                    );
+                    login_status_modal_inner.button_ref(cx)
+                        .set_text(cx, tr_key(self.app_language, "login.status.cancel"));
+                    login_status_modal.open(cx);
+                    let proxy = match self.build_proxy_url_from_form(cx) {
+                        Ok(proxy) => proxy,
+                        Err(proxy_validation_error) => {
+                            login_status_modal_inner.set_title(
+                                cx,
+                                tr_key(self.app_language, "login.status.invalid_proxy.title"),
+                            );
+                            let error_text = tr_fmt(self.app_language, "login.status.invalid_proxy.body", &[
+                                ("error", proxy_validation_error.as_str()),
+                            ]);
+                            login_status_modal_inner.set_status(cx, &error_text);
+                            login_status_modal_inner.button_ref(cx)
+                                .set_text(cx, tr_key(self.app_language, "login.status.okay"));
+                            login_status_modal.open(cx);
+                            self.redraw(cx);
+                            return;
+                        }
+                    };
+                    if let Err(e) = crate::proxy_config::save_proxy_url(proxy.as_deref()) {
+                        warning!("Failed to persist proxy configuration from homeserver probe: {e}");
+                    }
+                    submit_async_request(MatrixRequest::DiscoverHomeserverCapabilities {
+                        url: normalized,
+                        proxy,
+                    });
+                    self.redraw(cx);
+                    return;
+                }
+                // normalize failed: fall through so the existing password path
+                // surfaces a usable error to the user.
+            }
+
             if user_id.is_empty() {
                 login_status_modal_inner.set_title(cx, tr_key(self.app_language, "login.status.missing_user_id.title"));
                 login_status_modal_inner.set_status(cx, tr_key(self.app_language, "login.status.missing_user_id.body"));
@@ -970,7 +1190,54 @@ impl WidgetMatchEvent for LoginScreen {
             login_status_modal.open(cx);
             self.redraw(cx);
         }
-        
+
+        // "Continue in browser" click — only reachable when login_mode resolved
+        // to MasOidc (otherwise the card is hidden). Kick off the worker's
+        // OAuth flow via StartOidcLogin; oidc_in_flight will flip on when the
+        // worker posts LoginAction::OidcLoginStarted.
+        if self.view.button(cx, ids!(oidc_continue_button)).clicked(actions)
+            && !self.oidc_in_flight
+        {
+            if !matches!(self.login_mode, Some(LoginMode::MasOidc)) {
+                return;
+            }
+            let homeserver = homeserver_input.text().trim().to_owned();
+            match self.build_proxy_url_from_form(cx) {
+                Ok(proxy) => {
+                    if let Err(e) = crate::proxy_config::save_proxy_url(proxy.as_deref()) {
+                        warning!("Failed to persist proxy configuration from login screen: {e}");
+                    }
+                    submit_async_request(MatrixRequest::StartOidcLogin {
+                        homeserver_url: homeserver,
+                        proxy,
+                        is_add_account: self.adding_account,
+                    });
+                    self.redraw(cx);
+                }
+                Err(proxy_validation_error) => {
+                    login_status_modal_inner.set_title(
+                        cx,
+                        tr_key(self.app_language, "login.status.invalid_proxy.title"),
+                    );
+                    let error_text = tr_fmt(self.app_language, "login.status.invalid_proxy.body", &[
+                        ("error", proxy_validation_error.as_str()),
+                    ]);
+                    login_status_modal_inner.set_status(cx, &error_text);
+                    login_status_modal_inner.button_ref(cx)
+                        .set_text(cx, tr_key(self.app_language, "login.status.okay"));
+                    login_status_modal.open(cx);
+                    self.redraw(cx);
+                }
+            }
+        }
+
+        // Cancel an in-flight OIDC flow. Worker drops the cancel branch of
+        // its tokio::select!, calls abort_login, and posts OidcLoginCancelled
+        // which we handle below to restore the oidc_card to ready state.
+        if self.view.button(cx, ids!(oidc_cancel_button)).clicked(actions) {
+            submit_async_request(MatrixRequest::CancelOidcLogin);
+        }
+
         let provider_brands = ["apple", "facebook", "github", "gitlab", "google", "twitter"];
         let button_set: &[&[LiveId]] = ids_array!(
             apple_button, 
@@ -988,7 +1255,57 @@ impl WidgetMatchEvent for LoginScreen {
             if let Some(RegisterAction::NavigateToLogin) = action.downcast_ref() {
                 self.suppress_login_failure_modal = false;
                 self.last_failure_message_shown = None;
+                self.reset_oidc_screen_state(cx);
                 login_status_modal.close(cx);
+            }
+
+            // Capability probe result for the homeserver input. We share this
+            // action with RegisterScreen via crate::homeserver; filter on
+            // requested_url so a probe fired from Register doesn't drive us
+            // and vice versa.
+            match action.downcast_ref::<CapabilityProbeAction>() {
+                Some(CapabilityProbeAction::Discovered { requested_url, caps }) => {
+                    if self.last_discovery_input_url.as_deref() != Some(requested_url.as_str()) {
+                        continue;
+                    }
+                    self.discovery_pending = false;
+                    self.view.button(cx, ids!(login_button))
+                        .set_text(cx, tr_key(self.app_language, "login.button.login"));
+                    let resolved = login_mode(caps.as_ref());
+                    self.login_mode = Some(resolved);
+                    match resolved {
+                        LoginMode::MasOidc => {
+                            self.show_oidc_login_branch(cx);
+                            login_status_modal.close(cx);
+                        }
+                        LoginMode::Password => {
+                            self.show_password_login_branch(cx);
+                            login_status_modal.close(cx);
+                        }
+                    }
+                    self.redraw(cx);
+                    continue;
+                }
+                Some(CapabilityProbeAction::Failed { requested_url, error }) => {
+                    if self.last_discovery_input_url.as_deref() != Some(requested_url.as_str()) {
+                        continue;
+                    }
+                    self.clear_homeserver_classification();
+                    self.show_password_login_branch(cx);
+                    self.view.button(cx, ids!(login_button))
+                        .set_text(cx, tr_key(self.app_language, "login.button.login"));
+                    login_status_modal_inner.set_title(
+                        cx,
+                        tr_key(self.app_language, "login.status.login_failed"),
+                    );
+                    login_status_modal_inner.set_status(cx, error);
+                    login_status_modal_inner.button_ref(cx)
+                        .set_text(cx, tr_key(self.app_language, "login.status.okay"));
+                    login_status_modal.open(cx);
+                    self.redraw(cx);
+                    continue;
+                }
+                Some(CapabilityProbeAction::None) | None => {}
             }
 
             // Handle login-related actions received from background async tasks.
@@ -996,7 +1313,9 @@ impl WidgetMatchEvent for LoginScreen {
                 Some(LoginAction::ShowLoginScreen) => {
                     self.suppress_login_failure_modal = false;
                     self.last_failure_message_shown = None;
+                    self.reset_oidc_screen_state(cx);
                     login_status_modal.close(cx);
+                    self.redraw(cx);
                 }
                 Some(LoginAction::CliAutoLogin { user_id, homeserver }) => {
                     self.last_failure_message_shown = None;
@@ -1031,6 +1350,7 @@ impl WidgetMatchEvent for LoginScreen {
                     self.suppress_login_failure_modal = false;
                     self.last_failure_message_shown = None;
                     self.adding_account = false;
+                    self.reset_oidc_screen_state(cx);
                     user_id_input.set_text(cx, "");
                     password_input.set_text(cx, "");
                     homeserver_input.set_text(cx, "");
@@ -1074,6 +1394,7 @@ impl WidgetMatchEvent for LoginScreen {
                     self.suppress_login_failure_modal = false;
                     self.adding_account = true;
                     self.reset_sso_state(cx);
+                    self.reset_oidc_screen_state(cx);
                     // Update UI to "add account" mode
                     self.view.label(cx, ids!(title)).set_text(cx, tr_key(self.app_language, "settings.account.button.add_another_account"));
                     cancel_button.set_visible(cx, true);
@@ -1086,6 +1407,7 @@ impl WidgetMatchEvent for LoginScreen {
                     self.suppress_login_failure_modal = false;
                     self.adding_account = false;
                     self.reset_sso_state(cx);
+                    self.reset_oidc_screen_state(cx);
                     user_id_input.set_text(cx, "");
                     password_input.set_text(cx, "");
                     homeserver_input.set_text(cx, "");
@@ -1094,6 +1416,46 @@ impl WidgetMatchEvent for LoginScreen {
                     cancel_button.set_visible(cx, false);
                     mode_toggle_button.set_visible(cx, true);
                     login_status_modal.close(cx);
+                    self.redraw(cx);
+                }
+                Some(LoginAction::OidcLoginStarted) => {
+                    // Worker has launched the browser; flip the oidc_card to
+                    // its waiting state and expose Cancel.
+                    self.oidc_in_flight = true;
+                    self.show_oidc_login_branch(cx);
+                    self.view.button(cx, ids!(oidc_continue_button)).set_visible(cx, false);
+                    let status = self.view.label(cx, ids!(oidc_status_label));
+                    status.set_text(cx, tr_key(self.app_language, "login.oidc.waiting_body"));
+                    status.set_visible(cx, true);
+                    let cancel = self.view.button(cx, ids!(oidc_cancel_button));
+                    cancel.set_text(cx, tr_key(self.app_language, "login.button.cancel_oidc"));
+                    cancel.set_visible(cx, true);
+                    login_status_modal.close(cx);
+                    self.redraw(cx);
+                }
+                Some(LoginAction::OidcLoginCancelled) => {
+                    // Restore the idle MAS branch so the user can retry. Use
+                    // login.oidc.cancelled as a soft hint in the info body so
+                    // they know why they're back here without a modal popup.
+                    self.oidc_in_flight = false;
+                    self.show_oidc_login_branch(cx);
+                    self.view.label(cx, ids!(oidc_info_body))
+                        .set_text(cx, tr_key(self.app_language, "login.oidc.cancelled"));
+                    self.redraw(cx);
+                }
+                Some(LoginAction::OidcLoginFailed(error)) => {
+                    // Same idle reset as cancel, but surface the error via
+                    // the login_status_modal so it's unmissable.
+                    self.oidc_in_flight = false;
+                    self.show_oidc_login_branch(cx);
+                    login_status_modal_inner.set_title(
+                        cx,
+                        tr_key(self.app_language, "login.status.login_failed"),
+                    );
+                    login_status_modal_inner.set_status(cx, error);
+                    login_status_modal_inner.button_ref(cx)
+                        .set_text(cx, tr_key(self.app_language, "login.status.okay"));
+                    login_status_modal.open(cx);
                     self.redraw(cx);
                 }
                 _ => { }
@@ -1209,13 +1571,27 @@ pub enum LoginAction {
     NavigateToRegister,
     /// Request to cancel adding an account and return to the previous screen.
     CancelAddAccount,
+    /// Posted by the OIDC worker once the browser-based auth flow has been
+    /// launched and robrix2 is waiting for the loopback callback.
+    /// LoginScreen uses this to swap the "Continue in browser" button for the
+    /// "Waiting for callback..." + Cancel affordance.
+    OidcLoginStarted,
+    /// Posted when the OIDC flow was aborted — either via in-app Cancel, via
+    /// the browser's `error=access_denied` redirect, or via the 3-minute
+    /// total timeout. LoginScreen returns to the MAS branch ready-for-retry.
+    OidcLoginCancelled,
+    /// Posted when OIDC failed at any post-click stage (metadata discovery,
+    /// dynamic registration, authorize build, browser open, token exchange).
+    /// Payload is user-displayable; technical details go to logs.
+    OidcLoginFailed(String),
     #[default]
     None,
 }
 
 #[cfg(test)]
 mod tests {
-    use super::should_show_login_failure_modal;
+    use super::{should_probe_homeserver, should_show_login_failure_modal};
+    use crate::homeserver::LoginMode;
 
     #[test]
     fn login_failure_modal_is_suppressed_while_register_flow_is_active() {
@@ -1230,5 +1606,21 @@ mod tests {
     #[test]
     fn fresh_login_failure_message_is_shown_when_not_suppressed() {
         assert!(should_show_login_failure_modal(false, Some("old"), "boom"));
+    }
+
+    #[test]
+    fn capability_probe_is_required_when_login_mode_is_unknown() {
+        assert!(should_probe_homeserver(None, false));
+    }
+
+    #[test]
+    fn capability_probe_is_not_required_when_mode_already_classified() {
+        assert!(!should_probe_homeserver(Some(LoginMode::Password), false));
+        assert!(!should_probe_homeserver(Some(LoginMode::MasOidc), false));
+    }
+
+    #[test]
+    fn capability_probe_is_not_required_while_oidc_login_is_in_flight() {
+        assert!(!should_probe_homeserver(None, true));
     }
 }

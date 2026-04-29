@@ -47,6 +47,8 @@ pub mod i18n;
 
 /// Login screen
 pub mod login;
+/// Shared homeserver capability discovery state.
+pub mod homeserver;
 /// Account registration flow
 pub mod register;
 /// Logout confirmation and state management

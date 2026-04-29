@@ -15,44 +15,8 @@ pub fn script_mod(vm: &mut ScriptVm) {
     register_screen::script_mod(vm);
 }
 
-use matrix_sdk::ruma::api::client::uiaa::UiaaInfo;
+use crate::homeserver::HsCapabilities;
 use makepad_widgets::ActionDefaultRef;
-
-/// Homeserver capabilities discovered before register branching.
-#[derive(Clone, Debug)]
-pub struct HsCapabilities {
-    /// Normalized base URL the client will use.
-    pub base_url: String,
-    /// True iff the server advertises `m.authentication.issuer` in
-    /// `.well-known/matrix/client` (MSC2965 / MAS delegation).
-    pub is_mas_native_oidc: bool,
-    /// True iff `POST /_matrix/client/v3/register` with empty body returns
-    /// 401 with parseable UIAA flows (NOT 403 M_FORBIDDEN).
-    pub registration_enabled: bool,
-    /// Optional UIAA probe result (empty when server requires MAS).
-    pub uiaa_probe: Option<UiaaInfo>,
-    /// Identity providers harvested from `/_matrix/client/v3/login`.
-    /// Phase 1 populates but does not render; Phase 4 renders buttons.
-    pub sso_providers: Vec<IdentityProviderSummary>,
-
-    /// URL to open in the system browser for MAS self-registration.
-    /// Derived as `<issuer>/register` when a MAS issuer is discovered in
-    /// `.well-known` `m.authentication` (stable) or
-    /// `org.matrix.msc2965.authentication` (unstable). None for non-MAS
-    /// servers. Intentionally does NOT use MSC2965's `account` field —
-    /// that URL is for logged-in account management and loops when
-    /// opened unauthenticated.
-    pub mas_signup_url: Option<String>,
-}
-
-/// Minimal info per identity provider. Full matrix-sdk type is not
-/// used because we only need name + id at this phase.
-#[derive(Clone, Debug)]
-pub struct IdentityProviderSummary {
-    pub id: String,
-    pub name: String,
-    pub icon_url: Option<String>,
-}
 
 /// Outcome classification of capability discovery.
 ///
@@ -89,10 +53,6 @@ impl HsCapabilities {
 pub enum RegisterAction {
     /// User clicked the back button on RegisterScreen.
     NavigateToLogin,
-    /// `requested_url` is echoed so the screen can drop out-of-order responses.
-    CapabilitiesDiscovered { requested_url: String, caps: Box<HsCapabilities> },
-    /// `requested_url` is echoed so the screen can drop out-of-order responses.
-    DiscoveryFailed { requested_url: String, error: String },
     /// User submitted the RegistrationForm; first POST is in flight.
     RegistrationSubmitted,
     /// Registration completed and the client has been persisted via
@@ -109,5 +69,40 @@ impl ActionDefaultRef for RegisterAction {
     fn default_ref() -> &'static Self {
         static DEFAULT: RegisterAction = RegisterAction::None;
         &DEFAULT
+    }
+}
+
+#[cfg(test)]
+mod homeserver_login_mode_tests {
+    use crate::homeserver::{HsCapabilities, IdentityProviderSummary, LoginMode, login_mode};
+
+    #[test]
+    fn login_mode_prefers_mas_oidc_when_mas_is_advertised() {
+        let caps = HsCapabilities {
+            base_url: "https://matrix.org".into(),
+            is_mas_native_oidc: true,
+            registration_enabled: false,
+            uiaa_probe: None,
+            sso_providers: Vec::<IdentityProviderSummary>::new(),
+            mas_signup_url: Some("https://issuer/register".into()),
+            mas_issuer_url: Some("https://issuer".into()),
+        };
+
+        assert_eq!(login_mode(&caps), LoginMode::MasOidc);
+    }
+
+    #[test]
+    fn login_mode_falls_back_to_password_for_non_mas_servers() {
+        let caps = HsCapabilities {
+            base_url: "https://palpo.example".into(),
+            is_mas_native_oidc: false,
+            registration_enabled: true,
+            uiaa_probe: None,
+            sso_providers: Vec::<IdentityProviderSummary>::new(),
+            mas_signup_url: None,
+            mas_issuer_url: None,
+        };
+
+        assert_eq!(login_mode(&caps), LoginMode::Password);
     }
 }

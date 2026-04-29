@@ -36,7 +36,7 @@ use robius_open::Uri;
 use ruma::{OwnedRoomOrAliasId, RoomId, events::tag::Tags};
 use tokio::{
     runtime::Handle,
-    sync::{broadcast, mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
+    sync::{broadcast, mpsc::{Sender, UnboundedReceiver, UnboundedSender}, oneshot, watch, Notify}, task::JoinHandle, time::error::Elapsed,
 };
 use url::Url;
 use std::{borrow::Cow, cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, DerefMut, Not}, path::{ Path, PathBuf }, sync::{Arc, LazyLock, Mutex, atomic::{AtomicBool, Ordering}}, time::Duration};
@@ -46,7 +46,7 @@ use crate::{
     account_manager::{self, Account},
     app::{AppStateAction, RoomFilterRemoteSearchAction}, app_data_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
         add_room::{CreatableSpacesAction, CreateRoomAction, CreateRoomContext, KnockResultAction}, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{ActionResponseResultAction, InviteResultAction, ReportRoomResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, build_room_search_text, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
-    }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state, take_skip_app_state_restore_once}, profile::{
+    }, homeserver::{CapabilityProbeAction, HsCapabilities, IdentityProviderSummary}, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state, take_skip_app_state_restore_once}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
@@ -513,10 +513,30 @@ async fn login(
             }
             Ok((client, None, is_add_account, client_session))
         }
+        LoginRequest::LoginByOidcSuccess(client, client_session, is_add_account) => {
+            // Mirrors the SSO arm: the OIDC worker already performed
+            // finish_login, so the client is fully authenticated. We only
+            // need to persist and return — finalize_authenticated_client in
+            // the outer loop handles account-manager + rooms-list status.
+            if let Err(e) = persistence::save_session(&client, client_session.clone()).await {
+                error!("Failed to save session state to storage: {e:?}");
+            }
+            Ok((client, None, is_add_account, client_session))
+        }
         LoginRequest::HomeserverLoginTypesQuery(_) => {
             bail!("LoginRequest::HomeserverLoginTypesQuery not handled earlier");
         }
     }
+}
+
+/// Thin wrapper around `build_client` that exposes just what the OIDC worker
+/// needs, without leaking the private `Cli` type across module boundaries.
+pub(crate) async fn build_client_for_oidc(
+    homeserver: Option<String>,
+    proxy: Option<String>,
+) -> std::result::Result<(Client, ClientSessionPersisted), ClientBuildError> {
+    let cli = Cli { homeserver, proxy, ..Default::default() };
+    build_client(&cli, app_data_dir()).await
 }
 
 
@@ -713,11 +733,35 @@ pub enum MatrixRequest {
     Login(LoginRequest),
     /// Probe a homeserver's registration capabilities.
     /// Sent from RegisterScreen's Next button; result arrives via
-    /// `RegisterAction::CapabilitiesDiscovered` / `DiscoveryFailed`.
+    /// `CapabilityProbeAction::Discovered` / `Failed`.
     DiscoverHomeserverCapabilities {
         /// Already-normalized homeserver URL (has scheme, no trailing slash).
         url: String,
+        /// Optional proxy override from the login screen. Falls back to the
+        /// saved global proxy when omitted.
+        proxy: Option<String>,
     },
+    /// Begin the OIDC (MAS) login flow for an already-existing account on a
+    /// MAS-delegated homeserver. `homeserver_url` is the normalized URL from
+    /// capability discovery; `proxy` mirrors the password login's optional
+    /// per-request proxy override.
+    ///
+    /// Outcome dispatch:
+    ///   - `LoginAction::OidcLoginStarted` fires once the loopback server is
+    ///     live and the system browser has been opened.
+    ///   - On success, `LoginAction::LoginSuccess` fires after
+    ///     `finalize_authenticated_client()` persists the session.
+    ///   - Cancellation (in-app Cancel, browser `error=access_denied`, or
+    ///     3-min timeout) dispatches `LoginAction::OidcLoginCancelled`.
+    ///   - Any other failure dispatches `LoginAction::OidcLoginFailed(msg)`.
+    StartOidcLogin {
+        homeserver_url: String,
+        proxy: Option<String>,
+        is_add_account: bool,
+    },
+    /// Abort the in-flight OIDC login. Posted by LoginScreen's Cancel button.
+    /// No-op if no OIDC login is currently in flight.
+    CancelOidcLogin,
     /// Register a new account on a UIAA server using the single-stage
     /// `m.login.dummy` flow. `homeserver_url` is the already-normalized URL
     /// from capability discovery.
@@ -1562,6 +1606,12 @@ pub enum LoginRequest{
     LoginByPassword(LoginByPassword),
     Register(RegisterAccount),
     LoginBySSOSuccess(Client, ClientSessionPersisted, bool),
+    /// Sent by the OIDC worker task after `OAuth::finish_login()` returns
+    /// successfully. The payload mirrors `LoginBySSOSuccess` — already-built
+    /// client + its session bundle + `is_add_account`. The main login
+    /// handler just persists the session and returns it to the outer loop,
+    /// so sync-service startup is shared with password/SSO flows.
+    LoginByOidcSuccess(Client, ClientSessionPersisted, bool),
     LoginByCli,
     HomeserverLoginTypesQuery(String),
 
@@ -1607,6 +1657,7 @@ async fn matrix_worker_task(
                 let is_add_account = match &login_request {
                     LoginRequest::LoginByPassword(lpw) => lpw.is_add_account,
                     LoginRequest::LoginBySSOSuccess(_, _, is_add) => *is_add,
+                    LoginRequest::LoginByOidcSuccess(_, _, is_add) => *is_add,
                     _ => false,
                 };
 
@@ -1654,24 +1705,71 @@ async fn matrix_worker_task(
                 }
             }
 
-            MatrixRequest::DiscoverHomeserverCapabilities { url } => {
+            MatrixRequest::DiscoverHomeserverCapabilities { url, proxy } => {
                 tokio::spawn(async move {
                     let requested_url = url.clone();
-                    match discover_homeserver_capabilities(&url).await {
+                    match discover_homeserver_capabilities(&url, proxy.as_deref()).await {
                         Ok(caps) => {
-                            Cx::post_action(crate::register::RegisterAction::CapabilitiesDiscovered {
+                            Cx::post_action(CapabilityProbeAction::Discovered {
                                 requested_url,
                                 caps: Box::new(caps),
                             });
                         }
                         Err(e) => {
-                            Cx::post_action(crate::register::RegisterAction::DiscoveryFailed {
+                            Cx::post_action(CapabilityProbeAction::Failed {
                                 requested_url,
                                 error: e.to_string(),
                             });
                         }
                     }
                 });
+            }
+
+            MatrixRequest::StartOidcLogin { homeserver_url, proxy, is_add_account } => {
+                let (flow_id, cancel_rx) = match try_start_oidc_flow() {
+                    Ok(flow) => flow,
+                    Err(msg) => {
+                        warning!("{msg}");
+                        continue;
+                    }
+                };
+
+                let login_sender = login_sender.clone();
+                tokio::spawn(async move {
+                    let outcome = crate::login::oidc_login::start_oidc_login(
+                        homeserver_url,
+                        proxy,
+                        cancel_rx,
+                    ).await;
+
+                    match outcome {
+                        Ok((client, client_session, user_id)) => {
+                            log!("OIDC login succeeded for {user_id}; forwarding to login pipeline.");
+                            if let Err(e) = login_sender.send(
+                                LoginRequest::LoginByOidcSuccess(client, client_session, is_add_account)
+                            ).await {
+                                error!("Failed to forward OIDC login result: {e:?}");
+                                Cx::post_action(LoginAction::OidcLoginFailed(
+                                    "BUG: couldn't hand OIDC login result to the login pipeline.".to_string(),
+                                ));
+                            }
+                        }
+                        Err(crate::login::oidc_login::OidcLoginError::Cancelled) => {
+                            Cx::post_action(LoginAction::OidcLoginCancelled);
+                        }
+                        Err(e) => {
+                            error!("OIDC login failed: {e:?}");
+                            let msg = crate::login::oidc_login::map_oidc_error(&e);
+                            Cx::post_action(LoginAction::OidcLoginFailed(msg));
+                        }
+                    }
+
+                    finish_oidc_flow(flow_id);
+                });
+            }
+
+            MatrixRequest::CancelOidcLogin => {
+                cancel_active_oidc_flow();
             }
 
             MatrixRequest::RegisterViaUiaa { username, password, homeserver_url } => {
@@ -4069,6 +4167,78 @@ fn get_room_timeline(room_id: &RoomId) -> Option<Arc<Timeline>> {
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
 
+struct ActiveOidcFlow {
+    flow_id: u64,
+    cancel_tx: oneshot::Sender<()>,
+}
+
+#[derive(Default)]
+struct OidcFlowSlot {
+    next_flow_id: u64,
+    active_flow: Option<ActiveOidcFlow>,
+}
+
+impl OidcFlowSlot {
+    fn try_start_flow(&mut self) -> std::result::Result<(u64, oneshot::Receiver<()>), &'static str> {
+        if self.active_flow.is_some() {
+            return Err("OIDC login already in progress");
+        }
+
+        self.next_flow_id += 1;
+        let flow_id = self.next_flow_id;
+        let (cancel_tx, cancel_rx) = oneshot::channel();
+        self.active_flow = Some(ActiveOidcFlow { flow_id, cancel_tx });
+        Ok((flow_id, cancel_rx))
+    }
+
+    fn finish_flow(&mut self, flow_id: u64) {
+        if self
+            .active_flow
+            .as_ref()
+            .is_some_and(|active| active.flow_id == flow_id)
+        {
+            self.active_flow = None;
+        }
+    }
+
+    fn cancel_active_flow(&mut self) -> bool {
+        if let Some(active) = self.active_flow.take() {
+            let _ = active.cancel_tx.send(());
+            true
+        } else {
+            false
+        }
+    }
+
+    #[cfg(test)]
+    fn has_active_flow(&self) -> bool {
+        self.active_flow.is_some()
+    }
+}
+
+/// Single active OIDC flow slot.
+///
+/// We keep this generation-scoped rather than storing a bare sender so that a
+/// late cleanup from an older flow cannot drop the cancel handle for a newer
+/// loopback server. That race would make the browser land on `127.0.0.1`
+/// after the local listener had already been torn down.
+static OIDC_FLOW_SLOT: Mutex<OidcFlowSlot> = Mutex::new(OidcFlowSlot {
+    next_flow_id: 0,
+    active_flow: None,
+});
+
+fn try_start_oidc_flow() -> std::result::Result<(u64, oneshot::Receiver<()>), &'static str> {
+    OIDC_FLOW_SLOT.lock().unwrap().try_start_flow()
+}
+
+fn finish_oidc_flow(flow_id: u64) {
+    OIDC_FLOW_SLOT.lock().unwrap().finish_flow(flow_id);
+}
+
+fn cancel_active_oidc_flow() -> bool {
+    OIDC_FLOW_SLOT.lock().unwrap().cancel_active_flow()
+}
+
 pub fn get_client() -> Option<Client> {
     CLIENT.lock().unwrap().clone()
 }
@@ -4348,7 +4518,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
     let mut initial_client_opt = new_login_opt;
 
     loop {
-        let (client, sync_service, logged_in_user_id) = 'login_loop: loop {
+        let (client, sync_service, logged_in_user_id, client_session) = 'login_loop: loop {
             let (client, _sync_token, validate_session, session) = match initial_client_opt.take() {
                 Some(login) => login,
                 None => {
@@ -4414,7 +4584,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             let account = account_manager::Account {
                 client: client.clone(),
                 user_id: logged_in_user_id.clone(),
-                session,
+                session: session.clone(),
                 display_name: None,
                 avatar_url: None,
             };
@@ -4464,14 +4634,14 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                 }
             };
 
-            break 'login_loop (client, sync_service, logged_in_user_id);
+            break 'login_loop (client, sync_service, logged_in_user_id, session);
         };
 
         let (session_reset_sender, mut session_reset_receiver) =
             tokio::sync::mpsc::unbounded_channel::<SessionResetAction>();
         // Listen for session changes, e.g., when the access token becomes invalid.
         let session_change_handler_task =
-            handle_session_changes(client.clone(), session_reset_sender);
+            handle_session_changes(client.clone(), client_session.clone(), session_reset_sender);
 
         // Signal login success now that SyncService::build() has already succeeded (inside
         // 'login_loop), which is the only step that can fail with an invalid/expired token.
@@ -4630,7 +4800,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             REQUEST_SENDER.lock().unwrap().replace(sender);
             // Restore session for the switched account
             match persistence::restore_session(Some(switch_user_id.clone())).await {
-                Ok((client, _sync_token, _session)) => {
+                Ok((client, _sync_token, session)) => {
                     // Store the client
                     CLIENT.lock().unwrap().replace(client.clone());
 
@@ -4667,7 +4837,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                     let (session_reset_sender, mut session_reset_receiver) =
                         tokio::sync::mpsc::unbounded_channel::<SessionResetAction>();
                     let session_change_handler_task =
-                        handle_session_changes(client.clone(), session_reset_sender);
+                        handle_session_changes(client.clone(), session.clone(), session_reset_sender);
 
                     let mut matrix_worker_task_handle = rt.spawn(matrix_worker_task(receiver, login_sender));
                     let mut room_list_service_task = rt.spawn(room_list_service_loop(room_list_service));
@@ -5529,6 +5699,7 @@ fn is_invalid_token_error(e: &sync_service::Error) -> bool {
 /// so the user is prompted to log in again.
 fn handle_session_changes(
     client: Client,
+    client_session: ClientSessionPersisted,
     session_reset_sender: UnboundedSender<SessionResetAction>,
 ) -> JoinHandle<()> {
     let mut receiver = client.subscribe_to_session_changes();
@@ -5554,7 +5725,14 @@ fn handle_session_changes(
                     // for every rejected request, but one re-login prompt suffices.
                     break;
                 }
-                Ok(SessionChange::TokensRefreshed) => {}
+                Ok(SessionChange::TokensRefreshed) => {
+                    // OAuth refresh lands new access/refresh tokens inside the client;
+                    // save_session() re-reads them via client.session() and rewrites the
+                    // on-disk FullSessionPersisted so a restart picks up the fresh pair.
+                    if let Err(e) = persistence::save_session(&client, client_session.clone()).await {
+                        warning!("Failed to persist refreshed session tokens: {e}");
+                    }
+                }
                 Err(broadcast::error::RecvError::Lagged(n)) => {
                     warning!("Session change receiver lagged, missed {n} messages.");
                 }
@@ -6661,6 +6839,7 @@ impl UserPowerLevels {
 
 /// Shuts down the current Tokio runtime completely and takes ownership to ensure proper cleanup.
 pub fn shutdown_background_tasks() {
+    cancel_active_oidc_flow();
     if let Some(runtime) = TOKIO_RUNTIME.lock().unwrap().take() {
         runtime.shutdown_background();
     }
@@ -6669,6 +6848,7 @@ pub fn shutdown_background_tasks() {
 pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
     // Clear resources normally, allowing them to be properly dropped
     // This prevents memory leaks when users logout and login again without closing the app
+    cancel_active_oidc_flow();
     CLIENT.lock().unwrap().take();
     SYNC_SERVICE.lock().unwrap().take();
     REQUEST_SENDER.lock().unwrap().take();
@@ -6697,15 +6877,26 @@ pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
 ///
 /// Note: `matrix_sdk::reqwest::Response` does not expose `.json()`, so all
 /// response bodies are read as text and parsed via `serde_json::from_str`.
+fn build_discovery_http_client(
+    proxy_override: Option<&str>,
+) -> anyhow::Result<matrix_sdk::reqwest::Client> {
+    let mut builder = matrix_sdk::reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5));
+    if let Some(proxy) = crate::proxy_config::resolve_effective_proxy_url(proxy_override) {
+        crate::proxy_config::validate_proxy_url(&proxy)
+            .map_err(|e| anyhow::anyhow!(e))?;
+        builder = builder.proxy(matrix_sdk::reqwest::Proxy::all(&proxy)?);
+    }
+    Ok(builder.build()?)
+}
+
 async fn discover_homeserver_capabilities(
     raw_url: &str,
-) -> anyhow::Result<crate::register::HsCapabilities> {
-    use crate::register::{HsCapabilities, IdentityProviderSummary};
+    proxy_override: Option<&str>,
+) -> anyhow::Result<HsCapabilities> {
     use serde_json::Value;
 
-    let http = matrix_sdk::reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()?;
+    let http = build_discovery_http_client(proxy_override)?;
 
     // Helper: read response text and parse as JSON Value, returning Null on any failure.
     async fn body_json(resp: matrix_sdk::reqwest::Response) -> Value {
@@ -6717,7 +6908,7 @@ async fn discover_homeserver_capabilities(
 
     // Step 1: .well-known (lenient — default base_url = raw_url on failure).
     let wk_url = format!("{raw_url}/.well-known/matrix/client");
-    let (base_url, is_mas, mas_signup_url) = match http.get(&wk_url).send().await {
+    let (base_url, is_mas, mas_signup_url, mas_issuer_url) = match http.get(&wk_url).send().await {
         Ok(resp) if resp.status().is_success() => {
             let body = body_json(resp).await;
             let base = body
@@ -6734,17 +6925,18 @@ async fn discover_homeserver_capabilities(
             // `account` field is for post-login account management (requires a
             // session) — opening it while unauthenticated loops between
             // /account/ and /login, so we do NOT use it here.
-            let (mas, mas_signup_url) = ["m.authentication", "org.matrix.msc2965.authentication"]
+            let (mas, mas_signup_url, mas_issuer_url) = ["m.authentication", "org.matrix.msc2965.authentication"]
                 .iter()
                 .find_map(|key: &&str| {
                     let issuer = body.get(*key)?.get("issuer").and_then(|v: &Value| v.as_str())?;
-                    let signup = format!("{}/register", issuer.trim_end_matches('/'));
-                    Some((true, Some(signup)))
+                    let issuer = issuer.trim_end_matches('/').to_string();
+                    let signup = format!("{issuer}/register");
+                    Some((true, Some(signup), Some(issuer)))
                 })
-                .unwrap_or((false, None));
-            (base, mas, mas_signup_url)
+                .unwrap_or((false, None, None));
+            (base, mas, mas_signup_url, mas_issuer_url)
         }
-        _ => (raw_url.trim_end_matches('/').to_string(), false, None),
+        _ => (raw_url.trim_end_matches('/').to_string(), false, None, None),
     };
 
     // Step 2: versions — liveness (fatal if unreachable).
@@ -6824,12 +7016,13 @@ async fn discover_homeserver_capabilities(
         uiaa_probe,
         sso_providers,
         mas_signup_url,
+        mas_issuer_url,
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::worker_shutdown_is_unexpected;
+    use super::{OidcFlowSlot, build_discovery_http_client, worker_shutdown_is_unexpected};
 
     #[test]
     fn worker_shutdown_is_not_unexpected_during_logout() {
@@ -6844,5 +7037,44 @@ mod tests {
     #[test]
     fn worker_shutdown_is_unexpected_without_controlled_teardown() {
         assert!(worker_shutdown_is_unexpected(false, false));
+    }
+
+    #[test]
+    fn oidc_flow_slot_rejects_duplicate_start_until_cleared() {
+        let mut slot = OidcFlowSlot::default();
+
+        let _first = slot.try_start_flow().unwrap();
+        assert!(slot.try_start_flow().is_err());
+
+        assert!(slot.cancel_active_flow());
+        assert!(slot.try_start_flow().is_ok());
+    }
+
+    #[test]
+    fn oidc_flow_slot_finish_is_scoped_to_matching_generation() {
+        let mut slot = OidcFlowSlot::default();
+
+        let (first_id, _first_rx) = slot.try_start_flow().unwrap();
+        assert!(slot.cancel_active_flow());
+
+        let (second_id, _second_rx) = slot.try_start_flow().unwrap();
+        slot.finish_flow(first_id);
+        assert!(slot.has_active_flow());
+
+        slot.finish_flow(second_id);
+        assert!(!slot.has_active_flow());
+    }
+
+    #[test]
+    fn discovery_http_client_accepts_valid_proxy_override() {
+        let client = build_discovery_http_client(Some("http://127.0.0.1:8080")).unwrap();
+        drop(client);
+    }
+
+    #[test]
+    fn discovery_http_client_rejects_invalid_proxy_override() {
+        let err = build_discovery_http_client(Some("ftp://proxy.invalid"))
+            .expect_err("invalid proxy scheme should be rejected");
+        assert!(err.to_string().contains("Unsupported proxy URL scheme"));
     }
 }
