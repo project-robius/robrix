@@ -54,17 +54,17 @@ script_mod! {
                 // The account settings section.
                 account_settings := AccountSettings {}
 
-                LineH { width: 400, padding: 10, margin: Inset{top: 20, bottom: 5} }
+                LineH { width: 425, padding: 10, margin: Inset{top: 20, bottom: 5} }
 
                 // The Robrix app settings section.
                 app_settings := AppSettings {}
 
-                LineH { width: 400, padding: 10, margin: Inset{top: 20, bottom: 5} }
+                LineH { width: 425, padding: 10, margin: Inset{top: 20, bottom: 5} }
 
                 // The TSP wallet settings section.
                 tsp_settings_screen := TspSettingsScreen {}
 
-                LineH { width: 400, padding: 10, margin: Inset{top: 20, bottom: 5} }
+                // LineH { width: 425, padding: 10, margin: Inset{top: 20, bottom: 5} }
 
                 // Add other settings sections here as needed.
                 // Don't forget to add a `show()` fn to those settings sections
