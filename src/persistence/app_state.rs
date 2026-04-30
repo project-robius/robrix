@@ -5,11 +5,9 @@ use serde::{self, Deserialize, Serialize};
 use matrix_sdk::ruma::{OwnedUserId, UserId};
 use crate::{app::AppState, app_data_dir, persistence::persistent_state_dir};
 
-
 const LATEST_APP_STATE_FILE_NAME: &str = "latest_app_state.json";
 
 const WINDOW_GEOM_STATE_FILE_NAME: &str = "window_geom_state.json";
-
 
 /// Persistable state of the window's size, position, and fullscreen status.
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -22,17 +20,24 @@ pub struct WindowGeomState {
     pub is_fullscreen: bool,
 }
 
-
 /// Save the current app state to persistent storage.
-pub fn save_app_state(
-    app_state: AppState,
-    user_id: OwnedUserId,
-) -> anyhow::Result<()> {
-    let file = std::fs::File::create(
-        persistent_state_dir(&user_id).join(LATEST_APP_STATE_FILE_NAME)
-    )?;
+pub fn save_app_state(app_state: AppState, user_id: OwnedUserId) -> anyhow::Result<()> {
+    let bytes = serialize_app_state(&app_state)?;
+    save_app_state_bytes(&bytes, &user_id)
+}
+
+/// Serializes the current app state into the same format used by [`save_app_state`].
+pub fn serialize_app_state(app_state: &AppState) -> anyhow::Result<Vec<u8>> {
+    Ok(serde_json::to_vec(app_state)?)
+}
+
+/// Save pre-serialized app state bytes to persistent storage.
+pub fn save_app_state_bytes(app_state_json: &[u8], user_id: &UserId) -> anyhow::Result<()> {
+    let state_dir = persistent_state_dir(user_id);
+    std::fs::create_dir_all(&state_dir)?;
+    let file = std::fs::File::create(state_dir.join(LATEST_APP_STATE_FILE_NAME))?;
     let mut writer = std::io::BufWriter::new(file);
-    serde_json::to_writer(&mut writer, &app_state)?;
+    writer.write_all(app_state_json)?;
     writer.flush()?;
     log!("Successfully saved app state to persistent storage.");
     Ok(())
@@ -67,7 +72,7 @@ pub async fn load_app_state(user_id: &UserId) -> anyhow::Result<AppState> {
             log!("No saved app state found, using default.");
             return Ok(AppState::default());
         }
-        Err(e) => return Err(e.into())
+        Err(e) => return Err(e.into()),
     };
     match serde_json::from_slice(&file_bytes) {
         Ok(app_state) => {
@@ -75,7 +80,9 @@ pub async fn load_app_state(user_id: &UserId) -> anyhow::Result<AppState> {
             Ok(app_state)
         }
         Err(e) => {
-            error!("Failed to deserialize app state: {e}. This may be due to an incompatible format from a previous version.");
+            error!(
+                "Failed to deserialize app state: {e}. This may be due to an incompatible format from a previous version."
+            );
 
             // Backup the old file to preserve user's data
             let backup_path = state_path.with_extension("json.bak");
