@@ -348,34 +348,36 @@ fn add_new_space(space: &SpaceRoom, client: &Client) {
     let url_opt = space.avatar_url.clone();
     let client2 = client.clone();
 
-    // Spawn task to fetch avatar asynchronously to avoid N+1 query blocking.
-    tokio::runtime::Handle::current().spawn(async move {
-        let space_avatar_opt = if let Some(url) = url_opt {
-            fetch_space_avatar(url, &client2)
-                .await
-                .inspect_err(|e| error!("Failed to fetch avatar for new space {:?} ({}): {e}", display_name, space_id))
-                .ok()
-        } else { None };
-        let space_avatar = space_avatar_opt.unwrap_or_else(
-            || utils::avatar_from_room_name(Some(&display_name))
-        );
+    let jsi = JoinedSpaceInfo {
+        space_name_id: RoomNameId::new(
+            matrix_sdk::RoomDisplayName::Named(display_name.clone()),
+            space_id.clone(),
+        ),
+        canonical_alias,
+        topic,
+        space_avatar: utils::avatar_from_room_name(Some(&display_name)),
+        num_joined_members,
+        join_rule,
+        world_readable,
+        guest_can_join,
+        children_count,
+    };
+    // Emit AddJoinedSpace immediately with a fallback/unknown avatar, to ensure synchronous ordering.
+    enqueue_spaces_list_update(SpacesListUpdate::AddJoinedSpace(jsi));
 
-        let jsi = JoinedSpaceInfo {
-            space_name_id: RoomNameId::new(
-                matrix_sdk::RoomDisplayName::Named(display_name),
-                space_id,
-            ),
-            canonical_alias,
-            topic,
-            space_avatar,
-            num_joined_members,
-            join_rule,
-            world_readable,
-            guest_can_join,
-            children_count,
-        };
-        enqueue_spaces_list_update(SpacesListUpdate::AddJoinedSpace(jsi));
-    });
+    if url_opt.is_some() {
+        // Spawn task to fetch avatar asynchronously to avoid N+1 query blocking.
+        tokio::runtime::Handle::current().spawn(async move {
+            if let Some(url) = url_opt {
+                if let Ok(avatar) = fetch_space_avatar(url, &client2)
+                    .await
+                    .inspect_err(|e| error!("Failed to fetch avatar for new space {:?} ({}): {e}", display_name, space_id))
+                {
+                    enqueue_spaces_list_update(SpacesListUpdate::UpdateSpaceAvatar { space_id, avatar });
+                }
+            }
+        });
+    }
 }
 
 
