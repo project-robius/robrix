@@ -170,7 +170,7 @@ async fn collect_referenced_db_paths() -> std::collections::HashSet<PathBuf> {
         let session: FullSessionPersisted = match serde_json::from_slice(&bytes) {
             Ok(s) => s,
             Err(e) => {
-                log!("collect_referenced_db_paths: skipping unparseable session file {}: {e}",
+                log!("collect_referenced_db_paths: skipping unparsable session file {}: {e}",
                     session_file.display(),
                 );
                 continue;

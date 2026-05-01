@@ -4544,7 +4544,7 @@ impl UserPowerLevels {
 
 /// Drops session state and signals the login loop to wait for re-login.
 /// Keeps `REQUEST_SENDER` alive, and also the `matrix_worker_task
-/// whic needs to keep running to receive the next login request.
+/// which needs to keep running to receive the next login request.
 pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
     CLIENT.lock().unwrap().take();
     SYNC_SERVICE.lock().unwrap().take();
