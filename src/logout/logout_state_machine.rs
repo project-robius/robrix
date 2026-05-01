@@ -23,10 +23,6 @@
 //!                                                                           ↓
 //!                                                                   CleaningAppState (70%)
 //!                                                                           ↓
-//!                                                                   ShuttingDownTasks (80%)
-//!                                                                           ↓
-//!                                                                   RestartingRuntime (90%)
-//!                                                                           ↓
 //!                                                                     Completed (100%)
 //!                                                                           ↓
 //!                                                                        Failed
@@ -68,10 +64,11 @@
 //! 3. **LoggingOutFromServer**: Call `client.matrix_auth().logout()` (60s timeout)
 //! 4. **PointOfNoReturn**: Set global flags, delete saved user ID
 //! 5. **ClosingTabs**: Close desktop tabs via `MainDesktopUiAction::CloseAllTabs`
-//! 6. **CleaningAppState**: Clear global resources and notify UI cleanup
-//! 7. **ShuttingDownTasks**: Call `shutdown_background_tasks()`
-//! 8. **RestartingRuntime**: Call `start_matrix_tokio()` for next login
-//! 9. **Completed**: Send `LogoutAction::LogoutSuccess`
+//! 6. **CleaningAppState**: Drops globals and signals `LOGOUT_NOTIFY`. The
+//!    login loop in `start_matrix_client_login_and_sync` does the actual
+//!    teardown of per-session tasks. The tokio runtime stays alive, since
+//!    tearing it down here would race with the new client's SQLite setup.
+//! 7. **Completed**: Send `LogoutAction::LogoutSuccess`
 //!
 //! ## Usage
 //!
@@ -94,7 +91,7 @@ use crate::persistence::delete_latest_user_id;
 use crate::sliding_sync::clear_app_state;
 use crate::{
     home::main_desktop_ui::MainDesktopUiAction,
-    sliding_sync::{get_client, get_sync_service, shutdown_background_tasks, start_matrix_tokio},
+    sliding_sync::{get_client, get_sync_service},
 };
 use super::logout_confirm_modal::{LogoutAction, ClearedComponentType};
 use super::logout_errors::{LogoutError, RecoverableError, UnrecoverableError};
@@ -114,12 +111,8 @@ pub enum LogoutState {
     PointOfNoReturn,
     /// Closing UI tabs (desktop only)
     ClosingTabs,
-    /// Cleaning up application state
+    /// Cleaning up application state.
     CleaningAppState,
-    /// Shutting down background tasks
-    ShuttingDownTasks,
-    /// Restarting the Matrix runtime
-    RestartingRuntime,
     /// Logout completed successfully
     Completed,
     /// Logout failed with error
@@ -407,35 +400,7 @@ impl LogoutStateMachine {
             self.handle_error(&error).await;
             return Err(anyhow!(error));
         }
-        
-        // Shutdown tasks
-        self.transition_to(
-            LogoutState::ShuttingDownTasks,
-            "Shutting down background tasks...".to_string(),
-            80
-        ).await?;
-        
-        self.shutdown_background_tasks();
-        
-        // Restart runtime
-        self.transition_to(
-            LogoutState::RestartingRuntime,
-            "Restarting Matrix runtime...".to_string(),
-            90
-        ).await?;
-        
-        if let Err(e) = self.restart_runtime(){
-            let error = LogoutError::Unrecoverable(UnrecoverableError::RuntimeRestartFailed);
-            self.transition_to(
-                LogoutState::Failed(error.clone()),
-                format!("Failed to restart runtime: {}", e),
-                0
-            ).await?;
-            self.handle_error(&error).await;
-            return Err(anyhow!(error));
-        }
-        
-        // Success!
+
         self.transition_to(
             LogoutState::Completed,
             "Logout completed successfully".to_string(),
@@ -517,16 +482,6 @@ impl LogoutStateMachine {
             }
             Err(_) => Err(anyhow!("Timed out waiting for tabs to close")),
         }
-    }
-    
-    fn shutdown_background_tasks(&self) {
-        shutdown_background_tasks();
-    }
-    
-    fn restart_runtime(&self) -> Result<()> {
-        start_matrix_tokio()
-            .map(|_| ())
-            .map_err(|e| anyhow!("Failed to restart runtime: {}", e))
     }
     
     /// Handle errors by posting appropriate actions

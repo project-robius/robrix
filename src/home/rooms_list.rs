@@ -28,6 +28,7 @@ use crate::{
     home::{
         navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, rooms_list_entry::RoomsListEntryAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}
     },
+    logout::logout_confirm_modal::LogoutAction,
     room::{
         FetchedRoomAvatar,
         room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn},
@@ -1253,6 +1254,29 @@ impl Widget for RoomsList {
         // Second, handle any other actions that came from other widgets/components.
         if let Event::Actions(actions) = event {
             for action in actions {
+                // Clear widget state upon logout.
+                if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
+                    self.invited_rooms.borrow_mut().clear();
+                    self.all_joined_rooms.clear();
+                    self.all_known_rooms_order.clear();
+                    self.selected_space = None;
+                    self.space_request_sender = None;
+                    self.space_map.clear();
+                    self.hidden_rooms.clear();
+                    self.displayed_invited_rooms.clear();
+                    self.invited_rooms_indexes = Default::default();
+                    self.displayed_direct_rooms.clear();
+                    self.direct_rooms_indexes = Default::default();
+                    self.displayed_regular_rooms.clear();
+                    self.regular_rooms_indexes = Default::default();
+                    self.current_active_room = None;
+                    self.max_known_rooms = None;
+                    self.status = String::new();
+                    self.update_status();
+                    self.redraw(cx);
+                    continue;
+                }
+
                 // Only handle filter changes from the home screen's filter bar,
                 // not from any other RoomFilterInputBar instance (e.g., SpaceLobbyScreen's).
                 if let Some(MainFilterAction::Changed(keywords)) = action.downcast_ref() {
