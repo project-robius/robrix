@@ -3,13 +3,7 @@
 [target.'cfg(all())']
 rustflags = ["--cfg", "ruma_identifiers_storage=\"Arc\""]
 
-## Pin the macOS bundle identifier that Makepad's `platform/build.rs` writes
-## next to the binary for unbundled `cargo run` launches, so dev builds share
-## the same identity as proper bundled releases (see `packaging/Info.plist`).
-## Otherwise macOS treats them as separate apps for saved window positions,
-## permission grants, etc. Bundle *name* doesn't need an override — Makepad's
-## default derives "Robrix" from the workspace directory name. `force = true`
-## so IDE/CI wrappers that pre-set the var (often to empty) can't shadow it.
+## Override the bundle/package ID that Makepad uses by default with Robrix's ID.
 [env]
 MAKEPAD_BUNDLE_IDENTIFIER = { value = "rs.robius.robrix", force = true }
 
