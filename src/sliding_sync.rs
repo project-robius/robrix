@@ -3411,25 +3411,24 @@ fn handle_ignore_user_list_subscriber(client: Client) -> JoinHandle<()> {
 
 /// Asynchronously loads and restores the app state from persistent storage for the given user.
 ///
-/// If the loaded dock state contains open rooms and dock items, this function emits an action
-/// to instruct the UI to restore the app state for the main home view (all rooms).
-/// If loading fails, it shows a popup notification with the error message.
+/// When a saved state file is found, this emits a `RestoreAppStateFromPersistentState` action
+/// so that the app can restore preferences and the dock layout (on desktop).
+/// We emit this action even if the dock state is empty to ensure that prefs always get restored.
 fn handle_load_app_state(user_id: OwnedUserId) {
     Handle::current().spawn(async move {
         match load_app_state(&user_id).await {
-            Ok(app_state) => {
-                if !app_state.saved_dock_state_home.open_rooms.is_empty()
-                    && !app_state.saved_dock_state_home.dock_items.is_empty()
-                {
-                    log!("Loaded room panel state from app data directory. Restoring now...");
-                    Cx::post_action(AppStateAction::RestoreAppStateFromPersistentState(app_state));
-                }
+            Ok(Some(app_state)) => {
+                log!("Loaded app state from persistent storage. Restoring now...");
+                Cx::post_action(AppStateAction::RestoreAppStateFromPersistentState(app_state));
+            }
+            Ok(None) => {
+                // No saved file (fresh install) or file was unreadable; nothing to restore.
             }
             Err(_e) => {
-                log!("Failed to restore dock layout from persistent state: {_e}");
+                log!("Failed to restore app state from persistent storage: {_e}");
                 enqueue_popup_notification(
-                    "Could not restore the previous dock layout.",
-                    PopupKind::Error,
+                    "Could not restore the previous session's app state.",
+                    PopupKind::Warning,
                     None,
                 );
             }

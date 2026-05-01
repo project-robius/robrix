@@ -62,22 +62,24 @@ pub fn save_window_state(window_ref: WindowRef, cx: &Cx) -> anyhow::Result<()> {
 
 /// Loads the App state from persistent storage.
 ///
-/// If the file doesn't exist or deserialization fails (e.g., due to incompatible format changes),
-/// this function returns a default `AppState` and backs up the old file if it exists.
-pub async fn load_app_state(user_id: &UserId) -> anyhow::Result<AppState> {
+/// Return values:
+/// * `Ok(Some(app_state))` if a saved state file was found and parsed.
+/// * `Ok(None)` if no saved file exists, or if the file existed but wasn't valid.
+/// * `Err` if there was a functional error in trying to read the saved state file.
+pub async fn load_app_state(user_id: &UserId) -> anyhow::Result<Option<AppState>> {
     let state_path = persistent_state_dir(user_id).join(LATEST_APP_STATE_FILE_NAME);
     let file_bytes = match tokio::fs::read(&state_path).await {
         Ok(fb) => fb,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             log!("No saved app state found, using default.");
-            return Ok(AppState::default());
+            return Ok(None);
         }
         Err(e) => return Err(e.into()),
     };
     match serde_json::from_slice(&file_bytes) {
         Ok(app_state) => {
             log!("Successfully loaded app state from persistent storage.");
-            Ok(app_state)
+            Ok(Some(app_state))
         }
         Err(e) => {
             error!(
@@ -93,7 +95,7 @@ pub async fn load_app_state(user_id: &UserId) -> anyhow::Result<AppState> {
             }
 
             log!("Using default app state. Your previous tabs and selections will be reset.");
-            Ok(AppState::default())
+            Ok(None)
         }
     }
 }
