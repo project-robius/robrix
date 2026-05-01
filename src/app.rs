@@ -41,7 +41,17 @@ script_mod! {
                         }
                     }
                 }
-            
+
+                // Replace Makepad's stock WindowMenu (File/Edit/View/...) with a
+                // minimal Robrix app menu. The first submenu is what macOS shows
+                // as the application menu next to the Apple logo (its title is
+                // taken from CFBundleName — see `.cargo/config.toml`), but the
+                // items inside are what the user actually sees on click.
+                window_menu := WindowMenu {
+                    main := MenuItem.Main{items:[@app_menu]}
+                    app_menu := MenuItem.Sub { name:"Robrix" items:[@quit] }
+                    quit := MenuItem.Item { name:"Quit Robrix" key: KeyCode.KeyQ enabled: true }
+                }
 
                 body +: {
                     // Only TOP is applied here, since top is shared by every screen
@@ -711,12 +721,11 @@ impl App {
                 self.persist_runtime_state(cx, "background");
                 crate::sliding_sync::set_sync_service_desired_running(false, "app background");
             }
-            Event::WindowCloseRequested(e) => {
-                if self.ui.window(cx, ids!(main_window)).window_id() == Some(e.window_id) {
+            Event::WindowCloseRequested(e)
+                if self.ui.window(cx, ids!(main_window)).window_id() == Some(e.window_id) => {
                     log!("Main window close requested; persisting runtime state.");
                     self.persist_runtime_state(cx, "main window close request");
                 }
-            }
             Event::Foreground => {
                 if !self.lifecycle.is_foreground {
                     log!("App entered foreground; starting Matrix sync.");
