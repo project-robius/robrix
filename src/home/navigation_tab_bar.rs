@@ -570,6 +570,14 @@ impl Widget for NavigationTabBar {
                     continue;
                 }
 
+                // Upon login (mostly re-login), go back to the home tab
+                // because the profile/settings tab will have been selected upon logout.
+                if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
+                    self.apply_selected_tab(cx, Some(SelectedTab::Home));
+                    cx.action(NavigationBarAction::GoToHome);
+                    continue;
+                }
+
                 if let Some(AppPreferencesAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
                     if *new_mode != self.applied_view_mode {
                         self.apply_view_mode(*new_mode);

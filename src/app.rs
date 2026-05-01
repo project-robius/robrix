@@ -191,6 +191,19 @@ impl MatchEvent for App {
         // only init logging/tracing once
         let _ = tracing_subscriber::fmt::try_init();
 
+        // On iOS (and potentially other devices), there is a very low limit
+        // (albeit a soft limit) on max file descriptors, as little as 256.
+        // We increase that preemptively to avoid running out later due to sqlite ops.
+        #[cfg(unix)]
+        unsafe {
+            let mut rlim = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+            if libc::getrlimit(libc::RLIMIT_NOFILE, &mut rlim) == 0 && rlim.rlim_cur < 4096 {
+                let new_soft = (4096 as libc::rlim_t).min(rlim.rlim_max);
+                let bumped = libc::rlimit { rlim_cur: new_soft, rlim_max: rlim.rlim_max };
+                libc::setrlimit(libc::RLIMIT_NOFILE, &bumped);
+            }
+        }
+
         // Initialize the project directory here from the main UI thread
         // such that background threads/tasks will be able to can access it.
         let _app_data_dir = crate::app_data_dir();

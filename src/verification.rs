@@ -22,10 +22,11 @@ pub enum VerificationStateAction {
     None,
 }
 
-pub fn add_verification_event_handlers_and_sync_client(client: Client) {
+
+pub fn add_verification_event_handlers_and_sync_client(client: Client) -> tokio::task::JoinHandle<()> {
     let mut verification_state_subscriber = client.encryption().verification_state();
     log!("Initial verification state is {:?}", verification_state_subscriber.get());
-    Handle::current().spawn(async move {
+    let verification_state_handle = Handle::current().spawn(async move {
         while let Some(state) = verification_state_subscriber.next().await {
             log!("Received a verification state update: {state:?}");
             Cx::post_action(VerificationStateAction::Update(state));
@@ -70,6 +71,8 @@ pub fn add_verification_event_handlers_and_sync_client(client: Client) {
             }
         }
     );
+
+    verification_state_handle
 }
 
 

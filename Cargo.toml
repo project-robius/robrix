@@ -45,6 +45,7 @@ hashbrown = { version = "0.16", features = ["raw-entry"] }
 htmlize = "1.0.5"
 indexmap = "2.6.0"
 imghdr = "0.7.0"
+libc = "0.2"
 linkify = "0.10.0"
 matrix-sdk-base = { git = "https://github.com/project-robius/matrix-rust-sdk", branch = "space_room_suggested" }
 matrix-sdk = { git = "https://github.com/project-robius/matrix-rust-sdk", branch = "space_room_suggested", default-features = false, features = [
