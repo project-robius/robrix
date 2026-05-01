@@ -3387,6 +3387,7 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
             log!("Received a sync service state update: {state:?}");
             match state {
                 sync_service::State::Error(e) => {
+                    SYNC_SERVICE_ASSUMED_RUNNING.store(false, Ordering::Release);
                     if is_invalid_token_error(&e) {
                         // The access token is invalid; `handle_session_changes` will have
                         // already posted a LoginAction::LoginFailure, so just log here.
@@ -3409,9 +3410,8 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
                             continue;
                         }
                         log!("Restarting sync service due to error: {e}.");
-                        if let Some(ss) = get_sync_service() {
-                            ss.start().await;
-                            SYNC_SERVICE_ASSUMED_RUNNING.store(true, Ordering::Release);
+                        if get_sync_service().is_some() {
+                            apply_sync_service_desired_state("sync service error restart").await;
                         } else {
                             enqueue_popup_notification(
                                 "Unable to restart the Matrix sync service.\n\nPlease quit and restart Robrix.",

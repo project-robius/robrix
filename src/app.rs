@@ -660,12 +660,11 @@ impl AppMain for App {
             self.app_state.app_prefs.broadcast_all(cx);
         }
 
-        self.handle_lifecycle_event(cx, event);
-        
         // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
+        self.handle_lifecycle_event(cx, event);
 
     }
 }
@@ -698,6 +697,12 @@ impl App {
                 }
                 self.persist_runtime_state(cx, "background");
                 crate::sliding_sync::set_sync_service_desired_running(false, "app background");
+            }
+            Event::WindowCloseRequested(e) => {
+                if self.ui.window(cx, ids!(main_window)).window_id() == Some(e.window_id) {
+                    log!("Main window close requested; persisting runtime state.");
+                    self.persist_runtime_state(cx, "main window close request");
+                }
             }
             Event::Foreground => {
                 if !self.lifecycle.is_foreground {
