@@ -2162,6 +2162,10 @@ pub fn current_user_id() -> Option<OwnedUserId> {
 
 /// The singleton sync service.
 static SYNC_SERVICE: Mutex<Option<Arc<SyncService>>> = Mutex::new(None);
+static SYNC_SERVICE_DESIRED_RUNNING: AtomicBool = AtomicBool::new(true);
+static SYNC_SERVICE_ASSUMED_RUNNING: AtomicBool = AtomicBool::new(false);
+static SYNC_SERVICE_LIFECYCLE_LOCK: LazyLock<tokio::sync::Mutex<()>> =
+    LazyLock::new(|| tokio::sync::Mutex::new(()));
 
 /// Set to `true` when the access token has been rejected by the homeserver,
 /// signaling the main task to tear down the current session and wait for re-login.
@@ -2176,6 +2180,73 @@ static LOGOUT_NOTIFY: LazyLock<Notify> = LazyLock::new(Notify::new);
 /// Get a reference to the current sync service, if available.
 pub fn get_sync_service() -> Option<Arc<SyncService>> {
     SYNC_SERVICE.lock().ok()?.as_ref().cloned()
+}
+
+pub fn sync_service_desired_running() -> bool {
+    SYNC_SERVICE_DESIRED_RUNNING.load(Ordering::Acquire)
+}
+
+pub fn set_sync_service_desired_running(running: bool, reason: &'static str) {
+    let previous = SYNC_SERVICE_DESIRED_RUNNING.swap(running, Ordering::AcqRel);
+    if previous == running && SYNC_SERVICE_ASSUMED_RUNNING.load(Ordering::Acquire) == running {
+        log!(
+            "Matrix sync service already desired {}; skipping lifecycle request ({reason}).",
+            if running { "running" } else { "stopped" }
+        );
+        return;
+    }
+
+    let rt_handle = TOKIO_RUNTIME.lock().unwrap().as_ref().map(|rt| rt.handle().clone());
+    let Some(rt_handle) = rt_handle else {
+        log!(
+            "Stored Matrix sync desired state as {}; Tokio runtime is not running yet ({reason}).",
+            if running { "running" } else { "stopped" }
+        );
+        return;
+    };
+
+    rt_handle.spawn(apply_sync_service_desired_state(reason));
+}
+
+async fn apply_sync_service_desired_state(reason: &'static str) {
+    let _guard = SYNC_SERVICE_LIFECYCLE_LOCK.lock().await;
+    loop {
+        let desired = SYNC_SERVICE_DESIRED_RUNNING.load(Ordering::Acquire);
+        if SYNC_SERVICE_ASSUMED_RUNNING.load(Ordering::Acquire) == desired {
+            break;
+        }
+
+        let Some(sync_service) = get_sync_service() else {
+            log!("Matrix sync service is not available while applying lifecycle request ({reason}).");
+            break;
+        };
+
+        if desired {
+            log!("Starting Matrix sync service after lifecycle request ({reason}).");
+            sync_service.start().await;
+        } else {
+            log!("Stopping Matrix sync service after lifecycle request ({reason}).");
+            sync_service.stop().await;
+        }
+        SYNC_SERVICE_ASSUMED_RUNNING.store(desired, Ordering::Release);
+    }
+}
+
+pub fn stop_sync_service_for_shutdown(timeout: Duration) -> Result<(), Elapsed> {
+    SYNC_SERVICE_DESIRED_RUNNING.store(false, Ordering::Release);
+    let Some(sync_service) = get_sync_service() else {
+        SYNC_SERVICE_ASSUMED_RUNNING.store(false, Ordering::Release);
+        return Ok(());
+    };
+
+    let result = block_on_async_with_timeout(Some(timeout), async move {
+        let _guard = SYNC_SERVICE_LIFECYCLE_LOCK.lock().await;
+        sync_service.stop().await;
+    });
+    if result.is_ok() {
+        SYNC_SERVICE_ASSUMED_RUNNING.store(false, Ordering::Release);
+    }
+    result
 }
 
 /// The list of users that the current user has chosen to ignore.
@@ -2521,13 +2592,14 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         handle_load_app_state(logged_in_user_id.to_owned());
         subscriber_task_handles.push(handle_sync_indicator_subscriber(&sync_service));
         subscriber_task_handles.push(handle_sync_service_state_subscriber(sync_service.state()));
-        sync_service.start().await;
 
         let room_list_service = sync_service.room_list_service();
+        let sync_service = Arc::new(sync_service);
 
-        if let Some(_existing) = SYNC_SERVICE.lock().unwrap().replace(Arc::new(sync_service)) {
+        if let Some(_existing) = SYNC_SERVICE.lock().unwrap().replace(sync_service) {
             error!("BUG: unexpectedly replaced an existing sync service when initializing the matrix client.");
         }
+        apply_sync_service_desired_state("initial Matrix sync startup").await;
 
         let mut room_list_service_task = rt.spawn(room_list_service_loop(room_list_service));
         let mut space_service_task = rt.spawn(space_service_loop(client));
@@ -2659,6 +2731,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             // No-ops if `clear_app_state` already cleared these.
             let _ = CLIENT.lock().unwrap().take();
             let _ = SYNC_SERVICE.lock().unwrap().take();
+            SYNC_SERVICE_ASSUMED_RUNNING.store(false, Ordering::Release);
             continue 'login_loop;
         }
         // Unexpected break (e.g. matrix_worker_task panicked).
@@ -3338,25 +3411,24 @@ fn handle_ignore_user_list_subscriber(client: Client) -> JoinHandle<()> {
 
 /// Asynchronously loads and restores the app state from persistent storage for the given user.
 ///
-/// If the loaded dock state contains open rooms and dock items, this function emits an action
-/// to instruct the UI to restore the app state for the main home view (all rooms).
-/// If loading fails, it shows a popup notification with the error message.
+/// When a saved state file is found, this emits a `RestoreAppStateFromPersistentState` action
+/// so that the app can restore preferences and the dock layout (on desktop).
+/// We emit this action even if the dock state is empty to ensure that prefs always get restored.
 fn handle_load_app_state(user_id: OwnedUserId) {
     Handle::current().spawn(async move {
         match load_app_state(&user_id).await {
-            Ok(app_state) => {
-                if !app_state.saved_dock_state_home.open_rooms.is_empty()
-                    && !app_state.saved_dock_state_home.dock_items.is_empty()
-                {
-                    log!("Loaded room panel state from app data directory. Restoring now...");
-                    Cx::post_action(AppStateAction::RestoreAppStateFromPersistentState(app_state));
-                }
+            Ok(Some(app_state)) => {
+                log!("Loaded app state from persistent storage. Restoring now...");
+                Cx::post_action(AppStateAction::RestoreAppStateFromPersistentState(app_state));
+            }
+            Ok(None) => {
+                // No saved file (fresh install) or file was unreadable; nothing to restore.
             }
             Err(_e) => {
-                log!("Failed to restore dock layout from persistent state: {_e}");
+                log!("Failed to restore app state from persistent storage: {_e}");
                 enqueue_popup_notification(
-                    "Could not restore the previous dock layout.",
-                    PopupKind::Error,
+                    "Could not restore the previous session's app state.",
+                    PopupKind::Warning,
                     None,
                 );
             }
@@ -3426,6 +3498,7 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
             log!("Received a sync service state update: {state:?}");
             match state {
                 sync_service::State::Error(e) => {
+                    SYNC_SERVICE_ASSUMED_RUNNING.store(false, Ordering::Release);
                     if is_invalid_token_error(&e) {
                         // The access token is invalid; `handle_session_changes` will have
                         // already posted a LoginAction::LoginFailure, so just log here.
@@ -3439,12 +3512,17 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
                         TOKEN_EXPIRED_NOTIFY.notify_one();
                         if let Some(ss) = get_sync_service() {
                             ss.stop().await;
+                            SYNC_SERVICE_ASSUMED_RUNNING.store(false, Ordering::Release);
                         }
                         break;
                     } else {
+                        if !sync_service_desired_running() {
+                            log!("Not restarting sync service after error because lifecycle currently wants it stopped: {e}.");
+                            continue;
+                        }
                         log!("Restarting sync service due to error: {e}.");
-                        if let Some(ss) = get_sync_service() {
-                            ss.start().await;
+                        if get_sync_service().is_some() {
+                            apply_sync_service_desired_state("sync service error restart").await;
                         } else {
                             enqueue_popup_notification(
                                 "Unable to restart the Matrix sync service.\n\nPlease quit and restart Robrix.",
@@ -4548,6 +4626,7 @@ impl UserPowerLevels {
 pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
     CLIENT.lock().unwrap().take();
     SYNC_SERVICE.lock().unwrap().take();
+    SYNC_SERVICE_ASSUMED_RUNNING.store(false, Ordering::Release);
     IGNORED_USERS.lock().unwrap().clear();
     ALL_JOINED_ROOMS.lock().unwrap().clear();
     LOGOUT_NOTIFY.notify_one();

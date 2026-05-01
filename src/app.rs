@@ -2,9 +2,14 @@
 //!
 //! See `handle_startup()` for the first code that runs on app startup.
 
-use std::{cell::RefCell, collections::HashMap};
+use std::{
+    cell::RefCell,
+    collections::{hash_map::DefaultHasher, HashMap},
+    hash::{Hash, Hasher},
+    time::Duration,
+};
 use makepad_widgets::*;
-use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, RoomId}};
+use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomId}};
 use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::clear_avatar_cache, room_preview_cache::clear_room_preview_cache, home::{
@@ -36,7 +41,17 @@ script_mod! {
                         }
                     }
                 }
-            
+
+                // Replace Makepad's stock WindowMenu (File/Edit/View/...) with a
+                // minimal Robrix app menu. The first submenu is what macOS shows
+                // as the application menu next to the Apple logo (its title is
+                // taken from CFBundleName — see `.cargo/config.toml`), but the
+                // items inside are what the user actually sees on click.
+                window_menu := WindowMenu {
+                    main := MenuItem.Main{items:[@app_menu]}
+                    app_menu := MenuItem.Sub { name:"Robrix" items:[@quit] }
+                    quit := MenuItem.Item { name:"Quit Robrix" key: KeyCode.KeyQ enabled: true }
+                }
 
                 body +: {
                     // Only TOP is applied here, since top is shared by every screen
@@ -164,6 +179,7 @@ pub struct App {
     #[live] ui: WidgetRef,
     /// The top-level app state, shared across various parts of the app.
     #[rust] app_state: AppState,
+    #[rust] lifecycle: AppLifecycle,
     /// The details of a room we're waiting on to be loaded so that we can navigate to it.
     /// This can be either a room we're waiting to join, or one we're waiting to be invited to.
     /// Also includes an optional room ID to be closed once the awaited room has been loaded.
@@ -582,6 +598,44 @@ fn clear_all_app_state(cx: &mut Cx) {
     clear_room_preview_cache(cx);
 }
 
+#[derive(Debug)]
+struct AppLifecycle {
+    is_foreground: bool,
+    is_active: bool,
+    last_app_state_save: Option<AppStateSaveFingerprint>,
+    shutdown_started: bool,
+}
+
+impl Default for AppLifecycle {
+    fn default() -> Self {
+        Self {
+            is_foreground: true,
+            is_active: true,
+            last_app_state_save: None,
+            shutdown_started: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct AppStateSaveFingerprint {
+    user_id: OwnedUserId,
+    hash: u64,
+    len: usize,
+}
+
+impl AppStateSaveFingerprint {
+    fn new(user_id: OwnedUserId, bytes: &[u8]) -> Self {
+        let mut hasher = DefaultHasher::new();
+        bytes.hash(&mut hasher);
+        Self {
+            user_id,
+            hash: hasher.finish(),
+            len: bytes.len(),
+        }
+    }
+}
+
 impl AppMain for App {
     fn script_mod(vm: &mut ScriptVm) -> makepad_widgets::ScriptValue {
         // Order matters: base widgets first, then app widgets, then app UI.
@@ -629,47 +683,125 @@ impl AppMain for App {
             self.app_state.app_prefs.broadcast_all(cx);
         }
 
-        if let Event::Shutdown = event {
-            let window_ref = self.ui.window(cx, ids!(main_window));
-            if let Err(e) = persistence::save_window_state(window_ref, cx) {
-                error!("Failed to save window state. Error: {e}");
-            }
-            if let Some(user_id) = current_user_id() {
-                let app_state = self.app_state.clone();
-                if let Err(e) = persistence::save_app_state(app_state, user_id) {
-                    error!("Failed to save app state. Error: {e}");
-                }
-            }
-            #[cfg(feature = "tsp")] {
-                // Save the TSP wallet state, if it exists, with a 3-second timeout.
-                let tsp_state = std::mem::take(&mut *crate::tsp::tsp_state_ref().lock().unwrap());
-                let res = crate::sliding_sync::block_on_async_with_timeout(
-                    Some(std::time::Duration::from_secs(3)),
-                    async move {
-                        match tsp_state.close_and_serialize().await {
-                            Ok(saved_state) => match persistence::save_tsp_state_async(saved_state).await {
-                                Ok(_) => { }
-                                Err(e) => error!("Failed to save TSP wallet state. Error: {e}"),
-                            }
-                            Err(e) => error!("Failed to close and serialize TSP wallet state. Error: {e}"),
-                        }
-                    },
-                );
-                if let Err(_e) = res {
-                    error!("Failed to save TSP wallet state before app shutdown. Error: Timed Out.");
-                }
-            }
-        }
-        
         // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
+        self.handle_lifecycle_event(cx, event);
 
     }
 }
 
 impl App {
+    fn handle_lifecycle_event(&mut self, cx: &mut Cx, event: &Event) {
+        match event {
+            Event::QuitRequested(e) => {
+                log!("Received quit request: {:?}. Persisting state before allowing quit.", e.reason);
+                self.persist_runtime_state(cx, "quit request");
+            }
+            Event::Pause => {
+                if self.lifecycle.is_active {
+                    log!("App paused; persisting runtime state.");
+                    self.lifecycle.is_active = false;
+                }
+                self.persist_runtime_state(cx, "pause");
+            }
+            Event::Resume => {
+                if !self.lifecycle.is_active {
+                    log!("App resumed.");
+                    self.lifecycle.is_active = true;
+                }
+                crate::sliding_sync::set_sync_service_desired_running(true, "app resume");
+            }
+            Event::Background => {
+                if self.lifecycle.is_foreground {
+                    log!("App entered background; persisting state and stopping Matrix sync.");
+                    self.lifecycle.is_foreground = false;
+                }
+                self.persist_runtime_state(cx, "background");
+                crate::sliding_sync::set_sync_service_desired_running(false, "app background");
+            }
+            Event::WindowCloseRequested(e)
+                if self.ui.window(cx, ids!(main_window)).window_id() == Some(e.window_id) => {
+                    log!("Main window close requested; persisting runtime state.");
+                    self.persist_runtime_state(cx, "main window close request");
+                }
+            Event::Foreground => {
+                if !self.lifecycle.is_foreground {
+                    log!("App entered foreground; starting Matrix sync.");
+                    self.lifecycle.is_foreground = true;
+                }
+                crate::sliding_sync::set_sync_service_desired_running(true, "app foreground");
+            }
+            Event::Shutdown => self.handle_shutdown(cx),
+            _ => {}
+        }
+    }
+
+    fn persist_runtime_state(&mut self, cx: &mut Cx, reason: &'static str) {
+        let window_ref = self.ui.window(cx, ids!(main_window));
+        if let Err(e) = persistence::save_window_state(window_ref, cx) {
+            error!("Failed to save window state during {reason}. Error: {e}");
+        }
+
+        let Some(user_id) = current_user_id() else {
+            log!("Skipping app state persistence during {reason}: no logged-in Matrix user.");
+            return;
+        };
+
+        let app_state_json = match persistence::serialize_app_state(&self.app_state) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                error!("Failed to serialize app state during {reason}. Error: {e}");
+                return;
+            }
+        };
+        let fingerprint = AppStateSaveFingerprint::new(user_id.clone(), &app_state_json);
+        if self.lifecycle.last_app_state_save.as_ref() == Some(&fingerprint) {
+            log!("Skipping app state persistence during {reason}: state is unchanged.");
+            return;
+        }
+
+        if let Err(e) = persistence::save_app_state_bytes(&app_state_json, &user_id) {
+            error!("Failed to save app state during {reason}. Error: {e}");
+        } else {
+            self.lifecycle.last_app_state_save = Some(fingerprint);
+        }
+    }
+
+    fn handle_shutdown(&mut self, cx: &mut Cx) {
+        if self.lifecycle.shutdown_started {
+            log!("Ignoring duplicate shutdown lifecycle event.");
+            return;
+        }
+        self.lifecycle.shutdown_started = true;
+
+        self.persist_runtime_state(cx, "shutdown");
+
+        if let Err(_e) = crate::sliding_sync::stop_sync_service_for_shutdown(Duration::from_secs(3)) {
+            error!("Failed to stop Matrix sync service before shutdown. Error: Timed out.");
+        }
+
+        #[cfg(feature = "tsp")] {
+            let tsp_state = std::mem::take(&mut *crate::tsp::tsp_state_ref().lock().unwrap());
+            let res = crate::sliding_sync::block_on_async_with_timeout(
+                Some(Duration::from_secs(3)),
+                async move {
+                    match tsp_state.close_and_serialize().await {
+                        Ok(saved_state) => match persistence::save_tsp_state_async(saved_state).await {
+                            Ok(_) => { }
+                            Err(e) => error!("Failed to save TSP wallet state. Error: {e}"),
+                        }
+                        Err(e) => error!("Failed to close and serialize TSP wallet state. Error: {e}"),
+                    }
+                },
+            );
+            if let Err(_e) = res {
+                error!("Failed to save TSP wallet state before app shutdown. Error: Timed Out.");
+            }
+        }
+    }
+
     fn update_login_visibility(&self, cx: &mut Cx) {
         let show_login = !self.app_state.logged_in;
         if !show_login {
