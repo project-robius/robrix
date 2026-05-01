@@ -130,16 +130,9 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
 
     // Get the set of top-level (root) spaces that the user has joined.
     let (initial_spaces, mut spaces_diff_stream) = space_service.subscribe_to_top_level_joined_spaces().await;
-
-    // Concurrently fetch info (and avatars) for all initial spaces.
-    let new_space_infos = futures_util::future::join_all(
-        initial_spaces.iter().map(|s| get_joined_space_info(s, &client))
-    ).await;
-    // Sequential enqueuing preserves the order of updates correctly.
-    for jsi in new_space_infos {
-        enqueue_spaces_list_update(SpacesListUpdate::AddJoinedSpace(jsi));
+    for space in &initial_spaces {
+        add_new_space(space, &client);
     }
-
     let mut all_joined_spaces: Vector<SpaceRoom> = initial_spaces;
     if LOG_SPACE_SERVICE_DIFFS { log!("space_service: initial set: {all_joined_spaces:?}"); }
 
@@ -231,14 +224,8 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                 match diff {
                     VectorDiff::Append { values: new_spaces } => {
                         if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Append {}", new_spaces.len()); }
-
-                        let new_space_infos = futures_util::future::join_all(
-                            new_spaces.iter().map(|s| get_joined_space_info(s, &client))
-                        ).await;
-                        for jsi in new_space_infos {
-                            enqueue_spaces_list_update(SpacesListUpdate::AddJoinedSpace(jsi));
-                        }
                         for new_space in new_spaces {
+                            add_new_space(&new_space, &client);
                             all_joined_spaces.push_back(new_space);
                         }
                     }
@@ -249,12 +236,12 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                     }
                     VectorDiff::PushFront { value: new_space } => {
                         if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PushFront"); }
-                        add_new_space(&new_space, &client).await;
+                        add_new_space(&new_space, &client);
                         all_joined_spaces.push_front(new_space);
                     }
                     VectorDiff::PushBack { value: new_space } => {
                         if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PushBack"); }
-                        add_new_space(&new_space, &client).await;
+                        add_new_space(&new_space, &client);
                         all_joined_spaces.push_back(new_space);
                     }
                     remove_diff @ VectorDiff::PopFront => {
@@ -283,13 +270,13 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                     }
                     VectorDiff::Insert { index, value: new_space } => {
                         if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Insert at {index}"); }
-                        add_new_space(&new_space, &client).await;
+                        add_new_space(&new_space, &client);
                         all_joined_spaces.insert(index, new_space);
                     }
                     VectorDiff::Set { index, value: changed_space } => {
                         if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Set at {index}"); }
                         if let Some(old_space) = all_joined_spaces.get(index) {
-                            update_space(old_space, &changed_space, &client).await;
+                            update_space(old_space, &changed_space, &client);
                         } else {
                             error!("BUG: space_service diff: Set index {index} was out of bounds.");
                         }
@@ -328,14 +315,9 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                             remove_space(&space);
                         }
                         enqueue_spaces_list_update(SpacesListUpdate::ClearSpaces);
-
-                        let new_space_infos = futures_util::future::join_all(
-                            new_spaces.iter().map(|s| get_joined_space_info(s, &client))
-                        ).await;
-                        for jsi in new_space_infos {
-                            enqueue_spaces_list_update(SpacesListUpdate::AddJoinedSpace(jsi));
+                        for new_space in &new_spaces {
+                            add_new_space(new_space, &client);
                         }
-
                         all_joined_spaces = new_spaces;
                     }
                 }
@@ -352,36 +334,48 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
 }
 
 
-async fn get_joined_space_info(space: &SpaceRoom, client: &Client) -> JoinedSpaceInfo {
-    let space_avatar_opt = if let Some(url) = &space.avatar_url {
-        fetch_space_avatar(url.clone(), client)
-            .await
-            .inspect_err(|e| error!("Failed to fetch avatar for new space {:?} ({}): {e}", space.display_name, space.room_id))
-            .ok()
-    } else { None };
-    let space_avatar = space_avatar_opt.unwrap_or_else(
-        || utils::avatar_from_room_name(Some(&space.display_name))
-    );
+fn add_new_space(space: &SpaceRoom, client: &Client) {
+    let space_id = space.room_id.clone();
+    let display_name = space.display_name.clone();
+    let canonical_alias = space.canonical_alias.clone();
+    let topic = space.topic.clone();
+    let num_joined_members = space.num_joined_members;
+    let join_rule = space.join_rule.clone();
+    let world_readable = space.world_readable;
+    let guest_can_join = space.guest_can_join;
+    let children_count = space.children_count;
 
-    JoinedSpaceInfo {
-        space_name_id: RoomNameId::new(
-            matrix_sdk::RoomDisplayName::Named(space.display_name.clone()),
-            space.room_id.clone(),
-        ),
-        canonical_alias: space.canonical_alias.clone(),
-        topic: space.topic.clone(),
-        space_avatar,
-        num_joined_members: space.num_joined_members,
-        join_rule: space.join_rule.clone(),
-        world_readable: space.world_readable,
-        guest_can_join: space.guest_can_join,
-        children_count: space.children_count,
-    }
-}
+    let url_opt = space.avatar_url.clone();
+    let client2 = client.clone();
 
-async fn add_new_space(space: &SpaceRoom, client: &Client) {
-    let jsi = get_joined_space_info(space, client).await;
-    enqueue_spaces_list_update(SpacesListUpdate::AddJoinedSpace(jsi));
+    // Spawn task to fetch avatar asynchronously to avoid N+1 query blocking.
+    tokio::runtime::Handle::current().spawn(async move {
+        let space_avatar_opt = if let Some(url) = url_opt {
+            fetch_space_avatar(url, &client2)
+                .await
+                .inspect_err(|e| error!("Failed to fetch avatar for new space {:?} ({}): {e}", display_name, space_id))
+                .ok()
+        } else { None };
+        let space_avatar = space_avatar_opt.unwrap_or_else(
+            || utils::avatar_from_room_name(Some(&display_name))
+        );
+
+        let jsi = JoinedSpaceInfo {
+            space_name_id: RoomNameId::new(
+                matrix_sdk::RoomDisplayName::Named(display_name),
+                space_id,
+            ),
+            canonical_alias,
+            topic,
+            space_avatar,
+            num_joined_members,
+            join_rule,
+            world_readable,
+            guest_can_join,
+            children_count,
+        };
+        enqueue_spaces_list_update(SpacesListUpdate::AddJoinedSpace(jsi));
+    });
 }
 
 
@@ -401,17 +395,16 @@ async fn optimize_remove_then_add_into_update(
     all_joined_spaces: &mut Vector<SpaceRoom>,
     client: &Client,
 ) {
-    let next_diff_was_handled: bool;
-    match peekable_diffs.peek() {
+    let next_diff_was_handled = match peekable_diffs.peek() {
         Some(VectorDiff::Insert { index: insert_index, value: new_space })
             if space.room_id == new_space.room_id =>
         {
             if LOG_SPACE_SERVICE_DIFFS {
                 log!("Optimizing {remove_diff:?} + Insert({insert_index}) into Update for space {}", space.room_id);
             }
-            update_space(&space, new_space, client).await;
+            update_space(&space, new_space, client);
             all_joined_spaces.insert(*insert_index, new_space.clone());
-            next_diff_was_handled = true;
+            true
         }
         Some(VectorDiff::PushFront { value: new_space })
             if space.room_id == new_space.room_id =>
@@ -419,9 +412,9 @@ async fn optimize_remove_then_add_into_update(
             if LOG_SPACE_SERVICE_DIFFS {
                 log!("Optimizing {remove_diff:?} + PushFront into Update for space {}", space.room_id);
             }
-            update_space(&space, new_space, client).await;
+            update_space(&space, new_space, client);
             all_joined_spaces.push_front(new_space.clone());
-            next_diff_was_handled = true;
+            true
         }
         Some(VectorDiff::PushBack { value: new_space })
             if space.room_id == new_space.room_id =>
@@ -429,12 +422,12 @@ async fn optimize_remove_then_add_into_update(
             if LOG_SPACE_SERVICE_DIFFS {
                 log!("Optimizing {remove_diff:?} + PushBack into Update for space {}", space.room_id);
             }
-            update_space(&space, new_space, client).await;
+            update_space(&space, new_space, client);
             all_joined_spaces.push_back(new_space.clone());
-            next_diff_was_handled = true;
+            true
         }
-        _ => next_diff_was_handled = false,
-    }
+        _ => false,
+    };
     if next_diff_was_handled {
         peekable_diffs.next(); // consume the next diff
     } else {
@@ -444,7 +437,7 @@ async fn optimize_remove_then_add_into_update(
 
 
 /// Invoked when the space service has received an update that changes an existing space.
-async fn update_space(
+fn update_space(
     old_space: &SpaceRoom,
     new_space: &SpaceRoom,
     client: &Client,
@@ -475,12 +468,12 @@ async fn update_space(
                 }
                 Some(RoomState::Joined) => {
                     log!("update_space(): adding new Joined space: {:?} ({new_space_id})", new_space.display_name);
-                    add_new_space(new_space, client).await;
+                    add_new_space(new_space, client);
                     return;
                 }
                 Some(RoomState::Invited) => {
                     log!("update_space(): adding new Invited space: {:?} ({new_space_id})", new_space.display_name);
-                    add_new_space(new_space, client).await;
+                    add_new_space(new_space, client);
                     return;
                 }
                 Some(RoomState::Knocked) => {
@@ -584,7 +577,7 @@ async fn update_space(
             old_space.room_id, new_space_id,
         );
         remove_space(old_space);
-        add_new_space(new_space, client).await;
+        add_new_space(new_space, client);
     }
 }
 
