@@ -4115,6 +4115,18 @@ async fn spawn_sso_server(
             return;
         };
 
+        // The proactively-built client may have a stale TCP connection by
+        // now. Retry once here so it surfaces before we open the browser.
+        if let Err(e) = warmup_homeserver_connection(&client).await {
+            error!("SSO warmup failed twice: {e:?}");
+            Cx::post_action(LoginAction::LoginFailure(format!(
+                "Could not reach homeserver: {e}"
+            )));
+            DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
+            Cx::post_action(LoginAction::SsoPending(false));
+            return;
+        }
+
         let mut is_logged_in = false;
 
         // Desktop's `login_sso` uses a local HTTP server for the OAuth
@@ -4193,6 +4205,21 @@ async fn spawn_sso_server(
     });
 }
 
+
+/// Pings the homeserver before SSO opens a browser or sheet, retrying once.
+/// Recovers from stale pooled connections so the first SSO click doesn't
+/// fail visibly.
+async fn warmup_homeserver_connection(client: &Client) -> matrix_sdk::HttpResult<()> {
+    // `supported_versions()` doesn't cache for unauthenticated clients, so
+    // it always hits the network, which is what we want for warmup.
+    match client.supported_versions().await {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            warning!("Homeserver warmup failed (likely stale connection): {e:?}. Retrying once.");
+            client.supported_versions().await.map(|_| ())
+        }
+    }
+}
 
 /// Drives iOS SSO via `ASWebAuthenticationSession`. Gets the SSO URL with a
 /// `robrix://` redirect, opens it in the auth sheet, and feeds the callback
