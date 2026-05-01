@@ -3,12 +3,13 @@
 [target.'cfg(all())']
 rustflags = ["--cfg", "ruma_identifiers_storage=\"Arc\""]
 
-## Override the macOS bundle metadata that Makepad's `platform/build.rs` writes
-## next to the binary for unbundled `cargo run` launches. macOS uses CFBundleName
-## from that Info.plist as the application menu bar title, overriding the title
-## set on the first NSMenu submenu — without this, the menu shows
-## "MakepadStdinLoop" instead of "Robrix".
+## Pin the macOS bundle identifier that Makepad's `platform/build.rs` writes
+## next to the binary for unbundled `cargo run` launches, so dev builds share
+## the same identity as proper bundled releases (see `packaging/Info.plist`).
+## Otherwise macOS treats them as separate apps for saved window positions,
+## permission grants, etc. Bundle *name* doesn't need an override — Makepad's
+## default derives "Robrix" from the workspace directory name. `force = true`
+## so IDE/CI wrappers that pre-set the var (often to empty) can't shadow it.
 [env]
-MAKEPAD_BUNDLE_NAME = "Robrix"
-MAKEPAD_BUNDLE_IDENTIFIER = "org.robius.robrix"
+MAKEPAD_BUNDLE_IDENTIFIER = { value = "rs.robius.robrix", force = true }
 

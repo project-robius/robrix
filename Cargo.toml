@@ -14,8 +14,11 @@ version = "1.0.0-alpha.1"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
+# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
+# makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
+
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "fix_app_menu_bar", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "fix_app_menu_bar" }
 
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
@@ -201,7 +204,7 @@ debug-assertions = false
 ## Configuration for `cargo packager`
 [package.metadata.packager]
 product_name = "Robrix"
-identifier = "org.robius.robrix"
+identifier = "rs.robius.robrix"
 category = "SocialNetworking"
 authors = [
     "Project Robius <contact@robius.rs>",

@@ -42,17 +42,6 @@ script_mod! {
                     }
                 }
 
-                // Replace Makepad's stock WindowMenu (File/Edit/View/...) with a
-                // minimal Robrix app menu. The first submenu is what macOS shows
-                // as the application menu next to the Apple logo (its title is
-                // taken from CFBundleName — see `.cargo/config.toml`), but the
-                // items inside are what the user actually sees on click.
-                window_menu := WindowMenu {
-                    main := MenuItem.Main{items:[@app_menu]}
-                    app_menu := MenuItem.Sub { name:"Robrix" items:[@quit] }
-                    quit := MenuItem.Item { name:"Quit Robrix" key: KeyCode.KeyQ enabled: true }
-                }
-
                 body +: {
                     // Only TOP is applied here, since top is shared by every screen
                     // and no bar owns it. Bottom/left/right are delegated to whatever
