@@ -15,11 +15,14 @@ use matrix_sdk::{
                 message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
             }, MessageLikeEventType, StateEventType
         }, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, uint
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
+    }, sliding_sync::VersionBuilder, Client, ClientBuildError, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
 };
+#[cfg(not(target_os = "ios"))]
+use matrix_sdk::Error;
 use matrix_sdk_ui::{
     RoomListService, Timeline, encryption_sync_service, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{LatestEventValue, RoomExt, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
 };
+#[cfg(not(target_os = "ios"))]
 use robius_open::Uri;
 use ruma::{OwnedRoomOrAliasId, RoomId, events::tag::Tags};
 use tokio::{
@@ -1953,6 +1956,25 @@ static DEFAULT_SSO_CLIENT: Mutex<Option<(Client, ClientSessionPersisted)>> = Mut
 
 /// Used to notify the SSO login task that the async creation of the `DEFAULT_SSO_CLIENT` has finished.
 static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(|| Arc::new(Notify::new()));
+
+/// Handle to the in-flight `ASWebAuthenticationSession`. Set when the auth
+/// sheet is presented, cleared by the completion callback or by
+/// [`cancel_active_sso_auth_session`].
+#[cfg(target_os = "ios")]
+static ACTIVE_SSO_AUTH_SESSION: Mutex<Option<robius_web_auth_session::AuthSessionHandle>> =
+    Mutex::new(None);
+
+/// Dismiss the iOS auth sheet. The completion callback fires with
+/// `UserCancelled`, which surfaces as a `LoginFailure` and resets all
+/// SSO state so the next attempt works. No-op if nothing's running.
+#[cfg(target_os = "ios")]
+pub fn cancel_active_sso_auth_session() {
+    if let Ok(mut slot) = ACTIVE_SSO_AUTH_SESSION.lock() {
+        if let Some(handle) = slot.take() {
+            handle.cancel();
+        }
+    }
+}
 
 /// Blocks the current thread until the given future completes.
 ///
@@ -4094,36 +4116,52 @@ async fn spawn_sso_server(
         };
 
         let mut is_logged_in = false;
-        Cx::post_action(LoginAction::Status {
-            title: "Opening your browser...".into(),
-            status: "Please finish logging in using your browser, and then come back to Robrix.".into(),
-        });
-        match client
-            .matrix_auth()
-            .login_sso(|sso_url: String| async move {
-                let url = Url::parse(&sso_url)?;
-                for (key, value) in url.query_pairs() {
-                    if key == "redirectUrl" {
-                        let redirect_url = Url::parse(&value)?;
-                        Cx::post_action(LoginAction::SsoSetRedirectUrl(redirect_url));
-                        break
+
+        // Desktop's `login_sso` uses a local HTTP server for the OAuth
+        // redirect, which iOS suspends when Robrix backgrounds for Safari.
+        // iOS uses ASWebAuthenticationSession to keep the app foregrounded.
+        #[cfg(not(target_os = "ios"))]
+        let login_result = {
+            Cx::post_action(LoginAction::Status {
+                title: "Opening your browser...".into(),
+                status: "Please finish logging in using your browser, and then come back to Robrix.".into(),
+            });
+            client
+                .matrix_auth()
+                .login_sso(|sso_url: String| async move {
+                    let url = Url::parse(&sso_url)?;
+                    for (key, value) in url.query_pairs() {
+                        if key == "redirectUrl" {
+                            let redirect_url = Url::parse(&value)?;
+                            Cx::post_action(LoginAction::SsoSetRedirectUrl(redirect_url));
+                            break
+                        }
                     }
+                    Uri::new(&sso_url).open().map_err(|err|
+                        Error::Io(io::Error::other(format!("Unable to open SSO login url. Error: {:?}", err)))
+                    )
+                })
+                .identity_provider_id(&identity_provider_id)
+                .initial_device_display_name(&format!("robrix-sso-{brand}"))
+                .await
+        };
+        #[cfg(target_os = "ios")]
+        let login_result = {
+            Cx::post_action(LoginAction::Status {
+                title: "Opening in-app authentication...".into(),
+                status: "Please complete login in the authentication sheet that appeared.".into(),
+            });
+            run_ios_sso_flow(&client, &identity_provider_id, &brand).await
+        };
+
+        match login_result.inspect(|_| {
+            if let Some(client) = get_client() {
+                if client.matrix_auth().logged_in() {
+                    is_logged_in = true;
+                    log!("Already logged in, ignore login with sso");
                 }
-                Uri::new(&sso_url).open().map_err(|err|
-                    Error::Io(io::Error::other(format!("Unable to open SSO login url. Error: {:?}", err)))
-                )
-            })
-            .identity_provider_id(&identity_provider_id)
-            .initial_device_display_name(&format!("robrix-sso-{brand}"))
-            .await
-            .inspect(|_| {
-                if let Some(client) = get_client() {
-                    if client.matrix_auth().logged_in() {
-                        is_logged_in = true;
-                        log!("Already logged in, ignore login with sso");
-                    }
-                }
-            }) {
+            }
+        }) {
             Ok(identity_provider_res) => {
                 if !is_logged_in {
                     if let Err(e) = login_sender.send(LoginRequest::LoginBySSOSuccess(client, client_session)).await {
@@ -4153,6 +4191,87 @@ async fn spawn_sso_server(
         DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
         Cx::post_action(LoginAction::SsoPending(false));
     });
+}
+
+
+/// Drives iOS SSO via `ASWebAuthenticationSession`. Gets the SSO URL with a
+/// `robrix://` redirect, opens it in the auth sheet, and feeds the callback
+/// URL through `login_with_sso_callback` to finish.
+#[cfg(target_os = "ios")]
+async fn run_ios_sso_flow(
+    client: &Client,
+    identity_provider_id: &str,
+    brand: &str,
+) -> std::result::Result<
+    matrix_sdk::ruma::api::client::session::login::v3::Response,
+    matrix_sdk::Error,
+> {
+    use tokio::sync::oneshot;
+
+    // Session-scoped scheme, so no Info.plist registration needed. Synapse
+    // doesn't validate redirectUrl, so the URL shape is up to us.
+    const REDIRECT_URL: &str = "robrix://login";
+    const CALLBACK_SCHEME: &str = "robrix";
+
+    let auth = client.matrix_auth();
+    let sso_url = auth
+        .get_sso_login_url(REDIRECT_URL, Some(identity_provider_id))
+        .await?;
+
+    // Bridge the OS completion callback into a Rust oneshot. Mutex<Option>
+    // guards against the OS double-firing, and the same callback clears
+    // ACTIVE_SSO_AUTH_SESSION so cancel becomes a no-op once auth is done.
+    let (tx, rx) = oneshot::channel::<robius_web_auth_session::Result<String>>();
+    let tx = std::sync::Mutex::new(Some(tx));
+
+    let handle = robius_web_auth_session::AuthSession::new(&sso_url, CALLBACK_SCHEME)
+        .start(move |result| {
+            if let Ok(mut slot) = ACTIVE_SSO_AUTH_SESSION.lock() {
+                *slot = None;
+            }
+            if let Some(tx) = tx.lock().unwrap().take() {
+                let _ = tx.send(result);
+            }
+        })
+        .map_err(|e| {
+            matrix_sdk::Error::Io(io::Error::other(format!(
+                "Failed to start ASWebAuthenticationSession: {e}"
+            )))
+        })?;
+
+    // Publish the cancel handle so the modal's Cancel button can reach it.
+    // Cleared by the completion callback above.
+    if let Ok(mut slot) = ACTIVE_SSO_AUTH_SESSION.lock() {
+        *slot = Some(handle);
+    }
+
+    let callback_url_str = rx
+        .await
+        .map_err(|_| {
+            matrix_sdk::Error::Io(io::Error::other(
+                "ASWebAuthenticationSession completion handler dropped without firing",
+            ))
+        })?
+        .map_err(|e| {
+            matrix_sdk::Error::Io(io::Error::other(format!(
+                "ASWebAuthenticationSession failed: {e}"
+            )))
+        })?;
+
+    let callback_url = Url::parse(&callback_url_str).map_err(|e| {
+        matrix_sdk::Error::Io(io::Error::other(format!(
+            "Invalid SSO callback URL ({callback_url_str:?}): {e}"
+        )))
+    })?;
+
+    auth.login_with_sso_callback(callback_url.into())
+        .map_err(|e| {
+            matrix_sdk::Error::Io(io::Error::other(format!(
+                "Failed to parse SSO callback for loginToken: {e}"
+            )))
+        })?
+        .initial_device_display_name(&format!("robrix-sso-{brand}"))
+        .await
 }
 
 
