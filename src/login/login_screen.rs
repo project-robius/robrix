@@ -485,6 +485,17 @@ impl MatchEvent for LoginScreen {
             }
         }
 
+        // On iOS there's no redirect server, so the cancel button dismisses
+        // the auth sheet instead. Its completion handler takes the normal
+        // SSO failure path, which resets state for the next attempt.
+        #[cfg(target_os = "ios")]
+        if self.sso_pending {
+            let login_status_modal_button = login_status_modal_inner.button_ref(cx);
+            if login_status_modal_button.clicked(actions) {
+                crate::sliding_sync::cancel_active_sso_auth_session();
+            }
+        }
+
         // Handle any of the SSO login buttons being clicked
         for (view_ref, brand) in self.view_set(cx, button_set).iter().zip(&provider_brands) {
             if view_ref.finger_up(actions).is_some() && !self.sso_pending {

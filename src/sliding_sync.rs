@@ -15,11 +15,14 @@ use matrix_sdk::{
                 message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
             }, MessageLikeEventType, StateEventType
         }, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, uint
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
+    }, sliding_sync::VersionBuilder, Client, ClientBuildError, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
 };
+#[cfg(not(target_os = "ios"))]
+use matrix_sdk::Error;
 use matrix_sdk_ui::{
     RoomListService, Timeline, encryption_sync_service, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{LatestEventValue, RoomExt, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
 };
+#[cfg(not(target_os = "ios"))]
 use robius_open::Uri;
 use ruma::{OwnedRoomOrAliasId, RoomId, events::tag::Tags};
 use tokio::{
@@ -95,6 +98,16 @@ impl From<LoginByPassword> for Cli {
 }
 
 
+/// Shared SQLite store config for both `build_client` and `restore_session`,
+/// so both code paths can't drift.
+pub fn build_sqlite_store_config(
+    db_path: &Path,
+    passphrase: &str,
+) -> matrix_sdk::SqliteStoreConfig {
+    matrix_sdk::SqliteStoreConfig::with_low_memory_config(db_path)
+        .passphrase(Some(passphrase))
+}
+
 /// Build a new client.
 async fn build_client(
     cli: &Cli,
@@ -106,6 +119,15 @@ async fn build_client(
     let db_subfolder_name: String = format!("db_{}", now.format("%F_%H_%M_%S_%f"));
     let db_path = data_dir.join(&db_subfolder_name);
     log!("Building new client with db at: {}", db_path.display());
+
+    // Eagerly creat the db dir to avoid any issues within the matrix SDK.
+    if let Err(e) = tokio::fs::create_dir_all(&db_path).await {
+        error!(
+            "Failed to pre-create db directory at {}: {e}. Continuing anyway; \
+             matrix-sdk-sqlite will retry the create internally.",
+            db_path.display(),
+        );
+    }
 
     // Generate a random passphrase.
     let passphrase: String = {
@@ -121,10 +143,12 @@ async fn build_client(
         .unwrap_or("https://matrix-client.matrix.org/");
         // .unwrap_or("https://matrix.org/");
 
+    let store_config = build_sqlite_store_config(&db_path, &passphrase);
+
     let mut builder = Client::builder()
         .server_name_or_homeserver_url(homeserver_url)
         // Use a sqlite database to persist the client's encryption setup.
-        .sqlite_store(&db_path, Some(&passphrase))
+        .sqlite_store_with_config_and_cache_path(store_config, None::<&std::path::Path>)
         .with_threading_support(matrix_sdk::ThreadingSupport::Enabled {
             with_subscriptions: true,
         })
@@ -151,7 +175,6 @@ async fn build_client(
         RequestConfig::new()
             .timeout(std::time::Duration::from_secs(60))
     );
-
     let client = builder.build().await?;
     let homeserver_url =  client.homeserver().to_string();
     Ok((
@@ -1954,6 +1977,25 @@ static DEFAULT_SSO_CLIENT: Mutex<Option<(Client, ClientSessionPersisted)>> = Mut
 /// Used to notify the SSO login task that the async creation of the `DEFAULT_SSO_CLIENT` has finished.
 static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(|| Arc::new(Notify::new()));
 
+/// Handle to the in-flight `ASWebAuthenticationSession`. Set when the auth
+/// sheet is presented, cleared by the completion callback or by
+/// [`cancel_active_sso_auth_session`].
+#[cfg(target_os = "ios")]
+static ACTIVE_SSO_AUTH_SESSION: Mutex<Option<robius_web_auth_session::AuthSessionHandle>> =
+    Mutex::new(None);
+
+/// Dismiss the iOS auth sheet. The completion callback fires with
+/// `UserCancelled`, which surfaces as a `LoginFailure` and resets all
+/// SSO state so the next attempt works. No-op if nothing's running.
+#[cfg(target_os = "ios")]
+pub fn cancel_active_sso_auth_session() {
+    if let Ok(mut slot) = ACTIVE_SSO_AUTH_SESSION.lock() {
+        if let Some(handle) = slot.take() {
+            handle.cancel();
+        }
+    }
+}
+
 /// Blocks the current thread until the given future completes.
 ///
 /// ## Warning
@@ -2130,6 +2172,9 @@ static SYNC_SERVICE_LIFECYCLE_LOCK: LazyLock<tokio::sync::Mutex<()>> =
 static TOKEN_EXPIRED: AtomicBool = AtomicBool::new(false);
 /// Notifies the main monitoring loop to wake up and check `TOKEN_EXPIRED`.
 static TOKEN_EXPIRED_NOTIFY: LazyLock<Notify> = LazyLock::new(Notify::new);
+
+/// Wakes the monitoring loop on logout, see `is_logout_in_progress()`.
+static LOGOUT_NOTIFY: LazyLock<Notify> = LazyLock::new(Notify::new);
 
 
 /// Get a reference to the current sync service, if available.
@@ -2326,11 +2371,28 @@ impl RoomListServiceRoomInfo {
     }
 }
 
+/// Aborts all handles in parallel, then awaits each so their Drop chain
+/// (Arcs, channels, etc.) finishes before we move on.
+async fn abort_and_await_handles(handles: &mut Vec<JoinHandle<()>>) {
+    for h in handles.iter() {
+        h.abort();
+    }
+    for h in handles.drain(..) {
+        // Skip handles we've already consumed, as those would block forever.
+        if !h.is_finished() {
+            let _ = h.await;
+        }
+    }
+}
+
 /// Performs the Matrix client login or session restore, and starts the main sync service.
 ///
 /// After starting the sync service, this also starts the main room list service loop
 /// and the main space service loop.
 async fn start_matrix_client_login_and_sync(rt: Handle) {
+    // Run clean up before anything else, like creating new db dirs.
+    persistence::cleanup_orphan_db_dirs().await;
+
     // Create a channel for sending requests from the main UI thread to a background worker task.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
     REQUEST_SENDER.lock().unwrap().replace(sender);
@@ -2477,14 +2539,18 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             error!("BUG: unexpectedly replaced an existing client when initializing the matrix client.");
         }
 
+        // Track all async tasks so we can nicely clean them up with abort+await.
+        // Generally anything that holds a reference to `Client` should be here.
+        let mut subscriber_task_handles: Vec<JoinHandle<()>> = Vec::new();
+
         // Listen for changes to our verification status and incoming verification requests.
-        add_verification_event_handlers_and_sync_client(client.clone());
+        subscriber_task_handles.push(add_verification_event_handlers_and_sync_client(client.clone()));
 
         // Listen for updates to the ignored user list.
-        handle_ignore_user_list_subscriber(client.clone());
+        subscriber_task_handles.push(handle_ignore_user_list_subscriber(client.clone()));
 
         // Listen for session changes, e.g., when the access token becomes invalid.
-        handle_session_changes(client.clone());
+        subscriber_task_handles.push(handle_session_changes(client.clone()));
 
         Cx::post_action(LoginAction::Status {
             title: "Connecting".into(),
@@ -2509,6 +2575,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                 // Clear the stored client so the next login attempt doesn't trigger the
                 // "unexpectedly replaced an existing client" warning.
                 let _ = CLIENT.lock().unwrap().take();
+                abort_and_await_handles(&mut subscriber_task_handles).await;
                 continue 'login_loop;
             }
         };
@@ -2521,9 +2588,10 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         Cx::post_action(LoginAction::LoginSuccess);
 
         // Attempt to load the previously-saved app state.
+        // One-shot, drops on its own; not tracked.
         handle_load_app_state(logged_in_user_id.to_owned());
-        handle_sync_indicator_subscriber(&sync_service);
-        handle_sync_service_state_subscriber(sync_service.state());
+        subscriber_task_handles.push(handle_sync_indicator_subscriber(&sync_service));
+        subscriber_task_handles.push(handle_sync_service_state_subscriber(sync_service.state()));
 
         let room_list_service = sync_service.room_list_service();
         let sync_service = Arc::new(sync_service);
@@ -2538,14 +2606,21 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
 
         // Now, this task becomes an infinite loop that monitors the state of the
         // three core matrix-related background tasks that we just spawned above.
-        // If the access token expires (TOKEN_EXPIRED is set), this loop will break
-        // and we'll clean up and `continue 'login_loop` to wait for re-login.
         #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
         loop {
             tokio::select! {
-                // Wake up immediately when the access token has been rejected,
-                // so we can tear down this session and wait for re-login.
+                // If we were notified but it got canceled, check the TOKEN_EXPIRED bool.
                 _ = TOKEN_EXPIRED_NOTIFY.notified() => {
+                    if !TOKEN_EXPIRED.load(Ordering::Acquire) {
+                        continue;
+                    }
+                    break;
+                }
+                _ = LOGOUT_NOTIFY.notified() => {
+                    if !is_logout_in_progress() {
+                        continue;
+                    }
+                    log!("Login loop received logout signal");
                     break;
                 }
                 result = &mut matrix_worker_task_handle => {
@@ -2627,20 +2702,55 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             }
         }
 
-        // If the monitoring loop broke because the access token expired,
-        // clean up the current session state and loop back to wait for re-login.
-        if TOKEN_EXPIRED.load(Ordering::Acquire) {
-            log!("Token expired; cleaning up session state and waiting for re-login.");
-            // Abort the background tasks that depend on the now-invalid session.
+        let was_token_expired = TOKEN_EXPIRED.load(Ordering::Acquire);
+        let was_logout = is_logout_in_progress();
+        if was_token_expired || was_logout {
+            if was_token_expired {
+                log!("Token expired; cleaning up session state and waiting for re-login.");
+            } else {
+                log!("Logout in progress; cleaning up session state and waiting for re-login.");
+            }
+            // `is_finished()` skips handles already consumed by the select!
+            // above; awaiting them again would block forever.
             room_list_service_task.abort();
             space_service_task.abort();
-            // Clear the stored client and sync service so re-login starts fresh.
+            for h in &subscriber_task_handles {
+                h.abort();
+            }
+            if !room_list_service_task.is_finished() {
+                let _ = room_list_service_task.await;
+            }
+            if !space_service_task.is_finished() {
+                let _ = space_service_task.await;
+            }
+            for h in subscriber_task_handles.drain(..) {
+                if !h.is_finished() {
+                    let _ = h.await;
+                }
+            }
+            // No-ops if `clear_app_state` already cleared these.
             let _ = CLIENT.lock().unwrap().take();
             let _ = SYNC_SERVICE.lock().unwrap().take();
             SYNC_SERVICE_ASSUMED_RUNNING.store(false, Ordering::Release);
             continue 'login_loop;
         }
-        // For non-token-related breaks (logout, fatal errors), exit the function.
+        // Unexpected break (e.g. matrix_worker_task panicked).
+        room_list_service_task.abort();
+        space_service_task.abort();
+        for h in &subscriber_task_handles {
+            h.abort();
+        }
+        if !room_list_service_task.is_finished() {
+            let _ = room_list_service_task.await;
+        }
+        if !space_service_task.is_finished() {
+            let _ = space_service_task.await;
+        }
+        for h in subscriber_task_handles.drain(..) {
+            if !h.is_finished() {
+                let _ = h.await;
+            }
+        }
         return;
     }
 }
@@ -3259,7 +3369,9 @@ async fn current_ignore_user_list(client: &Client) -> Option<HashSet<OwnedUserId
     Some(ignored_users)
 }
 
-fn handle_ignore_user_list_subscriber(client: Client) {
+/// This function spawns a task that captures a strong `Client` ref,
+/// so the caller should abort+await it upon logout to ensure the Client gets dropped.
+fn handle_ignore_user_list_subscriber(client: Client) -> JoinHandle<()> {
     let mut subscriber = client.subscribe_to_ignore_user_list_changes();
     log!("Initial ignored-user list is: {:?}", subscriber.get());
     Handle::current().spawn(async move {
@@ -3294,7 +3406,7 @@ fn handle_ignore_user_list_subscriber(client: Client) {
 
             first_update = false;
         }
-    });
+    })
 }
 
 /// Asynchronously loads and restores the app state from persistent storage for the given user.
@@ -3348,7 +3460,7 @@ fn is_invalid_token_error(e: &sync_service::Error) -> bool {
 /// When the homeserver rejects the access token with a 401 `M_UNKNOWN_TOKEN` error
 /// (e.g., the token was revoked or expired), this emits a [`LoginAction::LoginFailure`]
 /// so the user is prompted to log in again.
-fn handle_session_changes(client: Client) {
+fn handle_session_changes(client: Client) -> JoinHandle<()> {
     let mut receiver = client.subscribe_to_session_changes();
     Handle::current().spawn(async move {
         loop {
@@ -3377,10 +3489,10 @@ fn handle_session_changes(client: Client) {
                 }
             }
         }
-    });
+    })
 }
 
-fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service::State>) {
+fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service::State>) -> JoinHandle<()> {
     log!("Initial sync service state is {:?}", subscriber.get());
     Handle::current().spawn(async move {
         while let Some(state) = subscriber.next().await {
@@ -3428,20 +3540,21 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
                 other => Cx::post_action(RoomsListHeaderAction::StateUpdate(other)),
             }
         }
-    });
+    })
 }
 
-fn handle_sync_indicator_subscriber(sync_service: &SyncService) {
+fn handle_sync_indicator_subscriber(sync_service: &SyncService) -> JoinHandle<()> {
     /// Duration for sync indicator delay before showing
     const SYNC_INDICATOR_DELAY: Duration = Duration::from_millis(100);
     /// Duration for sync indicator delay before hiding
     const SYNC_INDICATOR_HIDE_DELAY: Duration = Duration::from_millis(200);
-    let sync_indicator_stream = sync_service.room_list_service()
+    let sync_indicator_stream = sync_service
+        .room_list_service()
         .sync_indicator(
             SYNC_INDICATOR_DELAY,
             SYNC_INDICATOR_HIDE_DELAY
         );
-    
+
     Handle::current().spawn(async move {
        let mut sync_indicator_stream = std::pin::pin!(sync_indicator_stream);
 
@@ -3452,7 +3565,7 @@ fn handle_sync_indicator_subscriber(sync_service: &SyncService) {
             };
             Cx::post_action(RoomsListHeaderAction::SetSyncStatus(is_syncing));
         }
-    });
+    })
 }
 
 fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomListLoadingState>) {
@@ -4172,37 +4285,65 @@ async fn spawn_sso_server(
             return;
         };
 
+        // The proactively-built client may have a stale TCP connection by
+        // now. Retry once here so it surfaces before we open the browser.
+        if let Err(e) = warmup_homeserver_connection(&client).await {
+            error!("SSO warmup failed twice: {e:?}");
+            Cx::post_action(LoginAction::LoginFailure(format!(
+                "Could not reach homeserver: {e}"
+            )));
+            DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
+            Cx::post_action(LoginAction::SsoPending(false));
+            return;
+        }
+
         let mut is_logged_in = false;
-        Cx::post_action(LoginAction::Status {
-            title: "Opening your browser...".into(),
-            status: "Please finish logging in using your browser, and then come back to Robrix.".into(),
-        });
-        match client
-            .matrix_auth()
-            .login_sso(|sso_url: String| async move {
-                let url = Url::parse(&sso_url)?;
-                for (key, value) in url.query_pairs() {
-                    if key == "redirectUrl" {
-                        let redirect_url = Url::parse(&value)?;
-                        Cx::post_action(LoginAction::SsoSetRedirectUrl(redirect_url));
-                        break
+
+        // Desktop's `login_sso` uses a local HTTP server for the OAuth
+        // redirect, which iOS suspends when Robrix backgrounds for Safari.
+        // iOS uses ASWebAuthenticationSession to keep the app foregrounded.
+        #[cfg(not(target_os = "ios"))]
+        let login_result = {
+            Cx::post_action(LoginAction::Status {
+                title: "Opening your browser...".into(),
+                status: "Please finish logging in using your browser, and then come back to Robrix.".into(),
+            });
+            client
+                .matrix_auth()
+                .login_sso(|sso_url: String| async move {
+                    let url = Url::parse(&sso_url)?;
+                    for (key, value) in url.query_pairs() {
+                        if key == "redirectUrl" {
+                            let redirect_url = Url::parse(&value)?;
+                            Cx::post_action(LoginAction::SsoSetRedirectUrl(redirect_url));
+                            break
+                        }
                     }
+                    Uri::new(&sso_url).open().map_err(|err|
+                        Error::Io(io::Error::other(format!("Unable to open SSO login url. Error: {:?}", err)))
+                    )
+                })
+                .identity_provider_id(&identity_provider_id)
+                .initial_device_display_name(&format!("robrix-sso-{brand}"))
+                .await
+        };
+        #[cfg(target_os = "ios")]
+        let login_result = {
+            Cx::post_action(LoginAction::Status {
+                title: "Opening in-app authentication...".into(),
+                status: "Please complete login in the authentication sheet that appeared.".into(),
+            });
+            run_ios_sso_flow(&client, &identity_provider_id, &brand).await
+        };
+
+        match login_result.inspect(|_| {
+            if let Some(client) = get_client() {
+                if client.matrix_auth().logged_in() {
+                    is_logged_in = true;
+                    log!("Already logged in, ignore login with sso");
                 }
-                Uri::new(&sso_url).open().map_err(|err|
-                    Error::Io(io::Error::other(format!("Unable to open SSO login url. Error: {:?}", err)))
-                )
-            })
-            .identity_provider_id(&identity_provider_id)
-            .initial_device_display_name(&format!("robrix-sso-{brand}"))
-            .await
-            .inspect(|_| {
-                if let Some(client) = get_client() {
-                    if client.matrix_auth().logged_in() {
-                        is_logged_in = true;
-                        log!("Already logged in, ignore login with sso");
-                    }
-                }
-            }) {
+            }
+        }) {
             Ok(identity_provider_res) => {
                 if !is_logged_in {
                     if let Err(e) = login_sender.send(LoginRequest::LoginBySSOSuccess(client, client_session)).await {
@@ -4232,6 +4373,102 @@ async fn spawn_sso_server(
         DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
         Cx::post_action(LoginAction::SsoPending(false));
     });
+}
+
+
+/// Pings the homeserver before SSO opens a browser or sheet, retrying once.
+/// Recovers from stale pooled connections so the first SSO click doesn't
+/// fail visibly.
+async fn warmup_homeserver_connection(client: &Client) -> matrix_sdk::HttpResult<()> {
+    // `supported_versions()` doesn't cache for unauthenticated clients, so
+    // it always hits the network, which is what we want for warmup.
+    match client.supported_versions().await {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            warning!("Homeserver warmup failed (likely stale connection): {e:?}. Retrying once.");
+            client.supported_versions().await.map(|_| ())
+        }
+    }
+}
+
+/// Drives iOS SSO via `ASWebAuthenticationSession`. Gets the SSO URL with a
+/// `robrix://` redirect, opens it in the auth sheet, and feeds the callback
+/// URL through `login_with_sso_callback` to finish.
+#[cfg(target_os = "ios")]
+async fn run_ios_sso_flow(
+    client: &Client,
+    identity_provider_id: &str,
+    brand: &str,
+) -> std::result::Result<
+    matrix_sdk::ruma::api::client::session::login::v3::Response,
+    matrix_sdk::Error,
+> {
+    use tokio::sync::oneshot;
+
+    // Session-scoped scheme, so no Info.plist registration needed. Synapse
+    // doesn't validate redirectUrl, so the URL shape is up to us.
+    const REDIRECT_URL: &str = "robrix://login";
+    const CALLBACK_SCHEME: &str = "robrix";
+
+    let auth = client.matrix_auth();
+    let sso_url = auth
+        .get_sso_login_url(REDIRECT_URL, Some(identity_provider_id))
+        .await?;
+
+    // Bridge the OS completion callback into a Rust oneshot. Mutex<Option>
+    // guards against the OS double-firing, and the same callback clears
+    // ACTIVE_SSO_AUTH_SESSION so cancel becomes a no-op once auth is done.
+    let (tx, rx) = oneshot::channel::<robius_web_auth_session::Result<String>>();
+    let tx = std::sync::Mutex::new(Some(tx));
+
+    let handle = robius_web_auth_session::AuthSession::new(&sso_url, CALLBACK_SCHEME)
+        .start(move |result| {
+            if let Ok(mut slot) = ACTIVE_SSO_AUTH_SESSION.lock() {
+                *slot = None;
+            }
+            if let Some(tx) = tx.lock().unwrap().take() {
+                let _ = tx.send(result);
+            }
+        })
+        .map_err(|e| {
+            matrix_sdk::Error::Io(io::Error::other(format!(
+                "Failed to start ASWebAuthenticationSession: {e}"
+            )))
+        })?;
+
+    // Publish the cancel handle so the modal's Cancel button can reach it.
+    // Cleared by the completion callback above.
+    if let Ok(mut slot) = ACTIVE_SSO_AUTH_SESSION.lock() {
+        *slot = Some(handle);
+    }
+
+    let callback_url_str = rx
+        .await
+        .map_err(|_| {
+            matrix_sdk::Error::Io(io::Error::other(
+                "ASWebAuthenticationSession completion handler dropped without firing",
+            ))
+        })?
+        .map_err(|e| {
+            matrix_sdk::Error::Io(io::Error::other(format!(
+                "ASWebAuthenticationSession failed: {e}"
+            )))
+        })?;
+
+    let callback_url = Url::parse(&callback_url_str).map_err(|e| {
+        matrix_sdk::Error::Io(io::Error::other(format!(
+            "Invalid SSO callback URL ({callback_url_str:?}): {e}"
+        )))
+    })?;
+
+    auth.login_with_sso_callback(callback_url.into())
+        .map_err(|e| {
+            matrix_sdk::Error::Io(io::Error::other(format!(
+                "Failed to parse SSO callback for loginToken: {e}"
+            )))
+        })?
+        .initial_device_display_name(&format!("robrix-sso-{brand}"))
+        .await
 }
 
 
@@ -4384,26 +4621,20 @@ impl UserPowerLevels {
 }
 
 
-/// Shuts down the current Tokio runtime completely and takes ownership to ensure proper cleanup.
-pub fn shutdown_background_tasks() {
-    if let Some(runtime) = TOKIO_RUNTIME.lock().unwrap().take() {
-        runtime.shutdown_background();
-    }
-}
-
+/// Drops session state and signals the login loop to wait for re-login.
+/// Keeps `REQUEST_SENDER` alive, and also the `matrix_worker_task
+/// which needs to keep running to receive the next login request.
 pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
-    // Clear resources normally, allowing them to be properly dropped
-    // This prevents memory leaks when users logout and login again without closing the app
     CLIENT.lock().unwrap().take();
     SYNC_SERVICE.lock().unwrap().take();
     SYNC_SERVICE_ASSUMED_RUNNING.store(false, Ordering::Release);
-    REQUEST_SENDER.lock().unwrap().take();
     IGNORED_USERS.lock().unwrap().clear();
     ALL_JOINED_ROOMS.lock().unwrap().clear();
+    LOGOUT_NOTIFY.notify_one();
 
     let on_clear_appstate = Arc::new(Notify::new());
     Cx::post_action(LogoutAction::ClearAppState { on_clear_appstate: on_clear_appstate.clone() });
-    
+
     match tokio::time::timeout(config.app_state_cleanup_timeout, on_clear_appstate.notified()).await {
         Ok(_) => {
             log!("Received signal that UI-side app state was cleaned successfully");

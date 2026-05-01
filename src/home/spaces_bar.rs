@@ -13,7 +13,7 @@ use matrix_sdk::{RoomDisplayName, RoomState};
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 
 use crate::{
-    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, settings::app_preferences::{effective_is_desktop, AppPreferencesAction, ViewModeOverride}, shared::{avatar::AvatarWidgetRefExt, navigation_bar_button::NavigationBarButton, room_filter_input_bar::MainFilterAction}, utils::{self, RoomNameId}
+    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, logout::logout_confirm_modal::LogoutAction, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, settings::app_preferences::{effective_is_desktop, AppPreferencesAction, ViewModeOverride}, shared::{avatar::AvatarWidgetRefExt, navigation_bar_button::NavigationBarButton, room_filter_input_bar::MainFilterAction}, utils::{self, RoomNameId}
 };
 
 script_mod! {
@@ -326,7 +326,7 @@ pub struct SpacesBar {
     #[rust] all_joined_spaces: HashMap<OwnedRoomId, JoinedSpaceInfo>,
 
     /// The currently-active filter function for the list of spaces.
-    ///
+///
     /// Note: for performance reasons, this does not get automatically applied
     /// when its value changes. Instead, you must manually invoke it on the set of `all_joined_spaces`
     /// in order to update the set of `displayed_spaces` accordingly.
@@ -403,6 +403,17 @@ impl Widget for SpacesBar {
                         self.apply_view_mode(*new_mode);
                         self.view.redraw(cx);
                     }
+                    continue;
+                }
+
+                // Clear widget state upon logout.
+                if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
+                    self.all_joined_spaces.clear();
+                    self.displayed_spaces.clear();
+                    self.display_filter = Default::default();
+                    self.selected_space = None;
+                    self.is_filtered = false;
+                    self.redraw(cx);
                     continue;
                 }
             }
