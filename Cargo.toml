@@ -14,11 +14,8 @@ version = "1.0.0-alpha.1"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
-# makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
-
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "fix_app_menu_bar", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "fix_app_menu_bar" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "windows_platform_quit_signal", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "windows_platform_quit_signal" }
 
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
@@ -112,11 +109,12 @@ robius-web-auth-session = { git = "https://github.com/project-robius/robius" }
 
 
 [features]
-default = []
+default = ["hide_windows_console"]
 ## Enables experimental support for using TSP wallets.
 tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding", "dep:reqwest"]
 
-## Hides the command prompt console on Windows.
+## Hides the command prompt console on Windows. Enabled by default;
+## disable with `--no-default-features` if you need a console for a detached launch.
 hide_windows_console = []
 
 ## Logs all diffs received by the Matrix RoomListService.
