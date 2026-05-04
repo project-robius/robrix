@@ -593,22 +593,19 @@ script_mod! {
 
             restore_status_view := RestoreStatusView {}
 
-            // Widgets within this view will get shifted upwards when the on-screen keyboard is shown.
-            keyboard_view := KeyboardView {
+            // This used to be a KeyboardView wrapper, but now the on-screen keyboard shift
+            // is handled by the top-level Window.
+            timeline_and_input_bar := View {
                 width: Fill, height: Fill,
                 flow: Down,
 
                 // First, display the timeline of all messages/events.
-                timeline := mod.widgets.Timeline {
-                    // margin: Inset{bottom: 10}
-                }
+                timeline := mod.widgets.Timeline { }
 
                 // Below that, display a typing notice when other users in the room are typing.
                 typing_notice := TypingNotice { }
 
-                room_input_bar := RoomInputBar {
-                    // margin: Inset{top: 20}
-                }
+                room_input_bar := RoomInputBar { }
             }
 
             // Note: here, we're within a View that has an Overlay flow,

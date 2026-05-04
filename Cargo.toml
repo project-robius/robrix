@@ -14,8 +14,8 @@ version = "1.0.0-alpha.1"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "windows_platform_quit_signal", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "windows_platform_quit_signal" }
+makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
@@ -171,6 +171,9 @@ winresource = "0.1"
 [package.metadata.docs.rs]
 all-features = true
 
+[profile.release]
+debug = false
+strip = "symbols"
 
 ## An optimized profile for development, with full debug info and assertions.
 [profile.debug-opt]
