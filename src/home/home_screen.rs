@@ -253,8 +253,9 @@ script_mod! {
                             height: 39,
                             flow: Right
                             padding: Inset{top: 2, bottom: 2}
-                            // The negative left margin compensates for the RoomFilterInputBar's border
-                            margin: Inset{left: -1.5, right: 2}
+                            // The negative left/right margins compensate for the gray border,
+                            // such that the inner white input part is aligned with other elements.
+                            margin: Inset{left: -1.5, right: -1.5}
                             spacing: 2
                             align: Align{y: 0.5}
 
