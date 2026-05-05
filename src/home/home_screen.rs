@@ -237,6 +237,7 @@ script_mod! {
                     // as the others are handled by the parent widget
                     // or by the navigation bar.
                     padding: Inset{
+                        // could set left padding to 0
                         bottom: (mod.widgets.SAFE_INSET_PAD_BOTTOM),
                         right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
                     }
@@ -253,8 +254,10 @@ script_mod! {
                             height: 39,
                             flow: Right
                             padding: Inset{top: 2, bottom: 2}
-                            // The negative left margin compensates for the RoomFilterInputBar's border
-                            margin: Inset{left: -1.5, right: 2}
+                            // The negative left/right margins compensate for the
+                            // RoomFilterInputBar's border so its visible edges line
+                            // up with the left and right edges of the dock below.
+                            margin: Inset{left: -1.5, right: -1.5}
                             spacing: 2
                             align: Align{y: 0.5}
 

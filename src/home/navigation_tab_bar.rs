@@ -175,17 +175,16 @@ script_mod! {
         Desktop := RoundedView {
             flow: Down,
             align: Align{x: 0.5}
-            // Similar to how we do it for the mobile mode view, but now
-            // the bar is on the left, so we add left padding and extra width.
-            // Right padding must equal the left padding so that the actual content
-            // is horizontally centered within the spaces bar.
+            // The bar sits flush against the screen's left edge, so it absorbs
+            // the left safe-area inset (e.g. notch/Dynamic Island in landscape)
+            // via padding + extra width. The right edge is internal — it abuts
+            // the home content area — so it gets no padding and no extra width.
             padding: Inset{
                 top: 8.,
                 bottom: (8.0 + mod.widgets.SAFE_INSET_PAD_BOTTOM),
                 left: (mod.widgets.SAFE_INSET_PAD_LEFT),
-                right: (mod.widgets.SAFE_INSET_PAD_LEFT),
             }
-            width: (mod.widgets.NAVIGATION_TAB_BAR_SIZE + 2 * mod.widgets.SAFE_INSET_PAD_LEFT),
+            width: (mod.widgets.NAVIGATION_TAB_BAR_SIZE + mod.widgets.SAFE_INSET_PAD_LEFT),
             height: Fill
 
             draw_bg +: {
