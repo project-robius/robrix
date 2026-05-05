@@ -175,10 +175,6 @@ script_mod! {
         Desktop := RoundedView {
             flow: Down,
             align: Align{x: 0.5}
-            // The bar sits flush against the screen's left edge, so it absorbs
-            // the left safe-area inset (e.g. notch/Dynamic Island in landscape)
-            // via padding + extra width. The right edge is internal — it abuts
-            // the home content area — so it gets no padding and no extra width.
             padding: Inset{
                 top: 8.,
                 bottom: (8.0 + mod.widgets.SAFE_INSET_PAD_BOTTOM),
