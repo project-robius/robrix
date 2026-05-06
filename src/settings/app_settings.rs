@@ -4,7 +4,7 @@ use makepad_widgets::*;
 
 use crate::{
     app::AppState,
-    settings::app_preferences::{AppPreferences, AppPreferencesGlobal, ThumbnailMaxHeight, ViewModeOverride},
+    settings::app_preferences::{AppPreferences, AppPreferencesAction, AppPreferencesGlobal, ThumbnailMaxHeight, UiZoom, ViewModeOverride},
     shared::popup_list::{enqueue_popup_notification, PopupKind},
 };
 
@@ -14,9 +14,14 @@ const SEND_SHORTCUT_TOGGLE_LABEL: &str = "Send with Cmd⌘ + Enter";
 const SEND_SHORTCUT_TOGGLE_LABEL: &str = "Send with Ctrl + Enter";
 
 #[cfg(target_os = "macos")]
-const SEND_SHORTCUT_DESC_CMD: &str = "Current choice: 'Cmd⌘ + Enter' to send, 'Enter' for a new line";
+const SEND_SHORTCUT_DESC_CMD: &str = "Currently: 'Cmd⌘ + Enter' to send, 'Enter' for a new line";
 #[cfg(not(target_os = "macos"))]
-const SEND_SHORTCUT_DESC_CMD: &str = "Current choice: 'Ctrl + Enter' to send, 'Enter' for a new line";
+const SEND_SHORTCUT_DESC_CMD: &str = "Currently: 'Ctrl + Enter' to send, 'Enter' for a new line";
+
+#[cfg(target_os = "macos")]
+const UI_ZOOM_DESCRIPTION: &str = "Scales the entire UI uniformly.\n'Cmd⌘ + +/-' zooms in or out, 'Cmd⌘ + 0' resets zoom";
+#[cfg(not(target_os = "macos"))]
+const UI_ZOOM_DESCRIPTION: &str = "Scales the entire UI uniformly.\n'Ctrl + +/-' zooms in or out, 'Ctrl + 0' resets zoom.";
 
 
 script_mod! {
@@ -220,6 +225,60 @@ script_mod! {
         }
 
 
+        View {
+            width: Fill, height: Fit
+            flow: Right{wrap: true}
+            align: Align{y: 0.5}
+            spacing: 6
+
+            SubsectionLabel {
+                width: Fit,
+                margin: Inset{top: 4, right: 4}
+                text: "UI Zoom Level:"
+            }
+
+            ui_zoom_controls := View {
+                width: Fit
+                height: Fit
+                flow: Right,
+                margin: Inset {top: 8}
+                align: Align{y: 0.5}
+                spacing: 4
+
+                ui_zoom_minus_button := RobrixNeutralIconButton {
+                    width: 28, height: 28,
+                    padding: 0
+                    align: Align{x: 0.5, y: 0.5}
+                    draw_text +: {
+                        text_style: mod.widgets.SETTINGS_REGULAR_TEXT_STYLE { font_size: 14 },
+                    }
+                    text: "-"
+                }
+
+                ui_zoom_input := RobrixTextInput {
+                    width: 60, height: Fit
+                    align: Align {y: 0.5}
+                    padding: Inset{left: 8, right: 8, top: 5, bottom: 5}
+                    empty_text: "100%"
+                }
+
+                ui_zoom_plus_button := RobrixNeutralIconButton {
+                    width: 28, height: 28,
+                    padding: 0
+                    align: Align{x: 0.5, y: 0.5}
+                    draw_text +: {
+                        text_style: mod.widgets.SETTINGS_REGULAR_TEXT_STYLE { font_size: 14 },
+                    }
+                    text: "+"
+                }
+            }
+        }
+
+        ui_zoom_description := mod.widgets.SettingsSectionDescription {
+            text: "" // see UI_ZOOM_DESCRIPTION
+        }
+
+
         SubsectionLabel {
             text: "Send Message Keyboard Shortcut"
         }
@@ -272,10 +331,7 @@ script_mod! {
                     text: "Custom:"
                 }
 
-                // Starts read-only so it's inert before populate() runs with
-                // the user's actual preference. populate() and the radio
-                // handler then toggle editability based on whether the
-                // "Custom" radio is selected.
+                // Read-only by default, enabled when `thumb_custom_radio` is selected.
                 thumb_custom_input := RobrixTextInput {
                     width: 60, height: Fit
                     padding: Inset{left: 8, right: 8, top: 5, bottom: 5}
@@ -359,6 +415,60 @@ impl AppSettings {
                     PopupKind::Success,
                     Some(3.0),
                 );
+            }
+        }
+
+        let ui_zoom_minus = self.view.button(cx, ids!(ui_zoom_minus_button));
+        let ui_zoom_plus = self.view.button(cx, ids!(ui_zoom_plus_button));
+        let ui_zoom_input = self.view.text_input(cx, ids!(ui_zoom_input));
+
+        if ui_zoom_minus.clicked(actions) {
+            let new_zoom = app_state.app_prefs.ui_zoom.zoom_out_by(UiZoom::BUTTON_STEP);
+            if new_zoom != app_state.app_prefs.ui_zoom {
+                app_state.app_prefs.ui_zoom = new_zoom;
+                app_state.app_prefs.on_ui_zoom_changed(cx);
+            }
+        }
+
+        if ui_zoom_plus.clicked(actions) {
+            let new_zoom = app_state.app_prefs.ui_zoom.zoom_in_by(UiZoom::BUTTON_STEP);
+            if new_zoom != app_state.app_prefs.ui_zoom {
+                app_state.app_prefs.ui_zoom = new_zoom;
+                app_state.app_prefs.on_ui_zoom_changed(cx);
+            }
+        }
+
+        if ui_zoom_input.returned(actions).is_some() || ui_zoom_input.key_focus_lost(actions) {
+            let text = ui_zoom_input.text();
+            match parse_zoom_percent(&text) {
+                Some(multiplier) => {
+                    let new_zoom = UiZoom::new(multiplier);
+                    if new_zoom != app_state.app_prefs.ui_zoom {
+                        app_state.app_prefs.ui_zoom = new_zoom;
+                        app_state.app_prefs.on_ui_zoom_changed(cx);
+                    } else {
+                        ui_zoom_input.set_text(cx, &new_zoom.format_percent());
+                    }
+                }
+                None if !text.trim().is_empty() => {
+                    enqueue_popup_notification(
+                        "UI zoom must be a positive percentage, like 100 or 125%.",
+                        PopupKind::Error,
+                        Some(4.0),
+                    );
+                    ui_zoom_input.set_text(cx, &app_state.app_prefs.ui_zoom.format_percent());
+                }
+                None => { }
+            }
+        }
+
+        for action in actions {
+            if let Some(AppPreferencesAction::UiZoomChanged(new_zoom)) = action.downcast_ref() {
+                let new_zoom = *new_zoom;
+                if new_zoom != app_state.app_prefs.ui_zoom {
+                    app_state.app_prefs.ui_zoom = new_zoom;
+                }
+                ui_zoom_input.set_text(cx, &new_zoom.format_percent());
             }
         }
 
@@ -493,6 +603,11 @@ impl AppSettings {
         view.drop_down(cx, ids!(view_mode_dropdown))
             .set_selected_item(cx, prefs.view_mode.to_index());
 
+        view.text_input(cx, ids!(ui_zoom_input))
+            .set_text(cx, &prefs.ui_zoom.format_percent());
+        view.label(cx, ids!(ui_zoom_description))
+            .set_text(cx, UI_ZOOM_DESCRIPTION);
+
         view.check_box(cx, ids!(send_on_cmd_enter_toggle))
             .set_text(SEND_SHORTCUT_TOGGLE_LABEL);
         Self::update_send_shortcut_description(cx, view, prefs.send_on_enter);
@@ -549,4 +664,17 @@ fn parse_custom_thumb_height(text: &str) -> Option<u32> {
         return None;
     }
     trimmed.parse::<u32>().ok().filter(|v| *v > 0)
+}
+
+fn parse_zoom_percent(text: &str) -> Option<f32> {
+    let trimmed = text.trim().trim_end_matches('%').trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let percent = trimmed.parse::<f32>().ok()?;
+    if percent.is_finite() && percent > 0.0 {
+        Some(percent / 100.0)
+    } else {
+        None
+    }
 }

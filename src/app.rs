@@ -16,7 +16,7 @@ use crate::{
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, settings::app_preferences::AppPreferences, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, settings::app_preferences::{AppPreferences, UiZoom}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -218,6 +218,9 @@ impl MatchEvent for App {
         if let Err(e) = persistence::load_window_state(self.ui.window(cx, ids!(main_window)), cx) {
             error!("Failed to load window state: {}", e);
         }
+
+        #[cfg(target_os = "macos")]
+        self.install_macos_menu(cx);
 
         self.update_login_visibility(cx);
 
@@ -659,18 +662,13 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
-        // On a file-driven hot-reload (`Event::LiveEdit`), Makepad re-runs
-        // `script_mod!` which reasserts source-defined defaults (e.g.
-        // `mod.widgets.IMG_MSG_FIT = Fit{max: FitBound.Abs(200.0)}`). That
-        // wipes runtime preference overrides we pushed into the heap via
-        // `script_eval!`. Re-broadcast the current preferences so those
-        // overrides are re-established; the `request_script_reapply` inside
-        // `broadcast_all` triggers a follow-up `Event::ScriptReapply` pass
-        // (handled inside the same `run_live_edit_if_needed` tick) so
-        // widgets pick the overrides up. `Event::ScriptReapply` itself must
-        // NOT trigger another broadcast — that would loop.
         if let Event::LiveEdit = event {
             self.app_state.app_prefs.broadcast_all(cx);
+        }
+
+        self.handle_ui_zoom_shortcuts(cx, event);
+        if let Event::MacosMenuCommand(command) = event {
+            self.handle_ui_zoom_menu_command(cx, *command);
         }
 
         // Forward events to the MatchEvent trait implementation.
@@ -683,6 +681,91 @@ impl AppMain for App {
 }
 
 impl App {
+    fn apply_ui_zoom(&mut self, cx: &mut Cx, new_zoom: UiZoom) {
+        if new_zoom != self.app_state.app_prefs.ui_zoom {
+            self.app_state.app_prefs.ui_zoom = new_zoom;
+            self.app_state.app_prefs.on_ui_zoom_changed(cx);
+        }
+    }
+
+    fn handle_ui_zoom_shortcuts(&mut self, cx: &mut Cx, event: &Event) {
+        let Event::KeyDown(e) = event else { return };
+        if !e.modifiers.is_primary() {
+            return;
+        }
+        let current = self.app_state.app_prefs.ui_zoom;
+        let new_zoom = match e.key_code {
+            KeyCode::Equals | KeyCode::NumpadEquals | KeyCode::NumpadAdd => {
+                current.zoom_in_by(UiZoom::STEP)
+            }
+            KeyCode::Minus | KeyCode::NumpadSubtract => current.zoom_out_by(UiZoom::STEP),
+            KeyCode::Key0 | KeyCode::Numpad0 => UiZoom::reset(),
+            _ => return,
+        };
+        self.apply_ui_zoom(cx, new_zoom);
+    }
+
+    /// Set up the menu bar entries, currently macOS-only.
+    #[cfg(target_os = "macos")]
+    fn install_macos_menu(&self, cx: &mut Cx) {
+        cx.update_macos_menu(MacosMenu::Main {
+            items: vec![
+                MacosMenu::Sub {
+                    name: "Robrix".into(),
+                    items: vec![MacosMenu::Item {
+                        name: "Quit Robrix".into(),
+                        command: live_id!(quit),
+                        key: KeyCode::KeyQ,
+                        shift: false,
+                        enabled: true,
+                    }],
+                },
+                MacosMenu::Sub {
+                    name: "View".into(),
+                    items: vec![
+                        MacosMenu::Item {
+                            name: "Zoom In".into(),
+                            command: live_id!(zoom_in),
+                            key: KeyCode::Equals,
+                            shift: true,
+                            enabled: true,
+                        },
+                        MacosMenu::Item {
+                            name: "Zoom Out".into(),
+                            command: live_id!(zoom_out),
+                            key: KeyCode::Minus,
+                            shift: false,
+                            enabled: true,
+                        },
+                        MacosMenu::Line,
+                        MacosMenu::Item {
+                            name: "Reset Zoom".into(),
+                            command: live_id!(reset_zoom),
+                            key: KeyCode::Key0,
+                            shift: false,
+                            enabled: true,
+                        },
+                    ],
+                },
+            ],
+        });
+    }
+
+    /// Connects `MacosMenuCommand`s to the existing zoom shortcut handlers.
+    fn handle_ui_zoom_menu_command(&mut self, cx: &mut Cx, command: LiveId) {
+        let current = self.app_state.app_prefs.ui_zoom;
+        let new_zoom = if command == live_id!(zoom_in) {
+            current.zoom_in_by(UiZoom::STEP)
+        } else if command == live_id!(zoom_out) {
+            current.zoom_out_by(UiZoom::STEP)
+        } else if command == live_id!(reset_zoom) {
+            UiZoom::reset()
+        } else {
+            return;
+        };
+        self.apply_ui_zoom(cx, new_zoom);
+    }
+
     fn handle_lifecycle_event(&mut self, cx: &mut Cx, event: &Event) {
         match event {
             Event::QuitRequested(e) => {
