@@ -562,16 +562,6 @@ script_mod! {
                     }
                     text: "Create New Room"
                 }
-
-                close_button := RobrixNeutralIconButton {
-                    width: 38
-                    height: 38
-                    align: Align{x: 0.5, y: 0.5}
-                    spacing: 0
-                    padding: 11
-                    draw_icon.svg: (ICON_CLOSE)
-                    icon_walk: Walk{width: 14, height: 14}
-                }
             }
 
             subtitle := Label {
@@ -650,16 +640,6 @@ script_mod! {
                         color: #000
                     }
                     text: "Direct Messages"
-                }
-
-                close_button := RobrixNeutralIconButton {
-                    width: 38
-                    height: 38
-                    align: Align{x: 0.5, y: 0.5}
-                    spacing: 0
-                    padding: 11
-                    draw_icon.svg: (ICON_CLOSE)
-                    icon_walk: Walk{width: 14, height: 14}
                 }
             }
 
@@ -1258,18 +1238,6 @@ impl Widget for CreateRoomModal {
         if self.app_language != app_language {
             self.set_app_language(cx, app_language);
         }
-        let create_room_form = self.view.create_room_form(cx, ids!(create_room_form));
-        let is_busy = create_room_form.is_busy();
-        let create_button = self.view.button(cx, ids!(create_button));
-        let can_submit = create_room_form.can_submit(cx);
-        create_button.set_enabled(cx, can_submit);
-        create_button.set_text(cx, if is_busy {
-            tr_key(self.app_language, "add_room.create_room.button.syncing")
-        } else {
-            tr_key(self.app_language, "add_room.create_room.button.create")
-        });
-        self.view.button(cx, ids!(cancel_button)).set_enabled(cx, !is_busy);
-        self.view.button(cx, ids!(close_button)).set_enabled(cx, !is_busy);
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -1279,19 +1247,26 @@ impl WidgetMatchEvent for CreateRoomModal {
         let create_room_form = self.view.create_room_form(cx, ids!(create_room_form));
         let create_button = self.view.button(cx, ids!(create_button));
         let cancel_button = self.view.button(cx, ids!(cancel_button));
-        let close_button = self.view.button(cx, ids!(close_button));
+
         if create_button.clicked(actions) {
             let _ = create_room_form.submit(cx);
         }
-        let cancel_clicked = cancel_button.clicked(actions);
-        let close_clicked = close_button.clicked(actions);
-        if !create_room_form.is_busy()
-            && (cancel_clicked || close_clicked || actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed))))
-        {
-            if cancel_clicked || close_clicked {
-                cx.action(CreateRoomModalAction::Close);
-            }
+
+        // Allow cancel anytime
+        if cancel_button.clicked(actions) {
+            cx.action(CreateRoomModalAction::Close);
         }
+
+        // Update button states based on form state
+        let is_busy = create_room_form.is_busy();
+        let can_submit = create_room_form.can_submit(cx);
+        create_button.set_enabled(cx, can_submit);
+        create_button.set_text(cx, if is_busy {
+            tr_key(self.app_language, "add_room.create_room.button.syncing")
+        } else {
+            tr_key(self.app_language, "add_room.create_room.button.create")
+        });
+        // cancel_button stays enabled always
     }
 }
 
@@ -1317,9 +1292,9 @@ impl CreateRoomModal {
 
     pub fn show(&mut self, cx: &mut Cx, preferred_parent_space_id: Option<OwnedRoomId>) {
         self.has_fixed_parent = preferred_parent_space_id.is_some();
-        self.view.create_room_form(cx, ids!(create_room_form))
-            .set_app_language(cx, self.app_language);
-        self.view.create_room_form(cx, ids!(create_room_form)).prepare(
+        let create_room_form = self.view.create_room_form(cx, ids!(create_room_form));
+        create_room_form.set_app_language(cx, self.app_language);
+        create_room_form.prepare(
             cx,
             preferred_parent_space_id,
             CreateRoomContext::SpaceLobbyModal,
@@ -1331,11 +1306,15 @@ impl CreateRoomModal {
             } else {
                 tr_key(self.app_language, "add_room.create_room.help.default")
             });
-        self.view.button(cx, ids!(create_button))
-            .set_text(cx, tr_key(self.app_language, "add_room.create_room.button.create"));
-        self.view.button(cx, ids!(create_button)).reset_hover(cx);
-        self.view.button(cx, ids!(cancel_button)).reset_hover(cx);
-        self.view.button(cx, ids!(close_button)).reset_hover(cx);
+        let can_submit = create_room_form.can_submit(cx);
+        let create_button = self.view.button(cx, ids!(create_button));
+        let cancel_button = self.view.button(cx, ids!(cancel_button));
+        create_button.set_text(cx, tr_key(self.app_language, "add_room.create_room.button.create"));
+        create_button.reset_hover(cx);
+        cancel_button.reset_hover(cx);
+        // Initial button states: form is empty so create disabled, cancel always enabled
+        create_button.set_enabled(cx, can_submit);
+        cancel_button.set_enabled(cx, true);
         self.view.redraw(cx);
     }
 }
@@ -1373,17 +1352,6 @@ impl Widget for StartChatModal {
         if self.app_language != app_language {
             self.set_app_language(cx, app_language);
         }
-        let user_id_text_is_empty = self.view
-            .text_input(cx, ids!(chat_user_id_input))
-            .text()
-            .trim()
-            .is_empty();
-        self.view.button(cx, ids!(go_button))
-            .set_enabled(cx, !self.submitting && !user_id_text_is_empty);
-        self.view.button(cx, ids!(cancel_button))
-            .set_enabled(cx, !self.submitting);
-        self.view.button(cx, ids!(close_button))
-            .set_enabled(cx, !self.submitting);
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -1393,7 +1361,11 @@ impl WidgetMatchEvent for StartChatModal {
         let chat_user_id_input = self.view.text_input(cx, ids!(chat_user_id_input));
         let go_button = self.view.button(cx, ids!(go_button));
         let cancel_button = self.view.button(cx, ids!(cancel_button));
-        let close_button = self.view.button(cx, ids!(close_button));
+
+        if chat_user_id_input.changed(actions).is_some() {
+            let user_id_text_is_empty = chat_user_id_input.text().trim().is_empty();
+            go_button.set_enabled(cx, !self.submitting && !user_id_text_is_empty);
+        }
 
         let submit_chat_request = go_button.clicked(actions)
             || chat_user_id_input.returned(actions).is_some();
@@ -1401,9 +1373,8 @@ impl WidgetMatchEvent for StartChatModal {
             self.submit(cx);
         }
 
-        let cancel_clicked = cancel_button.clicked(actions);
-        let close_clicked = close_button.clicked(actions);
-        if cancel_clicked || close_clicked {
+        if cancel_button.clicked(actions) {
+            self.submitting = false;
             cx.action(StartChatModalAction::Close);
         }
 
@@ -1413,6 +1384,9 @@ impl WidgetMatchEvent for StartChatModal {
                 cx.action(StartChatModalAction::Close);
             } else if matches!(action.downcast_ref(), Some(DirectMessageRoomAction::FailedToCreate { .. } | DirectMessageRoomAction::DidNotExist { .. })) {
                 self.submitting = false;
+                let user_id_text_is_empty = chat_user_id_input.text().trim().is_empty();
+                go_button.set_enabled(cx, !user_id_text_is_empty);
+                cancel_button.set_enabled(cx, true);
                 self.view.redraw(cx);
             }
         }
@@ -1456,6 +1430,8 @@ impl StartChatModal {
                 }
 
                 self.submitting = true;
+                self.view.button(cx, ids!(go_button)).set_enabled(cx, false);
+                // cancel_button stays enabled so user can cancel during submission
                 submit_async_request(MatrixRequest::OpenOrCreateDirectMessage {
                     create_encrypted: false,
                     user_profile: UserProfile {
@@ -1485,9 +1461,12 @@ impl StartChatModal {
         self.submitting = false;
         self.view.text_input(cx, ids!(chat_user_id_input)).set_text(cx, "");
         self.set_app_language(cx, self.app_language);
-        self.view.button(cx, ids!(go_button)).reset_hover(cx);
-        self.view.button(cx, ids!(cancel_button)).reset_hover(cx);
-        self.view.button(cx, ids!(close_button)).reset_hover(cx);
+        let go_button = self.view.button(cx, ids!(go_button));
+        let cancel_button = self.view.button(cx, ids!(cancel_button));
+        go_button.reset_hover(cx);
+        cancel_button.reset_hover(cx);
+        go_button.set_enabled(cx, false); // Text input is empty
+        cancel_button.set_enabled(cx, true);
         self.view.text_input(cx, ids!(chat_user_id_input)).set_key_focus(cx);
         self.view.redraw(cx);
     }
