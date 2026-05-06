@@ -4,7 +4,7 @@ use makepad_widgets::*;
 use serde::{Deserialize, Serialize};
 
 /// App-wide user preferences controlled by the App Settings UI.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AppPreferences {
     /// Forces the HomeScreen `AdaptiveView` into a particular layout,
     /// or falls back to the default automatic width-based layout.
@@ -18,6 +18,9 @@ pub struct AppPreferences {
     /// Max height of image thumbnails in the room timeline.
     #[serde(default)]
     pub thumbnail_max_height: ThumbnailMaxHeight,
+    /// UI-wide zoom level, which scaled the entire UI (not just text).
+    #[serde(default)]
+    pub ui_zoom: UiZoom,
 
     // Note: if you add a new preference here, be sure to add a new
     // function `on_<NEW_PREFERENCE>_changed` and update `broadcast_all()`.
@@ -29,6 +32,7 @@ impl Default for AppPreferences {
             view_mode: ViewModeOverride::default(),
             send_on_enter: true,
             thumbnail_max_height: ThumbnailMaxHeight::default(),
+            ui_zoom: UiZoom::default(),
         }
     }
 }
@@ -95,9 +99,24 @@ impl AppPreferences {
         cx.request_script_reapply();
     }
 
+    /// Applies the current `ui_zoom` value by overriding the window's dpi factor.
+    pub fn on_ui_zoom_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.ui_zoom = self.ui_zoom;
+        let window_id = CxWindowPool::id_zero();
+        let dpi_override = if self.ui_zoom.is_default() {
+            None
+        } else {
+            let window = &cx.windows[window_id];
+            let baseline = window.os_dpi_factor.unwrap_or(window.window_geom.dpi_factor);
+            Some(baseline * self.ui_zoom.multiplier())
+        };
+        cx.set_window_dpi_override(window_id, dpi_override);
+        cx.action(AppPreferencesAction::UiZoomChanged(self.ui_zoom));
+    }
+
     /// Broadcasts every preference to listening widgets.
     ///
-    /// Used at app-state restore so every listener picks up the loaded
+    /// Used upon app-state restore so every listener picks up the loaded
     /// values without having to poll `AppState` every draw, and also
     /// after every `Event::LiveEdit` so a hot-reloaded `script_mod!` block
     /// doesn't clobber our runtime heap overrides.
@@ -105,6 +124,7 @@ impl AppPreferences {
         self.on_view_mode_changed(cx);
         self.on_send_on_enter_changed(cx);
         self.on_thumbnail_max_height_changed(cx);
+        self.on_ui_zoom_changed(cx);
     }
 }
 
@@ -181,6 +201,63 @@ impl ThumbnailMaxHeight {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UiZoom(pub f32);
+
+impl UiZoom {
+    pub const MIN: f32 = 0.25;
+    pub const MAX: f32 = 3.00;
+    pub const DEFAULT: f32 = 1.00;
+
+    /// Step size for keyboard shortcuts.
+    pub const STEP: f32 = 0.02;
+    /// Step size for the app settings +/- buttons.
+    pub const BUTTON_STEP: f32 = 0.05;
+
+    /// Create a new zoom value that is properly clamped.
+    pub fn new(value: f32) -> Self {
+        let v = if value.is_finite() { value } else { Self::DEFAULT };
+        Self(v.clamp(Self::MIN, Self::MAX))
+    }
+
+    pub fn multiplier(self) -> f64 {
+        self.0 as f64
+    }
+
+    /// Returns whether this zoom value is within 0.01 of the default 100%.
+    pub fn is_default(self) -> bool {
+        (self.0 - Self::DEFAULT).abs() < 0.01
+    }
+
+    pub fn zoom_in_by(self, delta: f32) -> Self {
+        Self::new(self.0 + delta)
+    }
+
+    pub fn zoom_out_by(self, delta: f32) -> Self {
+        Self::new(self.0 - delta)
+    }
+
+    pub fn reset() -> Self {
+        Self(Self::DEFAULT)
+    }
+
+    pub fn format_percent(self) -> String {
+        let pct = self.0 * 100.0;
+        let rounded = pct.round();
+        if (pct - rounded).abs() < 0.05 {
+            format!("{}%", rounded as i32)
+        } else {
+            format!("{:.1}%", pct)
+        }
+    }
+}
+
+impl Default for UiZoom {
+    fn default() -> Self {
+        Self(Self::DEFAULT)
+    }
+}
+
 /// Actions emitted when an app-wide preference changes so other parts of the
 /// app can react.
 ///
@@ -192,6 +269,7 @@ impl ThumbnailMaxHeight {
 pub enum AppPreferencesAction {
     ViewModeChanged(ViewModeOverride),
     SendOnEnterChanged(bool),
+    UiZoomChanged(UiZoom),
 }
 
 /// A `Cx` global mirror of the current [`AppPreferences`].
