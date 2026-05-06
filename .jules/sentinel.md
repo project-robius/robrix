@@ -1,0 +1,4 @@
+## 2025-02-14 - Fix missing HTML escaping in State Event previews
+**Vulnerability:** User-controlled strings inside `AnyOtherStateEventContentChange` variants (room aliases, version, guest access, history visibility, tombstone replacement) were concatenated directly into the HTML without sanitization, leading to a Cross-Site Scripting (XSS) vulnerability.
+**Learning:** Always explicitly check for HTML rendering contexts and use `htmlize::escape_text` before injecting user-provided strings into views. The use of `Cow::Borrowed` paired with `.into()` allows efficient zero-allocation returns for text values that don't need escaping.
+**Prevention:** Developers and reviewers should ensure that all newly added user-facing dynamic fields run through sanitization functions when evaluated in an HTML context.

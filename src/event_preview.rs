@@ -453,7 +453,12 @@ pub fn text_preview_of_other_state(
             let mut s = String::from("set this room's aliases to ");
             let last_alias = content.aliases.len() - 1;
             for (i, alias) in content.aliases.iter().enumerate() {
-                s.push_str(alias.as_str());
+                let a = if format_as_html {
+                    htmlize::escape_text(alias.as_str()).into()
+                } else {
+                    Cow::Borrowed(alias.as_str())
+                };
+                s.push_str(&a);
                 if i != last_alias {
                     s.push_str(", ");
                 }
@@ -465,12 +470,21 @@ pub fn text_preview_of_other_state(
             Some(String::from("set this room's avatar picture."))
         }
         AnyOtherStateEventContentChange::RoomCanonicalAlias(StateEventContentChange::Original { content, .. }) => {
-            Some(format!("set the main address of this room to {}.",
-                content.alias.as_ref().map(|a| a.as_str()).unwrap_or("none")
-            ))
+            let alias = content.alias.as_ref().map(|a| a.as_str()).unwrap_or("none");
+            let a = if format_as_html {
+                htmlize::escape_text(alias).into()
+            } else {
+                Cow::Borrowed(alias)
+            };
+            Some(format!("set the main address of this room to {}.", a))
         }
         AnyOtherStateEventContentChange::RoomCreate(StateEventContentChange::Original { content, .. }) => {
-            Some(format!("created this room (v{}).", content.room_version.as_str()))
+            let v = if format_as_html {
+                htmlize::escape_text(content.room_version.as_str()).into()
+            } else {
+                Cow::Borrowed(content.room_version.as_str())
+            };
+            Some(format!("created this room (v{}).", v))
         }
         AnyOtherStateEventContentChange::RoomEncryption(_) => {
             Some(String::from("enabled encryption in this room."))
@@ -479,19 +493,31 @@ pub fn text_preview_of_other_state(
             Some(match &content.guest_access {
                 GuestAccess::CanJoin => String::from("has allowed guests to join this room."),
                 GuestAccess::Forbidden => String::from("has forbidden guests from joining this room."),
-                custom => format!("has set custom guest access rules for this room: {}", custom.as_str()),
+                custom => {
+                    let c = if format_as_html {
+                        htmlize::escape_text(custom.as_str()).into()
+                    } else {
+                        Cow::Borrowed(custom.as_str())
+                    };
+                    format!("has set custom guest access rules for this room: {}", c)
+                }
             })
         }
         AnyOtherStateEventContentChange::RoomHistoryVisibility(StateEventContentChange::Original { content, .. }) => {
-            Some(format!("set this room's history to be visible by {}",
-                match &content.history_visibility {
-                    HistoryVisibility::Invited => "invited users, since they were invited.",
-                    HistoryVisibility::Joined => "joined users, since they joined.",
-                    HistoryVisibility::Shared => "joined users, for all of time.",
-                    HistoryVisibility::WorldReadable => "anyone for all time.",
-                    custom => custom.as_str(),
-                },
-            ))
+            let v = match &content.history_visibility {
+                HistoryVisibility::Invited => Cow::Borrowed("invited users, since they were invited."),
+                HistoryVisibility::Joined => Cow::Borrowed("joined users, since they joined."),
+                HistoryVisibility::Shared => Cow::Borrowed("joined users, for all of time."),
+                HistoryVisibility::WorldReadable => Cow::Borrowed("anyone for all time."),
+                custom => {
+                    if format_as_html {
+                        htmlize::escape_text(custom.as_str()).into()
+                    } else {
+                        Cow::Borrowed(custom.as_str())
+                    }
+                }
+            };
+            Some(format!("set this room's history to be visible by {}", v))
         }
         AnyOtherStateEventContentChange::RoomJoinRules(StateEventContentChange::Original { content, .. }) => {
             Some(match &content.join_rule {
@@ -501,7 +527,14 @@ pub fn text_preview_of_other_state(
                 JoinRule::Restricted(_) => String::from("set this room to be joinable by invite only or with restrictions."),
                 JoinRule::KnockRestricted(_) => String::from("set this room to be joinable by invite only or requestable with restrictions."),
                 JoinRule::Invite  => String::from("set this room to be joinable by invite only."),
-                custom => format!("set custom join rules for this room: {}", custom.as_str()),
+                custom => {
+                    let c = if format_as_html {
+                        htmlize::escape_text(custom.as_str()).into()
+                    } else {
+                        Cow::Borrowed(custom.as_str())
+                    };
+                    format!("set custom join rules for this room: {}", c)
+                }
             })
         }
         AnyOtherStateEventContentChange::RoomPinnedEvents(StateEventContentChange::Original { content, .. }) => {
@@ -522,7 +555,13 @@ pub fn text_preview_of_other_state(
             Some(String::from("set the server access control list for this room."))
         }
         AnyOtherStateEventContentChange::RoomTombstone(StateEventContentChange::Original { content, .. }) => {
-            Some(format!("closed this room and upgraded it to {}", content.replacement_room.matrix_to_uri()))
+            let uri = content.replacement_room.matrix_to_uri().to_string();
+            let u = if format_as_html {
+                htmlize::escape_text(&uri).into()
+            } else {
+                Cow::Borrowed(uri.as_str())
+            };
+            Some(format!("closed this room and upgraded it to {}", u))
         }
         AnyOtherStateEventContentChange::RoomTopic(StateEventContentChange::Original { content, .. }) => {
             let topic = if format_as_html {
