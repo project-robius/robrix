@@ -454,7 +454,7 @@ pub fn text_preview_of_other_state(
             let last_alias = content.aliases.len() - 1;
             for (i, alias) in content.aliases.iter().enumerate() {
                 let a = if format_as_html {
-                    htmlize::escape_text(alias.as_str()).into()
+                    htmlize::escape_text(alias.as_str())
                 } else {
                     Cow::Borrowed(alias.as_str())
                 };
@@ -472,7 +472,7 @@ pub fn text_preview_of_other_state(
         AnyOtherStateEventContentChange::RoomCanonicalAlias(StateEventContentChange::Original { content, .. }) => {
             let alias = content.alias.as_ref().map(|a| a.as_str()).unwrap_or("none");
             let a = if format_as_html {
-                htmlize::escape_text(alias).into()
+                htmlize::escape_text(alias)
             } else {
                 Cow::Borrowed(alias)
             };
@@ -480,7 +480,7 @@ pub fn text_preview_of_other_state(
         }
         AnyOtherStateEventContentChange::RoomCreate(StateEventContentChange::Original { content, .. }) => {
             let v = if format_as_html {
-                htmlize::escape_text(content.room_version.as_str()).into()
+                htmlize::escape_text(content.room_version.as_str())
             } else {
                 Cow::Borrowed(content.room_version.as_str())
             };
@@ -495,7 +495,7 @@ pub fn text_preview_of_other_state(
                 GuestAccess::Forbidden => String::from("has forbidden guests from joining this room."),
                 custom => {
                     let c = if format_as_html {
-                        htmlize::escape_text(custom.as_str()).into()
+                        htmlize::escape_text(custom.as_str())
                     } else {
                         Cow::Borrowed(custom.as_str())
                     };
@@ -511,7 +511,7 @@ pub fn text_preview_of_other_state(
                 HistoryVisibility::WorldReadable => Cow::Borrowed("anyone for all time."),
                 custom => {
                     if format_as_html {
-                        htmlize::escape_text(custom.as_str()).into()
+                        htmlize::escape_text(custom.as_str())
                     } else {
                         Cow::Borrowed(custom.as_str())
                     }
@@ -529,7 +529,7 @@ pub fn text_preview_of_other_state(
                 JoinRule::Invite  => String::from("set this room to be joinable by invite only."),
                 custom => {
                     let c = if format_as_html {
-                        htmlize::escape_text(custom.as_str()).into()
+                        htmlize::escape_text(custom.as_str())
                     } else {
                         Cow::Borrowed(custom.as_str())
                     };
@@ -557,7 +557,7 @@ pub fn text_preview_of_other_state(
         AnyOtherStateEventContentChange::RoomTombstone(StateEventContentChange::Original { content, .. }) => {
             let uri = content.replacement_room.matrix_to_uri().to_string();
             let u = if format_as_html {
-                htmlize::escape_text(&uri).into()
+                htmlize::escape_text(&uri)
             } else {
                 Cow::Borrowed(uri.as_str())
             };
