@@ -1,0 +1,3 @@
+## 2024-05-30 - [Performance] Parallelize initial space sync fetching
+**Learning:** In space service synchronization, iterating over space rooms and asynchronously fetching avatar for each space using `await` sequentially causes blocking for I/O bounds when joining multiple spaces, potentially leading to performance bottlenecks during initial startup.
+**Action:** Use `futures_util::future::join_all` to concurrently fetch avatar and information for all initial spaces, reducing latency and time spent initializing spaces list. Parallelizing space sync fetching and queuing preserves order while drastically reducing blocking.
