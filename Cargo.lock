@@ -5749,7 +5749,7 @@ dependencies = [
 
 [[package]]
 name = "robrix"
-version = "0.1.0-pre-alpha-2"
+version = "0.1.0-pre-alpha-3"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
