@@ -215,6 +215,46 @@ impl Widget for RoomInputBar {
             _ => {}
         }
 
+        match event.hits(cx, self.view.button(cx, ids!(location_button)).area()) {
+            Hit::FingerHoverIn(_) => {
+                cx.widget_action(
+                    self.widget_uid(),
+                    TooltipAction::HoverIn {
+                        widget_rect: self.view.button(cx, ids!(location_button)).area().rect(cx),
+                        text: "Share location".to_string(),
+                        options: CalloutTooltipOptions {
+                            position: TooltipPosition::Top,
+                            ..Default::default()
+                        },
+                    },
+                );
+            }
+            Hit::FingerHoverOut(_) => {
+                cx.widget_action(self.widget_uid(), TooltipAction::HoverOut);
+            }
+            _ => {}
+        }
+
+        match event.hits(cx, self.view.button(cx, ids!(send_message_button)).area()) {
+            Hit::FingerHoverIn(_) => {
+                cx.widget_action(
+                    self.widget_uid(),
+                    TooltipAction::HoverIn {
+                        widget_rect: self.view.button(cx, ids!(send_message_button)).area().rect(cx),
+                        text: "Send message".to_string(),
+                        options: CalloutTooltipOptions {
+                            position: TooltipPosition::Top,
+                            ..Default::default()
+                        },
+                    },
+                );
+            }
+            Hit::FingerHoverOut(_) => {
+                cx.widget_action(self.widget_uid(), TooltipAction::HoverOut);
+            }
+            _ => {}
+        }
+
         if let Event::Actions(actions) = event {
             // Handle changes to the `send_on_enter` preference.
             for action in actions {
