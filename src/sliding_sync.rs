@@ -1039,6 +1039,13 @@ pub enum MatrixRequest {
         #[cfg(feature = "tsp")]
         sign_with_tsp: bool,
     },
+    /// Request to forward an existing message's effective content to another room.
+    ForwardMessage {
+        source_room_id: OwnedRoomId,
+        source_event_id: OwnedEventId,
+        destination_room_id: OwnedRoomId,
+        message: RoomMessageEventContent,
+    },
     /// Request to send a bot action response below a timeline message.
     SendActionResponse {
         timeline_kind: TimelineKind,
@@ -1349,6 +1356,24 @@ mod matrix_request_tests {
     use super::*;
 
     #[test]
+    fn test_forward_success_feedback() {
+        let room_id = RoomId::parse("!dest:example.org").unwrap();
+
+        assert_eq!(
+            forward_success_feedback_text(room_id.as_ref()),
+            "Forwarded message to !dest:example.org.",
+        );
+    }
+
+    #[test]
+    fn test_forward_failure_feedback() {
+        assert_eq!(
+            forward_failure_feedback_text("network error"),
+            "Failed to forward message: network error",
+        );
+    }
+
+    #[test]
     fn is_active_dm_room_state_only_joined_is_reusable() {
         assert!(is_active_dm_room_state(RoomState::Joined));
         assert!(!is_active_dm_room_state(RoomState::Invited));
@@ -1637,6 +1662,14 @@ pub fn submit_async_request(req: MatrixRequest) {
         sender.send(req)
             .expect("BUG: matrix worker task receiver has died!");
     }
+}
+
+fn forward_success_feedback_text(destination_room_id: &RoomId) -> String {
+    format!("Forwarded message to {destination_room_id}.")
+}
+
+fn forward_failure_feedback_text(error: impl std::fmt::Display) -> String {
+    format!("Failed to forward message: {error}")
 }
 
 /// Details of a login request that get submitted within [`MatrixRequest::Login`].
@@ -3599,6 +3632,67 @@ async fn matrix_worker_task(
                                 error!("Failed to send message to {timeline_kind}: {_e:?}");
                                 enqueue_popup_notification(format!("Failed to send message: {_e}"), PopupKind::Error, None);
                             }
+                        }
+                    }
+                    SignalToUI::set_ui_signal();
+                });
+            }
+
+            MatrixRequest::ForwardMessage {
+                source_room_id,
+                source_event_id,
+                destination_room_id,
+                message,
+            } => {
+                let Some(client) = get_client() else {
+                    enqueue_popup_notification(
+                        "Cannot forward message: Matrix client is not ready.",
+                        PopupKind::Error,
+                        None,
+                    );
+                    continue;
+                };
+
+                let _forward_message_task = Handle::current().spawn(async move {
+                    let Some(destination_room) = client.get_room(&destination_room_id) else {
+                        enqueue_popup_notification(
+                            format!("Cannot forward message: room {destination_room_id} is not known locally."),
+                            PopupKind::Error,
+                            None,
+                        );
+                        SignalToUI::set_ui_signal();
+                        return;
+                    };
+                    if destination_room.state() != RoomState::Joined {
+                        enqueue_popup_notification(
+                            format!("Cannot forward message: not joined to {destination_room_id}."),
+                            PopupKind::Error,
+                            None,
+                        );
+                        SignalToUI::set_ui_signal();
+                        return;
+                    }
+
+                    match destination_room.send(message).await {
+                        Ok(_response) => {
+                            log!(
+                                "Forwarded message {source_event_id} from {source_room_id} to {destination_room_id}."
+                            );
+                            enqueue_popup_notification(
+                                forward_success_feedback_text(destination_room_id.as_ref()),
+                                PopupKind::Info,
+                                Some(4.0),
+                            );
+                        }
+                        Err(error) => {
+                            error!(
+                                "Failed to forward message {source_event_id} from {source_room_id} to {destination_room_id}: {error:?}"
+                            );
+                            enqueue_popup_notification(
+                                forward_failure_feedback_text(&error),
+                                PopupKind::Error,
+                                None,
+                            );
                         }
                     }
                     SignalToUI::set_ui_signal();

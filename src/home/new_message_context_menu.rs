@@ -3,7 +3,7 @@
 
 use bitflags::bitflags;
 use makepad_widgets::*;
-use matrix_sdk::ruma::OwnedEventId;
+use matrix_sdk::ruma::{OwnedEventId, events::room::message::MessageType};
 use matrix_sdk_ui::timeline::{EventTimelineItem, MsgLikeContent, TimelineEventItemId};
 
 use crate::{i18n::{AppLanguage, tr_key}, sliding_sync::UserPowerLevels};
@@ -155,6 +155,11 @@ script_mod! {
                 text: "Copy Link to Message"
             }
 
+            forward_message_button := mod.widgets.NewMessageContextMenuButton {
+                draw_icon +: { svg: (ICON_SEND) }
+                text: "Forward Message"
+            }
+
             view_source_button := mod.widgets.NewMessageContextMenuButton {
                 draw_icon +: { svg: (ICON_VIEW_SOURCE) }
                 text: "View Source"
@@ -231,13 +236,15 @@ bitflags! {
         const CanDelete = 1 << 5;
         /// Whether this message contains HTML content that the user can copy.
         const HasHtml = 1 << 6;
+        /// Whether this message can be forwarded to another room.
+        const CanForward = 1 << 7;
     }
 }
 impl MessageAbilities {
     pub fn from_user_power_and_event(
         user_power_levels: &UserPowerLevels,
         event_tl_item: &EventTimelineItem,
-        _message: &MsgLikeContent,
+        message: &MsgLikeContent,
         pinned_events: &[OwnedEventId],
         has_html: bool,
     ) -> Self {
@@ -257,9 +264,17 @@ impl MessageAbilities {
         }
         abilities.set(Self::CanReact, user_power_levels.can_send_reaction());
         abilities.set(Self::HasHtml, has_html);
+        abilities.set(Self::CanForward, is_forwardable_message_content(message));
         abilities
     }
 
+}
+
+pub fn is_forwardable_message_content(message: &MsgLikeContent) -> bool {
+    message.as_message().is_some_and(|message| matches!(
+        message.msgtype(),
+        MessageType::Text(..) | MessageType::Notice(..) | MessageType::Emote(..)
+    ))
 }
 
 /// Details about the message that define its context menu content.
@@ -448,6 +463,13 @@ impl WidgetMatchEvent for NewMessageContextMenu {
             );
             close_menu = true;
         }
+        else if self.button(cx, ids!(forward_message_button)).clicked(actions) {
+            cx.widget_action(
+                details.room_screen_widget_uid,
+                MessageAction::Forward(details.clone()),
+            );
+            close_menu = true;
+        }
         else if self.button(cx, ids!(view_source_button)).clicked(actions) {
             cx.widget_action(
                 details.room_screen_widget_uid, 
@@ -509,6 +531,8 @@ impl NewMessageContextMenu {
             .set_text(cx, tr_key(self.app_language, "new_message_context_menu.button.copy_text_html"));
         self.view.button(cx, ids!(copy_link_to_message_button))
             .set_text(cx, tr_key(self.app_language, "new_message_context_menu.button.copy_link"));
+        self.view.button(cx, ids!(forward_message_button))
+            .set_text(cx, tr_key(self.app_language, "new_message_context_menu.button.forward_message"));
         self.view.button(cx, ids!(view_source_button))
             .set_text(cx, tr_key(self.app_language, "new_message_context_menu.button.view_source"));
         self.view.button(cx, ids!(jump_to_related_button))
@@ -553,6 +577,7 @@ impl NewMessageContextMenu {
         let copy_text_button = self.view.button(cx, ids!(copy_text_button));
         let copy_html_button = self.view.button(cx, ids!(copy_html_button));
         let copy_link_button = self.view.button(cx, ids!(copy_link_to_message_button));
+        let forward_message_button = self.view.button(cx, ids!(forward_message_button));
         let view_source_button = self.view.button(cx, ids!(view_source_button));
         let jump_to_related_button = self.view.button(cx, ids!(jump_to_related_button));
         // let report_button = self.view.button(cx, ids!(report_button));
@@ -570,6 +595,7 @@ impl NewMessageContextMenu {
         let show_copy_text = true;
         let show_copy_html = details.abilities.contains(MessageAbilities::HasHtml);
         let show_copy_link = true;
+        let show_forward = details.abilities.contains(MessageAbilities::CanForward);
         let show_view_source = true;
         let show_jump_to_related = details.related_event_id.is_some();
         // let show_report = true;
@@ -599,6 +625,7 @@ impl NewMessageContextMenu {
         }
         pin_button.set_visible(cx, show_pin);
         copy_html_button.set_visible(cx, show_copy_html);
+        forward_message_button.set_visible(cx, show_forward);
         jump_to_related_button.set_visible(cx, show_jump_to_related);
         self.view.view(cx, ids!(divider_before_report_delete)).set_visible(cx, show_divider_before_report_delete);
         // report_button.set_visible(cx, show_report);
@@ -613,6 +640,7 @@ impl NewMessageContextMenu {
         copy_text_button.reset_hover(cx);
         copy_html_button.reset_hover(cx);
         copy_link_button.reset_hover(cx);
+        forward_message_button.reset_hover(cx);
         view_source_button.reset_hover(cx);
         jump_to_related_button.reset_hover(cx);
         // report_button.reset_hover(cx);
@@ -633,6 +661,7 @@ impl NewMessageContextMenu {
             + show_copy_text as u8
             + show_copy_html as u8
             + show_copy_link as u8
+            + show_forward as u8
             + show_view_source as u8
             + show_jump_to_related as u8
             // + show_report as u8

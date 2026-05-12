@@ -33,7 +33,7 @@ use crate::{
     },
     room::{BasicRoomDetails, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, translation, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::{AvatarState, AvatarWidgetExt, AvatarWidgetRefExt}, confirmation_modal::{ConfirmationModalAction, ConfirmationModalContent, ConfirmationModalWidgetExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::{AvatarState, AvatarWidgetExt, AvatarWidgetRefExt}, confirmation_modal::{ConfirmationModalAction, ConfirmationModalContent, ConfirmationModalWidgetExt}, forward_modal::{ForwardMessageContent, ForwardMessageModalAction}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, FetchedRoomThread, MatrixRequest, PaginationDirection, RoomThreadsAction, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, current_user_id, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -254,6 +254,19 @@ fn original_event_content_json(
     event_tl_item.original_json()
         .and_then(|raw| raw.get_field::<serde_json::Value>("content").ok())
         .flatten()
+}
+
+fn forwardable_room_message_content_from_json(
+    content: serde_json::Value,
+) -> Option<RoomMessageEventContent> {
+    let mut message = serde_json::from_value::<RoomMessageEventContent>(content).ok()?;
+    let is_forwardable = matches!(
+        &message.msgtype,
+        MessageType::Text(..) | MessageType::Notice(..) | MessageType::Emote(..)
+    );
+    message.relates_to = None;
+    message.tsp_signature = None;
+    is_forwardable.then_some(message)
 }
 
 fn parse_octos_approval_risk_level(value: Option<&str>) -> Option<OctosApprovalRiskLevel> {
@@ -7127,6 +7140,19 @@ impl RoomScreen {
             .find(|ev| ev.event_id().is_some_and(|id| id == target_event_id))
     }
 
+    fn forward_message_content(
+        timeline_kind: &TimelineKind,
+        event_tl_item: &EventTimelineItem,
+    ) -> Option<ForwardMessageContent> {
+        let message = latest_effective_event_content_json(event_tl_item)
+            .and_then(forwardable_room_message_content_from_json)?;
+        Some(ForwardMessageContent {
+            source_room_id: timeline_kind.room_id().clone(),
+            source_event_id: event_tl_item.event_id()?.to_owned(),
+            message,
+        })
+    }
+
     /// Handles any [`MessageAction`]s received by this RoomScreen.
     fn handle_message_actions(
         &mut self,
@@ -7373,6 +7399,25 @@ impl RoomScreen {
                             Some(5.0),
                         );
                         error!("MessageAction::CopyLink: no `event_id`: [{}] {:?} in room {}",
+                            details.item_id,
+                            details.timeline_event_id,
+                            tl.kind.room_id(),
+                        );
+                    }
+                }
+                MessageAction::Forward(details) => {
+                    let Some(tl) = self.tl_state.as_ref() else { return };
+                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details)
+                        && let Some(content) = Self::forward_message_content(&tl.kind, event_tl_item)
+                    {
+                        cx.action(ForwardMessageModalAction::Open(content));
+                    } else {
+                        enqueue_popup_notification(
+                            tr_key(self.app_language, "room_screen.popup.message.forward_not_found"),
+                            PopupKind::Error,
+                            Some(5.0),
+                        );
+                        error!("MessageAction::Forward: couldn't find forwardable event [{}] {:?} in room {}",
                             details.item_id,
                             details.timeline_event_id,
                             tl.kind.room_id(),
@@ -11110,6 +11155,8 @@ pub enum MessageAction {
     CopyHtml(MessageDetails),
     /// The user clicked the "copy link" button on a message.
     CopyLink(MessageDetails),
+    /// The user clicked the "forward message" button on a message.
+    Forward(MessageDetails),
     /// The user clicked the "view source" button on a message.
     ViewSource(MessageDetails),
     /// The user clicked the "jump to related" button on a message,
@@ -11564,6 +11611,64 @@ mod tests {
 
     fn make_state(text: &str) -> StreamingAnimState {
         StreamingAnimState::new(text, true)
+    }
+
+    #[test]
+    fn test_forward_menu() {
+        let content = serde_json::json!({
+            "msgtype": "m.text",
+            "body": "hello"
+        });
+
+        let message = forwardable_room_message_content_from_json(content).unwrap();
+
+        assert!(matches!(message.msgtype, MessageType::Text(..)));
+    }
+
+    #[test]
+    fn test_forward_menu_hidden_non_message() {
+        let content = serde_json::json!({
+            "msgtype": "m.image",
+            "body": "photo.jpg",
+            "url": "mxc://example.org/media"
+        });
+
+        assert!(forwardable_room_message_content_from_json(content).is_none());
+    }
+
+    #[test]
+    fn test_forward_uses_latest_effective_content() {
+        let content = serde_json::json!({
+            "msgtype": "m.text",
+            "body": "original",
+            "m.new_content": {
+                "msgtype": "m.text",
+                "body": "edited"
+            }
+        });
+        let effective_content = effective_octos_message_content(&content).clone();
+        let message = forwardable_room_message_content_from_json(effective_content).unwrap();
+
+        assert!(matches!(
+            message.msgtype,
+            MessageType::Text(TextMessageEventContent { body, .. }) if body == "edited"
+        ));
+    }
+
+    #[test]
+    fn test_forward_does_not_send_reply_metadata() {
+        let content = serde_json::json!({
+            "msgtype": "m.text",
+            "body": "reply text",
+            "m.relates_to": {
+                "m.in_reply_to": {
+                    "event_id": "$source:example.org"
+                }
+            }
+        });
+        let message = forwardable_room_message_content_from_json(content).unwrap();
+
+        assert!(message.relates_to.is_none());
     }
 
     #[test]

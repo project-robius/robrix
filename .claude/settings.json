@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "bash .claude/hooks/user-prompt-submit.sh",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}
