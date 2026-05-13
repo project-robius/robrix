@@ -4415,7 +4415,7 @@ impl SmallStateEventContent for OtherMessageLike {
     ) -> (WidgetRef, ItemDrawnStatus) {
         item.label(cx, ids!(content)).set_text(
             cx,
-            &text_preview_of_other_message_like(self).format_with(username, false),
+            &text_preview_of_other_message_like(self, false).format_with(username, false),
         );
         new_drawn_status.content_drawn = true;
         (item, new_drawn_status)
