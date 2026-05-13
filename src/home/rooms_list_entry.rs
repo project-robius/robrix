@@ -32,6 +32,21 @@ script_mod! {
         }
     }
 
+    mod.widgets.EncryptionIcon = View {
+        width: Fit, height: Fit,
+        visible: false,
+
+        Icon {
+            width: 19, height: 19,
+            align: Align{x: 0.5, y: 0.5}
+            draw_icon +: {
+                svg: (ICON_LOCK_FILLED)
+                color: #888888
+            }
+            icon_walk: Walk{ width: 15, height: 15 }
+        }
+    }
+
     mod.widgets.RoomName = Label {
         width: Fill, height: Fit
         flow: Flow.Right{wrap: false},
@@ -157,6 +172,7 @@ script_mod! {
                     align: Align{ x: 1.0 }
                     avatar := Avatar {}
                     unread_badge := UnreadBadge {}
+                    encryption_icon := mod.widgets.EncryptionIcon {}
                     tombstone_icon := mod.widgets.TombstoneIcon {}
                 }
             }
@@ -166,6 +182,7 @@ script_mod! {
                 avatar := Avatar {}
                 room_name := mod.widgets.RoomName {}
                 unread_badge := UnreadBadge {}
+                encryption_icon := mod.widgets.EncryptionIcon {}
                 tombstone_icon := mod.widgets.TombstoneIcon {}
             }
             FullPreview := mod.widgets.RoomsListEntryContent {
@@ -193,6 +210,7 @@ script_mod! {
                             width: Fit, height: Fit
                             align: Align{ x: 1.0 }
                             unread_badge := UnreadBadge {}
+                            encryption_icon := mod.widgets.EncryptionIcon {}
                             tombstone_icon := mod.widgets.TombstoneIcon {}
                         }
                     }
@@ -356,7 +374,10 @@ impl RoomsListEntryContent {
             room_info.num_unread_messages,
         );
         self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);
-        // Show tombstone icon if the room is tombstoned
+        self.view.view(cx, ids!(encryption_icon)).set_visible(
+            cx,
+            should_show_encryption_icon(room_info.is_encrypted, room_info.is_tombstoned),
+        );
         self.view.view(cx, ids!(tombstone_icon)).set_visible(cx, room_info.is_tombstoned);
     }
 
@@ -409,6 +430,8 @@ impl RoomsListEntryContent {
             .unread_badge(cx, ids!(unread_badge))
             .update_counts(false, 1, 0);
 
+        self.view.view(cx, ids!(encryption_icon)).set_visible(cx, false);
+        self.view.view(cx, ids!(tombstone_icon)).set_visible(cx, false);
         self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);
     }
 
@@ -509,5 +532,34 @@ impl RoomsListEntryContent {
                 color: #(message_text_color)
             }
         });
+    }
+}
+
+pub fn should_show_encryption_icon(is_encrypted: Option<bool>, is_tombstoned: bool) -> bool {
+    matches!(is_encrypted, Some(true)) && !is_tombstoned
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_room_list_icon_visible_when_encrypted() {
+        assert!(should_show_encryption_icon(Some(true), false));
+    }
+
+    #[test]
+    fn test_room_list_icon_hidden_when_unencrypted() {
+        assert!(!should_show_encryption_icon(Some(false), false));
+    }
+
+    #[test]
+    fn test_room_list_icon_hidden_when_unknown() {
+        assert!(!should_show_encryption_icon(None, false));
+    }
+
+    #[test]
+    fn test_room_list_icon_yields_to_tombstone() {
+        assert!(!should_show_encryption_icon(Some(true), true));
     }
 }

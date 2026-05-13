@@ -4244,6 +4244,8 @@ struct JoinedRoomDetails {
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
     /// A drop guard for the event handler that represents a subscription to pinned events for this room.
     pinned_events_subscriber: Option<EventHandlerDropGuard>,
+    /// The async task that listens for this room becoming encrypted.
+    room_encryption_subscriber_task: Option<JoinHandle<()>>,
 }
 impl Drop for JoinedRoomDetails {
     fn drop(&mut self) {
@@ -4251,6 +4253,9 @@ impl Drop for JoinedRoomDetails {
         self.main_timeline.timeline_subscriber_handler_task.abort();
         for thread_timeline in self.thread_timelines.values() {
             thread_timeline.timeline_subscriber_handler_task.abort();
+        }
+        if let Some(room_encryption_subscriber_task) = self.room_encryption_subscriber_task.take() {
+            room_encryption_subscriber_task.abort();
         }
         drop(self.typing_notice_subscriber.take());
         drop(self.pinned_events_subscriber.take());
@@ -5481,6 +5486,13 @@ async fn update_room(
                 });
             }
 
+            if let Some(is_encrypted) = fetch_room_is_encrypted(&new_room.room).await {
+                enqueue_rooms_list_update(RoomsListUpdate::UpdateIsEncrypted {
+                    room_id: new_room_id.clone(),
+                    is_encrypted,
+                });
+            }
+
             let mut __timeline_update_sender_opt = None;
             let mut get_timeline_update_sender = |room_id| {
                 if __timeline_update_sender_opt.is_none() {
@@ -5662,13 +5674,22 @@ async fn add_new_room(
             pending_thread_timelines: HashSet::new(),
             typing_notice_subscriber: None,
             pinned_events_subscriber: None,
+            room_encryption_subscriber_task: None,
         },
     );
+    if let Some(joined_room_details) = ALL_JOINED_ROOMS.lock().unwrap().get_mut(&new_room.room_id) {
+        joined_room_details.room_encryption_subscriber_task = Some(
+            spawn_room_encryption_subscriber(new_room.room.clone())
+        );
+    } else {
+        error!("BUG: could not find newly-added room {} to attach encryption subscriber", new_room.room_id);
+    }
 
     let latest = get_latest_event_details(
         &new_room.room.latest_event().await,
         room_list_service.client(),
     ).await;
+    let is_encrypted = fetch_room_is_encrypted(&new_room.room).await;
     let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
     // Start with a basic text avatar; the avatar image will be fetched asynchronously below.
     let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar());
@@ -5690,6 +5711,7 @@ async fn add_new_room(
         has_been_paginated: false,
         is_selected: false,
         is_direct: new_room.is_direct,
+        is_encrypted,
         is_tombstoned: new_room.is_tombstoned,
     }));
 
@@ -5711,6 +5733,41 @@ async fn add_new_room(
     });
     spawn_fetch_room_avatar(new_room);
     Ok(())
+}
+
+async fn fetch_room_is_encrypted(room: &Room) -> Option<bool> {
+    match room.latest_encryption_state().await {
+        Ok(state) => Some(state.is_encrypted()),
+        Err(error) => {
+            error!("Failed to fetch encryption state for room {}: {error:?}", room.room_id());
+            None
+        }
+    }
+}
+
+fn spawn_room_encryption_subscriber(room: Room) -> JoinHandle<()> {
+    Handle::current().spawn(async move {
+        let room_id = room.room_id().to_owned();
+        let mut room_info = room.subscribe_info();
+
+        if room_info.get().encryption_state().is_encrypted() {
+            enqueue_rooms_list_update(RoomsListUpdate::UpdateIsEncrypted {
+                room_id,
+                is_encrypted: true,
+            });
+            return;
+        }
+
+        while let Some(info) = room_info.next().await {
+            if info.encryption_state().is_encrypted() {
+                enqueue_rooms_list_update(RoomsListUpdate::UpdateIsEncrypted {
+                    room_id,
+                    is_encrypted: true,
+                });
+                break;
+            }
+        }
+    })
 }
 
 #[allow(unused)]
