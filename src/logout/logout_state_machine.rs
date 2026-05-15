@@ -88,6 +88,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, Notify};
 use anyhow::{anyhow, Result};
 use makepad_widgets::{Cx, log};
+use matrix_sdk::authentication::AuthApi;
 
 use crate::home::navigation_tab_bar::NavigationBarAction;
 use crate::persistence::{delete_latest_user_id, skip_app_state_restore_once};
@@ -498,13 +499,36 @@ impl LogoutStateMachine {
         let Some(client) = get_client() else {
             return Err(LogoutError::Unrecoverable(UnrecoverableError::ComponentsCleared));
         };
-        
-        match tokio::time::timeout(
-            self.config.server_logout_timeout,
-            client.matrix_auth().logout()
-        ).await {
-            Ok(Ok(_)) => Ok(()),
-            Ok(Err(e)) => Err(LogoutError::Recoverable(RecoverableError::ServerLogoutFailed(e.to_string()))),
+
+        // Dispatch by the active auth kind: password/Matrix sessions revoke via
+        // matrix_auth().logout(); OIDC sessions revoke tokens at the MAS issuer
+        // via oauth().logout(). The two return types differ, so normalize to
+        // Result<(), String> under a single timeout.
+        let logout_future: std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>> =
+            match client.auth_api() {
+                Some(AuthApi::Matrix(_)) => {
+                    let client = client.clone();
+                    Box::pin(async move {
+                        client.matrix_auth().logout().await
+                            .map(|_| ())
+                            .map_err(|e| e.to_string())
+                    })
+                }
+                Some(AuthApi::OAuth(_)) => {
+                    let client = client.clone();
+                    Box::pin(async move {
+                        client.oauth().logout().await
+                            .map_err(|e| e.to_string())
+                    })
+                }
+                // No live auth API means there is nothing to revoke server-side
+                // (e.g., session already torn down); succeed silently.
+                _ => return Ok(()),
+            };
+
+        match tokio::time::timeout(self.config.server_logout_timeout, logout_future).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(msg)) => Err(LogoutError::Recoverable(RecoverableError::ServerLogoutFailed(msg))),
             Err(_) => Err(LogoutError::Recoverable(RecoverableError::Timeout("Server logout timed out".to_string()))),
         }
     }

@@ -191,6 +191,25 @@ script_mod! {
                     }
                 }
             }
+            active: {
+                default: @off
+                off: AnimatorState{
+                    from: {all: Snap}
+                    apply: {
+                        draw_bg: {active: 0.0}
+                        space_lobby_label: { draw_text: {active: 0.0} }
+                        icon: { draw_icon: {active: 0.0} }
+                    }
+                }
+                on: AnimatorState{
+                    from: {all: Snap}
+                    apply: {
+                        draw_bg: {active: 1.0}
+                        space_lobby_label: { draw_text: {active: 1.0} }
+                        icon: { draw_icon: {active: 1.0} }
+                    }
+                }
+            }
         }
     }
 
@@ -691,6 +710,18 @@ impl Widget for SpaceLobbyEntry {
         self.view.label(cx, ids!(space_lobby_label))
             .set_text(cx, tr_key(app_language, "space_lobby.entry.explore_space"));
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl SpaceLobbyEntry {
+    fn set_selected(&mut self, cx: &mut Cx, is_selected: bool) {
+        self.animator_toggle(cx, is_selected, Animate::No, ids!(active.on), ids!(active.off));
+    }
+}
+impl SpaceLobbyEntryRef {
+    pub fn set_selected(&self, cx: &mut Cx, is_selected: bool) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_selected(cx, is_selected);
     }
 }
 

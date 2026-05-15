@@ -16,7 +16,7 @@ use crate::{
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt, mark_invite_modal_closed}, invite_screen::{InviteScreenWidgetRefExt, LeaveRoomResultAction}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, RoomScreenWidgetRefExt, TimelineUpdate, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, space_lobby::SpaceLobbyScreenWidgetRefExt, spaces_bar::SpacesBarRef
     }, i18n::{AppLanguage, tr_fmt, tr_key}, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, file_upload_modal::{FilePreviewerAction, FileUploadModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, room_filter_input_bar::FilterAction}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RemoteDirectorySearchKind, RemoteDirectorySearchResult, TimelineKind, AccountSwitchAction, current_user_id, get_client, submit_async_request, get_timeline_update_sender}, updater::{UpdateCheckOutcome, check_for_updates, load_skipped_update_version, save_skipped_update_version, update_release_page_url}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, register::RegisterAction, room::BasicRoomDetails, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, file_upload_modal::{FilePreviewerAction, FileUploadModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, room_filter_input_bar::FilterAction}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RemoteDirectorySearchKind, RemoteDirectorySearchResult, TimelineKind, AccountSwitchAction, current_user_id, get_client, submit_async_request, get_timeline_update_sender}, updater::{UpdateCheckOutcome, check_for_updates, load_skipped_update_version, save_skipped_update_version, update_release_page_url}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -71,6 +71,11 @@ script_mod! {
                         login_screen_view := View {
                             visible: true
                             login_screen := LoginScreen {}
+                        }
+
+                        register_screen_view := View {
+                            visible: false
+                            register_screen := RegisterScreen {}
                         }
 
                         image_viewer_modal := Modal {
@@ -846,6 +851,20 @@ impl MatchEvent for App {
                 _ => {}
             }
 
+            if let Some(LoginAction::NavigateToRegister) = action.downcast_ref() {
+                self.ui.view(cx, ids!(login_screen_view)).set_visible(cx, false);
+                self.ui.view(cx, ids!(register_screen_view)).set_visible(cx, true);
+                self.ui.redraw(cx);
+                continue;
+            }
+
+            if let Some(RegisterAction::NavigateToLogin) = action.downcast_ref() {
+                self.ui.view(cx, ids!(register_screen_view)).set_visible(cx, false);
+                self.ui.view(cx, ids!(login_screen_view)).set_visible(cx, true);
+                self.ui.redraw(cx);
+                continue;
+            }
+
             if let Some(LoginAction::ShowLoginScreen) = action.downcast_ref() {
                 if !self.app_state.adding_account {
                     self.app_state.logged_in = false;
@@ -861,6 +880,9 @@ impl MatchEvent for App {
                 self.app_state.logged_in = true;
                 self.app_state.adding_account = false;
                 self.auth_ui_state = AuthUiState::LoggedIn;
+                // If the user reached this success via the register flow, also hide
+                // register_screen — update_login_visibility only manages login_screen_view.
+                self.ui.view(cx, ids!(register_screen_view)).set_visible(cx, false);
                 self.update_login_visibility(cx);
                 self.ui.redraw(cx);
                 continue;
@@ -1590,6 +1612,7 @@ impl AppMain for App {
         crate::profile::script_mod(vm);
         crate::home::script_mod(vm);
         crate::login::script_mod(vm);
+        crate::register::script_mod(vm);
         crate::logout::script_mod(vm);
 
         self::script_mod(vm)
@@ -2627,7 +2650,7 @@ impl Eq for SelectedRoom {}
 
 #[cfg(test)]
 mod tests {
-    use super::{BotSettingsState, RoomBotBindingState, SavedDockState, SelectedRoom};
+    use super::{AppState, BotSettingsState, RoomBotBindingState, SavedDockState, SelectedRoom};
     use crate::utils::RoomNameId;
     use matrix_sdk::{RoomDisplayName, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, UserId}};
 
@@ -2796,6 +2819,72 @@ mod tests {
                 bot_user_id: "@octosbot:example.org".parse::<OwnedUserId>().unwrap(),
                 remark: String::new(),
             }]
+        );
+    }
+
+    // Regression guard for issue #94: on mobile, force-quit + relaunch previously lost the
+    // App Service binding because handle_load_app_state gated RestoreAppStateFromPersistentState
+    // behind a non-empty dock-state check. The production fix removes that guard. This test
+    // protects the underlying serde contract so a future #[serde(skip)] on bot_settings (or a
+    // breaking field rename) is caught at `cargo test` time instead of at Android runtime.
+    #[test]
+    fn test_app_state_roundtrip_preserves_bot_settings_with_empty_dock() {
+        let mut state = AppState::default();
+        state.bot_settings.enabled = true;
+        state.bot_settings.botfather_user_id = "@octosbot:example.com".to_string();
+        state.bot_settings.octos_service_url = "http://192.168.5.12:8010".to_string();
+        assert!(
+            state.saved_dock_state_home.open_rooms.is_empty(),
+            "precondition: this test simulates the mobile / fresh-desktop case with empty dock",
+        );
+        assert!(
+            state.saved_dock_state_home.dock_items.is_empty(),
+            "precondition: this test simulates the mobile / fresh-desktop case with empty dock",
+        );
+
+        let serialized =
+            serde_json::to_string(&state).expect("AppState must serialize via serde_json");
+        let deserialized: AppState =
+            serde_json::from_str(&serialized).expect("serialized AppState must deserialize back");
+
+        assert!(
+            deserialized.bot_settings.enabled,
+            "bot_settings.enabled must survive the round-trip (issue #94 regression guard)",
+        );
+        assert_eq!(
+            deserialized.bot_settings.botfather_user_id,
+            "@octosbot:example.com",
+            "botfather_user_id must survive the round-trip (issue #94 regression guard)",
+        );
+        assert_eq!(
+            deserialized.bot_settings.octos_service_url,
+            "http://192.168.5.12:8010",
+            "octos_service_url must survive the round-trip (issue #94 regression guard)",
+        );
+    }
+
+    #[test]
+    fn test_app_state_roundtrip_preserves_selected_room_with_empty_dock() {
+        let mut state = AppState::default();
+        state.selected_room = Some(joined_room("!room:example.org", "octosbot"));
+        assert!(
+            state.saved_dock_state_home.open_rooms.is_empty(),
+            "precondition: this test simulates the mobile case where selected_room persists without desktop dock tabs",
+        );
+        assert!(
+            state.saved_dock_state_home.dock_items.is_empty(),
+            "precondition: this test simulates the mobile case where selected_room persists without desktop dock tabs",
+        );
+
+        let serialized =
+            serde_json::to_string(&state).expect("AppState must serialize via serde_json");
+        let deserialized: AppState =
+            serde_json::from_str(&serialized).expect("serialized AppState must deserialize back");
+
+        assert_eq!(
+            deserialized.selected_room,
+            Some(joined_room("!room:example.org", "octosbot")),
+            "selected_room must survive the round-trip even when dock state is empty",
         );
     }
 
