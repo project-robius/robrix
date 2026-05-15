@@ -6,6 +6,7 @@ pub mod create_bot_modal;
 pub mod delete_bot_modal;
 pub mod edited_indicator;
 pub mod editing_pane;
+pub mod encryption_notice;
 pub mod event_source_modal;
 pub mod home_screen;
 pub mod invite_modal;
@@ -98,6 +99,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     rooms_list::script_mod(vm);
     edited_indicator::script_mod(vm);
     editing_pane::script_mod(vm);
+    encryption_notice::script_mod(vm);
     new_message_context_menu::script_mod(vm);
     event_source_modal::script_mod(vm);
     room_context_menu::script_mod(vm);

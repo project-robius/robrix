@@ -5,6 +5,7 @@ pub mod collapsible_header;
 pub mod expand_arrow;
 pub mod confirmation_modal;
 pub mod file_upload_modal;
+pub mod forward_modal;
 pub mod helpers;
 pub mod html_or_plaintext;
 pub mod icon_button;
@@ -48,4 +49,5 @@ pub fn script_mod(vm: &mut ScriptVm) {
     image_viewer::script_mod(vm);
     progress_bar::script_mod(vm);
     file_upload_modal::script_mod(vm);
+    forward_modal::script_mod(vm);
 }

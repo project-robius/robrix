@@ -27,13 +27,13 @@ use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, e
 
 use matrix_sdk_ui::sync_service::State;
 use crate::{
-    app::{AppState, AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{bot_binding_modal::BotBindingModalAction, create_bot_modal::{CreateBotModalAction, CreateBotModalWidgetExt}, delete_bot_modal::{DeleteBotModalAction, DeleteBotModalWidgetExt}, edited_indicator::EditedIndicatorWidgetRefExt, invite_modal::InviteModalAction, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::{RoomsListAction, RoomsListRef}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, i18n::{AppLanguage, tr_fmt, tr_key}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppState, AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{bot_binding_modal::BotBindingModalAction, create_bot_modal::{CreateBotModalAction, CreateBotModalWidgetExt}, delete_bot_modal::{DeleteBotModalAction, DeleteBotModalWidgetExt}, edited_indicator::EditedIndicatorWidgetRefExt, encryption_notice::{EncryptionNoticeWidgetRefExt, first_other_member_display_name}, invite_modal::InviteModalAction, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::{RoomsListAction, RoomsListRef}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, i18n::{AppLanguage, tr_fmt, tr_key}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
     room::{BasicRoomDetails, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, translation, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::{AvatarState, AvatarWidgetExt, AvatarWidgetRefExt}, confirmation_modal::{ConfirmationModalAction, ConfirmationModalContent, ConfirmationModalWidgetExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::{AvatarState, AvatarWidgetExt, AvatarWidgetRefExt}, confirmation_modal::{ConfirmationModalAction, ConfirmationModalContent, ConfirmationModalWidgetExt}, forward_modal::{ForwardMessageContent, ForwardMessageModalAction}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, FetchedRoomThread, MatrixRequest, PaginationDirection, RoomThreadsAction, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, current_user_id, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -68,6 +68,18 @@ const TRANSLATION_LANG_POPUP_SCROLL_HEIGHT: f64 = 288.0;
 const TRANSLATION_LANG_POPUP_HEIGHT: f64 = TRANSLATION_LANG_POPUP_SCROLL_HEIGHT + 8.0;
 const TRANSLATION_LANG_POPUP_GAP: f64 = 6.0;
 const TRANSLATION_LANG_POPUP_MARGIN: f64 = 8.0;
+
+fn tl_idx_from_item_id(item_id: usize, has_encryption_notice: bool) -> Option<usize> {
+    if has_encryption_notice {
+        item_id.checked_sub(1)
+    } else {
+        Some(item_id)
+    }
+}
+
+fn item_id_from_tl_idx(tl_idx: usize, has_encryption_notice: bool) -> usize {
+    tl_idx + usize::from(has_encryption_notice)
+}
 const MESSAGE_PROFILE_TOP_MARGIN: f64 = 4.5;
 const MESSAGE_PROFILE_AVATAR_SIZE: f64 = 48.0;
 const MESSAGE_USERNAME_ROW_HEIGHT: f64 = 18.0;
@@ -254,6 +266,19 @@ fn original_event_content_json(
     event_tl_item.original_json()
         .and_then(|raw| raw.get_field::<serde_json::Value>("content").ok())
         .flatten()
+}
+
+fn forwardable_room_message_content_from_json(
+    content: serde_json::Value,
+) -> Option<RoomMessageEventContent> {
+    let mut message = serde_json::from_value::<RoomMessageEventContent>(content).ok()?;
+    let is_forwardable = matches!(
+        &message.msgtype,
+        MessageType::Text(..) | MessageType::Notice(..) | MessageType::Emote(..)
+    );
+    message.relates_to = None;
+    message.tsp_signature = None;
+    is_forwardable.then_some(message)
 }
 
 fn parse_octos_approval_risk_level(value: Option<&str>) -> Option<OctosApprovalRiskLevel> {
@@ -3461,6 +3486,7 @@ script_mod! {
             SmallStateEvent := mod.widgets.SmallStateEvent {}
             SmallStateEventsSummary := mod.widgets.SmallStateEventsSummary {}
             Empty := mod.widgets.Empty {}
+            EncryptionNotice := mod.widgets.EncryptionNotice {}
             DateDivider := mod.widgets.DateDivider {}
             ReadMarker := mod.widgets.ReadMarker {}
             AppServicePanel := mod.widgets.AppServicePanel {}
@@ -4593,6 +4619,7 @@ impl Widget for RoomScreen {
         // we want to handle those before processing any updates that might change
         // the set of timeline indices (which would invalidate the index values in any actions).
         if let Event::Actions(actions) = event {
+            let has_encryption_notice = self.current_has_encryption_notice(cx);
             for (index, wr) in portal_list.items_with_actions(actions) {
                 // Handle a hover-in action on the reaction list: show a reaction summary.
                 let reaction_list = wr.reaction_list(cx, ids!(reaction_list));
@@ -4676,17 +4703,26 @@ impl Widget for RoomScreen {
                     continue;
                 }
 
-                if wr.button(cx, ids!(state_group_toggle_button)).clicked(actions)
-                    || wr.button(cx, ids!(group_header.state_group_toggle_button)).clicked(actions)
-                {
-                    self.toggle_small_state_event_group(cx, index);
+                let summary_clicked = wr.button(cx, ids!(state_group_toggle_button)).clicked(actions);
+                let header_clicked = wr.button(cx, ids!(group_header.state_group_toggle_button)).clicked(actions);
+                if summary_clicked || header_clicked {
+                    log!(
+                        "[encryption-notice/toggle] click reached: index={index}, has_encryption_notice={has_encryption_notice}, summary_clicked={summary_clicked}, header_clicked={header_clicked}"
+                    );
+                    let Some(tl_idx) = tl_idx_from_item_id(index, has_encryption_notice) else {
+                        log!("[encryption-notice/toggle] tl_idx_from_item_id returned None for index={index}, skipping");
+                        continue;
+                    };
+                    log!("[encryption-notice/toggle] calling toggle_small_state_event_group(tl_idx={tl_idx})");
+                    self.toggle_small_state_event_group(cx, tl_idx);
                     continue;
                 }
 
                 // Handle the invite_user_button (in a SmallStateEvent) being clicked.
                 if wr.button(cx, ids!(event_row.invite_user_button)).clicked(actions) {
+                    let Some(tl_idx) = tl_idx_from_item_id(index, has_encryption_notice) else { continue };
                     let Some(tl) = self.tl_state.as_ref() else { continue };
-                    if let Some(event_tl_item) = tl.items.get(index).and_then(|item| item.as_event()) {
+                    if let Some(event_tl_item) = tl.items.get(tl_idx).and_then(|item| item.as_event()) {
                         let user_id = event_tl_item.sender().to_owned();
                         let username = if let TimelineDetails::Ready(profile) = event_tl_item.sender_profile() {
                             profile.display_name.as_deref().unwrap_or(user_id.as_str())
@@ -5463,7 +5499,10 @@ impl Widget for RoomScreen {
 
             // Set the portal list's range based on the number of timeline items.
             let tl_items = &tl_state.items;
-            let last_item_id = tl_items.len() + usize::from(self.show_app_service_actions);
+            let has_encryption_notice = room_props.is_encrypted.is_some();
+            let last_item_id = tl_items.len()
+                + usize::from(self.show_app_service_actions)
+                + usize::from(has_encryption_notice);
 
             let list = list_ref.deref_mut();
             list.set_item_range(cx, 0, last_item_id);
@@ -5496,7 +5535,24 @@ impl Widget for RoomScreen {
 
             while let Some(item_id) = list.next_visible_item(cx) {
                 let item = {
-                    let tl_idx = item_id;
+                    if let Some(is_encrypted) = room_props.is_encrypted
+                        && item_id == 0
+                    {
+                        let item = list.item(cx, item_id, id!(EncryptionNotice));
+                        item.as_encryption_notice().set_content(
+                            cx,
+                            is_encrypted,
+                            first_other_member_display_name(
+                                tl_state.room_members.as_ref().map(|members| members.as_slice()),
+                            ),
+                        );
+                        item.draw_all(cx, &mut room_scope);
+                        continue;
+                    }
+                    let Some(tl_idx) = tl_idx_from_item_id(item_id, has_encryption_notice) else {
+                        list.item(cx, item_id, id!(Empty));
+                        continue;
+                    };
                     if self.show_app_service_actions && tl_idx == tl_items.len() {
                         list.item(cx, item_id, id!(AppServicePanel))
                     } else {
@@ -5761,16 +5817,27 @@ impl RoomScreen {
     }
 
     fn toggle_small_state_event_group(&mut self, cx: &mut Cx, group_start_index: usize) {
-        let Some(tl_state) = self.tl_state.as_mut() else { return };
+        let Some(tl_state) = self.tl_state.as_mut() else {
+            log!("[encryption-notice/toggle] tl_state is None, aborting");
+            return;
+        };
         let groups = compute_small_state_event_groups(
             &tl_state.items,
             &tl_state.kind,
             &tl_state.expanded_small_state_group_event_ids,
         );
+        let group_starts: Vec<usize> = groups.iter().map(|g| g.start).collect();
         let Some(group) = groups.into_iter().find(|group| group.start == group_start_index) else {
+            log!(
+                "[encryption-notice/toggle] FIND FAILED: looking for group.start={group_start_index}, available group.starts={group_starts:?}"
+            );
             return;
         };
 
+        log!(
+            "[encryption-notice/toggle] FIND OK: group.start={}, group.end={}, group.collapsed={}",
+            group.start, group.end, group.collapsed
+        );
         if group.collapsed {
             tl_state.expanded_small_state_group_event_ids.insert(group.first_event_id);
         } else {
@@ -5779,6 +5846,7 @@ impl RoomScreen {
         tl_state.content_drawn_since_last_update.remove(group.start .. group.end);
         tl_state.profile_drawn_since_last_update.remove(group.start .. group.end);
         self.redraw_timeline_list(cx);
+        log!("[encryption-notice/toggle] state mutated, redraw_timeline_list called");
     }
 
     fn sync_translation_lang_popup(&mut self, cx: &mut Cx) {
@@ -5847,6 +5915,9 @@ impl RoomScreen {
             let is_direct_room = cx.get_global::<RoomsListRef>()
                 .is_direct_room(&room_id)
                 .unwrap_or(false);
+            let is_encrypted = cx.get_global::<RoomsListRef>()
+                .joined_room_is_encrypted(&room_id)
+                .flatten();
             let (
                 app_service_enabled,
                 app_service_room_bound,
@@ -5930,6 +6001,7 @@ impl RoomScreen {
                 room_name_id: self.room_name_id.clone().unwrap_or_else(|| RoomNameId::empty(room_id.clone())),
                 timeline_kind: tl.kind.clone(),
                 room_members,
+                is_encrypted,
                 is_direct_room,
                 room_bot_user_ids,
                 room_members_sync_pending: tl.room_members_sync_pending,
@@ -5949,6 +6021,7 @@ impl RoomScreen {
                 timeline_kind: self.timeline_kind.clone()
                     .expect("BUG: room_name_id was set but timeline_kind was missing"),
                 room_members: None,
+                is_encrypted: None,
                 is_direct_room: false,
                 room_bot_user_ids: Vec::new(),
                 room_members_sort: None,
@@ -5966,6 +6039,16 @@ impl RoomScreen {
 
     fn room_id(&self) -> Option<&OwnedRoomId> {
         self.room_name_id.as_ref().map(|r| r.room_id())
+    }
+
+    fn current_has_encryption_notice(&self, cx: &mut Cx) -> bool {
+        self.room_id()
+            .and_then(|room_id|
+                cx.get_global::<RoomsListRef>()
+                    .joined_room_is_encrypted(room_id)
+                    .flatten()
+            )
+            .is_some()
     }
 
     /// Extract the text body from a timeline item, if it's a text message.
@@ -6284,7 +6367,9 @@ impl RoomScreen {
     ) {
         let top_space = self.view(cx, ids!(top_space));
         let jump_to_bottom_button = self.jump_to_bottom_button(cx, ids!(jump_to_bottom_button));
+        let has_encryption_notice = self.current_has_encryption_notice(cx);
         let curr_first_id = portal_list.first_id();
+        let curr_first_tl_idx = tl_idx_from_item_id(curr_first_id, has_encryption_notice).unwrap_or(0);
         let ui = self.widget_uid();
         let Some(tl) = self.tl_state.as_mut() else { return };
         let (
@@ -6321,7 +6406,10 @@ impl RoomScreen {
                     tl.profile_drawn_since_last_update.clear();
                     tl.fully_paginated = false;
                     // Set the portal list to the very bottom of the timeline.
-                    portal_list.set_first_id_and_scroll(initial_items.len().saturating_sub(1), 0.0);
+                    portal_list.set_first_id_and_scroll(
+                        item_id_from_tl_idx(initial_items.len().saturating_sub(1), has_encryption_notice),
+                        0.0,
+                    );
                     portal_list.set_tail_range(true);
                     jump_to_bottom_button.update_visibility(cx, true);
 
@@ -6393,14 +6481,17 @@ impl RoomScreen {
                         //       and then replaces the existing timeline in ALL_ROOMS_INFO with the new one.
                     }
 
-                    let prior_items_changed = clear_cache || changed_indices.start <= curr_first_id;
+                    let prior_items_changed = clear_cache || changed_indices.start <= curr_first_tl_idx;
 
                     if new_items.len() == tl.items.len() {
                         // log!("process_timeline_updates(): no jump necessary for updated timeline of same length: {}", items.len());
                     }
-                    else if curr_first_id > new_items.len() {
-                        log!("process_timeline_updates(): jumping to bottom: curr_first_id {} is out of bounds for {} new items", curr_first_id, new_items.len());
-                        portal_list.set_first_id_and_scroll(new_items.len().saturating_sub(1), 0.0);
+                    else if curr_first_tl_idx > new_items.len() {
+                        log!("process_timeline_updates(): jumping to bottom: curr_first_tl_idx {} is out of bounds for {} new items", curr_first_tl_idx, new_items.len());
+                        portal_list.set_first_id_and_scroll(
+                            item_id_from_tl_idx(new_items.len().saturating_sub(1), has_encryption_notice),
+                            0.0,
+                        );
                         portal_list.set_tail_range(true);
                         jump_to_bottom_button.update_visibility(cx, true);
                     }
@@ -6409,13 +6500,16 @@ impl RoomScreen {
                     // which ensures that the timeline doesn't jump around unexpectedly and ruin the user's experience.
                     else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
                         prior_items_changed.then(||
-                            find_new_item_matching_current_item(cx, portal_list, curr_first_id, &tl.items, &new_items)
+                            find_new_item_matching_current_item(cx, portal_list, curr_first_tl_idx, &tl.items, &new_items, has_encryption_notice)
                         )
                         .flatten()
                     {
                         if curr_item_idx != new_item_idx {
                             log!("process_timeline_updates(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
-                            portal_list.set_first_id_and_scroll(new_item_idx, new_item_scroll);
+                            portal_list.set_first_id_and_scroll(
+                                item_id_from_tl_idx(new_item_idx, has_encryption_notice),
+                                new_item_scroll,
+                            );
                             tl.prev_first_index = Some(new_item_idx);
                             // Set scrolled_past_read_marker false when we jump to a new event
                             tl.scrolled_past_read_marker = false;
@@ -6641,10 +6735,11 @@ impl RoomScreen {
                         // NOTE: this code was copied from the `MessageAction::JumpToRelated` handler;
                         //       we should deduplicate them at some point.
                         let speed = 50.0;
-                        portal_list.smooth_scroll_to(cx, index, speed, None, 10.0);
+                        let item_id = item_id_from_tl_idx(index, has_encryption_notice);
+                        portal_list.smooth_scroll_to(cx, item_id, speed, None, 10.0);
                         // start highlight animation.
                         tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
-                            item_id: index
+                            item_id
                         };
                     }
                     else {
@@ -7079,8 +7174,10 @@ impl RoomScreen {
         let Some(media_source) = mxc_uri else {
             return;
         };
+        let has_encryption_notice = self.current_has_encryption_notice(cx);
         let Some(tl_state) = self.tl_state.as_mut() else { return };
-        let Some(event_tl_item) = tl_state.items.get(item_id).and_then(|item| item.as_event()) else { return };
+        let Some(tl_idx) = tl_idx_from_item_id(item_id, has_encryption_notice) else { return };
+        let Some(event_tl_item) = tl_state.items.get(tl_idx).and_then(|item| item.as_event()) else { return };
 
         let timestamp_millis = event_tl_item.timestamp();
         let (image_name, image_file_size) = get_image_name_and_filesize(event_tl_item);
@@ -7112,9 +7209,11 @@ impl RoomScreen {
     fn find_event_in_timeline<'a>(
         items: &'a Vector<Arc<TimelineItem>>,
         details: &MessageDetails,
+        has_encryption_notice: bool,
     ) -> Option<&'a EventTimelineItem> {
         let target_event_id = details.event_id()?;
-        if let Some(event) = items.get(details.item_id)
+        let tl_idx = tl_idx_from_item_id(details.item_id, has_encryption_notice)?;
+        if let Some(event) = items.get(tl_idx)
             .and_then(|item| item.as_event())
             .filter(|ev| ev.event_id().is_some_and(|id| id == target_event_id))
         {
@@ -7125,6 +7224,19 @@ impl RoomScreen {
             .take(MAX_ITEMS_TO_SEARCH_THROUGH)
             .filter_map(|item| item.as_event())
             .find(|ev| ev.event_id().is_some_and(|id| id == target_event_id))
+    }
+
+    fn forward_message_content(
+        timeline_kind: &TimelineKind,
+        event_tl_item: &EventTimelineItem,
+    ) -> Option<ForwardMessageContent> {
+        let message = latest_effective_event_content_json(event_tl_item)
+            .and_then(forwardable_room_message_content_from_json)?;
+        Some(ForwardMessageContent {
+            source_room_id: timeline_kind.room_id().clone(),
+            source_event_id: event_tl_item.event_id()?.to_owned(),
+            message,
+        })
     }
 
     /// Handles any [`MessageAction`]s received by this RoomScreen.
@@ -7189,6 +7301,7 @@ impl RoomScreen {
         }
 
         let room_screen_widget_uid = self.widget_uid();
+        let has_encryption_notice = self.current_has_encryption_notice(cx);
         for action in actions {
             match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast_ref() {
                 MessageAction::React { details, reaction } => {
@@ -7201,7 +7314,7 @@ impl RoomScreen {
                 }
                 MessageAction::Reply(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
-                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details).cloned() {
+                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details, has_encryption_notice).cloned() {
                         let replied_to_info = EmbeddedEvent::from_timeline_item(&event_tl_item);
                         self.view.room_input_bar(cx, ids!(room_input_bar))
                             .show_replying_to(cx, (event_tl_item, replied_to_info), &tl.kind);
@@ -7221,7 +7334,7 @@ impl RoomScreen {
                 }
                 MessageAction::Edit(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
-                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details) {
+                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details, has_encryption_notice) {
                         self.view.room_input_bar(cx, ids!(room_input_bar))
                             .show_editing_pane(
                                 cx,
@@ -7268,7 +7381,10 @@ impl RoomScreen {
                 MessageAction::MessageSubmittedLocally => {
                     let Some(tl) = self.tl_state.as_ref() else { continue };
                     let last_item_idx = tl.items.len().saturating_sub(1);
-                    portal_list.set_first_id_and_scroll(last_item_idx, 0.0);
+                    portal_list.set_first_id_and_scroll(
+                        item_id_from_tl_idx(last_item_idx, has_encryption_notice),
+                        0.0,
+                    );
                     portal_list.set_tail_range(true);
                     self.jump_to_bottom_button(cx, ids!(jump_to_bottom_button))
                         .update_visibility(cx, true);
@@ -7308,7 +7424,7 @@ impl RoomScreen {
                 }
                 MessageAction::CopyText(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
-                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details) {
+                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details, has_encryption_notice) {
                         cx.copy_to_clipboard(&plaintext_body_of_timeline_item(event_tl_item));
                     }
                     else {
@@ -7329,7 +7445,7 @@ impl RoomScreen {
                     // The logic for getting the formatted body of a message is the same
                     // as the logic used in `populate_message_view()`.
                     let mut success = false;
-                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details) {
+                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details, has_encryption_notice) {
                         if let Some(message) = event_tl_item.content().as_message() {
                             match message.msgtype() {
                                 MessageType::Text(TextMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
@@ -7379,9 +7495,28 @@ impl RoomScreen {
                         );
                     }
                 }
+                MessageAction::Forward(details) => {
+                    let Some(tl) = self.tl_state.as_ref() else { return };
+                    if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details, has_encryption_notice)
+                        && let Some(content) = Self::forward_message_content(&tl.kind, event_tl_item)
+                    {
+                        cx.action(ForwardMessageModalAction::Open(content));
+                    } else {
+                        enqueue_popup_notification(
+                            tr_key(self.app_language, "room_screen.popup.message.forward_not_found"),
+                            PopupKind::Error,
+                            Some(5.0),
+                        );
+                        error!("MessageAction::Forward: couldn't find forwardable event [{}] {:?} in room {}",
+                            details.item_id,
+                            details.timeline_event_id,
+                            tl.kind.room_id(),
+                        );
+                    }
+                }
                 MessageAction::ViewSource(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { continue };
-                    let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details) else {
+                    let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details, has_encryption_notice) else {
                         enqueue_popup_notification(
                             tr_key(self.app_language, "room_screen.popup.message.view_source_not_found"),
                             PopupKind::Error,
@@ -7565,8 +7700,11 @@ impl RoomScreen {
         portal_list: &PortalListRef,
         loading_pane: &LoadingPaneRef,
     ) {
+        let has_encryption_notice = self.current_has_encryption_notice(cx);
         let Some(tl) = self.tl_state.as_mut() else { return };
-        let max_tl_idx = max_tl_idx.unwrap_or_else(|| tl.items.len());
+        let max_tl_idx = max_tl_idx
+            .and_then(|item_id| tl_idx_from_item_id(item_id, has_encryption_notice))
+            .unwrap_or_else(|| tl.items.len());
 
         // Attempt to find the index of replied-to message in the timeline.
         // Start from the current item's index (`tl_idx`) and search backwards,
@@ -7589,10 +7727,11 @@ impl RoomScreen {
         if let Some(index) = related_msg_tl_index {
             // log!("The related message {replied_to_event} was immediately found in room {}, scrolling to from index {reply_message_item_id} --> {index} (first ID {}).", tl.kind.room_id(), portal_list.first_id());
             let speed = 50.0;
-            portal_list.smooth_scroll_to(cx, index, speed, None, 10.0);
+            let item_id = item_id_from_tl_idx(index, has_encryption_notice);
+            portal_list.smooth_scroll_to(cx, item_id, speed, None, 10.0);
             // start highlight animation.
             tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
-                item_id: index
+                item_id
             };
         } else {
             log!("The related event {target_event_id} wasn't immediately available in room {}, searching for it in the background...", tl.kind.room_id());
@@ -8229,7 +8368,7 @@ impl RoomScreen {
     /// Sends read receipts based on the current scroll position of the timeline.
     fn send_user_read_receipts_based_on_scroll_pos(
         &mut self,
-        _cx: &mut Cx,
+        cx: &mut Cx,
         actions: &ActionsBuf,
         portal_list: &PortalListRef,
     ) {
@@ -8237,7 +8376,9 @@ impl RoomScreen {
         if portal_list.scrolled(actions) {
             return;
         }
-        let first_index = portal_list.first_id();
+        let has_encryption_notice = self.current_has_encryption_notice(cx);
+        let first_item_id = portal_list.first_id();
+        let first_index = tl_idx_from_item_id(first_item_id, has_encryption_notice).unwrap_or(0);
         let Some(tl_state) = self.tl_state.as_mut() else { return };
 
         if let Some(ref mut index) = tl_state.prev_first_index {
@@ -8305,15 +8446,16 @@ impl RoomScreen {
     /// and is approaching the top of the timeline.
     fn send_pagination_request_based_on_scroll_pos(
         &mut self,
-        _cx: &mut Cx,
+        cx: &mut Cx,
         actions: &ActionsBuf,
         portal_list: &PortalListRef,
     ) {
+        let has_encryption_notice = self.current_has_encryption_notice(cx);
         let Some(tl) = self.tl_state.as_mut() else { return };
         if tl.fully_paginated { return };
         if !portal_list.scrolled(actions) { return };
 
-        let first_index = portal_list.first_id();
+        let first_index = tl_idx_from_item_id(portal_list.first_id(), has_encryption_notice).unwrap_or(0);
         if first_index == 0 && tl.last_scrolled_index > 0 && !tl.backwards_pagination_in_flight {
             tl.backwards_pagination_in_flight = true;
             log!("Scrolled up from item {} --> 0, sending back pagination request for room {}",
@@ -8349,6 +8491,7 @@ pub struct RoomScreenProps {
     pub room_name_id: RoomNameId,
     pub timeline_kind: TimelineKind,
     pub room_members: Option<Arc<Vec<RoomMember>>>,
+    pub is_encrypted: Option<bool>,
     pub is_direct_room: bool,
     pub room_bot_user_ids: Vec<OwnedUserId>,
     pub room_members_sync_pending: bool,
@@ -8993,6 +9136,7 @@ fn find_new_item_matching_current_item(
     starting_at_curr_idx: usize,
     curr_items: &Vector<Arc<TimelineItem>>,
     new_items: &Vector<Arc<TimelineItem>>,
+    has_encryption_notice: bool,
 ) -> Option<(usize, usize, f64, OwnedEventId)> {
     let mut curr_item_focus = curr_items.focus();
     let mut idx_curr = starting_at_curr_idx;
@@ -9026,7 +9170,10 @@ fn find_new_item_matching_current_item(
             // Not all items in the portal list are guaranteed to have a position offset,
             // some may be zeroed-out, so we need to account for that possibility by only
             // using events that have a real non-zero area
-            if let Some(pos_offset) = portal_list.position_of_item(cx, *idx_curr) {
+            if let Some(pos_offset) = portal_list.position_of_item(
+                cx,
+                item_id_from_tl_idx(*idx_curr, has_encryption_notice),
+            ) {
                 log!("Found matching event ID {event_id} at index {idx_new} in new items list, corresponding to current item index {idx_curr} at pos offset {pos_offset}");
                 return Some((*idx_curr, idx_new, pos_offset, event_id.to_owned()));
             }
@@ -11110,6 +11257,8 @@ pub enum MessageAction {
     CopyHtml(MessageDetails),
     /// The user clicked the "copy link" button on a message.
     CopyLink(MessageDetails),
+    /// The user clicked the "forward message" button on a message.
+    Forward(MessageDetails),
     /// The user clicked the "view source" button on a message.
     ViewSource(MessageDetails),
     /// The user clicked the "jump to related" button on a message,
@@ -11564,6 +11713,75 @@ mod tests {
 
     fn make_state(text: &str) -> StreamingAnimState {
         StreamingAnimState::new(text, true)
+    }
+
+    #[test]
+    fn test_forward_menu() {
+        let content = serde_json::json!({
+            "msgtype": "m.text",
+            "body": "hello"
+        });
+
+        let message = forwardable_room_message_content_from_json(content).unwrap();
+
+        assert!(matches!(message.msgtype, MessageType::Text(..)));
+    }
+
+    #[test]
+    fn test_forward_menu_hidden_non_message() {
+        let content = serde_json::json!({
+            "msgtype": "m.image",
+            "body": "photo.jpg",
+            "url": "mxc://example.org/media"
+        });
+
+        assert!(forwardable_room_message_content_from_json(content).is_none());
+    }
+
+    #[test]
+    fn test_forward_uses_latest_effective_content() {
+        let content = serde_json::json!({
+            "msgtype": "m.text",
+            "body": "original",
+            "m.new_content": {
+                "msgtype": "m.text",
+                "body": "edited"
+            }
+        });
+        let effective_content = effective_octos_message_content(&content).clone();
+        let message = forwardable_room_message_content_from_json(effective_content).unwrap();
+
+        assert!(matches!(
+            message.msgtype,
+            MessageType::Text(TextMessageEventContent { body, .. }) if body == "edited"
+        ));
+    }
+
+    #[test]
+    fn test_forward_does_not_send_reply_metadata() {
+        let content = serde_json::json!({
+            "msgtype": "m.text",
+            "body": "reply text",
+            "m.relates_to": {
+                "m.in_reply_to": {
+                    "event_id": "$source:example.org"
+                }
+            }
+        });
+        let message = forwardable_room_message_content_from_json(content).unwrap();
+
+        assert!(message.relates_to.is_none());
+    }
+
+    #[test]
+    fn test_notice_offset_actions() {
+        assert_eq!(tl_idx_from_item_id(0, true), None);
+        assert_eq!(tl_idx_from_item_id(1, true), Some(0));
+        assert_eq!(tl_idx_from_item_id(7, true), Some(6));
+        assert_eq!(tl_idx_from_item_id(7, false), Some(7));
+        assert_eq!(item_id_from_tl_idx(0, true), 1);
+        assert_eq!(item_id_from_tl_idx(6, true), 7);
+        assert_eq!(item_id_from_tl_idx(6, false), 6);
     }
 
     #[test]
