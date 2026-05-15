@@ -1107,6 +1107,7 @@ impl WidgetMatchEvent for LoginScreen {
         }
 
         // Handle toggling confirm password visibility
+        let confirm_password_input = self.view.text_input(cx, ids!(confirm_password_input));
         let show_confirm_pw_button = self.view.button(cx, ids!(show_confirm_password_button));
         let hide_confirm_pw_button = self.view.button(cx, ids!(hide_confirm_password_button));
         if show_confirm_pw_button.clicked(actions) || hide_confirm_pw_button.clicked(actions) {
