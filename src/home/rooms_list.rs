@@ -1595,6 +1595,17 @@ impl Widget for RoomsList {
         let app_state = scope.data.get::<AppState>().unwrap();
         // Update the currently-selected room from the AppState data.
         self.current_active_room = app_state.selected_room.clone();
+        let is_space_lobby_selected = self.selected_space.as_ref()
+            .is_some_and(|selected_space|
+                self.current_active_room.as_ref()
+                    .is_some_and(|active_room|
+                        matches!(active_room, SelectedRoom::Space { space_name_id }
+                            if space_name_id.room_id() == selected_space.room_id()
+                        )
+                    )
+            );
+        self.view.space_lobby_entry(cx, ids!(space_lobby_entry))
+            .set_selected(cx, is_space_lobby_selected);
         let mut app_state_for_item_scope = app_state.clone();
 
         // Based on the various displayed room lists and is_expanded state of each room header,

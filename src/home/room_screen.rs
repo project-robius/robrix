@@ -79,6 +79,7 @@ const BOT_BADGE_BORDER_RADIUS: f64 = 3.0;
 const BOT_BADGE_TEXT_FONT_SIZE: f64 = 8.5;
 const BOT_BADGE_TEXT_TOP_DROP: f64 = -0.08;
 const MAX_OCTOS_ACTION_BUTTONS: usize = 6;
+const MIN_SMALL_STATE_EVENTS_TO_COLLAPSE: usize = 2;
 
 const fn centered_top_margin(outer_top_margin: f64, outer_height: f64, inner_height: f64) -> f64 {
     outer_top_margin + ((outer_height - inner_height) * 0.5)
@@ -1534,6 +1535,30 @@ script_mod! {
         }
     }
 
+    mod.widgets.SmallStateGroupToggleButton = Button {
+        width: Fit
+        height: Fit
+        spacing: 0.0
+        padding: Inset{ left: 0.0, right: 0.0, top: 0.0, bottom: 0.0 }
+        draw_bg +: {
+            border_radius: 4.0
+            border_size: 0.0
+            border_color: #x00000000
+            border_color_hover: #x00000000
+            border_color_down: #x00000000
+            color: #x00000000
+            color_hover: #x00000000
+            color_down: #x00000000
+        }
+        draw_text +: {
+            text_style: SMALL_STATE_TEXT_STYLE { font_size: 11.0 }
+            color: #x232A31
+            color_hover: #x1A1F25
+            color_down: #x0E1217
+        }
+        text: ""
+    }
+
     mod.widgets.MessageActionButtonSlot = View {
         visible: false
         width: Fit
@@ -2284,63 +2309,136 @@ script_mod! {
         body := View {
             width: Fill,
             height: Fit
-            flow: Right,
+            flow: Down,
             padding: Inset{ left: 7.0, top: 2.0, bottom: 2.0 }
-            spacing: 5.0
+            spacing: 4.0
 
-            left_container := View {
-                align: Align{x: 0.5, y: 0}
-                width: 70.0,
+            group_header := View {
+                visible: false
+                width: Fill,
                 height: Fit
+                flow: Right
+                spacing: 0.0
+                padding: Inset{ left: 50.0, right: 10.0, bottom: 1.0 }
 
-                timestamp := Timestamp {
-                    margin: Inset{top: 3}
+                group_summary_label := Label {
+                    width: Fit,
+                    height: Fit
+                    draw_text +: {
+                        text_style: SMALL_STATE_TEXT_STYLE {}
+                        color: (SMALL_STATE_TEXT_COLOR)
+                    }
+                    text: ""
+                }
+
+                spacer := View {
+                    width: Fill
+                    height: Fit
+                }
+
+                state_group_toggle_button := mod.widgets.SmallStateGroupToggleButton {
+                    width: Fit
+                    height: Fit
+                    margin: Inset{ top: 1.0 }
+                    text: ""
                 }
             }
 
-            avatar := Avatar {
-                width: 19.,
-                height: 19.,
-                margin: 0
+            event_row := View {
+                width: Fill,
+                height: Fit
+                flow: Right,
+                spacing: 5.0
 
-                text_view +: {
-                    text +: {
-                        draw_text +: {
-                            text_style: TITLE_TEXT { font_size: 7.0 }
+                left_container := View {
+                    align: Align{x: 0.5, y: 0}
+                    width: 70.0,
+                    height: Fit
+
+                    timestamp := Timestamp {
+                        margin: Inset{top: 3}
+                    }
+                }
+
+                avatar := Avatar {
+                    width: 19.,
+                    height: 19.,
+                    margin: 0
+
+                    text_view +: {
+                        text +: {
+                            draw_text +: {
+                                text_style: TITLE_TEXT { font_size: 7.0 }
+                            }
                         }
                     }
                 }
-            }
 
-            // Show an invite button only for a `Knocked` room membership change.
-            // All other small state events will not show this button.
-            invite_user_button := RobrixPositiveIconButton {
-                visible: false
-                margin: Inset{ top: -1.5, left: 2, right: 2}
-                padding: Inset{top: 4, bottom: 4, left: 9, right: 9}
-                draw_bg +: {
-                    border_size: 0.75
+                // Show an invite button only for a `Knocked` room membership change.
+                // All other small state events will not show this button.
+                invite_user_button := RobrixPositiveIconButton {
+                    visible: false
+                    margin: Inset{ top: -1.5, left: 2, right: 2}
+                    padding: Inset{top: 4, bottom: 4, left: 9, right: 9}
+                    draw_bg +: {
+                        border_size: 0.75
+                    }
+                    draw_icon.svg: (ICON_ADD_USER)
+                    draw_text.text_style: SMALL_STATE_TEXT_STYLE {}
+                    icon_walk: Walk{width: 15, height: Fit, margin: Inset{right: -4}}
+                    text: ""
                 }
-                draw_icon.svg: (ICON_ADD_USER)
-                draw_text.text_style: SMALL_STATE_TEXT_STYLE {}
-                icon_walk: Walk{width: 15, height: Fit, margin: Inset{right: -4}}
-                text: ""
-            }
 
-            content := Label {
-                width: Fill,
-                height: Fit
-                flow: Flow.Right{wrap: true},
-                margin: Inset{top: 2.5}
-                padding: Inset{ top: 0.0, bottom: 0.0, left: 0.0, right: 0.0 }
-                draw_text +: {
-                    text_style: SMALL_STATE_TEXT_STYLE {},
-                    color: (SMALL_STATE_TEXT_COLOR)
+                content := Label {
+                    width: Fill,
+                    height: Fit
+                    flow: Flow.Right{wrap: true},
+                    margin: Inset{top: 2.5}
+                    padding: Inset{ top: 0.0, bottom: 0.0, left: 0.0, right: 0.0 }
+                    draw_text +: {
+                        text_style: SMALL_STATE_TEXT_STYLE {},
+                        color: (SMALL_STATE_TEXT_COLOR)
+                    }
+                    text: ""
                 }
-                text: ""
-            }
 
-            avatar_row := mod.widgets.AvatarRow {}
+                avatar_row := mod.widgets.AvatarRow {}
+            }
+        }
+    }
+
+    // The summary row shown for a collapsed group of adjacent small state events.
+    mod.widgets.SmallStateEventsSummary = View {
+        width: Fill,
+        height: Fit,
+        flow: Right,
+        margin: Inset{ top: 4.0, bottom: 4.0}
+        padding: Inset{ left: 50.0, top: 1.0, bottom: 1.0, right: 10.0 }
+        spacing: 7.0
+        cursor: MouseCursor.Default
+
+        summary_label := Label {
+            width: Fit,
+            height: Fit
+            flow: Right
+            margin: Inset{top: 1.5}
+            draw_text +: {
+                text_style: SMALL_STATE_TEXT_STYLE {}
+                color: (SMALL_STATE_TEXT_COLOR)
+            }
+            text: ""
+        }
+
+        spacer := View {
+            width: Fill
+            height: Fit
+        }
+
+        state_group_toggle_button := mod.widgets.SmallStateGroupToggleButton {
+            width: Fit
+            height: Fit
+            margin: Inset{ left: 2.0, top: 1.0 }
+            text: ""
         }
     }
 
@@ -3361,6 +3459,7 @@ script_mod! {
             ImageMessage := mod.widgets.ImageMessage {}
             CondensedImageMessage := mod.widgets.CondensedImageMessage {}
             SmallStateEvent := mod.widgets.SmallStateEvent {}
+            SmallStateEventsSummary := mod.widgets.SmallStateEventsSummary {}
             Empty := mod.widgets.Empty {}
             DateDivider := mod.widgets.DateDivider {}
             ReadMarker := mod.widgets.ReadMarker {}
@@ -4577,8 +4676,15 @@ impl Widget for RoomScreen {
                     continue;
                 }
 
+                if wr.button(cx, ids!(state_group_toggle_button)).clicked(actions)
+                    || wr.button(cx, ids!(group_header.state_group_toggle_button)).clicked(actions)
+                {
+                    self.toggle_small_state_event_group(cx, index);
+                    continue;
+                }
+
                 // Handle the invite_user_button (in a SmallStateEvent) being clicked.
-                if wr.button(cx, ids!(invite_user_button)).clicked(actions) {
+                if wr.button(cx, ids!(event_row.invite_user_button)).clicked(actions) {
                     let Some(tl) = self.tl_state.as_ref() else { continue };
                     if let Some(event_tl_item) = tl.items.get(index).and_then(|item| item.as_event()) {
                         let user_id = event_tl_item.sender().to_owned();
@@ -5372,6 +5478,22 @@ impl Widget for RoomScreen {
                 tl_state.room_members.as_ref(),
             );
 
+            let small_state_event_groups = compute_small_state_event_groups(
+                tl_items,
+                &tl_state.kind,
+                &tl_state.expanded_small_state_group_event_ids,
+            );
+            let mut small_state_event_group_by_start = HashMap::new();
+            let mut collapsed_small_state_hidden_indices = HashSet::new();
+            for group in small_state_event_groups {
+                if group.collapsed {
+                    for hidden_idx in group.start + 1 .. group.end {
+                        collapsed_small_state_hidden_indices.insert(hidden_idx);
+                    }
+                }
+                small_state_event_group_by_start.insert(group.start, group);
+            }
+
             while let Some(item_id) = list.next_visible_item(cx) {
                 let item = {
                     let tl_idx = item_id;
@@ -5392,7 +5514,34 @@ impl Widget for RoomScreen {
                         content_drawn: tl_state.content_drawn_since_last_update.contains(&tl_idx),
                         profile_drawn: tl_state.profile_drawn_since_last_update.contains(&tl_idx),
                     };
-                    let (item, item_new_draw_status) = match timeline_item.kind() {
+                    let collapse_button_text_for_expanded_group = small_state_event_group_by_start
+                        .get(&tl_idx)
+                        .and_then(|group|
+                            (!group.collapsed).then_some(
+                                tr_key(self.app_language, "room_screen.small_state_group.collapse"),
+                            )
+                        );
+                    let (item, item_new_draw_status) = if let Some(group) = small_state_event_group_by_start.get(&tl_idx)
+                        && group.collapsed
+                    {
+                        let item = list.item(cx, item_id, id!(SmallStateEventsSummary));
+                        item.label(cx, ids!(summary_label)).set_text(
+                            cx,
+                            &format_small_state_group_summary_text(
+                                self.app_language,
+                                tl_items,
+                                group,
+                            ),
+                        );
+                        item.button(cx, ids!(state_group_toggle_button)).set_text(
+                            cx,
+                            tr_key(self.app_language, "room_screen.small_state_group.expand"),
+                        );
+                        (item, ItemDrawnStatus::both_drawn())
+                    } else if collapsed_small_state_hidden_indices.contains(&tl_idx) {
+                        (list.item(cx, item_id, id!(Empty)), ItemDrawnStatus::both_drawn())
+                    } else {
+                    match timeline_item.kind() {
                         TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
                             TimelineItemContent::MsgLike(msg_like_content) => {
                                 if tl_state.kind.thread_root_event_id().is_none()
@@ -5442,6 +5591,8 @@ impl Widget for RoomScreen {
                                             event_tl_item,
                                             poll_state,
                                             item_drawn_status,
+                                            None,
+                                            collapse_button_text_for_expanded_group,
                                         ),
                                         MsgLikeKind::UnableToDecrypt(utd) => populate_small_state_event(
                                             cx,
@@ -5452,6 +5603,8 @@ impl Widget for RoomScreen {
                                             event_tl_item,
                                             utd,
                                             item_drawn_status,
+                                            None,
+                                            collapse_button_text_for_expanded_group,
                                         ),
                                         MsgLikeKind::LiveLocation(live_loc) => populate_small_state_event(
                                             cx,
@@ -5462,6 +5615,8 @@ impl Widget for RoomScreen {
                                             event_tl_item,
                                             live_loc,
                                             item_drawn_status,
+                                            None,
+                                            collapse_button_text_for_expanded_group,
                                         ),
                                         MsgLikeKind::Other(other) => populate_small_state_event(
                                             cx,
@@ -5472,6 +5627,8 @@ impl Widget for RoomScreen {
                                             event_tl_item,
                                             other,
                                             item_drawn_status,
+                                            None,
+                                            collapse_button_text_for_expanded_group,
                                         ),
                                     }
                                 }
@@ -5485,6 +5642,8 @@ impl Widget for RoomScreen {
                                 event_tl_item,
                                 membership_change,
                                 item_drawn_status,
+                                None,
+                                collapse_button_text_for_expanded_group,
                             ),
                             TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(
                                 cx,
@@ -5495,6 +5654,8 @@ impl Widget for RoomScreen {
                                 event_tl_item,
                                 profile_change,
                                 item_drawn_status,
+                                None,
+                                collapse_button_text_for_expanded_group,
                             ),
                             TimelineItemContent::OtherState(other) => populate_small_state_event(
                                 cx,
@@ -5505,10 +5666,12 @@ impl Widget for RoomScreen {
                                 event_tl_item,
                                 other,
                                 item_drawn_status,
+                                None,
+                                collapse_button_text_for_expanded_group,
                             ),
                             unhandled => {
                                 let item = list.item(cx, item_id, id!(SmallStateEvent));
-                                item.label(cx, ids!(content)).set_text(
+                                item.label(cx, ids!(event_row.content)).set_text(
                                     cx,
                                     &format!("{} {:?}", tr_key(self.app_language, "room_screen.unsupported.prefix"), unhandled),
                                 );
@@ -5536,6 +5699,7 @@ impl Widget for RoomScreen {
                             let item = list.item(cx, item_id, id!(Empty));
                             (item, ItemDrawnStatus::both_drawn())
                         }
+                    }
                     };
 
                     // Now that we've drawn the item, add its index to the set of drawn items.
@@ -5594,6 +5758,27 @@ impl RoomScreen {
         if let Some(mut list) = portal_list.borrow_mut() {
             list.redraw(cx);
         }
+    }
+
+    fn toggle_small_state_event_group(&mut self, cx: &mut Cx, group_start_index: usize) {
+        let Some(tl_state) = self.tl_state.as_mut() else { return };
+        let groups = compute_small_state_event_groups(
+            &tl_state.items,
+            &tl_state.kind,
+            &tl_state.expanded_small_state_group_event_ids,
+        );
+        let Some(group) = groups.into_iter().find(|group| group.start == group_start_index) else {
+            return;
+        };
+
+        if group.collapsed {
+            tl_state.expanded_small_state_group_event_ids.insert(group.first_event_id);
+        } else {
+            tl_state.expanded_small_state_group_event_ids.remove(&group.first_event_id);
+        }
+        tl_state.content_drawn_since_last_update.remove(group.start .. group.end);
+        tl_state.profile_drawn_since_last_update.remove(group.start .. group.end);
+        self.redraw_timeline_list(cx);
     }
 
     fn sync_translation_lang_popup(&mut self, cx: &mut Cx) {
@@ -6148,6 +6333,11 @@ impl RoomScreen {
                         );
 
                     tl.items = initial_items;
+                    prune_expanded_small_state_group_ids(
+                        &tl.items,
+                        &tl.kind,
+                        &mut tl.expanded_small_state_group_event_ids,
+                    );
                     tl.streaming_messages = rebuilt_streaming_messages;
                     refresh_stream_indices(
                         tl.items.iter().map(item_event_id),
@@ -6407,6 +6597,11 @@ impl RoomScreen {
                     // --- End streaming detection ---
 
                     tl.items = new_items;
+                    prune_expanded_small_state_group_ids(
+                        &tl.items,
+                        &tl.kind,
+                        &mut tl.expanded_small_state_group_event_ids,
+                    );
                     refresh_stream_indices(
                         tl.items.iter().map(item_event_id),
                         &mut tl.streaming_messages,
@@ -7752,6 +7947,7 @@ impl RoomScreen {
                 fully_paginated: false,
                 backwards_pagination_in_flight: false,
                 items: Vector::new(),
+                expanded_small_state_group_event_ids: HashSet::new(),
                 content_drawn_since_last_update: RangeSet::new(),
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
@@ -8359,6 +8555,11 @@ struct TimelineUiState {
     /// The list of items (events) in this room's timeline that our client currently knows about.
     items: Vector<Arc<TimelineItem>>,
 
+    /// The set of first-event IDs for small-state event groups that are expanded.
+    ///
+    /// By default, groups are collapsed unless their first event ID appears in this set.
+    expanded_small_state_group_event_ids: HashSet<OwnedEventId>,
+
     /// The range of items (indices in the above `items` list) whose event **contents** have been drawn
     /// since the last update and thus do not need to be re-populated on future draw events.
     ///
@@ -8467,6 +8668,315 @@ struct SavedState {
     first_index_and_scroll: Option<(usize, f64)>,
     /// The state of all UI elements in the `RoomInputBar`.
     room_input_bar_state: RoomInputBarState,
+}
+
+#[derive(Clone, Debug)]
+struct SmallStateEventGroup {
+    start: usize,
+    end: usize,
+    count: usize,
+    first_event_id: OwnedEventId,
+    collapsed: bool,
+}
+
+#[derive(Default)]
+struct SmallStateSummaryStats {
+    joined_users: Vec<String>,
+    left_users: Vec<String>,
+    profile_picture_changes: HashMap<String, usize>,
+    display_name_changes: HashMap<String, usize>,
+    other_changes: usize,
+}
+
+fn timeline_item_is_small_state_event(
+    timeline_item: &TimelineItem,
+    timeline_kind: &TimelineKind,
+) -> bool {
+    let TimelineItemKind::Event(event_tl_item) = timeline_item.kind() else {
+        return false;
+    };
+    match event_tl_item.content() {
+        TimelineItemContent::MsgLike(msg_like_content) => {
+            if timeline_kind.thread_root_event_id().is_none()
+                && msg_like_content.thread_root.is_some()
+            {
+                return false;
+            }
+            matches!(
+                msg_like_content.kind,
+                MsgLikeKind::Poll(_)
+                | MsgLikeKind::UnableToDecrypt(_)
+                | MsgLikeKind::LiveLocation(_)
+                | MsgLikeKind::Other(_)
+            )
+        }
+        TimelineItemContent::MembershipChange(_)
+        | TimelineItemContent::ProfileChange(_)
+        | TimelineItemContent::OtherState(_) => true,
+        _ => false,
+    }
+}
+
+fn compute_small_state_event_groups(
+    items: &Vector<Arc<TimelineItem>>,
+    timeline_kind: &TimelineKind,
+    expanded_group_event_ids: &HashSet<OwnedEventId>,
+) -> Vec<SmallStateEventGroup> {
+    let mut groups = Vec::new();
+    let mut idx = 0usize;
+    while idx < items.len() {
+        let is_small = items
+            .get(idx)
+            .is_some_and(|item| timeline_item_is_small_state_event(item, timeline_kind));
+        if !is_small {
+            idx += 1;
+            continue;
+        }
+
+        let start = idx;
+        idx += 1;
+        while idx < items.len()
+            && items
+                .get(idx)
+                .is_some_and(|item| timeline_item_is_small_state_event(item, timeline_kind))
+        {
+            idx += 1;
+        }
+        let end = idx;
+        let count = end.saturating_sub(start);
+        if count < MIN_SMALL_STATE_EVENTS_TO_COLLAPSE {
+            continue;
+        }
+
+        let Some(first_event_id) = items
+            .get(start)
+            .and_then(|item| item.as_event())
+            .and_then(|event| event.event_id())
+            .map(ToOwned::to_owned)
+        else {
+            continue;
+        };
+
+        groups.push(SmallStateEventGroup {
+            start,
+            end,
+            count,
+            collapsed: !expanded_group_event_ids.contains(&first_event_id),
+            first_event_id,
+        });
+    }
+    groups
+}
+
+fn prune_expanded_small_state_group_ids(
+    items: &Vector<Arc<TimelineItem>>,
+    timeline_kind: &TimelineKind,
+    expanded_group_event_ids: &mut HashSet<OwnedEventId>,
+) {
+    let empty_expanded_ids: HashSet<OwnedEventId> = HashSet::new();
+    let valid_group_ids: HashSet<OwnedEventId> = compute_small_state_event_groups(
+        items,
+        timeline_kind,
+        &empty_expanded_ids,
+    )
+    .into_iter()
+    .map(|group| group.first_event_id)
+    .collect();
+    expanded_group_event_ids.retain(|event_id| valid_group_ids.contains(event_id));
+}
+
+fn summarize_sender_name(event_tl_item: &EventTimelineItem) -> String {
+    if let TimelineDetails::Ready(profile) = event_tl_item.sender_profile()
+        && let Some(name) = profile.display_name.as_ref()
+        && !name.is_empty()
+    {
+        return name.clone();
+    }
+
+    let raw = event_tl_item.sender().as_str();
+    let without_at = raw.strip_prefix('@').unwrap_or(raw);
+    without_at.split(':').next().unwrap_or(without_at).to_string()
+}
+
+fn push_unique_name(names: &mut Vec<String>, name: String) {
+    if !names.iter().any(|n| n == &name) {
+        names.push(name);
+    }
+}
+
+fn collect_small_state_summary_stats(
+    items: &Vector<Arc<TimelineItem>>,
+    group: &SmallStateEventGroup,
+) -> SmallStateSummaryStats {
+    let mut stats = SmallStateSummaryStats::default();
+    for idx in group.start .. group.end {
+        let Some(item) = items.get(idx) else { continue };
+        let TimelineItemKind::Event(event_tl_item) = item.kind() else { continue };
+        let sender_name = summarize_sender_name(event_tl_item);
+        match event_tl_item.content() {
+            TimelineItemContent::MembershipChange(change) => match change.change() {
+                Some(MembershipChange::Joined)
+                | Some(MembershipChange::InvitationAccepted) => {
+                    push_unique_name(&mut stats.joined_users, sender_name);
+                }
+                Some(MembershipChange::Left)
+                | Some(MembershipChange::KnockRetracted)
+                | Some(MembershipChange::InvitationRejected) => {
+                    push_unique_name(&mut stats.left_users, sender_name);
+                }
+                Some(MembershipChange::NotImplemented)
+                | Some(MembershipChange::None)
+                | Some(MembershipChange::Error)
+                | None => {}
+                _ => {
+                    stats.other_changes += 1;
+                }
+            },
+            TimelineItemContent::ProfileChange(change) => {
+                let mut did_count = false;
+                if change.avatar_url_change().is_some() {
+                    *stats.profile_picture_changes.entry(sender_name.clone()).or_insert(0) += 1;
+                    did_count = true;
+                }
+                if change.displayname_change().is_some() {
+                    *stats.display_name_changes.entry(sender_name).or_insert(0) += 1;
+                    did_count = true;
+                }
+                if !did_count {
+                    stats.other_changes += 1;
+                }
+            }
+            TimelineItemContent::OtherState(_)
+            | TimelineItemContent::MsgLike(_) => {
+                stats.other_changes += 1;
+            }
+            _ => {}
+        }
+    }
+    stats
+}
+
+fn format_people_phrase(
+    app_language: AppLanguage,
+    names: &[String],
+    one_suffix_en: &str,
+    plural_suffix_en: &str,
+    one_suffix_zh: &str,
+    plural_suffix_zh: &str,
+) -> Option<String> {
+    if names.is_empty() {
+        return None;
+    }
+    Some(match app_language {
+        AppLanguage::ChineseSimplified => match names.len() {
+            1 => format!("{}{}", names[0], one_suffix_zh),
+            2 => format!("{}、{}{}", names[0], names[1], plural_suffix_zh),
+            n => format!("{} 等 {} 人{}", names[0], n, plural_suffix_zh),
+        },
+        AppLanguage::English => match names.len() {
+            1 => format!("{}{}", names[0], one_suffix_en),
+            2 => format!("{} and one other{}", names[0], plural_suffix_en),
+            n => format!("{} and {} others{}", names[0], n - 1, plural_suffix_en),
+        },
+    })
+}
+
+fn format_top_user_counter_phrase(
+    app_language: AppLanguage,
+    counts: &HashMap<String, usize>,
+    one_en: &str,
+    many_en: &str,
+    one_zh: &str,
+    many_zh: &str,
+) -> Option<String> {
+    if counts.is_empty() {
+        return None;
+    }
+    let mut entries: Vec<(&String, &usize)> = counts.iter().collect();
+    entries.sort_by(|(name_a, count_a), (name_b, count_b)| {
+        count_b.cmp(count_a).then_with(|| name_a.cmp(name_b))
+    });
+    let (name, count) = entries[0];
+    Some(match app_language {
+        AppLanguage::ChineseSimplified => {
+            if *count > 1 {
+                format!("{name}{many_zh}", many_zh = many_zh.replace("{count}", &count.to_string()))
+            } else {
+                format!("{name}{one_zh}")
+            }
+        }
+        AppLanguage::English => {
+            if *count > 1 {
+                format!("{name}{many_en}", many_en = many_en.replace("{count}", &count.to_string()))
+            } else {
+                format!("{name}{one_en}")
+            }
+        }
+    })
+}
+
+fn format_small_state_group_summary_text(
+    app_language: AppLanguage,
+    items: &Vector<Arc<TimelineItem>>,
+    group: &SmallStateEventGroup,
+) -> String {
+    let stats = collect_small_state_summary_stats(items, group);
+    let mut parts = Vec::new();
+
+    if let Some(joined) = format_people_phrase(
+        app_language,
+        &stats.joined_users,
+        " joined",
+        " joined",
+        " 加入了房间",
+        " 加入了房间",
+    ) {
+        parts.push(joined);
+    }
+    if let Some(left) = format_people_phrase(
+        app_language,
+        &stats.left_users,
+        " left",
+        " left",
+        " 离开了房间",
+        " 离开了房间",
+    ) {
+        parts.push(left);
+    }
+    if let Some(profile_pic) = format_top_user_counter_phrase(
+        app_language,
+        &stats.profile_picture_changes,
+        " changed their profile picture",
+        " changed their profile picture {count} times",
+        " 更换了头像",
+        " 更换了头像 {count} 次",
+    ) {
+        parts.push(profile_pic);
+    }
+    if let Some(display_name) = format_top_user_counter_phrase(
+        app_language,
+        &stats.display_name_changes,
+        " changed their display name",
+        " changed their display name {count} times",
+        " 修改了昵称",
+        " 修改了昵称 {count} 次",
+    ) {
+        parts.push(display_name);
+    }
+    if stats.other_changes > 0 {
+        parts.push(match app_language {
+            AppLanguage::ChineseSimplified => format!("另有 {} 条其他状态变更", stats.other_changes),
+            AppLanguage::English => format!("{} other state changes", stats.other_changes),
+        });
+    }
+
+    if parts.is_empty() {
+        return match app_language {
+            AppLanguage::ChineseSimplified => format!("{} 条状态事件", group.count),
+            AppLanguage::English => format!("{} state events", group.count),
+        };
+    }
+    parts.join(", ")
 }
 
 /// Returns info about the item in the list of `new_items` that matches the event ID
@@ -10264,7 +10774,7 @@ impl SmallStateEventContent for EncryptedMessage {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        item.label(cx, ids!(content)).set_text(
+        item.label(cx, ids!(event_row.content)).set_text(
             cx,
             &text_preview_of_encrypted_message(self).format_with(username, false),
         );
@@ -10286,7 +10796,7 @@ impl SmallStateEventContent for LiveLocationState {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        item.label(cx, ids!(content)).set_text(
+        item.label(cx, ids!(event_row.content)).set_text(
             cx,
             &format!("{username} shared a live location."),
         );
@@ -10307,7 +10817,7 @@ impl SmallStateEventContent for OtherMessageLike {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        item.label(cx, ids!(content)).set_text(
+        item.label(cx, ids!(event_row.content)).set_text(
             cx,
             &text_preview_of_other_message_like(self).format_with(username, false),
         );
@@ -10330,7 +10840,7 @@ impl SmallStateEventContent for PollState {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        item.label(cx, ids!(content)).set_text(
+        item.label(cx, ids!(event_row.content)).set_text(
             cx,
             self.fallback_text().unwrap_or_else(|| self.results().question).as_str(),
         );
@@ -10352,7 +10862,7 @@ impl SmallStateEventContent for timeline::OtherState {
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
         let item = if let Some(text_preview) = text_preview_of_other_state(self, false) {
-            item.label(cx, ids!(content))
+            item.label(cx, ids!(event_row.content))
                 .set_text(cx, &text_preview.format_with(username, false));
             new_drawn_status.content_drawn = true;
             item
@@ -10377,7 +10887,7 @@ impl SmallStateEventContent for MemberProfileChange {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        item.label(cx, ids!(content)).set_text(
+        item.label(cx, ids!(event_row.content)).set_text(
             cx,
             &text_preview_of_member_profile_change(self, username, false)
                 .format_with(username, false),
@@ -10407,11 +10917,11 @@ impl SmallStateEventContent for RoomMembershipChange {
             );
         };
 
-        item.label(cx, ids!(content))
+        item.label(cx, ids!(event_row.content))
             .set_text(cx, &preview.format_with(username, false));
 
         // The invite_user_button is only used for "Knocked" membership change events.
-        item.button(cx, ids!(invite_user_button)).set_visible(
+        item.button(cx, ids!(event_row.invite_user_button)).set_visible(
             cx,
             matches!(self.change(), Some(MembershipChange::Knocked)),
         );
@@ -10435,6 +10945,8 @@ fn populate_small_state_event(
     event_tl_item: &EventTimelineItem,
     event_content: &impl SmallStateEventContent,
     item_drawn_status: ItemDrawnStatus,
+    group_header_summary_text: Option<&str>,
+    group_toggle_button_text: Option<&str>,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
     let (item, existed) = list.item_with_existed(cx, item_id, id!(SmallStateEvent));
@@ -10455,7 +10967,7 @@ fn populate_small_state_event(
 
     let username = username_opt.unwrap_or_else(|| {
         // As a fallback, call `set_avatar_and_get_username` to get the user's display name.
-        let avatar_ref = item.avatar(cx, ids!(avatar));
+        let avatar_ref = item.avatar(cx, ids!(event_row.avatar));
 
         let (username, profile_drawn) = avatar_ref.set_avatar_and_get_username(
             cx,
@@ -10467,7 +10979,7 @@ fn populate_small_state_event(
         );
         // Draw the timestamp as part of the profile.
         if let Some(dt) = unix_time_millis_to_datetime(event_tl_item.timestamp()) {
-            item.timestamp(cx, ids!(left_container.timestamp)).set_date_time(cx, dt);
+            item.timestamp(cx, ids!(event_row.left_container.timestamp)).set_date_time(cx, dt);
         }
         new_drawn_status.profile_drawn = profile_drawn;
         username
@@ -10485,8 +10997,19 @@ fn populate_small_state_event(
         new_drawn_status,
     );
 
-    item.button(cx, ids!(invite_user_button))
+    item.button(cx, ids!(event_row.invite_user_button))
         .set_text(cx, tr_key(app_language, "room_screen.small_state.invite_to_room"));
+    item.view(cx, ids!(group_header))
+        .set_visible(cx, group_toggle_button_text.is_some());
+    item.label(cx, ids!(group_header.group_summary_label))
+        .set_visible(cx, group_header_summary_text.is_some());
+    if let Some(summary_text) = group_header_summary_text {
+        item.label(cx, ids!(group_header.group_summary_label))
+            .set_text(cx, summary_text);
+    }
+    if let Some(button_text) = group_toggle_button_text {
+        item.button(cx, ids!(group_header.state_group_toggle_button)).set_text(cx, button_text);
+    }
 
     (item, new_drawn_status)
 }

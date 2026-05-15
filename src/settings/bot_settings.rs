@@ -264,6 +264,10 @@ pub struct BotSettings {
     app_language: AppLanguage,
     #[rust]
     octos_health: OctosHealthState,
+    #[rust]
+    last_synced_bot_settings: BotSettingsState,
+    #[rust]
+    has_synced_bot_settings: bool,
 }
 
 impl Widget for BotSettings {
@@ -274,6 +278,7 @@ impl Widget for BotSettings {
         if self.app_language != app_language {
             self.set_app_language(cx, app_language);
         }
+        self.sync_from_scope_if_needed(cx, scope);
 
         if let Event::NetworkResponses(responses) = event {
             for response in responses {
@@ -380,6 +385,19 @@ impl WidgetMatchEvent for BotSettings {
 }
 
 impl BotSettings {
+    fn sync_from_scope_if_needed(&mut self, cx: &mut Cx, scope: &mut Scope) {
+        let Some(app_state) = scope.data.get::<AppState>() else {
+            return;
+        };
+        if should_sync_bot_settings_from_app_state(
+            self.has_synced_bot_settings,
+            &self.last_synced_bot_settings,
+            app_state,
+        ) {
+            self.sync_ui(cx, &app_state.bot_settings);
+        }
+    }
+
     fn current_service_url(&self, cx: &mut Cx) -> String {
         let service_url = self.view
             .text_input(cx, ids!(octos_service_input))
@@ -537,6 +555,8 @@ impl BotSettings {
     }
 
     fn sync_ui(&mut self, cx: &mut Cx, bot_settings: &BotSettingsState) {
+        self.has_synced_bot_settings = true;
+        self.last_synced_bot_settings = bot_settings.clone();
         self.view
             .check_box(cx, ids!(app_service_switch))
             .set_active(cx, bot_settings.enabled);
@@ -556,6 +576,14 @@ impl BotSettings {
         self.sync_app_language(cx);
         self.sync_ui(cx, bot_settings);
     }
+}
+
+fn should_sync_bot_settings_from_app_state(
+    has_synced_bot_settings: bool,
+    last_synced_bot_settings: &BotSettingsState,
+    app_state: &AppState,
+) -> bool {
+    !has_synced_bot_settings || last_synced_bot_settings != &app_state.bot_settings
 }
 
 impl BotSettingsRef {
@@ -585,7 +613,10 @@ fn persist_bot_settings(app_state: &AppState) {
 
 #[cfg(test)]
 mod tests {
-    use super::{OctosHealthProbeStage, OctosHealthState, OctosHealthStatus};
+    use super::{
+        OctosHealthProbeStage, OctosHealthState, OctosHealthStatus,
+        should_sync_bot_settings_from_app_state,
+    };
     use crate::app::BotSettingsState;
 
     #[test]
@@ -707,5 +738,41 @@ mod tests {
 
         assert_eq!(bot_settings, before);
         assert_eq!(state.status, OctosHealthStatus::Unreachable);
+    }
+
+    #[test]
+    fn test_bot_settings_scope_sync_detects_restored_state() {
+        let last_synced = BotSettingsState::default();
+        let mut app_state = crate::app::AppState::default();
+        app_state.bot_settings.enabled = true;
+        app_state.bot_settings.botfather_user_id = "@octosbot:example.com".into();
+        app_state.bot_settings.octos_service_url = "http://192.168.5.12:8010".into();
+
+        assert!(should_sync_bot_settings_from_app_state(true, &last_synced, &app_state));
+    }
+
+    #[test]
+    fn test_bot_settings_scope_sync_ignores_unchanged_state() {
+        let mut app_state = crate::app::AppState::default();
+        app_state.bot_settings.enabled = true;
+        app_state.bot_settings.botfather_user_id = "@octosbot:example.com".into();
+        app_state.bot_settings.octos_service_url = "http://192.168.5.12:8010".into();
+
+        assert!(!should_sync_bot_settings_from_app_state(
+            true,
+            &app_state.bot_settings,
+            &app_state,
+        ));
+    }
+
+    #[test]
+    fn test_bot_settings_scope_sync_runs_before_first_hydration() {
+        let app_state = crate::app::AppState::default();
+
+        assert!(should_sync_bot_settings_from_app_state(
+            false,
+            &app_state.bot_settings,
+            &app_state,
+        ));
     }
 }

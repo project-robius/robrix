@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, bail};
 use makepad_widgets::{log, warning, Cx};
 use matrix_sdk::{
-    authentication::matrix::MatrixSession,
+    authentication::{AuthSession, matrix::MatrixSession, oauth::{ClientId, OAuthSession, UserSession}},
     ruma::{OwnedUserId, UserId},
     sliding_sync,
     Client,
@@ -45,8 +45,8 @@ pub struct FullSessionPersisted {
     /// The data to re-build the client.
     pub client_session: ClientSessionPersisted,
 
-    /// The Matrix user session.
-    pub user_session: MatrixSession,
+    /// The persisted auth session.
+    pub user_session: PersistedAuthSession,
 
     /// The latest sync token.
     ///
@@ -66,6 +66,40 @@ pub struct FullSessionPersisted {
     /// when rebuilding the session from persistent storage.
     #[serde(default)]
     pub sliding_sync_version: SlidingSyncVersion,
+}
+
+/// Persisted OAuth session payload.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PersistedOAuthSession {
+    pub client_id: String,
+    pub user_session: UserSession,
+}
+
+/// Persisted auth session, backward-compatible with old matrix-only files.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PersistedAuthSession {
+    Matrix(MatrixSession),
+    OAuth(PersistedOAuthSession),
+}
+
+impl PersistedAuthSession {
+    fn user_id(&self) -> &UserId {
+        match self {
+            PersistedAuthSession::Matrix(session) => session.meta.user_id.as_ref(),
+            PersistedAuthSession::OAuth(session) => session.user_session.meta.user_id.as_ref(),
+        }
+    }
+
+    fn into_auth_session(self) -> AuthSession {
+        match self {
+            PersistedAuthSession::Matrix(session) => AuthSession::Matrix(session),
+            PersistedAuthSession::OAuth(session) => AuthSession::OAuth(Box::new(OAuthSession {
+                client_id: ClientId::new(session.client_id),
+                user: session.user_session,
+            })),
+        }
+    }
 }
 
 /// A serializable duplicate of [`sliding_sync::Version`].
@@ -197,16 +231,16 @@ pub async fn restore_session(
     let client = client_builder.build().await?;
     let sliding_sync_version = sliding_sync_version.into();
     client.set_sliding_sync_version(sliding_sync_version);
-    let status_str = format!("Authenticating previous login session for {}...", user_session.meta.user_id);
+    let restored_user_id = user_session.user_id().to_owned();
+    let status_str = format!("Authenticating previous login session for {}...", restored_user_id);
     log!("{status_str}");
     Cx::post_action(LoginAction::Status {
         title: "Authenticating session".into(),
         status: status_str,
     });
 
-    // Restore the Matrix user session.
-    client.restore_session(user_session).await?;
-    save_latest_user_id(&user_id).await?;
+    client.restore_session(user_session.into_auth_session()).await?;
+    save_latest_user_id(&restored_user_id).await?;
 
     Ok((client, sync_token, client_session))
 }
@@ -222,14 +256,23 @@ pub async fn save_session(
     client_session: ClientSessionPersisted,
 ) -> anyhow::Result<()> {
     let user_session = client
-        .matrix_auth()
         .session()
         .ok_or_else(|| anyhow!("A logged-in client should have a session"))?;
 
-    save_latest_user_id(&user_session.meta.user_id).await?;
+    let user_session = match user_session {
+        AuthSession::Matrix(session) => PersistedAuthSession::Matrix(session),
+        AuthSession::OAuth(session) => PersistedAuthSession::OAuth(PersistedOAuthSession {
+            client_id: session.client_id.to_string(),
+            user_session: session.user,
+        }),
+        other => bail!("Unsupported auth session variant for persistence: {other:?}"),
+    };
+
+    let persisted_user_id = user_session.user_id().to_owned();
+    save_latest_user_id(&persisted_user_id).await?;
     let sliding_sync_version = client.sliding_sync_version().into();
     // Save that user's session.
-    let session_file = session_file_path(&user_session.meta.user_id);
+    let session_file = session_file_path(&persisted_user_id);
     let serialized_session = serde_json::to_string(&FullSessionPersisted {
         client_session,
         user_session,
@@ -330,5 +373,37 @@ pub async fn delete_session(user_id: &UserId) -> anyhow::Result<bool> {
             .map(|_| true)
     } else {
         Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use matrix_sdk::{
+        SessionMeta, SessionTokens,
+        authentication::oauth::UserSession,
+        ruma::{device_id, user_id},
+    };
+
+    use super::{PersistedAuthSession, PersistedOAuthSession};
+
+    #[test]
+    fn persisted_auth_session_round_trips_oauth_variant() {
+        let persisted = PersistedAuthSession::OAuth(PersistedOAuthSession {
+            client_id: "client-id".into(),
+            user_session: UserSession {
+                meta: SessionMeta {
+                    user_id: user_id!("@alice:example.org").to_owned(),
+                    device_id: device_id!("DEVICEID").to_owned(),
+                },
+                tokens: SessionTokens {
+                    access_token: "access".into(),
+                    refresh_token: Some("refresh".into()),
+                },
+            },
+        });
+
+        let json = serde_json::to_string(&persisted).unwrap();
+        let restored: PersistedAuthSession = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.user_id().as_str(), "@alice:example.org");
     }
 }

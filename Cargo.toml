@@ -10,7 +10,7 @@ license = "MIT"
 readme = "README.md"
 categories = ["gui"]
 repository = "https://github.com/Project-Robius-China/robrix2"
-version = "0.1.0-pre-alpha-2"
+version = "0.1.0-pre-alpha-3"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
