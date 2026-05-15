@@ -1039,6 +1039,13 @@ pub enum MatrixRequest {
         #[cfg(feature = "tsp")]
         sign_with_tsp: bool,
     },
+    /// Request to forward an existing message's effective content to another room.
+    ForwardMessage {
+        source_room_id: OwnedRoomId,
+        source_event_id: OwnedEventId,
+        destination_room_id: OwnedRoomId,
+        message: RoomMessageEventContent,
+    },
     /// Request to send a bot action response below a timeline message.
     SendActionResponse {
         timeline_kind: TimelineKind,
@@ -1349,6 +1356,24 @@ mod matrix_request_tests {
     use super::*;
 
     #[test]
+    fn test_forward_success_feedback() {
+        let room_id = RoomId::parse("!dest:example.org").unwrap();
+
+        assert_eq!(
+            forward_success_feedback_text(room_id.as_ref()),
+            "Forwarded message to !dest:example.org.",
+        );
+    }
+
+    #[test]
+    fn test_forward_failure_feedback() {
+        assert_eq!(
+            forward_failure_feedback_text("network error"),
+            "Failed to forward message: network error",
+        );
+    }
+
+    #[test]
     fn is_active_dm_room_state_only_joined_is_reusable() {
         assert!(is_active_dm_room_state(RoomState::Joined));
         assert!(!is_active_dm_room_state(RoomState::Invited));
@@ -1637,6 +1662,14 @@ pub fn submit_async_request(req: MatrixRequest) {
         sender.send(req)
             .expect("BUG: matrix worker task receiver has died!");
     }
+}
+
+fn forward_success_feedback_text(destination_room_id: &RoomId) -> String {
+    format!("Forwarded message to {destination_room_id}.")
+}
+
+fn forward_failure_feedback_text(error: impl std::fmt::Display) -> String {
+    format!("Failed to forward message: {error}")
 }
 
 /// Details of a login request that get submitted within [`MatrixRequest::Login`].
@@ -3604,6 +3637,67 @@ async fn matrix_worker_task(
                 });
             }
 
+            MatrixRequest::ForwardMessage {
+                source_room_id,
+                source_event_id,
+                destination_room_id,
+                message,
+            } => {
+                let Some(client) = get_client() else {
+                    enqueue_popup_notification(
+                        "Cannot forward message: Matrix client is not ready.",
+                        PopupKind::Error,
+                        None,
+                    );
+                    continue;
+                };
+
+                let _forward_message_task = Handle::current().spawn(async move {
+                    let Some(destination_room) = client.get_room(&destination_room_id) else {
+                        enqueue_popup_notification(
+                            format!("Cannot forward message: room {destination_room_id} is not known locally."),
+                            PopupKind::Error,
+                            None,
+                        );
+                        SignalToUI::set_ui_signal();
+                        return;
+                    };
+                    if destination_room.state() != RoomState::Joined {
+                        enqueue_popup_notification(
+                            format!("Cannot forward message: not joined to {destination_room_id}."),
+                            PopupKind::Error,
+                            None,
+                        );
+                        SignalToUI::set_ui_signal();
+                        return;
+                    }
+
+                    match destination_room.send(message).await {
+                        Ok(_response) => {
+                            log!(
+                                "Forwarded message {source_event_id} from {source_room_id} to {destination_room_id}."
+                            );
+                            enqueue_popup_notification(
+                                forward_success_feedback_text(destination_room_id.as_ref()),
+                                PopupKind::Info,
+                                Some(4.0),
+                            );
+                        }
+                        Err(error) => {
+                            error!(
+                                "Failed to forward message {source_event_id} from {source_room_id} to {destination_room_id}: {error:?}"
+                            );
+                            enqueue_popup_notification(
+                                forward_failure_feedback_text(&error),
+                                PopupKind::Error,
+                                None,
+                            );
+                        }
+                    }
+                    SignalToUI::set_ui_signal();
+                });
+            }
+
             MatrixRequest::SendActionResponse {
                 timeline_kind,
                 content,
@@ -4149,6 +4243,8 @@ struct JoinedRoomDetails {
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
     /// A drop guard for the event handler that represents a subscription to pinned events for this room.
     pinned_events_subscriber: Option<EventHandlerDropGuard>,
+    /// The async task that listens for this room becoming encrypted.
+    room_encryption_subscriber_task: Option<JoinHandle<()>>,
 }
 impl Drop for JoinedRoomDetails {
     fn drop(&mut self) {
@@ -4156,6 +4252,9 @@ impl Drop for JoinedRoomDetails {
         self.main_timeline.timeline_subscriber_handler_task.abort();
         for thread_timeline in self.thread_timelines.values() {
             thread_timeline.timeline_subscriber_handler_task.abort();
+        }
+        if let Some(room_encryption_subscriber_task) = self.room_encryption_subscriber_task.take() {
+            room_encryption_subscriber_task.abort();
         }
         drop(self.typing_notice_subscriber.take());
         drop(self.pinned_events_subscriber.take());
@@ -5386,6 +5485,13 @@ async fn update_room(
                 });
             }
 
+            if let Some(is_encrypted) = fetch_room_is_encrypted(&new_room.room).await {
+                enqueue_rooms_list_update(RoomsListUpdate::UpdateIsEncrypted {
+                    room_id: new_room_id.clone(),
+                    is_encrypted,
+                });
+            }
+
             let mut __timeline_update_sender_opt = None;
             let mut get_timeline_update_sender = |room_id| {
                 if __timeline_update_sender_opt.is_none() {
@@ -5567,13 +5673,22 @@ async fn add_new_room(
             pending_thread_timelines: HashSet::new(),
             typing_notice_subscriber: None,
             pinned_events_subscriber: None,
+            room_encryption_subscriber_task: None,
         },
     );
+    if let Some(joined_room_details) = ALL_JOINED_ROOMS.lock().unwrap().get_mut(&new_room.room_id) {
+        joined_room_details.room_encryption_subscriber_task = Some(
+            spawn_room_encryption_subscriber(new_room.room.clone())
+        );
+    } else {
+        error!("BUG: could not find newly-added room {} to attach encryption subscriber", new_room.room_id);
+    }
 
     let latest = get_latest_event_details(
         &new_room.room.latest_event().await,
         room_list_service.client(),
     ).await;
+    let is_encrypted = fetch_room_is_encrypted(&new_room.room).await;
     let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
     // Start with a basic text avatar; the avatar image will be fetched asynchronously below.
     let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar());
@@ -5595,6 +5710,7 @@ async fn add_new_room(
         has_been_paginated: false,
         is_selected: false,
         is_direct: new_room.is_direct,
+        is_encrypted,
         is_tombstoned: new_room.is_tombstoned,
     }));
 
@@ -5616,6 +5732,41 @@ async fn add_new_room(
     });
     spawn_fetch_room_avatar(new_room);
     Ok(())
+}
+
+async fn fetch_room_is_encrypted(room: &Room) -> Option<bool> {
+    match room.latest_encryption_state().await {
+        Ok(state) => Some(state.is_encrypted()),
+        Err(error) => {
+            error!("Failed to fetch encryption state for room {}: {error:?}", room.room_id());
+            None
+        }
+    }
+}
+
+fn spawn_room_encryption_subscriber(room: Room) -> JoinHandle<()> {
+    Handle::current().spawn(async move {
+        let room_id = room.room_id().to_owned();
+        let mut room_info = room.subscribe_info();
+
+        if room_info.get().encryption_state().is_encrypted() {
+            enqueue_rooms_list_update(RoomsListUpdate::UpdateIsEncrypted {
+                room_id,
+                is_encrypted: true,
+            });
+            return;
+        }
+
+        while let Some(info) = room_info.next().await {
+            if info.encryption_state().is_encrypted() {
+                enqueue_rooms_list_update(RoomsListUpdate::UpdateIsEncrypted {
+                    room_id,
+                    is_encrypted: true,
+                });
+                break;
+            }
+        }
+    })
 }
 
 #[allow(unused)]

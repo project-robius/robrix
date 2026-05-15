@@ -190,6 +190,11 @@ pub enum RoomsListUpdate {
         room_id: OwnedRoomId,
         is_direct: bool,
     },
+    /// Update whether the given room is end-to-end encrypted.
+    UpdateIsEncrypted {
+        room_id: OwnedRoomId,
+        is_encrypted: bool,
+    },
     /// Remove the given room from the rooms list
     RemoveRoom {
         room_id: OwnedRoomId,
@@ -315,6 +320,10 @@ pub struct JoinedRoomInfo {
     pub is_selected: bool,
     /// Whether this a direct room.
     pub is_direct: bool,
+    /// Whether this room is end-to-end encrypted.
+    ///
+    /// `None` means the encryption state is not known yet or failed to load.
+    pub is_encrypted: Option<bool>,
     /// Whether this room is tombstoned (shut down and replaced with a successor room).
     pub is_tombstoned: bool,
 
@@ -381,6 +390,15 @@ pub fn build_room_search_text(
         search_text.push_str(&alias.as_str().to_lowercase());
     }
     search_text
+}
+
+pub fn merge_encryption_state(current: Option<bool>, incoming: bool) -> Option<bool> {
+    match (current, incoming) {
+        (Some(true), _) => Some(true),
+        (Some(false), true) => Some(true),
+        (Some(false), false) => Some(false),
+        (None, value) => Some(value),
+    }
 }
 impl std::fmt::Debug for InviterInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -577,6 +595,11 @@ impl RoomsList {
         self.all_joined_rooms.get(room_id).map(|jr| jr.is_direct)
     }
 
+    /// Returns whether the given joined room is end-to-end encrypted.
+    pub fn joined_room_is_encrypted(&self, room_id: &OwnedRoomId) -> Option<Option<bool>> {
+        self.all_joined_rooms.get(room_id).map(|jr| jr.is_encrypted)
+    }
+
     fn upsert_created_room_placeholder(
         &mut self,
         cx: &mut Cx,
@@ -609,6 +632,7 @@ impl RoomsList {
                     has_been_paginated: false,
                     is_selected: false,
                     is_direct: false,
+                    is_encrypted: None,
                     is_tombstoned: false,
                 });
             }
@@ -811,6 +835,18 @@ impl RoomsList {
                         }
                     } else {
                         error!("Error: couldn't find room {room_id} to update is_direct");
+                    }
+                }
+                RoomsListUpdate::UpdateIsEncrypted { room_id, is_encrypted } => {
+                    if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
+                        let next = merge_encryption_state(room.is_encrypted, is_encrypted);
+                        if room.is_encrypted == next {
+                            continue;
+                        }
+                        room.is_encrypted = next;
+                        SignalToUI::set_ui_signal();
+                    } else {
+                        error!("Error: couldn't find room {room_id} to update is_encrypted");
                     }
                 }
                 RoomsListUpdate::RemoveRoom { room_id, new_state } => {
@@ -1796,6 +1832,11 @@ impl RoomsListRef {
         self.borrow()?.is_direct_room(room_id)
     }
 
+    /// Returns whether the given joined room is end-to-end encrypted.
+    pub fn joined_room_is_encrypted(&self, room_id: &OwnedRoomId) -> Option<Option<bool>> {
+        self.borrow()?.joined_room_is_encrypted(room_id)
+    }
+
     /// Returns the name of the given room, if it is known and loaded.
     pub fn get_room_name(&self, room_id: &OwnedRoomId) -> Option<RoomNameId> {
         let inner = self.borrow()?;
@@ -1912,5 +1953,20 @@ mod tests {
             iterated_room_ids,
             vec![first_room_id, second_room_id],
         );
+    }
+
+    #[test]
+    fn test_room_list_icon_live_update() {
+        assert_eq!(merge_encryption_state(Some(false), true), Some(true));
+    }
+
+    #[test]
+    fn test_room_list_icon_resolve_from_unknown() {
+        assert_eq!(merge_encryption_state(None, true), Some(true));
+    }
+
+    #[test]
+    fn encryption_state_does_not_demote_encrypted_room() {
+        assert_eq!(merge_encryption_state(Some(true), false), Some(true));
     }
 }
