@@ -1121,6 +1121,8 @@ impl Widget for RoomInputBar {
             self.set_app_language(cx, app_language);
         }
 
+        self.handle_file_drag_drop(cx, event);
+
         let room_screen_props = scope.props.get::<RoomScreenProps>();
         let room_screen_widget_uid = room_screen_props.map(|props| props.room_screen_widget_uid);
         let show_bot_menu_tooltip =
@@ -1991,77 +1993,7 @@ impl RoomInputBar {
             .add_filter("Documents", &["pdf", "doc", "docx", "txt", "rtf"]);
 
         if let Some(selected_file_path) = dialog.pick_file() {
-            // Get file metadata
-            let file_size = match std::fs::metadata(&selected_file_path) {
-                Ok(metadata) => metadata.len(),
-                Err(e) => {
-                    makepad_widgets::error!("Failed to read file metadata: {e}");
-                    enqueue_popup_notification(
-                        format!("Unable to access file: {e}"),
-                        PopupKind::Error,
-                        None,
-                    );
-                    return;
-                }
-            };
-
-            // Check for empty files
-            if file_size == 0 {
-                enqueue_popup_notification("Cannot upload empty file", PopupKind::Error, None);
-                return;
-            }
-
-            // Detect the MIME type from the file extension
-            let mime = mime_guess::from_path(&selected_file_path)
-                .first_or_octet_stream();
-
-            // Create channel for receiving loaded file data
-            let (sender, receiver) = std::sync::mpsc::channel();
-            self.pending_file_load = Some(receiver);
-
-            // Spawn background thread to generate thumbnail (for images)
-            let path_clone = selected_file_path.clone();
-            let mime_clone = mime.clone();
-            cx.spawn_thread(move || {
-                // Generate thumbnail for images
-                let (thumbnail, dimensions) = if crate::image_utils::is_displayable_image(mime_clone.as_ref()) {
-                    match std::fs::read(&path_clone) {
-                        Ok(data) => {
-                            match crate::image_utils::generate_thumbnail(&data) {
-                                Ok((thumb_data, width, height)) => (
-                                    Some(ThumbnailData { data: thumb_data, width, height }),
-                                    Some((width, height))
-                                ),
-                                Err(e) => {
-                                    makepad_widgets::error!("Failed to generate thumbnail: {e}");
-                                    (None, None)
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            makepad_widgets::error!("Failed to read file for thumbnail: {e}");
-                            (None, None)
-                        }
-                    }
-                } else {
-                    (None, None)
-                };
-
-                let loaded_data = FileLoadedData {
-                    metadata: FilePreviewerMetaData {
-                        mime: mime_clone,
-                        file_size,
-                        file_path: path_clone,
-                    },
-                    thumbnail,
-                    dimensions,
-                };
-
-                if sender.send(Some(loaded_data)).is_err() {
-                    makepad_widgets::error!("Failed to send file data to UI: receiver dropped");
-                }
-                SignalToUI::set_ui_signal();
-            });
+            self.start_file_preview_load(cx, selected_file_path);
         }
     }
 
@@ -2073,6 +2005,107 @@ impl RoomInputBar {
             PopupKind::Error,
             None,
         );
+    }
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    fn handle_file_drag_drop(&mut self, cx: &mut Cx, event: &Event) {
+        match event.drag_hits(cx, self.view.area()) {
+            DragHit::Drag(drag_hit) => {
+                if first_dropped_file_path(drag_hit.items.as_ref()).is_some()
+                    && let Ok(mut response) = drag_hit.response.lock()
+                {
+                    *response = DragResponse::Copy;
+                }
+            }
+            DragHit::Drop(drop_hit) => {
+                let file_paths = dropped_file_paths(drop_hit.items.as_ref());
+                match file_paths.as_slice() {
+                    [] => {}
+                    [path] => self.start_file_preview_load(cx, path.clone()),
+                    _ => enqueue_popup_notification(
+                        "Only one file can be uploaded at a time.",
+                        PopupKind::Error,
+                        None,
+                    ),
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    fn handle_file_drag_drop(&mut self, _cx: &mut Cx, _event: &Event) {}
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    fn start_file_preview_load(&mut self, cx: &mut Cx, file_path: std::path::PathBuf) {
+        let metadata = match std::fs::metadata(&file_path) {
+            Ok(metadata) => metadata,
+            Err(e) => {
+                makepad_widgets::error!("Failed to read file metadata: {e}");
+                enqueue_popup_notification(
+                    format!("Unable to access file: {e}"),
+                    PopupKind::Error,
+                    None,
+                );
+                return;
+            }
+        };
+        if !metadata.is_file() {
+            enqueue_popup_notification("Only regular files can be uploaded.", PopupKind::Error, None);
+            return;
+        }
+
+        let file_size = metadata.len();
+        if file_size == 0 {
+            enqueue_popup_notification("Cannot upload empty file", PopupKind::Error, None);
+            return;
+        }
+
+        let mime = mime_guess::from_path(&file_path).first_or_octet_stream();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        self.pending_file_load = Some(receiver);
+
+        let path_clone = file_path.clone();
+        let mime_clone = mime.clone();
+        cx.spawn_thread(move || {
+            let (thumbnail, dimensions) = if crate::image_utils::is_displayable_image(mime_clone.as_ref()) {
+                match std::fs::read(&path_clone) {
+                    Ok(data) => {
+                        match crate::image_utils::generate_thumbnail(&data) {
+                            Ok((thumb_data, width, height)) => (
+                                Some(ThumbnailData { data: thumb_data, width, height }),
+                                Some((width, height))
+                            ),
+                            Err(e) => {
+                                makepad_widgets::error!("Failed to generate thumbnail: {e}");
+                                (None, None)
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        makepad_widgets::error!("Failed to read file for thumbnail: {e}");
+                        (None, None)
+                    }
+                }
+            } else {
+                (None, None)
+            };
+
+            let loaded_data = FileLoadedData {
+                metadata: FilePreviewerMetaData {
+                    mime: mime_clone,
+                    file_size,
+                    file_path: path_clone,
+                },
+                thumbnail,
+                dimensions,
+            };
+
+            if sender.send(Some(loaded_data)).is_err() {
+                makepad_widgets::error!("Failed to send file data to UI: receiver dropped");
+            }
+            SignalToUI::set_ui_signal();
+        });
     }
 }
 
@@ -2329,6 +2362,30 @@ fn convert_loaded_data_to_file_data(loaded: FileLoadedData) -> FileData {
     }
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+fn first_dropped_file_path(items: &[DragItem]) -> Option<std::path::PathBuf> {
+    dropped_file_paths(items).into_iter().next()
+}
+
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+fn dropped_file_paths(items: &[DragItem]) -> Vec<std::path::PathBuf> {
+    items
+        .iter()
+        .filter_map(|item| match item {
+            DragItem::FilePath { path, .. } if !path.is_empty() => {
+                // Drag/drop paths from the OS arrive percent-encoded (e.g. `%20` for space),
+                // so decode before constructing the PathBuf or std::fs calls will fail.
+                let decoded = percent_encoding::percent_decode_str(path)
+                    .decode_utf8()
+                    .map(|s| s.into_owned())
+                    .unwrap_or_else(|_| path.clone());
+                Some(std::path::PathBuf::from(decoded))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 /// The saved UI state of a `RoomInputBar` widget.
 #[derive(Default)]
 pub struct RoomInputBarState {
@@ -2432,6 +2489,39 @@ mod tests {
 
         assert!(popup_pos.y < button_rect.pos.y);
         assert!(popup_pos.y < 0.0);
+    }
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    #[test]
+    fn dropped_file_paths_extracts_file_items_only() {
+        let items = vec![
+            DragItem::String {
+                value: "ignored".to_string(),
+                internal_id: None,
+            },
+            DragItem::FilePath {
+                path: "/tmp/upload-one.png".to_string(),
+                internal_id: None,
+            },
+            DragItem::FilePath {
+                path: String::new(),
+                internal_id: None,
+            },
+            DragItem::FilePath {
+                path: "/tmp/upload-two.pdf".to_string(),
+                internal_id: None,
+            },
+        ];
+
+        let paths = dropped_file_paths(&items);
+
+        assert_eq!(paths.len(), 2);
+        assert_eq!(paths[0], std::path::PathBuf::from("/tmp/upload-one.png"));
+        assert_eq!(paths[1], std::path::PathBuf::from("/tmp/upload-two.pdf"));
+        assert_eq!(
+            first_dropped_file_path(&items),
+            Some(std::path::PathBuf::from("/tmp/upload-one.png")),
+        );
     }
 
     #[test]
