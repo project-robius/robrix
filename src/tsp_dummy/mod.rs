@@ -24,7 +24,7 @@ script_mod! {
 
 
     mod.widgets.TspSettingsScreen = View {
-        width: Fill, height: 20
+        width: Fill, height: 0
         flow: Down
     }
 

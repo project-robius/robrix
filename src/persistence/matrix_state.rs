@@ -211,7 +211,7 @@ pub async fn cleanup_orphan_db_dirs() {
         }
         if active.contains(&path) {
             kept += 1;
-            log!("cleanup_orphan_db_dirs: preserving referenced db dir: {}", path.display());
+            // log!("cleanup_orphan_db_dirs: preserving referenced db dir: {}", path.display());
             continue;
         }
         let size = dir_size_bytes(&path).await.unwrap_or(0);

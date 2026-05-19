@@ -247,7 +247,6 @@ script_mod! {
             width: Fill
             height: 20
         }
-        
     }
 }
 

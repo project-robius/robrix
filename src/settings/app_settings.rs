@@ -618,7 +618,7 @@ impl AppSettings {
 
     fn update_send_shortcut_description(cx: &mut Cx, view: &View, send_on_enter: bool) {
         let text = if send_on_enter {
-            "Current choice: 'Enter' to send, 'Shift + Enter' for a new line"
+            "Currently: 'Enter' to send, 'Shift + Enter' for a new line"
         } else {
             SEND_SHORTCUT_DESC_CMD
         };

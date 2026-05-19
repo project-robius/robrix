@@ -17,8 +17,8 @@ metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 # makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
 # makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "runtime_dpi_override", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "runtime_dpi_override" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "dedup_ios_ime_conversion", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "dedup_ios_ime_conversion" }
 
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
@@ -75,7 +75,7 @@ serde = "1.0"
 serde_json = "1.0"
 thiserror = "2.0.16"
 tokio = { version = "1.43.1", features = ["macros", "rt-multi-thread"] }
-tracing-subscriber = "0.3.17"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 unicode-segmentation = "1.11.0"
 url = "2.5.0"
 
@@ -165,6 +165,9 @@ askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
 ## so we patch the git source, not crates-io.
 [patch."https://github.com/ruma/ruma"]
 ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
+
+[build-dependencies]
+toml = "1"
 
 ## On Windows, use the `winresource` crate to embed the app's icon and metadata into the executable.
 [target.'cfg(windows)'.build-dependencies]
