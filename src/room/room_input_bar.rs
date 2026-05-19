@@ -2038,7 +2038,6 @@ impl RoomInputBar {
 
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     fn start_file_preview_load(&mut self, cx: &mut Cx, file_path: std::path::PathBuf) {
-        println!("file_path {:?}",file_path);
         let metadata = match std::fs::metadata(&file_path) {
             Ok(metadata) => metadata,
             Err(e) => {
