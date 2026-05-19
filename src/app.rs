@@ -1099,6 +1099,15 @@ impl SelectedRoom {
             SelectedRoom::Thread { room_name_id, .. } => format!("[Thread] {room_name_id}"),
         }
     }
+
+    /// Returns the dock-tab `kind` template id used to render this room.
+    pub fn dock_kind(&self) -> LiveId {
+        match self {
+            SelectedRoom::JoinedRoom { .. } | SelectedRoom::Thread { .. } => id!(room_screen),
+            SelectedRoom::InvitedRoom { .. } => id!(invite_screen),
+            SelectedRoom::Space { .. } => id!(space_lobby_screen),
+        }
+    }
 }
 
 impl PartialEq for SelectedRoom {

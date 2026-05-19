@@ -128,7 +128,6 @@ script_mod! {
         }
 
         thread_summary_latest := MessageHtml {
-            flow: Right,
             max_lines: 2
             text_overflow: Ellipsis
         }
