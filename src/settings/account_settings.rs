@@ -173,7 +173,7 @@ script_mod! {
         }
 
         SubsectionLabel {
-            text: "Your Display Name:"
+            text: "Your Display Name"
         }
 
         display_name_input := RobrixTextInput {
@@ -225,7 +225,7 @@ script_mod! {
         }
 
         SubsectionLabel {
-            text: "Your User ID:"
+            text: "Your User ID"
         }
 
         View {
@@ -255,7 +255,7 @@ script_mod! {
         }
 
         SubsectionLabel {
-            text: "Other actions:"
+            text: "Other Actions"
         }
 
         View {

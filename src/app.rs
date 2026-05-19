@@ -194,8 +194,17 @@ impl ScriptHook for App {
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
-        // only init logging/tracing once
-        let _ = tracing_subscriber::fmt::try_init();
+        // only init logging/tracing once.
+        // `matrix_sdk::latest_events` emits a noisy per-room "Timer ... finished"
+        // INFO line on every load; silence it by default. RUST_LOG still wins
+        // when set, so you can re-enable it with `RUST_LOG=matrix_sdk::latest_events=info`.
+        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(
+                "info,matrix_sdk::latest_events=warn",
+            ));
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .try_init();
 
         // On iOS (and potentially other devices), there is a very low limit
         // (albeit a soft limit) on max file descriptors, as little as 256.
