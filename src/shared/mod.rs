@@ -14,6 +14,7 @@ pub mod mentionable_text_input;
 pub mod popup_list;
 pub mod progress_bar;
 pub mod room_filter_input_bar;
+pub mod room_filter_search_results;
 pub mod styles;
 pub mod text_or_image;
 pub mod timestamp;
@@ -36,6 +37,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     timestamp::script_mod(vm);
     room_filter_input_bar::script_mod(vm);
     avatar::script_mod(vm);
+    room_filter_search_results::script_mod(vm);
     text_or_image::script_mod(vm);
     html_or_plaintext::script_mod(vm);
     bouncing_dots::script_mod(vm);
