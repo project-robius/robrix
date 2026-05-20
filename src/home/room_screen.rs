@@ -3377,7 +3377,7 @@ fn populate_message_view(
                             format: MessageFormat::Html,
                             body: format!(
                                 "<i>Sent a <b>verification request</b> to {}.<br>(Supported methods: {})</i>",
-                                verification.to,
+                                htmlize::escape_text(verification.to.as_str()),
                                 verification.methods
                                     .iter()
                                     .map(|m| m.as_str())

@@ -285,7 +285,7 @@ fn text_preview_of_message(
         }
         MessageType::VerificationRequest(verification) => format!(
             "[Verification Request] <i>to user {}</i>",
-            verification.to,
+            htmlize::escape_text(verification.to.as_str()),
         ),
         MessageType::Video(video) => format!(
             "[Video]: <i>{}</i>",
