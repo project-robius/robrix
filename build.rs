@@ -8,6 +8,15 @@ fn main() {
         {
             let mut res = winresource::WindowsResource::new();
             res.set_icon("resources/icon.ico");
+            // Explicit VERSIONINFO fields. Without these, Windows shows
+            // "Unknown publisher" in the UAC/SmartScreen install prompt
+            // (CompanyName/LegalCopyright are empty by default), and the
+            // ProductName/FileDescription fall back to the lowercase crate
+            // name "robrix" instead of the product name.
+            res.set("CompanyName", "GOSIM Foundation");
+            res.set("ProductName", "Robrix");
+            res.set("FileDescription", "Robrix - Matrix chat client");
+            res.set("LegalCopyright", "Copyright - 2023-2026 Project Robius");
             res.compile().expect("Failed to compile Windows resources");
         }
     }
