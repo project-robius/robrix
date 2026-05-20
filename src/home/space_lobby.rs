@@ -546,7 +546,7 @@ script_mod! {
                 parent_avatar := Avatar {
                     width: 36,
                     height: 36,
-                    margin: Inset{ right: 12 }
+                    margin: Inset{ left: 5, right: 12 }
                 }
                 
                 parent_name := Label {

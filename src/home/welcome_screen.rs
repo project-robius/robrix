@@ -28,6 +28,8 @@ script_mod! {
             draw_bg.color: (COLOR_PRIMARY)
 
             title := Label {
+                padding: 0
+                margin: 0
                 text: "Welcome to Robrix!",
                 draw_text +: {
                     color: (mod.widgets.WELCOME_TEXT_COLOR),
