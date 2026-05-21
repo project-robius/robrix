@@ -2639,14 +2639,6 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                                 log!("matrix worker task ended with error due to logout: {e:?}");
                             } else {
                                 error!("Error: matrix worker task ended:\n\t{e:?}");
-                                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                    status: e.to_string(),
-                                });
-                                enqueue_popup_notification(
-                                    format!("Rooms list update error: {e}"),
-                                    PopupKind::Error,
-                                    None,
-                                );
                             }
                         },
                         Err(e) => {
