@@ -1398,7 +1398,7 @@ impl MatchEvent for App {
                 Some(ForwardMessageModalAction::Open(content)) => {
                     self.ui
                         .forward_message_modal(cx, ids!(forward_message_modal_inner))
-                        .show(cx, content.clone(), self.app_state.app_language);
+                        .show(cx, (**content).clone(), self.app_state.app_language);
                     self.ui.modal(cx, ids!(forward_message_modal)).open(cx);
                     continue;
                 }

@@ -7500,7 +7500,7 @@ impl RoomScreen {
                     if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details, has_encryption_notice)
                         && let Some(content) = Self::forward_message_content(&tl.kind, event_tl_item)
                     {
-                        cx.action(ForwardMessageModalAction::Open(content));
+                        cx.action(ForwardMessageModalAction::Open(Box::new(content)));
                     } else {
                         enqueue_popup_notification(
                             tr_key(self.app_language, "room_screen.popup.message.forward_not_found"),

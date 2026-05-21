@@ -117,7 +117,7 @@ pub struct ForwardMessageContent {
 
 #[derive(Clone, Debug, Default)]
 pub enum ForwardMessageModalAction {
-    Open(ForwardMessageContent),
+    Open(Box<ForwardMessageContent>),
     Close,
     #[default]
     None,
@@ -353,11 +353,11 @@ mod tests {
 
     #[test]
     fn test_forward_modal_opens() {
-        let action = ForwardMessageModalAction::Open(ForwardMessageContent {
+        let action = ForwardMessageModalAction::Open(Box::new(ForwardMessageContent {
             source_room_id: OwnedRoomId::try_from("!source:example.org").unwrap(),
             source_event_id: OwnedEventId::try_from("$event:example.org").unwrap(),
             message: RoomMessageEventContent::text_plain("hello"),
-        });
+        }));
 
         assert!(matches!(action, ForwardMessageModalAction::Open(_)));
     }
