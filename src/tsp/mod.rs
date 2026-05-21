@@ -1,7 +1,7 @@
 use std::{borrow::Cow, collections::BTreeMap, ops::Deref, path::Path, sync::{Arc, Mutex, OnceLock}};
 
 use anyhow::anyhow;
-use futures_util::StreamExt;
+use futures_util::{StreamExt, future::{join_all, try_join_all}};
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedUserId, UserId};
 use quinn::rustls::crypto::{CryptoProvider, aws_lc_rs};
@@ -120,9 +120,20 @@ impl TspState {
         let mut other_wallets = Vec::with_capacity(saved_state.num_wallets());
         let mut current_local_vid = None;
 
-        for (idx, wallet_metadata) in saved_state.wallets.into_iter().enumerate() {
-            if let Ok(opened_wallet) = wallet_metadata.open_wallet().await {
-                if saved_state.default_wallet == Some(idx) {
+        let default_wallet_idx = saved_state.default_wallet;
+
+        // ⚡ Bolt Optimization: Process wallet initialization concurrently
+        // instead of sequential await to avoid I/O bottlenecks.
+        let open_futures = saved_state.wallets.into_iter().enumerate().map(|(idx, metadata)| async move {
+            let res = metadata.open_wallet().await;
+            (idx, metadata, res)
+        });
+
+        let results = join_all(open_futures).await;
+
+        for (idx, wallet_metadata, opened_result) in results {
+            if let Ok(opened_wallet) = opened_result {
+                if default_wallet_idx == Some(idx) {
                     current_wallet = Some(opened_wallet);
                 } else {
                     other_wallets.push(TspWalletEntry::Opened(opened_wallet));
@@ -188,19 +199,26 @@ impl TspState {
             self.current_wallet.is_some() as usize + self.other_wallets.len()
         );
 
+        let mut close_futures = Vec::new();
+
         if let Some(current_wallet) = self.current_wallet {
             let metadata = current_wallet.metadata.clone();
             default_wallet = Some(0);
-            current_wallet.persist_and_close().await?;
+            close_futures.push(current_wallet.persist_and_close());
             wallets.push(metadata);
         }
         for entry in self.other_wallets {
             let metadata = entry.metadata().clone();
             if let TspWalletEntry::Opened(opened) = entry {
-                opened.persist_and_close().await?;
+                close_futures.push(opened.persist_and_close());
             }
             wallets.push(metadata);
         }
+
+        // ⚡ Bolt Optimization: Persist and close wallets concurrently
+        // instead of sequential await to avoid I/O bottlenecks.
+        try_join_all(close_futures).await?;
+
         Ok(SavedTspState {
             wallets,
             default_wallet,
