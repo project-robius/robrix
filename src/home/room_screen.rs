@@ -7525,8 +7525,8 @@ impl RoomScreen {
                         continue;
                     };
                     // Get the original JSON from the event and pretty-print it
-                    let original_json: Option<String> = event_tl_item
-                        .original_json()
+                    let latest_json: Option<String> = event_tl_item
+                        .latest_json()
                         .and_then(|raw_event| serde_json::to_value(raw_event).ok())
                         .and_then(|value| serde_json::to_string_pretty(&value).ok());
 
@@ -7535,7 +7535,7 @@ impl RoomScreen {
                     cx.action(super::event_source_modal::EventSourceModalAction::Open {
                         room_id: tl.kind.room_id().clone(),
                         event_id,
-                        original_json,
+                        latest_json,
                     });
                 }
                 MessageAction::JumpToRelated(details) => {

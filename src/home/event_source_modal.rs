@@ -184,7 +184,7 @@ script_mod! {
             margin: 3
         }
 
-        // Original event source section header
+        // Latest event source section header
         source_header := View {
             width: Fill, height: Fit,
             flow: Right,
@@ -197,7 +197,7 @@ script_mod! {
                     text_style: TITLE_TEXT {font_size: 13},
                     color: #000
                 }
-                text: "Original event source"
+                text: "Latest event source"
             }
 
             copy_source_button := mod.widgets.CopyButton {}
@@ -243,7 +243,7 @@ pub enum EventSourceModalAction {
     Open {
         room_id: OwnedRoomId,
         event_id: Option<OwnedEventId>,
-        original_json: Option<String>,
+        latest_json: Option<String>,
     },
     /// Close the modal.
     Close,
@@ -255,7 +255,7 @@ pub struct EventSourceModal {
     #[deref] view: View,
     #[rust] room_id: Option<OwnedRoomId>,
     #[rust] event_id: Option<OwnedEventId>,
-    #[rust] original_json: Option<String>,
+    #[rust] latest_json: Option<String>,
 }
 
 impl Widget for EventSourceModal {
@@ -271,7 +271,7 @@ impl Widget for EventSourceModal {
         if let Some(event_id) = &self.event_id {
             self.view.label(cx, ids!(event_id_value)).set_text(cx, event_id.as_str());
         }
-        if let Some(json) = &self.original_json {
+        if let Some(json) = &self.latest_json {
             self.view.html(cx, ids!(source_html))
                 .set_text(cx, &format_event_source_html(json));
         }
@@ -320,7 +320,7 @@ impl WidgetMatchEvent for EventSourceModal {
         }
 
         if self.view.button(cx, ids!(copy_source_button)).clicked(actions) {
-            if let Some(json) = &self.original_json {
+            if let Some(json) = &self.latest_json {
                 cx.copy_to_clipboard(json);
                 enqueue_popup_notification(
                     "Copied event source to clipboard.",
@@ -339,11 +339,11 @@ impl EventSourceModal {
         cx: &mut Cx,
         room_id: OwnedRoomId,
         event_id: Option<OwnedEventId>,
-        original_json: Option<String>,
+        latest_json: Option<String>,
     ) {
         self.room_id = Some(room_id.clone());
         self.event_id = event_id.clone();
-        self.original_json = original_json.clone();
+        self.latest_json = latest_json.clone();
 
         self.view.button(cx, ids!(close_button)).reset_hover(cx);
         self.view.button(cx, ids!(room_id_copy_button)).reset_hover(cx);
@@ -504,10 +504,10 @@ impl EventSourceModalRef {
         cx: &mut Cx,
         room_id: OwnedRoomId,
         event_id: Option<OwnedEventId>,
-        original_json: Option<String>,
+        latest_json: Option<String>,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.show(cx, room_id, event_id, original_json);
+        inner.show(cx, room_id, event_id, latest_json);
     }
 }
 

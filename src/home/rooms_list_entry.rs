@@ -73,16 +73,43 @@ script_mod! {
     mod.widgets.MessagePreview = View {
         width: Fill, height: Fit
         latest_message := HtmlOrPlaintext {
-            html_view +: {
-                html +: {
+                html_view +: {
+                    html +: {
                     font_size: 9.3
                     max_lines: 2
                     text_overflow: Ellipsis
-                    text_style_normal +: { font_size: 9.3 }
-                    text_style_italic +: { font_size: 9.3 }
-                    text_style_bold +: { font_size: 9.3 }
-                    text_style_bold_italic +: { font_size: 9.3 }
-                    text_style_fixed +: { font_size: 9.3 }
+                    text_style_normal +: { font_size: 9.3, line_spacing: 1.32 }
+                    text_style_italic +: { font_size: 9.3, line_spacing: 1.32 }
+                    text_style_bold +: { font_size: 9.3, line_spacing: 1.32 }
+                    text_style_bold_italic +: { font_size: 9.3, line_spacing: 1.32 }
+                    text_style_fixed +: { font_size: 9.3, line_spacing: 1.32 }
+                    // Scale down the pill (title font, avatar size, avatar text) to fit.
+                    a +: {
+                        matrix_link_view +: {
+                            matrix_link +: {
+                                pill_bg +: {
+                                    margin: Inset{top: 1}
+                                    padding: Inset{ left: 4.5, right: 3.0, bottom: -3.5, top: -3.5 }
+                                    draw_bg +: { border_radius: 4.5 }
+                                    avatar +: {
+                                        width: 13.0, height: 13.0,
+                                        text_view +: {
+                                            text +: {
+                                                draw_text +: {
+                                                    text_style +: { font_size: 6 }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    title +: {
+                                        draw_text +: {
+                                            text_style +: { font_size: 8.5 }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             plaintext_view +: {
@@ -90,7 +117,7 @@ script_mod! {
                     max_lines: 2
                     text_overflow: Ellipsis
                     draw_text +: {
-                        text_style: theme.font_regular { font_size: 9.5 },
+                        text_style: theme.font_regular { font_size: 9.3, line_spacing: 1.32 },
                     }
                     text: "[No recent messages]"
                 }
