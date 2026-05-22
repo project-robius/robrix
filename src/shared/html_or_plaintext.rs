@@ -1,7 +1,7 @@
 //! A `HtmlOrPlaintext` view can display either plaintext or rich HTML content.
 
 use makepad_widgets::*;
-use matrix_sdk::{ruma::{matrix_uri::{MatrixId, MatrixToUri, MatrixUri}, OwnedMxcUri}, OwnedServerName};
+use matrix_sdk::{ruma::{matrix_uri::MatrixId, OwnedMxcUri}, OwnedServerName};
 
 use crate::{avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, sliding_sync::{current_user_id, submit_async_request, MatrixRequest}, utils};
 
@@ -56,22 +56,27 @@ script_mod! {
 
     // A RobrixHtmlLink is either a regular Html link (default) or a Matrix link.
     // The Matrix link is a pill-shaped widget with an avatar and a title.
+    //
+    // Layout notes:
+    // * `html_link` is a direct child (not wrapped in an intermediate View).
+    //   Wrapping `HtmlLink` inside a View breaks inline text wrapping, because
+    //   `HtmlLink::draw_walk` draws text directly into the parent `TextFlow`'s
+    //   turtle via `tf.draw_text()`. A surrounding View opens its own turtle
+    //   (via `cx.begin_turtle`), which replaces the turtle that `tf.draw_text`
+    //   reads to compute wrap width — so long links would refuse to break.
+    //   Instead, `RobrixHtmlLink::draw_walk` dispatches in Rust: it calls
+    //   `html_link.draw_walk` DIRECTLY for inline-text mode (no surrounding
+    //   turtle), and falls back to the outer View only for the pill mode.
     mod.widgets.RobrixHtmlLink = #(RobrixHtmlLink::register_widget(vm)) {
         width: Fit, height: Fit,
-        flow: Flow.Right{wrap: true}, // ensure the link text can wrap
         align: Align{ y: 0.5 },
         cursor: MouseCursor.Hand,
 
-        html_link_view := View {
+        html_link := HtmlLink {
             visible: true,
-            width: Fit, height: Fit,
-            flow: Flow.Right{wrap: true},
-
-            html_link := HtmlLink {
-                hover_color: (COLOR_LINK_HOVER)
-                grab_key_focus: false,
-                padding: Inset{left: 1.0, right: 1.5},
-            }
+            hover_color: (COLOR_LINK_HOVER)
+            grab_key_focus: false,
+            padding: Inset{left: 1.0, right: 1.5},
         }
 
         matrix_link_view := View {
@@ -238,17 +243,18 @@ impl Widget for RobrixHtmlLink {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // Try to render Matrix mention pills for matrix:// URIs.
-        // Note: vertical alignment with surrounding text may not be perfect
-        // (known Makepad limitation with inline Html subwidgets).
+        // TODO: pill-mode dispatch is currently disabled because Makepad doesn't
+        // yet support partial vertical alignment of inline block widgets (pills)
+        // with the surrounding text baseline. Once Makepad supports that, we can
+        // re-enable the Matrix URI parsing below to render pills inline.
+        /*
         if let Ok(matrix_to_uri) = MatrixToUri::parse(&self.url) {
-            self.draw_matrix_pill(cx, matrix_to_uri.id(), matrix_to_uri.via());
+            return self.draw_matrix_pill(cx, scope, walk, matrix_to_uri.id(), matrix_to_uri.via());
         } else if let Ok(matrix_uri) = MatrixUri::parse(&self.url) {
-            self.draw_matrix_pill(cx, matrix_uri.id(), matrix_uri.via());
-        } else {
-            self.draw_html_link(cx);
+            return self.draw_matrix_pill(cx, scope, walk, matrix_uri.id(), matrix_uri.via());
         }
-        self.view.draw_walk(cx, scope, walk)
+        */
+        self.draw_html_link(cx, scope, walk)
     }
 
     fn text(&self) -> String {
@@ -262,39 +268,59 @@ impl Widget for RobrixHtmlLink {
 }
 
 impl RobrixHtmlLink {
+    /// Draws the Matrix link pill as an atomic inline block.
+    ///
+    /// The pill is drawn via `self.view.draw_walk`, which opens a turtle and
+    /// renders the visible `matrix_link_view`. From the outer `TextFlow`'s
+    /// perspective, the pill is a single unbreakable inline unit (which is the
+    /// correct behavior — a pill shouldn't wrap internally).
     #[allow(unused)]
-    fn draw_matrix_pill(&mut self, cx: &mut Cx, matrix_id: &MatrixId, via: &[OwnedServerName]) {
-        {
-            let matrix_link_pill = self.matrix_link_pill(cx, ids!(matrix_link));
-            let Some(mut pill) = matrix_link_pill.borrow_mut() else {
-                self.draw_html_link(cx);
-                return;
-            };
+    fn draw_matrix_pill(
+        &mut self,
+        cx: &mut Cx2d,
+        scope: &mut Scope,
+        walk: Walk,
+        matrix_id: &MatrixId,
+        via: &[OwnedServerName],
+    ) -> DrawStep {
+        if let Some(mut pill) = self.matrix_link_pill(cx, ids!(matrix_link)).borrow_mut() {
             pill.populate_pill(cx, self.url.clone(), matrix_id, via);
         }
-        let matrix_link_view = self.view(cx, ids!(matrix_link_view));
-        let html_link_view = self.view(cx, ids!(html_link_view));
-        let visibility_changed = !matrix_link_view.visible() || html_link_view.visible();
-        matrix_link_view.set_visible(cx, true);
-        html_link_view.set_visible(cx, false);
-        if visibility_changed {
-            self.redraw(cx);
-        }
+        self.view(cx, ids!(matrix_link_view)).set_visible(cx, true);
+        self.html_link(cx, ids!(html_link)).set_visible(cx, false);
+        self.view.draw_walk(cx, scope, walk)
     }
 
-    /// Shows the inner plain HTML link and hides the Matrix link pill view.
-    fn draw_html_link(&mut self, cx: &mut Cx) {
-        let html_link_view = self.view(cx, ids!(html_link_view));
-        let matrix_link_view = self.view(cx, ids!(matrix_link_view));
-        let visibility_changed = !html_link_view.visible() || matrix_link_view.visible();
-        html_link_view.set_visible(cx, true);
-        matrix_link_view.set_visible(cx, false);
-        if visibility_changed {
-            self.redraw(cx);
-        }
-        let mut html_link = self.html_link(cx, ids!(html_link));
-        html_link.set_url(&self.url);
-        html_link.set_text(cx, self.text.as_ref());
+    /// Draws the inner `HtmlLink` as inline wrapping text.
+    ///
+    /// We invoke `HtmlLink::draw_walk` directly rather than going through
+    /// `self.view.draw_walk`. Going through the outer View would open a new
+    /// turtle, which in turn would become the turtle that `tf.draw_text()`
+    /// reads inside `HtmlLink::draw_walk` — that turtle has `width: Fit` and
+    /// therefore no wrap bound, so the link text would refuse to break across
+    /// lines. By calling `draw_walk` directly on the `HtmlLink`, the current
+    /// turtle remains the parent Html widget's `TextFlow` turtle, which has
+    /// the full message width and wraps correctly.
+    fn draw_html_link(
+        &mut self,
+        cx: &mut Cx2d,
+        scope: &mut Scope,
+        walk: Walk,
+    ) -> DrawStep {
+        // Keep subwidget visibility consistent with what's actually drawn, so
+        // `self.view.handle_event` can route events to the right place and
+        // skip the inactive subtree.
+        self.html_link(cx, ids!(html_link)).set_visible(cx, true);
+        self.view(cx, ids!(matrix_link_view)).set_visible(cx, false);
+
+        let mut html_link_ref = self.html_link(cx, ids!(html_link));
+        html_link_ref.set_url(&self.url);
+        html_link_ref.set_text(cx, self.text.as_ref());
+
+        let Some(mut html_link) = html_link_ref.borrow_mut() else {
+            return DrawStep::done();
+        };
+        html_link.draw_walk(cx, scope, walk)
     }
 }
 

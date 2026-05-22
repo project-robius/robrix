@@ -19,7 +19,7 @@ use crate::{
 };
 
 /// The timeout for hiding the UI overlays after no user mouse/tap activity.
-const SHOW_UI_DURATION: f64 = 3.0;
+const SHOW_UI_DURATION: f64 = 2.5;
 
 /// Loads the given image `data` into an `ImageBuffer` as either a PNG or JPEG, using the `imghdr` library to determine which format it is.
 ///
@@ -1220,4 +1220,3 @@ pub struct ImageViewerMetaData {
     // Image size in bytes
     pub image_file_size: u64,
 }
-

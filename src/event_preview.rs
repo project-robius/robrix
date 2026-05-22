@@ -119,11 +119,11 @@ pub fn text_preview_of_timeline_item(
                 )))
         }
         TimelineItemContent::FailedToParseMessageLike { event_type, .. } => TextPreview::from((
-            format!("[Failed to parse <i>{}</i> message]", event_type),
+            format!("[Failed to parse <i>{}</i> message]", htmlize::escape_text(event_type.to_string())),
             BeforeText::UsernameWithColon,
         )),
         TimelineItemContent::FailedToParseState { event_type, .. } => TextPreview::from((
-            format!("[Failed to parse <i>{}</i> state]", event_type),
+            format!("[Failed to parse <i>{}</i> state]", htmlize::escape_text(event_type.to_string())),
             BeforeText::UsernameWithColon,
         )),
         TimelineItemContent::CallInvite => TextPreview::from((

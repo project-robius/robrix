@@ -246,6 +246,7 @@ script_mod! {
 
                         // Show incoming verification requests in front of the aforementioned UI elements.
                         verification_modal := Modal {
+                            can_dismiss: false,
                             content +: {
                                 verification_modal_inner := VerificationModal {}
                             }
