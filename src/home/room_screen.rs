@@ -335,7 +335,7 @@ script_mod! {
     // this object's `max` field at runtime (see
     // `AppPreferences::on_thumbnail_max_height_changed`) — every widget
     // whose `walk.height` referenced this object observes the change
-    // through the same heap slot on the next `Event::ScriptReapply`.
+    // through the same heap object on the next `Event::ScriptReapply`.
     //
     // This sidesteps the override-chain divergence that would otherwise
     // make the mutation invisible to derived templates (e.g., the
@@ -666,7 +666,7 @@ pub struct RoomScreen {
 impl Drop for RoomScreen {
     fn drop(&mut self) {
         // This ensures that the `TimelineUiState` instance owned by this room is *always* returned
-        // back to to `TIMELINE_STATES`, which ensures that its UI state(s) are not lost
+        // back to the timeline lease store, which ensures that its UI state(s) are not lost
         // and that other RoomScreen instances can show this room in the future.
         // RoomScreen will be dropped whenever its widget instance is destroyed, e.g.,
         // when a Tab is closed or the app is resized to a different AdaptiveView layout.
@@ -2242,72 +2242,78 @@ impl RoomScreen {
         let kind = self.timeline_kind.clone()
             .expect("BUG: Timeline::show_timeline(): no timeline_kind was set.");
         let room_id = kind.room_id().clone();
+        let owner = self.widget_uid();
 
-        let state_opt = TIMELINE_STATES.with_borrow_mut(|ts| ts.remove(&kind));
-        let (mut tl_state, mut is_first_time_being_loaded) = if let Some(existing) = state_opt {
-            (existing, false)
-        } else {
-            let Some(timeline_endpoints) = take_timeline_endpoints(&kind) else {
-                if let Some(thread_root_event_id) = kind.thread_root_event_id() {
-                    submit_async_request(MatrixRequest::CreateThreadTimeline {
-                        room_id: room_id.clone(),
-                        thread_root_event_id: thread_root_event_id.clone(),
-                    });
-                    return;
-                }
-                if !self.is_loaded && self.all_rooms_loaded {
-                    panic!("BUG: timeline {kind} is not loaded, but its RoomScreen \
-                    was not waiting for its timeline to be loaded either.");
-                }
+        let (mut tl_state, mut is_first_time_being_loaded) = match timeline_lease::checkout(&kind, owner) {
+            timeline_lease::Checkout::Available(existing) => (existing, false),
+            timeline_lease::Checkout::CheckedOut { owner: current_owner } => {
+                error!("RoomScreen::show_timeline(): timeline {kind} is already checked out by widget {current_owner:?}");
                 return;
-            };
-            let TimelineEndpoints {
-                update_receiver,
-                update_sender,
-                request_sender,
-                successor_room,
-            } = timeline_endpoints;
+            }
+            timeline_lease::Checkout::Missing => {
+                let Some(timeline_endpoints) = take_timeline_endpoints(&kind) else {
+                    if let Some(thread_root_event_id) = kind.thread_root_event_id() {
+                        submit_async_request(MatrixRequest::CreateThreadTimeline {
+                            room_id: room_id.clone(),
+                            thread_root_event_id: thread_root_event_id.clone(),
+                        });
+                        return;
+                    }
+                    if !self.is_loaded && self.all_rooms_loaded {
+                        panic!("BUG: timeline {kind} is not loaded, but its RoomScreen \
+                        was not waiting for its timeline to be loaded either.");
+                    }
+                    return;
+                };
+                let TimelineEndpoints {
+                    update_receiver,
+                    update_sender,
+                    request_sender,
+                    successor_room,
+                } = timeline_endpoints;
 
-            // Start with the basic tombstone info, and fetch the full details
-            // if the room has been tombstoned.
-            let tombstone_info = if let Some(sr) = successor_room {
-                submit_async_request(MatrixRequest::GetSuccessorRoomDetails {
-                    tombstoned_room_id: room_id.clone(),
-                });
-                Some(SuccessorRoomDetails::Basic(sr))
-            } else {
-                None
-            };
+                // Start with the basic tombstone info, and fetch the full details
+                // if the room has been tombstoned.
+                let tombstone_info = if let Some(sr) = successor_room {
+                    submit_async_request(MatrixRequest::GetSuccessorRoomDetails {
+                        tombstoned_room_id: room_id.clone(),
+                    });
+                    Some(SuccessorRoomDetails::Basic(sr))
+                } else {
+                    None
+                };
 
-            let tl_state = TimelineUiState {
-                kind,
-                // Initially, we assume the user has all power levels by default.
-                // This avoids unexpectedly hiding any UI elements that should be visible to the user.
-                // This doesn't mean that the user can actually perform all actions;
-                // the power levels will be updated from the homeserver once the room is opened.
-                user_power: UserPowerLevels::all(),
-                // Room members start as None and get populated when fetched from the server
-                room_members: None,
-                // We assume timelines being viewed for the first time haven't been fully paginated.
-                fully_paginated: false,
-                items: Vector::new(),
-                content_drawn_since_last_update: RangeSet::new(),
-                profile_drawn_since_last_update: RangeSet::new(),
-                update_receiver,
-                request_sender,
-                media_cache: MediaCache::new(Some(update_sender.clone())),
-                link_preview_cache: LinkPreviewCache::new(Some(update_sender)),
-                fetched_thread_summaries: HashMap::new(),
-                pending_thread_summary_fetches: HashSet::new(),
-                saved_state: SavedState::default(),
-                message_highlight_animation_state: MessageHighlightAnimationState::default(),
-                last_scrolled_index: usize::MAX,
-                prev_first_index: None,
-                scrolled_past_read_marker: false,
-                latest_own_user_receipt: None,
-                tombstone_info,
-            };
-            (tl_state, true)
+                let tl_state = TimelineUiState {
+                    kind,
+                    // Initially, we assume the user has all power levels by default.
+                    // This avoids unexpectedly hiding any UI elements that should be visible to the user.
+                    // This doesn't mean that the user can actually perform all actions;
+                    // the power levels will be updated from the homeserver once the room is opened.
+                    user_power: UserPowerLevels::all(),
+                    // Room members start as None and get populated when fetched from the server
+                    room_members: None,
+                    // We assume timelines being viewed for the first time haven't been fully paginated.
+                    fully_paginated: false,
+                    items: Vector::new(),
+                    content_drawn_since_last_update: RangeSet::new(),
+                    profile_drawn_since_last_update: RangeSet::new(),
+                    update_receiver,
+                    request_sender,
+                    media_cache: MediaCache::new(Some(update_sender.clone())),
+                    link_preview_cache: LinkPreviewCache::new(Some(update_sender)),
+                    fetched_thread_summaries: HashMap::new(),
+                    pending_thread_summary_fetches: HashSet::new(),
+                    saved_state: SavedState::default(),
+                    message_highlight_animation_state: MessageHighlightAnimationState::default(),
+                    last_scrolled_index: usize::MAX,
+                    prev_first_index: None,
+                    scrolled_past_read_marker: false,
+                    latest_own_user_receipt: None,
+                    tombstone_info,
+                };
+                timeline_lease::mark_checked_out(&tl_state.kind, owner);
+                (tl_state, true)
+            }
         };
 
         // It is possible that this room has already been loaded (received from the server)
@@ -2407,6 +2413,9 @@ impl RoomScreen {
     /// Invoke this when this RoomScreen/timeline is being hidden or no longer being shown.
     fn hide_timeline(&mut self) {
         let Some(timeline_kind) = self.timeline_kind.clone() else { return };
+        if self.tl_state.is_none() {
+            return;
+        }
 
         self.save_state();
 
@@ -2433,7 +2442,7 @@ impl RoomScreen {
     }
 
     /// Removes the current room's visual UI state from this widget
-    /// and saves it to the map of `TIMELINE_STATES` such that it can be restored later.
+    /// and saves it to the timeline lease store such that it can be restored later.
     ///
     /// Note: after calling this function, the widget's `tl_state` will be `None`.
     fn save_state(&mut self) {
@@ -2452,8 +2461,8 @@ impl RoomScreen {
         tl.saved_state = state;
         // Clear room_members to avoid wasting memory (in case this room is never re-opened).
         tl.room_members = None;
-        // Store this Timeline's `TimelineUiState` in the global map of states.
-        TIMELINE_STATES.with_borrow_mut(|ts| ts.insert(tl.kind.clone(), tl));
+        // Store this Timeline's `TimelineUiState` in the lease store.
+        timeline_lease::return_state(self.widget_uid(), tl);
     }
 
     /// Restores the previously-saved visual UI state of this room.
@@ -2536,6 +2545,19 @@ impl RoomScreen {
         });
 
         self.show_timeline(cx);
+    }
+
+    pub fn hide_displayed_room(&mut self, cx: &mut Cx) {
+        if self.tl_state.is_some() {
+            self.hide_timeline();
+        }
+        self.room_name_id = None;
+        self.timeline_kind = None;
+        self.pinned_events.clear();
+        self.is_loaded = false;
+        self.all_rooms_loaded = false;
+        self.view.restore_status_view(cx, ids!(restore_status_view)).set_visible(cx, false);
+        self.redraw(cx);
     }
 
     /// Sends read receipts based on the current scroll position of the timeline.
@@ -2650,6 +2672,11 @@ impl RoomScreenRef {
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_room(cx, room_name_id, thread_root_event_id);
+    }
+
+    pub fn hide_displayed_room(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.hide_displayed_room(cx);
     }
 }
 
@@ -2792,12 +2819,82 @@ pub enum TimelineUpdate {
     LinkPreviewFetched,
 }
 
-thread_local! {
-    /// The global set of all timeline states, one entry per room.
-    ///
-    /// This is only useful when accessed from the main UI thread.
-    static TIMELINE_STATES: RefCell<HashMap<TimelineKind, TimelineUiState>> = 
-        RefCell::new(HashMap::new());
+mod timeline_lease {
+    use super::*;
+
+    enum LeaseState {
+        Available(TimelineUiState),
+        CheckedOut { owner: WidgetUid },
+    }
+
+    pub(super) enum Checkout {
+        Available(TimelineUiState),
+        CheckedOut { owner: WidgetUid },
+        Missing,
+    }
+
+    thread_local! {
+        /// The global store of all timeline states, one entry per room.
+        ///
+        /// This is only useful when accessed from the main UI thread.
+        static TIMELINE_STATES: RefCell<HashMap<TimelineKind, LeaseState>> =
+            RefCell::new(HashMap::new());
+    }
+
+    pub(super) fn checkout(kind: &TimelineKind, owner: WidgetUid) -> Checkout {
+        TIMELINE_STATES.with_borrow_mut(|states| {
+            match states.remove(kind) {
+                Some(LeaseState::Available(state)) => {
+                    states.insert(kind.clone(), LeaseState::CheckedOut { owner });
+                    Checkout::Available(state)
+                }
+                Some(LeaseState::CheckedOut { owner: current_owner }) => {
+                    states.insert(kind.clone(), LeaseState::CheckedOut { owner: current_owner });
+                    Checkout::CheckedOut { owner: current_owner }
+                }
+                None => Checkout::Missing,
+            }
+        })
+    }
+
+    pub(super) fn mark_checked_out(kind: &TimelineKind, owner: WidgetUid) {
+        TIMELINE_STATES.with_borrow_mut(|states| {
+            match states.insert(kind.clone(), LeaseState::CheckedOut { owner }) {
+                Some(LeaseState::Available(_)) => {
+                    error!("RoomScreen::show_timeline(): timeline {kind} unexpectedly had an available saved state while creating a new state");
+                }
+                Some(LeaseState::CheckedOut { owner: current_owner }) if current_owner != owner => {
+                    error!("RoomScreen::show_timeline(): timeline {kind} was already checked out by widget {current_owner:?}, but widget {owner:?} created a new state");
+                }
+                Some(LeaseState::CheckedOut { .. }) | None => {}
+            }
+        });
+    }
+
+    pub(super) fn return_state(owner: WidgetUid, state: TimelineUiState) {
+        let kind = state.kind.clone();
+        TIMELINE_STATES.with_borrow_mut(|states| {
+            match states.remove(&kind) {
+                Some(LeaseState::CheckedOut { owner: current_owner }) if current_owner == owner => {}
+                Some(LeaseState::CheckedOut { owner: current_owner }) => {
+                    error!("RoomScreen::save_state(): timeline {kind} was returned by widget {owner:?}, but it was checked out by widget {current_owner:?}");
+                }
+                Some(LeaseState::Available(_)) => {
+                    error!("RoomScreen::save_state(): timeline {kind} was returned by widget {owner:?}, but an available saved state already existed");
+                }
+                None => {
+                    log!("RoomScreen::save_state(): timeline {kind} was returned by widget {owner:?} without a checkout marker");
+                }
+            }
+            states.insert(kind, LeaseState::Available(state));
+        });
+    }
+
+    pub(super) fn clear_all() {
+        TIMELINE_STATES.with_borrow_mut(|states| {
+            states.clear();
+        });
+    }
 }
 
 /// The UI-side state of a single room's timeline, which is only accessed/updated by the UI thread.
@@ -4906,8 +5003,5 @@ impl MessageRef {
 /// which isn't used, but acts as a guarantee that this function
 /// must only be called by the main UI thread. 
 pub fn clear_timeline_states(_cx: &mut Cx) {
-    // Clear timeline states cache
-    TIMELINE_STATES.with_borrow_mut(|states| {
-        states.clear();
-    });
+    timeline_lease::clear_all();
 }
