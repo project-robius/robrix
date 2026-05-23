@@ -528,6 +528,17 @@ impl InviteScreen {
             restore_status_view.set_visible(cx, false);
         }
     }
+
+    pub fn hide_displayed_invite(&mut self, cx: &mut Cx) {
+        self.room_name_id = None;
+        self.info = None;
+        self.invite_state = InviteState::default();
+        self.has_shown_confirmation = false;
+        self.is_loaded = false;
+        self.all_rooms_loaded = false;
+        self.view.restore_status_view(cx, ids!(restore_status_view)).set_visible(cx, false);
+        self.redraw(cx);
+    }
 }
 
 impl InviteScreenRef {
@@ -535,6 +546,12 @@ impl InviteScreenRef {
     pub fn set_displayed_invite(&self, cx: &mut Cx, room_name_id: &RoomNameId) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_displayed_invite(cx, room_name_id);
+        }
+    }
+
+    pub fn hide_displayed_invite(&self, cx: &mut Cx) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.hide_displayed_invite(cx);
         }
     }
 }
