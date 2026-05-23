@@ -2834,6 +2834,7 @@ mod timeline_state_store {
     }
 
     /// Result of trying to take ownership of a timeline's UI state.
+    #[allow(clippy::large_enum_variant)]
     pub(super) enum TakeResult {
         /// A previously-saved state existed and has been taken by the caller.
         Taken(TimelineUiState),
