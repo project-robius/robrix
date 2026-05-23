@@ -2824,6 +2824,7 @@ mod timeline_state_store {
     use super::*;
 
     /// The current ownership state for a timeline's UI state.
+    #[allow(clippy::large_enum_variant)]
     enum StateEntry {
         /// No widget is displaying this timeline, so its state is parked here,
         /// and can be taken by another `RoomScreen` in the future.
