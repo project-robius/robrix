@@ -666,7 +666,7 @@ pub struct RoomScreen {
 impl Drop for RoomScreen {
     fn drop(&mut self) {
         // This ensures that the `TimelineUiState` instance owned by this room is *always* returned
-        // back to the timeline lease store, which ensures that its UI state(s) are not lost
+        // back to the timeline state store, which ensures that its UI state(s) are not lost
         // and that other RoomScreen instances can show this room in the future.
         // RoomScreen will be dropped whenever its widget instance is destroyed, e.g.,
         // when a Tab is closed or the app is resized to a different AdaptiveView layout.
@@ -2244,13 +2244,13 @@ impl RoomScreen {
         let room_id = kind.room_id().clone();
         let owner = self.widget_uid();
 
-        let (mut tl_state, mut is_first_time_being_loaded) = match timeline_lease::checkout(&kind, owner) {
-            timeline_lease::Checkout::Available(existing) => (existing, false),
-            timeline_lease::Checkout::CheckedOut { owner: current_owner } => {
-                error!("RoomScreen::show_timeline(): timeline {kind} is already checked out by widget {current_owner:?}");
+        let (mut tl_state, mut is_first_time_being_loaded) = match timeline_state_store::take(&kind, owner) {
+            timeline_state_store::TakeResult::Taken(existing) => (existing, false),
+            timeline_state_store::TakeResult::AlreadyTaken { owner: current_owner } => {
+                error!("RoomScreen::show_timeline(): timeline {kind} is already taken by widget {current_owner:?}");
                 return;
             }
-            timeline_lease::Checkout::Missing => {
+            timeline_state_store::TakeResult::Missing => {
                 let Some(timeline_endpoints) = take_timeline_endpoints(&kind) else {
                     if let Some(thread_root_event_id) = kind.thread_root_event_id() {
                         submit_async_request(MatrixRequest::CreateThreadTimeline {
@@ -2311,7 +2311,7 @@ impl RoomScreen {
                     latest_own_user_receipt: None,
                     tombstone_info,
                 };
-                timeline_lease::mark_checked_out(&tl_state.kind, owner);
+                timeline_state_store::mark_taken(&tl_state.kind, owner);
                 (tl_state, true)
             }
         };
@@ -2442,7 +2442,7 @@ impl RoomScreen {
     }
 
     /// Removes the current room's visual UI state from this widget
-    /// and saves it to the timeline lease store such that it can be restored later.
+    /// and saves it to the timeline state store such that it can be restored later.
     ///
     /// Note: after calling this function, the widget's `tl_state` will be `None`.
     fn save_state(&mut self) {
@@ -2461,8 +2461,8 @@ impl RoomScreen {
         tl.saved_state = state;
         // Clear room_members to avoid wasting memory (in case this room is never re-opened).
         tl.room_members = None;
-        // Store this Timeline's `TimelineUiState` in the lease store.
-        timeline_lease::return_state(self.widget_uid(), tl);
+        // Store this Timeline's `TimelineUiState` until a RoomScreen shows it again.
+        timeline_state_store::put_back(self.widget_uid(), tl);
     }
 
     /// Restores the previously-saved visual UI state of this room.
@@ -2819,77 +2819,96 @@ pub enum TimelineUpdate {
     LinkPreviewFetched,
 }
 
-mod timeline_lease {
+/// Stores timeline UI state that is not currently owned by a `RoomScreen`.
+mod timeline_state_store {
     use super::*;
 
-    enum LeaseState {
-        Available(TimelineUiState),
-        CheckedOut { owner: WidgetUid },
+    /// The current ownership state for a timeline's UI state.
+    enum StateEntry {
+        /// No widget is displaying this timeline, so its state is parked here,
+        /// and can be taken by another `RoomScreen` in the future.
+        Stored(TimelineUiState),
+        /// A `RoomScreen` is displaying this timeline, so it's not available.
+        Taken { owner: WidgetUid },
     }
 
-    pub(super) enum Checkout {
-        Available(TimelineUiState),
-        CheckedOut { owner: WidgetUid },
+    /// Result of trying to take ownership of a timeline's UI state.
+    pub(super) enum TakeResult {
+        /// A previously-saved state existed and has been taken by the caller.
+        Taken(TimelineUiState),
+        /// Another widget already took this timeline state and is displaying it.
+        AlreadyTaken { owner: WidgetUid },
+        /// No saved state exists, so a new `TimelineUiState` can be created
+        /// from newly-available timeline endpoints.
         Missing,
     }
 
     thread_local! {
-        /// The global store of all timeline states, one entry per room.
-        ///
-        /// This is only useful when accessed from the main UI thread.
-        static TIMELINE_STATES: RefCell<HashMap<TimelineKind, LeaseState>> =
-            RefCell::new(HashMap::new());
+        /// All timeline states (for timelines that have been shown),
+        /// one per room/thread timeline. Only relevant from the main UI thread.
+        static TIMELINE_STATES: RefCell<HashMap<TimelineKind, StateEntry>> = RefCell::new(HashMap::new());
     }
 
-    pub(super) fn checkout(kind: &TimelineKind, owner: WidgetUid) -> Checkout {
+    /// Attempts to take ownership of the saved UI state for `kind`.
+    pub(super) fn take(kind: &TimelineKind, owner: WidgetUid) -> TakeResult {
         TIMELINE_STATES.with_borrow_mut(|states| {
             match states.remove(kind) {
-                Some(LeaseState::Available(state)) => {
-                    states.insert(kind.clone(), LeaseState::CheckedOut { owner });
-                    Checkout::Available(state)
+                Some(StateEntry::Stored(state)) => {
+                    states.insert(kind.clone(), StateEntry::Taken { owner });
+                    TakeResult::Taken(state)
                 }
-                Some(LeaseState::CheckedOut { owner: current_owner }) => {
-                    states.insert(kind.clone(), LeaseState::CheckedOut { owner: current_owner });
-                    Checkout::CheckedOut { owner: current_owner }
+                Some(StateEntry::Taken { owner: current_owner }) => {
+                    states.insert(kind.clone(), StateEntry::Taken { owner: current_owner });
+                    TakeResult::AlreadyTaken { owner: current_owner }
                 }
-                None => Checkout::Missing,
+                None => TakeResult::Missing,
             }
         })
     }
 
-    pub(super) fn mark_checked_out(kind: &TimelineKind, owner: WidgetUid) {
+    /// Records that `owner` has created and taken ownership of a new timeline state.
+    ///
+    /// This is only supposed to be used when a new timeline is created by taking
+    /// the backend timeline endpoints.
+    pub(super) fn mark_taken(kind: &TimelineKind, owner: WidgetUid) {
         TIMELINE_STATES.with_borrow_mut(|states| {
-            match states.insert(kind.clone(), LeaseState::CheckedOut { owner }) {
-                Some(LeaseState::Available(_)) => {
-                    error!("RoomScreen::show_timeline(): timeline {kind} unexpectedly had an available saved state while creating a new state");
+            match states.insert(kind.clone(), StateEntry::Taken { owner }) {
+                Some(StateEntry::Stored(_)) => {
+                    error!("RoomScreen::show_timeline(): timeline {kind} unexpectedly had a stored state while creating a new state");
                 }
-                Some(LeaseState::CheckedOut { owner: current_owner }) if current_owner != owner => {
-                    error!("RoomScreen::show_timeline(): timeline {kind} was already checked out by widget {current_owner:?}, but widget {owner:?} created a new state");
+                Some(StateEntry::Taken { owner: current_owner }) if current_owner != owner => {
+                    error!("RoomScreen::show_timeline(): timeline {kind} was already taken by widget {current_owner:?}, but widget {owner:?} created a new state");
                 }
-                Some(LeaseState::CheckedOut { .. }) | None => {}
+                Some(StateEntry::Taken { .. }) | None => {}
             }
         });
     }
 
-    pub(super) fn return_state(owner: WidgetUid, state: TimelineUiState) {
+    /// Puts a timeline's UI state back into the store after a `RoomScreen` hides it,
+    /// which allows a future RoomScreen to take it again.
+    pub(super) fn put_back(owner: WidgetUid, state: TimelineUiState) {
         let kind = state.kind.clone();
         TIMELINE_STATES.with_borrow_mut(|states| {
             match states.remove(&kind) {
-                Some(LeaseState::CheckedOut { owner: current_owner }) if current_owner == owner => {}
-                Some(LeaseState::CheckedOut { owner: current_owner }) => {
-                    error!("RoomScreen::save_state(): timeline {kind} was returned by widget {owner:?}, but it was checked out by widget {current_owner:?}");
+                Some(StateEntry::Taken { owner: current_owner }) if current_owner == owner => {}
+                Some(StateEntry::Taken { owner: current_owner }) => {
+                    error!("RoomScreen::save_state(): timeline {kind} was put back by widget {owner:?}, but it was taken by widget {current_owner:?}");
                 }
-                Some(LeaseState::Available(_)) => {
-                    error!("RoomScreen::save_state(): timeline {kind} was returned by widget {owner:?}, but an available saved state already existed");
+                Some(StateEntry::Stored(_)) => {
+                    error!("RoomScreen::save_state(): timeline {kind} was put back by widget {owner:?}, but a stored state already existed");
                 }
                 None => {
-                    log!("RoomScreen::save_state(): timeline {kind} was returned by widget {owner:?} without a checkout marker");
+                    log!("RoomScreen::save_state(): timeline {kind} was put back by widget {owner:?} without a taken marker");
                 }
             }
-            states.insert(kind, LeaseState::Available(state));
+            states.insert(kind, StateEntry::Stored(state));
         });
     }
 
+    /// Drops every stored timeline state and `Taken` marker.
+    ///
+    /// This is used when all timeline UI state is being reset globally, such as
+    /// during logout or session teardown.
     pub(super) fn clear_all() {
         TIMELINE_STATES.with_borrow_mut(|states| {
             states.clear();
@@ -5003,5 +5022,5 @@ impl MessageRef {
 /// which isn't used, but acts as a guarantee that this function
 /// must only be called by the main UI thread. 
 pub fn clear_timeline_states(_cx: &mut Cx) {
-    timeline_lease::clear_all();
+    timeline_state_store::clear_all();
 }

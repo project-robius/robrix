@@ -603,7 +603,7 @@ impl Widget for HomeScreen {
                     action.as_widget_action().cast()
                 {
                     let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
-                    self.hide_released_stack_navigation_view(cx, &stack_navigation, view_id);
+                    self.hide_screen_in_released_stack_view(cx, &stack_navigation, view_id);
                 }
 
                 // When a stack navigation pop is requested (back button pressed),
@@ -668,7 +668,11 @@ impl HomeScreen {
             )
     }
 
-    fn configure_mobile_stack_navigation_view(
+    /// Populates a `StackNavigationView` with the given room/screen's info.
+    ///
+    /// Returns the LiveId of the view that should be pushed onto or revealed by
+    /// the stack navigation widget.
+    fn populate_mobile_stack_view(
         &mut self,
         cx: &mut Cx,
         stack_navigation: &StackNavigationRef,
@@ -726,16 +730,13 @@ impl HomeScreen {
         Some(view_id)
     }
 
-    fn hide_released_stack_navigation_view(
+    /// Hides the screen within a stack view that was released by the StackNavigation widget.
+    fn hide_screen_in_released_stack_view(
         &mut self,
         cx: &mut Cx,
         stack_navigation: &StackNavigationRef,
         view_id: LiveId,
     ) {
-        // A ViewReleased action can arrive after this StackNavigationView has
-        // already been reused for a new transition. In that case, the visible
-        // view is displaying a newer screen and must not be hidden by the stale
-        // release.
         if stack_navigation.stack_view_ids().contains(&view_id) {
             return;
         }
@@ -779,16 +780,13 @@ impl HomeScreen {
 
         let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
         if stack_navigation.is_transitioning() {
-            log!("Ignoring mobile room selection while StackNavigation is transitioning");
             return;
         }
         let has_current_mobile_screen = stack_navigation.current_view().is_some();
-
         if has_current_mobile_screen && app_state.selected_room.as_ref().is_some_and(|c| c == &sr) {
             return;
         }
-
-        let Some(view_id) = self.configure_mobile_stack_navigation_view(cx, &stack_navigation, &sr) else {
+        let Some(view_id) = self.populate_mobile_stack_view(cx, &stack_navigation, &sr) else {
             return;
         };
 
@@ -805,28 +803,26 @@ impl HomeScreen {
 
     /// Pops the current mobile screen, revealing the previous screen or the room list root.
     fn pop_selected_screen_view(&mut self, cx: &mut Cx, app_state: &mut AppState) {
-        let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
-        if stack_navigation.is_transitioning() {
+        let stack_nav = self.view.stack_navigation(cx, ids!(view_stack));
+        if stack_nav.is_transitioning() {
             return;
         }
-
         let Some(current_screen) = app_state.selected_room.take() else {
             return;
         };
-        let previous_screen = self.mobile_screen_history.pop();
-        match previous_screen {
-            Some(previous_screen) => {
-                let Some(view_id) = self.configure_mobile_stack_navigation_view(cx, &stack_navigation, &previous_screen) else {
+        match self.mobile_screen_history.pop() {
+            Some(previous) => {
+                let Some(view_id) = self.populate_mobile_stack_view(cx, &stack_nav, &previous) else {
                     app_state.selected_room = Some(current_screen);
-                    self.mobile_screen_history.push(previous_screen);
+                    self.mobile_screen_history.push(previous);
                     return;
                 };
-                app_state.selected_room = Some(previous_screen);
-                stack_navigation.pop_to_view(cx, view_id);
+                app_state.selected_room = Some(previous);
+                stack_nav.pop_to_view(cx, view_id);
             }
             None => {
                 app_state.selected_room = None;
-                stack_navigation.pop_to_root(cx);
+                stack_nav.pop_to_root(cx);
             }
         }
         self.view.redraw(cx);
