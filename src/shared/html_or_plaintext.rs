@@ -1,11 +1,13 @@
 //! A `HtmlOrPlaintext` view can display either plaintext or rich HTML content.
 
+use std::sync::Arc;
+
 use makepad_widgets::*;
-use matrix_sdk::{ruma::{matrix_uri::MatrixId, MatrixToUri, MatrixUri, OwnedMxcUri}, OwnedServerName};
+use matrix_sdk::{ruma::{matrix_uri::MatrixId, MatrixToUri, MatrixUri, RoomOrAliasId}, OwnedServerName};
 
-use crate::{avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, sliding_sync::{current_user_id, submit_async_request, MatrixRequest}, utils};
+use crate::{avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, room_preview_cache::{self, CachedRoomPreview}, sliding_sync::current_user_id, utils};
 
-use super::avatar::AvatarWidgetExt;
+use super::avatar::{AvatarState, AvatarWidgetExt};
 
 /// The color of the text used to print the spoiler reason before the hidden text.
 const COLOR_SPOILER_REASON: Vec4 = vec4(0.6, 0.6, 0.6, 1.0);
@@ -166,8 +168,8 @@ script_mod! {
         heading_margin: Inset{ top: 1.0, bottom: 0.1 }
         paragraph_margin: Inset{ top: 0.33, bottom: 0.33 }
 
-        inline_code_padding: Inset{top: 3, bottom: 3, left: 4, right: 4 }
-        inline_code_margin: Inset{ left: 3, right: 3, bottom: 2, top: 2 }
+        inline_code_padding: Inset{top: 3, bottom: 3, left: 5, right: 5 }
+        inline_code_margin: Inset{ left: 0, right: 0, bottom: 2, top: 2 }
 
         font := mod.widgets.MatrixHtmlSpan { }
         span := mod.widgets.MatrixHtmlSpan { }
@@ -305,12 +307,12 @@ impl RobrixHtmlLink {
         if let Some(mut pill) = self.matrix_link_pill(cx, ids!(matrix_link)).borrow_mut() {
             pill.populate_pill(cx, self.url.clone(), matrix_id, via, self.text.as_ref());
         }
-        let mlv_ref = self.view(cx, ids!(matrix_link_view));
-        mlv_ref.set_visible(cx, true);
-        let Some(mut mlv) = mlv_ref.borrow_mut() else {
+        let matrix_link_view_ref = self.view(cx, ids!(matrix_link_view));
+        matrix_link_view_ref.set_visible(cx, true);
+        let Some(mut matrix_link_view) = matrix_link_view_ref.borrow_mut() else {
             return DrawStep::done();
         };
-        mlv.draw_walk(cx, scope, walk)
+        matrix_link_view.draw_walk(cx, scope, walk)
     }
 
     /// Draws the inner `HtmlLink` as inline wrapping text.
@@ -345,47 +347,25 @@ impl RobrixHtmlLink {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-pub enum MatrixLinkPillState {
-    Requested,
-    Loaded {
-        matrix_id: MatrixId,
-        name: String,
-        avatar_url: Option<OwnedMxcUri>,
-    },
-    #[default]
-    None,
-}
-
 /// A pill-shaped widget that shows a Matrix link as an avatar and a title.
 ///
-/// This can be a link to a user, a room, or a message in a room.
+/// This can be a link to a user, a room, or an event in a room.
 #[derive(Script, ScriptHook, Widget)]
 struct MatrixLinkPill {
     #[deref] view: View,
 
     #[rust] matrix_id: Option<MatrixId>,
     #[rust] via: Vec<OwnedServerName>,
-    #[rust] state: MatrixLinkPillState,
     #[rust] url: String,
 }
 
 impl Widget for MatrixLinkPill {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
-        if let Event::Actions(actions) = event {
-            for action in actions {
-                if let Some(loaded @ MatrixLinkPillState::Loaded { matrix_id, .. }) = action.downcast_ref() {
-                    if self.matrix_id.as_ref() == Some(matrix_id) {
-                        self.state = loaded.clone();
-                        self.redraw(cx);
-                    }
-                }
+        if matches!(event, Event::Signal) {
+            room_preview_cache::process_room_preview_updates(cx);
+            if self.matrix_id.is_some() {
+                self.redraw(cx);
             }
-        }
-
-        // Redraw upon a UI Signal to catch updates to a user profile.
-        if matches!(event, Event::Signal) && matches!(self.matrix_id, Some(MatrixId::User(_))) {
-            self.redraw(cx);
         }
 
         // Handle hover (to set the cursor) and click in a single hit-test,
@@ -417,13 +397,6 @@ impl Widget for MatrixLinkPill {
         self.view.draw_walk(cx, scope, walk)
     }
 
-    fn text(&self) -> String {
-        match &self.state {
-            MatrixLinkPillState::Loaded { name, .. } => name.clone(),
-            _ => String::new(),
-        }
-    }
-
     fn set_text(&mut self, cx: &mut Cx, v: &str) {
         self.label(cx, ids!(title)).set_text(cx, v);
     }
@@ -453,39 +426,46 @@ impl MatrixLinkPill {
 
         // Handle a user ID link by querying the user profile cache.
         if let MatrixId::User(user_id) = matrix_id {
-
-            let (name, avatar_uri) = match user_profile_cache::with_user_profile(
+            let (name, avatar_state) = match user_profile_cache::with_user_profile(
                 cx,
                 user_id.clone(),
                 None,
                 true,
                 |profile, _| { (profile.displayable_name().to_owned(), profile.avatar_state.clone()) }
             ) {
-                Some((name, avatar)) => (name, avatar.uri().cloned()),
-                None => (user_id.to_string(), None),
+                Some(pair) => pair,
+                None => (user_id.to_string(), AvatarState::Unknown),
             };
             self.set_text(cx, &name);
-            self.populate_avatar(cx, avatar_uri.as_ref(), &name);
+            self.populate_avatar(cx, &avatar_state, &name);
             return;
         }
 
-        // Handle room ID or alias
-        match &self.state {
-            MatrixLinkPillState::Loaded { name, avatar_url, .. } => {
+        // Handle a room ID, alias, or event link by querying the room preview cache.
+        let room_or_alias_id: Option<&RoomOrAliasId> = match matrix_id {
+            MatrixId::Room(room_id) => Some((&**room_id).into()),
+            MatrixId::RoomAlias(alias) => Some((&**alias).into()),
+            MatrixId::Event(room_or_alias, _) => Some(room_or_alias),
+            _ => None,
+        };
+        if let Some(room_or_alias_id) = room_or_alias_id {
+            if let CachedRoomPreview::Loaded { room_name_id, room_avatar } =
+                room_preview_cache::get_or_fetch_room_preview(cx, room_or_alias_id, via)
+            {
+                // `RoomNameId::Display` would print "Room ID !xyz:server" for
+                // empty names; the pill should show just the bare room ID
+                // instead, matching the pre-cache behavior.
+                let resolved_name = if room_name_id.is_empty() {
+                    room_name_id.room_id().as_str().to_owned()
+                } else {
+                    room_name_id.to_string()
+                };
                 // For @room mentions, show "@room" as the title, not the room name.
-                let display_name = if is_room_mention { "@room" } else { name.as_str() };
+                let display_name = if is_room_mention { "@room" } else { resolved_name.as_str() };
                 self.label(cx, ids!(title)).set_text(cx, display_name);
-                self.populate_avatar(cx, avatar_url.as_ref(), display_name);
+                self.populate_avatar(cx, &room_avatar, display_name);
                 return;
             }
-            MatrixLinkPillState::None => {
-                submit_async_request(MatrixRequest::GetMatrixRoomLinkPillInfo {
-                    matrix_id: matrix_id.clone(),
-                    via: via.to_vec(),
-                });
-                self.state = MatrixLinkPillState::Requested;
-            }
-            MatrixLinkPillState::Requested => { }
         }
         // While waiting for the async request to complete, show "@room" or the room ID/alias.
         let fallback_name = if is_room_mention {
@@ -499,36 +479,40 @@ impl MatrixLinkPill {
             }
         };
         self.set_text(cx, &fallback_name);
-        self.populate_avatar(cx, None, &fallback_name);
+        self.populate_avatar(cx, &AvatarState::Unknown, &fallback_name);
     }
 
-    fn populate_avatar(&self, cx: &mut Cx, avatar_url: Option<&OwnedMxcUri>, display_name: &str) {
+    /// Renders the pill avatar from the given [`AvatarState`], falling back to
+    /// a text avatar built from `display_name` when no image is available.
+    ///
+    /// Handles all paths the pill needs:
+    /// * `Loaded(bytes)` — paint bytes directly (room link cache).
+    /// * `Known(Some(uri))` — fetch bytes via [`avatar_cache`] (user link).
+    /// * `Known(None)` / `Unknown` / `Failed` — text fallback.
+    fn populate_avatar(&self, cx: &mut Cx, avatar: &AvatarState, display_name: &str) {
         let avatar_ref = self.avatar(cx, ids!(avatar));
-        if let Some(avatar_url) = avatar_url {
-            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, avatar_url) {
-                let res = avatar_ref.show_image(
-                    cx,
-                    None, // Don't make this avatar clickable
-                    |cx, img_ref| utils::load_png_or_jpg(&img_ref, cx, &data),
-                );
-                if res.is_ok() {
-                    return;
-                }
+        let bytes: Option<Arc<[u8]>> = match avatar {
+            AvatarState::Loaded(data) => Some(data.clone()),
+            AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, uri) {
+                AvatarCacheEntry::Loaded(data) => Some(data),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(data) = bytes {
+            let res = avatar_ref.show_image(
+                cx,
+                None, // Don't make this avatar clickable
+                |cx, img_ref| utils::load_png_or_jpg(&img_ref, cx, &data),
+            );
+            if res.is_ok() {
+                return;
             }
         }
         avatar_ref.show_text(cx, None, None, display_name);
     }
 }
 
-impl MatrixLinkPillRef {
-    pub fn get_matrix_id(&self) -> Option<MatrixId> {
-        self.borrow().and_then(|inner| inner.matrix_id.clone())
-    }
-
-    pub fn get_via(&self) -> Vec<OwnedServerName> {
-        self.borrow().map(|inner| inner.via.clone()).unwrap_or_default()
-    }
-}
 
 /// A widget used to display a single HTML `<span>` tag or a `<font>` tag.
 #[derive(Script, Widget)]

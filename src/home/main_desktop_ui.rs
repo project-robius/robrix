@@ -1,7 +1,7 @@
 use makepad_widgets::*;
 use ruma::OwnedRoomId;
 use tokio::sync::Notify;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, utils::RoomNameId};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
@@ -17,8 +17,7 @@ script_mod! {
             height: Fill,
             padding: 0,
             spacing: 0,
-            // Align the dock with the RoomFilterInputBar. Not sure why we need this...
-            margin: Inset{left: 1.75}
+            margin: 0
 
             tab_bar +: {
                 CloseableTab := mod.widgets.RobrixTab { closeable: true }
@@ -158,12 +157,7 @@ impl MainDesktopUI {
         }
 
         // Create a new tab for the room
-        let kind = match &room {
-            SelectedRoom::JoinedRoom { .. }
-            | SelectedRoom::Thread { .. } => id!(room_screen),
-            SelectedRoom::InvitedRoom { .. } => id!(invite_screen),
-            SelectedRoom::Space { .. } => id!(space_lobby_screen),
-        };
+        let kind = room.dock_kind();
 
         // Insert the tab after the currently-selected room's tab, if possible.
         // Otherwise, insert it after the home tab, which should always exist.
@@ -260,7 +254,7 @@ impl MainDesktopUI {
     /// Closes all tabs
     pub fn close_all_tabs(&mut self, cx: &mut Cx) {
         let dock = self.view.dock(cx, ids!(dock));
-        for tab_id in self.open_rooms.keys() {        
+        for tab_id in self.open_rooms.keys() {
             dock.close_tab(cx, *tab_id);
         }
 
@@ -272,6 +266,7 @@ impl MainDesktopUI {
         self.tab_to_close = None;
         self.room_order.clear();
         self.most_recently_selected_room = None;
+        cx.action(MainDesktopUiAction::SaveDockIntoAppState);
     }
 
     /// Replaces an invite with a joined room in the dock.
@@ -315,9 +310,6 @@ impl MainDesktopUI {
     /// Saves a copy of the current UI state of the dock into the given app state,
     /// properly accounting for which space is currently selected.
     fn save_dock_state_to(&mut self, cx: &mut Cx, app_state: &mut AppState) {
-        if self.open_rooms.is_empty() {
-            return;
-        } 
         let saved_dock_state = self.save_dock_state(cx);
         if let Some(space_id) = self.selected_space.as_ref() {
             app_state.saved_dock_state_per_space.insert(
@@ -346,37 +338,66 @@ impl MainDesktopUI {
     /// defined in the DSL: one splitter with the RoomsList on the left and a Welcome tab on the right.
     fn load_dock_state_from(&mut self, cx: &mut Cx, app_state: &mut AppState) {
         let dock = self.view.dock(cx, ids!(dock));
-        let to_restore_opt = if let Some(ss) = self.selected_space.as_ref() {
+
+        let saved_ref: Option<&SavedDockState> = if let Some(ss) = self.selected_space.as_ref() {
             app_state.saved_dock_state_per_space.get(ss)
         } else {
             Some(&app_state.saved_dock_state_home)
         };
-        let to_restore = match to_restore_opt {
-            None => &self.default_layout,
-            Some(sds) if sds.open_rooms.is_empty() => &self.default_layout,
-            Some(sds) => sds,
-        };
+        let space_label = self.selected_space.as_ref()
+            .map(|s| format!("space {s}"))
+            .unwrap_or_else(|| "home".to_string());
+        let (to_restore, recreate_from_room_order): (SavedDockState, Option<Vec<SelectedRoom>>) =
+            match saved_ref {
+                None => (self.default_layout.clone(), None),
+                Some(sds) if sds.open_rooms.is_empty()
+                    && sds.room_order.is_empty()
+                    && sds.selected_room.is_none() => (self.default_layout.clone(), None),
+                Some(sds) => {
+                    let mut candidate = sds.clone();
+                    match dock_state_repair::validate_and_repair_dock_state(&mut candidate) {
+                        Ok(false) => (candidate, None),
+                        Ok(true) => {
+                            log!("Repaired corrupt saved dock state for {space_label}.");
+                            // Update the app state with the repaired dock state to ensure that
+                            // the next save operation will persist valid state to storage.
+                            if let Some(ss) = self.selected_space.as_ref() {
+                                app_state.saved_dock_state_per_space.insert(ss.clone(), candidate.clone());
+                            } else {
+                                app_state.saved_dock_state_home = candidate.clone();
+                            }
+                            (candidate, None)
+                        }
+                        Err(reason) => {
+                            error!(
+                                "Saved dock state for {space_label} is unrepairable ({reason}); \
+                                 falling back to default layout and re-adding tabs from saved room_order."
+                            );
+                            let original_selected = sds.selected_room.clone();
+                            let original_order = sds.room_order.clone();
+                            let mut fallback = self.default_layout.clone();
+                            fallback.selected_room = original_selected;
+                            (fallback, Some(original_order))
+                        }
+                    }
+                }
+            };
+
         let SavedDockState { dock_items, open_rooms, room_order, selected_room } = to_restore;
 
-        self.room_order = room_order.clone();
-        self.open_rooms = open_rooms.clone();
+        self.room_order = room_order;
+        self.open_rooms = open_rooms;
 
-        if let Some(mut dock) = dock.borrow_mut() {
-            dock.load_state(cx, dock_items.clone());
-            // Lazily populate the content within each restored dock tab:
-            // only initialize the currently-visible tabs (selected in each pane),
-            // and defer the rest until the user actually clicks on their tab.
-            // This avoids an O(N) cost of calling `set_displayed_room()` for
-            // every open tab, which would block the UI thread for several seconds
-            // when restoring the dock (e.g., after switching from Mobile to Desktop view).
-            for (tab_id, widget) in dock.visible_items() {
-                Self::init_tab_widget(cx, &self.open_rooms, &tab_id, &widget);
+        dock.load_state(cx, dock_items);
+        // Lazily populate the dock content to avoid initializing tabs that aren't visible.
+        self.init_all_visible_tabs(cx);
+
+        // If using the fallback, we re-add each tab from room_order so the user's opened rooms aren't lost.
+        if let Some(orig_room_order) = recreate_from_room_order {
+            for room in orig_room_order {
+                self.focus_or_create_tab(cx, room);
             }
-        } else {
-            error!("BUG: failed to borrow dock widget to restore state upon LoadDockFromAppState action.");
-            return;
         }
-        // Note: the borrow of `dock` must end here *before* we call `self.focus_or_create_tab()`.
 
         // Now that we've loaded the dock content, we can re-select the selected room.
         let selected_room = selected_room.clone();
@@ -440,10 +461,9 @@ impl MainDesktopUI {
         if !self.open_rooms.contains_key(&tab_id) {
             return;
         }
-        let dock = self.view.dock(cx, ids!(dock));
-        let Some(mut dock) = dock.borrow_mut() else { return };
-        if let Some((_, (_, widget))) = dock.items().iter().find(|(id, _)| **id == tab_id) {
-            Self::init_tab_widget(cx, &self.open_rooms, &tab_id, widget);
+        let widget = self.view.dock(cx, ids!(dock)).item(tab_id);
+        if !widget.is_empty() {
+            Self::init_tab_widget(cx, &self.open_rooms, &tab_id, &widget);
         }
     }
 
@@ -594,4 +614,546 @@ pub enum MainDesktopUiAction {
     CloseAllTabs {
         on_close_all: Arc<Notify>,
     },
+}
+
+/// Saved dock state validation, repair, and helpers for translating
+/// `SelectedRoom`s into dock items.
+mod dock_state_repair {
+    use super::*;
+
+    /// Checks the given saved dock state and makes repairs in place.
+    ///
+    /// Removes orphaned, duplicated, and dangling dock item references while preserving
+    /// all open rooms that can still be reconstructed.
+    ///
+    /// * Returns `Ok` if we successfully repaired the dock state (or it was already good),
+    /// * Returns `Err` is the state is unrepairable, meaning we should fall back to the default.
+    pub(super) fn validate_and_repair_dock_state(saved: &mut SavedDockState) -> Result<bool, &'static str> {
+        let root = id!(root);
+        let home_tab = id!(home_tab);
+        let main_tabs_dsl = id!(main_tabs);
+        let rooms_sidebar_tab = id!(rooms_sidebar_tab);
+        let rooms_sidebar_tabs = id!(rooms_sidebar_tabs);
+
+        let mut repaired = false;
+
+        repaired |= ensure_fixed_tab_item(
+            saved,
+            home_tab,
+            DockItem::Tab {
+                name: "Home".to_string(),
+                template: id!(PermanentTab),
+                kind: id!(welcome_screen),
+            },
+        )?;
+        repaired |= ensure_fixed_tab_item(
+            saved,
+            rooms_sidebar_tab,
+            DockItem::Tab {
+                name: "Rooms".to_string(),
+                template: id!(PermanentTab),
+                kind: id!(rooms_sidebar),
+            },
+        )?;
+        if !any_tabs_contains(&saved.dock_items, home_tab) {
+            repaired |= ensure_tab_ref_in_tabs_container(saved, main_tabs_dsl, home_tab)?;
+        }
+        repaired |= ensure_tab_ref_in_tabs_container(saved, rooms_sidebar_tabs, rooms_sidebar_tab)?;
+
+        // Rebuild missing bookkeeping from the more redundant fields. Older corrupt
+        // snapshots often have a valid room_order but an incomplete open_rooms map.
+        let known_rooms: Vec<SelectedRoom> = saved.room_order.iter()
+            .chain(saved.selected_room.iter())
+            .cloned()
+            .collect();
+        for room in known_rooms {
+            let tab_id = room.tab_id();
+            if saved.open_rooms.get(&tab_id) != Some(&room) {
+                saved.open_rooms.insert(tab_id, room);
+                repaired = true;
+            }
+        }
+        if let Some(sr) = saved.selected_room.clone()
+            && !saved.room_order.iter().any(|r| r == &sr)
+        {
+            saved.room_order.push(sr);
+            repaired = true;
+        }
+
+        // If an open room is still known semantically but its DockItem::Tab was lost,
+        // recreate that tab item so it can be rescued into the main tab bar.
+        for (&tab_id, room) in saved.open_rooms.iter() {
+            match saved.dock_items.get(&tab_id) {
+                Some(DockItem::Tab { .. }) => {}
+                None => {
+                    saved.dock_items.insert(tab_id, dock_tab_for_selected_room(room));
+                    repaired = true;
+                }
+                Some(_) => return Err("open room tab id collides with a dock container"),
+            }
+        }
+
+        let (mut tree_order, mut reachable) = walk_dock_tree(&saved.dock_items)?;
+
+        // The main-tabs container is the first reachable `Tabs` (in DFS order) that
+        // holds `home_tab`.
+        let Some(main_tabs_id) = find_tabs_containing(&saved.dock_items, &tree_order, home_tab) else {
+            return Err("no reachable main-tabs container (holding home_tab) was found");
+        };
+        if main_tabs_id == root {
+            promote_root_tabs_to_default_split(
+                saved,
+                main_tabs_dsl,
+                rooms_sidebar_tabs,
+                rooms_sidebar_tab,
+            )?;
+            repaired = true;
+            (tree_order, _) = walk_dock_tree(&saved.dock_items)?;
+        } else if main_tabs_id != main_tabs_dsl {
+            // Normalize the home-holding tab container to id!(main_tabs). If id!(main_tabs)
+            // is already a reachable different container, swap the two IDs instead of
+            // deleting the reachable container's content.
+            normalize_main_tabs_id(saved, main_tabs_id, main_tabs_dsl, &reachable)?;
+            repaired = true;
+            (tree_order, _) = walk_dock_tree(&saved.dock_items)?;
+        }
+
+        // Dedupe in tree (DFS) order so the root-most reference wins. Otherwise
+        // find_tab_bar_of_tab picks an arbitrary HashMap entry and new tabs can
+        // land in the wrong container.
+        let mut referenced_tabs = HashSet::new();
+        repaired |= remove_bad_and_duplicate_tab_refs(saved, &tree_order, &mut referenced_tabs);
+
+        // Rescue open room tabs that are no longer referenced by any reachable Tabs
+        // container. Recreated missing DockItem::Tab entries from above are handled here.
+        repaired |= append_unreferenced_open_rooms_to_main_tabs(saved, main_tabs_dsl, &mut referenced_tabs);
+        (tree_order, reachable) = walk_dock_tree(&saved.dock_items)?;
+
+        // Collapse reachable empty Tabs out of the tree. Dedupe can strip the only
+        // tab from a container; if we leave it in place, Makepad renders it as an
+        // empty pane. main_tabs and the fixed sidebar tabs container are preserved.
+        loop {
+            let empty_id = tree_order.iter()
+                .find(|id| **id != root
+                    && **id != main_tabs_dsl
+                    && **id != rooms_sidebar_tabs
+                    && matches!(
+                        saved.dock_items.get(*id),
+                        Some(DockItem::Tabs { tabs, .. }) if tabs.is_empty()
+                    )
+                )
+                .copied();
+            let Some(empty_id) = empty_id else { break };
+            collapse_tabs_container(saved, empty_id, main_tabs_dsl, rooms_sidebar_tabs)?;
+            repaired = true;
+            (tree_order, reachable) = walk_dock_tree(&saved.dock_items)?;
+        }
+
+        // Drop anything still unreachable, such as orphaned Tabs/Splitter items.
+        let len_before = saved.dock_items.len();
+        saved.dock_items.retain(|id, _| reachable.contains(id));
+        if saved.dock_items.len() != len_before {
+            repaired = true;
+            (tree_order, _) = walk_dock_tree(&saved.dock_items)?;
+        }
+
+        if find_tabs_containing(&saved.dock_items, &tree_order, home_tab) != Some(main_tabs_dsl) {
+            return Err("home_tab is not in the reachable main-tabs container");
+        }
+        if find_tabs_containing(&saved.dock_items, &tree_order, rooms_sidebar_tab).is_none() {
+            return Err("rooms sidebar tab is not reachable");
+        }
+
+        // Collect the post-cleanup set of tab IDs reachable from the tree, used to
+        // prune open_rooms below. No new dedupe needed; collapse/drop only remove
+        // containers, they can't introduce duplicate tab refs.
+        referenced_tabs.clear();
+        for &id in &tree_order {
+            if let Some(DockItem::Tabs { tabs, .. }) = saved.dock_items.get(&id) {
+                referenced_tabs.extend(tabs.iter().copied());
+            }
+        }
+
+        // Adjust the indices for the selected room.
+        if let Some(sel_id) = saved.selected_room.as_ref().map(|sr| sr.tab_id())
+            && let Some(DockItem::Tabs { tabs, selected, .. }) =
+                saved.dock_items.get_mut(&main_tabs_dsl)
+            && let Some(idx) = tabs.iter().position(|t| *t == sel_id)
+            && *selected != idx
+        {
+            *selected = idx;
+            repaired = true;
+        }
+
+        let len_before = saved.open_rooms.len();
+        saved.open_rooms.retain(|id, _| referenced_tabs.contains(id));
+        repaired |= saved.open_rooms.len() != len_before;
+
+        // Drop room_order entries whose tab is gone or duplicated, then append any
+        // open_rooms entries that aren't in the order yet (sorted by tab id for stability).
+        let mut seen_room_tabs = HashSet::with_capacity(saved.room_order.len());
+        let len_before = saved.room_order.len();
+        saved.room_order.retain(|sr| {
+            saved.open_rooms.contains_key(&sr.tab_id()) && seen_room_tabs.insert(sr.tab_id())
+        });
+        let mut missing: Vec<SelectedRoom> = saved.open_rooms.values()
+            .filter(|r| !seen_room_tabs.contains(&r.tab_id()))
+            .cloned()
+            .collect();
+        missing.sort_by_key(|r| r.tab_id().0);
+        repaired |= saved.room_order.len() != len_before || !missing.is_empty();
+        saved.room_order.extend(missing);
+
+        repaired |= saved.selected_room
+            .take_if(|sr| !saved.open_rooms.contains_key(&sr.tab_id()))
+            .is_some();
+
+        Ok(repaired)
+    }
+
+    fn dock_tab_for_selected_room(room: &SelectedRoom) -> DockItem {
+        DockItem::Tab {
+            name: room.display_name(),
+            template: id!(CloseableTab),
+            kind: room.dock_kind(),
+        }
+    }
+
+    fn ensure_fixed_tab_item(
+        saved: &mut SavedDockState,
+        tab_id: LiveId,
+        tab_item: DockItem,
+    ) -> Result<bool, &'static str> {
+        match saved.dock_items.get(&tab_id) {
+            Some(DockItem::Tab { .. }) => Ok(false),
+            None => {
+                saved.dock_items.insert(tab_id, tab_item);
+                Ok(true)
+            }
+            Some(_) => Err("fixed tab id collides with a dock container"),
+        }
+    }
+
+    fn any_tabs_contains(dock_items: &HashMap<LiveId, DockItem>, tab_id: LiveId) -> bool {
+        dock_items.values().any(|item| {
+            matches!(item, DockItem::Tabs { tabs, .. } if tabs.contains(&tab_id))
+        })
+    }
+
+    fn ensure_tab_ref_in_tabs_container(
+        saved: &mut SavedDockState,
+        tabs_id: LiveId,
+        tab_id: LiveId,
+    ) -> Result<bool, &'static str> {
+        match saved.dock_items.get_mut(&tabs_id) {
+            Some(DockItem::Tabs { tabs, selected, .. }) => {
+                if tabs.contains(&tab_id) {
+                    return Ok(false);
+                }
+                if !tabs.is_empty() {
+                    *selected = selected.saturating_add(1);
+                }
+                tabs.insert(0, tab_id);
+                Ok(true)
+            }
+            Some(DockItem::Tab { .. }) | Some(DockItem::Splitter { .. }) => {
+                Err("fixed tabs container id collides with another dock item")
+            }
+            None => Ok(false),
+        }
+    }
+
+    fn promote_root_tabs_to_default_split(
+        saved: &mut SavedDockState,
+        main_tabs_id: LiveId,
+        rooms_sidebar_tabs_id: LiveId,
+        rooms_sidebar_tab_id: LiveId,
+    ) -> Result<(), &'static str> {
+        let root = id!(root);
+        let Some(root_tabs) = saved.dock_items.remove(&root) else {
+            return Err("root dock item is missing");
+        };
+        if !matches!(root_tabs, DockItem::Tabs { .. }) {
+            saved.dock_items.insert(root, root_tabs);
+            return Err("root dock item is not a tabs container");
+        }
+
+        saved.dock_items.insert(main_tabs_id, root_tabs);
+        saved.dock_items.insert(
+            rooms_sidebar_tabs_id,
+            DockItem::Tabs {
+                tabs: vec![rooms_sidebar_tab_id],
+                selected: 0,
+                closable: true,
+                hide_tab_bar: true,
+            },
+        );
+        saved.dock_items.insert(
+            root,
+            DockItem::Splitter {
+                axis: SplitterAxis::Horizontal,
+                align: SplitterAlign::FromA(300.0),
+                a: rooms_sidebar_tabs_id,
+                b: main_tabs_id,
+            },
+        );
+        Ok(())
+    }
+
+    fn walk_dock_tree(
+        dock_items: &HashMap<LiveId, DockItem>,
+    ) -> Result<(Vec<LiveId>, HashSet<LiveId>), &'static str> {
+        fn visit(
+            id: LiveId,
+            dock_items: &HashMap<LiveId, DockItem>,
+            order: &mut Vec<LiveId>,
+            reachable: &mut HashSet<LiveId>,
+            visiting: &mut HashSet<LiveId>,
+        ) -> Result<(), &'static str> {
+            let Some(item) = dock_items.get(&id) else {
+                return Err("dock item reference is missing");
+            };
+            if visiting.contains(&id) {
+                return Err("dock item graph contains a cycle");
+            }
+            if reachable.contains(&id) {
+                return if matches!(item, DockItem::Tab { .. }) {
+                    Ok(())
+                } else {
+                    Err("dock container is referenced more than once")
+                };
+            }
+
+            reachable.insert(id);
+            visiting.insert(id);
+            order.push(id);
+            match item {
+                DockItem::Splitter { a, b, .. } => {
+                    if a == b {
+                        return Err("splitter references the same child twice");
+                    }
+                    visit(*a, dock_items, order, reachable, visiting)?;
+                    visit(*b, dock_items, order, reachable, visiting)?;
+                }
+                DockItem::Tabs { tabs, .. } => {
+                    for tab_id in tabs {
+                        if matches!(dock_items.get(tab_id), Some(DockItem::Tab { .. })) {
+                            visit(*tab_id, dock_items, order, reachable, visiting)?;
+                        }
+                    }
+                }
+                DockItem::Tab { .. } => {}
+            }
+            visiting.remove(&id);
+            Ok(())
+        }
+
+        if !dock_items.contains_key(&id!(root)) {
+            return Err("root dock item is missing");
+        }
+
+        let mut order = Vec::with_capacity(dock_items.len());
+        let mut reachable = HashSet::with_capacity(dock_items.len());
+        let mut visiting = HashSet::with_capacity(dock_items.len());
+        visit(id!(root), dock_items, &mut order, &mut reachable, &mut visiting)?;
+        Ok((order, reachable))
+    }
+
+    fn find_tabs_containing(
+        dock_items: &HashMap<LiveId, DockItem>,
+        tree_order: &[LiveId],
+        tab_id: LiveId,
+    ) -> Option<LiveId> {
+        tree_order.iter().find_map(|id| {
+            if let Some(DockItem::Tabs { tabs, .. }) = dock_items.get(id) {
+                if tabs.contains(&tab_id) {
+                    return Some(*id);
+                }
+            }
+            None
+        })
+    }
+
+    fn normalize_main_tabs_id(
+        saved: &mut SavedDockState,
+        current_main_tabs_id: LiveId,
+        main_tabs_dsl: LiveId,
+        reachable: &HashSet<LiveId>,
+    ) -> Result<(), &'static str> {
+        if current_main_tabs_id == id!(root) {
+            return Err("main-tabs container is root");
+        }
+        let Some(current_main_tabs) = saved.dock_items.remove(&current_main_tabs_id) else {
+            return Err("main-tabs container is missing");
+        };
+        let existing_dsl_item = saved.dock_items.remove(&main_tabs_dsl);
+        let existing_dsl_was_reachable = existing_dsl_item.as_ref().is_some_and(|item| {
+            reachable.contains(&main_tabs_dsl) && !matches!(item, DockItem::Tab { .. })
+        });
+
+        saved.dock_items.insert(main_tabs_dsl, current_main_tabs);
+        if existing_dsl_was_reachable
+            && let Some(existing_dsl_item) = existing_dsl_item
+        {
+            saved.dock_items.insert(current_main_tabs_id, existing_dsl_item);
+        }
+
+        // Rewrite splitter refs: when the existing dsl entry was reachable we swap
+        // the two IDs everywhere; otherwise we just point current -> dsl.
+        let remap = |id: &mut LiveId| {
+            if *id == current_main_tabs_id {
+                *id = main_tabs_dsl;
+            } else if existing_dsl_was_reachable && *id == main_tabs_dsl {
+                *id = current_main_tabs_id;
+            }
+        };
+        for item in saved.dock_items.values_mut() {
+            if let DockItem::Splitter { a, b, .. } = item {
+                remap(a);
+                remap(b);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn remove_bad_and_duplicate_tab_refs(
+        saved: &mut SavedDockState,
+        tree_order: &[LiveId],
+        referenced_tabs: &mut HashSet<LiveId>,
+    ) -> bool {
+        let valid_tabs: HashSet<LiveId> = saved.dock_items.iter()
+            .filter_map(|(id, item)| matches!(item, DockItem::Tab { .. }).then_some(*id))
+            .collect();
+        let mut seen = HashSet::with_capacity(valid_tabs.len());
+        let mut repaired = false;
+        for &id in tree_order {
+            if let Some(DockItem::Tabs { tabs, selected, .. }) = saved.dock_items.get_mut(&id) {
+                let original_len = tabs.len();
+                tabs.retain(|tab_id| {
+                    valid_tabs.contains(tab_id)
+                        && seen.insert(*tab_id)
+                        && {
+                            referenced_tabs.insert(*tab_id);
+                            true
+                        }
+                });
+                if tabs.len() != original_len {
+                    repaired = true;
+                }
+                let new_selected = if tabs.is_empty() {
+                    0
+                } else if *selected >= tabs.len() {
+                    tabs.len() - 1
+                } else {
+                    *selected
+                };
+                if *selected != new_selected {
+                    *selected = new_selected;
+                    repaired = true;
+                }
+            }
+        }
+        repaired
+    }
+
+    fn append_unreferenced_open_rooms_to_main_tabs(
+        saved: &mut SavedDockState,
+        main_tabs_id: LiveId,
+        referenced_tabs: &mut HashSet<LiveId>,
+    ) -> bool {
+        let mut repaired = false;
+        let mut candidates = Vec::with_capacity(saved.room_order.len() + saved.open_rooms.len());
+        let mut candidate_ids = HashSet::with_capacity(saved.room_order.len() + saved.open_rooms.len());
+        for room in saved.room_order.iter() {
+            let tab_id = room.tab_id();
+            if candidate_ids.insert(tab_id) {
+                candidates.push(tab_id);
+            }
+        }
+        let mut unordered: Vec<LiveId> = saved.open_rooms.keys()
+            .filter(|tab_id| candidate_ids.insert(**tab_id))
+            .copied()
+            .collect();
+        unordered.sort_by_key(|tab_id| tab_id.0);
+        candidates.extend(unordered);
+
+        let candidates: Vec<LiveId> = candidates.into_iter()
+            .filter(|tab_id| matches!(saved.dock_items.get(tab_id), Some(DockItem::Tab { .. })))
+            .collect();
+        if let Some(DockItem::Tabs { tabs, selected, .. }) = saved.dock_items.get_mut(&main_tabs_id) {
+            for tab_id in candidates {
+                if referenced_tabs.contains(&tab_id) {
+                    continue;
+                }
+                tabs.push(tab_id);
+                referenced_tabs.insert(tab_id);
+                repaired = true;
+            }
+            if *selected >= tabs.len() && !tabs.is_empty() {
+                *selected = tabs.len() - 1;
+                repaired = true;
+            }
+        }
+        repaired
+    }
+
+    fn collapse_tabs_container(
+        saved: &mut SavedDockState,
+        tabs_id: LiveId,
+        main_tabs_id: LiveId,
+        rooms_sidebar_tabs_id: LiveId,
+    ) -> Result<(), &'static str> {
+        let root = id!(root);
+        let Some((parent_split, sibling)) = saved.dock_items.iter().find_map(|(sid, item)| {
+            if let DockItem::Splitter { a, b, .. } = item {
+                if *a == tabs_id {
+                    return Some((*sid, *b));
+                }
+                if *b == tabs_id {
+                    return Some((*sid, *a));
+                }
+            }
+            None
+        }) else {
+            saved.dock_items.remove(&tabs_id);
+            return Ok(());
+        };
+
+        if parent_split == root {
+            if sibling == main_tabs_id || sibling == rooms_sidebar_tabs_id {
+                return Err("empty pane collapse would remove a required dock container id");
+            }
+            let Some(sibling_content) = saved.dock_items.remove(&sibling) else {
+                return Err("empty pane sibling is missing");
+            };
+            saved.dock_items.insert(root, sibling_content);
+        } else {
+            if !saved.dock_items.contains_key(&sibling) {
+                return Err("empty pane sibling is missing");
+            }
+            if !replace_splitter_refs(&mut saved.dock_items, parent_split, sibling) {
+                return Err("empty pane parent splitter is detached");
+            }
+            saved.dock_items.remove(&parent_split);
+        }
+        saved.dock_items.remove(&tabs_id);
+        Ok(())
+    }
+
+    fn replace_splitter_refs(
+        dock_items: &mut HashMap<LiveId, DockItem>,
+        from: LiveId,
+        to: LiveId,
+    ) -> bool {
+        let mut replaced = false;
+        for item in dock_items.values_mut() {
+            if let DockItem::Splitter { a, b, .. } = item {
+                if *a == from { *a = to; replaced = true; }
+                if *b == from { *b = to; replaced = true; }
+            }
+        }
+        replaced
+    }
+
 }

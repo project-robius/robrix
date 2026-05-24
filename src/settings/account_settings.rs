@@ -1,8 +1,9 @@
 use std::cell::RefCell;
 
 use makepad_widgets::{text::selection::Cursor, *};
+use matrix_sdk::encryption::{identities::Device, VerificationState};
 
-use crate::{app::ConfirmDeleteAction, avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, settings::PopulateMode, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, MatrixRequest, submit_async_request}, utils};
+use crate::{app::ConfirmDeleteAction, avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, settings::PopulateMode, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{get_client, submit_async_request, AccountDataAction, MatrixRequest}, utils, verification::VerificationStateAction};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -18,15 +19,88 @@ script_mod! {
             text: "Account Settings"
         }
 
+        // Verification banners. Both stay hidden until we know the state.
+        verification_banner_verified := RoundedView {
+            visible: false
+            width: Fill {max: 450},
+            height: Fit
+            flow: Right
+            align: Align {y: 0.5}
+            margin: Inset{top: 10, bottom: 5}
+            padding: Inset{top: 10, bottom: 9, left: 12, right: 12}
+            show_bg: true
+            draw_bg +: {
+                color: (COLOR_BG_ACCEPT_GREEN)
+                border_color: (COLOR_FG_ACCEPT_GREEN)
+                border_size: 1.0
+                border_radius: 4.0
+            }
+            Label {
+                width: Fill, height: Fit
+                flow: Flow.Right{wrap: true}
+                draw_text +: {
+                    color: (COLOR_FG_ACCEPT_GREEN),
+                    text_style: theme.font_bold { font_size: 11.5 },
+                }
+                text: "This device is verified and can access encrypted messages."
+            }
+        }
+
+        verification_banner_unverified := RoundedView {
+            visible: false
+            width: Fill {max: 478},
+            height: Fit
+            flow: Down,
+            align: Align {y: 0.5}
+            spacing: 0,
+            margin: Inset{top: 10, bottom: 5}
+            padding: Inset{top: 10, bottom: 13, left: 12, right: 12}
+            show_bg: true
+            draw_bg +: {
+                color: (COLOR_BG_DANGER_RED)
+                border_color: (COLOR_FG_DANGER_RED)
+                border_size: 1.0
+                border_radius: 4.0
+            }
+            Label {
+                width: Fill, height: Fit
+                flow: Flow.Right{wrap: true}
+                draw_text +: {
+                    color: (COLOR_FG_DANGER_RED),
+                    text_style: theme.font_bold { font_size: 11.5 },
+                }
+                text: "This device is not verified and can't view encrypted messages."
+            }
+            Label {
+                width: Fill, height: Fit
+                flow: Flow.Right{wrap: true}
+                margin: Inset { top: 4, bottom: 1}
+                draw_text +: {
+                    color: (MESSAGE_TEXT_COLOR),
+                    text_style: theme.font_regular { font_size: 11.5 },
+                }
+                text: "Verify it from another client using this info:"
+            }
+            // Filled in from Rust with the session name + device ID.
+            unverified_device_info_label := Label {
+                width: Fill, height: Fit
+                padding: Inset{left: 8}
+                flow: Flow.Right{wrap: true}
+                draw_text +: {
+                    color: (MESSAGE_TEXT_COLOR),
+                    text_style: theme.font_regular { font_size: 11.5 },
+                }
+                text: ""
+            }
+        }
+
         SubsectionLabel {
             text: "Your Avatar:"
         }
 
         View {
             width: Fill, height: Fit
-            // TODO: I'd like to use RightWrap here, but Makepad doesn't yet
-            //       support RightWrap with align: Align{y: 0.5}.
-            flow: Right,
+            flow: Right { wrap: true },
             align: Align{y: 0.5}
 
             our_own_avatar := Avatar {
@@ -48,7 +122,8 @@ script_mod! {
                 align: Align{y: 0.5}
                 padding: Inset{ left: 10, right: 10 }
                 spacing: 10
-
+                margin: Inset{top: 15}
+                
                 View {
                     width: Fit, height: Fit
                     flow: Right,
@@ -98,12 +173,13 @@ script_mod! {
         }
 
         SubsectionLabel {
-            text: "Your Display Name:"
+            text: "Your Display Name"
         }
 
         display_name_input := RobrixTextInput {
             margin: Inset{top: 3, left: 5, right: 5, bottom: 8},
-            width: 216, height: Fit
+            width: Fill { max: 226}, // to match the button width
+            height: Fit
             empty_text: "Add a display name..."
         }
 
@@ -149,7 +225,7 @@ script_mod! {
         }
 
         SubsectionLabel {
-            text: "Your User ID:"
+            text: "Your User ID"
         }
 
         View {
@@ -169,17 +245,17 @@ script_mod! {
             user_id := Label {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true},
-                margin: Inset{top: 10}
+                margin: Inset{top: 9}
                 draw_text +: {
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: 11.5 },
                 }
                 text: "You are not logged in."
             }
         }
 
         SubsectionLabel {
-            text: "Other actions:"
+            text: "Other Actions"
         }
 
         View {
@@ -217,6 +293,8 @@ pub struct AccountSettings {
     #[deref] view: View,
 
     #[rust] own_profile: Option<UserProfile>,
+    #[rust(VerificationState::Unknown)] verification_state: VerificationState,
+    #[rust] own_device: Option<Device>,
 }
 
 impl ScriptHook for AccountSettings {
@@ -227,6 +305,17 @@ impl ScriptHook for AccountSettings {
         _scope: &mut Scope,
         _value: ScriptValue,
     ) {
+        // After apply, the DSL fields will be reset to their defaults,
+        // so we need to re-populate everything.
+        if let Some(client) = get_client() {
+            self.verification_state = client.encryption().verification_state().get();
+        }
+        if self.own_device.is_none() {
+            submit_async_request(MatrixRequest::GetOwnDevice);
+        }
+        let cx = vm.cx_mut();
+        self.update_verification_banner(cx);
+
         // Restore user_id inline so the DSL placeholder never flashes.
         // Anything that goes through `cx.with_vm` (button colors, avatar)
         // can't run here, so it's handled later in `restore_after_reapply`.
@@ -237,7 +326,6 @@ impl ScriptHook for AccountSettings {
             return;
         };
         let cached_user_id = own_profile.user_id.as_str().to_owned();
-        let cx = vm.cx_mut();
         self.view
             .label(cx, ids!(user_id))
             .set_text(cx, &cached_user_id);
@@ -301,6 +389,12 @@ impl MatchEvent for AccountSettings {
         let upload_avatar_button = self.view.button(cx, ids!(upload_avatar_button));
 
         for action in actions {
+            if let Some(VerificationStateAction::Update(state)) = action.downcast_ref() {
+                self.verification_state = *state;
+                self.update_verification_banner(cx);
+                continue;
+            }
+
             // Handle LogoutAction::InProgress to update button state
             if let Some(LogoutAction::InProgress(is_in_progress)) = action.downcast_ref() {
                 let logout_button = self.view.button(cx, ids!(logout_button));
@@ -378,6 +472,11 @@ impl MatchEvent for AccountSettings {
                         PopupKind::Error,
                         Some(4.0),
                     );
+                    continue;
+                }
+                Some(AccountDataAction::OwnDeviceFetched(device)) => {
+                    self.own_device = device.as_deref().cloned();
+                    self.update_verification_banner(cx);
                     continue;
                 }
                 _ => {}
@@ -605,6 +704,31 @@ impl AccountSettings {
         self.view.button(cx, ids!(copy_user_id_button)).reset_hover(cx);
         self.view.button(cx, ids!(manage_account_button)).reset_hover(cx);
         self.view.button(cx, ids!(logout_button)).reset_hover(cx);
+        self.view.redraw(cx);
+    }
+
+    /// Show verification info based on `self.verification_state`.
+    ///
+    /// If unknown, nothing will be shown.
+    fn update_verification_banner(&mut self, cx: &mut Cx) {
+        let (verified, unverified) = match self.verification_state {
+            VerificationState::Verified => (true, false),
+            VerificationState::Unverified => (false, true),
+            VerificationState::Unknown => (false, false),
+        };
+        self.view.view(cx, ids!(verification_banner_verified)).set_visible(cx, verified);
+        self.view.view(cx, ids!(verification_banner_unverified)).set_visible(cx, unverified);
+
+        // Refill the session info even if the banner is hidden, so it's
+        // already right if it shows up later.
+        let info_text = match self.own_device.as_ref() {
+            Some(device) => match device.display_name() {
+                Some(name) => format!("Session: \"{name}\",  Device ID: {}", device.device_id()),
+                None       => format!("Device ID: {}", device.device_id()),
+            },
+            None => String::new(),
+        };
+        self.view.label(cx, ids!(unverified_device_info_label)).set_text(cx, &info_text);
         self.view.redraw(cx);
     }
 

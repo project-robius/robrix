@@ -239,10 +239,7 @@ cargo install --locked --git https://github.com/project-robius/robius-packaging-
 ```sh
 cargo packager --release ## --verbose is optional
 ```
-  * If you want to hide the default cmd prompt console on Windows, use the following config:
-    ```sh
-    RUSTFLAGS="--cfg hide_windows_console" cargo packager --release
-    ```
+  * On Windows, the cmd prompt console is hidden by default via the `hide_windows_console` Cargo feature. If you need to keep the console visible (e.g., to debug a detached launch), build with `--no-default-features`.
 
 
 ### Platform-specific considerations

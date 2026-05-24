@@ -14,11 +14,8 @@ version = "1.0.0-alpha.1"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
-# makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
-
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "script_reapply_variant", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "script_reapply_variant" }
+makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
@@ -46,6 +43,7 @@ htmlize = "1.0.5"
 indexmap = "2.6.0"
 imghdr = "0.7.0"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+libc = "0.2"
 mime = "0.3"
 mime_guess = "2.0"
 linkify = "0.10.0"
@@ -78,7 +76,7 @@ serde = "1.0"
 serde_json = "1.0"
 thiserror = "2.0.16"
 tokio = { version = "1.43.1", features = ["macros", "rt-multi-thread"] }
-tracing-subscriber = "0.3.17"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 unicode-segmentation = "1.11.0"
 url = "2.5.0"
 
@@ -113,12 +111,18 @@ reqwest = { version = "0.12", default-features = false, optional = true, feature
 rfd = "0.15"
 
 
+## For OAuth/SSO login on iOS, via `ASWebAuthenticationSession`. Ugh....
+[target.'cfg(target_os = "ios")'.dependencies]
+robius-web-auth-session = { git = "https://github.com/project-robius/robius" }
+
+
 [features]
-default = []
+default = ["hide_windows_console"]
 ## Enables experimental support for using TSP wallets.
 tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding", "dep:reqwest"]
 
-## Hides the command prompt console on Windows.
+## Hides the command prompt console on Windows. Enabled by default;
+## disable with `--no-default-features` if you need a console for a detached launch.
 hide_windows_console = []
 
 ## Logs all diffs received by the Matrix RoomListService.
@@ -167,6 +171,9 @@ askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
 [patch."https://github.com/ruma/ruma"]
 ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
 
+[build-dependencies]
+toml = "1"
+
 ## On Windows, use the `winresource` crate to embed the app's icon and metadata into the executable.
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
@@ -175,6 +182,9 @@ winresource = "0.1"
 [package.metadata.docs.rs]
 all-features = true
 
+[profile.release]
+debug = false
+strip = "symbols"
 
 ## An optimized profile for development, with full debug info and assertions.
 [profile.debug-opt]
@@ -203,18 +213,27 @@ strip = true
 debug-assertions = false
 
 
+
+## Configuration for cargo makepad (`cargo makepad android build-aab`).
+## The `[package.metadata.packager]` section below already sets the package ID
+## and product name, so we just need a version code for Google Play Store builds.
+[package.metadata.makepad.android]
+## Specifying "auto" will set it to a format like 'YYYYMMDDHH'.
+version_code = "auto"
+
+
 ## Configuration for `cargo packager`
 [package.metadata.packager]
 product_name = "Robrix"
-identifier = "org.robius.robrix"
+identifier = "rs.robius.robrix"
 category = "SocialNetworking"
 authors = [
     "Project Robius <contact@robius.rs>",
     "Kevin Boos <kevinaboos@gmail.com>",
 ]
-publisher = "robius"
+publisher = "GOSIM Foundation"
 license_file = "LICENSE-MIT"
-copyright = "Copyright 2023-202, Project Robius"
+copyright = "Copyright 2023-2026, Project Robius"
 homepage = "https://github.com/project-robius"
 ### Note: there is an 80-character max for each line of the `long_description`.
 long_description = """

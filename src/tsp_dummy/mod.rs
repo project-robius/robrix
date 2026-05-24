@@ -24,25 +24,8 @@ script_mod! {
 
 
     mod.widgets.TspSettingsScreen = View {
-        width: Fill, height: Fit
+        width: Fill, height: 0
         flow: Down
-        align: Align{x: 0}
-
-        TitleLabel {
-            text: "TSP Wallet Settings"
-        }
-
-        Label {
-            width: Fill, height: Fit
-            flow: Flow.Right{wrap: true},
-            align: Align{x: 0}
-            margin: Inset{top: 10, bottom: 10}
-            draw_text +: {
-                color: (MESSAGE_TEXT_COLOR),
-                text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
-            }
-            text: "TSP features are not included in this build.\nTo use TSP, build Robrix with the 'tsp' feature enabled."
-        }
     }
 
     mod.widgets.CreateWalletModal = View {

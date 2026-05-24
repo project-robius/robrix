@@ -2,16 +2,21 @@
 //!
 //! See `handle_startup()` for the first code that runs on app startup.
 
-use std::{cell::RefCell, collections::HashMap};
+use std::{
+    cell::RefCell,
+    collections::{hash_map::DefaultHasher, HashMap},
+    hash::{Hash, Hasher},
+    time::Duration,
+};
 use makepad_widgets::*;
-use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, RoomId}};
+use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomId}};
 use serde::{Deserialize, Serialize};
 use crate::{
-    avatar_cache::clear_avatar_cache, home::{
+    avatar_cache::clear_avatar_cache, room_preview_cache::clear_room_preview_cache, home::{
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, settings::app_preferences::AppPreferences, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, settings::app_preferences::{AppPreferences, UiZoom}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -37,7 +42,6 @@ script_mod! {
                         }
                     }
                 }
-            
 
                 body +: {
                     // Only TOP is applied here, since top is shared by every screen
@@ -51,6 +55,7 @@ script_mod! {
                         left: 0,
                         right: 0,
                     }
+                    keyboard_min_shift: 12.0
 
                     overlay_container := View {
                         width: Fill, height: Fill,
@@ -120,6 +125,7 @@ script_mod! {
 
                         // Show incoming verification requests in front of the aforementioned UI elements.
                         verification_modal := Modal {
+                            can_dismiss: false,
                             content +: {
                                 verification_modal_inner := VerificationModal {}
                             }
@@ -175,6 +181,7 @@ pub struct App {
     #[live] ui: WidgetRef,
     /// The top-level app state, shared across various parts of the app.
     #[rust] app_state: AppState,
+    #[rust] lifecycle: AppLifecycle,
     /// The details of a room we're waiting on to be loaded so that we can navigate to it.
     /// This can be either a room we're waiting to join, or one we're waiting to be invited to.
     /// Also includes an optional room ID to be closed once the awaited room has been loaded.
@@ -199,8 +206,30 @@ impl ScriptHook for App {
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
-        // only init logging/tracing once
-        let _ = tracing_subscriber::fmt::try_init();
+        // only init logging/tracing once.
+        // `matrix_sdk::latest_events` emits a noisy per-room "Timer ... finished"
+        // INFO line on every load; silence it by default. RUST_LOG still wins
+        // when set, so you can re-enable it with `RUST_LOG=matrix_sdk::latest_events=info`.
+        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(
+                "info,matrix_sdk::latest_events=warn",
+            ));
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .try_init();
+
+        // On iOS (and potentially other devices), there is a very low limit
+        // (albeit a soft limit) on max file descriptors, as little as 256.
+        // We increase that preemptively to avoid running out later due to sqlite ops.
+        #[cfg(unix)]
+        unsafe {
+            let mut rlim = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+            if libc::getrlimit(libc::RLIMIT_NOFILE, &mut rlim) == 0 && rlim.rlim_cur < 4096 {
+                let new_soft = (4096 as libc::rlim_t).min(rlim.rlim_max);
+                let bumped = libc::rlimit { rlim_cur: new_soft, rlim_max: rlim.rlim_max };
+                libc::setrlimit(libc::RLIMIT_NOFILE, &bumped);
+            }
+        }
 
         // Initialize the project directory here from the main UI thread
         // such that background threads/tasks will be able to can access it.
@@ -210,6 +239,9 @@ impl MatchEvent for App {
         if let Err(e) = persistence::load_window_state(self.ui.window(cx, ids!(main_window)), cx) {
             error!("Failed to load window state: {}", e);
         }
+
+        #[cfg(target_os = "macos")]
+        self.install_macos_menu(cx);
 
         self.update_login_visibility(cx);
 
@@ -592,6 +624,45 @@ fn clear_all_app_state(cx: &mut Cx) {
     clear_all_invited_rooms(cx);
     clear_timeline_states(cx);
     clear_avatar_cache(cx);
+    clear_room_preview_cache(cx);
+}
+
+#[derive(Debug)]
+struct AppLifecycle {
+    is_foreground: bool,
+    is_active: bool,
+    last_app_state_save: Option<AppStateSaveFingerprint>,
+    shutdown_started: bool,
+}
+
+impl Default for AppLifecycle {
+    fn default() -> Self {
+        Self {
+            is_foreground: true,
+            is_active: true,
+            last_app_state_save: None,
+            shutdown_started: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct AppStateSaveFingerprint {
+    user_id: OwnedUserId,
+    hash: u64,
+    len: usize,
+}
+
+impl AppStateSaveFingerprint {
+    fn new(user_id: OwnedUserId, bytes: &[u8]) -> Self {
+        let mut hasher = DefaultHasher::new();
+        bytes.hash(&mut hasher);
+        Self {
+            user_id,
+            hash: hasher.finish(),
+            len: bytes.len(),
+        }
+    }
 }
 
 impl AppMain for App {
@@ -628,61 +699,219 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
-        // On a file-driven hot-reload (`Event::LiveEdit`), Makepad re-runs
-        // `script_mod!` which reasserts source-defined defaults (e.g.
-        // `mod.widgets.IMG_MSG_FIT = Fit{max: FitBound.Abs(200.0)}`). That
-        // wipes runtime preference overrides we pushed into the heap via
-        // `script_eval!`. Re-broadcast the current preferences so those
-        // overrides are re-established; the `request_script_reapply` inside
-        // `broadcast_all` triggers a follow-up `Event::ScriptReapply` pass
-        // (handled inside the same `run_live_edit_if_needed` tick) so
-        // widgets pick the overrides up. `Event::ScriptReapply` itself must
-        // NOT trigger another broadcast — that would loop.
         if let Event::LiveEdit = event {
             self.app_state.app_prefs.broadcast_all(cx);
         }
 
-        if let Event::Shutdown = event {
-            let window_ref = self.ui.window(cx, ids!(main_window));
-            if let Err(e) = persistence::save_window_state(window_ref, cx) {
-                error!("Failed to save window state. Error: {e}");
-            }
-            if let Some(user_id) = current_user_id() {
-                let app_state = self.app_state.clone();
-                if let Err(e) = persistence::save_app_state(app_state, user_id) {
-                    error!("Failed to save app state. Error: {e}");
-                }
-            }
-            #[cfg(feature = "tsp")] {
-                // Save the TSP wallet state, if it exists, with a 3-second timeout.
-                let tsp_state = std::mem::take(&mut *crate::tsp::tsp_state_ref().lock().unwrap());
-                let res = crate::sliding_sync::block_on_async_with_timeout(
-                    Some(std::time::Duration::from_secs(3)),
-                    async move {
-                        match tsp_state.close_and_serialize().await {
-                            Ok(saved_state) => match persistence::save_tsp_state_async(saved_state).await {
-                                Ok(_) => { }
-                                Err(e) => error!("Failed to save TSP wallet state. Error: {e}"),
-                            }
-                            Err(e) => error!("Failed to close and serialize TSP wallet state. Error: {e}"),
-                        }
-                    },
-                );
-                if let Err(_e) = res {
-                    error!("Failed to save TSP wallet state before app shutdown. Error: Timed Out.");
-                }
-            }
+        self.handle_ui_zoom_shortcuts(cx, event);
+        if let Event::MacosMenuCommand(command) = event {
+            self.handle_ui_zoom_menu_command(cx, *command);
         }
-        
+
         // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
+        self.handle_lifecycle_event(cx, event);
 
     }
 }
 
 impl App {
+    fn apply_ui_zoom(&mut self, cx: &mut Cx, new_zoom: UiZoom) {
+        if new_zoom != self.app_state.app_prefs.ui_zoom {
+            self.app_state.app_prefs.ui_zoom = new_zoom;
+            self.app_state.app_prefs.on_ui_zoom_changed(cx);
+        }
+    }
+
+    fn handle_ui_zoom_shortcuts(&mut self, cx: &mut Cx, event: &Event) {
+        let Event::KeyDown(e) = event else { return };
+        if !e.modifiers.is_primary() {
+            return;
+        }
+        let current = self.app_state.app_prefs.ui_zoom;
+        let new_zoom = match e.key_code {
+            KeyCode::Equals | KeyCode::NumpadEquals | KeyCode::NumpadAdd => {
+                current.zoom_in_by(UiZoom::STEP)
+            }
+            KeyCode::Minus | KeyCode::NumpadSubtract => current.zoom_out_by(UiZoom::STEP),
+            KeyCode::Key0 | KeyCode::Numpad0 => UiZoom::reset(),
+            _ => return,
+        };
+        self.apply_ui_zoom(cx, new_zoom);
+    }
+
+    /// Set up the menu bar entries, currently macOS-only.
+    #[cfg(target_os = "macos")]
+    fn install_macos_menu(&self, cx: &mut Cx) {
+        cx.update_macos_menu(MacosMenu::Main {
+            items: vec![
+                MacosMenu::Sub {
+                    name: "Robrix".into(),
+                    items: vec![MacosMenu::Item {
+                        name: "Quit Robrix".into(),
+                        command: live_id!(quit),
+                        key: KeyCode::KeyQ,
+                        shift: false,
+                        enabled: true,
+                    }],
+                },
+                MacosMenu::Sub {
+                    name: "View".into(),
+                    items: vec![
+                        MacosMenu::Item {
+                            name: "Zoom In".into(),
+                            command: live_id!(zoom_in),
+                            key: KeyCode::Equals,
+                            shift: true,
+                            enabled: true,
+                        },
+                        MacosMenu::Item {
+                            name: "Zoom Out".into(),
+                            command: live_id!(zoom_out),
+                            key: KeyCode::Minus,
+                            shift: false,
+                            enabled: true,
+                        },
+                        MacosMenu::Line,
+                        MacosMenu::Item {
+                            name: "Reset Zoom".into(),
+                            command: live_id!(reset_zoom),
+                            key: KeyCode::Key0,
+                            shift: false,
+                            enabled: true,
+                        },
+                    ],
+                },
+            ],
+        });
+    }
+
+    /// Connects `MacosMenuCommand`s to the existing zoom shortcut handlers.
+    fn handle_ui_zoom_menu_command(&mut self, cx: &mut Cx, command: LiveId) {
+        let current = self.app_state.app_prefs.ui_zoom;
+        let new_zoom = if command == live_id!(zoom_in) {
+            current.zoom_in_by(UiZoom::STEP)
+        } else if command == live_id!(zoom_out) {
+            current.zoom_out_by(UiZoom::STEP)
+        } else if command == live_id!(reset_zoom) {
+            UiZoom::reset()
+        } else {
+            return;
+        };
+        self.apply_ui_zoom(cx, new_zoom);
+    }
+
+    fn handle_lifecycle_event(&mut self, cx: &mut Cx, event: &Event) {
+        match event {
+            Event::QuitRequested(e) => {
+                log!("Received quit request: {:?}. Persisting state before allowing quit.", e.reason);
+                self.persist_runtime_state(cx, "quit request");
+            }
+            Event::Pause => {
+                if self.lifecycle.is_active {
+                    log!("App paused; persisting runtime state.");
+                    self.lifecycle.is_active = false;
+                }
+                self.persist_runtime_state(cx, "pause");
+            }
+            Event::Resume => {
+                if !self.lifecycle.is_active {
+                    log!("App resumed.");
+                    self.lifecycle.is_active = true;
+                }
+                crate::sliding_sync::set_sync_service_desired_running(true, "app resume");
+            }
+            Event::Background => {
+                if self.lifecycle.is_foreground {
+                    log!("App entered background; persisting state and stopping Matrix sync.");
+                    self.lifecycle.is_foreground = false;
+                }
+                self.persist_runtime_state(cx, "background");
+                crate::sliding_sync::set_sync_service_desired_running(false, "app background");
+            }
+            Event::WindowCloseRequested(e)
+                if self.ui.window(cx, ids!(main_window)).window_id() == Some(e.window_id) => {
+                    log!("Main window close requested; persisting runtime state.");
+                    self.persist_runtime_state(cx, "main window close request");
+                }
+            Event::Foreground => {
+                if !self.lifecycle.is_foreground {
+                    log!("App entered foreground; starting Matrix sync.");
+                    self.lifecycle.is_foreground = true;
+                }
+                crate::sliding_sync::set_sync_service_desired_running(true, "app foreground");
+            }
+            Event::Shutdown => self.handle_shutdown(cx),
+            _ => {}
+        }
+    }
+
+    fn persist_runtime_state(&mut self, cx: &mut Cx, reason: &'static str) {
+        let window_ref = self.ui.window(cx, ids!(main_window));
+        if let Err(e) = persistence::save_window_state(window_ref, cx) {
+            error!("Failed to save window state during {reason}. Error: {e}");
+        }
+
+        let Some(user_id) = current_user_id() else {
+            log!("Skipping app state persistence during {reason}: no logged-in Matrix user.");
+            return;
+        };
+
+        let app_state_json = match persistence::serialize_app_state(&self.app_state) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                error!("Failed to serialize app state during {reason}. Error: {e}");
+                return;
+            }
+        };
+        let fingerprint = AppStateSaveFingerprint::new(user_id.clone(), &app_state_json);
+        if self.lifecycle.last_app_state_save.as_ref() == Some(&fingerprint) {
+            log!("Skipping app state persistence during {reason}: state is unchanged.");
+            return;
+        }
+
+        if let Err(e) = persistence::save_app_state_bytes(&app_state_json, &user_id) {
+            error!("Failed to save app state during {reason}. Error: {e}");
+        } else {
+            self.lifecycle.last_app_state_save = Some(fingerprint);
+        }
+    }
+
+    fn handle_shutdown(&mut self, cx: &mut Cx) {
+        if self.lifecycle.shutdown_started {
+            log!("Ignoring duplicate shutdown lifecycle event.");
+            return;
+        }
+        self.lifecycle.shutdown_started = true;
+
+        self.persist_runtime_state(cx, "shutdown");
+
+        if let Err(_e) = crate::sliding_sync::stop_sync_service_for_shutdown(Duration::from_secs(3)) {
+            error!("Failed to stop Matrix sync service before shutdown. Error: Timed out.");
+        }
+
+        #[cfg(feature = "tsp")] {
+            let tsp_state = std::mem::take(&mut *crate::tsp::tsp_state_ref().lock().unwrap());
+            let res = crate::sliding_sync::block_on_async_with_timeout(
+                Some(Duration::from_secs(3)),
+                async move {
+                    match tsp_state.close_and_serialize().await {
+                        Ok(saved_state) => match persistence::save_tsp_state_async(saved_state).await {
+                            Ok(_) => { }
+                            Err(e) => error!("Failed to save TSP wallet state. Error: {e}"),
+                        }
+                        Err(e) => error!("Failed to close and serialize TSP wallet state. Error: {e}"),
+                    }
+                },
+            );
+            if let Err(_e) = res {
+                error!("Failed to save TSP wallet state before app shutdown. Error: Timed Out.");
+            }
+        }
+    }
+
     fn update_login_visibility(&self, cx: &mut Cx) {
         let show_login = !self.app_state.logged_in;
         if !show_login {
@@ -895,6 +1124,15 @@ impl SelectedRoom {
             SelectedRoom::InvitedRoom { room_name_id } => room_name_id.to_string(),
             SelectedRoom::Space { space_name_id } => format!("[Space] {space_name_id}"),
             SelectedRoom::Thread { room_name_id, .. } => format!("[Thread] {room_name_id}"),
+        }
+    }
+
+    /// Returns the dock-tab `kind` template id used to render this room.
+    pub fn dock_kind(&self) -> LiveId {
+        match self {
+            SelectedRoom::JoinedRoom { .. } | SelectedRoom::Thread { .. } => id!(room_screen),
+            SelectedRoom::InvitedRoom { .. } => id!(invite_screen),
+            SelectedRoom::Space { .. } => id!(space_lobby_screen),
         }
     }
 }

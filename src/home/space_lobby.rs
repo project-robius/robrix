@@ -546,7 +546,7 @@ script_mod! {
                 parent_avatar := Avatar {
                     width: 36,
                     height: 36,
-                    margin: Inset{ right: 12 }
+                    margin: Inset{ left: 5, right: 12 }
                 }
                 
                 parent_name := Label {
@@ -1017,6 +1017,12 @@ pub struct SpaceLobbyScreen {
 
     /// The current filter keywords entered by the user, if any.
     #[rust] filter_keywords: String,
+}
+
+impl Drop for SpaceLobbyScreen {
+    fn drop(&mut self) {
+        self.save_current_state();
+    }
 }
 
 impl Widget for SpaceLobbyScreen {
@@ -1781,12 +1787,31 @@ impl SpaceLobbyScreen {
 
         self.redraw(cx);
     }
+
+    pub fn hide_displayed_space(&mut self, cx: &mut Cx) {
+        self.save_current_state();
+        self.space_name_id = None;
+        self.space_avatar_state = AvatarState::Unknown;
+        self.space_request_sender = None;
+        self.tree_entries.clear();
+        self.loading_subspaces.clear();
+        self.is_loading = false;
+        self.filter_keywords.clear();
+        self.view.text_input(cx, ids!(filter_bar.input)).set_text(cx, "");
+        self.view.button(cx, ids!(filter_bar.clear_button)).set_visible(cx, false);
+        self.redraw(cx);
+    }
 }
 
 impl SpaceLobbyScreenRef {
     pub fn set_displayed_space(&self, cx: &mut Cx, space_name_id: &RoomNameId) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_space(cx, space_name_id);
+    }
+
+    pub fn hide_displayed_space(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.hide_displayed_space(cx);
     }
 
     /// Saves the current UI state. Call this when the screen is being hidden or destroyed.

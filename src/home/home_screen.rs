@@ -3,14 +3,14 @@ use makepad_widgets::*;
 use crate::{
     app::{AppState, AppStateAction, SelectedRoom},
     home::{
-        invite_screen::InviteScreenWidgetExt,
+        invite_screen::InviteScreenWidgetRefExt,
         navigation_tab_bar::{NavigationBarAction, SelectedTab},
-        room_screen::RoomScreenWidgetExt,
+        room_screen::RoomScreenWidgetRefExt,
         rooms_list::RoomsListAction,
-        space_lobby::SpaceLobbyScreenWidgetExt,
+        space_lobby::SpaceLobbyScreenWidgetRefExt,
     },
     settings::{
-        app_preferences::{AppPreferencesAction, ViewModeOverride},
+        app_preferences::{effective_is_desktop, AppPreferencesAction, ViewModeOverride},
         settings_screen::SettingsScreenWidgetRefExt,
     },
     shared::room_filter_input_bar::{MainFilterAction, RoomFilterInputBarWidgetExt},
@@ -27,9 +27,9 @@ script_mod! {
     mod.widgets.STACK_VIEW_HEADER_HEIGHT = 45
 
     // A reusable base for StackNavigationView children in the mobile layout.
-    // Each specific content view (room, invite, space lobby) extends this
+    // Each specific screen view (room, invite, space lobby) extends this
     // and places its own screen widget inside the body.
-    mod.widgets.RobrixContentView = StackNavigationView {
+    mod.widgets.RobrixStackNavigationView = StackNavigationView {
         width: Fill, height: Fill
         draw_bg.color: (COLOR_PRIMARY)
         header +: {
@@ -253,7 +253,9 @@ script_mod! {
                             height: 39,
                             flow: Right
                             padding: Inset{top: 2, bottom: 2}
-                            margin: Inset{right: 2}
+                            // The negative left/right margins compensate for the gray border,
+                            // such that the inner white input part is aligned with other elements.
+                            margin: Inset{left: -1.5, right: -1.5}
                             spacing: 2
                             align: Align{y: 0.5}
 
@@ -370,36 +372,23 @@ script_mod! {
                         }
                     }
 
-                    // Room views: multiple instances to support deep stacking
-                    // (e.g., room -> thread -> room -> thread -> ...).
-                    // Each stack depth gets its own dedicated view widget,
-                    // avoiding complex state save/restore when views are reused.
-                    room_view_0  := mod.widgets.RobrixContentView { body +: { room_screen_0  := mod.widgets.RoomScreen {} } }
-                    room_view_1  := mod.widgets.RobrixContentView { body +: { room_screen_1  := mod.widgets.RoomScreen {} } }
-                    room_view_2  := mod.widgets.RobrixContentView { body +: { room_screen_2  := mod.widgets.RoomScreen {} } }
-                    room_view_3  := mod.widgets.RobrixContentView { body +: { room_screen_3  := mod.widgets.RoomScreen {} } }
-                    room_view_4  := mod.widgets.RobrixContentView { body +: { room_screen_4  := mod.widgets.RoomScreen {} } }
-                    room_view_5  := mod.widgets.RobrixContentView { body +: { room_screen_5  := mod.widgets.RoomScreen {} } }
-                    room_view_6  := mod.widgets.RobrixContentView { body +: { room_screen_6  := mod.widgets.RoomScreen {} } }
-                    room_view_7  := mod.widgets.RobrixContentView { body +: { room_screen_7  := mod.widgets.RoomScreen {} } }
-                    room_view_8  := mod.widgets.RobrixContentView { body +: { room_screen_8  := mod.widgets.RoomScreen {} } }
-                    room_view_9  := mod.widgets.RobrixContentView { body +: { room_screen_9  := mod.widgets.RoomScreen {} } }
-                    room_view_10 := mod.widgets.RobrixContentView { body +: { room_screen_10 := mod.widgets.RoomScreen {} } }
-                    room_view_11 := mod.widgets.RobrixContentView { body +: { room_screen_11 := mod.widgets.RoomScreen {} } }
-                    room_view_12 := mod.widgets.RobrixContentView { body +: { room_screen_12 := mod.widgets.RoomScreen {} } }
-                    room_view_13 := mod.widgets.RobrixContentView { body +: { room_screen_13 := mod.widgets.RoomScreen {} } }
-                    room_view_14 := mod.widgets.RobrixContentView { body +: { room_screen_14 := mod.widgets.RoomScreen {} } }
-                    room_view_15 := mod.widgets.RobrixContentView { body +: { room_screen_15 := mod.widgets.RoomScreen {} } }
-
-                    invite_view := mod.widgets.RobrixContentView {
-                        body +: {
-                            invite_screen := mod.widgets.InviteScreen {}
+                    stack_templates: {
+                        RoomScreenStackNavigationView := mod.widgets.RobrixStackNavigationView {
+                            body +: {
+                                room_screen := mod.widgets.RoomScreen {}
+                            }
                         }
-                    }
 
-                    space_lobby_view := mod.widgets.RobrixContentView {
-                        body +: {
-                            space_lobby_screen := mod.widgets.SpaceLobbyScreen {}
+                        InviteScreenStackNavigationView := mod.widgets.RobrixStackNavigationView {
+                            body +: {
+                                invite_screen := mod.widgets.InviteScreen {}
+                            }
+                        }
+
+                        SpaceLobbyScreenStackNavigationView := mod.widgets.RobrixStackNavigationView {
+                            body +: {
+                                space_lobby_screen := mod.widgets.SpaceLobbyScreen {}
+                            }
                         }
                     }
                 }
@@ -489,15 +478,18 @@ pub struct HomeScreen {
     #[rust] previous_selection: SelectedTab,
     #[rust] is_spaces_bar_shown: bool,
 
-    /// A stack of previously-selected rooms for mobile stack navigation.
+    /// A history of previously-selected screens for mobile stack navigation.
     /// When a view is popped off the stack, the previous `selected_room` is restored.
-    #[rust] mobile_room_nav_stack: Vec<SelectedRoom>,
+    #[rust] mobile_screen_history: Vec<SelectedRoom>,
 
     /// The most recently applied view-mode override, used to short-circuit
     /// redundant `AdaptiveView` selector reinstalls when an
     /// [`AppPreferencesAction::ViewModeChanged`] action repeats the current
     /// value (e.g., the unconditional broadcast on app-state restore).
     #[rust] applied_view_mode: ViewModeOverride,
+
+    /// The last effective AdaptiveView mode we observed. `Some(true)` means desktop mode.
+    #[rust] last_effective_is_desktop: Option<bool>,
 }
 
 impl Widget for HomeScreen {
@@ -582,14 +574,22 @@ impl Widget for HomeScreen {
                         self.apply_view_mode(cx, *new_mode);
                         self.view.redraw(cx);
                     }
+                    self.sync_effective_view_mode(cx);
                 }
 
-                // Handle mobile stack navigation actions (push/pop room views).
-                // In Desktop mode, MainDesktopUI also handles RoomsListAction::Selected
-                // to manage dock tabs; the mobile push is harmless there (views aren't drawn).
+                if let WindowAction::WindowGeomChange(_) = action.as_widget_action().cast() {
+                    self.sync_effective_view_mode(cx);
+                }
+
+                // Handle room selections. Desktop owns tab creation in MainDesktopUI,
+                // while mobile owns StackNavigation screen pushes here.
                 match action.as_widget_action().cast() {
                     RoomsListAction::Selected(selected_room) => {
-                        self.push_selected_room_view(cx, app_state, selected_room);
+                        if effective_is_desktop(cx) {
+                            app_state.selected_room = Some(selected_room);
+                        } else {
+                            self.push_selected_screen_view(cx, app_state, selected_room);
+                        }
                     }
                     RoomsListAction::InviteAccepted { room_name_id } => {
                         cx.action(AppStateAction::UpgradedInviteToJoinedRoom(
@@ -599,12 +599,17 @@ impl Widget for HomeScreen {
                     _ => {}
                 }
 
-                // When a stack navigation pop is initiated (back button pressed),
-                // pop the mobile nav stack so it stays in sync with StackNavigation.
+                if let StackNavigationTransitionAction::ViewReleased(view_id) =
+                    action.as_widget_action().cast()
+                {
+                    let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
+                    self.hide_screen_in_released_stack_view(cx, &stack_navigation, view_id);
+                }
+
+                // When a stack navigation pop is requested (back button pressed),
+                // reveal the previous screen from HomeScreen's mobile history.
                 if let StackNavigationAction::Pop = action.as_widget_action().cast() {
-                    if app_state.selected_room.is_some() {
-                        app_state.selected_room = self.mobile_room_nav_stack.pop();
-                    }
+                    self.pop_selected_screen_view(cx, app_state);
                 }
             }
         }
@@ -635,6 +640,16 @@ impl HomeScreen {
         self.applied_view_mode = mode;
     }
 
+    fn sync_effective_view_mode(&mut self, cx: &mut Cx) {
+        let is_desktop = effective_is_desktop(cx);
+        let Some(previous_is_desktop) = self.last_effective_is_desktop.replace(is_desktop) else {
+            return;
+        };
+        if previous_is_desktop != is_desktop {
+            self.clear_mobile_navigation_state(cx);
+        }
+    }
+
     fn update_active_page_from_selection(
         &mut self,
         cx: &mut Cx,
@@ -653,93 +668,163 @@ impl HomeScreen {
             )
     }
 
-    /// Room StackNavigationView instances, one per stack depth.
-    /// Each depth gets its own dedicated view widget to avoid
-    /// complex state save/restore when views would otherwise be reused.
-    const ROOM_VIEW_IDS: [LiveId; 16] = [
-        live_id!(room_view_0),  live_id!(room_view_1),
-        live_id!(room_view_2),  live_id!(room_view_3),
-        live_id!(room_view_4),  live_id!(room_view_5),
-        live_id!(room_view_6),  live_id!(room_view_7),
-        live_id!(room_view_8),  live_id!(room_view_9),
-        live_id!(room_view_10), live_id!(room_view_11),
-        live_id!(room_view_12), live_id!(room_view_13),
-        live_id!(room_view_14), live_id!(room_view_15),
-    ];
-
-    /// The RoomScreen widget IDs inside each room view,
-    /// corresponding 1:1 with [`Self::ROOM_VIEW_IDS`].
-    const ROOM_SCREEN_IDS: [LiveId; 16] = [
-        live_id!(room_screen_0),  live_id!(room_screen_1),
-        live_id!(room_screen_2),  live_id!(room_screen_3),
-        live_id!(room_screen_4),  live_id!(room_screen_5),
-        live_id!(room_screen_6),  live_id!(room_screen_7),
-        live_id!(room_screen_8),  live_id!(room_screen_9),
-        live_id!(room_screen_10), live_id!(room_screen_11),
-        live_id!(room_screen_12), live_id!(room_screen_13),
-        live_id!(room_screen_14), live_id!(room_screen_15),
-    ];
-
-    /// Returns the room view and room screen LiveIds for the given stack depth.
-    /// Clamps to the last available view if depth exceeds the pool size.
-    fn room_ids_for_depth(depth: usize) -> (LiveId, LiveId) {
-        let index = depth.min(Self::ROOM_VIEW_IDS.len() - 1);
-        (Self::ROOM_VIEW_IDS[index], Self::ROOM_SCREEN_IDS[index])
-    }
-
-    /// Pushes the appropriate StackNavigationView for the given `SelectedRoom`,
-    /// configuring the view's content widget and header title.
+    /// Populates a `StackNavigationView` with the given room/screen's info.
     ///
-    /// Each stack depth gets its own dedicated room view widget,
-    /// supporting deep navigation (room → thread → room → thread → ...).
-    fn push_selected_room_view(
+    /// Returns the LiveId of the view that should be pushed onto or revealed by
+    /// the stack navigation widget.
+    fn populate_mobile_stack_view(
         &mut self,
         cx: &mut Cx,
-        app_state: &mut AppState,
-        selected_room: SelectedRoom,
-    ) {
-        let new_depth = self.view.stack_navigation(cx, ids!(view_stack)).depth();
-
-        let view_id = match &selected_room {
+        stack_navigation: &StackNavigationRef,
+        selected_screen: &SelectedRoom,
+    ) -> Option<LiveId> {
+        let view_id = match selected_screen {
             SelectedRoom::JoinedRoom { room_name_id }
             | SelectedRoom::Thread { room_name_id, .. } => {
-                let (view_id, room_screen_id) = Self::room_ids_for_depth(new_depth);
-                let thread_root = if let SelectedRoom::Thread { thread_root_event_id, .. } = &selected_room {
+                let Some((view_id, stack_navigation_view)) =
+                    stack_navigation.create_view_from_template(cx, id!(RoomScreenStackNavigationView))
+                else {
+                    error!("BUG: failed to create mobile RoomScreen StackNavigationView");
+                    return None;
+                };
+                Self::hide_displayed_stack_screen(cx, &stack_navigation_view);
+                let thread_root = if let SelectedRoom::Thread { thread_root_event_id, .. } = selected_screen {
                     Some(thread_root_event_id.clone())
                 } else {
                     None
                 };
-                self.view
-                    .room_screen(cx, &[room_screen_id])
+                stack_navigation_view
+                    .room_screen(cx, ids!(room_screen))
                     .set_displayed_room(cx, room_name_id, thread_root);
                 view_id
             }
             SelectedRoom::InvitedRoom { room_name_id } => {
-                self.view
+                let Some((view_id, stack_navigation_view)) =
+                    stack_navigation.create_view_from_template(cx, id!(InviteScreenStackNavigationView))
+                else {
+                    error!("BUG: failed to create mobile InviteScreen StackNavigationView");
+                    return None;
+                };
+                Self::hide_displayed_stack_screen(cx, &stack_navigation_view);
+                stack_navigation_view
                     .invite_screen(cx, ids!(invite_screen))
                     .set_displayed_invite(cx, room_name_id);
-                id!(invite_view)
+                view_id
             }
             SelectedRoom::Space { space_name_id } => {
-                self.view
+                let Some((view_id, stack_navigation_view)) =
+                    stack_navigation.create_view_from_template(cx, id!(SpaceLobbyScreenStackNavigationView))
+                else {
+                    error!("BUG: failed to create mobile SpaceLobbyScreen StackNavigationView");
+                    return None;
+                };
+                Self::hide_displayed_stack_screen(cx, &stack_navigation_view);
+                stack_navigation_view
                     .space_lobby_screen(cx, ids!(space_lobby_screen))
                     .set_displayed_space(cx, space_name_id);
-                id!(space_lobby_view)
+                view_id
             }
         };
 
+        stack_navigation.set_title(cx, view_id, &selected_screen.display_name());
+        Some(view_id)
+    }
+
+    /// Hides the screen within a stack view that was released by the StackNavigation widget.
+    fn hide_screen_in_released_stack_view(
+        &mut self,
+        cx: &mut Cx,
+        stack_navigation: &StackNavigationRef,
+        view_id: LiveId,
+    ) {
+        if stack_navigation.stack_view_ids().contains(&view_id) {
+            return;
+        }
+        let stack_navigation_view = stack_navigation.view_by_id(cx, view_id);
+        Self::hide_displayed_stack_screen(cx, &stack_navigation_view);
+    }
+
+    fn clear_mobile_navigation_state(&mut self, cx: &mut Cx) {
+        self.mobile_screen_history.clear();
+
         let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
-        stack_navigation.set_title(cx, view_id, &selected_room.display_name());
+        for view_id in stack_navigation.dynamic_stack_view_ids() {
+            let stack_navigation_view = stack_navigation.view_by_id(cx, view_id);
+            Self::hide_displayed_stack_screen(cx, &stack_navigation_view);
+        }
+    }
+
+    fn hide_displayed_stack_screen(cx: &mut Cx, stack_navigation_view: &WidgetRef) {
+        stack_navigation_view
+            .room_screen(cx, ids!(room_screen))
+            .hide_displayed_room(cx);
+        stack_navigation_view
+            .invite_screen(cx, ids!(invite_screen))
+            .hide_displayed_invite(cx);
+        stack_navigation_view
+            .space_lobby_screen(cx, ids!(space_lobby_screen))
+            .hide_displayed_space(cx);
+    }
+
+    /// Pushes the given screen onto the mobile screen history and animates it in.
+    fn push_selected_screen_view(
+        &mut self,
+        cx: &mut Cx,
+        app_state: &mut AppState,
+        sr: SelectedRoom,
+    ) {
+        // Ensure the view mode is known.
+        if self.last_effective_is_desktop.is_none() {
+            self.last_effective_is_desktop = Some(effective_is_desktop(cx));
+        }
+
+        let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
+        if stack_navigation.is_transitioning() {
+            return;
+        }
+        let has_current_mobile_screen = stack_navigation.current_view().is_some();
+        if has_current_mobile_screen && app_state.selected_room.as_ref().is_some_and(|c| c == &sr) {
+            return;
+        }
+        let Some(view_id) = self.populate_mobile_stack_view(cx, &stack_navigation, &sr) else {
+            return;
+        };
 
         // Save the current selected_room onto the navigation stack before replacing it.
-        if let Some(prev) = app_state.selected_room.take() {
-            self.mobile_room_nav_stack.push(prev);
+        if has_current_mobile_screen {
+            if let Some(prev) = app_state.selected_room.take() {
+                self.mobile_screen_history.push(prev);
+            }
         }
-        app_state.selected_room = Some(selected_room);
-
-        // Push the view onto the mobile navigation stack.
+        app_state.selected_room = Some(sr);
         stack_navigation.push(cx, view_id);
         self.view.redraw(cx);
     }
-}
 
+    /// Pops the current mobile screen, revealing the previous screen or the room list root.
+    fn pop_selected_screen_view(&mut self, cx: &mut Cx, app_state: &mut AppState) {
+        let stack_nav = self.view.stack_navigation(cx, ids!(view_stack));
+        if stack_nav.is_transitioning() {
+            return;
+        }
+        let Some(current_screen) = app_state.selected_room.take() else {
+            return;
+        };
+        match self.mobile_screen_history.pop() {
+            Some(previous) => {
+                let Some(view_id) = self.populate_mobile_stack_view(cx, &stack_nav, &previous) else {
+                    app_state.selected_room = Some(current_screen);
+                    self.mobile_screen_history.push(previous);
+                    return;
+                };
+                app_state.selected_room = Some(previous);
+                stack_nav.pop_to_view(cx, view_id);
+            }
+            None => {
+                app_state.selected_room = None;
+                stack_nav.pop_to_root(cx);
+            }
+        }
+        self.view.redraw(cx);
+    }
+}

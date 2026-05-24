@@ -11,7 +11,7 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    mod.widgets.IMG_APP_LOGO = crate_resource("self://resources/icon_512.png")
+    mod.widgets.IMG_APP_LOGO = crate_resource("self://resources/robrix_logo_alpha.png")
     mod.widgets.ICON_EYE_OPEN   = crate_resource("self://resources/icons/eye_open.svg")
     mod.widgets.ICON_EYE_CLOSED = crate_resource("self://resources/icons/eye_closed.svg")
 
@@ -358,6 +358,7 @@ impl MatchEvent for LoginScreen {
             password_input.toggle_is_password(cx);
             show_pw_button.set_visible(cx, !self.password_visible);
             hide_pw_button.set_visible(cx, self.password_visible);
+            password_input.set_key_focus(cx);
             self.redraw(cx);
         }
 
@@ -482,6 +483,17 @@ impl MatchEvent for LoginScreen {
                 let request = HttpRequest::new(format!("{}/?login_token=",sso_redirect_url), HttpMethod::GET);
                 cx.http_request(request_id, request);
                 self.sso_redirect_url = None;
+            }
+        }
+
+        // On iOS there's no redirect server, so the cancel button dismisses
+        // the auth sheet instead. Its completion handler takes the normal
+        // SSO failure path, which resets state for the next attempt.
+        #[cfg(target_os = "ios")]
+        if self.sso_pending {
+            let login_status_modal_button = login_status_modal_inner.button_ref(cx);
+            if login_status_modal_button.clicked(actions) {
+                crate::sliding_sync::cancel_active_sso_auth_session();
             }
         }
 

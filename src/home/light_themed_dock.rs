@@ -105,7 +105,7 @@ script_mod! {
         draw_button +: {
             color: #0
             color_hover: #FE8610
-            color_active: #FE8610
+            color_active: COLOR_PRIMARY
         }
 
         animator: Animator{

@@ -13,70 +13,75 @@ script_mod! {
 
     // A modal dialog that displays logout confirmation
     mod.widgets.LogoutConfirmModal = #(LogoutConfirmModal::register_widget(vm)) {
-        width: Fit,
-        height: Fit,
+        width: Fit
+        height: Fit
 
         RoundedView {
-            width: 400,
-            height: Fit,
-            flow: Down,
-            align: Align{x: 0.5},
-            padding: 25,
-            margin: 0
-            spacing: 10,
+            width: 400
+            height: Fit
+            align: Align{x: 0.5}
+            flow: Down
+            padding: Inset{top: 30, right: 25, bottom: 20, left: 25}
 
-            show_bg: true,
-            draw_bg.color: (COLOR_PRIMARY)
+            show_bg: true
+            draw_bg +: {
+                color: (COLOR_PRIMARY)
+                border_radius: 4.0
+            }
 
-            View {
+            title_view := View {
                 width: Fill,
                 height: Fit,
-                flow: Right,
-                padding: Inset{top: 0, bottom: 10},
-                align: Align{x: 0.5, y: 0.0},
+                padding: Inset{top: 0, bottom: 25}
+                align: Align{x: 0.5, y: 0.0}
 
                 title := Label {
-                    text: "Confirm Logout",
+                    width: Fill
+                    height: Fit
+                    align: Align{x: 0.5}
+                    flow: Flow.Right{wrap: true},
                     draw_text +: {
-                        text_style: TITLE_TEXT {font_size: 18},
-                        color: #000000
+                        text_style: TITLE_TEXT {font_size: 13},
+                        color: #000
                     }
+                    text: "Confirm Logout"
                 }
             }
 
             message := Label {
-                width: Fill,
-                margin: Inset{top: 10, bottom: 20},
+                width: Fill
+                height: Fit
                 flow: Flow.Right{wrap: true},
                 draw_text +: {
-                    text_style: REGULAR_TEXT {
-                        font_size: 14,
-                    },
-                    color: #000000,
+                    text_style: REGULAR_TEXT {font_size: 11},
+                    color: #000
                 },
                 text: "Are you sure you want to logout?"
             }
 
             View {
-                width: Fill,
-                height: Fit,
+                width: Fill, height: Fit
                 flow: Right,
-                align: Align{x: 0.5, y: 0.5},
-                spacing: 10.0,
+                padding: Inset{top: 20, bottom: 10}
+                align: Align{x: 1.0, y: 0.5}
+                spacing: 20
 
                 cancel_button := RobrixNeutralIconButton {
-                    width: Fit, height: Fit,
-                    padding: 10,
+                    width: 120,
+                    align: Align{x: 0.5, y: 0.5}
+                    padding: 12,
+                    draw_icon.svg: (ICON_FORBIDDEN)
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                     text: "Cancel"
-                    draw_text.text_style: REGULAR_TEXT {font_size: 14}
                 }
 
                 confirm_button := RobrixNegativeIconButton {
-                    width: Fit, height: Fit,
-                    padding: 10,
+                    width: 120
+                    align: Align{x: 0.5, y: 0.5}
+                    padding: 12,
                     draw_icon.svg: (ICON_LOGOUT)
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                     text: "Logout Now"
-                    draw_text.text_style: REGULAR_TEXT {font_size: 14}
                 }
             }
         }
@@ -197,7 +202,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
             if let Some(successful) = self.final_success {
                 if is_logout_past_point_of_no_return() && !successful {
                     log!("User requested immediate restart after unrecoverable logout error");
-                    cx.quit();
+                    cx.request_quit(QuitReason::App);
                 }
 
                 cx.action(LogoutConfirmModalAction::Close { successful, was_internal: true });

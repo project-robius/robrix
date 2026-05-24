@@ -57,46 +57,33 @@ script_mod! {
     use mod.widgets.*
 
 
-    // The base layout/sizing for the icon-style buttons in the NavigationTabBar.
-    // Inherits hover/selected styling from `mod.widgets.NavigationBarButton`
-    // (defined in `src/shared/navigation_bar_button.rs`).
+    // The base style definition for icon buttons in the NavigationTabBar.
     mod.widgets.NavigationTabButton = mod.widgets.NavigationBarButton {
         width: Fill,
-        height: (NAVIGATION_TAB_BAR_SIZE - 5),
+        height: (NAVIGATION_TAB_BAR_SIZE - 4),
         padding: 5,
-        margin: 3,
+        margin: 2,
         align: Align{x: 0.5, y: 0.5}
         flow: Down,
     }
 
     mod.widgets.ProfileIcon = #(ProfileIcon::register_widget(vm)) {
-        // Inherit hover/selected styling directly from NavigationBarButton
-        // (not via NavigationTabButton, to avoid inheriting its padding/margin
-        // which would squeeze ProfileIcon's avatar+badge layout).
         ..mod.widgets.NavigationBarButton
 
         // ProfileIcon emits its own dynamic tooltip (with verification badge info)
         // from Rust, so leave the built-in tooltip text empty.
         tooltip_text: ""
 
-        // Match the drawn bg bounds of `NavigationTabButton` (height and
-        // margin) so that ProfileIcon's hover/selected highlight is the same
-        // size and shape as the other buttons in the tab bar.
+        // Use the same size/shape bounds as other buttons in the NavigationTabBar
         width: Fill,
-        height: (NAVIGATION_TAB_BAR_SIZE - 5)
+        height: (NAVIGATION_TAB_BAR_SIZE - 4)
         padding: 0,
-        margin: 3,
+        margin: 2,
         align: Align{ x: 0.5, y: 0.5 }
 
-        // The avatar and verification badge are wrapped in a sub-container that
-        // is *larger* than the avatar (sized to match ProfileIcon's drawn bg
-        // bounds), so the avatar can be centered while the badge sits in the
-        // gap between the avatar's edge and the wrapper's corner. This places
-        // the badge at the avatar's outer top-right (overlapping the corner)
-        // independently of the parent ProfileIcon's width.
         avatar_with_badge := View {
-            width: (NAVIGATION_TAB_BAR_SIZE - 5)
-            height: (NAVIGATION_TAB_BAR_SIZE - 5)
+            width: (NAVIGATION_TAB_BAR_SIZE - 4)
+            height: (NAVIGATION_TAB_BAR_SIZE - 4)
             flow: Overlay
             align: Align { x: 0.5, y: 0.5 }
 
@@ -137,8 +124,8 @@ script_mod! {
             margin: 0,
             icon_walk: Walk {
                 margin: 0,
-                width: (NAVIGATION_TAB_BAR_SIZE / 2.2),
-                height: (NAVIGATION_TAB_BAR_SIZE / 2.2)
+                width: 30,
+                height: 30
             }
             draw_icon +: {
                 color: (COLOR_NAVIGATION_TAB_FG)
@@ -153,8 +140,8 @@ script_mod! {
             margin: 0,
             icon_walk: Walk {
                 margin: 0,
-                width: (NAVIGATION_TAB_BAR_SIZE / 2.2),
-                height: (NAVIGATION_TAB_BAR_SIZE / 2.2)
+                width: 30,
+                height: 30
             }
             draw_icon +: {
                 color: (COLOR_NAVIGATION_TAB_FG)
@@ -172,8 +159,8 @@ script_mod! {
             margin: 0,
             icon_walk: Walk {
                 margin: 0,
-                width: (NAVIGATION_TAB_BAR_SIZE / 2.2),
-                height: (NAVIGATION_TAB_BAR_SIZE / 2.2)
+                width: 30,
+                height: 30
             }
             draw_icon +: {
                 color: (COLOR_NAVIGATION_TAB_FG)
@@ -188,8 +175,6 @@ script_mod! {
         Desktop := RoundedView {
             flow: Down,
             align: Align{x: 0.5}
-            // Similar to how we do it for the mobile mode view, but now
-            // the bar is on the left, so we add left padding and extra width.
             padding: Inset{
                 top: 8.,
                 bottom: (8.0 + mod.widgets.SAFE_INSET_PAD_BOTTOM),
@@ -392,8 +377,8 @@ impl Widget for ProfileIcon {
                     .verification_badge(cx, ids!(verification_badge))
                     .tooltip_content();
                 let text = self.own_profile.as_ref().map_or_else(
-                    || format!("Not logged in.\n\n{}", verification_str),
-                    |p| format!("Logged in as \"{}\".\n\n{}", p.displayable_name(), verification_str)
+                    || String::from("Not logged in (or disconnected).\n\nClick/tap to access all settings."),
+                    |p| format!("Logged in {verification_str}as \"{}\".\n\nClick/tap to access all settings.", p.displayable_name()),
                 );
                 let mut options = CalloutTooltipOptions {
                     position: if effective_is_desktop(cx) { TooltipPosition::Right } else { TooltipPosition::Top },
@@ -474,16 +459,21 @@ pub struct NavigationTabBar {
 
     /// The most recently applied view-mode override,
     #[rust] applied_view_mode: ViewModeOverride,
+
+    /// The tab currently visually marked as selected.
+    #[rust] selected_tab: SelectedTab,
 }
 
 impl ScriptHook for NavigationTabBar {
     fn on_after_new(&mut self, vm: &mut ScriptVm) {
         vm.with_cx_mut(|cx| {
-            // Programmatically select the Home button as active on startup,
-            // because animator default overrides in the DSL don't take effect.
-            self.view
-                .navigation_bar_button(cx, ids!(home_button))
-                .set_selected(cx, true);
+            self.apply_selected_tab(cx, None);
+        });
+    }
+
+    fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            self.apply_selected_tab(cx, None);
         });
     }
 }
@@ -498,13 +488,17 @@ impl NavigationTabBar {
     }
 
     /// Updates which navigation tab button is visually marked as selected,
-    /// enforcing radio-button-like mutual exclusion across the four
-    /// navigation tab buttons.
-    fn apply_selected_tab(&mut self, cx: &mut Cx, tab: &SelectedTab) {
+    /// enforcing mutual exclusion across all buttons (like a radio button group).
+    ///
+    /// If `tab` is `None`, the existing selection is re-applied without changing it.
+    fn apply_selected_tab(&mut self, cx: &mut Cx, tab: Option<SelectedTab>) {
+        if let Some(t) = tab {
+            self.selected_tab = t;
+        }
         let home    = self.view.navigation_bar_button(cx, ids!(home_button));
         let add     = self.view.navigation_bar_button(cx, ids!(add_room_button));
         let profile = self.view.profile_icon(cx, ids!(profile_icon));
-        match tab {
+        match &self.selected_tab {
             SelectedTab::Home => {
                 home.set_selected(cx, true);
                 add.set_selected(cx, false);
@@ -538,11 +532,11 @@ impl Widget for NavigationTabBar {
             // Each click both updates the visual selection and emits the
             // corresponding `NavigationBarAction` for downstream handling.
             if self.view.navigation_bar_button(cx, ids!(home_button)).clicked(actions) {
-                self.apply_selected_tab(cx, &SelectedTab::Home);
+                self.apply_selected_tab(cx, Some(SelectedTab::Home));
                 cx.action(NavigationBarAction::GoToHome);
             }
             else if self.view.navigation_bar_button(cx, ids!(add_room_button)).clicked(actions) {
-                self.apply_selected_tab(cx, &SelectedTab::AddRoom);
+                self.apply_selected_tab(cx, Some(SelectedTab::AddRoom));
                 cx.action(NavigationBarAction::GoToAddRoom);
             }
             else {
@@ -553,7 +547,7 @@ impl Widget for NavigationTabBar {
                     .borrow()
                     .is_some_and(|p| p.inner.clicked(actions));
                 if profile_clicked {
-                    self.apply_selected_tab(cx, &SelectedTab::Settings);
+                    self.apply_selected_tab(cx, Some(SelectedTab::Settings));
                     cx.action(NavigationBarAction::OpenSettings);
                 }
             }
@@ -567,7 +561,15 @@ impl Widget for NavigationTabBar {
                 // If another widget programmatically selected a new tab,
                 // update our buttons' visual selection state accordingly.
                 if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
-                    self.apply_selected_tab(cx, tab);
+                    self.apply_selected_tab(cx, Some(tab.clone()));
+                    continue;
+                }
+
+                // Upon login (mostly re-login), go back to the home tab
+                // because the profile/settings tab will have been selected upon logout.
+                if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
+                    self.apply_selected_tab(cx, Some(SelectedTab::Home));
+                    cx.action(NavigationBarAction::GoToHome);
                     continue;
                 }
 

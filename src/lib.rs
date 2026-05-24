@@ -74,6 +74,7 @@ pub mod tsp_dummy;
 pub mod sliding_sync;
 pub mod space_service_sync;
 pub mod avatar_cache;
+pub mod room_preview_cache;
 pub mod media_cache;
 pub mod verification;
 
@@ -82,7 +83,7 @@ pub mod temp_storage;
 pub mod location;
 pub mod image_utils;
 
-pub const APP_QUALIFIER: &str = "org";
+pub const APP_QUALIFIER: &str = "rs";
 pub const APP_ORGANIZATION: &str = "robius";
 pub const APP_NAME: &str = "robrix";
 
