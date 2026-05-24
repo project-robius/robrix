@@ -33,6 +33,8 @@ use crate::shared::file_upload_modal::FilePreviewerMetaData;
 const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB
 
 /// Result of the native file picker plus background file-loading work.
+// Note: file upload is currently not supported on iOS/Android.
+#[cfg_attr(any(target_os = "ios", target_os = "android"), allow(dead_code))]
 enum PendingFileSelection {
     /// A file was selected and read successfully.
     Selected {
