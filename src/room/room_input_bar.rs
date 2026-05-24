@@ -16,24 +16,20 @@
 //!
 
 
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId};
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-use std::sync::Arc;
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{FileUploadAttemptId, MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FileUploadMetadata, FileLoadedData, FilePreviewerAction, TimelineUpdateSender}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-use crate::shared::file_upload_modal::FilePreviewerMetaData;
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{FileUploadAttemptId, MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, AttachmentUploadTarget, FileUploadMetadata, FileLoadedData, FilePreviewerAction, TimelineUpdateSender}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+
 /// Result of the native file picker plus background file-loading work.
 enum PendingFileSelection {
     /// A file was selected and read successfully.
     #[allow(dead_code)] // file upload isn't yet supported on iOS/Android
     Selected {
         loaded_data: FileLoadedData,
-        timeline_update_sender: TimelineUpdateSender,
+        upload_target: AttachmentUploadTarget,
         in_reply_to: Option<OwnedEventId>,
     },
     /// The picker was dismissed without selecting a file.
@@ -281,13 +277,13 @@ impl Widget for RoomInputBar {
                 match receiver.try_recv() {
                     Ok(PendingFileSelection::Selected {
                         loaded_data,
-                        timeline_update_sender,
+                        upload_target,
                         in_reply_to,
                     }) => {
                         let file_data = convert_loaded_data_to_file_data(loaded_data);
                         Cx::post_action(FilePreviewerAction::Show {
                             file_data,
-                            timeline_update_sender,
+                            upload_target,
                             in_reply_to,
                         });
                         remove_receiver = true;
@@ -371,7 +367,7 @@ impl RoomInputBar {
         // Handle the add attachment button being clicked.
         if self.button(cx, ids!(send_attachment_button)).clicked(actions) {
             log!("Add attachment button clicked; opening file picker...");
-            self.open_file_picker(cx, room_screen_props.timeline_update_sender.clone());
+            self.open_file_picker(cx, room_screen_props.timeline_kind.clone(), room_screen_props.timeline_update_sender.clone());
         }
 
         // Handle the add location button being clicked.
@@ -683,10 +679,15 @@ impl RoomInputBar {
 
     /// Opens the native file picker dialog to select a file for upload.
     ///
-    /// The timeline update sender is captured at this moment to ensure the file is uploaded
+    /// The timeline target is captured at this moment to ensure the file is uploaded
     /// to the correct room/thread, even if the user switches rooms while the modal is open.
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
-    fn open_file_picker(&mut self, cx: &mut Cx, timeline_update_sender: Option<TimelineUpdateSender>) {
+    fn open_file_picker(
+        &mut self,
+        cx: &mut Cx,
+        timeline_kind: TimelineKind,
+        timeline_update_sender: Option<TimelineUpdateSender>,
+    ) {
         let Some(timeline_update_sender) = timeline_update_sender else {
             enqueue_popup_notification(
                 "Cannot upload file: timeline not available.",
@@ -717,6 +718,12 @@ impl RoomInputBar {
         let in_reply_to = self.replying_to
             .as_ref()
             .and_then(|(event_tl_item, _embedded_event)| event_tl_item.event_id().map(ToOwned::to_owned));
+        let upload_target = AttachmentUploadTarget {
+            timeline_kind,
+            timeline_update_sender,
+            #[cfg(feature = "tsp")]
+            sign_with_tsp: self.is_tsp_signing_enabled(cx),
+        };
 
         let dialog = rfd::AsyncFileDialog::new()
             .set_title("Select file to upload");
@@ -728,7 +735,7 @@ impl RoomInputBar {
             let result = match futures::executor::block_on(dialog_task) {
                 Some(selected_file) => load_selected_file(
                     selected_file.path().to_path_buf(),
-                    timeline_update_sender,
+                    upload_target,
                     in_reply_to,
                 ),
                 None => PendingFileSelection::Cancelled,
@@ -742,7 +749,7 @@ impl RoomInputBar {
 
     /// Shows a "not supported" message on mobile platforms.
     #[cfg(any(target_os = "ios", target_os = "android"))]
-    fn open_file_picker(&mut self, _cx: &mut Cx, _timeline_update_sender: Option<TimelineUpdateSender>) {
+    fn open_file_picker(&mut self, _cx: &mut Cx, _timeline_kind: TimelineKind, _timeline_update_sender: Option<TimelineUpdateSender>) {
         enqueue_popup_notification(
             "File uploads are not yet supported on this platform.",
             PopupKind::Error,
@@ -1004,7 +1011,7 @@ fn convert_loaded_data_to_file_data(loaded: FileLoadedData) -> FileUploadMetadat
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn load_selected_file(
     selected_file_path: std::path::PathBuf,
-    timeline_update_sender: TimelineUpdateSender,
+    upload_target: AttachmentUploadTarget,
     in_reply_to: Option<OwnedEventId>,
 ) -> PendingFileSelection {
     match std::fs::metadata(&selected_file_path) {
@@ -1020,7 +1027,7 @@ fn load_selected_file(
                 .first_or_octet_stream();
             let preview_data = if crate::image_utils::is_displayable_image(mime.essence_str()) {
                 match std::fs::read(&selected_file_path) {
-                    Ok(data) => Some(Arc::new(data)),
+                    Ok(data) => Some(std::sync::Arc::new(data)),
                     Err(e) => return PendingFileSelection::Error(format!("Unable to read image preview: {e}")),
                 }
             } else {
@@ -1029,14 +1036,14 @@ fn load_selected_file(
 
             PendingFileSelection::Selected {
                 loaded_data: FileLoadedData {
-                    metadata: FilePreviewerMetaData {
+                    metadata: crate::shared::file_upload_modal::FilePreviewerMetaData {
                         mime,
                         file_size,
                         file_path: selected_file_path,
                     },
                     preview_data,
                 },
-                timeline_update_sender,
+                upload_target,
                 in_reply_to,
             }
         }

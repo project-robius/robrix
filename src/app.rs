@@ -329,9 +329,9 @@ impl MatchEvent for App {
 
             // Handle file upload modal actions
             match action.downcast_ref() {
-                Some(FilePreviewerAction::Show { file_data, timeline_update_sender, in_reply_to }) => {
+                Some(FilePreviewerAction::Show { file_data, upload_target, in_reply_to }) => {
                     self.ui.file_upload_modal(cx, ids!(file_upload_modal_inner))
-                        .set_file_data(cx, file_data.clone(), timeline_update_sender.clone(), in_reply_to.clone());
+                        .set_file_data(cx, file_data.clone(), upload_target.clone(), in_reply_to.clone());
                     self.ui.modal(cx, ids!(file_upload_modal)).open(cx);
                     continue;
                 }

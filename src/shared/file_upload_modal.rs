@@ -8,7 +8,11 @@ use ruma::OwnedEventId;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::home::room_screen::TimelineUpdate;
+use crate::{
+    home::room_screen::{TimelineUpdate, next_file_upload_attempt_id},
+    shared::popup_list::{PopupKind, enqueue_popup_notification},
+    sliding_sync::{MatrixRequest, TimelineKind, submit_async_request},
+};
 use crate::utils::format_decimal_file_size;
 
 /// Type alias for the sender used to send timeline updates.
@@ -219,6 +223,18 @@ pub struct AttachmentUpload {
     pub in_reply_to: Option<OwnedEventId>,
 }
 
+/// The room or thread that should receive a confirmed attachment upload.
+#[derive(Clone, Debug)]
+pub struct AttachmentUploadTarget {
+    /// The timeline that was active when the file picker was opened.
+    pub timeline_kind: TimelineKind,
+    /// The sender for delivering upload progress back to the target timeline UI.
+    pub timeline_update_sender: TimelineUpdateSender,
+    /// Whether TSP signing was enabled when the file picker was opened.
+    #[cfg(feature = "tsp")]
+    pub sign_with_tsp: bool,
+}
+
 /// Metadata for the file previewer (used in background loading).
 #[derive(Debug, Clone)]
 pub struct FilePreviewerMetaData {
@@ -246,11 +262,10 @@ pub enum FilePreviewerAction {
     /// No action.
     #[default]
     None,
-    /// Request that the file upload modal be shown with the given file data and timeline update sender.
-    /// The sender is captured at file selection time to ensure uploads go to the correct room.
+    /// Request that the file upload modal be shown for the captured upload target.
     Show {
         file_data: FileUploadMetadata,
-        timeline_update_sender: TimelineUpdateSender,
+        upload_target: AttachmentUploadTarget,
         in_reply_to: Option<OwnedEventId>,
     },
     /// Report that the file upload modal should be hidden.
@@ -265,8 +280,8 @@ pub struct FileUploadModal {
 
     /// The current file data being previewed.
     #[rust] file_data: Option<FileUploadMetadata>,
-    /// The sender to use for sending timeline updates when upload is confirmed.
-    #[rust] timeline_update_sender: Option<TimelineUpdateSender>,
+    /// The room/thread target captured when the file picker was opened.
+    #[rust] upload_target: Option<AttachmentUploadTarget>,
     /// The reply event captured when the file picker was opened.
     #[rust] in_reply_to: Option<OwnedEventId>,
 }
@@ -277,7 +292,7 @@ impl Widget for FileUploadModal {
             // Handle cancel button
             if self.button(cx, ids!(cancel_button)).clicked(actions) {
                 self.file_data = None;
-                self.timeline_update_sender = None;
+                self.upload_target = None;
                 self.in_reply_to = None;
                 Cx::post_action(FilePreviewerAction::Hide);
             }
@@ -288,7 +303,7 @@ impl Widget for FileUploadModal {
                     "" => None,
                     caption => Some(caption.to_string()),
                 };
-                if let (Some(file_data), Some(sender)) = (self.file_data.as_mut(), self.timeline_update_sender.as_ref()) {
+                if let (Some(file_data), Some(upload_target)) = (self.file_data.as_mut(), self.upload_target.as_ref()) {
                     file_data.caption = caption;
                     let mut upload_file_data = file_data.clone();
                     upload_file_data.preview_data = None;
@@ -296,21 +311,11 @@ impl Widget for FileUploadModal {
                         file_data: upload_file_data,
                         in_reply_to: self.in_reply_to.clone(),
                     };
-                    match sender.send(TimelineUpdate::FileUploadConfirmed(upload)) {
-                        Ok(()) => {
-                            self.file_data = None;
-                            self.timeline_update_sender = None;
-                            self.in_reply_to = None;
-                            SignalToUI::set_ui_signal();
-                            Cx::post_action(FilePreviewerAction::Hide);
-                        }
-                        Err(_e) => {
-                            crate::shared::popup_list::enqueue_popup_notification(
-                                "Cannot upload file: the selected room is no longer available.",
-                                crate::shared::popup_list::PopupKind::Error,
-                                None,
-                            );
-                        }
+                    if start_attachment_upload(upload, upload_target.clone()) {
+                        self.file_data = None;
+                        self.upload_target = None;
+                        self.in_reply_to = None;
+                        Cx::post_action(FilePreviewerAction::Hide);
                     }
                 }
             }
@@ -324,16 +329,54 @@ impl Widget for FileUploadModal {
     }
 }
 
+fn start_attachment_upload(upload: AttachmentUpload, upload_target: AttachmentUploadTarget) -> bool {
+    #[cfg(feature = "tsp")]
+    if upload_target.sign_with_tsp {
+        enqueue_popup_notification(
+            "TSP-signed attachment uploads are not supported yet. Disable TSP signing to upload files.",
+            PopupKind::Error,
+            None,
+        );
+        return true;
+    }
+
+    let upload_id = next_file_upload_attempt_id();
+    let file_name = upload.file_data.file_name();
+    if upload_target.timeline_update_sender.send(TimelineUpdate::FileUploadStarted {
+        upload_id,
+        file_name,
+        in_reply_to: upload.in_reply_to.clone(),
+    }).is_err() {
+        enqueue_popup_notification(
+            "Cannot upload file: the selected room is no longer available.",
+            PopupKind::Error,
+            None,
+        );
+        return false;
+    }
+
+    submit_async_request(MatrixRequest::SendAttachment {
+        timeline_kind: upload_target.timeline_kind,
+        upload_id,
+        upload,
+        timeline_update_sender: upload_target.timeline_update_sender,
+        #[cfg(feature = "tsp")]
+        sign_with_tsp: upload_target.sign_with_tsp,
+    });
+    SignalToUI::set_ui_signal();
+    true
+}
+
 impl FileUploadModal {
-    /// Sets the file data and timeline update sender, and updates the preview UI.
-    pub fn set_file_data(&mut self, cx: &mut Cx, file_data: FileUploadMetadata, timeline_update_sender: TimelineUpdateSender, in_reply_to: Option<OwnedEventId>) {
+    /// Sets the file data and captured upload target, and updates the preview UI.
+    pub fn set_file_data(&mut self, cx: &mut Cx, file_data: FileUploadMetadata, upload_target: AttachmentUploadTarget, in_reply_to: Option<OwnedEventId>) {
         let file_name = file_data.file_name();
         let caption = file_data.caption.as_deref().unwrap_or(&file_name);
         self.button(cx, ids!(cancel_button)).reset_hover(cx);
         self.button(cx, ids!(upload_button)).reset_hover(cx);
         self.text_input(cx, ids!(caption_input)).set_text(cx, caption);
         self.label(cx, ids!(file_size_label))
-            .set_text(cx, &format_decimal_file_size(file_data.size).to_string());
+            .set_text(cx, &format_decimal_file_size(file_data.size));
         self.label(cx, ids!(large_attachment_warning_label))
             .set_visible(cx, file_data.size > LARGE_ATTACHMENT_WARNING_THRESHOLD_BYTES);
 
@@ -370,7 +413,7 @@ impl FileUploadModal {
         }
 
         self.file_data = Some(file_data);
-        self.timeline_update_sender = Some(timeline_update_sender);
+        self.upload_target = Some(upload_target);
         self.in_reply_to = in_reply_to;
         self.redraw(cx);
     }
@@ -442,10 +485,10 @@ fn display_file_type_label(mime_type: &str) -> &'static str {
 }
 
 impl FileUploadModalRef {
-    /// Sets the file data and timeline update sender, and updates the preview UI.
-    pub fn set_file_data(&self, cx: &mut Cx, file_data: FileUploadMetadata, timeline_update_sender: TimelineUpdateSender, in_reply_to: Option<OwnedEventId>) {
+    /// Sets the file data and captured upload target, and updates the preview UI.
+    pub fn set_file_data(&self, cx: &mut Cx, file_data: FileUploadMetadata, upload_target: AttachmentUploadTarget, in_reply_to: Option<OwnedEventId>) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_file_data(cx, file_data, timeline_update_sender, in_reply_to);
+            inner.set_file_data(cx, file_data, upload_target, in_reply_to);
         }
     }
 }

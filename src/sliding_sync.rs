@@ -1816,13 +1816,14 @@ async fn matrix_worker_task(
                     } else {
                         None
                     };
+                    let matrix_file_size = || matrix_sdk::ruma::UInt::try_from(file_data.size).ok();
 
                     // Create AttachmentInfo based on the MIME type
                     let info = match content_type.type_() {
                         mime::IMAGE => AttachmentInfo::Image(BaseImageInfo {
                             width: image_dimensions.map(|(width, _height)| width.into()),
                             height: image_dimensions.map(|(_width, height)| height.into()),
-                            size: Some(file_data.size.try_into().unwrap_or(u32::MAX).into()),
+                            size: matrix_file_size(),
                             blurhash: None,
                             is_animated: None,
                         }),
@@ -1831,17 +1832,17 @@ async fn matrix_worker_task(
                             width: None,
                             height: None,
                             duration: None,
-                            size: Some(file_data.size.try_into().unwrap_or(u32::MAX).into()),
+                            size: matrix_file_size(),
                             blurhash: None,
                         }),
                         mime::AUDIO => AttachmentInfo::Audio(BaseAudioInfo {
                             // TODO: Extract actual duration from audio
                             duration: None,
-                            size: Some(file_data.size.try_into().unwrap_or(u32::MAX).into()),
+                            size: matrix_file_size(),
                             waveform: None,
                         }),
                         _ => AttachmentInfo::File(BaseFileInfo {
-                            size: Some(file_data.size.try_into().unwrap_or(u32::MAX).into()),
+                            size: matrix_file_size(),
                         }),
                     };
 

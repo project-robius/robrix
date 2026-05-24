@@ -67,7 +67,7 @@ pub type FileUploadAttemptId = u64;
 
 static NEXT_FILE_UPLOAD_ATTEMPT_ID: AtomicU64 = AtomicU64::new(1);
 
-fn next_file_upload_attempt_id() -> FileUploadAttemptId {
+pub fn next_file_upload_attempt_id() -> FileUploadAttemptId {
     NEXT_FILE_UPLOAD_ATTEMPT_ID.fetch_add(1, Ordering::Relaxed)
 }
 
@@ -1681,29 +1681,9 @@ impl RoomScreen {
                     tl.tombstone_info = Some(successor_room_details);
                 }
                 TimelineUpdate::LinkPreviewFetched => {}
-                TimelineUpdate::FileUploadConfirmed(upload) => {
-                    let room_input_bar = self.view.room_input_bar(cx, ids!(room_input_bar));
-                    #[cfg(feature = "tsp")]
-                    if room_input_bar.is_tsp_signing_enabled(cx) {
-                        enqueue_popup_notification(
-                            "TSP-signed attachment uploads are not supported yet. Disable TSP signing to upload files.",
-                            PopupKind::Error,
-                            None,
-                        );
-                        continue;
-                    }
-
-                    let upload_id = next_file_upload_attempt_id();
-                    let file_name = upload.file_data.file_name();
-                    room_input_bar.begin_file_upload(cx, upload_id, &file_name, upload.in_reply_to.as_ref());
-                    submit_async_request(MatrixRequest::SendAttachment {
-                        timeline_kind: tl.kind.clone(),
-                        upload_id,
-                        upload,
-                        timeline_update_sender: tl.update_sender.clone(),
-                        #[cfg(feature = "tsp")]
-                        sign_with_tsp: false,
-                    });
+                TimelineUpdate::FileUploadStarted { upload_id, file_name, in_reply_to } => {
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .begin_file_upload(cx, upload_id, &file_name, in_reply_to.as_ref());
                 }
                 TimelineUpdate::FileUploadUpdate { upload_id, current, total } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
@@ -2900,8 +2880,12 @@ pub enum TimelineUpdate {
     Tombstoned(SuccessorRoomDetails),
     /// A notice that link preview data for a URL has been fetched and is now available.
     LinkPreviewFetched,
-    /// User confirmed a file upload via the file upload modal.
-    FileUploadConfirmed(crate::shared::file_upload_modal::AttachmentUpload),
+    /// A file upload has started for this timeline.
+    FileUploadStarted {
+        upload_id: FileUploadAttemptId,
+        file_name: String,
+        in_reply_to: Option<OwnedEventId>,
+    },
     /// Progress update for a specific file-upload attempt.
     FileUploadUpdate {
         upload_id: FileUploadAttemptId,

@@ -17,9 +17,9 @@ use crate::{
 pub const GEO_URI_SCHEME: &str = "geo:";
 
 
-/// Formats a byte count using `bytesize`'s decimal SI units, e.g. KB/MB/GB.
-pub fn format_decimal_file_size(bytes: u64) -> bytesize::Display {
-    bytesize::ByteSize::b(bytes).display().si()
+/// Formats a byte count using decimal units with user-facing byte suffixes, e.g. KB/MB/GB.
+pub fn format_decimal_file_size(bytes: u64) -> String {
+    bytesize::ByteSize::b(bytes).display().si().to_string().to_uppercase()
 }
 
 
