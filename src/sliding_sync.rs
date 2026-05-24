@@ -1850,10 +1850,7 @@ async fn matrix_worker_task(
                         content_type,
                         TimelineAttachmentConfig {
                             info: Some(info),
-                            caption: file_data
-                                .caption
-                                .as_ref()
-                                .map(|caption| TextMessageEventContent::plain(caption)),
+                            caption: file_data.caption.as_ref().map(TextMessageEventContent::plain),
                             in_reply_to,
                             ..Default::default()
                         },
