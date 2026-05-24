@@ -869,18 +869,17 @@ impl Widget for RoomScreen {
                 }
 
                 // Handle retry action from upload progress view.
-                if let UploadProgressViewAction::Retry { file_data, timeline_kind } = action.as_widget_action().cast() {
+                if let UploadProgressViewAction::Retry { upload, timeline_kind } = action.as_widget_action().cast() {
                     let Some(tl) = self.tl_state.as_ref() else { continue };
                     // Only handle if this action is for the current room/thread.
                     if tl.kind != timeline_kind { continue };
                     let room_input_bar = self.view.room_input_bar(cx, ids!(room_input_bar));
-                    room_input_bar.show_upload_progress(cx, &file_data.name);
+                    room_input_bar.show_upload_progress(cx, &upload.file_data.name);
                     submit_async_request(MatrixRequest::SendAttachment {
                         timeline_kind,
-                        file_data,
-                        replied_to: None,
+                        upload,
                         #[cfg(feature = "tsp")]
-                        sign_with_tsp: room_input_bar.is_tsp_signing_enabled(cx),
+                        sign_with_tsp: false,
                     });
                     continue;
                 }
@@ -1676,13 +1675,25 @@ impl RoomScreen {
                 TimelineUpdate::LinkPreviewFetched => {}
                 TimelineUpdate::FileUploadConfirmed(file_data) => {
                     let room_input_bar = self.view.room_input_bar(cx, ids!(room_input_bar));
-                    let replied_to = room_input_bar.handle_file_upload_confirmed(cx, &file_data.name);
+                    #[cfg(feature = "tsp")]
+                    if room_input_bar.is_tsp_signing_enabled(cx) {
+                        enqueue_popup_notification(
+                            "TSP-signed attachment uploads are not supported yet. Disable TSP signing to upload files.",
+                            PopupKind::Error,
+                            None,
+                        );
+                        continue;
+                    }
+
+                    let in_reply_to = room_input_bar.begin_file_upload(cx, &file_data.name);
                     submit_async_request(MatrixRequest::SendAttachment {
                         timeline_kind: tl.kind.clone(),
-                        file_data,
-                        replied_to,
+                        upload: crate::shared::file_upload_modal::AttachmentUpload {
+                            file_data,
+                            in_reply_to,
+                        },
                         #[cfg(feature = "tsp")]
-                        sign_with_tsp: room_input_bar.is_tsp_signing_enabled(cx),
+                        sign_with_tsp: false,
                     });
                 }
                 TimelineUpdate::FileUploadUpdate { current, total } => {
@@ -1693,9 +1704,9 @@ impl RoomScreen {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .set_upload_abort_handle(handle);
                 }
-                TimelineUpdate::FileUploadError { error, file_data } => {
+                TimelineUpdate::FileUploadError { error, upload } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .show_upload_error(cx, &error, file_data);
+                        .show_upload_error(cx, &error, upload);
                 }
                 TimelineUpdate::FileUploadComplete => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
@@ -2865,7 +2876,7 @@ pub enum TimelineUpdate {
     /// An error occurred during file upload.
     FileUploadError {
         error: String,
-        file_data: crate::shared::file_upload_modal::FileData,
+        upload: crate::shared::file_upload_modal::AttachmentUpload,
     },
     /// File upload completed successfully.
     FileUploadComplete,

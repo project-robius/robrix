@@ -6,7 +6,7 @@ use makepad_widgets::*;
 use tokio::task::AbortHandle;
 
 use crate::home::room_screen::RoomScreenProps;
-use crate::shared::file_upload_modal::FileData;
+use crate::shared::file_upload_modal::AttachmentUpload;
 use crate::shared::progress_bar::ProgressBarWidgetRefExt;
 use crate::sliding_sync::TimelineKind;
 
@@ -107,7 +107,7 @@ pub enum UploadViewState {
     /// Error state - upload failed.
     Error {
         message: String,
-        file_data: FileData,
+        upload: AttachmentUpload,
     },
 }
 
@@ -121,7 +121,7 @@ pub enum UploadProgressViewAction {
     Cancelled,
     /// User requested retry of a failed upload.
     Retry {
-        file_data: FileData,
+        upload: AttachmentUpload,
         timeline_kind: TimelineKind,
     },
 }
@@ -154,10 +154,10 @@ impl Widget for UploadProgressView {
 
             // Handle retry button
             if self.button(cx, ids!(retry_button)).clicked(actions) {
-                if let UploadViewState::Error { file_data, .. } = &self.state {
+                if let UploadViewState::Error { upload, .. } = &self.state {
                     if let Some(room_screen_props) = scope.props.get::<RoomScreenProps>() {
                         cx.widget_action(self.widget_uid(), UploadProgressViewAction::Retry {
-                            file_data: file_data.clone(),
+                            upload: upload.clone(),
                             timeline_kind: room_screen_props.timeline_kind.clone(),
                         });
                     }
@@ -201,7 +201,7 @@ impl UploadProgressView {
 
     /// Updates the progress value.
     pub fn set_progress(&mut self, cx: &mut Cx, current: u64, total: u64) {
-        if let UploadViewState::Error{ message: _, file_data: _ } = self.state {
+        if let UploadViewState::Error { .. } = self.state {
             return
         }
         self.progress = if total > 0 {
@@ -232,10 +232,10 @@ impl UploadProgressView {
     }
 
     /// Shows an error state with the given message.
-    pub fn show_error(&mut self, cx: &mut Cx, error: &str, file_data: FileData) {
+    pub fn show_error(&mut self, cx: &mut Cx, error: &str, upload: AttachmentUpload) {
         self.state = UploadViewState::Error {
             message: error.to_string(),
-            file_data,
+            upload,
         };
 
         // Update UI for error state
@@ -281,9 +281,9 @@ impl UploadProgressViewRef {
     }
 
     /// Shows an error state with the given message.
-    pub fn show_error(&self, cx: &mut Cx, error: &str, file_data: FileData) {
+    pub fn show_error(&self, cx: &mut Cx, error: &str, upload: AttachmentUpload) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_error(cx, error, file_data);
+            inner.show_error(cx, error, upload);
         }
     }
 }

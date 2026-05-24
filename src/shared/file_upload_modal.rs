@@ -5,6 +5,7 @@
 
 use bytesize::ByteSize;
 use makepad_widgets::*;
+use ruma::OwnedEventId;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -178,19 +179,15 @@ pub struct FileData {
     pub data: Arc<Vec<u8>>,
     /// The file size in bytes.
     pub size: u64,
-    /// Optional thumbnail data for images (JPEG bytes).
-    pub thumbnail: Option<ThumbnailData>,
 }
 
-/// Thumbnail data for image files.
+/// Metadata for a pending attachment upload.
 #[derive(Clone, Debug)]
-pub struct ThumbnailData {
-    /// The thumbnail image data (JPEG).
-    pub data: Vec<u8>,
-    /// Width of the thumbnail.
-    pub width: u32,
-    /// Height of the thumbnail.
-    pub height: u32,
+pub struct AttachmentUpload {
+    /// The selected file and preview data.
+    pub file_data: FileData,
+    /// The explicit event being replied to, if any.
+    pub in_reply_to: Option<OwnedEventId>,
 }
 
 /// Metadata for the file previewer (used in background loading).
@@ -213,9 +210,6 @@ pub struct FileLoadedData {
     /// The raw file data read from disk (wrapped in Arc to avoid copying large files).
     pub data: Arc<Vec<u8>>,
 }
-
-/// Type alias for the receiver that gets loaded file data from a background thread.
-pub type FileLoadReceiver = std::sync::mpsc::Receiver<Option<FileLoadedData>>;
 
 /// Actions emitted by the FileUploadModal.
 #[derive(Clone, Debug, Default)]

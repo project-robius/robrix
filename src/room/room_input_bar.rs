@@ -22,15 +22,31 @@ use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
-use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedRoomId};
+use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId};
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 use std::sync::Arc;
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{FileData, FileLoadedData, FilePreviewerAction, TimelineUpdateSender}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FileData, FileLoadedData, FilePreviewerAction, TimelineUpdateSender}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 use crate::shared::file_upload_modal::FilePreviewerMetaData;
 // Check file size limit (100 MB - homeservers typically cap at 50-100 MB)
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB
+
+/// Result of the native file picker plus background file-loading work.
+enum PendingFileSelection {
+    /// A file was selected and read successfully.
+    Selected {
+        loaded_data: FileLoadedData,
+        timeline_update_sender: TimelineUpdateSender,
+    },
+    /// The picker was dismissed without selecting a file.
+    Cancelled,
+    /// The file could not be selected, inspected, or read.
+    Error(String),
+}
+
+/// Receives the pending file-selection result back on the UI thread.
+type PendingFileSelectionReceiver = std::sync::mpsc::Receiver<PendingFileSelection>;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -203,12 +219,8 @@ pub struct RoomInputBar {
     /// Cached natural Fit height of the input_bar, used as the animation
     /// target when the editing pane is being hidden.
     #[rust] input_bar_natural_height: f64,
-    /// The pending file load operation, if any. Contains the receiver channel
-    /// for receiving the loaded file data from a background thread.
-    #[rust] pending_file_load: Option<crate::shared::file_upload_modal::FileLoadReceiver>,
-    /// The timeline update sender captured when a file picker is opened, to ensure the file
-    /// is uploaded to the correct room/thread even if the user switches rooms.
-    #[rust] pending_file_update_sender: Option<TimelineUpdateSender>,
+    /// The pending file picker / background load operation, if any.
+    #[rust] pending_file_selection: Option<PendingFileSelectionReceiver>,
 }
 
 impl ScriptHook for RoomInputBar {
@@ -265,34 +277,33 @@ impl Widget for RoomInputBar {
 
         // Handle signal events for pending file loads from background threads
         if let Event::Signal = event {
-            if let Some(receiver) = &self.pending_file_load {
+            if let Some(receiver) = &self.pending_file_selection {
                 let mut remove_receiver = false;
                 match receiver.try_recv() {
-                    Ok(Some(loaded_data)) => {
-                        // Convert FileLoadedData to FileData for the modal
+                    Ok(PendingFileSelection::Selected {
+                        loaded_data,
+                        timeline_update_sender,
+                    }) => {
                         let file_data = convert_loaded_data_to_file_data(loaded_data);
-                        // Use the captured sender from when the file picker was opened
-                        if let Some(timeline_update_sender) = self.pending_file_update_sender.take() {
-                            Cx::post_action(FilePreviewerAction::Show { file_data, timeline_update_sender });
-                        }
+                        Cx::post_action(FilePreviewerAction::Show { file_data, timeline_update_sender });
                         remove_receiver = true;
                     }
-                    Ok(None) => {
-                        // File loading failed
-                        self.pending_file_update_sender = None;
+                    Ok(PendingFileSelection::Cancelled) => {
+                        remove_receiver = true;
+                    }
+                    Ok(PendingFileSelection::Error(error)) => {
+                        enqueue_popup_notification(error, PopupKind::Error, None);
                         remove_receiver = true;
                     }
                     Err(std::sync::mpsc::TryRecvError::Empty) => {
-                        // Still waiting for data
+                        // Still waiting for file picker / loader.
                     }
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        // Channel disconnected
-                        self.pending_file_update_sender = None;
                         remove_receiver = true;
                     }
                 }
                 if remove_receiver {
-                    self.pending_file_load = None;
+                    self.pending_file_selection = None;
                     self.redraw(cx);
                 }
             }
@@ -672,7 +683,6 @@ impl RoomInputBar {
     /// to the correct room/thread, even if the user switches rooms while the modal is open.
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     fn open_file_picker(&mut self, cx: &mut Cx, timeline_update_sender: Option<TimelineUpdateSender>) {
-        // Get the timeline update sender - it's passed from RoomScreenProps
         let Some(timeline_update_sender) = timeline_update_sender else {
             enqueue_popup_notification(
                 "Cannot upload file: timeline not available.",
@@ -682,91 +692,80 @@ impl RoomInputBar {
             return;
         };
 
-        // Run file dialog on main thread (required for non-windowed environments)
-        let dialog = rfd::FileDialog::new()
+        if self.pending_file_selection.is_some() {
+            enqueue_popup_notification(
+                "A file selection is already in progress.",
+                PopupKind::Error,
+                None,
+            );
+            return;
+        }
+
+        if self.view.view(cx, ids!(upload_progress_view)).visible() {
+            enqueue_popup_notification(
+                "Finish the current upload before starting another one.",
+                PopupKind::Error,
+                None,
+            );
+            return;
+        }
+
+        let dialog = rfd::AsyncFileDialog::new()
             .set_title("Select file to upload")
             .add_filter("All files", &["*"])
             .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp", "bmp"])
             .add_filter("Documents", &["pdf", "doc", "docx", "txt", "rtf"]);
+        let dialog_task = dialog.pick_file();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        self.pending_file_selection = Some(receiver);
 
-        if let Some(selected_file_path) = dialog.pick_file() {
-            // Store the sender for when the file finishes loading
-            self.pending_file_update_sender = Some(timeline_update_sender);
-            // Get file metadata
-            let file_size = match std::fs::metadata(&selected_file_path) {
-                Ok(metadata) => metadata.len(),
-                Err(e) => {
-                    makepad_widgets::error!("Failed to read file metadata: {e}");
-                    enqueue_popup_notification(
-                        format!("Unable to access file: {e}"),
-                        PopupKind::Error,
-                        None,
-                    );
-                    return;
+        cx.spawn_thread(move || {
+            let selection = futures::executor::block_on(dialog_task);
+            let result = match selection {
+                Some(selected_file) => {
+                    let selected_file_path = selected_file.path().to_path_buf();
+                    match std::fs::metadata(&selected_file_path) {
+                        Ok(metadata) => {
+                            let file_size = metadata.len();
+                            if file_size == 0 {
+                                PendingFileSelection::Error("Cannot upload empty file".to_string())
+                            } else if file_size > MAX_FILE_SIZE {
+                                PendingFileSelection::Error(format!(
+                                    "File too large ({}). Maximum upload size is 100 MB.",
+                                    ByteSize::b(file_size)
+                                ))
+                            } else {
+                                let mime = mime_guess::from_path(&selected_file_path)
+                                    .first_or_octet_stream();
+                                match std::fs::read(&selected_file_path) {
+                                    Ok(data) => PendingFileSelection::Selected {
+                                        loaded_data: FileLoadedData {
+                                            metadata: FilePreviewerMetaData {
+                                                mime,
+                                                file_size,
+                                                file_path: selected_file_path,
+                                            },
+                                            data: Arc::new(data),
+                                        },
+                                        timeline_update_sender,
+                                    },
+                                    Err(e) => PendingFileSelection::Error(format!(
+                                        "Unable to read file: {e}"
+                                    )),
+                                }
+                            }
+                        }
+                        Err(e) => PendingFileSelection::Error(format!("Unable to access file: {e}")),
+                    }
                 }
+                None => PendingFileSelection::Cancelled,
             };
 
-            // Check for empty files
-            if file_size == 0 {
-                enqueue_popup_notification("Cannot upload empty file", PopupKind::Error, None);
-                return;
+            if sender.send(result).is_err() {
+                makepad_widgets::error!("Failed to send file picker result to UI: receiver dropped");
             }
-
-            if file_size > MAX_FILE_SIZE {
-                enqueue_popup_notification(
-                    format!(
-                        "File too large ({}). Maximum upload size is 100 MB.",
-                        ByteSize::b(file_size)
-                    ),
-                    PopupKind::Error,
-                    None,
-                );
-                return;
-            }
-
-            // Detect the MIME type from the file extension
-            let mime = mime_guess::from_path(&selected_file_path)
-                .first_or_octet_stream();
-
-            // Create channel for receiving loaded file data
-            let (sender, receiver) = std::sync::mpsc::channel();
-            self.pending_file_load = Some(receiver);
-
-            // Spawn background thread to read file and generate thumbnail (for images)
-            let path_clone = selected_file_path.clone();
-            let mime_clone = mime.clone();
-            cx.spawn_thread(move || {
-                // Read the file data in the background thread (not on UI thread)
-                let file_data = match std::fs::read(&path_clone) {
-                    Ok(data) => data,
-                    Err(e) => {
-                        makepad_widgets::error!("Failed to read file: {e}");
-                        if sender.send(None).is_err() {
-                            makepad_widgets::error!("Failed to send error to UI: receiver dropped");
-                        }
-                        SignalToUI::set_ui_signal();
-                        return;
-                    }
-                };
-
-                // Wrap file data in Arc to avoid copying when passed through channels
-                let file_data = Arc::new(file_data);
-
-                let loaded_data = FileLoadedData {
-                    metadata: FilePreviewerMetaData {
-                        mime: mime_clone,
-                        file_size,
-                        file_path: path_clone,
-                    },
-                    data: file_data,
-                };
-
-                if sender.send(Some(loaded_data)).is_err() {
-                    makepad_widgets::error!("Failed to send file data to UI: receiver dropped");
-                }
-                SignalToUI::set_ui_signal();
-            });
-        }
+            SignalToUI::set_ui_signal();
+        });
     }
 
     /// Shows a "not supported" message on mobile platforms.
@@ -944,43 +943,29 @@ impl RoomInputBarRef {
     }
 
     /// Shows an upload error with retry option.
-    pub fn show_upload_error(&self, cx: &mut Cx, error: &str, file_data: FileData) {
+    pub fn show_upload_error(&self, cx: &mut Cx, error: &str, upload: AttachmentUpload) {
         let Some(inner) = self.borrow() else { return };
         inner.child_by_path(ids!(upload_progress_view))
             .as_upload_progress_view()
-            .show_error(cx, error, file_data);
+            .show_error(cx, error, upload);
     }
 
-    /// Handles a confirmed file upload from the file upload modal.
-    ///
-    /// This method:
-    /// - Shows the upload progress view
-    /// - Gets and clears any "replying to" state
-    /// - Returns the reply metadata (None if not replying or widget unavailable)
-    pub fn handle_file_upload_confirmed(&self, cx: &mut Cx, file_name: &str) -> Option<Reply> {
+    /// Starts a file upload by showing progress and extracting reply metadata.
+    pub fn begin_file_upload(&self, cx: &mut Cx, file_name: &str) -> Option<OwnedEventId> {
         let mut inner = self.borrow_mut()?;
 
-        // Get the reply metadata if replying to a message
-        let replied_to = inner
+        let in_reply_to = inner
             .replying_to
             .take()
-            .and_then(|(event_tl_item, _embedded_event)| {
-                event_tl_item.event_id().map(|event_id| Reply {
-                    event_id: event_id.to_owned(),
-                    enforce_thread: EnforceThread::MaybeThreaded,
-                    add_mentions: AddMentions::Yes
-                })
-            });
+            .and_then(|(event_tl_item, _embedded_event)| event_tl_item.event_id().map(ToOwned::to_owned));
 
-        // Show the upload progress view
         inner.child_by_path(ids!(upload_progress_view))
             .as_upload_progress_view()
             .show(cx, file_name);
 
-        // Clear the replying-to state
         inner.clear_replying_to(cx);
 
-        replied_to
+        in_reply_to
     }
 
     /// Returns whether TSP signing is enabled.
@@ -1033,6 +1018,5 @@ fn convert_loaded_data_to_file_data(loaded: FileLoadedData) -> FileData {
         mime_type: loaded.metadata.mime.to_string(),
         data: loaded.data,
         size: loaded.metadata.file_size,
-        thumbnail: None, // Thumbnail generation is not currently implemented
     }
 }
