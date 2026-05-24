@@ -125,10 +125,10 @@ script_mod! {
 
             file_name_label := Label {
                 width: Fill,
+                flow: Flow.Right { wrap: true }
                 draw_text +: {
                     text_style: REGULAR_TEXT { font_size: 11 },
                     color: (COLOR_TEXT),
-                    wrap: Word,
                 }
                 text: ""
             }
