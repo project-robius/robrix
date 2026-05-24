@@ -3,7 +3,6 @@
 
 use std::{borrow::Cow, cell::RefCell, ops::{DerefMut, Range}, sync::{atomic::{AtomicU64, Ordering}, Arc}};
 
-use bytesize::ByteSize;
 use hashbrown::{HashMap, HashSet};
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
@@ -4115,7 +4114,7 @@ fn populate_file_message_content(
         .info
         .as_ref()
         .and_then(|info| info.size)
-        .map(|bytes| format!("  ({})", ByteSize::b(bytes.into())))
+        .map(|bytes| format!("  ({})", utils::format_decimal_file_size(bytes.into())))
         .unwrap_or_default();
     let caption = file_content.formatted_caption()
         .filter(|fb| fb.format == MessageFormat::Html)
@@ -4154,7 +4153,7 @@ fn populate_audio_message_content(
                 .map(|m| format!("  {},", htmlize::escape_text(m)))
                 .unwrap_or_default(),
             info.size
-                .map(|bytes| format!("  ({}),", ByteSize::b(bytes.into())))
+                .map(|bytes| format!("  ({}),", utils::format_decimal_file_size(bytes.into())))
                 .unwrap_or_default(),
         ))
         .unwrap_or_default();
@@ -4196,7 +4195,7 @@ fn populate_video_message_content(
                 .map(|m| format!("  {},", htmlize::escape_text(m)))
                 .unwrap_or_default(),
             info.size
-                .map(|bytes| format!("  ({}),", ByteSize::b(bytes.into())))
+                .map(|bytes| format!("  ({}),", utils::format_decimal_file_size(bytes.into())))
                 .unwrap_or_default(),
             info.width.and_then(|width|
                 info.height.map(|height| format!("  {width}x{height},"))

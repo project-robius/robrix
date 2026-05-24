@@ -17,6 +17,12 @@ use crate::{
 pub const GEO_URI_SCHEME: &str = "geo:";
 
 
+/// Formats a byte count using `bytesize`'s decimal SI units, e.g. KB/MB/GB.
+pub fn format_decimal_file_size(bytes: u64) -> bytesize::Display {
+    bytesize::ByteSize::b(bytes).display().si()
+}
+
+
 /// A wrapper type that implements the `Debug` trait for non-`Debug` types.
 pub struct DebugWrapper<T>(T);
 impl<T> std::fmt::Debug for DebugWrapper<T> {

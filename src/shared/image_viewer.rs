@@ -4,7 +4,6 @@
 //! ImageViewerRef has 4 public methods, `configure_zoom`, `show_loading`, `show_loaded` and `reset`.
 use std::sync::{mpsc::Receiver, Arc};
 
-use bytesize::ByteSize;
 use chrono::{DateTime, Local};
 use makepad_widgets::{
     event::TouchUpdateEvent,
@@ -12,6 +11,8 @@ use makepad_widgets::{
     *,
 };
 use matrix_sdk_ui::timeline::EventTimelineItem;
+
+use crate::utils::format_decimal_file_size;
 use thiserror::Error;
 use crate::{
     shared::{avatar::AvatarWidgetExt, timestamp::TimestampWidgetRefExt},
@@ -1120,7 +1121,7 @@ impl ImageViewer {
     /// via `max_lines: 2` + `text_overflow: Ellipsis` in the layout.
     pub fn set_metadata(&mut self, cx: &mut Cx, metadata: &ImageViewerMetaData) {
         let meta_view = self.view.view(cx, ids!(metadata_view));
-        let human_readable_size = ByteSize::b(metadata.image_file_size).to_string();
+        let human_readable_size = format_decimal_file_size(metadata.image_file_size);
         let display_text = format!("{} ({})", metadata.image_name, human_readable_size);
         meta_view
             .label(cx, ids!(image_name_and_size))

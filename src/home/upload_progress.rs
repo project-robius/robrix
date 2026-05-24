@@ -1,14 +1,15 @@
 //! A widget that displays upload progress with a progress bar, status label,
 //! and cancel/retry buttons.
 
-use bytesize::ByteSize;
 use makepad_widgets::*;
 use tokio::task::AbortHandle;
 
 use crate::home::room_screen::{FileUploadAttemptId, RoomScreenProps};
 use crate::shared::file_upload_modal::AttachmentUpload;
 use crate::shared::progress_bar::ProgressBarWidgetRefExt;
+use crate::shared::styles::COLOR_FG_DANGER_RED;
 use crate::sliding_sync::TimelineKind;
+use crate::utils::format_decimal_file_size;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -19,7 +20,7 @@ script_mod! {
         width: Fill,
         height: Fit,
         flow: Down,
-        padding: 10,
+        padding: Inset { top: 10, bottom: 10, left: 15, right: 15 }
         spacing: 8,
 
         show_bg: true,
@@ -36,17 +37,21 @@ script_mod! {
             align: Align{x: 0.0, y: 0.5},
             spacing: 10,
 
-            uploading_label := Label {
+            Label {
                 width: Fit,
+                padding: 0,
+                margin: 0
                 draw_text +: {
                     text_style: REGULAR_TEXT { font_size: 10 },
                     color: (COLOR_TEXT)
                 }
-                text: "Uploading: "
+                text: "Sending: "
             }
 
             file_name_label := Label {
                 width: Fill,
+                padding: 0,
+                margin: 0
                 draw_text +: {
                     text_style: REGULAR_TEXT { font_size: 10 },
                     color: (COLOR_TEXT)
@@ -54,22 +59,18 @@ script_mod! {
                 text: ""
             }
 
-            cancel_button := RobrixNeutralIconButton {
-                width: 24, height: 24,
-                padding: 4,
-                draw_icon +: { svg: (ICON_FORBIDDEN) }
-                icon_walk: Walk{width: 14, height: 14}
-                text: ""
+            cancel_button := RobrixNegativeIconButton {
+                width: Fit,
+                align: Align{x: 0.5, y: 0.5}
+                padding: 13,
+                draw_icon.svg: (ICON_FORBIDDEN)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Cancel"
             }
         }
 
-        // Progress bar
-        progress_bar := ProgressBar {
-            width: Fill,
-            height: 6,
-        }
+        progress_bar := ProgressBar { }
 
-        // Status/error area
         status_view := View {
             width: Fill,
             height: Fit,
@@ -79,19 +80,18 @@ script_mod! {
 
             status_label := Label {
                 width: Fill,
+                padding: 0,
+                margin: 0
                 draw_text +: {
-                    text_style: REGULAR_TEXT { font_size: 9 },
-                    color: (SMALL_STATE_TEXT_COLOR)
+                    text_style: REGULAR_TEXT { font_size: 10 },
+                    color: (COLOR_TEXT)
                 }
                 text: ""
             }
 
-            retry_button := RobrixPositiveIconButton {
-                enabled: false,
-                padding: Inset{top: 4, bottom: 4, left: 8, right: 8}
-                draw_text +: {
-                    text_style: REGULAR_TEXT { font_size: 9 },
-                }
+            retry_button := RobrixIconButton {
+                visible: false,
+                padding: 13
                 text: "Retry"
             }
         }
@@ -148,7 +148,11 @@ impl Widget for UploadProgressView {
             // Handle cancel button
             if self.button(cx, ids!(cancel_button)).clicked(actions) {
                 if let Some(handle) = self.abort_handle.take() {
+                    log!("Upload cancel requested for {:?}, aborting upload task.", self.upload_id);
                     handle.abort();
+                    log!("Upload abort requested for {:?}.", self.upload_id);
+                } else {
+                    log!("Upload cancel requested for {:?}, but no abort handle was available.", self.upload_id);
                 }
                 cx.widget_action(self.widget_uid(), UploadProgressViewAction::Cancelled);
                 self.hide_current(cx);
@@ -186,11 +190,12 @@ impl UploadProgressView {
 
         self.label(cx, ids!(file_name_label)).set_text(cx, file_name);
         self.label(cx, ids!(status_label)).set_text(cx, "Starting upload...");
-        self.button(cx, ids!(retry_button)).set_enabled(cx, false);
-        self.button(cx, ids!(cancel_button)).set_enabled(cx, true);
+        let retry_button = self.button(cx, ids!(retry_button));
+        retry_button.set_visible(cx, false);
+        retry_button.reset_hover(cx);
+        self.button(cx, ids!(cancel_button)).reset_hover(cx);
 
-        // Reset progress bar
-        self.child_by_path(ids!(progress_bar)).as_progress_bar().set_progress(cx, 0.0);
+        self.reset_progress_bar(cx);
 
         self.redraw(cx);
     }
@@ -207,6 +212,8 @@ impl UploadProgressView {
         self.upload_id = None;
         self.abort_handle = None;
         self.state = UploadViewState::Normal;
+        self.button(cx, ids!(retry_button)).set_visible(cx, false);
+        self.reset_progress_bar(cx);
         self.redraw(cx);
     }
 
@@ -232,8 +239,8 @@ impl UploadProgressView {
         let status = format!(
             "Uploading... {}% ({} / {})",
             percent,
-            ByteSize::b(current),
-            ByteSize::b(total)
+            format_decimal_file_size(current),
+            format_decimal_file_size(total)
         );
         self.label(cx, ids!(status_label)).set_text(cx, &status);
 
@@ -243,8 +250,10 @@ impl UploadProgressView {
     /// Sets the abort handle for the current upload task.
     pub fn set_abort_handle(&mut self, upload_id: FileUploadAttemptId, handle: AbortHandle) {
         if self.upload_id == Some(upload_id) && !matches!(self.state, UploadViewState::Error { .. }) {
+            log!("Received abort handle for upload {upload_id:?}.");
             self.abort_handle = Some(handle);
         } else {
+            log!("Discarding stale abort handle for upload {upload_id:?}; current upload is {:?}.", self.upload_id);
             handle.abort();
         }
     }
@@ -263,13 +272,21 @@ impl UploadProgressView {
         // Update UI for error state
         self.label(cx, ids!(status_label))
             .set_text(cx, &format!("Error: {}", error));
-        self.button(cx, ids!(retry_button)).set_enabled(cx, true);
-        self.button(cx, ids!(cancel_button)).set_enabled(cx, true);
+        let retry_button = self.button(cx, ids!(retry_button));
+        retry_button.set_visible(cx, true);
+        retry_button.reset_hover(cx);
 
-        // Set progress bar to error color - no longer apply color change via script_apply_eval
-        // The progress bar will use the default color for now
+        self.progress = 1.0;
+        let progress_bar = self.child_by_path(ids!(progress_bar)).as_progress_bar();
+        progress_bar.set_progress_color(cx, COLOR_FG_DANGER_RED);
+        progress_bar.set_progress(cx, 1.0);
 
         self.redraw(cx);
+    }
+
+    fn reset_progress_bar(&mut self, cx: &mut Cx) {
+        self.child_by_path(ids!(progress_bar)).as_progress_bar().reset_progress_color(cx);
+        self.child_by_path(ids!(progress_bar)).as_progress_bar().set_progress(cx, 0.0);
     }
 }
 

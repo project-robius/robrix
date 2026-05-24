@@ -2,6 +2,8 @@
 
 use makepad_widgets::*;
 
+use crate::shared::styles::COLOR_ACTIVE_PRIMARY;
+
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
@@ -19,7 +21,7 @@ script_mod! {
             // Filled portion color
             progress_color: instance((COLOR_ACTIVE_PRIMARY))
 
-            border_radius: 4.0
+            border_radius: 2.0
 
             pixel: fn() {
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size);
@@ -89,6 +91,19 @@ impl ProgressBar {
     pub fn progress(&self) -> f32 {
         self.progress
     }
+
+    /// Sets the color of the filled portion of the progress bar.
+    pub fn set_progress_color(&mut self, cx: &mut Cx, color: Vec4) {
+        script_apply_eval!(cx, self.view, {
+            draw_bg +: { progress_color: #(color) }
+        });
+        self.redraw(cx);
+    }
+
+    /// Restores the default fill color for the progress bar.
+    pub fn reset_progress_color(&mut self, cx: &mut Cx) {
+        self.set_progress_color(cx, COLOR_ACTIVE_PRIMARY);
+    }
 }
 
 impl ProgressBarRef {
@@ -102,5 +117,19 @@ impl ProgressBarRef {
     /// Gets the current progress value.
     pub fn progress(&self) -> f32 {
         self.borrow().map(|inner| inner.progress()).unwrap_or(0.0)
+    }
+
+    /// Sets the color of the filled portion of the progress bar.
+    pub fn set_progress_color(&self, cx: &mut Cx, color: Vec4) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_progress_color(cx, color);
+        }
+    }
+
+    /// Restores the default fill color for the progress bar.
+    pub fn reset_progress_color(&self, cx: &mut Cx) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.reset_progress_color(cx);
+        }
     }
 }

@@ -3,19 +3,19 @@
 //! This modal shows a preview of the file (image thumbnail or file icon)
 //! along with file metadata and upload/cancel buttons.
 
-use bytesize::ByteSize;
 use makepad_widgets::*;
 use ruma::OwnedEventId;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::home::room_screen::TimelineUpdate;
+use crate::utils::format_decimal_file_size;
 
 /// Type alias for the sender used to send timeline updates.
 pub type TimelineUpdateSender = crossbeam_channel::Sender<TimelineUpdate>;
 
 /// File size above which the upload confirmation modal shows a warning.
-pub const LARGE_ATTACHMENT_WARNING_THRESHOLD_BYTES: u64 = 10 * 1024 * 1024;
+pub const LARGE_ATTACHMENT_WARNING_THRESHOLD_BYTES: u64 = 10 * 1000 * 1000;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -54,6 +54,8 @@ script_mod! {
 
             title := Label {
                 width: Fill,
+                padding: 0,
+                margin: 0
                 draw_text +: {
                     text_style: TITLE_TEXT { font_size: 14 },
                     color: (COLOR_TEXT)
@@ -75,10 +77,10 @@ script_mod! {
             // Image preview container (visible when file is an image)
             image_preview_container := View {
                 visible: false,
-                width: Fill,                                                                                                           
-                height: Fill, 
+                width: Fill,
+                height: Fill,
                 image_preview := Image {
-                    width: Fill,                                                                                                             
+                    width: Fill,
                     height: Fill,
                     fit: ImageFit.Smallest,
                 }
@@ -104,6 +106,8 @@ script_mod! {
 
                 file_type_label := Label {
                     width: Fit,
+                    padding: 0,
+                    margin: 0
                     draw_text +: {
                         text_style: REGULAR_TEXT { font_size: 10 },
                         color: (SMALL_STATE_TEXT_COLOR)
@@ -134,6 +138,8 @@ script_mod! {
 
             file_size_label := Label {
                 width: Fill,
+                padding: 0,
+                margin: 0
                 draw_text +: {
                     text_style: REGULAR_TEXT { font_size: 10 },
                     color: (SMALL_STATE_TEXT_COLOR)
@@ -144,12 +150,14 @@ script_mod! {
             large_attachment_warning_label := Label {
                 visible: false,
                 width: Fill,
+                padding: 0,
+                margin: 0
                 flow: Flow.Right { wrap: true }
                 draw_text +: {
                     text_style: REGULAR_TEXT { font_size: 10 },
                     color: (COLOR_TEXT_WARNING_NOT_FOUND)
                 }
-                text: "Are you sure you want to upload this large file (over 10 MB) to the homeserver?"
+                text: "This file is large (over 10 MB). Are you sure you want to upload it to the homeserver?"
             }
         }
 
@@ -162,12 +170,12 @@ script_mod! {
             spacing: 10,
 
             cancel_button := RobrixNeutralIconButton {
-                padding: Inset{top: 8, bottom: 8, left: 16, right: 16}
+                padding: 13
                 text: "Cancel"
             }
 
             upload_button := RobrixPositiveIconButton {
-                padding: Inset{top: 8, bottom: 8, left: 16, right: 16}
+                padding: 13
                 draw_icon +: { svg: (ICON_UPLOAD) }
                 icon_walk: Walk{width: 16, height: Fit, margin: Inset{right: 4}}
                 text: "Upload"
@@ -321,9 +329,11 @@ impl FileUploadModal {
     pub fn set_file_data(&mut self, cx: &mut Cx, file_data: FileUploadMetadata, timeline_update_sender: TimelineUpdateSender, in_reply_to: Option<OwnedEventId>) {
         let file_name = file_data.file_name();
         let caption = file_data.caption.as_deref().unwrap_or(&file_name);
+        self.button(cx, ids!(cancel_button)).reset_hover(cx);
+        self.button(cx, ids!(upload_button)).reset_hover(cx);
         self.text_input(cx, ids!(caption_input)).set_text(cx, caption);
         self.label(cx, ids!(file_size_label))
-            .set_text(cx, &ByteSize::b(file_data.size).to_string());
+            .set_text(cx, &format_decimal_file_size(file_data.size).to_string());
         self.label(cx, ids!(large_attachment_warning_label))
             .set_visible(cx, file_data.size > LARGE_ATTACHMENT_WARNING_THRESHOLD_BYTES);
 
@@ -367,13 +377,67 @@ impl FileUploadModal {
 
     /// Updates the file type label based on MIME type.
     fn update_file_type_label(&mut self, cx: &mut Cx, mime_type: &str) {
-        let type_text = mime_type
-            .split('/')
-            .next_back()
-            .unwrap_or("Unknown")
-            .to_uppercase();
         self.label(cx, ids!(file_type_label))
-            .set_text(cx, &format!("{} File", type_text));
+            .set_text(cx, display_file_type_label(mime_type));
+    }
+}
+
+fn display_file_type_label(mime_type: &str) -> &'static str {
+    let mime_type = mime_type
+        .split(';')
+        .next()
+        .unwrap_or(mime_type)
+        .trim()
+        .to_ascii_lowercase();
+
+    match mime_type.as_str() {
+        "text/plain" => "Plain text file",
+        "text/markdown" | "text/x-markdown" => "Markdown file",
+        "text/csv" => "CSV spreadsheet",
+        "text/html" => "HTML document",
+        "text/css" => "CSS stylesheet",
+        "text/javascript" | "application/javascript" | "application/x-javascript" => "JavaScript file",
+        "text/xml" | "application/xml" => "XML document",
+        "application/json" => "JSON file",
+        "application/pdf" => "PDF document",
+        "application/rtf" | "text/rtf" => "Rich text document",
+        "application/msword" |
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => "Word document",
+        "application/vnd.ms-excel" |
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => "Excel spreadsheet",
+        "application/vnd.ms-powerpoint" |
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation" => "PowerPoint presentation",
+        "application/zip" => "ZIP archive",
+        "application/x-tar" => "TAR archive",
+        "application/gzip" | "application/x-gzip" => "Gzip archive",
+        "application/x-bzip2" => "Bzip2 archive",
+        "application/x-7z-compressed" => "7-Zip archive",
+        "application/vnd.rar" | "application/x-rar-compressed" => "RAR archive",
+        "application/x-sh" => "Shell script",
+        "application/x-sql" => "SQL file",
+        "image/png" => "PNG image",
+        "image/jpeg" | "image/jpg" => "JPEG image",
+        "image/gif" => "GIF image",
+        "image/webp" => "WebP image",
+        "image/bmp" => "BMP image",
+        "image/svg+xml" => "SVG image",
+        "image/tiff" => "TIFF image",
+        "audio/mpeg" => "MP3 audio",
+        "audio/mp4" => "MPEG-4 audio",
+        "audio/wav" | "audio/x-wav" => "WAV audio",
+        "audio/ogg" => "Ogg audio",
+        "audio/flac" => "FLAC audio",
+        "video/mp4" => "MP4 video",
+        "video/webm" => "WebM video",
+        "video/quicktime" => "QuickTime video",
+        "video/x-msvideo" => "AVI video",
+        "font/ttf" | "font/otf" | "font/woff" | "font/woff2" => "Font file",
+        _ if mime_type.starts_with("text/") => "Text file",
+        _ if mime_type.starts_with("image/") => "Image file",
+        _ if mime_type.starts_with("audio/") => "Audio file",
+        _ if mime_type.starts_with("video/") => "Video file",
+        _ if mime_type.starts_with("font/") => "Font file",
+        _ => "File",
     }
 }
 

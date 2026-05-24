@@ -1783,6 +1783,7 @@ async fn matrix_worker_task(
 
                 let sender_clone = sender.clone();
                 let progress_sender = sender.clone();
+                let monitor_timeline_kind = timeline_kind.clone();
                 // Spawn a new async task to send the attachment.
                 let send_attachment_task = Handle::current().spawn(async move {
                     use matrix_sdk::attachment::{
@@ -1899,9 +1900,21 @@ async fn matrix_worker_task(
 
                     SignalToUI::set_ui_signal();
                 });
+                let abort_handle = send_attachment_task.abort_handle();
+                Handle::current().spawn(async move {
+                    match send_attachment_task.await {
+                        Ok(()) => {}
+                        Err(join_error) if join_error.is_cancelled() => {
+                            log!("Attachment upload task {upload_id:?} for {monitor_timeline_kind} was aborted.");
+                        }
+                        Err(join_error) => {
+                            error!("Attachment upload task {upload_id:?} for {monitor_timeline_kind} exited unexpectedly: {join_error:?}");
+                        }
+                    }
+                });
                 let _ = sender.send(TimelineUpdate::FileUploadAbortHandle {
                     upload_id,
-                    handle: send_attachment_task.abort_handle(),
+                    handle: abort_handle,
                 });
                 SignalToUI::set_ui_signal();
             }

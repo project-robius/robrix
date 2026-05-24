@@ -24,7 +24,7 @@ use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventIte
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId};
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 use std::sync::Arc;
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{FileUploadAttemptId, MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FileUploadMetadata, FileLoadedData, FilePreviewerAction, LARGE_ATTACHMENT_WARNING_THRESHOLD_BYTES, TimelineUpdateSender}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{FileUploadAttemptId, MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FileUploadMetadata, FileLoadedData, FilePreviewerAction, TimelineUpdateSender}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 use crate::shared::file_upload_modal::FilePreviewerMetaData;
 /// Result of the native file picker plus background file-loading work.
@@ -719,10 +719,7 @@ impl RoomInputBar {
             .and_then(|(event_tl_item, _embedded_event)| event_tl_item.event_id().map(ToOwned::to_owned));
 
         let dialog = rfd::AsyncFileDialog::new()
-            .set_title("Select file to upload")
-            .add_filter("All files", &["*"])
-            .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp", "bmp"])
-            .add_filter("Documents", &["pdf", "doc", "docx", "txt", "rtf"]);
+            .set_title("Select file to upload");
         let (sender, receiver) = std::sync::mpsc::channel();
         self.pending_file_selection = Some(receiver);
         let dialog_task = dialog.pick_file();
