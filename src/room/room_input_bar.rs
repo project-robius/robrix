@@ -17,7 +17,6 @@
 
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
-use bytesize::ByteSize;
 use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
@@ -25,13 +24,9 @@ use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventIte
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId};
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 use std::sync::Arc;
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FileData, FileLoadedData, FilePreviewerAction, TimelineUpdateSender}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{FileUploadAttemptId, MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FileUploadMetadata, FileLoadedData, FilePreviewerAction, LARGE_ATTACHMENT_WARNING_THRESHOLD_BYTES, TimelineUpdateSender}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 use crate::shared::file_upload_modal::FilePreviewerMetaData;
-// Check file size limit (100 MB - homeservers typically cap at 50-100 MB)
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB
-
 /// Result of the native file picker plus background file-loading work.
 enum PendingFileSelection {
     /// A file was selected and read successfully.
@@ -39,6 +34,7 @@ enum PendingFileSelection {
     Selected {
         loaded_data: FileLoadedData,
         timeline_update_sender: TimelineUpdateSender,
+        in_reply_to: Option<OwnedEventId>,
     },
     /// The picker was dismissed without selecting a file.
     #[allow(dead_code)] // file upload isn't yet supported on iOS/Android
@@ -286,9 +282,14 @@ impl Widget for RoomInputBar {
                     Ok(PendingFileSelection::Selected {
                         loaded_data,
                         timeline_update_sender,
+                        in_reply_to,
                     }) => {
                         let file_data = convert_loaded_data_to_file_data(loaded_data);
-                        Cx::post_action(FilePreviewerAction::Show { file_data, timeline_update_sender });
+                        Cx::post_action(FilePreviewerAction::Show {
+                            file_data,
+                            timeline_update_sender,
+                            in_reply_to,
+                        });
                         remove_receiver = true;
                     }
                     Ok(PendingFileSelection::Cancelled) => {
@@ -713,57 +714,28 @@ impl RoomInputBar {
             return;
         }
 
+        let in_reply_to = self.replying_to
+            .as_ref()
+            .and_then(|(event_tl_item, _embedded_event)| event_tl_item.event_id().map(ToOwned::to_owned));
+
         let dialog = rfd::AsyncFileDialog::new()
             .set_title("Select file to upload")
             .add_filter("All files", &["*"])
             .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp", "bmp"])
             .add_filter("Documents", &["pdf", "doc", "docx", "txt", "rtf"]);
-        let dialog_task = dialog.pick_file();
         let (sender, receiver) = std::sync::mpsc::channel();
         self.pending_file_selection = Some(receiver);
+        let dialog_task = dialog.pick_file();
 
         cx.spawn_thread(move || {
-            let selection = futures::executor::block_on(dialog_task);
-            let result = match selection {
-                Some(selected_file) => {
-                    let selected_file_path = selected_file.path().to_path_buf();
-                    match std::fs::metadata(&selected_file_path) {
-                        Ok(metadata) => {
-                            let file_size = metadata.len();
-                            if file_size == 0 {
-                                PendingFileSelection::Error("Cannot upload empty file".to_string())
-                            } else if file_size > MAX_FILE_SIZE {
-                                PendingFileSelection::Error(format!(
-                                    "File too large ({}). Maximum upload size is 100 MB.",
-                                    ByteSize::b(file_size)
-                                ))
-                            } else {
-                                let mime = mime_guess::from_path(&selected_file_path)
-                                    .first_or_octet_stream();
-                                match std::fs::read(&selected_file_path) {
-                                    Ok(data) => PendingFileSelection::Selected {
-                                        loaded_data: FileLoadedData {
-                                            metadata: FilePreviewerMetaData {
-                                                mime,
-                                                file_size,
-                                                file_path: selected_file_path,
-                                            },
-                                            data: Arc::new(data),
-                                        },
-                                        timeline_update_sender,
-                                    },
-                                    Err(e) => PendingFileSelection::Error(format!(
-                                        "Unable to read file: {e}"
-                                    )),
-                                }
-                            }
-                        }
-                        Err(e) => PendingFileSelection::Error(format!("Unable to access file: {e}")),
-                    }
-                }
+            let result = match futures::executor::block_on(dialog_task) {
+                Some(selected_file) => load_selected_file(
+                    selected_file.path().to_path_buf(),
+                    timeline_update_sender,
+                    in_reply_to,
+                ),
                 None => PendingFileSelection::Cancelled,
             };
-
             if sender.send(result).is_err() {
                 makepad_widgets::error!("Failed to send file picker result to UI: receiver dropped");
             }
@@ -914,61 +886,69 @@ impl RoomInputBarRef {
     }
 
     /// Shows the upload progress view for a file upload.
-    pub fn show_upload_progress(&self, cx: &mut Cx, file_name: &str) {
+    pub fn show_upload_progress(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, file_name: &str) {
         let Some(inner) = self.borrow() else { return };
         inner.child_by_path(ids!(upload_progress_view))
             .as_upload_progress_view()
-            .show(cx, file_name);
+            .show(cx, upload_id, file_name);
     }
 
-    /// Hides the upload progress view.
-    pub fn hide_upload_progress(&self, cx: &mut Cx) {
+    /// Hides the upload progress view for the given upload attempt.
+    pub fn hide_upload_progress(&self, cx: &mut Cx, upload_id: FileUploadAttemptId) {
         let Some(inner) = self.borrow() else { return };
         inner.child_by_path(ids!(upload_progress_view))
             .as_upload_progress_view()
-            .hide(cx);
+            .hide(cx, upload_id);
     }
 
     /// Updates the upload progress.
-    pub fn set_upload_progress(&self, cx: &mut Cx, current: u64, total: u64) {
+    pub fn set_upload_progress(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, current: u64, total: u64) {
         let Some(inner) = self.borrow() else { return };
         inner.child_by_path(ids!(upload_progress_view))
             .as_upload_progress_view()
-            .set_progress(cx, current, total);
+            .set_progress(cx, upload_id, current, total);
     }
 
     /// Sets the abort handle for the current upload.
-    pub fn set_upload_abort_handle(&self, handle: tokio::task::AbortHandle) {
+    pub fn set_upload_abort_handle(&self, upload_id: FileUploadAttemptId, handle: tokio::task::AbortHandle) {
         let Some(inner) = self.borrow_mut() else { return };
         inner.child_by_path(ids!(upload_progress_view))
             .as_upload_progress_view()
-            .set_abort_handle(handle);
+            .set_abort_handle(upload_id, handle);
     }
 
     /// Shows an upload error with retry option.
-    pub fn show_upload_error(&self, cx: &mut Cx, error: &str, upload: AttachmentUpload) {
+    pub fn show_upload_error(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, error: &str, upload: AttachmentUpload) {
         let Some(inner) = self.borrow() else { return };
         inner.child_by_path(ids!(upload_progress_view))
             .as_upload_progress_view()
-            .show_error(cx, error, upload);
+            .show_error(cx, upload_id, error, upload);
     }
 
-    /// Starts a file upload by showing progress and extracting reply metadata.
-    pub fn begin_file_upload(&self, cx: &mut Cx, file_name: &str) -> Option<OwnedEventId> {
-        let mut inner = self.borrow_mut()?;
-
-        let in_reply_to = inner
-            .replying_to
-            .take()
-            .and_then(|(event_tl_item, _embedded_event)| event_tl_item.event_id().map(ToOwned::to_owned));
+    /// Starts a file upload and clears only the reply captured for this upload.
+    pub fn begin_file_upload(
+        &self,
+        cx: &mut Cx,
+        upload_id: FileUploadAttemptId,
+        file_name: &str,
+        in_reply_to: Option<&OwnedEventId>,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
 
         inner.child_by_path(ids!(upload_progress_view))
             .as_upload_progress_view()
-            .show(cx, file_name);
+            .show(cx, upload_id, file_name);
 
-        inner.clear_replying_to(cx);
-
-        in_reply_to
+        if let Some(in_reply_to) = in_reply_to {
+            let should_clear_reply = inner
+                .replying_to
+                .as_ref()
+                .and_then(|(event_tl_item, _embedded_event)| event_tl_item.event_id())
+                .is_some_and(|current_reply_event_id| current_reply_event_id == in_reply_to);
+            if should_clear_reply {
+                inner.clear_replying_to(cx);
+            }
+        }
     }
 
     /// Returns whether TSP signing is enabled.
@@ -1007,19 +987,62 @@ enum ShowEditingPaneBehavior {
 
 /// Converts `FileLoadedData` from background thread to `FileData` for the modal.
 ///
-/// The file data has already been read in the background thread,
+/// Any optional preview data has already been read in the background thread,
 /// so this is a cheap conversion that doesn't block the UI thread.
-fn convert_loaded_data_to_file_data(loaded: FileLoadedData) -> FileData {
+fn convert_loaded_data_to_file_data(loaded: FileLoadedData) -> FileUploadMetadata {
     let name = loaded.metadata.file_path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "unknown".to_string());
 
-    FileData {
+    FileUploadMetadata {
         path: loaded.metadata.file_path,
-        name,
+        caption: Some(name),
         mime_type: loaded.metadata.mime.to_string(),
-        data: loaded.data,
+        preview_data: loaded.preview_data,
         size: loaded.metadata.file_size,
+    }
+}
+
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+fn load_selected_file(
+    selected_file_path: std::path::PathBuf,
+    timeline_update_sender: TimelineUpdateSender,
+    in_reply_to: Option<OwnedEventId>,
+) -> PendingFileSelection {
+    match std::fs::metadata(&selected_file_path) {
+        Ok(metadata) => {
+            if !metadata.is_file() {
+                return PendingFileSelection::Error("Cannot upload directories or special files".to_string());
+            }
+            let file_size = metadata.len();
+            if file_size == 0 {
+                return PendingFileSelection::Error("Cannot upload empty file".to_string());
+            }
+            let mime = mime_guess::from_path(&selected_file_path)
+                .first_or_octet_stream();
+            let preview_data = if crate::image_utils::is_displayable_image(mime.essence_str()) {
+                match std::fs::read(&selected_file_path) {
+                    Ok(data) => Some(Arc::new(data)),
+                    Err(e) => return PendingFileSelection::Error(format!("Unable to read image preview: {e}")),
+                }
+            } else {
+                None
+            };
+
+            PendingFileSelection::Selected {
+                loaded_data: FileLoadedData {
+                    metadata: FilePreviewerMetaData {
+                        mime,
+                        file_size,
+                        file_path: selected_file_path,
+                    },
+                    preview_data,
+                },
+                timeline_update_sender,
+                in_reply_to,
+            }
+        }
+        Err(e) => PendingFileSelection::Error(format!("Unable to access file: {e}")),
     }
 }

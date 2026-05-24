@@ -13,7 +13,7 @@ use matrix_sdk::{
         api::{Direction, client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}}, events::{
             relation::RelationType,
             room::{
-                message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
+                message::{RoomMessageEventContent, TextMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
             }, MessageLikeEventType, StateEventType
         }, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, uint
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
@@ -36,7 +36,7 @@ use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
     app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
-        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
+        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{FileUploadAttemptId, InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, room_preview_cache::{enqueue_room_preview_update, RoomPreviewUpdate}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
@@ -621,7 +621,9 @@ pub enum MatrixRequest {
     /// Request to send a file attachment to the given room.
     SendAttachment {
         timeline_kind: TimelineKind,
+        upload_id: FileUploadAttemptId,
         upload: crate::shared::file_upload_modal::AttachmentUpload,
+        timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
         #[cfg(feature = "tsp")]
         sign_with_tsp: bool,
     },
@@ -1751,18 +1753,27 @@ async fn matrix_worker_task(
 
             MatrixRequest::SendAttachment {
                 timeline_kind,
+                upload_id,
                 upload,
+                timeline_update_sender,
                 #[cfg(feature = "tsp")]
                 sign_with_tsp,
             } => {
                 let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
                     log!("BUG: {timeline_kind} not found for send attachment request");
+                    let _ = timeline_update_sender.send(TimelineUpdate::FileUploadError {
+                        upload_id,
+                        error: "Cannot upload file: timeline not available.".to_string(),
+                        upload,
+                    });
+                    SignalToUI::set_ui_signal();
                     continue;
                 };
 
                 #[cfg(feature = "tsp")]
                 if sign_with_tsp {
                     let _ = sender.send(TimelineUpdate::FileUploadError {
+                        upload_id,
                         error: "TSP-signed attachment uploads are not supported yet.".to_string(),
                         upload,
                     });
@@ -1786,19 +1797,30 @@ async fn matrix_worker_task(
                         in_reply_to,
                     } = upload;
 
-                    log!("Sending attachment to {timeline_kind}: {} ({} bytes)...",
-                        file_data.name, file_data.size);
+                    log!(
+                        "Sending attachment to {timeline_kind}: {} ({} bytes)...",
+                        file_data.file_name(),
+                        file_data.size,
+                    );
 
                     // Parse MIME type, falling back to octet-stream for unknown types
                     let content_type: Mime = file_data.mime_type.parse()
                         .unwrap_or(mime::APPLICATION_OCTET_STREAM);
 
+                    let image_dimensions = if content_type.type_() == mime::IMAGE {
+                        image::ImageReader::open(&file_data.path)
+                            .ok()
+                            .and_then(|reader| reader.with_guessed_format().ok())
+                            .and_then(|reader| reader.into_dimensions().ok())
+                    } else {
+                        None
+                    };
+
                     // Create AttachmentInfo based on the MIME type
                     let info = match content_type.type_() {
                         mime::IMAGE => AttachmentInfo::Image(BaseImageInfo {
-                            // TODO: Extract actual dimensions from image data
-                            width: None,
-                            height: None,
+                            width: image_dimensions.map(|(width, _height)| width.into()),
+                            height: image_dimensions.map(|(_width, height)| height.into()),
                             size: Some(file_data.size.try_into().unwrap_or(u32::MAX).into()),
                             blurhash: None,
                             is_animated: None,
@@ -1827,6 +1849,10 @@ async fn matrix_worker_task(
                         content_type,
                         TimelineAttachmentConfig {
                             info: Some(info),
+                            caption: file_data
+                                .caption
+                                .as_ref()
+                                .map(|caption| TextMessageEventContent::plain(caption)),
                             in_reply_to,
                             ..Default::default()
                         },
@@ -1840,6 +1866,7 @@ async fn matrix_worker_task(
                             let current: u64 = progress.current as u64;
                             let total: u64 = progress.total as u64;
                             if progress_sender.send(TimelineUpdate::FileUploadUpdate {
+                                upload_id,
                                 current,
                                 total,
                             }).is_err() {
@@ -1856,25 +1883,27 @@ async fn matrix_worker_task(
                     match send_request.await {
                         Ok(()) => {
                             log!("Successfully sent attachment to {timeline_kind}.");
-                            let _ = sender_clone.send(TimelineUpdate::FileUploadComplete);
+                            let _ = sender_clone.send(TimelineUpdate::FileUploadComplete {
+                                upload_id,
+                            });
                         }
                         Err(e) => {
                             error!("Failed to send attachment to {timeline_kind}: {e:?}");
                             let _ = sender_clone.send(TimelineUpdate::FileUploadError {
+                                upload_id,
                                 error: format!("{e}"),
                                 upload: upload_for_error,
                             });
-                            enqueue_popup_notification(
-                                format!("Failed to upload file: {e}"),
-                                PopupKind::Error,
-                                None,
-                            );
                         }
                     }
 
                     SignalToUI::set_ui_signal();
                 });
-                let _ = sender.send(TimelineUpdate::FileUploadAbortHandle(send_attachment_task.abort_handle()));
+                let _ = sender.send(TimelineUpdate::FileUploadAbortHandle {
+                    upload_id,
+                    handle: send_attachment_task.abort_handle(),
+                });
+                SignalToUI::set_ui_signal();
             }
 
             MatrixRequest::ReadReceipt { timeline_kind, event_id, receipt_type } => {

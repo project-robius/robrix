@@ -5,7 +5,7 @@ use bytesize::ByteSize;
 use makepad_widgets::*;
 use tokio::task::AbortHandle;
 
-use crate::home::room_screen::RoomScreenProps;
+use crate::home::room_screen::{FileUploadAttemptId, RoomScreenProps};
 use crate::shared::file_upload_modal::AttachmentUpload;
 use crate::shared::progress_bar::ProgressBarWidgetRefExt;
 use crate::sliding_sync::TimelineKind;
@@ -57,7 +57,7 @@ script_mod! {
             cancel_button := RobrixNeutralIconButton {
                 width: 24, height: 24,
                 padding: 4,
-                draw_icon +: { svg: (ICON_CLOSE) }
+                draw_icon +: { svg: (ICON_FORBIDDEN) }
                 icon_walk: Walk{width: 14, height: 14}
                 text: ""
             }
@@ -134,6 +134,8 @@ pub struct UploadProgressView {
 
     /// Handle to abort the current upload task.
     #[rust] abort_handle: Option<AbortHandle>,
+    /// The upload attempt currently represented by this view.
+    #[rust] upload_id: Option<FileUploadAttemptId>,
     /// Current progress value (0.0 to 1.0).
     #[rust] progress: f32,
     /// Current state of the upload view.
@@ -149,7 +151,7 @@ impl Widget for UploadProgressView {
                     handle.abort();
                 }
                 cx.widget_action(self.widget_uid(), UploadProgressViewAction::Cancelled);
-                self.hide(cx);
+                self.hide_current(cx);
             }
 
             // Handle retry button
@@ -175,8 +177,10 @@ impl Widget for UploadProgressView {
 
 impl UploadProgressView {
     /// Shows the upload progress view with the given file name.
-    pub fn show(&mut self, cx: &mut Cx, file_name: &str) {
+    pub fn show(&mut self, cx: &mut Cx, upload_id: FileUploadAttemptId, file_name: &str) {
         self.set_visible(cx, true);
+        self.upload_id = Some(upload_id);
+        self.abort_handle = None;
         self.state = UploadViewState::Normal;
         self.progress = 0.0;
 
@@ -191,16 +195,26 @@ impl UploadProgressView {
         self.redraw(cx);
     }
 
-    /// Hides the upload progress view.
-    pub fn hide(&mut self, cx: &mut Cx) {
+    /// Hides the upload progress view if it belongs to the given upload attempt.
+    pub fn hide(&mut self, cx: &mut Cx, upload_id: FileUploadAttemptId) {
+        if self.upload_id == Some(upload_id) {
+            self.hide_current(cx);
+        }
+    }
+
+    fn hide_current(&mut self, cx: &mut Cx) {
         self.set_visible(cx, false);
+        self.upload_id = None;
         self.abort_handle = None;
         self.state = UploadViewState::Normal;
         self.redraw(cx);
     }
 
-    /// Updates the progress value.
-    pub fn set_progress(&mut self, cx: &mut Cx, current: u64, total: u64) {
+    /// Updates the progress value if it belongs to the given upload attempt.
+    pub fn set_progress(&mut self, cx: &mut Cx, upload_id: FileUploadAttemptId, current: u64, total: u64) {
+        if self.upload_id != Some(upload_id) {
+            return;
+        }
         if let UploadViewState::Error { .. } = self.state {
             return
         }
@@ -227,12 +241,20 @@ impl UploadProgressView {
     }
 
     /// Sets the abort handle for the current upload task.
-    pub fn set_abort_handle(&mut self, handle: AbortHandle) {
-        self.abort_handle = Some(handle);
+    pub fn set_abort_handle(&mut self, upload_id: FileUploadAttemptId, handle: AbortHandle) {
+        if self.upload_id == Some(upload_id) && !matches!(self.state, UploadViewState::Error { .. }) {
+            self.abort_handle = Some(handle);
+        } else {
+            handle.abort();
+        }
     }
 
-    /// Shows an error state with the given message.
-    pub fn show_error(&mut self, cx: &mut Cx, error: &str, upload: AttachmentUpload) {
+    /// Shows an error state with the given message if it belongs to the given upload attempt.
+    pub fn show_error(&mut self, cx: &mut Cx, upload_id: FileUploadAttemptId, error: &str, upload: AttachmentUpload) {
+        if self.upload_id != Some(upload_id) {
+            return;
+        }
+        self.abort_handle = None;
         self.state = UploadViewState::Error {
             message: error.to_string(),
             upload,
@@ -253,37 +275,37 @@ impl UploadProgressView {
 
 impl UploadProgressViewRef {
     /// Shows the upload progress view with the given file name.
-    pub fn show(&self, cx: &mut Cx, file_name: &str) {
+    pub fn show(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, file_name: &str) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show(cx, file_name);
+            inner.show(cx, upload_id, file_name);
         }
     }
 
-    /// Hides the upload progress view.
-    pub fn hide(&self, cx: &mut Cx) {
+    /// Hides the upload progress view if it belongs to the given upload attempt.
+    pub fn hide(&self, cx: &mut Cx, upload_id: FileUploadAttemptId) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.hide(cx);
+            inner.hide(cx, upload_id);
         }
     }
 
-    /// Updates the progress value.
-    pub fn set_progress(&self, cx: &mut Cx, current: u64, total: u64) {
+    /// Updates the progress value if it belongs to the given upload attempt.
+    pub fn set_progress(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, current: u64, total: u64) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_progress(cx, current, total);
+            inner.set_progress(cx, upload_id, current, total);
         }
     }
 
     /// Sets the abort handle for the current upload task.
-    pub fn set_abort_handle(&self, handle: AbortHandle) {
+    pub fn set_abort_handle(&self, upload_id: FileUploadAttemptId, handle: AbortHandle) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_abort_handle(handle);
+            inner.set_abort_handle(upload_id, handle);
         }
     }
 
-    /// Shows an error state with the given message.
-    pub fn show_error(&self, cx: &mut Cx, error: &str, upload: AttachmentUpload) {
+    /// Shows an error state with the given message if it belongs to the given upload attempt.
+    pub fn show_error(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, error: &str, upload: AttachmentUpload) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_error(cx, error, upload);
+            inner.show_error(cx, upload_id, error, upload);
         }
     }
 }

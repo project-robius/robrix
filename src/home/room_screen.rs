@@ -1,7 +1,7 @@
 //! The `RoomScreen` widget is the UI view that displays a single room or thread's timeline
 //! of events (messages，state changes, etc.), along with an input bar at the bottom.
 
-use std::{borrow::Cow, cell::RefCell, ops::{DerefMut, Range}, sync::Arc};
+use std::{borrow::Cow, cell::RefCell, ops::{DerefMut, Range}, sync::{atomic::{AtomicU64, Ordering}, Arc}};
 
 use bytesize::ByteSize;
 use hashbrown::{HashMap, HashSet};
@@ -62,6 +62,15 @@ const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 100;
 const BLURHASH_IMAGE_MAX_SIZE: u32 = 32;
 
 static UNNAMED_ROOM: &str = "Unnamed Room";
+
+/// Unique identifier for a single file-upload attempt.
+pub type FileUploadAttemptId = u64;
+
+static NEXT_FILE_UPLOAD_ATTEMPT_ID: AtomicU64 = AtomicU64::new(1);
+
+fn next_file_upload_attempt_id() -> FileUploadAttemptId {
+    NEXT_FILE_UPLOAD_ATTEMPT_ID.fetch_add(1, Ordering::Relaxed)
+}
 
 /// #FFF4E5
 const COLOR_THREAD_SUMMARY_BG: Vec4 = vec4(1.0, 0.957, 0.898, 1.0);
@@ -870,10 +879,14 @@ impl Widget for RoomScreen {
                     // Only handle if this action is for the current room/thread.
                     if tl.kind != timeline_kind { continue };
                     let room_input_bar = self.view.room_input_bar(cx, ids!(room_input_bar));
-                    room_input_bar.show_upload_progress(cx, &upload.file_data.name);
+                    let file_name = upload.file_data.file_name();
+                    let upload_id = next_file_upload_attempt_id();
+                    room_input_bar.show_upload_progress(cx, upload_id, &file_name);
                     submit_async_request(MatrixRequest::SendAttachment {
                         timeline_kind,
+                        upload_id,
                         upload,
+                        timeline_update_sender: tl.update_sender.clone(),
                         #[cfg(feature = "tsp")]
                         sign_with_tsp: false,
                     });
@@ -1669,7 +1682,7 @@ impl RoomScreen {
                     tl.tombstone_info = Some(successor_room_details);
                 }
                 TimelineUpdate::LinkPreviewFetched => {}
-                TimelineUpdate::FileUploadConfirmed(file_data) => {
+                TimelineUpdate::FileUploadConfirmed(upload) => {
                     let room_input_bar = self.view.room_input_bar(cx, ids!(room_input_bar));
                     #[cfg(feature = "tsp")]
                     if room_input_bar.is_tsp_signing_enabled(cx) {
@@ -1681,32 +1694,33 @@ impl RoomScreen {
                         continue;
                     }
 
-                    let in_reply_to = room_input_bar.begin_file_upload(cx, &file_data.name);
+                    let upload_id = next_file_upload_attempt_id();
+                    let file_name = upload.file_data.file_name();
+                    room_input_bar.begin_file_upload(cx, upload_id, &file_name, upload.in_reply_to.as_ref());
                     submit_async_request(MatrixRequest::SendAttachment {
                         timeline_kind: tl.kind.clone(),
-                        upload: crate::shared::file_upload_modal::AttachmentUpload {
-                            file_data,
-                            in_reply_to,
-                        },
+                        upload_id,
+                        upload,
+                        timeline_update_sender: tl.update_sender.clone(),
                         #[cfg(feature = "tsp")]
                         sign_with_tsp: false,
                     });
                 }
-                TimelineUpdate::FileUploadUpdate { current, total } => {
+                TimelineUpdate::FileUploadUpdate { upload_id, current, total } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .set_upload_progress(cx, current, total);
+                        .set_upload_progress(cx, upload_id, current, total);
                 }
-                TimelineUpdate::FileUploadAbortHandle(handle) => {
+                TimelineUpdate::FileUploadAbortHandle { upload_id, handle } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .set_upload_abort_handle(handle);
+                        .set_upload_abort_handle(upload_id, handle);
                 }
-                TimelineUpdate::FileUploadError { error, upload } => {
+                TimelineUpdate::FileUploadError { upload_id, error, upload } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .show_upload_error(cx, &error, upload);
+                        .show_upload_error(cx, upload_id, &error, upload);
                 }
-                TimelineUpdate::FileUploadComplete => {
+                TimelineUpdate::FileUploadComplete { upload_id } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .hide_upload_progress(cx);
+                        .hide_upload_progress(cx, upload_id);
                 }
             }
         }
@@ -2888,21 +2902,28 @@ pub enum TimelineUpdate {
     /// A notice that link preview data for a URL has been fetched and is now available.
     LinkPreviewFetched,
     /// User confirmed a file upload via the file upload modal.
-    FileUploadConfirmed(crate::shared::file_upload_modal::FileData),
-    /// Progress update for an ongoing file upload.
+    FileUploadConfirmed(crate::shared::file_upload_modal::AttachmentUpload),
+    /// Progress update for a specific file-upload attempt.
     FileUploadUpdate {
+        upload_id: FileUploadAttemptId,
         current: u64,
         total: u64,
     },
-    /// The abort handle for an in-progress file upload.
-    FileUploadAbortHandle(tokio::task::AbortHandle),
-    /// An error occurred during file upload.
+    /// The abort handle for a specific in-progress file-upload attempt.
+    FileUploadAbortHandle {
+        upload_id: FileUploadAttemptId,
+        handle: tokio::task::AbortHandle,
+    },
+    /// An error occurred during a specific file-upload attempt.
     FileUploadError {
+        upload_id: FileUploadAttemptId,
         error: String,
         upload: crate::shared::file_upload_modal::AttachmentUpload,
     },
-    /// File upload completed successfully.
-    FileUploadComplete,
+    /// A specific file-upload attempt completed successfully.
+    FileUploadComplete {
+        upload_id: FileUploadAttemptId,
+    },
 }
 
 /// Stores timeline UI state that is not currently owned by a `RoomScreen`.

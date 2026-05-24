@@ -14,6 +14,9 @@ use crate::home::room_screen::TimelineUpdate;
 /// Type alias for the sender used to send timeline updates.
 pub type TimelineUpdateSender = crossbeam_channel::Sender<TimelineUpdate>;
 
+/// File size above which the upload confirmation modal shows a warning.
+pub const LARGE_ATTACHMENT_WARNING_THRESHOLD_BYTES: u64 = 10 * 1024 * 1024;
+
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
@@ -29,6 +32,12 @@ script_mod! {
         align: Align{x: 0.5, y: 0}
         flow: Down
         padding: Inset{top: 20, right: 25, bottom: 20, left: 25}
+
+        scroll_bars: ScrollBars {
+            show_scroll_x: false, show_scroll_y: true,
+            scroll_bar_y: ScrollBar {drag_scrolling: true}
+        }
+
         show_bg: true,
         draw_bg +: {
             color: (COLOR_PRIMARY)
@@ -36,7 +45,6 @@ script_mod! {
             border_size: 0.0
         }
 
-        // Header
         header := View {
             width: Fill,
             height: Fit,
@@ -51,17 +59,6 @@ script_mod! {
                     color: (COLOR_TEXT)
                 }
                 text: "Upload File"
-            }
-
-            close_button := RobrixNeutralIconButton {
-                width: Fit,
-                height: Fit,
-                align: Align{x: 1.0, y: 0.0},
-                spacing: 0,
-                margin: Inset{top: 4.5} // vertically align with the title
-                padding: 15,
-                draw_icon.svg: (ICON_CLOSE)
-                icon_walk: Walk{width: 14, height: 14}
             }
         }
 
@@ -123,14 +120,16 @@ script_mod! {
             flow: Down,
             spacing: 5,
 
-            file_name_label := Label {
+            caption_input := RobrixTextInput {
                 width: Fill,
-                flow: Flow.Right { wrap: true }
+                height: Fit,
+                is_multiline: true,
+                empty_text: "Caption"
+                padding: 10,
                 draw_text +: {
                     text_style: REGULAR_TEXT { font_size: 11 },
                     color: (COLOR_TEXT),
                 }
-                text: ""
             }
 
             file_size_label := Label {
@@ -140,6 +139,17 @@ script_mod! {
                     color: (SMALL_STATE_TEXT_COLOR)
                 }
                 text: ""
+            }
+
+            large_attachment_warning_label := Label {
+                visible: false,
+                width: Fill,
+                flow: Flow.Right { wrap: true }
+                draw_text +: {
+                    text_style: REGULAR_TEXT { font_size: 10 },
+                    color: (COLOR_TEXT_WARNING_NOT_FOUND)
+                }
+                text: "Are you sure you want to upload this large file (over 10 MB) to the homeserver?"
             }
         }
 
@@ -166,26 +176,37 @@ script_mod! {
     }
 }
 
-/// Data describing a file to be uploaded.
+/// Metadata describing a file to be uploaded.
 #[derive(Clone, Debug)]
-pub struct FileData {
+pub struct FileUploadMetadata {
     /// The file path on the local filesystem.
     pub path: PathBuf,
-    /// The file name (without directory path).
-    pub name: String,
+    /// The optional user-editable caption to send with the attachment.
+    pub caption: Option<String>,
     /// The MIME type of the file.
     pub mime_type: String,
-    /// The raw file data (wrapped in Arc to avoid copying large files).
-    pub data: Arc<Vec<u8>>,
+    /// Optional preview data, only loaded for reasonably small displayable images.
+    pub preview_data: Option<Arc<Vec<u8>>>,
     /// The file size in bytes.
     pub size: u64,
+}
+
+impl FileUploadMetadata {
+    /// Returns the file name portion of the local path, or a fallback for invalid paths.
+    pub fn file_name(&self) -> String {
+        self.path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Unknown file")
+            .to_string()
+    }
 }
 
 /// Metadata for a pending attachment upload.
 #[derive(Clone, Debug)]
 pub struct AttachmentUpload {
     /// The selected file and preview data.
-    pub file_data: FileData,
+    pub file_data: FileUploadMetadata,
     /// The explicit event being replied to, if any.
     pub in_reply_to: Option<OwnedEventId>,
 }
@@ -207,23 +228,24 @@ pub struct FilePreviewerMetaData {
 pub struct FileLoadedData {
     /// Metadata about the file (path, size, MIME type).
     pub metadata: FilePreviewerMetaData,
-    /// The raw file data read from disk (wrapped in Arc to avoid copying large files).
-    pub data: Arc<Vec<u8>>,
+    /// Optional preview data read from disk.
+    pub preview_data: Option<Arc<Vec<u8>>>,
 }
 
-/// Actions emitted by the FileUploadModal.
+/// Actions used to show/hide the FileUploadModal and report user confirmation.
 #[derive(Clone, Debug, Default)]
 pub enum FilePreviewerAction {
     /// No action.
     #[default]
     None,
-    /// Show the file upload modal with the given file data and timeline update sender.
+    /// Request that the file upload modal be shown with the given file data and timeline update sender.
     /// The sender is captured at file selection time to ensure uploads go to the correct room.
     Show {
-        file_data: FileData,
+        file_data: FileUploadMetadata,
         timeline_update_sender: TimelineUpdateSender,
+        in_reply_to: Option<OwnedEventId>,
     },
-    /// Hide the file upload modal.
+    /// Report that the file upload modal should be hidden.
     Hide,
 }
 
@@ -234,30 +256,54 @@ pub struct FileUploadModal {
     #[deref] view: View,
 
     /// The current file data being previewed.
-    #[rust] file_data: Option<FileData>,
+    #[rust] file_data: Option<FileUploadMetadata>,
     /// The sender to use for sending timeline updates when upload is confirmed.
     #[rust] timeline_update_sender: Option<TimelineUpdateSender>,
+    /// The reply event captured when the file picker was opened.
+    #[rust] in_reply_to: Option<OwnedEventId>,
 }
 
 impl Widget for FileUploadModal {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
-            // Handle close button
-            if self.button(cx, ids!(close_button)).clicked(actions)
-                || self.button(cx, ids!(cancel_button)).clicked(actions)
-            {
+            // Handle cancel button
+            if self.button(cx, ids!(cancel_button)).clicked(actions) {
                 self.file_data = None;
                 self.timeline_update_sender = None;
+                self.in_reply_to = None;
                 Cx::post_action(FilePreviewerAction::Hide);
             }
 
             // Handle upload button
             if self.button(cx, ids!(upload_button)).clicked(actions) {
-                if let (Some(file_data), Some(sender)) = (self.file_data.take(), self.timeline_update_sender.take()) {
-                    // Send the file upload request directly to the timeline
-                    let _ = sender.send(TimelineUpdate::FileUploadConfirmed(file_data));
-                    SignalToUI::set_ui_signal();
-                    Cx::post_action(FilePreviewerAction::Hide);
+                let caption = match self.text_input(cx, ids!(caption_input)).text().trim() {
+                    "" => None,
+                    caption => Some(caption.to_string()),
+                };
+                if let (Some(file_data), Some(sender)) = (self.file_data.as_mut(), self.timeline_update_sender.as_ref()) {
+                    file_data.caption = caption;
+                    let mut upload_file_data = file_data.clone();
+                    upload_file_data.preview_data = None;
+                    let upload = AttachmentUpload {
+                        file_data: upload_file_data,
+                        in_reply_to: self.in_reply_to.clone(),
+                    };
+                    match sender.send(TimelineUpdate::FileUploadConfirmed(upload)) {
+                        Ok(()) => {
+                            self.file_data = None;
+                            self.timeline_update_sender = None;
+                            self.in_reply_to = None;
+                            SignalToUI::set_ui_signal();
+                            Cx::post_action(FilePreviewerAction::Hide);
+                        }
+                        Err(_e) => {
+                            crate::shared::popup_list::enqueue_popup_notification(
+                                "Cannot upload file: the selected room is no longer available.",
+                                crate::shared::popup_list::PopupKind::Error,
+                                None,
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -272,37 +318,40 @@ impl Widget for FileUploadModal {
 
 impl FileUploadModal {
     /// Sets the file data and timeline update sender, and updates the preview UI.
-    pub fn set_file_data(&mut self, cx: &mut Cx, file_data: FileData, timeline_update_sender: TimelineUpdateSender) {
-        // Update file name label
-        self.label(cx, ids!(file_name_label))
-            .set_text(cx, &file_data.name);
-
-        // Update file size label
+    pub fn set_file_data(&mut self, cx: &mut Cx, file_data: FileUploadMetadata, timeline_update_sender: TimelineUpdateSender, in_reply_to: Option<OwnedEventId>) {
+        let file_name = file_data.file_name();
+        let caption = file_data.caption.as_deref().unwrap_or(&file_name);
+        self.text_input(cx, ids!(caption_input)).set_text(cx, caption);
         self.label(cx, ids!(file_size_label))
             .set_text(cx, &ByteSize::b(file_data.size).to_string());
+        self.label(cx, ids!(large_attachment_warning_label))
+            .set_visible(cx, file_data.size > LARGE_ATTACHMENT_WARNING_THRESHOLD_BYTES);
 
-        // Determine if this is an image
+        // Show image preview if this is a displayable image
         let is_image = crate::image_utils::is_displayable_image(&file_data.mime_type);
-
-        // Show/hide appropriate preview widgets
         let image_preview = self.view.image(cx, ids!(image_preview_container.image_preview));
         let image_preview_container = self.view.view(cx, ids!(image_preview_container));
         let file_icon_container = self.view.view(cx, ids!(file_icon_container));
-
         if is_image {
             // Hide file icon first
             file_icon_container.set_visible(cx, false);
 
             // Load image data into the preview
-            if let Err(e) = crate::utils::load_png_or_jpg(&image_preview, cx, &file_data.data) {
-                makepad_widgets::error!("Failed to load image preview: {:?}", e);
-                // Fall back to file icon
+            if let Some(preview_data) = &file_data.preview_data {
+                if let Err(e) = crate::utils::load_png_or_jpg(&image_preview, cx, preview_data) {
+                    makepad_widgets::error!("Failed to load image preview: {:?}", e);
+                    // Fall back to file icon
+                    image_preview_container.set_visible(cx, false);
+                    file_icon_container.set_visible(cx, true);
+                    self.update_file_type_label(cx, &file_data.mime_type);
+                } else {
+                    // Set container visible after loading
+                    image_preview_container.set_visible(cx, true);
+                }
+            } else {
                 image_preview_container.set_visible(cx, false);
                 file_icon_container.set_visible(cx, true);
                 self.update_file_type_label(cx, &file_data.mime_type);
-            } else {
-                // Set container visible after loading
-                image_preview_container.set_visible(cx, true);
             }
         } else {
             image_preview_container.set_visible(cx, false);
@@ -312,6 +361,7 @@ impl FileUploadModal {
 
         self.file_data = Some(file_data);
         self.timeline_update_sender = Some(timeline_update_sender);
+        self.in_reply_to = in_reply_to;
         self.redraw(cx);
     }
 
@@ -329,9 +379,9 @@ impl FileUploadModal {
 
 impl FileUploadModalRef {
     /// Sets the file data and timeline update sender, and updates the preview UI.
-    pub fn set_file_data(&self, cx: &mut Cx, file_data: FileData, timeline_update_sender: TimelineUpdateSender) {
+    pub fn set_file_data(&self, cx: &mut Cx, file_data: FileUploadMetadata, timeline_update_sender: TimelineUpdateSender, in_reply_to: Option<OwnedEventId>) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_file_data(cx, file_data, timeline_update_sender);
+            inner.set_file_data(cx, file_data, timeline_update_sender, in_reply_to);
         }
     }
 }
