@@ -1781,6 +1781,13 @@ async fn matrix_worker_task(
                     continue;
                 }
 
+                let _ = sender.send(TimelineUpdate::FileUploadStarted {
+                    upload_id,
+                    file_name: upload.file_data.file_name(),
+                    in_reply_to: upload.in_reply_to.clone(),
+                });
+                SignalToUI::set_ui_signal();
+
                 let sender_clone = sender.clone();
                 let progress_sender = sender.clone();
                 let monitor_timeline_kind = timeline_kind.clone();

@@ -32,7 +32,7 @@ use crate::{
     },
     room::{BasicRoomDetails, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::{AttachmentUploadTarget, submit_attachment_upload}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -877,18 +877,13 @@ impl Widget for RoomScreen {
                     let Some(tl) = self.tl_state.as_ref() else { continue };
                     // Only handle if this action is for the current room/thread.
                     if tl.kind != timeline_kind { continue };
-                    let room_input_bar = self.view.room_input_bar(cx, ids!(room_input_bar));
-                    let file_name = upload.file_data.file_name();
-                    let upload_id = next_file_upload_attempt_id();
-                    room_input_bar.show_upload_progress(cx, upload_id, &file_name);
-                    submit_async_request(MatrixRequest::SendAttachment {
+                    let upload_target = AttachmentUploadTarget {
                         timeline_kind,
-                        upload_id,
-                        upload,
                         timeline_update_sender: tl.update_sender.clone(),
                         #[cfg(feature = "tsp")]
                         sign_with_tsp: false,
-                    });
+                    };
+                    submit_attachment_upload(upload, upload_target);
                     continue;
                 }
 
@@ -1683,7 +1678,7 @@ impl RoomScreen {
                 TimelineUpdate::LinkPreviewFetched => {}
                 TimelineUpdate::FileUploadStarted { upload_id, file_name, in_reply_to } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .begin_file_upload(cx, upload_id, &file_name, in_reply_to.as_ref());
+                        .handle_file_upload_started(cx, upload_id, &file_name, in_reply_to.as_ref());
                 }
                 TimelineUpdate::FileUploadUpdate { upload_id, current, total } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
@@ -2880,7 +2875,7 @@ pub enum TimelineUpdate {
     Tombstoned(SuccessorRoomDetails),
     /// A notice that link preview data for a URL has been fetched and is now available.
     LinkPreviewFetched,
-    /// A file upload has started for this timeline.
+    /// A file upload has been started in the background for this timeline.
     FileUploadStarted {
         upload_id: FileUploadAttemptId,
         file_name: String,

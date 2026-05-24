@@ -10,9 +10,10 @@ use std::sync::Arc;
 
 use crate::{
     home::room_screen::{TimelineUpdate, next_file_upload_attempt_id},
-    shared::popup_list::{PopupKind, enqueue_popup_notification},
     sliding_sync::{MatrixRequest, TimelineKind, submit_async_request},
 };
+#[cfg(feature = "tsp")]
+use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
 use crate::utils::format_decimal_file_size;
 
 /// Type alias for the sender used to send timeline updates.
@@ -311,7 +312,7 @@ impl Widget for FileUploadModal {
                         file_data: upload_file_data,
                         in_reply_to: self.in_reply_to.clone(),
                     };
-                    if start_attachment_upload(upload, upload_target.clone()) {
+                    if submit_attachment_upload(upload, upload_target.clone()) {
                         self.file_data = None;
                         self.upload_target = None;
                         self.in_reply_to = None;
@@ -329,7 +330,8 @@ impl Widget for FileUploadModal {
     }
 }
 
-fn start_attachment_upload(upload: AttachmentUpload, upload_target: AttachmentUploadTarget) -> bool {
+/// Submits a confirmed attachment upload request to the Matrix worker.
+pub fn submit_attachment_upload(upload: AttachmentUpload, upload_target: AttachmentUploadTarget) -> bool {
     #[cfg(feature = "tsp")]
     if upload_target.sign_with_tsp {
         enqueue_popup_notification(
@@ -341,20 +343,6 @@ fn start_attachment_upload(upload: AttachmentUpload, upload_target: AttachmentUp
     }
 
     let upload_id = next_file_upload_attempt_id();
-    let file_name = upload.file_data.file_name();
-    if upload_target.timeline_update_sender.send(TimelineUpdate::FileUploadStarted {
-        upload_id,
-        file_name,
-        in_reply_to: upload.in_reply_to.clone(),
-    }).is_err() {
-        enqueue_popup_notification(
-            "Cannot upload file: the selected room is no longer available.",
-            PopupKind::Error,
-            None,
-        );
-        return false;
-    }
-
     submit_async_request(MatrixRequest::SendAttachment {
         timeline_kind: upload_target.timeline_kind,
         upload_id,
@@ -363,7 +351,7 @@ fn start_attachment_upload(upload: AttachmentUpload, upload_target: AttachmentUp
         #[cfg(feature = "tsp")]
         sign_with_tsp: upload_target.sign_with_tsp,
     });
-    SignalToUI::set_ui_signal();
+
     true
 }
 

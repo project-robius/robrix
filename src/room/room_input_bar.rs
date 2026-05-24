@@ -749,11 +749,16 @@ impl RoomInputBar {
 
     /// Shows a "not supported" message on mobile platforms.
     #[cfg(any(target_os = "ios", target_os = "android"))]
-    fn open_file_picker(&mut self, _cx: &mut Cx, _timeline_kind: TimelineKind, _timeline_update_sender: Option<TimelineUpdateSender>) {
+    fn open_file_picker(
+        &mut self,
+        _cx: &mut Cx,
+        _timeline_kind: TimelineKind,
+        _timeline_update_sender: Option<TimelineUpdateSender>,
+    ) {
         enqueue_popup_notification(
-            "File uploads are not yet supported on this platform.",
+            "File uploads are not yet supported on mobile.",
             PopupKind::Error,
-            None,
+            Some(5.0),
         );
     }
 }
@@ -929,8 +934,8 @@ impl RoomInputBarRef {
             .show_error(cx, upload_id, error, upload);
     }
 
-    /// Starts a file upload and clears only the reply captured for this upload.
-    pub fn begin_file_upload(
+    /// Handles a started file upload and clears only the reply captured for this upload.
+    pub fn handle_file_upload_started(
         &self,
         cx: &mut Cx,
         upload_id: FileUploadAttemptId,
