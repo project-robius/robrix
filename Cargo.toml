@@ -35,13 +35,17 @@ crossbeam-channel = "0.5.10"
 crossbeam-queue = "0.3.8"
 eyeball = { version = "0.8.8", features = ["tracing"] } # same as matrix-sdk-ui
 eyeball-im = { version = "0.8.0", features = [ "tracing" ] } # same as matrix-sdk-ui
+futures = "0.3"
 imbl = { version = "6.1.0", features = ["serde"] } # same as matrix-sdk-ui
 futures-util = "0.3"
 hashbrown = { version = "0.16", features = ["raw-entry"] }
 htmlize = "1.0.5"
 indexmap = "2.6.0"
 imghdr = "0.7.0"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 libc = "0.2"
+mime = "0.3"
+mime_guess = "2.0"
 linkify = "0.10.0"
 matrix-sdk-base = { git = "https://github.com/project-robius/matrix-rust-sdk", branch = "space_room_suggested" }
 matrix-sdk = { git = "https://github.com/project-robius/matrix-rust-sdk", branch = "space_room_suggested", default-features = false, features = [
@@ -101,6 +105,10 @@ reqwest = { version = "0.12", default-features = false, optional = true, feature
     "http2",
     "macos-system-configuration",
 ] }
+
+# Desktop-only file dialog (doesn't work on iOS/Android)
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+rfd = "0.15"
 
 
 ## For OAuth/SSO login on iOS, via `ASWebAuthenticationSession`. Ugh....

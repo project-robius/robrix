@@ -29,6 +29,7 @@ pub mod new_message_context_menu;
 pub mod room_context_menu;
 pub mod link_preview;
 pub mod room_image_viewer;
+pub mod upload_progress;
 
 pub fn script_mod(vm: &mut ScriptVm) {
     search_messages::script_mod(vm);
@@ -58,6 +59,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     main_desktop_ui::script_mod(vm);
     spaces_bar::script_mod(vm);
     navigation_tab_bar::script_mod(vm);
+    upload_progress::script_mod(vm);
     // Keep HomeScreen last, it references many widgets registered above.
     home_screen::script_mod(vm);
 }

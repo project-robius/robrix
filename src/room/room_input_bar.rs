@@ -20,8 +20,24 @@ use makepad_widgets::*;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
-use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction}, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FilePreviewerAction, FileUploadAttemptId}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+
+/// Result of the native file picker plus background file-loading work.
+#[cfg_attr(any(target_os = "ios", target_os = "android"), allow(dead_code))]
+enum PendingFileSelection {
+    /// A file was selected and read successfully.
+    Selected {
+        upload: AttachmentUpload,
+    },
+    /// The picker was dismissed without selecting a file.
+    Cancelled,
+    /// The file could not be selected, inspected, or read.
+    Error(String),
+}
+
+/// Receives the pending file-selection result back on the UI thread.
+type PendingFileSelectionReceiver = std::sync::mpsc::Receiver<PendingFileSelection>;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -60,6 +76,9 @@ script_mod! {
         // Below that, display a preview of the current location that a user is about to send.
         location_preview := LocationPreview { }
 
+        // Upload progress view (shown when a file upload is in progress)
+        upload_progress_view := UploadProgressView { }
+
         // Below that, display one of multiple possible views:
         // * the message input bar (buttons and message TextInput).
         // * a notice that the user can't send messages to this room.
@@ -79,6 +98,23 @@ script_mod! {
                 // even when the mentionable_text_input box is very tall.
                 align: Align{y: 1.0},
                 padding: 6,
+
+                // Attachment button for uploading files/images
+                send_attachment_button := RobrixIconButton {
+                    margin: 4
+                    spacing: 0,
+                    draw_icon +: {
+                        svg: (ICON_ADD_ATTACHMENT)
+                        color: (COLOR_ACTIVE_PRIMARY_DARKER)
+                    },
+                    draw_bg +: {
+                        color: (COLOR_BG_PREVIEW)
+                        color_hover: #E0E8F0
+                        color_down: #D0D8E8
+                    }
+                    icon_walk: Walk{width: 21, height: 21}
+                    text: "",
+                }
 
                 location_button := RobrixIconButton {
                     margin: 4
@@ -174,6 +210,8 @@ pub struct RoomInputBar {
     /// Cached natural Fit height of the input_bar, used as the animation
     /// target when the editing pane is being hidden.
     #[rust] input_bar_natural_height: f64,
+    /// The pending file picker / background load operation, if any.
+    #[rust] pending_file_selection: Option<PendingFileSelectionReceiver>,
 }
 
 impl ScriptHook for RoomInputBar {
@@ -226,6 +264,36 @@ impl Widget for RoomInputBar {
             }
 
             self.handle_actions(cx, actions, room_screen_props);
+        }
+
+        // Handle signal events for pending file loads from background threads
+        if let Event::Signal = event {
+            if let Some(receiver) = &self.pending_file_selection {
+                let mut remove_receiver = false;
+                match receiver.try_recv() {
+                    Ok(PendingFileSelection::Selected { upload }) => {
+                        Cx::post_action(FilePreviewerAction::Show { upload });
+                        remove_receiver = true;
+                    }
+                    Ok(PendingFileSelection::Cancelled) => {
+                        remove_receiver = true;
+                    }
+                    Ok(PendingFileSelection::Error(error)) => {
+                        enqueue_popup_notification(error, PopupKind::Error, None);
+                        remove_receiver = true;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        // Still waiting for file picker / loader.
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        remove_receiver = true;
+                    }
+                }
+                if remove_receiver {
+                    self.pending_file_selection = None;
+                    self.redraw(cx);
+                }
+            }
         }
 
         self.view.handle_event(cx, event, scope);
@@ -281,6 +349,12 @@ impl RoomInputBar {
         {
             self.clear_replying_to(cx);
             self.redraw(cx);
+        }
+
+        // Handle the add attachment button being clicked.
+        if self.button(cx, ids!(send_attachment_button)).clicked(actions) {
+            log!("Add attachment button clicked; opening file picker...");
+            self.open_file_picker(cx, room_screen_props.timeline_kind.clone());
         }
 
         // Handle the add location button being clicked.
@@ -589,6 +663,90 @@ impl RoomInputBar {
     fn is_tsp_signing_enabled(&self, cx: &mut Cx) -> bool {
         self.view.check_box(cx, ids!(tsp_sign_checkbox)).active(cx)
     }
+
+    /// Opens the native file picker dialog to select a file for upload.
+    ///
+    /// The timeline target is captured at this moment to ensure the file is uploaded
+    /// to the correct room/thread, even if the user switches rooms while the modal is open.
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    fn open_file_picker(
+        &mut self,
+        cx: &mut Cx,
+        timeline_kind: TimelineKind,
+    ) {
+        if self.pending_file_selection.is_some() {
+            enqueue_popup_notification(
+                "A file selection is already in progress.",
+                PopupKind::Error,
+                None,
+            );
+            return;
+        }
+
+        if self.view.view(cx, ids!(upload_progress_view)).visible() {
+            enqueue_popup_notification(
+                "Finish the current upload before starting another one.",
+                PopupKind::Error,
+                None,
+            );
+            return;
+        }
+
+        let in_reply_to = self.replying_to
+            .as_ref()
+            .and_then(|(event_tl_item, _embedded_event)| event_tl_item.event_id().map(ToOwned::to_owned));
+        #[cfg(feature = "tsp")]
+        let sign_with_tsp = self.is_tsp_signing_enabled(cx);
+
+        let dialog = rfd::AsyncFileDialog::new()
+            .set_title("Select file to upload");
+        let (sender, receiver) = std::sync::mpsc::channel();
+        self.pending_file_selection = Some(receiver);
+        let dialog_task = dialog.pick_file();
+
+        cx.spawn_thread(move || {
+            let result = match futures::executor::block_on(dialog_task) {
+                Some(selected_file) => {
+                    #[cfg(feature = "tsp")]
+                    {
+                        load_selected_file(
+                            selected_file.path().to_path_buf(),
+                            timeline_kind,
+                            in_reply_to,
+                            sign_with_tsp,
+                        )
+                    }
+                    #[cfg(not(feature = "tsp"))]
+                    {
+                        load_selected_file(
+                            selected_file.path().to_path_buf(),
+                            timeline_kind,
+                            in_reply_to,
+                        )
+                    }
+                }
+                None => PendingFileSelection::Cancelled,
+            };
+            if sender.send(result).is_err() {
+                makepad_widgets::error!("Failed to send file picker result to UI: receiver dropped");
+            }
+            SignalToUI::set_ui_signal();
+        });
+    }
+
+    /// Shows a "not supported" message on mobile platforms.
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    fn open_file_picker(
+        &mut self,
+        _cx: &mut Cx,
+        _timeline_kind: TimelineKind,
+    ) {
+        enqueue_popup_notification(
+            "File uploads are not yet supported on mobile.",
+            PopupKind::Error,
+            Some(5.0),
+        );
+    }
 }
 
 impl RoomInputBarRef {
@@ -721,6 +879,64 @@ impl RoomInputBarRef {
         //    This depends on the `EditingPane` state, so it must be done after Step 3.
         inner.update_tombstone_footer(cx, timeline_kind.room_id(), tombstone_info);
     }
+
+    /// Hides the upload progress view for the given upload attempt.
+    pub fn hide_upload_progress(&self, cx: &mut Cx, upload_id: FileUploadAttemptId) {
+        let Some(inner) = self.borrow() else { return };
+        inner.child_by_path(ids!(upload_progress_view))
+            .as_upload_progress_view()
+            .hide(cx, upload_id);
+    }
+
+    /// Updates the upload progress.
+    pub fn set_upload_progress(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, current: u64, total: u64) {
+        let Some(inner) = self.borrow() else { return };
+        inner.child_by_path(ids!(upload_progress_view))
+            .as_upload_progress_view()
+            .set_progress(cx, upload_id, current, total);
+    }
+
+    /// Shows an upload error with retry option.
+    pub fn show_upload_error(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, error: &str, upload: AttachmentUpload, retryable: bool) {
+        let Some(inner) = self.borrow() else { return };
+        inner.child_by_path(ids!(upload_progress_view))
+            .as_upload_progress_view()
+            .show_error(cx, upload_id, error, upload, retryable);
+    }
+
+    /// Handles a started file upload and clears only the reply captured for this upload.
+    pub fn handle_file_upload_started(
+        &self,
+        cx: &mut Cx,
+        upload_id: FileUploadAttemptId,
+        file_name: &str,
+        in_reply_to: Option<&OwnedEventId>,
+        abort_handle: futures_util::future::AbortHandle,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+
+        inner.child_by_path(ids!(upload_progress_view))
+            .as_upload_progress_view()
+            .show(cx, upload_id, file_name, abort_handle);
+
+        if let Some(in_reply_to) = in_reply_to {
+            let should_clear_reply = inner
+                .replying_to
+                .as_ref()
+                .and_then(|(event_tl_item, _embedded_event)| event_tl_item.event_id())
+                .is_some_and(|current_reply_event_id| current_reply_event_id == in_reply_to);
+            if should_clear_reply {
+                inner.clear_replying_to(cx);
+            }
+        }
+    }
+
+    /// Returns whether TSP signing is enabled.
+    #[cfg(feature = "tsp")]
+    pub fn is_tsp_signing_enabled(&self, cx: &mut Cx) -> bool {
+        let Some(inner) = self.borrow() else { return false };
+        inner.is_tsp_signing_enabled(cx)
+    }
 }
 
 /// The saved UI state of a `RoomInputBar` widget.
@@ -747,4 +963,56 @@ enum ShowEditingPaneBehavior {
     RestoreExisting {
         editing_pane_state: EditingPaneState,
     },
+}
+
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+fn load_selected_file(
+    selected_file_path: std::path::PathBuf,
+    timeline_kind: TimelineKind,
+    in_reply_to: Option<OwnedEventId>,
+    #[cfg(feature = "tsp")]
+    sign_with_tsp: bool,
+) -> PendingFileSelection {
+    match std::fs::metadata(&selected_file_path) {
+        Ok(metadata) => {
+            if !metadata.is_file() {
+                return PendingFileSelection::Error("Cannot upload directories or special files".to_string());
+            }
+            let file_size = metadata.len();
+            if file_size == 0 {
+                return PendingFileSelection::Error("Cannot upload empty file".to_string());
+            }
+            let mime = mime_guess::from_path(&selected_file_path)
+                .first_or_octet_stream();
+            let preview_data = if crate::image_utils::is_displayable_image(mime.essence_str()) {
+                match std::fs::read(&selected_file_path) {
+                    Ok(data) => Some(std::sync::Arc::new(data)),
+                    Err(e) => return PendingFileSelection::Error(format!("Unable to read image preview: {e}")),
+                }
+            } else {
+                None
+            };
+            let name = selected_file_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+
+            PendingFileSelection::Selected {
+                upload: AttachmentUpload {
+                    timeline_kind,
+                    file_data: crate::shared::file_upload_modal::FileUploadMetadata {
+                        path: selected_file_path,
+                        caption: Some(name),
+                        mime_type: mime.to_string(),
+                        preview_data,
+                        size: file_size,
+                    },
+                    in_reply_to,
+                    #[cfg(feature = "tsp")]
+                    sign_with_tsp,
+                },
+            }
+        }
+        Err(e) => PendingFileSelection::Error(format!("Unable to access file: {e}")),
+    }
 }

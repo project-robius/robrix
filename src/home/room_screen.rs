@@ -3,7 +3,6 @@
 
 use std::{borrow::Cow, cell::RefCell, ops::{DerefMut, Range}, sync::Arc};
 
-use bytesize::ByteSize;
 use hashbrown::{HashMap, HashSet};
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
@@ -33,7 +32,7 @@ use crate::{
     },
     room::{BasicRoomDetails, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -1642,6 +1641,22 @@ impl RoomScreen {
                     tl.tombstone_info = Some(successor_room_details);
                 }
                 TimelineUpdate::LinkPreviewFetched => {}
+                TimelineUpdate::FileUploadStarted { upload_id, file_name, in_reply_to, abort_handle } => {
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .handle_file_upload_started(cx, upload_id, &file_name, in_reply_to.as_ref(), abort_handle);
+                }
+                TimelineUpdate::FileUploadUpdate { upload_id, current, total } => {
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .set_upload_progress(cx, upload_id, current, total);
+                }
+                TimelineUpdate::FileUploadError { upload_id, error, upload, retryable } => {
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .show_upload_error(cx, upload_id, &error, upload, retryable);
+                }
+                TimelineUpdate::FileUploadComplete { upload_id } => {
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .hide_upload_progress(cx, upload_id);
+                }
             }
         }
 
@@ -2817,6 +2832,30 @@ pub enum TimelineUpdate {
     Tombstoned(SuccessorRoomDetails),
     /// A notice that link preview data for a URL has been fetched and is now available.
     LinkPreviewFetched,
+    /// A file upload has been started in the background for this timeline.
+    FileUploadStarted {
+        upload_id: FileUploadAttemptId,
+        file_name: String,
+        in_reply_to: Option<OwnedEventId>,
+        abort_handle: futures_util::future::AbortHandle,
+    },
+    /// Progress update for a specific file-upload attempt.
+    FileUploadUpdate {
+        upload_id: FileUploadAttemptId,
+        current: u64,
+        total: u64,
+    },
+    /// An error occurred during a specific file-upload attempt.
+    FileUploadError {
+        upload_id: FileUploadAttemptId,
+        error: String,
+        upload: crate::shared::file_upload_modal::AttachmentUpload,
+        retryable: bool,
+    },
+    /// A specific file-upload attempt completed successfully.
+    FileUploadComplete {
+        upload_id: FileUploadAttemptId,
+    },
 }
 
 /// Stores timeline UI state that is not currently owned by a `RoomScreen`.
@@ -4004,7 +4043,7 @@ fn populate_file_message_content(
         .info
         .as_ref()
         .and_then(|info| info.size)
-        .map(|bytes| format!("  ({})", ByteSize::b(bytes.into())))
+        .map(|bytes| format!("  ({})", utils::format_decimal_file_size(bytes.into())))
         .unwrap_or_default();
     let caption = file_content.formatted_caption()
         .filter(|fb| fb.format == MessageFormat::Html)
@@ -4043,7 +4082,7 @@ fn populate_audio_message_content(
                 .map(|m| format!("  {},", htmlize::escape_text(m)))
                 .unwrap_or_default(),
             info.size
-                .map(|bytes| format!("  ({}),", ByteSize::b(bytes.into())))
+                .map(|bytes| format!("  ({}),", utils::format_decimal_file_size(bytes.into())))
                 .unwrap_or_default(),
         ))
         .unwrap_or_default();
@@ -4085,7 +4124,7 @@ fn populate_video_message_content(
                 .map(|m| format!("  {},", htmlize::escape_text(m)))
                 .unwrap_or_default(),
             info.size
-                .map(|bytes| format!("  ({}),", ByteSize::b(bytes.into())))
+                .map(|bytes| format!("  ({}),", utils::format_decimal_file_size(bytes.into())))
                 .unwrap_or_default(),
             info.width.and_then(|width|
                 info.height.map(|height| format!("  {width}x{height},"))

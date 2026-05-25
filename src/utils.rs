@@ -1,4 +1,4 @@
-use std::{borrow::Cow, ops::{Deref, DerefMut}, time::SystemTime};
+use std::{borrow::Cow, ops::{Deref, DerefMut}};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -15,6 +15,12 @@ use crate::{
 
 /// The scheme for GEO links, used for location messages in Matrix.
 pub const GEO_URI_SCHEME: &str = "geo:";
+
+
+/// Formats a byte count using decimal units with user-facing byte suffixes, e.g. KB/MB/GB.
+pub fn format_decimal_file_size(bytes: u64) -> String {
+    bytesize::ByteSize::b(bytes).display().si().to_string().to_uppercase()
+}
 
 
 /// A wrapper type that implements the `Debug` trait for non-`Debug` types.
@@ -118,22 +124,23 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
             })
         }
     };
-    if let Err(err) = res.as_ref() {
-        // debugging: dump out the bad image to disk
-        let mut path = crate::temp_storage::get_temp_dir_path().clone();
-        let filename = format!(
-            "img_{}",
-            SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map(|d| d.as_millis())
-                .unwrap_or_else(|_| rand::random::<u128>()),
-        );
-        path.push(filename);
-        path.set_extension("unknown");
-        error!("Failed to load PNG/JPG: {err}. Dumping bad image: {:?}", path);
-        let _ = std::fs::write(path, data)
-            .inspect_err(|e| error!("Failed to write bad image to disk: {e}"));
-    }
+    // Disabled: dumping invalid user-selected image bytes can duplicate private or large files.
+    // if let Err(err) = res.as_ref() {
+    //     // debugging: dump out the bad image to disk
+    //     let mut path = crate::temp_storage::get_temp_dir_path().clone();
+    //     let filename = format!(
+    //         "img_{}",
+    //         std::time::SystemTime::now()
+    //             .duration_since(std::time::SystemTime::UNIX_EPOCH)
+    //             .map(|d| d.as_millis())
+    //             .unwrap_or_else(|_| rand::random::<u128>()),
+    //     );
+    //     path.push(filename);
+    //     path.set_extension("unknown");
+    //     error!("Failed to load PNG/JPG: {err}. Dumping bad image: {:?}", path);
+    //     let _ = std::fs::write(path, data)
+    //         .inspect_err(|e| error!("Failed to write bad image to disk: {e}"));
+    // }
     res
 }
 
