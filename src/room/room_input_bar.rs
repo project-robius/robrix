@@ -913,11 +913,11 @@ impl RoomInputBarRef {
     }
 
     /// Shows an upload error with retry option.
-    pub fn show_upload_error(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, error: &str, upload: AttachmentUpload) {
+    pub fn show_upload_error(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, error: &str, upload: AttachmentUpload, retryable: bool) {
         let Some(inner) = self.borrow() else { return };
         inner.child_by_path(ids!(upload_progress_view))
             .as_upload_progress_view()
-            .show_error(cx, upload_id, error, upload);
+            .show_error(cx, upload_id, error, upload, retryable);
     }
 
     /// Handles a started file upload and clears only the reply captured for this upload.

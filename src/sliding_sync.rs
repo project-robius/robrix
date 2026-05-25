@@ -1769,9 +1769,50 @@ async fn matrix_worker_task(
                         upload_id,
                         error: "TSP-signed attachment uploads are not supported yet.".to_string(),
                         upload,
+                        retryable: false,
                     });
                     SignalToUI::set_ui_signal();
                     continue;
+                }
+
+                let max_upload_size = match get_client() {
+                    Some(client) => match client.load_or_fetch_max_upload_size().await {
+                        Ok(max_upload_size) => Some(max_upload_size),
+                        Err(e) => {
+                            warning!("Could not fetch homeserver max upload size for {timeline_kind}: {e:?}; continuing without a local size-limit check.");
+                            None
+                        }
+                    },
+                    None => {
+                        warning!("Could not fetch homeserver max upload size for {timeline_kind}: client unavailable; continuing without a local size-limit check.");
+                        None
+                    }
+                };
+                if let Some(max_upload_size) = max_upload_size {
+                    let exceeds_max_upload_size = matrix_sdk::ruma::UInt::try_from(upload.file_data.size)
+                        .map(|upload_size| upload_size > max_upload_size)
+                        .unwrap_or(true);
+                    if exceeds_max_upload_size {
+                        let max_size: u64 = max_upload_size.into();
+                        let error = format!(
+                            "file size of ({}) exceeds the homeserver's {} limit.",
+                            utils::format_decimal_file_size(upload.file_data.size),
+                            utils::format_decimal_file_size(max_size),
+                        );
+                        let _ = sender.send(TimelineUpdate::FileUploadStarted {
+                            upload_id,
+                            file_name: upload.file_data.file_name(),
+                            in_reply_to: upload.in_reply_to.clone(),
+                        });
+                        let _ = sender.send(TimelineUpdate::FileUploadError {
+                            upload_id,
+                            error,
+                            upload,
+                            retryable: false,
+                        });
+                        SignalToUI::set_ui_signal();
+                        continue;
+                    }
                 }
 
                 let _ = sender.send(TimelineUpdate::FileUploadStarted {
@@ -1893,6 +1934,7 @@ async fn matrix_worker_task(
                                 upload_id,
                                 error: format!("{e}"),
                                 upload: upload_for_error,
+                                retryable: true,
                             });
                         }
                     }

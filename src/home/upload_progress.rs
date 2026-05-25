@@ -19,7 +19,7 @@ script_mod! {
         height: Fit,
         flow: Down,
         padding: Inset { top: 10, bottom: 10, left: 15, right: 15 }
-        spacing: 8,
+        spacing: 15,
 
         show_bg: true,
         draw_bg +: {
@@ -35,21 +35,11 @@ script_mod! {
             align: Align{x: 0.0, y: 0.5},
             spacing: 10,
 
-            Label {
-                width: Fit,
-                padding: 0,
-                margin: 0
-                draw_text +: {
-                    text_style: REGULAR_TEXT { font_size: 10 },
-                    color: (COLOR_TEXT)
-                }
-                text: "Sending: "
-            }
-
             file_name_label := Label {
                 width: Fill,
+                flow: Flow.Right {wrap: true}
                 padding: 0,
-                margin: 0
+                margin: Inset { left: 1 }
                 draw_text +: {
                     text_style: REGULAR_TEXT { font_size: 10 },
                     color: (COLOR_TEXT)
@@ -78,10 +68,11 @@ script_mod! {
 
             status_label := Label {
                 width: Fill,
+                flow: Flow.Right {wrap: true}
                 padding: 0,
-                margin: 0
+                margin: Inset { left: 1 }
                 draw_text +: {
-                    text_style: REGULAR_TEXT { font_size: 10 },
+                    text_style: REGULAR_TEXT { font_size: 11 },
                     color: (COLOR_TEXT)
                 }
                 text: ""
@@ -104,7 +95,7 @@ pub enum UploadViewState {
     Normal,
     /// Error state - upload failed.
     Error {
-        upload: AttachmentUpload,
+        upload: Option<AttachmentUpload>,
     },
 }
 
@@ -141,9 +132,8 @@ impl Widget for UploadProgressView {
 
             // Handle retry button
             if self.button(cx, ids!(retry_button)).clicked(actions) {
-                if let UploadViewState::Error { upload } = &self.state {
+                if let UploadViewState::Error { upload: Some(upload) } = &self.state {
                     let upload = upload.clone();
-
                     self.hide_current(cx);
                     submit_attachment_upload(upload);
                 }
@@ -167,8 +157,9 @@ impl UploadProgressView {
         self.state = UploadViewState::Normal;
         self.progress = 0.0;
 
-        self.label(cx, ids!(file_name_label)).set_text(cx, file_name);
+        self.label(cx, ids!(file_name_label)).set_text(cx, &format!("Sending:  {file_name}"));
         self.label(cx, ids!(status_label)).set_text(cx, "Starting upload...");
+        self.reset_status_label_color(cx);
         let retry_button = self.button(cx, ids!(retry_button));
         retry_button.set_visible(cx, false);
         retry_button.reset_hover(cx);
@@ -192,6 +183,7 @@ impl UploadProgressView {
         self.abort_handle = None;
         self.state = UploadViewState::Normal;
         self.button(cx, ids!(retry_button)).set_visible(cx, false);
+        self.reset_status_label_color(cx);
         self.reset_progress_bar(cx);
         self.redraw(cx);
     }
@@ -222,6 +214,7 @@ impl UploadProgressView {
             format_decimal_file_size(total)
         );
         self.label(cx, ids!(status_label)).set_text(cx, &status);
+        self.reset_status_label_color(cx);
 
         self.redraw(cx);
     }
@@ -238,23 +231,26 @@ impl UploadProgressView {
     }
 
     /// Shows an error state with the given message if it belongs to the given upload attempt.
-    pub fn show_error(&mut self, cx: &mut Cx, upload_id: FileUploadAttemptId, error: &str, upload: AttachmentUpload) {
+    pub fn show_error(&mut self, cx: &mut Cx, upload_id: FileUploadAttemptId, error: &str, upload: AttachmentUpload, retryable: bool) {
         if self.upload_id != Some(upload_id) {
             return;
         }
         self.abort_handle = None;
         self.state = UploadViewState::Error {
-            upload,
+            upload: retryable.then_some(upload),
         };
 
         // Update UI for error state
         self.label(cx, ids!(status_label))
             .set_text(cx, &format!("Error: {}", error));
         let retry_button = self.button(cx, ids!(retry_button));
-        retry_button.set_visible(cx, true);
-        retry_button.reset_hover(cx);
+        retry_button.set_visible(cx, retryable);
+        if retryable {
+            retry_button.reset_hover(cx);
+        }
 
         self.progress = 1.0;
+        self.set_status_label_color(cx, COLOR_FG_DANGER_RED);
         let progress_bar = self.child_by_path(ids!(progress_bar)).as_progress_bar();
         progress_bar.set_progress_color(cx, COLOR_FG_DANGER_RED);
         progress_bar.set_progress(cx, 1.0);
@@ -265,6 +261,20 @@ impl UploadProgressView {
     fn reset_progress_bar(&mut self, cx: &mut Cx) {
         self.child_by_path(ids!(progress_bar)).as_progress_bar().reset_progress_color(cx);
         self.child_by_path(ids!(progress_bar)).as_progress_bar().set_progress(cx, 0.0);
+    }
+
+    fn set_status_label_color(&mut self, cx: &mut Cx, color: Vec4) {
+        let mut status_label = self.label(cx, ids!(status_label));
+        script_apply_eval!(cx, status_label, {
+            draw_text +: { color: #(color) }
+        });
+    }
+
+    fn reset_status_label_color(&mut self, cx: &mut Cx) {
+        let mut status_label = self.label(cx, ids!(status_label));
+        script_apply_eval!(cx, status_label, {
+            draw_text +: { color: mod.widgets.COLOR_TEXT }
+        });
     }
 }
 
@@ -298,9 +308,9 @@ impl UploadProgressViewRef {
     }
 
     /// Shows an error state with the given message if it belongs to the given upload attempt.
-    pub fn show_error(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, error: &str, upload: AttachmentUpload) {
+    pub fn show_error(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, error: &str, upload: AttachmentUpload, retryable: bool) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_error(cx, upload_id, error, upload);
+            inner.show_error(cx, upload_id, error, upload, retryable);
         }
     }
 }

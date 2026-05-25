@@ -146,7 +146,7 @@ script_mod! {
             file_size_label := Label {
                 width: Fill,
                 padding: 0,
-                margin: 0
+                margin: Inset{ left: 4.5}
                 draw_text +: {
                     text_style: REGULAR_TEXT { font_size: 10 },
                     color: (SMALL_STATE_TEXT_COLOR)
@@ -158,7 +158,7 @@ script_mod! {
                 visible: false,
                 width: Fill,
                 padding: 0,
-                margin: 0
+                margin: Inset{ left: 4.5}
                 flow: Flow.Right { wrap: true }
                 draw_text +: {
                     text_style: REGULAR_TEXT { font_size: 10 },

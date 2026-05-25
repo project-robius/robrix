@@ -1653,9 +1653,9 @@ impl RoomScreen {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .set_upload_abort_handle(upload_id, handle);
                 }
-                TimelineUpdate::FileUploadError { upload_id, error, upload } => {
+                TimelineUpdate::FileUploadError { upload_id, error, upload, retryable } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .show_upload_error(cx, upload_id, &error, upload);
+                        .show_upload_error(cx, upload_id, &error, upload, retryable);
                 }
                 TimelineUpdate::FileUploadComplete { upload_id } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
@@ -2858,6 +2858,7 @@ pub enum TimelineUpdate {
         upload_id: FileUploadAttemptId,
         error: String,
         upload: crate::shared::file_upload_modal::AttachmentUpload,
+        retryable: bool,
     },
     /// A specific file-upload attempt completed successfully.
     FileUploadComplete {
