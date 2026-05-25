@@ -855,14 +855,6 @@ impl Widget for RoomScreen {
                     continue;
                 }
 
-                // Handle cancel action from upload progress view.
-                // The upload progress view already hides itself and aborts the upload,
-                // so we just need to acknowledge the action here.
-                if let UploadProgressViewAction::Cancelled = action.as_widget_action().cast() {
-                    // Nothing additional to do - the widget handles hiding itself
-                    continue;
-                }
-
                 // Handle retry action from upload progress view.
                 if let UploadProgressViewAction::Retry { upload, timeline_kind } = action.as_widget_action().cast() {
                     let Some(tl) = self.tl_state.as_ref() else { continue };

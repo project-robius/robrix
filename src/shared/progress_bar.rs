@@ -87,11 +87,6 @@ impl ProgressBar {
         self.redraw(cx);
     }
 
-    /// Gets the current progress value.
-    pub fn progress(&self) -> f32 {
-        self.progress
-    }
-
     /// Sets the color of the filled portion of the progress bar.
     pub fn set_progress_color(&mut self, cx: &mut Cx, color: Vec4) {
         script_apply_eval!(cx, self.view, {
@@ -112,11 +107,6 @@ impl ProgressBarRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_progress(cx, value);
         }
-    }
-
-    /// Gets the current progress value.
-    pub fn progress(&self) -> f32 {
-        self.borrow().map(|inner| inner.progress()).unwrap_or(0.0)
     }
 
     /// Sets the color of the filled portion of the progress bar.

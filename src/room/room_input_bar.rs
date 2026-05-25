@@ -24,19 +24,17 @@ use ruma::{events::room::message::{LocationMessageEventContent, MessageType, Rep
 use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, AttachmentUploadTarget, FileLoadedData, FilePreviewerAction, FileUploadAttemptId, FileUploadMetadata, TimelineUpdateSender}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 
 /// Result of the native file picker plus background file-loading work.
+#[cfg_attr(any(target_os = "ios", target_os = "android"), allow(dead_code))]
 enum PendingFileSelection {
     /// A file was selected and read successfully.
-    #[allow(dead_code)] // file upload isn't yet supported on iOS/Android
     Selected {
         loaded_data: FileLoadedData,
         upload_target: AttachmentUploadTarget,
         in_reply_to: Option<OwnedEventId>,
     },
     /// The picker was dismissed without selecting a file.
-    #[allow(dead_code)] // file upload isn't yet supported on iOS/Android
     Cancelled,
     /// The file could not be selected, inspected, or read.
-    #[allow(dead_code)] // file upload isn't yet supported on iOS/Android
     Error(String),
 }
 

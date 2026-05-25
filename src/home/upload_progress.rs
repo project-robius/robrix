@@ -106,7 +106,6 @@ pub enum UploadViewState {
     Normal,
     /// Error state - upload failed.
     Error {
-        message: String,
         upload: AttachmentUpload,
     },
 }
@@ -117,8 +116,6 @@ pub enum UploadProgressViewAction {
     /// No action.
     #[default]
     None,
-    /// User cancelled the upload.
-    Cancelled,
     /// User requested retry of a failed upload.
     Retry {
         upload: AttachmentUpload,
@@ -154,7 +151,6 @@ impl Widget for UploadProgressView {
                 } else {
                     log!("Upload cancel requested for {:?}, but no abort handle was available.", self.upload_id);
                 }
-                cx.widget_action(self.widget_uid(), UploadProgressViewAction::Cancelled);
                 self.hide_current(cx);
             }
 
@@ -265,7 +261,6 @@ impl UploadProgressView {
         }
         self.abort_handle = None;
         self.state = UploadViewState::Error {
-            message: error.to_string(),
             upload,
         };
 

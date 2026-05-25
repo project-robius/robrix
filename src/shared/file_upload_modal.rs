@@ -1,6 +1,6 @@
 //! A modal dialog for previewing and confirming file uploads.
 //!
-//! This modal shows a preview of the file (image thumbnail or file icon)
+//! This modal shows a preview of the file (image preview or file icon)
 //! along with file metadata and upload/cancel buttons.
 
 use makepad_widgets::*;
@@ -38,9 +38,7 @@ script_mod! {
         ..mod.widgets.RoundedView
 
         width: Fill { max: 1000 }
-        // TODO: i'd like for this height to be Fit with a max of Rel { base: Full, factor: 0.90 },
-        //       but Makepad doesn't allow Fit views with a max to be scrolled.
-        height: Fill // { max: 1400 }
+        height: Fill
         margin: 40,
         align: Align{x: 0.5, y: 0}
         flow: Down
@@ -206,7 +204,7 @@ pub struct FileUploadMetadata {
     pub caption: Option<String>,
     /// The MIME type of the file.
     pub mime_type: String,
-    /// Optional preview data, only loaded for reasonably small displayable images.
+    /// Optional preview data, loaded for displayable images.
     pub preview_data: Option<Arc<Vec<u8>>>,
     /// The file size in bytes.
     pub size: u64,
@@ -265,7 +263,7 @@ pub struct FileLoadedData {
     pub preview_data: Option<Arc<Vec<u8>>>,
 }
 
-/// Actions used to show/hide the FileUploadModal and report user confirmation.
+/// Actions used to show/hide the FileUploadModal.
 #[derive(Clone, Debug, Default)]
 pub enum FilePreviewerAction {
     /// No action.
@@ -320,12 +318,11 @@ impl Widget for FileUploadModal {
                         file_data: upload_file_data,
                         in_reply_to: self.in_reply_to.clone(),
                     };
-                    if submit_attachment_upload(upload, upload_target.clone()) {
-                        self.file_data = None;
-                        self.upload_target = None;
-                        self.in_reply_to = None;
-                        Cx::post_action(FilePreviewerAction::Hide);
-                    }
+                    submit_attachment_upload(upload, upload_target.clone());
+                    self.file_data = None;
+                    self.upload_target = None;
+                    self.in_reply_to = None;
+                    Cx::post_action(FilePreviewerAction::Hide);
                 }
             }
         }
@@ -339,7 +336,7 @@ impl Widget for FileUploadModal {
 }
 
 /// Submits a confirmed attachment upload request to the Matrix worker.
-pub fn submit_attachment_upload(upload: AttachmentUpload, upload_target: AttachmentUploadTarget) -> bool {
+pub fn submit_attachment_upload(upload: AttachmentUpload, upload_target: AttachmentUploadTarget) {
     #[cfg(feature = "tsp")]
     if upload_target.sign_with_tsp {
         enqueue_popup_notification(
@@ -347,7 +344,7 @@ pub fn submit_attachment_upload(upload: AttachmentUpload, upload_target: Attachm
             PopupKind::Error,
             None,
         );
-        return true;
+        return;
     }
 
     let upload_id = next_file_upload_attempt_id();
@@ -359,8 +356,6 @@ pub fn submit_attachment_upload(upload: AttachmentUpload, upload_target: Attachm
         #[cfg(feature = "tsp")]
         sign_with_tsp: upload_target.sign_with_tsp,
     });
-
-    true
 }
 
 impl FileUploadModal {
