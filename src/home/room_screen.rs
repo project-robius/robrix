@@ -1641,17 +1641,13 @@ impl RoomScreen {
                     tl.tombstone_info = Some(successor_room_details);
                 }
                 TimelineUpdate::LinkPreviewFetched => {}
-                TimelineUpdate::FileUploadStarted { upload_id, file_name, in_reply_to } => {
+                TimelineUpdate::FileUploadStarted { upload_id, file_name, in_reply_to, abort_handle } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .handle_file_upload_started(cx, upload_id, &file_name, in_reply_to.as_ref());
+                        .handle_file_upload_started(cx, upload_id, &file_name, in_reply_to.as_ref(), abort_handle);
                 }
                 TimelineUpdate::FileUploadUpdate { upload_id, current, total } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .set_upload_progress(cx, upload_id, current, total);
-                }
-                TimelineUpdate::FileUploadAbortHandle { upload_id, handle } => {
-                    self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .set_upload_abort_handle(upload_id, handle);
                 }
                 TimelineUpdate::FileUploadError { upload_id, error, upload, retryable } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
@@ -2841,17 +2837,13 @@ pub enum TimelineUpdate {
         upload_id: FileUploadAttemptId,
         file_name: String,
         in_reply_to: Option<OwnedEventId>,
+        abort_handle: futures_util::future::AbortHandle,
     },
     /// Progress update for a specific file-upload attempt.
     FileUploadUpdate {
         upload_id: FileUploadAttemptId,
         current: u64,
         total: u64,
-    },
-    /// The abort handle for a specific in-progress file-upload attempt.
-    FileUploadAbortHandle {
-        upload_id: FileUploadAttemptId,
-        handle: tokio::task::AbortHandle,
     },
     /// An error occurred during a specific file-upload attempt.
     FileUploadError {

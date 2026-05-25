@@ -880,14 +880,6 @@ impl RoomInputBarRef {
         inner.update_tombstone_footer(cx, timeline_kind.room_id(), tombstone_info);
     }
 
-    /// Shows the upload progress view for a file upload.
-    pub fn show_upload_progress(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, file_name: &str) {
-        let Some(inner) = self.borrow() else { return };
-        inner.child_by_path(ids!(upload_progress_view))
-            .as_upload_progress_view()
-            .show(cx, upload_id, file_name);
-    }
-
     /// Hides the upload progress view for the given upload attempt.
     pub fn hide_upload_progress(&self, cx: &mut Cx, upload_id: FileUploadAttemptId) {
         let Some(inner) = self.borrow() else { return };
@@ -902,14 +894,6 @@ impl RoomInputBarRef {
         inner.child_by_path(ids!(upload_progress_view))
             .as_upload_progress_view()
             .set_progress(cx, upload_id, current, total);
-    }
-
-    /// Sets the abort handle for the current upload.
-    pub fn set_upload_abort_handle(&self, upload_id: FileUploadAttemptId, handle: tokio::task::AbortHandle) {
-        let Some(inner) = self.borrow_mut() else { return };
-        inner.child_by_path(ids!(upload_progress_view))
-            .as_upload_progress_view()
-            .set_abort_handle(upload_id, handle);
     }
 
     /// Shows an upload error with retry option.
@@ -927,12 +911,13 @@ impl RoomInputBarRef {
         upload_id: FileUploadAttemptId,
         file_name: &str,
         in_reply_to: Option<&OwnedEventId>,
+        abort_handle: futures_util::future::AbortHandle,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
 
         inner.child_by_path(ids!(upload_progress_view))
             .as_upload_progress_view()
-            .show(cx, upload_id, file_name);
+            .show(cx, upload_id, file_name, abort_handle);
 
         if let Some(in_reply_to) = in_reply_to {
             let should_clear_reply = inner

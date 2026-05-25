@@ -1775,191 +1775,179 @@ async fn matrix_worker_task(
                     continue;
                 }
 
-                let max_upload_size = match get_client() {
-                    Some(client) => match client.load_or_fetch_max_upload_size().await {
-                        Ok(max_upload_size) => Some(max_upload_size),
-                        Err(e) => {
-                            warning!("Could not fetch homeserver max upload size for {timeline_kind}: {e:?}; continuing without a local size-limit check.");
-                            None
-                        }
-                    },
-                    None => {
-                        warning!("Could not fetch homeserver max upload size for {timeline_kind}: client unavailable; continuing without a local size-limit check.");
-                        None
-                    }
-                };
-                if let Some(max_upload_size) = max_upload_size {
-                    let exceeds_max_upload_size = matrix_sdk::ruma::UInt::try_from(upload.file_data.size)
-                        .map(|upload_size| upload_size > max_upload_size)
-                        .unwrap_or(true);
-                    if exceeds_max_upload_size {
-                        let max_size: u64 = max_upload_size.into();
-                        let error = format!(
-                            "file size of ({}) exceeds the homeserver's {} limit.",
-                            utils::format_decimal_file_size(upload.file_data.size),
-                            utils::format_decimal_file_size(max_size),
-                        );
-                        let _ = sender.send(TimelineUpdate::FileUploadStarted {
-                            upload_id,
-                            file_name: upload.file_data.file_name(),
-                            in_reply_to: upload.in_reply_to.clone(),
-                        });
-                        let _ = sender.send(TimelineUpdate::FileUploadError {
-                            upload_id,
-                            error,
-                            upload,
-                            retryable: false,
-                        });
-                        SignalToUI::set_ui_signal();
-                        continue;
-                    }
-                }
-
-                let _ = sender.send(TimelineUpdate::FileUploadStarted {
-                    upload_id,
-                    file_name: upload.file_data.file_name(),
-                    in_reply_to: upload.in_reply_to.clone(),
-                });
-                SignalToUI::set_ui_signal();
-
                 let sender_clone = sender.clone();
                 let progress_sender = sender.clone();
                 let monitor_timeline_kind = timeline_kind.clone();
+                let (abort_handle, abort_registration) = futures_util::future::AbortHandle::new_pair();
                 // Spawn a new async task to send the attachment.
-                let send_attachment_task = Handle::current().spawn(async move {
+                let _send_attachment_task = Handle::current().spawn(async move {
                     use matrix_sdk::attachment::{
                         AttachmentInfo,
                         BaseFileInfo, BaseImageInfo, BaseVideoInfo, BaseAudioInfo,
                     };
                     use matrix_sdk_ui::timeline::AttachmentConfig as TimelineAttachmentConfig;
 
-                    let upload_for_error = upload.clone();
-                    let AttachmentUpload {
-                        file_data,
-                        in_reply_to,
-                        ..
-                    } = upload;
+                    let upload_future = async move {
+                        let _ = sender_clone.send(TimelineUpdate::FileUploadStarted {
+                            upload_id,
+                            file_name: upload.file_data.file_name(),
+                            in_reply_to: upload.in_reply_to.clone(),
+                            abort_handle,
+                        });
+                        SignalToUI::set_ui_signal();
 
-                    log!(
-                        "Sending attachment to {timeline_kind}: {} ({} bytes)...",
-                        file_data.file_name(),
-                        file_data.size,
-                    );
+                        let max_upload_size = match get_client() {
+                            Some(client) => match client.load_or_fetch_max_upload_size().await {
+                                Ok(max_upload_size) => Some(max_upload_size),
+                                Err(e) => {
+                                    warning!("Could not fetch homeserver max upload size for {timeline_kind}: {e:?}; continuing without a local size-limit check.");
+                                    None
+                                }
+                            },
+                            None => {
+                                warning!("Could not fetch homeserver max upload size for {timeline_kind}: client unavailable; continuing without a local size-limit check.");
+                                None
+                            }
+                        };
+                        if let Some(max_upload_size) = max_upload_size {
+                            let exceeds_max_upload_size = matrix_sdk::ruma::UInt::try_from(upload.file_data.size)
+                                .map(|upload_size| upload_size > max_upload_size)
+                                .unwrap_or(true);
+                            if exceeds_max_upload_size {
+                                let max_size: u64 = max_upload_size.into();
+                                let error = format!(
+                                    "file size of ({}) exceeds the homeserver's {} limit.",
+                                    utils::format_decimal_file_size(upload.file_data.size),
+                                    utils::format_decimal_file_size(max_size),
+                                );
+                                let _ = sender_clone.send(TimelineUpdate::FileUploadError {
+                                    upload_id,
+                                    error,
+                                    upload,
+                                    retryable: false,
+                                });
+                                SignalToUI::set_ui_signal();
+                                return;
+                            }
+                        }
 
-                    // Parse MIME type, falling back to octet-stream for unknown types
-                    let content_type: Mime = file_data.mime_type.parse()
-                        .unwrap_or(mime::APPLICATION_OCTET_STREAM);
-
-                    let image_dimensions = if content_type.type_() == mime::IMAGE {
-                        image::ImageReader::open(&file_data.path)
-                            .ok()
-                            .and_then(|reader| reader.with_guessed_format().ok())
-                            .and_then(|reader| reader.into_dimensions().ok())
-                    } else {
-                        None
-                    };
-                    let matrix_file_size = || matrix_sdk::ruma::UInt::try_from(file_data.size).ok();
-
-                    // Create AttachmentInfo based on the MIME type
-                    let info = match content_type.type_() {
-                        mime::IMAGE => AttachmentInfo::Image(BaseImageInfo {
-                            width: image_dimensions.map(|(width, _height)| width.into()),
-                            height: image_dimensions.map(|(_width, height)| height.into()),
-                            size: matrix_file_size(),
-                            blurhash: None,
-                            is_animated: None,
-                        }),
-                        mime::VIDEO => AttachmentInfo::Video(BaseVideoInfo {
-                            // TODO: Extract actual dimensions and duration from video
-                            width: None,
-                            height: None,
-                            duration: None,
-                            size: matrix_file_size(),
-                            blurhash: None,
-                        }),
-                        mime::AUDIO => AttachmentInfo::Audio(BaseAudioInfo {
-                            // TODO: Extract actual duration from audio
-                            duration: None,
-                            size: matrix_file_size(),
-                            waveform: None,
-                        }),
-                        _ => AttachmentInfo::File(BaseFileInfo {
-                            size: matrix_file_size(),
-                        }),
-                    };
-
-                    let send_request = timeline.send_attachment(
-                        file_data.path.clone(),
-                        content_type,
-                        TimelineAttachmentConfig {
-                            info: Some(info),
-                            caption: file_data.caption.as_ref().map(TextMessageEventContent::plain),
+                        let upload_for_error = upload.clone();
+                        let AttachmentUpload {
+                            file_data,
                             in_reply_to,
-                            ..Default::default()
-                        },
-                    );
-                    let progress_subscriber = send_request.subscribe_to_send_progress();
-                    // Spawn a task to handle progress updates
-                    Handle::current().spawn(async move {
-                        let mut subscriber = progress_subscriber;
-                        loop {
-                            let progress = subscriber.get();
-                            let current: u64 = progress.current as u64;
-                            let total: u64 = progress.total as u64;
-                            if progress_sender.send(TimelineUpdate::FileUploadUpdate {
-                                upload_id,
-                                current,
-                                total,
-                            }).is_err() {
-                                break;
-                            }
-                            SignalToUI::set_ui_signal();
-                            // Wait for next update
-                            if subscriber.next().await.is_none() {
-                                break;
-                            }
-                        }
-                    });
+                            ..
+                        } = upload;
 
-                    match send_request.await {
-                        Ok(()) => {
-                            log!("Successfully sent attachment to {timeline_kind}.");
-                            let _ = sender_clone.send(TimelineUpdate::FileUploadComplete {
-                                upload_id,
-                            });
-                        }
-                        Err(e) => {
-                            error!("Failed to send attachment to {timeline_kind}: {e:?}");
-                            let _ = sender_clone.send(TimelineUpdate::FileUploadError {
-                                upload_id,
-                                error: format!("{e}"),
-                                upload: upload_for_error,
-                                retryable: true,
-                            });
-                        }
-                    }
+                        log!(
+                            "Sending attachment to {timeline_kind}: {} ({} bytes)...",
+                            file_data.file_name(),
+                            file_data.size,
+                        );
 
-                    SignalToUI::set_ui_signal();
-                });
-                let abort_handle = send_attachment_task.abort_handle();
-                Handle::current().spawn(async move {
-                    match send_attachment_task.await {
+                        // Parse MIME type, falling back to octet-stream for unknown types
+                        let content_type: Mime = file_data.mime_type.parse()
+                            .unwrap_or(mime::APPLICATION_OCTET_STREAM);
+
+                        let image_dimensions = if content_type.type_() == mime::IMAGE {
+                            image::ImageReader::open(&file_data.path)
+                                .ok()
+                                .and_then(|reader| reader.with_guessed_format().ok())
+                                .and_then(|reader| reader.into_dimensions().ok())
+                        } else {
+                            None
+                        };
+                        let matrix_file_size = || matrix_sdk::ruma::UInt::try_from(file_data.size).ok();
+
+                        // Create AttachmentInfo based on the MIME type
+                        let info = match content_type.type_() {
+                            mime::IMAGE => AttachmentInfo::Image(BaseImageInfo {
+                                width: image_dimensions.map(|(width, _height)| width.into()),
+                                height: image_dimensions.map(|(_width, height)| height.into()),
+                                size: matrix_file_size(),
+                                blurhash: None,
+                                is_animated: None,
+                            }),
+                            mime::VIDEO => AttachmentInfo::Video(BaseVideoInfo {
+                                // TODO: Extract actual dimensions and duration from video
+                                width: None,
+                                height: None,
+                                duration: None,
+                                size: matrix_file_size(),
+                                blurhash: None,
+                            }),
+                            mime::AUDIO => AttachmentInfo::Audio(BaseAudioInfo {
+                                // TODO: Extract actual duration from audio
+                                duration: None,
+                                size: matrix_file_size(),
+                                waveform: None,
+                            }),
+                            _ => AttachmentInfo::File(BaseFileInfo {
+                                size: matrix_file_size(),
+                            }),
+                        };
+
+                        let send_request = timeline.send_attachment(
+                            file_data.path.clone(),
+                            content_type,
+                            TimelineAttachmentConfig {
+                                info: Some(info),
+                                caption: file_data.caption.as_ref().map(TextMessageEventContent::plain),
+                                in_reply_to,
+                                ..Default::default()
+                            },
+                        );
+                        let progress_subscriber = send_request.subscribe_to_send_progress();
+                        // Spawn a task to handle progress updates
+                        Handle::current().spawn(async move {
+                            let mut subscriber = progress_subscriber;
+                            loop {
+                                let progress = subscriber.get();
+                                let current: u64 = progress.current as u64;
+                                let total: u64 = progress.total as u64;
+                                if progress_sender.send(TimelineUpdate::FileUploadUpdate {
+                                    upload_id,
+                                    current,
+                                    total,
+                                }).is_err() {
+                                    break;
+                                }
+                                SignalToUI::set_ui_signal();
+                                // Wait for next update
+                                if subscriber.next().await.is_none() {
+                                    break;
+                                }
+                            }
+                        });
+
+                        match send_request.await {
+                            Ok(()) => {
+                                log!("Successfully sent attachment to {timeline_kind}.");
+                                let _ = sender_clone.send(TimelineUpdate::FileUploadComplete {
+                                    upload_id,
+                                });
+                            }
+                            Err(e) => {
+                                error!("Failed to send attachment to {timeline_kind}: {e:?}");
+                                let _ = sender_clone.send(TimelineUpdate::FileUploadError {
+                                    upload_id,
+                                    error: format!("{e}"),
+                                    upload: upload_for_error,
+                                    retryable: true,
+                                });
+                            }
+                        }
+
+                        SignalToUI::set_ui_signal();
+                    };
+
+                    match futures_util::future::Abortable::new(upload_future, abort_registration).await {
                         Ok(()) => {}
-                        Err(join_error) if join_error.is_cancelled() => {
+                        Err(_) => {
                             log!("Attachment upload task {upload_id:?} for {monitor_timeline_kind} was aborted.");
                         }
-                        Err(join_error) => {
-                            error!("Attachment upload task {upload_id:?} for {monitor_timeline_kind} exited unexpectedly: {join_error:?}");
-                        }
                     }
                 });
-                let _ = sender.send(TimelineUpdate::FileUploadAbortHandle {
-                    upload_id,
-                    handle: abort_handle,
-                });
-                SignalToUI::set_ui_signal();
             }
-
             MatrixRequest::ReadReceipt { timeline_kind, event_id, receipt_type } => {
                 let Some(timeline) = get_timeline(&timeline_kind) else {
                     log!("BUG: {timeline_kind} not found when sending read receipt, {event_id}");
