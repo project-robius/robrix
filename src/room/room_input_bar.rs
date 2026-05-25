@@ -21,7 +21,7 @@ use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FilePreviewerAction, FileUploadAttemptId, FileUploadMetadata}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FilePreviewerAction, FileUploadAttemptId}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 
 /// Result of the native file picker plus background file-loading work.
 #[cfg_attr(any(target_os = "ios", target_os = "android"), allow(dead_code))]
@@ -1015,7 +1015,7 @@ fn load_selected_file(
             PendingFileSelection::Selected {
                 upload: AttachmentUpload {
                     timeline_kind,
-                    file_data: FileUploadMetadata {
+                    file_data: crate::shared::file_upload_modal::FileUploadMetadata {
                         path: selected_file_path,
                         caption: Some(name),
                         mime_type: mime.to_string(),
