@@ -5,22 +5,30 @@
 
 use makepad_widgets::*;
 use ruma::OwnedEventId;
+use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use crate::{
-    home::room_screen::{TimelineUpdate, next_file_upload_attempt_id},
+    home::room_screen::TimelineUpdate,
     sliding_sync::{MatrixRequest, TimelineKind, submit_async_request},
+    utils::format_decimal_file_size,
 };
 #[cfg(feature = "tsp")]
 use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
-use crate::utils::format_decimal_file_size;
 
 /// Type alias for the sender used to send timeline updates.
 pub type TimelineUpdateSender = crossbeam_channel::Sender<TimelineUpdate>;
 
 /// File size above which the upload confirmation modal shows a warning.
 pub const LARGE_ATTACHMENT_WARNING_THRESHOLD_BYTES: u64 = 10 * 1000 * 1000;
+
+/// Unique identifier for a single file-upload attempt.
+pub type FileUploadAttemptId = u64;
+
+fn next_file_upload_attempt_id() -> FileUploadAttemptId {
+    static NEXT_FILE_UPLOAD_ATTEMPT_ID: AtomicU64 = AtomicU64::new(1);
+    NEXT_FILE_UPLOAD_ATTEMPT_ID.fetch_add(1, Ordering::Relaxed)
+}
 
 script_mod! {
     use mod.prelude.widgets.*

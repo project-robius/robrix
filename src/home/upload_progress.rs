@@ -4,8 +4,8 @@
 use makepad_widgets::*;
 use tokio::task::AbortHandle;
 
-use crate::home::room_screen::{FileUploadAttemptId, RoomScreenProps};
-use crate::shared::file_upload_modal::AttachmentUpload;
+use crate::home::room_screen::RoomScreenProps;
+use crate::shared::file_upload_modal::{AttachmentUpload, FileUploadAttemptId};
 use crate::shared::progress_bar::ProgressBarWidgetRefExt;
 use crate::shared::styles::COLOR_FG_DANGER_RED;
 use crate::sliding_sync::TimelineKind;
