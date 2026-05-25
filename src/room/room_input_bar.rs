@@ -21,16 +21,14 @@ use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, AttachmentUploadTarget, FileLoadedData, FilePreviewerAction, FileUploadAttemptId, FileUploadMetadata, TimelineUpdateSender}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FilePreviewerAction, FileUploadAttemptId, FileUploadMetadata}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 
 /// Result of the native file picker plus background file-loading work.
 #[cfg_attr(any(target_os = "ios", target_os = "android"), allow(dead_code))]
 enum PendingFileSelection {
     /// A file was selected and read successfully.
     Selected {
-        loaded_data: FileLoadedData,
-        upload_target: AttachmentUploadTarget,
-        in_reply_to: Option<OwnedEventId>,
+        upload: AttachmentUpload,
     },
     /// The picker was dismissed without selecting a file.
     Cancelled,
@@ -273,17 +271,8 @@ impl Widget for RoomInputBar {
             if let Some(receiver) = &self.pending_file_selection {
                 let mut remove_receiver = false;
                 match receiver.try_recv() {
-                    Ok(PendingFileSelection::Selected {
-                        loaded_data,
-                        upload_target,
-                        in_reply_to,
-                    }) => {
-                        let file_data = convert_loaded_data_to_file_data(loaded_data);
-                        Cx::post_action(FilePreviewerAction::Show {
-                            file_data,
-                            upload_target,
-                            in_reply_to,
-                        });
+                    Ok(PendingFileSelection::Selected { upload }) => {
+                        Cx::post_action(FilePreviewerAction::Show { upload });
                         remove_receiver = true;
                     }
                     Ok(PendingFileSelection::Cancelled) => {
@@ -365,7 +354,7 @@ impl RoomInputBar {
         // Handle the add attachment button being clicked.
         if self.button(cx, ids!(send_attachment_button)).clicked(actions) {
             log!("Add attachment button clicked; opening file picker...");
-            self.open_file_picker(cx, room_screen_props.timeline_kind.clone(), room_screen_props.timeline_update_sender.clone());
+            self.open_file_picker(cx, room_screen_props.timeline_kind.clone());
         }
 
         // Handle the add location button being clicked.
@@ -684,17 +673,7 @@ impl RoomInputBar {
         &mut self,
         cx: &mut Cx,
         timeline_kind: TimelineKind,
-        timeline_update_sender: Option<TimelineUpdateSender>,
     ) {
-        let Some(timeline_update_sender) = timeline_update_sender else {
-            enqueue_popup_notification(
-                "Cannot upload file: timeline not available.",
-                PopupKind::Error,
-                None,
-            );
-            return;
-        };
-
         if self.pending_file_selection.is_some() {
             enqueue_popup_notification(
                 "A file selection is already in progress.",
@@ -716,12 +695,8 @@ impl RoomInputBar {
         let in_reply_to = self.replying_to
             .as_ref()
             .and_then(|(event_tl_item, _embedded_event)| event_tl_item.event_id().map(ToOwned::to_owned));
-        let upload_target = AttachmentUploadTarget {
-            timeline_kind,
-            timeline_update_sender,
-            #[cfg(feature = "tsp")]
-            sign_with_tsp: self.is_tsp_signing_enabled(cx),
-        };
+        #[cfg(feature = "tsp")]
+        let sign_with_tsp = self.is_tsp_signing_enabled(cx);
 
         let dialog = rfd::AsyncFileDialog::new()
             .set_title("Select file to upload");
@@ -731,11 +706,25 @@ impl RoomInputBar {
 
         cx.spawn_thread(move || {
             let result = match futures::executor::block_on(dialog_task) {
-                Some(selected_file) => load_selected_file(
-                    selected_file.path().to_path_buf(),
-                    upload_target,
-                    in_reply_to,
-                ),
+                Some(selected_file) => {
+                    #[cfg(feature = "tsp")]
+                    {
+                        load_selected_file(
+                            selected_file.path().to_path_buf(),
+                            timeline_kind,
+                            in_reply_to,
+                            sign_with_tsp,
+                        )
+                    }
+                    #[cfg(not(feature = "tsp"))]
+                    {
+                        load_selected_file(
+                            selected_file.path().to_path_buf(),
+                            timeline_kind,
+                            in_reply_to,
+                        )
+                    }
+                }
                 None => PendingFileSelection::Cancelled,
             };
             if sender.send(result).is_err() {
@@ -751,7 +740,6 @@ impl RoomInputBar {
         &mut self,
         _cx: &mut Cx,
         _timeline_kind: TimelineKind,
-        _timeline_update_sender: Option<TimelineUpdateSender>,
     ) {
         enqueue_popup_notification(
             "File uploads are not yet supported on mobile.",
@@ -992,30 +980,13 @@ enum ShowEditingPaneBehavior {
     },
 }
 
-/// Converts `FileLoadedData` from background thread to `FileData` for the modal.
-///
-/// Any optional preview data has already been read in the background thread,
-/// so this is a cheap conversion that doesn't block the UI thread.
-fn convert_loaded_data_to_file_data(loaded: FileLoadedData) -> FileUploadMetadata {
-    let name = loaded.metadata.file_path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
-
-    FileUploadMetadata {
-        path: loaded.metadata.file_path,
-        caption: Some(name),
-        mime_type: loaded.metadata.mime.to_string(),
-        preview_data: loaded.preview_data,
-        size: loaded.metadata.file_size,
-    }
-}
-
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn load_selected_file(
     selected_file_path: std::path::PathBuf,
-    upload_target: AttachmentUploadTarget,
+    timeline_kind: TimelineKind,
     in_reply_to: Option<OwnedEventId>,
+    #[cfg(feature = "tsp")]
+    sign_with_tsp: bool,
 ) -> PendingFileSelection {
     match std::fs::metadata(&selected_file_path) {
         Ok(metadata) => {
@@ -1036,18 +1007,25 @@ fn load_selected_file(
             } else {
                 None
             };
+            let name = selected_file_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "unknown".to_string());
 
             PendingFileSelection::Selected {
-                loaded_data: FileLoadedData {
-                    metadata: crate::shared::file_upload_modal::FilePreviewerMetaData {
-                        mime,
-                        file_size,
-                        file_path: selected_file_path,
+                upload: AttachmentUpload {
+                    timeline_kind,
+                    file_data: FileUploadMetadata {
+                        path: selected_file_path,
+                        caption: Some(name),
+                        mime_type: mime.to_string(),
+                        preview_data,
+                        size: file_size,
                     },
-                    preview_data,
+                    in_reply_to,
+                    #[cfg(feature = "tsp")]
+                    sign_with_tsp,
                 },
-                upload_target,
-                in_reply_to,
             }
         }
         Err(e) => PendingFileSelection::Error(format!("Unable to access file: {e}")),

@@ -4,11 +4,9 @@
 use makepad_widgets::*;
 use tokio::task::AbortHandle;
 
-use crate::home::room_screen::RoomScreenProps;
-use crate::shared::file_upload_modal::{AttachmentUpload, FileUploadAttemptId};
+use crate::shared::file_upload_modal::{AttachmentUpload, FileUploadAttemptId, submit_attachment_upload};
 use crate::shared::progress_bar::ProgressBarWidgetRefExt;
 use crate::shared::styles::COLOR_FG_DANGER_RED;
-use crate::sliding_sync::TimelineKind;
 use crate::utils::format_decimal_file_size;
 
 script_mod! {
@@ -110,19 +108,6 @@ pub enum UploadViewState {
     },
 }
 
-/// Actions emitted by the UploadProgressView.
-#[derive(Clone, Debug, Default)]
-pub enum UploadProgressViewAction {
-    /// No action.
-    #[default]
-    None,
-    /// User requested retry of a failed upload.
-    Retry {
-        upload: AttachmentUpload,
-        timeline_kind: TimelineKind,
-    },
-}
-
 /// A widget showing upload progress with cancel/retry functionality.
 #[derive(Script, ScriptHook, Widget)]
 pub struct UploadProgressView {
@@ -156,13 +141,11 @@ impl Widget for UploadProgressView {
 
             // Handle retry button
             if self.button(cx, ids!(retry_button)).clicked(actions) {
-                if let UploadViewState::Error { upload, .. } = &self.state {
-                    if let Some(room_screen_props) = scope.props.get::<RoomScreenProps>() {
-                        cx.widget_action(self.widget_uid(), UploadProgressViewAction::Retry {
-                            upload: upload.clone(),
-                            timeline_kind: room_screen_props.timeline_kind.clone(),
-                        });
-                    }
+                if let UploadViewState::Error { upload } = &self.state {
+                    let upload = upload.clone();
+
+                    self.hide_current(cx);
+                    submit_attachment_upload(upload);
                 }
             }
         }

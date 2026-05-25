@@ -41,7 +41,7 @@ use crate::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
-        avatar::AvatarState, file_upload_modal::FileUploadAttemptId, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}
+        avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId}, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, VecDiff, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -620,12 +620,8 @@ pub enum MatrixRequest {
     },
     /// Request to send a file attachment to the given room.
     SendAttachment {
-        timeline_kind: TimelineKind,
         upload_id: FileUploadAttemptId,
-        upload: crate::shared::file_upload_modal::AttachmentUpload,
-        timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
-        #[cfg(feature = "tsp")]
-        sign_with_tsp: bool,
+        upload: AttachmentUpload,
     },
     /// Sends a notice to the given room that the current user is or is not typing.
     ///
@@ -1752,26 +1748,23 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::SendAttachment {
-                timeline_kind,
                 upload_id,
                 upload,
-                timeline_update_sender,
-                #[cfg(feature = "tsp")]
-                sign_with_tsp,
             } => {
+                let timeline_kind = upload.timeline_kind.clone();
                 let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
                     log!("BUG: {timeline_kind} not found for send attachment request");
-                    let _ = timeline_update_sender.send(TimelineUpdate::FileUploadError {
-                        upload_id,
-                        error: "Cannot upload file: timeline not available.".to_string(),
-                        upload,
-                    });
+                    enqueue_popup_notification(
+                        "Cannot upload file: timeline not available.",
+                        PopupKind::Error,
+                        None,
+                    );
                     SignalToUI::set_ui_signal();
                     continue;
                 };
 
                 #[cfg(feature = "tsp")]
-                if sign_with_tsp {
+                if upload.sign_with_tsp {
                     let _ = sender.send(TimelineUpdate::FileUploadError {
                         upload_id,
                         error: "TSP-signed attachment uploads are not supported yet.".to_string(),
@@ -1800,9 +1793,10 @@ async fn matrix_worker_task(
                     use matrix_sdk_ui::timeline::AttachmentConfig as TimelineAttachmentConfig;
 
                     let upload_for_error = upload.clone();
-                    let crate::shared::file_upload_modal::AttachmentUpload {
+                    let AttachmentUpload {
                         file_data,
                         in_reply_to,
+                        ..
                     } = upload;
 
                     log!(

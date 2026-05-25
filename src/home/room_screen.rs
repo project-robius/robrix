@@ -32,7 +32,7 @@ use crate::{
     },
     room::{BasicRoomDetails, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::{AttachmentUploadTarget, FileUploadAttemptId, submit_attachment_upload}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -43,7 +43,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputAction;
 
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, upload_progress::UploadProgressViewAction};
+use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 /// The maximum number of timeline items to search through
 /// when looking for a particular event.
@@ -855,21 +855,6 @@ impl Widget for RoomScreen {
                     continue;
                 }
 
-                // Handle retry action from upload progress view.
-                if let UploadProgressViewAction::Retry { upload, timeline_kind } = action.as_widget_action().cast() {
-                    let Some(tl) = self.tl_state.as_ref() else { continue };
-                    // Only handle if this action is for the current room/thread.
-                    if tl.kind != timeline_kind { continue };
-                    let upload_target = AttachmentUploadTarget {
-                        timeline_kind,
-                        timeline_update_sender: tl.update_sender.clone(),
-                        #[cfg(feature = "tsp")]
-                        sign_with_tsp: false,
-                    };
-                    submit_attachment_upload(upload, upload_target);
-                    continue;
-                }
-
                 // Handle the highlight animation for a message.
                 let Some(tl) = self.tl_state.as_mut() else { continue };
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
@@ -994,7 +979,6 @@ impl Widget for RoomScreen {
                     timeline_kind: tl.kind.clone(),
                     room_members,
                     room_avatar_url,
-                    timeline_update_sender: Some(tl.update_sender.clone()),
                 }
             } else if let Some(room_name) = &self.room_name_id {
                 // Fallback case: we have a room_name but no tl_state yet
@@ -1005,7 +989,6 @@ impl Widget for RoomScreen {
                         .expect("BUG: room_name_id was set but timeline_kind was missing"),
                     room_members: None,
                     room_avatar_url: None,
-                    timeline_update_sender: None,
                 }
             } else {
                 // No room selected yet, skip event handling that requires room context
@@ -1021,7 +1004,6 @@ impl Widget for RoomScreen {
                     timeline_kind: TimelineKind::MainRoom { room_id },
                     room_members: None,
                     room_avatar_url: None,
-                    timeline_update_sender: None,
                 }
             };
             let mut room_scope = Scope::with_props(&room_props);
@@ -2335,7 +2317,6 @@ impl RoomScreen {
                     content_drawn_since_last_update: RangeSet::new(),
                     profile_drawn_since_last_update: RangeSet::new(),
                     update_receiver,
-                    update_sender: update_sender.clone(),
                     request_sender,
                     media_cache: MediaCache::new(Some(update_sender.clone())),
                     link_preview_cache: LinkPreviewCache::new(Some(update_sender)),
@@ -2726,9 +2707,6 @@ pub struct RoomScreenProps {
     pub timeline_kind: TimelineKind,
     pub room_members: Option<Arc<Vec<RoomMember>>>,
     pub room_avatar_url: Option<OwnedMxcUri>,
-    /// The sender for timeline updates, used for file uploads and other UI-initiated updates.
-    /// This is `None` when the timeline hasn't been fully loaded yet.
-    pub timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 }
 
 
@@ -3036,10 +3014,6 @@ struct TimelineUiState {
     /// in a sync context and the sender runs in an async context,
     /// which is okay because a sender on an unbounded channel never needs to block.
     update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
-
-    /// The channel sender for timeline updates for this room.
-    /// This is used to send upload confirmations and other UI-initiated updates.
-    update_sender: crossbeam_channel::Sender<TimelineUpdate>,
 
     /// The sender for timeline requests from a RoomScreen showing this room
     /// to the background async task that handles this room's timeline updates.
