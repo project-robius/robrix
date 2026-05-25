@@ -264,6 +264,91 @@ async fn clear_persisted_session(user_id: Option<&UserId>) {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RestoreSessionFailureAction {
+    Preserve,
+    DeleteLatestUserId,
+    ArchiveBadSessionAndDeleteLatestUserId,
+    ClearPersistedSession,
+}
+
+fn restore_session_failure_action(error: &persistence::RestoreSessionError) -> RestoreSessionFailureAction {
+    match error {
+        persistence::RestoreSessionError::MissingSessionFile { .. } => {
+            RestoreSessionFailureAction::DeleteLatestUserId
+        }
+        persistence::RestoreSessionError::CorruptSessionFile { .. } => {
+            RestoreSessionFailureAction::ArchiveBadSessionAndDeleteLatestUserId
+        }
+        persistence::RestoreSessionError::InvalidToken { .. } => {
+            RestoreSessionFailureAction::ClearPersistedSession
+        }
+        persistence::RestoreSessionError::NoLatestUserId
+        | persistence::RestoreSessionError::ReadSessionFile { .. }
+        | persistence::RestoreSessionError::ClientBuild { .. }
+        | persistence::RestoreSessionError::RestoreAuth { .. }
+        | persistence::RestoreSessionError::SaveLatestUserId { .. } => {
+            RestoreSessionFailureAction::Preserve
+        }
+    }
+}
+
+fn session_validation_failure_action(is_invalid_token: bool) -> RestoreSessionFailureAction {
+    if is_invalid_token {
+        RestoreSessionFailureAction::ClearPersistedSession
+    } else {
+        RestoreSessionFailureAction::Preserve
+    }
+}
+
+fn restore_session_failure_message(error: &persistence::RestoreSessionError) -> String {
+    match restore_session_failure_action(error) {
+        RestoreSessionFailureAction::ClearPersistedSession => {
+            "Your login token is no longer valid.\n\nPlease log in again.".to_owned()
+        }
+        RestoreSessionFailureAction::DeleteLatestUserId => {
+            "Could not find the saved session file.\n\nPlease log in again.".to_owned()
+        }
+        RestoreSessionFailureAction::ArchiveBadSessionAndDeleteLatestUserId => {
+            "The saved session file is corrupted and was archived.\n\nPlease log in again.".to_owned()
+        }
+        RestoreSessionFailureAction::Preserve => {
+            let detail = if matches!(error, persistence::RestoreSessionError::SaveLatestUserId { .. }) {
+                "Robrix restored the session but could not update the latest user pointer."
+            } else {
+                "Robrix kept your saved session so it can try again after the server or network issue is fixed."
+            };
+            format!("Could not restore previous user session.\n\n{detail}\n\nError: {error}")
+        }
+    }
+}
+
+async fn apply_restore_session_failure_policy(error: &persistence::RestoreSessionError) {
+    match restore_session_failure_action(error) {
+        RestoreSessionFailureAction::Preserve => {}
+        RestoreSessionFailureAction::DeleteLatestUserId => {
+            if let Some(user_id) = error.user_id() {
+                if let Err(e) = persistence::delete_latest_user_id_if_matches(user_id).await {
+                    warning!("Failed to delete stale latest user id for {user_id}: {e}");
+                }
+            }
+        }
+        RestoreSessionFailureAction::ArchiveBadSessionAndDeleteLatestUserId => {
+            if let persistence::RestoreSessionError::CorruptSessionFile { user_id, path, .. } = error {
+                if let Err(e) = persistence::archive_bad_session_file(path).await {
+                    warning!("Failed to archive corrupt session file for {user_id}: {e}");
+                }
+                if let Err(e) = persistence::delete_latest_user_id_if_matches(user_id).await {
+                    warning!("Failed to delete latest user id for corrupt session {user_id}: {e}");
+                }
+            }
+        }
+        RestoreSessionFailureAction::ClearPersistedSession => {
+            clear_persisted_session(error.user_id()).await;
+        }
+    }
+}
+
 enum SessionResetAction {
     Reauthenticate { message: String },
 }
@@ -4192,6 +4277,13 @@ fn worker_shutdown_is_unexpected(logout_in_progress: bool, account_switch_pendin
     !logout_in_progress && !account_switch_pending
 }
 
+fn should_prebuild_default_sso_client(
+    most_recent_user_id: Option<&UserId>,
+    cli_has_valid_username_password: bool,
+) -> bool {
+    most_recent_user_id.is_none() && !cli_has_valid_username_password
+}
+
 async fn attach_room_to_space(client: &Client, child_room: &Room, space_id: &OwnedRoomId) -> Result<()> {
     let user_id = client.user_id().ok_or_else(|| anyhow!("Current user ID not found"))?;
     let space_room = client.get_room(space_id)
@@ -4278,6 +4370,19 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
     // Proactively build a Matrix Client in the background so that the SSO Server
     // can have a quicker start if needed (as it's rather slow to build this client).
     rt_handle.spawn(async move {
+        let cli_has_valid_username_password = Cli::try_parse()
+            .as_ref()
+            .is_ok_and(|cli| !cli.user_id.is_empty() && !cli.password.is_empty());
+        let most_recent_user_id = persistence::most_recent_user_id().await;
+        if !should_prebuild_default_sso_client(
+            most_recent_user_id.as_deref(),
+            cli_has_valid_username_password,
+        ) {
+            DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
+            Cx::post_action(LoginAction::SsoPending(false));
+            return;
+        }
+
         match build_client(&Cli::default(), app_data_dir()).await {
             Ok(client_and_session) => {
                 DEFAULT_SSO_CLIENT.lock().unwrap()
@@ -4715,17 +4820,17 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             specified_username.as_ref().or(most_recent_user_id.as_ref())
         );
         match persistence::restore_session(specified_username.clone()).await {
-            Ok((client, sync_token, session)) => Some((client, sync_token, true, session)),
+            Ok((client, sync_token, session)) => {
+                // Do not make whoami a startup restore gate. Some Matrix-compatible
+                // homeservers may not expose it yet; invalid tokens are still caught
+                // by SDK restore, SyncService::build(), and SessionChange::UnknownToken.
+                Some((client, sync_token, false, session))
+            }
             Err(e) => {
-                let status_err = "Could not restore previous user session.\n\nPlease login again.";
+                let status_err = restore_session_failure_message(&e);
                 log!("{status_err} Error: {e:?}");
-                clear_persisted_session(
-                    specified_username
-                        .as_deref()
-                        .or(most_recent_user_id.as_deref()),
-                )
-                .await;
-                Cx::post_action(LoginAction::LoginFailure(status_err.to_string()));
+                apply_restore_session_failure_policy(&e).await;
+                Cx::post_action(LoginAction::LoginFailure(status_err));
 
                 if let Ok(cli) = &cli_parse_result {
                     log!("Attempting auto-login from CLI arguments as user '{}'...", cli.user_id);
@@ -4798,7 +4903,9 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             if validate_session {
                 match client.whoami().await {
                     Ok(_) => {}
-                    Err(e) if is_invalid_token_http_error(&e) => {
+                    Err(e) if session_validation_failure_action(is_invalid_token_http_error(&e))
+                        == RestoreSessionFailureAction::ClearPersistedSession =>
+                    {
                         clear_persisted_session(client.user_id()).await;
                         let err_msg = "Your login token is no longer valid.\n\nPlease log in again.";
                         Cx::post_action(LoginAction::LoginFailure(err_msg.to_string()));
@@ -5144,6 +5251,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                 }
                 Err(e) => {
                     error!("Failed to restore session for account switch: {e:?}");
+                    apply_restore_session_failure_policy(&e).await;
                     Cx::post_action(AccountSwitchAction::Failed(format!("Failed to restore session: {e}")));
                     enqueue_popup_notification(
                         format!("Account switch failed: {e}"),
@@ -7332,7 +7440,15 @@ async fn discover_homeserver_capabilities(
 
 #[cfg(test)]
 mod tests {
-    use super::{OidcFlowSlot, build_discovery_http_client, worker_shutdown_is_unexpected};
+    use matrix_sdk::ruma::user_id;
+
+    use super::{
+        OidcFlowSlot, RestoreSessionFailureAction, build_discovery_http_client,
+        restore_session_failure_action, restore_session_failure_message,
+        session_validation_failure_action, should_prebuild_default_sso_client,
+        worker_shutdown_is_unexpected,
+    };
+    use crate::persistence::RestoreSessionError;
 
     #[test]
     fn worker_shutdown_is_not_unexpected_during_logout() {
@@ -7386,5 +7502,80 @@ mod tests {
         let err = build_discovery_http_client(Some("ftp://proxy.invalid"))
             .expect_err("invalid proxy scheme should be rejected");
         assert!(err.to_string().contains("Unsupported proxy URL scheme"));
+    }
+
+    #[test]
+    fn default_sso_client_is_not_prebuilt_when_restore_session_is_available() {
+        assert!(!should_prebuild_default_sso_client(
+            Some(user_id!("@bob:192.168.1.58:8128")),
+            false,
+        ));
+    }
+
+    #[test]
+    fn default_sso_client_is_not_prebuilt_during_cli_login() {
+        assert!(!should_prebuild_default_sso_client(None, true));
+    }
+
+    #[test]
+    fn default_sso_client_is_prebuilt_for_idle_login_screen() {
+        assert!(should_prebuild_default_sso_client(None, false));
+    }
+
+    #[test]
+    fn restore_session_policy_preserves_data_for_client_build_failure() {
+        let err = RestoreSessionError::ClientBuild {
+            user_id: user_id!("@alice:example.org").to_owned(),
+            message: "homeserver returned 502".to_owned(),
+        };
+
+        assert_eq!(restore_session_failure_action(&err), RestoreSessionFailureAction::Preserve);
+        assert!(restore_session_failure_message(&err).contains("try again"));
+    }
+
+    #[test]
+    fn whoami_404_is_retryable_restore_validation_failure() {
+        assert_eq!(
+            session_validation_failure_action(false),
+            RestoreSessionFailureAction::Preserve,
+        );
+    }
+
+    #[test]
+    fn invalid_token_restore_policy_clears_session_and_latest_user() {
+        let err = RestoreSessionError::InvalidToken {
+            user_id: user_id!("@alice:example.org").to_owned(),
+            message: "M_UNKNOWN_TOKEN".to_owned(),
+        };
+
+        assert_eq!(
+            restore_session_failure_action(&err),
+            RestoreSessionFailureAction::ClearPersistedSession,
+        );
+        assert_eq!(
+            session_validation_failure_action(true),
+            RestoreSessionFailureAction::ClearPersistedSession,
+        );
+    }
+
+    #[test]
+    fn account_switch_restore_retryable_error_preserves_target_session() {
+        let err = RestoreSessionError::RestoreAuth {
+            user_id: user_id!("@alice:example.org").to_owned(),
+            message: "HTTP 404".to_owned(),
+        };
+
+        assert_eq!(restore_session_failure_action(&err), RestoreSessionFailureAction::Preserve);
+    }
+
+    #[test]
+    fn save_latest_user_failure_is_reported_without_session_cleanup() {
+        let err = RestoreSessionError::SaveLatestUserId {
+            user_id: user_id!("@alice:example.org").to_owned(),
+            message: "permission denied".to_owned(),
+        };
+
+        assert_eq!(restore_session_failure_action(&err), RestoreSessionFailureAction::Preserve);
+        assert!(restore_session_failure_message(&err).contains("latest user"));
     }
 }
