@@ -17,33 +17,15 @@
 //! will be replaced with these dummy widgets when the `tsp` feature is not enabled.
 
 use makepad_widgets::*;
-use crate::{app::AppState, i18n::{AppLanguage, tr_key}};
 
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
 
-    mod.widgets.TspSettingsScreen = #(TspSettingsScreen::register_widget(vm)) {
-        width: Fill, height: Fit
+    mod.widgets.TspSettingsScreen = View {
+        width: Fill, height: 20
         flow: Down
-        align: Align{x: 0}
-
-        title := TitleLabel {
-            text: ""
-        }
-
-        message := Label {
-            width: Fill, height: Fit
-            flow: Flow.Right{wrap: true},
-            align: Align{x: 0}
-            margin: Inset{top: 10, bottom: 10}
-            draw_text +: {
-                color: (MESSAGE_TEXT_COLOR),
-                text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
-            }
-            text: ""
-        }
     }
 
     mod.widgets.CreateWalletModal = View {
@@ -69,48 +51,5 @@ script_mod! {
 
     mod.widgets.TspSignIndicator = View {
         visible: false
-    }
-}
-
-#[derive(Script, ScriptHook, Widget)]
-pub struct TspSettingsScreen {
-    #[deref] view: View,
-    #[rust] app_language: AppLanguage,
-    #[rust] app_language_initialized: bool,
-}
-
-impl Widget for TspSettingsScreen {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let app_language = scope.data.get::<AppState>()
-            .map(|app_state| app_state.app_language)
-            .unwrap_or_default();
-        if !self.app_language_initialized || self.app_language != app_language {
-            self.set_app_language(cx, app_language);
-        }
-        self.view.handle_event(cx, event, scope);
-    }
-
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let app_language = scope.data.get::<AppState>()
-            .map(|app_state| app_state.app_language)
-            .unwrap_or_default();
-        if !self.app_language_initialized || self.app_language != app_language {
-            self.set_app_language(cx, app_language);
-        }
-        self.view.draw_walk(cx, scope, walk)
-    }
-}
-
-impl TspSettingsScreen {
-    fn set_app_language(&mut self, cx: &mut Cx, app_language: AppLanguage) {
-        self.app_language = app_language;
-        self.app_language_initialized = true;
-        self.view
-            .label(cx, ids!(title))
-            .set_text(cx, tr_key(self.app_language, "tsp.settings.title"));
-        self.view
-            .label(cx, ids!(message))
-            .set_text(cx, tr_key(self.app_language, "tsp_dummy.message.disabled"));
-        self.view.redraw(cx);
     }
 }

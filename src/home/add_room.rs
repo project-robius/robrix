@@ -16,7 +16,7 @@ use crate::{
         popup_list::{PopupKind, enqueue_popup_notification},
         styles::COLOR_FG_DANGER_RED,
     },
-    sliding_sync::{DirectMessageRoomAction, MatrixRequest, current_user_id, submit_async_request},
+    sliding_sync::{DirectMessageRoomAction, MatrixRequest, RoomPreviewResponseMode, current_user_id, submit_async_request},
     space_service_sync::SpaceRequest,
     utils::{self, RoomNameId},
 };
@@ -524,6 +524,11 @@ script_mod! {
                     text: "Cancel"
                 }
             }
+        }
+
+        View {
+            width: Fill
+            height: 20
         }
         
     }
@@ -1582,7 +1587,11 @@ impl Widget for AddRoomScreen {
                             room_or_alias_id: room_or_alias_id.clone(),
                             via: via.clone(),
                         };
-                        submit_async_request(MatrixRequest::GetRoomPreview { room_or_alias_id, via });
+                        submit_async_request(MatrixRequest::GetRoomPreview {
+                            room_or_alias_id,
+                            via,
+                            response_mode: RoomPreviewResponseMode::Action,
+                        });
                     }
                     Err(e) => {
                         let error_text = e.to_string();

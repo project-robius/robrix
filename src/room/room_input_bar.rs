@@ -1624,11 +1624,7 @@ impl RoomInputBar {
 
         let submitted_text = text_input
             .returned(actions)
-            .and_then(|(text, modifiers)| {
-                modifiers
-                    .is_primary()
-                    .then_some(text.trim().to_string())
-            });
+            .map(|(text, _)| text.trim().to_string());
 
         // Handle the send message button being clicked or Cmd/Ctrl + Return being pressed.
         if self.button(cx, ids!(send_message_button)).clicked(actions)

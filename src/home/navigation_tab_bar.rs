@@ -36,7 +36,7 @@ use crate::{
         user_profile_cache::{self, UserProfileUpdate},
     }, home::spaces_bar::SpacesBarWidgetExt, shared::{
         avatar::{AvatarState, AvatarWidgetExt}, styles::*, verification_badge::VerificationBadgeWidgetExt
-    }, sliding_sync::{current_user_id, AccountDataAction, AccountSwitchAction}, utils::{self, RoomNameId}
+    }, settings::app_preferences::{effective_is_desktop, AppPreferencesGlobal, AppPreferencesAction, ViewModeOverride}, sliding_sync::{current_user_id, AccountDataAction, AccountSwitchAction}, utils::{self, RoomNameId}
 };
 
 script_mod! {
@@ -147,10 +147,6 @@ script_mod! {
         }
     }
 
-    mod.widgets.SettingsButton = mod.widgets.NavigationTabButton {
-        draw_icon +: { svg: (ICON_SETTINGS) }
-    }
-
     mod.widgets.AddRoomButton = mod.widgets.NavigationTabButton {
         draw_icon +: { svg: (ICON_ADD) }
     }
@@ -186,11 +182,6 @@ script_mod! {
                 root_spaces_bar := mod.widgets.SpacesBar {}
             }
 
-            mod.widgets.Separator {}
-
-            CachedWidget {
-                settings_button := mod.widgets.SettingsButton {}
-            }
         }
 
         Mobile := RoundedView {
@@ -214,9 +205,6 @@ script_mod! {
             toggle_spaces_bar_button := mod.widgets.ToggleSpacesBarButton {}
 
             CachedWidget {
-                settings_button := mod.widgets.SettingsButton {}
-            }
-            CachedWidget {
                 profile_icon := mod.widgets.ProfileIcon {}
             }
         }
@@ -231,6 +219,13 @@ pub struct ProfileIcon {
     #[deref] view: View,
     #[rust] own_profile: Option<UserProfile>,
     #[rust] app_language: AppLanguage,
+}
+
+#[derive(Clone, Debug, Default)]
+pub enum ProfileIconAction {
+    Clicked,
+    #[default]
+    None,
 }
 
 impl ScriptHook for ProfileIcon {
@@ -351,6 +346,9 @@ impl Widget for ProfileIcon {
 
         let area = self.view.area();
         match event.hits(cx, area) {
+            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                cx.widget_action(self.widget_uid(), ProfileIconAction::Clicked);
+            }
             Hit::FingerLongPress(_) | Hit::FingerHoverIn(_) => {
                 let (verification_str, bg_color) = self.view
                     .verification_badge(cx, ids!(verification_badge))
@@ -365,7 +363,7 @@ impl Widget for ProfileIcon {
                     ]),
                 );
                 let mut options = CalloutTooltipOptions {
-                    position: if cx.display_context.is_desktop() { TooltipPosition::Right} else { TooltipPosition::Top},
+                    position: if effective_is_desktop(cx) { TooltipPosition::Right} else { TooltipPosition::Top},
                     ..Default::default()
                 };
                 if let Some(c) = bg_color {
@@ -433,6 +431,7 @@ pub struct NavigationTabBar {
     #[deref] view: AdaptiveView,
 
     #[rust] is_spaces_bar_shown: bool,
+    #[rust] applied_view_mode: ViewModeOverride,
 }
 
 impl ScriptHook for NavigationTabBar {
@@ -444,7 +443,16 @@ impl ScriptHook for NavigationTabBar {
                 rb.animator_play(cx, ids!(active.on));
             }
             cx.set_global(self.view.spaces_bar(cx, ids!(root_spaces_bar)));
+            let mode = cx.global::<AppPreferencesGlobal>().0.view_mode;
+            self.apply_view_mode(mode);
         });
+    }
+}
+
+impl NavigationTabBar {
+    fn apply_view_mode(&mut self, mode: ViewModeOverride) {
+        self.view.set_variant_selector(mode.variant_selector());
+        self.applied_view_mode = mode;
     }
 }
 
@@ -457,12 +465,10 @@ impl Widget for NavigationTabBar {
             let radio_button_set = self.view.radio_button_set(cx, ids_array!(
                 home_button,
                 add_room_button,
-                settings_button,
             ));
             match radio_button_set.selected(cx, actions) {
                 Some(0) => cx.action(NavigationBarAction::GoToHome),
                 Some(1) => cx.action(NavigationBarAction::GoToAddRoom),
-                Some(2) => cx.action(NavigationBarAction::OpenSettings),
                 _ => { }
             }
 
@@ -478,7 +484,13 @@ impl Widget for NavigationTabBar {
                     match tab {
                         SelectedTab::Home     => self.view.radio_button(cx, ids!(home_button)).select(cx, scope),
                         SelectedTab::AddRoom  => self.view.radio_button(cx, ids!(add_room_button)).select(cx, scope),
-                        SelectedTab::Settings => self.view.radio_button(cx, ids!(settings_button)).select(cx, scope),
+                        SelectedTab::Settings => {
+                            for rb in radio_button_set.iter() {
+                                if let Some(mut rb_inner) = rb.borrow_mut() {
+                                    rb_inner.animator_play(cx, ids!(active.off));
+                                }
+                            }
+                        }
                         SelectedTab::Space { .. } => {
                             for rb in radio_button_set.iter() {
                                 if let Some(mut rb_inner) = rb.borrow_mut() {
@@ -486,6 +498,24 @@ impl Widget for NavigationTabBar {
                                 }
                             }
                         }
+                    }
+                    continue;
+                }
+
+                if let ProfileIconAction::Clicked = action.as_widget_action().cast() {
+                    for rb in radio_button_set.iter() {
+                        if let Some(mut rb_inner) = rb.borrow_mut() {
+                            rb_inner.animator_play(cx, ids!(active.off));
+                        }
+                    }
+                    cx.action(NavigationBarAction::OpenSettings);
+                    continue;
+                }
+
+                if let Some(AppPreferencesAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
+                    if *new_mode != self.applied_view_mode {
+                        self.apply_view_mode(*new_mode);
+                        self.view.redraw(cx);
                     }
                     continue;
                 }

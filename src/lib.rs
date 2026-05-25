@@ -81,6 +81,7 @@ pub mod cpu_worker;
 pub mod sliding_sync;
 pub mod space_service_sync;
 pub mod avatar_cache;
+pub mod room_preview_cache;
 pub mod media_cache;
 pub mod verification;
 pub mod updater;

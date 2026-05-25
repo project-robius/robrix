@@ -10,7 +10,7 @@ use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomI
 use serde::{Deserialize, Serialize};
 use url::Url;
 use crate::{
-    avatar_cache::{self, clear_avatar_cache}, home::{
+    avatar_cache::{self, clear_avatar_cache}, room_preview_cache::clear_room_preview_cache, home::{
         add_room::{CreateRoomModalAction, CreateRoomModalWidgetRefExt, StartChatModalAction, StartChatModalWidgetRefExt},
         bot_binding_modal::{BotBindingModalAction, BotBindingModalWidgetRefExt},
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt, mark_invite_modal_closed}, invite_screen::{InviteScreenWidgetRefExt, LeaveRoomResultAction}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, RoomScreenWidgetRefExt, TimelineUpdate, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, space_lobby::SpaceLobbyScreenWidgetRefExt, spaces_bar::SpacesBarRef
@@ -19,7 +19,7 @@ use crate::{
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, register::RegisterAction, room::BasicRoomDetails, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, file_upload_modal::{FilePreviewerAction, FileUploadModalWidgetRefExt}, forward_modal::{ForwardMessageModalAction, ForwardMessageModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, room_filter_input_bar::FilterAction}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RemoteDirectorySearchKind, RemoteDirectorySearchResult, TimelineKind, AccountSwitchAction, current_user_id, get_client, submit_async_request, get_timeline_update_sender}, updater::{UpdateCheckOutcome, check_for_updates, load_skipped_update_version, save_skipped_update_version, update_release_page_url}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
-    }
+    }, settings::app_preferences::{AppPreferences, AppPreferencesAction, UiZoom}
 };
 use crate::shared::room_filter_search_results::{RoomFilterResultAction, RoomFilterResultTarget};
 use crate::shared::room_filter_search_results::RoomFilterSearchResultsListWidgetRefExt;
@@ -344,6 +344,8 @@ script_mod! {
 
                         // Tooltips must be shown in front of all other UI elements,
                         // since they can be shown as a hover atop any other widget.
+                        // This tooltip widget handles TooltipActions directly by itself,
+                        // so we don't need to call show/hide ourselves.
                         app_tooltip := CalloutTooltip {}
                     }
                 } // end of body
@@ -629,19 +631,6 @@ impl MatchEvent for App {
             // Clean up old log files to prevent disk space issues
             cleanup_old_logs(MAX_LOG_FILES_TO_KEEP);
         }
-        // Override Makepad's new default-JSON logger. We just want regular formatting.
-        fn regular_log(file_name: &str, line_start: u32, column_start: u32, _line_end: u32, _column_end: u32, message: String, level: LogLevel) {
-            let l = match level {
-                LogLevel::Panic   => "[!]",
-                LogLevel::Error   => "[E]",
-                LogLevel::Warning => "[W]",
-                LogLevel::Log     => "[I]",
-                LogLevel::Wait    => "[.]",
-            };
-            println!("{l} {file_name}:{}:{}: {message}", line_start + 1, column_start + 1);
-        }
-        *LOG_WITH_LEVEL.write().unwrap() = regular_log;
-
         // Initialize the project directory here from the main UI thread
         // such that background threads/tasks will be able to can access it.
         let _app_data_dir = crate::app_data_dir();
@@ -653,6 +642,7 @@ impl MatchEvent for App {
 
         self.update_login_visibility(cx);
         self.sync_app_language(cx);
+        self.app_state.app_prefs.broadcast_all(cx);
         self.skipped_update_version = load_skipped_update_version();
         self.start_auto_update_check(cx);
 
@@ -736,6 +726,19 @@ impl MatchEvent for App {
         }
 
         for action in actions.iter() {
+            if let Some(
+                AppPreferencesAction::ViewModeChanged(_)
+                | AppPreferencesAction::SendOnEnterChanged(_)
+                | AppPreferencesAction::UiZoomChanged(_)
+            ) = action.downcast_ref() {
+                if let Some(user_id) = current_user_id() {
+                    if let Err(e) = persistence::save_app_state(self.app_state.clone(), user_id) {
+                        error!("Failed to persist app state after updating app preferences. Error: {e}");
+                    }
+                }
+                continue;
+            }
+
             if let RoomFilterResultAction::Clicked(target) = action.as_widget_action().cast() {
                 self.ui.modal(cx, ids!(room_filter_modal)).close(cx);
                 match target {
@@ -1201,6 +1204,7 @@ impl MatchEvent for App {
                     self.app_state.logged_in = logged_in_actual;
                     // Initialize the global translation config so RoomInputBar can access it.
                     crate::room::translation::set_global_config(&self.app_state.translation);
+                    self.app_state.app_prefs.broadcast_all(cx);
                     if removed_room_bindings > 0 {
                         if let Some(user_id) = current_user_id() {
                             if let Err(e) = persistence::save_app_state(self.app_state.clone(), user_id) {
@@ -1295,30 +1299,6 @@ impl MatchEvent for App {
                     if let Some((dest_room, room_to_close)) = self.waiting_to_navigate_to_room.take() {
                         self.navigate_to_room(cx, room_to_close.as_ref(), &dest_room);
                     }
-                    continue;
-                }
-                _ => {}
-            }
-
-            // Handle actions for showing or hiding the tooltip.
-            match action.as_widget_action().cast() {
-                TooltipAction::HoverIn { text, widget_rect, options } => {
-                    // Don't show any tooltips if the message context menu is currently shown.
-                    if self.ui.new_message_context_menu(cx, ids!(new_message_context_menu)).is_currently_shown(cx) {
-                        self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
-                    }
-                    else {
-                        self.ui.callout_tooltip(cx, ids!(app_tooltip)).show_with_options(
-                            cx,
-                            &text,
-                            widget_rect,
-                            options,
-                        );
-                    }
-                    continue;
-                }
-                TooltipAction::HoverOut => {
-                    self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
                     continue;
                 }
                 _ => {}
@@ -1610,6 +1590,7 @@ fn clear_all_app_state(cx: &mut Cx) {
     clear_all_invited_rooms(cx);
     clear_timeline_states(cx);
     clear_avatar_cache(cx);
+    clear_room_preview_cache(cx);
 }
 
 impl AppMain for App {
@@ -1647,6 +1628,17 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        if let Event::LiveEdit = event {
+            self.app_state.app_prefs.broadcast_all(cx);
+        }
+        if let Event::WindowGeomChange(_) = event {
+            if !self.app_state.app_prefs.ui_zoom.is_default() {
+                self.app_state.app_prefs.on_ui_zoom_changed(cx);
+            }
+        }
+
+        self.handle_ui_zoom_shortcuts(cx, event);
+
         if let Event::Shutdown = event {
             let window_ref = self.ui.window(cx, ids!(main_window));
             if let Err(e) = persistence::save_window_state(window_ref, cx) {
@@ -1688,6 +1680,30 @@ impl AppMain for App {
 }
 
 impl App {
+    fn apply_ui_zoom(&mut self, cx: &mut Cx, new_zoom: UiZoom) {
+        if new_zoom != self.app_state.app_prefs.ui_zoom {
+            self.app_state.app_prefs.ui_zoom = new_zoom;
+            self.app_state.app_prefs.on_ui_zoom_changed(cx);
+        }
+    }
+
+    fn handle_ui_zoom_shortcuts(&mut self, cx: &mut Cx, event: &Event) {
+        let Event::KeyDown(e) = event else { return };
+        if !e.modifiers.is_primary() {
+            return;
+        }
+        let current = self.app_state.app_prefs.ui_zoom;
+        let new_zoom = match e.key_code {
+            KeyCode::Equals | KeyCode::NumpadEquals | KeyCode::NumpadAdd => {
+                current.zoom_in_by(UiZoom::STEP)
+            }
+            KeyCode::Minus | KeyCode::NumpadSubtract => current.zoom_out_by(UiZoom::STEP),
+            KeyCode::Key0 | KeyCode::Numpad0 => UiZoom::reset(),
+            _ => return,
+        };
+        self.apply_ui_zoom(cx, new_zoom);
+    }
+
     fn start_auto_update_check(&mut self, cx: &mut Cx) {
         if self.auto_update_check_started {
             return;
@@ -2090,6 +2106,9 @@ pub struct AppState {
     pub logged_in: bool,
     /// The preferred app language.
     pub app_language: AppLanguage,
+    /// App-wide UI/behavior preferences.
+    #[serde(default)]
+    pub app_prefs: AppPreferences,
     /// Whether the app is currently showing the login screen for adding another account.
     /// This is transient state and not persisted.
     #[serde(skip)]

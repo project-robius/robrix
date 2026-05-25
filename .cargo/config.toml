@@ -3,3 +3,13 @@
 [target.'cfg(all())']
 rustflags = ["--cfg", "ruma_identifiers_storage=\"Arc\""]
 
+## Override the bundle/package ID that Makepad uses by default with Robrix's ID.
+[env]
+MAKEPAD_BUNDLE_IDENTIFIER = { value = "rs.robius.robrix", force = true }
+MAKEPAD_APP_ICON_32 = { value = "resources/icon_32.png", relative = true }
+MAKEPAD_APP_ICON_64 = { value = "resources/icon_64.png", relative = true }
+MAKEPAD_APP_ICON_128 = { value = "resources/icon_128.png", relative = true }
+MAKEPAD_APP_ICON_256 = { value = "resources/icon_256.png", relative = true }
+MAKEPAD_APP_ICON_512 = { value = "resources/icon_512.png", relative = true }
+MAKEPAD_APP_ICON_1024 = { value = "resources/icon_1024.png", relative = true }
+MAKEPAD_APP_ICON_ICO = { value = "resources/icon.ico", relative = true }

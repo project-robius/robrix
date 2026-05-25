@@ -3,6 +3,7 @@ use makepad_widgets::*;
 use crate::{
     app::AppState,
     home::navigation_tab_bar::{NavigationBarAction, SelectedTab},
+    settings::app_preferences::{AppPreferencesAction, ViewModeOverride},
     settings::settings_screen::SettingsScreenWidgetRefExt,
     shared::room_filter_input_bar::{MainFilterAction, RoomFilterInputBarWidgetExt},
 };
@@ -214,7 +215,7 @@ script_mod! {
     // rooms list, room screens, and the settings screen as an overlay.
     // It adapts to both desktop and mobile layouts.
     mod.widgets.HomeScreen = #(HomeScreen::register_widget(vm)) {
-        AdaptiveView {
+        main_adaptive_view := AdaptiveView {
             // NOTE: within each of these sub views, we used `CachedWidget` wrappers
             //       to ensure that there is only a single global instance of each
             //       of those widgets, which means they maintain their state
@@ -426,6 +427,7 @@ pub struct HomeScreen {
     /// other widgets can easily access it.
     #[rust] previous_selection: SelectedTab,
     #[rust] is_spaces_bar_shown: bool,
+    #[rust] applied_view_mode: ViewModeOverride,
 }
 
 impl Widget for HomeScreen {
@@ -441,6 +443,14 @@ impl Widget for HomeScreen {
 
             let app_state = scope.data.get_mut::<AppState>().unwrap();
             for action in actions {
+                if let Some(AppPreferencesAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
+                    if *new_mode != self.applied_view_mode {
+                        self.apply_view_mode(cx, *new_mode);
+                        self.view.redraw(cx);
+                    }
+                    continue;
+                }
+
                 match action.downcast_ref() {
                     Some(NavigationBarAction::GoToHome) => {
                         if !matches!(app_state.selected_tab, SelectedTab::Home) {
@@ -479,7 +489,7 @@ impl Widget for HomeScreen {
                             if let Some(settings_page) = self.update_active_page_from_selection(cx, app_state) {
                                 settings_page
                                     .settings_screen(cx, ids!(settings_screen))
-                                    .populate(cx, None, &app_state.bot_settings, &app_state.translation, app_state.app_language);
+                                    .populate(cx, None, &app_state.bot_settings, &app_state.translation, &app_state.app_prefs, app_state.app_language);
                                 self.view.redraw(cx);
                             } else {
                                 error!("BUG: failed to set active page to show settings screen.");
@@ -511,6 +521,10 @@ impl Widget for HomeScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let app_state = scope.data.get_mut::<AppState>().unwrap();
+        let mode = app_state.app_prefs.view_mode;
+        if mode != self.applied_view_mode {
+            self.apply_view_mode(cx, mode);
+        }
         // Note: We need to update the active page before drawing,
         // because if we switched between Desktop and Mobile views,
         // the PageFlip widget will have been reset to its default,
@@ -522,6 +536,13 @@ impl Widget for HomeScreen {
 }
 
 impl HomeScreen {
+    fn apply_view_mode(&mut self, cx: &mut Cx, mode: ViewModeOverride) {
+        self.view
+            .adaptive_view(cx, ids!(main_adaptive_view))
+            .set_variant_selector(mode.variant_selector());
+        self.applied_view_mode = mode;
+    }
+
     fn update_active_page_from_selection(
         &mut self,
         cx: &mut Cx,

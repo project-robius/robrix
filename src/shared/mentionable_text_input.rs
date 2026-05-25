@@ -1106,7 +1106,21 @@ impl Widget for MentionableTextInput {
             modifiers,
             ..
         }) = event {
-            if modifiers.logo || modifiers.control {
+            let send_on_enter = scope
+                .data
+                .get::<crate::app::AppState>()
+                .map(|app_state| app_state.app_prefs.send_on_enter)
+                .unwrap_or(true);
+            let should_submit = modifiers.logo
+                || modifiers.control
+                || (
+                    send_on_enter
+                    && !modifiers.shift
+                    && !modifiers.alt
+                    && !modifiers.logo
+                    && !modifiers.control
+                );
+            if should_submit {
                 let text_input = self.cmd_text_input.text_input(cx, ids!(text_input));
                 let uid = text_input.widget_uid();
                 let text = text_input.text();

@@ -4,9 +4,9 @@ use std::cell::RefCell;
 use makepad_widgets::{text::selection::Cursor, *};
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 use rfd::FileDialog;
-use matrix_sdk::ruma::OwnedUserId;
+use matrix_sdk::{encryption::{identities::Device, VerificationState}, ruma::OwnedUserId};
 
-use crate::{account_manager, app::AppState, avatar_cache::{self}, home::navigation_tab_bar::get_own_profile, i18n::{AppLanguage, tr_fmt, tr_key}, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::{user_profile::UserProfile, user_profile_cache}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccessTokenCopyAction, AccessTokenCopyError, AccountDataAction, AccountSwitchAction, MatrixRequest, submit_async_request}, utils};
+use crate::{account_manager, app::AppState, avatar_cache::{self}, home::navigation_tab_bar::get_own_profile, i18n::{AppLanguage, tr_fmt, tr_key}, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::{user_profile::UserProfile, user_profile_cache}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{get_client, AccessTokenCopyAction, AccessTokenCopyError, AccountDataAction, AccountSwitchAction, MatrixRequest, submit_async_request}, utils, verification::VerificationStateAction};
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 use crate::{app::ConfirmDeleteAction, shared::confirmation_modal::ConfirmationModalContent};
 
@@ -22,6 +22,79 @@ script_mod! {
 
         account_settings_title := TitleLabel {
             text: "Account Settings"
+        }
+
+        verification_banner_verified := RoundedView {
+            visible: false
+            width: Fill
+            height: Fit
+            flow: Right
+            align: Align{y: 0.5}
+            margin: Inset{top: (SPACE_SM)}
+            padding: Inset{top: 10, bottom: 9, left: 12, right: 12}
+            show_bg: true
+            draw_bg +: {
+                color: (COLOR_BG_ACCEPT_GREEN)
+                border_color: (COLOR_FG_ACCEPT_GREEN)
+                border_size: 1.0
+                border_radius: 4.0
+            }
+            Label {
+                width: Fill, height: Fit
+                flow: Flow.Right{wrap: true}
+                draw_text +: {
+                    color: (COLOR_FG_ACCEPT_GREEN),
+                    text_style: theme.font_bold { font_size: 11.5 },
+                }
+                text: "This device is verified and can access encrypted messages."
+            }
+        }
+
+        verification_banner_unverified := RoundedView {
+            visible: false
+            width: Fill
+            height: Fit
+            flow: Down,
+            align: Align{y: 0.5}
+            spacing: 0,
+            margin: Inset{top: (SPACE_SM)}
+            padding: Inset{top: 10, bottom: 13, left: 12, right: 12}
+            show_bg: true
+            draw_bg +: {
+                color: (COLOR_BG_DANGER_RED)
+                border_color: (COLOR_FG_DANGER_RED)
+                border_size: 1.0
+                border_radius: 4.0
+            }
+            Label {
+                width: Fill, height: Fit
+                flow: Flow.Right{wrap: true}
+                draw_text +: {
+                    color: (COLOR_FG_DANGER_RED),
+                    text_style: theme.font_bold { font_size: 11.5 },
+                }
+                text: "This device is not verified and can't view encrypted messages."
+            }
+            Label {
+                width: Fill, height: Fit
+                flow: Flow.Right{wrap: true}
+                margin: Inset{top: 4, bottom: 1}
+                draw_text +: {
+                    color: (MESSAGE_TEXT_COLOR),
+                    text_style: theme.font_regular { font_size: 11.5 },
+                }
+                text: "Verify it from another client using this info:"
+            }
+            unverified_device_info_label := Label {
+                width: Fill, height: Fit
+                padding: Inset{left: 8}
+                flow: Flow.Right{wrap: true}
+                draw_text +: {
+                    color: (MESSAGE_TEXT_COLOR),
+                    text_style: theme.font_regular { font_size: 11.5 },
+                }
+                text: ""
+            }
         }
 
         // --- Avatar card ---
@@ -43,9 +116,7 @@ script_mod! {
 
             View {
                 width: Fill, height: Fit
-                // TODO: I'd like to use RightWrap here, but Makepad doesn't yet
-                //       support RightWrap with align: Align{y: 0.5}.
-                flow: Right,
+                flow: Right { wrap: true },
                 align: Align{y: 0.5}
 
                 our_own_avatar := Avatar {
@@ -138,7 +209,8 @@ script_mod! {
 
             display_name_input := RobrixTextInput {
                 margin: Inset{top: 3, left: (SPACE_XS), right: (SPACE_XS), bottom: (SPACE_SM)},
-                width: 216, height: Fit
+                width: Fill { max: 226}, // to match the button width
+                height: Fit
                 empty_text: "Add a display name..."
             }
 
@@ -216,9 +288,10 @@ script_mod! {
                 user_id := Label {
                     width: Fill, height: Fit
                     flow: Flow.Right{wrap: true},
+                    margin: Inset{top: 9}
                     draw_text +: {
                         color: (MESSAGE_TEXT_COLOR),
-                        text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
+                        text_style: MESSAGE_TEXT_STYLE { font_size: 11.5 },
                     }
                     text: "You are not logged in."
                 }
@@ -417,6 +490,8 @@ pub struct AccountSettings {
     #[deref] view: View,
 
     #[rust] own_profile: Option<UserProfile>,
+    #[rust(VerificationState::Unknown)] verification_state: VerificationState,
+    #[rust] own_device: Option<Device>,
     #[rust] app_language: AppLanguage,
     /// List of other account user IDs (not the currently active one)
     #[rust] other_accounts: Vec<OwnedUserId>,
@@ -478,12 +553,14 @@ impl MatchEvent for AccountSettings {
             user_profile_cache::process_user_profile_updates(cx);
             if let Some(new_profile) = get_own_profile(cx) {
                 self.own_profile = Some(new_profile.clone());
+                self.own_device = None;
                 self.view.label(cx, ids!(user_id))
                     .set_text(cx, new_profile.user_id.as_str());
                 self.view.text_input(cx, ids!(display_name_input))
                     .set_text(cx, new_profile.username.as_deref().unwrap_or_default());
                 self.populate_avatar_views(cx);
                 self.populate_account_list(cx);
+                self.refresh_verification_state(cx);
                 self.view.redraw(cx);
             }
             return;
@@ -511,6 +588,12 @@ impl MatchEvent for AccountSettings {
         let upload_avatar_button = self.view.button(cx, ids!(upload_avatar_button));
 
         for action in actions {
+            if let Some(VerificationStateAction::Update(state)) = action.downcast_ref() {
+                self.verification_state = *state;
+                self.update_verification_banner(cx);
+                continue;
+            }
+
             // Handle LogoutAction::InProgress to update button state
             if let Some(LogoutAction::InProgress(is_in_progress)) = action.downcast_ref() {
                 let logout_button = self.view.button(cx, ids!(logout_button));
@@ -625,6 +708,11 @@ impl MatchEvent for AccountSettings {
                         PopupKind::Error,
                         Some(4.0),
                     );
+                    continue;
+                }
+                Some(AccountDataAction::OwnDeviceFetched(device)) => {
+                    self.own_device = device.as_deref().cloned();
+                    self.update_verification_banner(cx);
                     continue;
                 }
                 _ => {}
@@ -794,6 +882,8 @@ impl MatchEvent for AccountSettings {
         for action in actions {
             if let Some(AccountSwitchAction::Switched(new_user_id)) = action.downcast_ref() {
                 log!("Account switched to: {}, refreshing profile and account list", new_user_id);
+                self.own_device = None;
+                self.refresh_verification_state(cx);
                 // Refresh the profile with new account's data
                 if let Some(new_profile) = get_own_profile(cx) {
                     self.own_profile = Some(new_profile.clone());
@@ -825,6 +915,8 @@ impl MatchEvent for AccountSettings {
             // Refresh profile and account list after login success
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
                 log!("Login success, refreshing profile and account list");
+                self.own_device = None;
+                self.refresh_verification_state(cx);
                 if let Some(new_profile) = get_own_profile(cx) {
                     self.own_profile = Some(new_profile.clone());
                     self.view.label(cx, ids!(user_id))
@@ -910,6 +1002,36 @@ impl AccountSettings {
         self.view.redraw(cx);
     }
 
+    fn refresh_verification_state(&mut self, cx: &mut Cx) {
+        if let Some(client) = get_client() {
+            self.verification_state = client.encryption().verification_state().get();
+        } else {
+            self.verification_state = VerificationState::Unknown;
+        }
+        submit_async_request(MatrixRequest::GetOwnDevice);
+        self.update_verification_banner(cx);
+    }
+
+    fn update_verification_banner(&mut self, cx: &mut Cx) {
+        let (verified, unverified) = match self.verification_state {
+            VerificationState::Verified => (true, false),
+            VerificationState::Unverified => (false, true),
+            VerificationState::Unknown => (false, false),
+        };
+        self.view.view(cx, ids!(verification_banner_verified)).set_visible(cx, verified);
+        self.view.view(cx, ids!(verification_banner_unverified)).set_visible(cx, unverified);
+
+        let info_text = match self.own_device.as_ref() {
+            Some(device) => match device.display_name() {
+                Some(name) => format!("Session: \"{name}\",  Device ID: {}", device.device_id()),
+                None => format!("Device ID: {}", device.device_id()),
+            },
+            None => String::new(),
+        };
+        self.view.label(cx, ids!(unverified_device_info_label)).set_text(cx, &info_text);
+        self.view.redraw(cx);
+    }
+
     /// Populate avatar-related views with the user's profile data.
     ///
     /// This does nothing if `self.own_profile` is `None`.
@@ -964,6 +1086,7 @@ impl AccountSettings {
 
         self.own_profile = Some(own_profile);
         self.populate_avatar_views(cx);
+        self.refresh_verification_state(cx);
         self.sync_app_language(cx);
 
         self.view.button(cx, ids!(upload_avatar_button)).reset_hover(cx);

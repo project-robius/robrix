@@ -1103,6 +1103,7 @@ impl WidgetMatchEvent for LoginScreen {
             password_input.toggle_is_password(cx);
             show_pw_button.set_visible(cx, !self.password_visible);
             hide_pw_button.set_visible(cx, self.password_visible);
+            password_input.set_key_focus(cx);
             self.redraw(cx);
         }
 

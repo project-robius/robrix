@@ -9,7 +9,7 @@ use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use mime::{IMAGE_JPEG, IMAGE_PNG};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, ListThreadsOptions, RelationsOptions, RoomMember, RoomMemberRole}, ruma::{
+    config::RequestConfig, encryption::{identities::Device, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, ListThreadsOptions, RelationsOptions, RoomMember, RoomMemberRole}, ruma::{
         api::{Direction, client::{
             account::register::v3::Request as RegistrationRequest,
             room::{Visibility, create_room::v3::{Request as CreateRoomRequest, RoomPreset}},
@@ -26,7 +26,7 @@ use matrix_sdk::{
             },
             space::{child::SpaceChildEventContent, parent::SpaceParentEventContent},
             InitialStateEvent, MessageLikeEventType, StateEventType
-        }, matrix_uri::MatrixId, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, int, uint
+        }, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, int, uint
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
 };
 use matrix_sdk_ui::{
@@ -46,11 +46,11 @@ use crate::{
     account_manager::{self, Account},
     app::{AppStateAction, RoomFilterRemoteSearchAction}, app_data_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
         add_room::{CreatableSpacesAction, CreateRoomAction, CreateRoomContext, KnockResultAction}, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{ActionResponseResultAction, InviteResultAction, ReportRoomResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, build_room_search_text, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
-    }, homeserver::{CapabilityProbeAction, HsCapabilities, IdentityProviderSummary}, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state, take_skip_app_state_restore_once}, profile::{
+    }, homeserver::{CapabilityProbeAction, HsCapabilities, IdentityProviderSummary}, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, room_preview_cache::{enqueue_room_preview_update, RoomPreviewUpdate}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state, take_skip_app_state_restore_once}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
-        avatar::AvatarState, html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}
+        avatar::AvatarState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, VecDiff, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -628,6 +628,9 @@ pub enum AccountDataAction {
     DisplayNameChanged(Option<String>),
     /// Failed to update the user's display name.
     DisplayNameChangeFailed(String),
+    /// Result of [`MatrixRequest::GetOwnDevice`], in a `Box` because `Device` is large.
+    /// * `None` if not logged in or the crypto store isn't ready yet.
+    OwnDeviceFetched(Option<Box<Device>>),
 }
 
 /// Actions emitted in response to account switching.
@@ -724,6 +727,19 @@ impl std::fmt::Display for TimelineKind {
             }
         }
     }
+}
+
+/// How the worker should deliver the result of a [`MatrixRequest::GetRoomPreview`].
+#[derive(Clone, Debug)]
+pub enum RoomPreviewResponseMode {
+    /// Posts a [`RoomPreviewAction::Fetched`] action with the result, success
+    /// or error. Used by interactive flows like the "join room" UI.
+    Action,
+    /// Stores the result in the [`crate::room_preview_cache`] on success;
+    /// logs and drops on error (the cache entry stays `Requested` until
+    /// `clear_all_pending_requests()` is called on offline→online recovery).
+    /// Used by `RobrixHtmlLink` pills.
+    RoomPreviewCache,
 }
 
 /// The set of requests for async work that can be made to the worker thread.
@@ -888,10 +904,13 @@ pub enum MatrixRequest {
     /// Request to fetch the preview (basic info) for the given room,
     /// either one that is joined locally or one that is unknown.
     ///
-    /// Emits a [`RoomPreviewAction::Fetched`] when the fetch operation has completed.
+    /// On completion, the result is dispatched according to `response_mode`:
+    /// either as a [`RoomPreviewAction::Fetched`] action, or by enqueueing
+    /// a cache update into the [`crate::room_preview_cache`].
     GetRoomPreview {
         room_or_alias_id: OwnedRoomOrAliasId,
         via: Vec<OwnedServerName>,
+        response_mode: RoomPreviewResponseMode,
     },
     /// Request to search server-side directory for users, rooms, or spaces.
     SearchDirectory {
@@ -1007,8 +1026,9 @@ pub enum MatrixRequest {
         /// * If `None`, the display name will be removed.
         new_display_name: Option<String>,
     },
-    /// Request to resolve a room alias into a room ID and the servers that know about that room.
-    ResolveRoomAlias(OwnedRoomAliasId),
+    /// Request to fetch our own [`Device`].
+    /// The response is delivered via [`AccountDataAction::OwnDeviceFetched`].
+    GetOwnDevice,
     /// Request to fetch an Avatar image from the server.
     /// Upon completion of the async media request, the `on_fetched` function
     /// will be invoked with the content of an `AvatarUpdate`.
@@ -1146,13 +1166,6 @@ pub enum MatrixRequest {
         timeline_kind: TimelineKind,
         event_id: OwnedEventId,
         pin: bool,
-    },
-    /// Sends a request to obtain the room's pill link info for the given Matrix ID.
-    ///
-    /// The MatrixLinkPillInfo::Loaded variant is sent back to the main UI thread via.
-    GetMatrixRoomLinkPillInfo {
-        matrix_id: MatrixId,
-        via: Vec<OwnedServerName>
     },
     /// Request to fetch URL preview from the Matrix homeserver.
     GetUrlPreview {
@@ -2588,11 +2601,22 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::GetRoomPreview { room_or_alias_id, via } => {
+            MatrixRequest::GetRoomPreview { room_or_alias_id, via, response_mode } => {
                 let Some(client) = get_client() else { continue };
                 let _fetch_task = Handle::current().spawn(async move {
                     let res = fetch_room_preview_with_avatar(&client, &room_or_alias_id, via).await;
-                    Cx::post_action(RoomPreviewAction::Fetched(res));
+                    match response_mode {
+                        RoomPreviewResponseMode::Action => {
+                            Cx::post_action(RoomPreviewAction::Fetched(res));
+                        }
+                        RoomPreviewResponseMode::RoomPreviewCache => match res {
+                            Ok(fetched) => enqueue_room_preview_update(RoomPreviewUpdate {
+                                room_or_alias_id,
+                                fetched,
+                            }),
+                            Err(e) => log!("Failed to get room preview for {room_or_alias_id:?}: {e:?}"),
+                        },
+                    }
                 });
             }
 
@@ -2884,7 +2908,7 @@ async fn matrix_worker_task(
                                     room_member,
                                 });
                             } else {
-                                log!("User profile request: user {user_id} was not a member of room {room_id}");
+                                // log!("User profile request: user {user_id} was not a member of room {room_id}");
                             }
                         } else {
                             log!("User profile request: client could not get room with ID {room_id}");
@@ -3104,6 +3128,20 @@ async fn matrix_worker_task(
                             Cx::post_action(AccountDataAction::DisplayNameChangeFailed(err_msg));
                         }
                     }
+                });
+            }
+
+            MatrixRequest::GetOwnDevice => {
+                let Some(client) = get_client() else { continue };
+                let _get_own_device_task = Handle::current().spawn(async move {
+                    let device = match client.encryption().get_own_device().await {
+                        Ok(device) => device,
+                        Err(e) => {
+                            error!("Failed to get own device: {e:?}");
+                            None
+                        }
+                    };
+                    Cx::post_action(AccountDataAction::OwnDeviceFetched(device.map(Box::new)));
                 });
             }
 
@@ -3410,16 +3448,6 @@ async fn matrix_worker_task(
 
             MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id, proxy } => {
                 spawn_sso_server(brand, homeserver_url, identity_provider_id, proxy, login_sender.clone()).await;
-            }
-
-            MatrixRequest::ResolveRoomAlias(room_alias) => {
-                let Some(client) = get_client() else { continue };
-                let _resolve_task = Handle::current().spawn(async move {
-                    log!("Sending resolve room alias request for {room_alias}...");
-                    let res = client.resolve_room_alias(&room_alias).await;
-                    log!("Resolved room alias {room_alias} to: {res:?}");
-                    todo!("Send the resolved room alias back to the UI thread somehow.");
-                });
             }
 
             MatrixRequest::FetchAvatar { mxc_uri, on_fetched } => {
@@ -4051,33 +4079,6 @@ async fn matrix_worker_task(
                     match sender.send(TimelineUpdate::PinResult { event_id, pin, result }) {
                         Ok(_) => SignalToUI::set_ui_signal(),
                         Err(_) => log!("Failed to send UI update for pin event."),
-                    }
-                });
-            }
-
-            MatrixRequest::GetMatrixRoomLinkPillInfo { matrix_id, via } => {
-                let Some(client) = get_client() else { continue };
-                let _fetch_matrix_link_pill_info_task = Handle::current().spawn(async move {
-                    let room_or_alias_id: Option<&RoomOrAliasId> = match &matrix_id {
-                        MatrixId::Room(room_id) => Some((&**room_id).into()),
-                        MatrixId::RoomAlias(room_alias_id) => Some((&**room_alias_id).into()),
-                        MatrixId::Event(room_or_alias_id, _event_id) => Some(room_or_alias_id),
-                        _ => {
-                            log!("MatrixLinkRoomPillInfoRequest: Unsupported MatrixId type: {matrix_id:?}");
-                            return;
-                        }
-                    };
-                    if let Some(room_or_alias_id) = room_or_alias_id {
-                        match client.get_room_preview(room_or_alias_id, via).await {
-                            Ok(preview) => Cx::post_action(MatrixLinkPillState::Loaded {
-                                matrix_id: matrix_id.clone(),
-                                name: preview.name.unwrap_or_else(|| room_or_alias_id.to_string()),
-                                avatar_url: preview.avatar_url
-                            }),
-                            Err(_e) => {
-                                log!("Failed to get room link pill info for {room_or_alias_id:?}: {_e:?}");
-                            }
-                        };
                     }
                 });
             }
@@ -4944,14 +4945,6 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                                 log!("matrix worker task ended with error due to account switch: {e:?}");
                             } else {
                                 error!("Error: matrix worker task ended:\n\t{e:?}");
-                                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                    status: e.to_string(),
-                                });
-                                enqueue_popup_notification(
-                                    format!("Rooms list update error: {e}"),
-                                    PopupKind::Error,
-                                    None,
-                                );
                             }
                         },
                         Err(e) => {
@@ -5955,6 +5948,7 @@ fn should_restore_loaded_app_state(app_state: &crate::app::AppState) -> bool {
             .any(saved_dock_state_has_content)
         || app_state.bot_settings != crate::app::BotSettingsState::default()
         || app_state.app_language != crate::i18n::AppLanguage::default()
+        || app_state.app_prefs != crate::settings::app_preferences::AppPreferences::default()
         || app_state.translation != crate::room::translation::TranslationConfig::default()
 }
 

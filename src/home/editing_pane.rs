@@ -226,7 +226,7 @@ impl Widget for EditingPane {
             let Some(info) = self.info.as_ref() else { return };
 
             if self.button(cx, ids!(accept_button)).clicked(actions)
-                || edit_text_input.returned(actions).is_some_and(|(_, m)| m.is_primary())
+                || edit_text_input.returned(actions).is_some()
             {
                 let edited_text = edit_text_input.text().trim().to_string();
                 let edited_content = match info.event_tl_item.content() {
