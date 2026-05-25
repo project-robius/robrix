@@ -6,7 +6,7 @@ use makepad_widgets::{text::selection::Cursor, *};
 use rfd::FileDialog;
 use matrix_sdk::ruma::OwnedUserId;
 
-use crate::{account_manager, app::AppState, avatar_cache::{self}, home::navigation_tab_bar::get_own_profile, i18n::{AppLanguage, tr_fmt, tr_key}, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::{user_profile::UserProfile, user_profile_cache}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccountDataAction, AccountSwitchAction, MatrixRequest, submit_async_request}, utils};
+use crate::{account_manager, app::AppState, avatar_cache::{self}, home::navigation_tab_bar::get_own_profile, i18n::{AppLanguage, tr_fmt, tr_key}, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::{user_profile::UserProfile, user_profile_cache}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{AccessTokenCopyAction, AccessTokenCopyError, AccountDataAction, AccountSwitchAction, MatrixRequest, submit_async_request}, utils};
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 use crate::{app::ConfirmDeleteAction, shared::confirmation_modal::ConfirmationModalContent};
 
@@ -391,6 +391,14 @@ script_mod! {
                     text: "Manage Account"
                 }
 
+                copy_access_token_button := RobrixNeutralIconButton {
+                    padding: Inset{top: (SPACE_SM), bottom: (SPACE_SM), left: (SPACE_MD), right: (SPACE_LG)}
+                    draw_bg +: { border_radius: (RADIUS_MD) }
+                    draw_icon.svg: (ICON_COPY)
+                    icon_walk: Walk{width: 16, height: 16}
+                    text: "Copy Access Token"
+                }
+
                 logout_button := RobrixNegativeIconButton {
                     padding: Inset{top: (SPACE_SM), bottom: (SPACE_SM), left: (SPACE_MD), right: (SPACE_LG)}
                     draw_bg +: { border_radius: (RADIUS_MD) }
@@ -516,6 +524,31 @@ impl MatchEvent for AccountSettings {
                 continue;
             }
 
+            match action.downcast_ref() {
+                Some(AccessTokenCopyAction::Ready { access_token }) => {
+                    cx.copy_to_clipboard(access_token);
+                    enqueue_popup_notification(
+                        tr_key(self.app_language, "settings.account.popup.copied_access_token"),
+                        PopupKind::Success,
+                        Some(3.0),
+                    );
+                    continue;
+                }
+                Some(AccessTokenCopyAction::Failed { reason }) => {
+                    let error_key = match reason {
+                        AccessTokenCopyError::NoSession => "settings.account.popup.access_token_no_session",
+                        AccessTokenCopyError::Unavailable => "settings.account.popup.access_token_unavailable",
+                    };
+                    enqueue_popup_notification(
+                        tr_key(self.app_language, error_key),
+                        PopupKind::Error,
+                        Some(4.0),
+                    );
+                    continue;
+                }
+                _ => {}
+            }
+
             // Handle account data changes.
             // Note: the NavigationTabBar handles removing stale data from the user_profile_cache,
             // so here, we only need to update this widget's local profile info.
@@ -617,6 +650,10 @@ impl MatchEvent for AccountSettings {
         if self.view.button(cx, ids!(logout_button)).clicked(actions) {
             cx.action(LogoutConfirmModalAction::Open);
             return;
+        }
+
+        if self.view.button(cx, ids!(copy_access_token_button)).clicked(actions) {
+            submit_async_request(MatrixRequest::GetAccessTokenForCopy);
         }
 
         let Some(own_profile) = &self.own_profile else { return };
@@ -863,6 +900,9 @@ impl AccountSettings {
         self.view
             .button(cx, ids!(manage_account_button))
             .set_text(cx, tr_key(self.app_language, "settings.account.button.manage_account"));
+        self.view
+            .button(cx, ids!(copy_access_token_button))
+            .set_text(cx, tr_key(self.app_language, "settings.account.button.copy_access_token"));
         self.view
             .button(cx, ids!(logout_button))
             .set_text(cx, tr_key(self.app_language, "settings.account.button.log_out"));

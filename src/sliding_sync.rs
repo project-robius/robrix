@@ -731,6 +731,9 @@ impl std::fmt::Display for TimelineKind {
 pub enum MatrixRequest {
     /// Request from the login screen to log in with the given credentials.
     Login(LoginRequest),
+    /// Request the currently-authenticated user's access token for copying to
+    /// external Matrix client integrations such as Hermes/OpenClaw.
+    GetAccessTokenForCopy,
     /// Probe a homeserver's registration capabilities.
     /// Sent from RegisterScreen's Next button; result arrives via
     /// `CapabilityProbeAction::Discovered` / `Failed`.
@@ -1634,6 +1637,49 @@ mod matrix_request_tests {
         );
     }
 
+    #[test]
+    fn test_access_token_copy_result_returns_token_when_available() {
+        assert_eq!(
+            access_token_copy_result(Some("secret-token".to_owned())),
+            AccessTokenCopyAction::Ready {
+                access_token: "secret-token".to_owned(),
+            },
+        );
+    }
+
+    #[test]
+    fn test_access_token_copy_action_debug_redacts_token() {
+        let debug_text = format!(
+            "{:?}",
+            AccessTokenCopyAction::Ready {
+                access_token: "secret-token".to_owned(),
+            },
+        );
+
+        assert!(debug_text.contains("<redacted>"));
+        assert!(!debug_text.contains("secret-token"));
+    }
+
+    #[test]
+    fn test_access_token_copy_result_fails_without_client() {
+        assert_eq!(
+            access_token_copy_result_for_client(None),
+            AccessTokenCopyAction::Failed {
+                reason: AccessTokenCopyError::NoSession,
+            },
+        );
+    }
+
+    #[test]
+    fn test_access_token_copy_result_fails_without_access_token() {
+        assert_eq!(
+            access_token_copy_result(None),
+            AccessTokenCopyAction::Failed {
+                reason: AccessTokenCopyError::Unavailable,
+            },
+        );
+    }
+
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1687,6 +1733,63 @@ pub enum LoginRequest{
     HomeserverLoginTypesQuery(String),
 
 }
+
+/// Why a [`MatrixRequest::GetAccessTokenForCopy`] request produced no token.
+///
+/// Variants are locale-independent: the worker thread has no `AppLanguage`, so
+/// it reports *what* went wrong and leaves the user-facing wording to the UI
+/// thread, which owns the active language.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AccessTokenCopyError {
+    /// No Matrix client is currently logged in.
+    NoSession,
+    /// A client is logged in but its session carries no access token.
+    Unavailable,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum AccessTokenCopyAction {
+    Ready {
+        access_token: String,
+    },
+    Failed {
+        reason: AccessTokenCopyError,
+    },
+}
+
+impl std::fmt::Debug for AccessTokenCopyAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AccessTokenCopyAction::Ready { .. } => f
+                .debug_struct("AccessTokenCopyAction::Ready")
+                .field("access_token", &"<redacted>")
+                .finish(),
+            AccessTokenCopyAction::Failed { reason } => f
+                .debug_struct("AccessTokenCopyAction::Failed")
+                .field("reason", reason)
+                .finish(),
+        }
+    }
+}
+
+fn access_token_copy_result(access_token: Option<String>) -> AccessTokenCopyAction {
+    match access_token {
+        Some(access_token) => AccessTokenCopyAction::Ready { access_token },
+        None => AccessTokenCopyAction::Failed {
+            reason: AccessTokenCopyError::Unavailable,
+        },
+    }
+}
+
+fn access_token_copy_result_for_client(client: Option<Client>) -> AccessTokenCopyAction {
+    let Some(client) = client else {
+        return AccessTokenCopyAction::Failed {
+            reason: AccessTokenCopyError::NoSession,
+        };
+    };
+    access_token_copy_result(client.access_token())
+}
+
 /// Information needed to log in to a Matrix homeserver.
 pub struct LoginByPassword {
     pub user_id: String,
@@ -1774,6 +1877,10 @@ async fn matrix_worker_task(
                         )));
                     }
                 }
+            }
+
+            MatrixRequest::GetAccessTokenForCopy => {
+                Cx::post_action(access_token_copy_result_for_client(get_client()));
             }
 
             MatrixRequest::DiscoverHomeserverCapabilities { url, proxy } => {

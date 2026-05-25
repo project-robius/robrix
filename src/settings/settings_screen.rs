@@ -852,14 +852,20 @@ impl SettingsScreen {
             return;
         }
         self.preferences_proxy_layout_width = card_width;
-        let mut proxy_use_card = self.view.view(cx, ids!(preferences_proxy_use_card));
-        script_apply_eval!(cx, proxy_use_card, {
-            width: #(card_width)
-        });
-        let mut proxy_fields_section = self.view.view(cx, ids!(preferences_proxy_fields_section));
-        script_apply_eval!(cx, proxy_fields_section, {
-            width: #(card_width)
-        });
+        if let Some(mut proxy_use_card) = self.view
+            .child_by_path(ids!(preferences_proxy_use_card))
+            .borrow_mut::<View>()
+        {
+            proxy_use_card.walk.width = Size::Fixed(card_width);
+            proxy_use_card.redraw(cx);
+        }
+        if let Some(mut proxy_fields_section) = self.view
+            .child_by_path(ids!(preferences_proxy_fields_section))
+            .borrow_mut::<View>()
+        {
+            proxy_fields_section.walk.width = Size::Fixed(card_width);
+            proxy_fields_section.redraw(cx);
+        }
     }
 
     fn set_app_language(&mut self, cx: &mut Cx, app_language: AppLanguage) {
