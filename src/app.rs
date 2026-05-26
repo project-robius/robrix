@@ -2881,8 +2881,10 @@ mod tests {
 
     #[test]
     fn test_app_state_roundtrip_preserves_selected_room_with_empty_dock() {
-        let mut state = AppState::default();
-        state.selected_room = Some(joined_room("!room:example.org", "octosbot"));
+        let state = AppState {
+            selected_room: Some(joined_room("!room:example.org", "octosbot")),
+            ..Default::default()
+        };
         assert!(
             state.saved_dock_state_home.open_rooms.is_empty(),
             "precondition: this test simulates the mobile case where selected_room persists without desktop dock tabs",

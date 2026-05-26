@@ -9,7 +9,7 @@ use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use mime::{IMAGE_JPEG, IMAGE_PNG};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    config::RequestConfig, encryption::{identities::Device, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, ListThreadsOptions, RelationsOptions, RoomMember, RoomMemberRole}, ruma::{
+    config::RequestConfig, encryption::EncryptionSettings, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, ListThreadsOptions, RelationsOptions, RoomMember, RoomMemberRole}, ruma::{
         api::{Direction, client::{
             account::register::v3::Request as RegistrationRequest,
             room::{Visibility, create_room::v3::{Request as CreateRoomRequest, RoomPreset}},
@@ -713,9 +713,15 @@ pub enum AccountDataAction {
     DisplayNameChanged(Option<String>),
     /// Failed to update the user's display name.
     DisplayNameChangeFailed(String),
-    /// Result of [`MatrixRequest::GetOwnDevice`], in a `Box` because `Device` is large.
+    /// Result of [`MatrixRequest::GetOwnDevice`].
     /// * `None` if not logged in or the crypto store isn't ready yet.
-    OwnDeviceFetched(Option<Box<Device>>),
+    OwnDeviceFetched(Option<OwnDeviceInfo>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OwnDeviceInfo {
+    pub device_id: String,
+    pub display_name: Option<String>,
 }
 
 /// Actions emitted in response to account switching.
@@ -1713,13 +1719,15 @@ mod matrix_request_tests {
 
     #[test]
     fn test_should_restore_loaded_app_state_with_selected_room_and_empty_dock() {
-        let mut app_state = crate::app::AppState::default();
-        app_state.selected_room = Some(crate::app::SelectedRoom::JoinedRoom {
-            room_name_id: crate::utils::RoomNameId::new(
-                matrix_sdk::RoomDisplayName::Named("octosbot".into()),
-                "!room:example.org".parse().unwrap(),
-            ),
-        });
+        let app_state = crate::app::AppState {
+            selected_room: Some(crate::app::SelectedRoom::JoinedRoom {
+                room_name_id: crate::utils::RoomNameId::new(
+                    matrix_sdk::RoomDisplayName::Named("octosbot".into()),
+                    "!room:example.org".parse().unwrap(),
+                ),
+            }),
+            ..Default::default()
+        };
 
         assert!(
             should_restore_loaded_app_state(&app_state),
@@ -3226,7 +3234,11 @@ async fn matrix_worker_task(
                             None
                         }
                     };
-                    Cx::post_action(AccountDataAction::OwnDeviceFetched(device.map(Box::new)));
+                    let device_info = device.map(|device| OwnDeviceInfo {
+                        device_id: device.device_id().to_string(),
+                        display_name: device.display_name().map(ToOwned::to_owned),
+                    });
+                    Cx::post_action(AccountDataAction::OwnDeviceFetched(device_info));
                 });
             }
 
