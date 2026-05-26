@@ -48,7 +48,7 @@ script_mod! {
             color: (MESSAGE_TEXT_COLOR),
             color_hover: (MESSAGE_TEXT_COLOR),
             color_active: (COLOR_ACTIVE_PRIMARY_DARKER),
-            text_style: SETTINGS_REGULAR_TEXT_STYLE {},
+            text_style: REGULAR_TEXT {},
         }
 
         draw_bg +: {
@@ -92,7 +92,7 @@ script_mod! {
             color_hover: (MESSAGE_TEXT_COLOR),
             color_focus: (MESSAGE_TEXT_COLOR),
             color_down: (MESSAGE_TEXT_COLOR),
-            text_style: SETTINGS_REGULAR_TEXT_STYLE {},
+            text_style: REGULAR_TEXT {},
         }
 
         draw_bg +: {
@@ -167,7 +167,7 @@ script_mod! {
             color_active: (MESSAGE_TEXT_COLOR),
             color_focus: (MESSAGE_TEXT_COLOR),
             color_down: (MESSAGE_TEXT_COLOR),
-            text_style: SETTINGS_REGULAR_TEXT_STYLE {},
+            text_style: REGULAR_TEXT {},
         }
 
         draw_bg +: {
@@ -288,7 +288,7 @@ script_mod! {
                 draw_bg +: { size: 21 }
                 text: ""
                 draw_text +: {
-                    text_style: SETTINGS_REGULAR_TEXT_STYLE {},
+                    text_style: REGULAR_TEXT {},
                 }
             }
 
@@ -554,7 +554,7 @@ impl AppSettings {
         self.view.check_box(cx, ids!(send_on_cmd_enter_toggle))
             .set_text(SEND_SHORTCUT_TOGGLE_LABEL);
         self.view.check_box(cx, ids!(send_on_cmd_enter_toggle))
-            .set_active(cx, !prefs.send_on_enter);
+            .set_active(cx, !prefs.send_on_enter, Animate::No);
         Self::update_send_shortcut_description(cx, &self.view, prefs.send_on_enter);
 
         let (small, medium, unlimited, custom, custom_text) = match prefs.thumbnail_max_height {
@@ -563,10 +563,10 @@ impl AppSettings {
             ThumbnailMaxHeight::Unlimited => (false, false, true, false, String::new()),
             ThumbnailMaxHeight::Custom(v) => (false, false, false, true, v.to_string()),
         };
-        self.view.radio_button(cx, ids!(thumb_small_radio)).set_active(cx, small);
-        self.view.radio_button(cx, ids!(thumb_medium_radio)).set_active(cx, medium);
-        self.view.radio_button(cx, ids!(thumb_unlimited_radio)).set_active(cx, unlimited);
-        self.view.radio_button(cx, ids!(thumb_custom_radio)).set_active(cx, custom);
+        self.view.radio_button(cx, ids!(thumb_small_radio)).set_active(cx, small, Animate::No);
+        self.view.radio_button(cx, ids!(thumb_medium_radio)).set_active(cx, medium, Animate::No);
+        self.view.radio_button(cx, ids!(thumb_unlimited_radio)).set_active(cx, unlimited, Animate::No);
+        self.view.radio_button(cx, ids!(thumb_custom_radio)).set_active(cx, custom, Animate::No);
         Self::set_thumb_custom_input_read_only(cx, &self.view, custom);
         Self::set_thumb_custom_input_disabled(cx, &self.view, custom);
         self.view.text_input(cx, ids!(thumb_custom_input)).set_text(cx, &custom_text);

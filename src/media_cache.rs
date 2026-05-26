@@ -1,4 +1,4 @@
-use std::{ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
+use std::{ops::{Deref, DerefMut}, path::PathBuf, sync::{Arc, Mutex}, time::SystemTime};
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, reqwest::StatusCode, ruma::{events::room::MediaSource, OwnedMxcUri}, Error, HttpError};
@@ -188,6 +188,16 @@ impl MediaCache {
             // Keep the top-level entry only if at least one sub-entry remains.
             value.full_file.is_some() || value.thumbnail.is_some()
         });
+    }
+
+    pub fn path_for(&self, mxc_uri: &OwnedMxcUri) -> PathBuf {
+        let sanitized_uri: String = mxc_uri
+            .as_str()
+            .chars()
+            .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+            .collect();
+        crate::temp_storage::get_temp_dir_path()
+            .join(format!("robrix_media_cache_{sanitized_uri}"))
     }
 
     /// Removes a specific media format from the cache for the given MXC URI.

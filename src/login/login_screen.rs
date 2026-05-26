@@ -814,7 +814,7 @@ impl LoginScreen {
         self.use_proxy_enabled = enabled;
         self.view
             .check_box(cx, ids!(proxy_use_toggle))
-            .set_active(cx, enabled);
+            .set_active(cx, enabled, Animate::No);
         self.view
             .view(cx, ids!(proxy_fields_section))
             .set_visible(cx, enabled);
