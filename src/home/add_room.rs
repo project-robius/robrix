@@ -1157,7 +1157,7 @@ impl CreateRoomForm {
         create_room_button.set_enabled(cx, !create_room_name_input.text().trim().is_empty());
         create_room_button.set_text(cx, tr_key(self.app_language, "add_room.create_room.button.create"));
         create_room_button.reset_hover(cx);
-        create_room_encrypted_toggle.set_active(cx, self.create_encrypted_room);
+        create_room_encrypted_toggle.set_active(cx, self.create_encrypted_room, Animate::No);
         self.set_create_room_public(cx, self.create_public_room);
         self.set_visibility_popup_visible(cx, false);
         self.sync_mode_views(cx);
