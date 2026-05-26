@@ -7,7 +7,7 @@
 
 use std::borrow::Cow;
 
-use matrix_sdk::{ruma::{OwnedUserId, events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType}}, AnySyncMessageLikeEvent, AnySyncTimelineEvent, StateEventContentChange, SyncMessageLikeEvent}, serde::Raw, UserId}};
+use matrix_sdk::{ruma::{OwnedUserId, events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{AudioMessageEventContent, MessageFormat, MessageType}}, AnySyncMessageLikeEvent, AnySyncTimelineEvent, StateEventContentChange, SyncMessageLikeEvent}, serde::Raw, UserId}};
 use matrix_sdk_base::crypto::types::events::UtdCause;
 use matrix_sdk_ui::timeline::{self, AnyOtherStateEventContentChange, EncryptedMessage, EventTimelineItem, MemberProfileChange, MembershipChange, MsgLikeKind, OtherMessageLike, RoomMembershipChange, TimelineItemContent};
 
@@ -30,6 +30,14 @@ pub enum BeforeText {
 pub struct TextPreview {
     text: String,
     before_text: BeforeText,
+}
+
+pub(crate) struct AudioSummary {
+    pub(crate) filename: String,
+    pub(crate) mime: Option<String>,
+    pub(crate) duration_secs: Option<f64>,
+    pub(crate) size_bytes: Option<u64>,
+    pub(crate) caption_html: Option<String>,
 }
 impl From<(String, BeforeText)> for TextPreview {
     fn from((text, before_text): (String, BeforeText)) -> Self {
@@ -57,6 +65,67 @@ impl TextPreview {
                 text,
             ),
         }
+    }
+}
+
+pub(crate) fn summarize_audio_message(audio: &AudioMessageEventContent) -> AudioSummary {
+    AudioSummary {
+        filename: audio.filename().to_string(),
+        mime: audio.info.as_ref().and_then(|info| info.mimetype.clone()),
+        duration_secs: audio
+            .info
+            .as_ref()
+            .and_then(|info| info.duration)
+            .map(|duration| duration.as_secs_f64()),
+        size_bytes: audio
+            .info
+            .as_ref()
+            .and_then(|info| info.size)
+            .map(Into::into),
+        caption_html: audio
+            .formatted_caption()
+            .map(|formatted| formatted.body.clone())
+            .or_else(|| audio.caption().map(|caption| htmlize::escape_text(caption).to_string())),
+    }
+}
+
+pub fn format_mmss(secs: f64) -> String {
+    if !secs.is_finite() || secs < 0.0 {
+        return "00:00".to_string();
+    }
+    let secs = secs.floor() as u64;
+    format!("{:02}:{:02}", secs / 60, secs % 60)
+}
+
+pub fn infer_audio_extension(filename: &str, mime: Option<&str>) -> &'static str {
+    let from_filename = filename
+        .rsplit_once('.')
+        .map(|(_, extension)| extension.trim().to_ascii_lowercase())
+        .and_then(|extension| audio_extension_from_str(&extension));
+    from_filename.unwrap_or_else(|| {
+        mime.and_then(audio_extension_from_mime).unwrap_or("")
+    })
+}
+
+fn audio_extension_from_str(extension: &str) -> Option<&'static str> {
+    match extension {
+        "mp3" => Some("mp3"),
+        "wav" | "wave" => Some("wav"),
+        "aif" | "aiff" => Some("aiff"),
+        "flac" => Some("flac"),
+        "m4a" | "mp4" => Some("m4a"),
+        _ => None,
+    }
+}
+
+fn audio_extension_from_mime(mime: &str) -> Option<&'static str> {
+    match mime.to_ascii_lowercase().split(';').next().unwrap_or("").trim() {
+        "audio/mpeg" | "audio/mp3" => Some("mp3"),
+        "audio/wav" | "audio/wave" | "audio/x-wav" => Some("wav"),
+        "audio/aiff" | "audio/x-aiff" => Some("aiff"),
+        "audio/flac" | "audio/x-flac" => Some("flac"),
+        "audio/mp4" | "audio/x-m4a" | "audio/m4a" | "audio/aac" => Some("m4a"),
+        _ => None,
     }
 }
 
