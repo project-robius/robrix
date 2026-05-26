@@ -42,6 +42,7 @@ use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use crate::home::streaming_animation::StreamingAnimState;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
 use crate::shared::mentionable_text_input::MentionableTextInputAction;
+use crate::shared::animated_image::{AnimatedImageRef, AnimatedImageWidgetRefExt};
 
 use rangemap::RangeSet;
 
@@ -2301,6 +2302,7 @@ script_mod! {
                         height: (mod.widgets.IMG_MSG_FIT)
                     } }
                 }
+                animated_message := mod.widgets.AnimatedImage { visible: false }
                 View {
                     width: Fill,
                     height: Fit,
@@ -2328,6 +2330,7 @@ script_mod! {
                         height: (mod.widgets.IMG_MSG_FIT)
                     } }
                 }
+                animated_message := mod.widgets.AnimatedImage { visible: false }
                 View {
                     width: Fill,
                     height: Fit,
@@ -9569,9 +9572,11 @@ fn populate_message_view(
                     } else {
                         let image_info = image.info.clone();
                         let text_or_image_ref = item.text_or_image(cx, ids!(content.message));
+                        let animated_image_ref = item.animated_image(cx, ids!(content.animated_message));
                         let is_image_fully_drawn = populate_image_message_content(
                             cx,
                             &text_or_image_ref,
+                            Some(&animated_image_ref),
                             app_language,
                             image_info,
                             image.source.clone(),
@@ -9751,6 +9756,7 @@ fn populate_message_view(
                     let is_image_fully_drawn = populate_image_message_content(
                         cx,
                         &text_or_image_ref,
+                        None,
                         app_language,
                         Some(Box::new(image_info.clone())),
                         MediaSource::Plain(owned_mxc_url.clone()),
@@ -10060,6 +10066,7 @@ fn populate_text_message_content(
                 populate_image_message_content(
                     cx,
                     text_or_image_ref,
+                    None,
                     app_language,
                     image_info_source,
                     original_source,
@@ -10163,6 +10170,7 @@ fn populate_bot_text_message_content(
                         populate_image_message_content(
                             cx,
                             text_or_image_ref,
+                            None,
                             app_language,
                             image_info_source,
                             original_source,
@@ -10299,10 +10307,17 @@ fn populate_octos_action_buttons(
 
 /// Draws the given image message's content into the `message_content_widget`.
 ///
+/// `animated_image_ref` is the optional `AnimatedImage` slot on the message
+/// template. When the message's mimetype/filename identifies it as animated
+/// (gif/apng/webp), that slot is made visible and populated instead of the
+/// regular `TextOrImage`. `None` is passed by stickers and link previews,
+/// which never animate.
+///
 /// Returns whether the image message content was fully drawn.
 fn populate_image_message_content(
     cx: &mut Cx,
     text_or_image_ref: &TextOrImageRef,
+    animated_image_ref: Option<&AnimatedImageRef>,
     app_language: AppLanguage,
     image_info_source: Option<Box<ImageInfo>>,
     original_source: MediaSource,
@@ -10314,6 +10329,33 @@ fn populate_image_message_content(
     let (mimetype, _width, _height) = image_info_source.as_ref()
         .map(|info| (info.mimetype.as_deref(), info.width, info.height))
         .unwrap_or_default();
+
+    let is_animated_image = mimetype
+        .map(utils::is_animated_image_mime)
+        .unwrap_or_else(|| utils::is_animated_image_filename(body));
+    if is_animated_image {
+        if let Some(animated_image_ref) = animated_image_ref {
+            text_or_image_ref.set_visible(cx, false);
+            animated_image_ref.set_visible(cx, true);
+            return animated_image_ref.populate_from_media_source(
+                cx,
+                original_source,
+                body,
+                media_cache,
+            );
+        }
+
+        text_or_image_ref.show_text(
+            cx,
+            format!("{body}\n\nAnimated image messages require the animated image widget."),
+        );
+        return true;
+    }
+
+    if let Some(animated_image_ref) = animated_image_ref {
+        animated_image_ref.set_visible(cx, false);
+    }
+    text_or_image_ref.set_visible(cx, true);
 
     // If we have a known mimetype and it's not a static image,
     // then show a message about it being unsupported (e.g., for animated gifs).
