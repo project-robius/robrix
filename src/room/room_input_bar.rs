@@ -700,10 +700,12 @@ impl RoomInputBar {
 
         let (sender, receiver) = std::sync::mpsc::channel();
         self.pending_file_selection = Some(receiver);
-        let dialog = rfd::AsyncFileDialog::new();
+        let dialog_task = rfd::AsyncFileDialog::new().pick_file();
 
-        crate::sliding_sync::spawn_async_task(async move {
-            let result = match dialog.pick_file().await {
+        // Native thread, not a tokio task: rfd's macOS dialog panics if it
+        // runs on a tokio worker thread.
+        cx.spawn_thread(move || {
+            let result = match futures::executor::block_on(dialog_task) {
                 Some(selected_file) => {
                     #[cfg(feature = "tsp")]
                     {
@@ -712,7 +714,7 @@ impl RoomInputBar {
                             timeline_kind,
                             in_reply_to,
                             sign_with_tsp,
-                        ).await
+                        )
                     }
                     #[cfg(not(feature = "tsp"))]
                     {
@@ -720,7 +722,7 @@ impl RoomInputBar {
                             selected_file.path().to_path_buf(),
                             timeline_kind,
                             in_reply_to,
-                        ).await
+                        )
                     }
                 }
                 None => PendingFileSelection::Cancelled,
@@ -964,14 +966,14 @@ enum ShowEditingPaneBehavior {
 }
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
-async fn load_selected_file(
+fn load_selected_file(
     selected_file_path: std::path::PathBuf,
     timeline_kind: TimelineKind,
     in_reply_to: Option<OwnedEventId>,
     #[cfg(feature = "tsp")]
     sign_with_tsp: bool,
 ) -> PendingFileSelection {
-    let metadata = match tokio::fs::metadata(&selected_file_path).await {
+    let metadata = match std::fs::metadata(&selected_file_path) {
         Ok(m) => m,
         Err(e) => return PendingFileSelection::Error(format!("Unable to access file: {e}")),
     };
@@ -985,7 +987,7 @@ async fn load_selected_file(
     let mime = mime_guess::from_path(&selected_file_path)
         .first_or_octet_stream();
     let preview_data = if crate::image_utils::is_displayable_image(mime.essence_str()) {
-        match tokio::fs::read(&selected_file_path).await {
+        match std::fs::read(&selected_file_path) {
             Ok(data) => Some(std::sync::Arc::new(data)),
             Err(e) => return PendingFileSelection::Error(format!("Unable to read image preview: {e}")),
         }

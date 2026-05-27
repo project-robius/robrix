@@ -32,7 +32,7 @@ use crate::{
     },
     room::{BasicRoomDetails, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        attachment_download::{DownloadKind, DownloadableAttachment, start_attachment_download}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageStatus, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        attachment_download::{DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, media_source_mxc, start_attachment_download}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageStatus, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -87,9 +87,7 @@ script_mod! {
     // An empty view that takes up no space in the portal list.
     mod.widgets.Empty = View { }
 
-    // Shown beneath media messages. The whole section is hidden for non-media
-    // ones; for media, one of the two children is visible at a time
-    // (button vs spinner), driven from `Message::set_data`.
+    // A download button or loading spinner shown beneath a message.
     mod.widgets.MessageDownloadSection = View {
         visible: false,
         width: Fit, height: Fit,
@@ -111,7 +109,7 @@ script_mod! {
             flow: Right,
             align: Align{y: 0.5}
             spacing: 8,
-            padding: Inset{left: 12, right: 12}
+            padding: Inset{left: 12, right: 6}
 
             spinner := LoadingSpinner {
                 width: 16, height: 16
@@ -127,6 +125,34 @@ script_mod! {
                 }
                 text: "Downloading…"
             }
+            cancel_button := RobrixNegativeIconButton {
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
+                padding: Inset{left: 12, right: 12}
+                margin: 0
+                draw_icon.svg: (ICON_CLOSE)
+                icon_walk: Walk{width: 16, height: 16}
+                text: "Cancel"
+            }
+        }
+
+        success_button := RobrixPositiveIconButton {
+            visible: false,
+            height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
+            padding: Inset{left: 12, right: 12}
+            margin: 0
+            draw_icon.svg: (ICON_CHECKMARK)
+            icon_walk: Walk{width: 16, height: 16}
+            text: "Downloaded"
+        }
+
+        failure_button := RobrixNegativeIconButton {
+            visible: false,
+            height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
+            padding: Inset{left: 12, right: 12}
+            margin: 0
+            draw_icon.svg: (ICON_CLOSE)
+            icon_walk: Walk{width: 16, height: 16}
+            text: "Download Failed"
         }
     }
 
@@ -890,14 +916,21 @@ impl Widget for RoomScreen {
                     }
                 }
 
-                // When transitioning from offline to online, clear stale `Requested`/`Failed`
-                // entries from per-room caches so they can be re-fetched.
+                // When transitioning from offline to online, abort all pending downloads
+                // and clear stale `Requested`/`Failed` entries from per-room caches so they can be re-fetched.
                 if let Some(RoomsListHeaderAction::StateUpdate(new_state)) = action.downcast_ref() {
-                    if !matches!(new_state, State::Offline) {
+                    if matches!(new_state, State::Offline) {
                         if let Some(tl) = self.tl_state.as_mut() {
-                            tl.media_cache.clear_all_pending_and_failed_requests();
-                            tl.link_preview_cache.clear_all_pending_and_failed_requests();
+                            // Tell the worker to abort every in-flight download
+                            // for this room before we drop them from local state.
+                            for entry in tl.pending_downloads.drain(..) {
+                                submit_async_request(MatrixRequest::CancelDownload(entry.mxc));
+                            }
+                            self.view.portal_list(cx, ids!(timeline.list)).redraw(cx);
                         }
+                    } else if let Some(tl) = self.tl_state.as_mut() {
+                        tl.media_cache.clear_all_pending_and_failed_requests();
+                        tl.link_preview_cache.clear_all_pending_and_failed_requests();
                     }
                     continue;
                 }
@@ -1705,8 +1738,17 @@ impl RoomScreen {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .hide_upload_progress(cx, upload_id);
                 }
-                TimelineUpdate::AttachmentDownloadFinished(mxc) => {
-                    tl.pending_downloads.retain(|p| p != &mxc);
+                TimelineUpdate::AttachmentDownloadFinished(mxc, result) => {
+                    if let Some(entry) = tl.pending_downloads.iter_mut().find(|p| p.mxc == mxc) {
+                        entry.state = match result {
+                            Ok(()) => PendingDownloadState::JustSucceeded,
+                            Err(_) => PendingDownloadState::JustFailed,
+                        };
+                    }
+                    portal_list.redraw(cx);
+                }
+                TimelineUpdate::AttachmentDownloadReset(mxc) => {
+                    tl.pending_downloads.retain(|p| p.mxc != mxc);
                     portal_list.redraw(cx);
                 }
             }
@@ -2206,20 +2248,27 @@ impl RoomScreen {
 
                 MessageAction::DownloadAttachment(info) => {
                     let Some(tl) = self.tl_state.as_mut() else { continue };
-                    let mxc = match &info.media_source {
-                        MediaSource::Plain(uri) => uri,
-                        MediaSource::Encrypted(file) => &file.url,
-                    };
-                    // Mark pending synchronously so the next draw hides the
-                    // button before the user can click it again. Skip if it's
-                    // already in flight.
-                    if tl.pending_downloads.iter().any(|p| p == mxc) {
+                    let mxc = media_source_mxc(&info.media_source);
+                    // Prevent the same attachment from being downloaded more than once at a time.
+                    if tl.pending_downloads.iter().any(|p| &p.mxc == mxc) {
                         continue;
                     }
-                    tl.pending_downloads.push(mxc.clone());
+                    tl.pending_downloads.push(PendingDownload {
+                        mxc: mxc.clone(),
+                        state: PendingDownloadState::InProgress,
+                    });
                     portal_list.redraw(cx);
                     let update_sender = tl.media_cache.timeline_update_sender().cloned();
-                    start_attachment_download(info.clone(), update_sender);
+                    start_attachment_download(cx, info.clone(), update_sender);
+                }
+                MessageAction::CancelDownload(mxc) => {
+                    submit_async_request(MatrixRequest::CancelDownload(mxc.clone()));
+                    if let Some(tl) = self.tl_state.as_mut()
+                        && let Some(i) = tl.pending_downloads.iter().position(|p| &p.mxc == mxc)
+                    {
+                        tl.pending_downloads.swap_remove(i);
+                        portal_list.redraw(cx);
+                    }
                 }
                 // This is handled within the Message widget itself.
                 MessageAction::HighlightMessage(..) => { }
@@ -2933,9 +2982,12 @@ pub enum TimelineUpdate {
     FileUploadComplete {
         upload_id: FileUploadAttemptId,
     },
-    /// An inline-button download is done (or failed). `RoomScreen` removes
-    /// the mxc from `pending_downloads` so the spinner reverts to the button.
-    AttachmentDownloadFinished(OwnedMxcUri),
+    /// Download finished. `Ok` if bytes hit disk, `Err(msg)` otherwise.
+    /// The inline button briefly shows a success/failure indicator, then
+    /// `AttachmentDownloadReset` clears the entry from `pending_downloads`.
+    AttachmentDownloadFinished(OwnedMxcUri, Result<(), String>),
+    /// Drop the entry so the inline button goes back to its default "Download …" label.
+    AttachmentDownloadReset(OwnedMxcUri),
 }
 
 /// Stores timeline UI state that is not currently owned by a `RoomScreen`.
@@ -3148,7 +3200,7 @@ struct TimelineUiState {
 
     /// Media/file attachments in this timeline currently being downloaded.
     /// the inline button's spinner state.
-    pending_downloads: SmallVec<[OwnedMxcUri; 1]>,
+    pending_downloads: SmallVec<[PendingDownload; 1]>,
 }
 
 #[derive(Default, Debug)]
@@ -3279,7 +3331,7 @@ fn populate_message_view(
     pending_thread_summary_fetches: &mut HashSet<OwnedEventId>,
     user_power_levels: &UserPowerLevels,
     pinned_events: &[OwnedEventId],
-    pending_downloads: &[OwnedMxcUri],
+    pending_downloads: &[PendingDownload],
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
 ) -> (WidgetRef, ItemDrawnStatus) {
@@ -3857,14 +3909,15 @@ fn populate_message_view(
         ),
         should_be_highlighted: event_tl_item.is_highlighted() || has_room_mention,
     };
-    let is_downloading = download_info.as_ref().is_some_and(|info| {
-        let mxc = match &info.media_source {
-            MediaSource::Plain(uri) => uri,
-            MediaSource::Encrypted(file) => &file.url,
-        };
-        pending_downloads.iter().any(|p| p == mxc)
-    });
-    item.as_message().set_data(cx, message_details, download_info, is_downloading);
+    let download_state = download_info.as_ref()
+        .and_then(|info| {
+            let mxc = media_source_mxc(&info.media_source);
+            pending_downloads.iter()
+                .find(|p| &p.mxc == mxc)
+                .map(|p| p.state.display())
+        })
+        .unwrap_or_default();
+    item.as_message().set_data(cx, message_details, download_info, download_state);
 
 
     // If `used_cached_item` is false, we should always redraw the profile, even if profile_drawn is true.
@@ -4223,13 +4276,13 @@ fn populate_file_message_content(
         .unwrap_or_default();
     let caption = file_content.formatted_caption()
         .filter(|fb| fb.format == MessageFormat::Html)
-        .map(|fb| format!("<br><i>{}</i>", fb.body))
-        .or_else(|| file_content.caption().map(|c| format!("<br><i>{}</i>", htmlize::escape_text(c))))
+        .map(|fb| format!("{}<br>", fb.body))
+        .or_else(|| file_content.caption().map(|c| format!("{}<br>", htmlize::escape_text(c))))
         .unwrap_or_default();
 
     message_content_widget.show_html(
         cx,
-        format!("<b>File: </b>{caption}<br>{filename}{size}"),
+        format!("<b>File: </b>{caption}{filename}{size}"),
     );
     true
 }
@@ -4248,28 +4301,28 @@ fn populate_audio_message_content(
         .as_ref()
         .map(|info| (
             info.duration
-                .map(|d| format!("  {:.2} sec,", d.as_secs_f64()))
+                .map(|d| format!(",  {:.2} sec", d.as_secs_f64()))
                 .unwrap_or_default(),
             info.mimetype
                 .as_ref()
                 .map(|m| format!("  {},", htmlize::escape_text(m)))
                 .unwrap_or_default(),
             info.size
-                .map(|bytes| format!("  ({}),", utils::format_decimal_file_size(bytes.into())))
+                .map(|bytes| format!("  ({})", utils::format_decimal_file_size(bytes.into())))
                 .unwrap_or_default(),
         ))
         .unwrap_or_default();
     let caption = audio.formatted_caption()
         .filter(|fb| fb.format == MessageFormat::Html)
-        .map(|fb| format!("<br><i>{}</i>", fb.body))
-        .or_else(|| audio.caption().map(|c| format!("<br><i>{}</i>", htmlize::escape_text(c))))
+        .map(|fb| format!("{}<br>", fb.body))
+        .or_else(|| audio.caption().map(|c| format!("{}<br>", htmlize::escape_text(c))))
         .unwrap_or_default();
 
     // TODO: add an audio to play the audio file
 
     message_content_widget.show_html(
         cx,
-        format!("<b>Audio: </b>{caption}<br>{mime}{duration}{size}<br>{filename}<br> → <i>Audio playback not yet supported.</i>"),
+        format!("<b>Audio: </b>{caption}File: <i>{filename}</i>{size}{mime}{duration}<br> → <i>Video playback not yet supported.</i>"),
     );
     true
 }
@@ -4289,31 +4342,31 @@ fn populate_video_message_content(
         .as_ref()
         .map(|info| (
             info.duration
-                .map(|d| format!("  {:.2} sec,", d.as_secs_f64()))
+                .map(|d| format!(",  {:.2} sec", d.as_secs_f64()))
                 .unwrap_or_default(),
             info.mimetype
                 .as_ref()
-                .map(|m| format!("  {},", htmlize::escape_text(m)))
+                .map(|m| format!(",  {}", htmlize::escape_text(m)))
                 .unwrap_or_default(),
             info.size
-                .map(|bytes| format!("  ({}),", utils::format_decimal_file_size(bytes.into())))
+                .map(|bytes| format!("  ({})", utils::format_decimal_file_size(bytes.into())))
                 .unwrap_or_default(),
             info.width.and_then(|width|
-                info.height.map(|height| format!("  {width}x{height},"))
+                info.height.map(|height| format!(",  {width}x{height}"))
             ).unwrap_or_default(),
         ))
         .unwrap_or_default();
     let caption = video.formatted_caption()
         .filter(|fb| fb.format == MessageFormat::Html)
-        .map(|fb| format!("<br><i>{}</i>", fb.body))
-        .or_else(|| video.caption().map(|c| format!("<br><i>{}</i>", htmlize::escape_text(c))))
+        .map(|fb| format!("{}<br>", fb.body))
+        .or_else(|| video.caption().map(|c| format!("{}<br>", htmlize::escape_text(c))))
         .unwrap_or_default();
 
     // TODO: populate a video widget here, once makepad supports that
 
     message_content_widget.show_html(
         cx,
-        format!("<b>Video: </b>{caption}<br>{mime}{duration}{size}{dimensions}<br>{filename}<br> → <i>Video playback not yet supported.</i>"),
+        format!("<b>Video: </b>{caption}File: <i>{filename}</i>{size}{mime}{duration}{dimensions}<br> → <i>Video playback not yet supported.</i>"),
     );
     true
 }
@@ -5012,6 +5065,8 @@ pub enum MessageAction {
 
     /// The user clicked the "Download" button on a media/file message.
     DownloadAttachment(DownloadableAttachment),
+    /// User clicked the cancel × next to the in-progress spinner.
+    CancelDownload(OwnedMxcUri),
     /// The message at the given item index in the timeline should be highlighted.
     HighlightMessage(usize),
     /// The user requested that we show a context menu with actions
@@ -5215,6 +5270,15 @@ impl Widget for Message {
                     MessageAction::DownloadAttachment(info.clone()),
                 );
             }
+            // Cancel × shown next to the in-progress spinner.
+            if let Some(info) = self.download_info.as_ref()
+                && self.view.button(cx, ids!(content.download_section.downloading_view.cancel_button)).clicked(actions)
+            {
+                cx.widget_action(
+                    details.room_screen_widget_uid,
+                    MessageAction::CancelDownload(media_source_mxc(&info.media_source).clone()),
+                );
+            }
         }
     }
 
@@ -5240,7 +5304,7 @@ impl Message {
         cx: &mut Cx,
         details: MessageDetails,
         download_info: Option<DownloadableAttachment>,
-        is_downloading: bool,
+        download_state: DownloadDisplayState,
     ) {
         self.details = Some(details);
         self.download_info = download_info;
@@ -5251,9 +5315,13 @@ impl Message {
         if let Some(info) = self.download_info.as_ref() {
             let download_button = self.view.button(cx, ids!(content.download_section.download_button));
             let downloading_view = self.view.view(cx, ids!(content.download_section.downloading_view));
+            let success_button = self.view.button(cx, ids!(content.download_section.success_button));
+            let failure_button = self.view.button(cx, ids!(content.download_section.failure_button));
             download_button.set_text(cx, info.kind.button_text());
-            download_button.set_visible(cx, !is_downloading);
-            downloading_view.set_visible(cx, is_downloading);
+            download_button.set_visible(cx, matches!(download_state, DownloadDisplayState::Idle));
+            downloading_view.set_visible(cx, matches!(download_state, DownloadDisplayState::InProgress));
+            success_button.set_visible(cx, matches!(download_state, DownloadDisplayState::Succeeded));
+            failure_button.set_visible(cx, matches!(download_state, DownloadDisplayState::Failed));
         }
     }
 }
@@ -5264,10 +5332,10 @@ impl MessageRef {
         cx: &mut Cx,
         details: MessageDetails,
         download_info: Option<DownloadableAttachment>,
-        is_downloading: bool,
+        download_state: DownloadDisplayState,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_data(cx, details, download_info, is_downloading);
+        inner.set_data(cx, details, download_info, download_state);
     }
 }
 

@@ -711,16 +711,19 @@ pub enum MatrixRequest {
         destination: Arc<Mutex<crate::home::link_preview::TimestampedCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
-    /// Fetches a media attachment in full and writes it to `save_path`.
-    /// Shows a popup on success/failure; if `update_sender` is set, also
-    /// emits started/finished updates so the source timeline can show a
-    /// spinner.
+    /// Reqeust to fetch a media attachment/file and save it to the given path.
+    ///
+    /// Sends a [`TimelineUpdate::AttachmentDownloadFinished`] upon success or failure.
     DownloadMediaToFile {
         media_source: MediaSource,
         save_path: PathBuf,
         filename: String,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
+    /// Abort an in-flight download started by `DownloadMediaToFile`.
+    /// No-op if the worker doesn't know about this mxc (already finished,
+    /// already cancelled, or the original request hasn't been processed yet).
+    CancelDownload(OwnedMxcUri),
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -768,6 +771,11 @@ async fn matrix_worker_task(
     let mut subscribers_own_user_read_receipts: HashMap<TimelineKind, JoinHandle<()>> = HashMap::new();
     // The async tasks that are spawned to subscribe to changes in the pinned events for each room.
     let mut subscribers_pinned_events: HashMap<OwnedRoomId, JoinHandle<()>> = HashMap::new();
+    // Abort handles for in-flight attachment-download tasks, keyed by mxc.
+    // Shared with each spawned task via `Arc` so the task can self-remove
+    // when it ends. `CancelDownload` looks up the handle and aborts it.
+    let download_tasks: Arc<Mutex<HashMap<OwnedMxcUri, futures_util::future::AbortHandle>>>
+        = Arc::new(Mutex::new(HashMap::new()));
 
     while let Some(request) = request_receiver.recv().await {
         match request {
@@ -2183,24 +2191,29 @@ async fn matrix_worker_task(
 
             MatrixRequest::DownloadMediaToFile { media_source, save_path, filename, update_sender } => {
                 let Some(client) = get_client() else { continue };
-                Handle::current().spawn(async move {
-                    let mxc_uri = match &media_source {
-                        MediaSource::Plain(uri) => uri.clone(),
-                        MediaSource::Encrypted(file) => file.url.clone(),
-                    };
+                let mxc_uri = match &media_source {
+                    MediaSource::Plain(uri) => uri.clone(),
+                    MediaSource::Encrypted(file) => file.url.clone(),
+                };
+                let (abort_handle, abort_registration) = futures_util::future::AbortHandle::new_pair();
+                let mxc_for_task = mxc_uri.clone();
+                let mxc_for_finished = mxc_uri.clone();
+                let tasks_for_cleanup = download_tasks.clone();
+                let download_future = async move {
                     let media_request = MediaRequestParameters {
                         source: media_source,
                         format: matrix_sdk::media::MediaFormat::File,
                     };
-                    match client.media().get_media_content(&media_request, true).await {
+                    let result: Result<(), String> = match client.media().get_media_content(&media_request, true).await {
                         Ok(bytes) => match tokio::fs::write(&save_path, &bytes).await {
                             Ok(()) => {
                                 log!("Saved downloaded attachment {filename:?} to {}", save_path.display());
                                 enqueue_popup_notification(
-                                    format!("Saved \"{filename}\" to {}", save_path.display()),
+                                    format!("Downloaded \"{filename}\"."),
                                     PopupKind::Success,
-                                    Some(5.0),
+                                    Some(crate::shared::attachment_download::DOWNLOAD_RESULT_DURATION_SECS),
                                 );
+                                Ok(())
                             }
                             Err(e) => {
                                 error!("Failed to write downloaded attachment {filename:?} to {}: {e}", save_path.display());
@@ -2209,6 +2222,7 @@ async fn matrix_worker_task(
                                     PopupKind::Error,
                                     None,
                                 );
+                                Err(e.to_string())
                             }
                         }
                         Err(e) => {
@@ -2218,13 +2232,38 @@ async fn matrix_worker_task(
                                 PopupKind::Error,
                                 None,
                             );
+                            Err(e.to_string())
                         }
-                    }
-                    if let Some(sender) = update_sender.as_ref() {
-                        let _ = sender.send(TimelineUpdate::AttachmentDownloadFinished(mxc_uri));
+                    };
+                    if let Some(sender) = update_sender {
+                        let _ = sender.send(TimelineUpdate::AttachmentDownloadFinished(mxc_for_finished, result));
                         SignalToUI::set_ui_signal();
+                        // Drop the success/failure indicator after a short delay.
+                        let reset_sender = sender.clone();
+                        Handle::current().spawn(async move {
+                            tokio::time::sleep(std::time::Duration::from_secs_f64(
+                                crate::shared::attachment_download::DOWNLOAD_RESULT_DURATION_SECS,
+                            )).await;
+                            let _ = reset_sender.send(TimelineUpdate::AttachmentDownloadReset(mxc_for_task));
+                            SignalToUI::set_ui_signal();
+                        });
                     }
+                };
+                // Wrap in Abortable so `CancelDownload` and the offline path
+                // can cleanly stop the fetch+write.
+                let mxc_for_cleanup = mxc_uri.clone();
+                download_tasks.lock().unwrap().insert(mxc_uri, abort_handle);
+                Handle::current().spawn(async move {
+                    let _ = futures_util::future::Abortable::new(download_future, abort_registration).await;
+                    // Self-clean: drop our handle entry. (No-op if `CancelDownload` already removed us.)
+                    tasks_for_cleanup.lock().unwrap().remove(&mxc_for_cleanup);
                 });
+            }
+
+            MatrixRequest::CancelDownload(mxc) => {
+                if let Some(abort) = download_tasks.lock().unwrap().remove(&mxc) {
+                    abort.abort();
+                }
             }
 
         }

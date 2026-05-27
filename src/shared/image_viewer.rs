@@ -844,9 +844,9 @@ impl MatchEvent for ImageViewer {
             // Use the already-loaded bytes if we have them, otherwise fall
             // back to the matrix-worker fetch path.
             if let Some(bytes) = self.loaded_bytes.clone() {
-                save_loaded_attachment(info, bytes);
+                save_loaded_attachment(cx, info, bytes);
             } else {
-                start_attachment_download(info, None);
+                start_attachment_download(cx, info, None);
             }
         }
 
