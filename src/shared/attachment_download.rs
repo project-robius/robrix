@@ -158,7 +158,7 @@ pub fn save_loaded_attachment(cx: &mut Cx, info: DownloadableAttachment, bytes: 
         let save_path = handle.path().to_path_buf();
         match std::fs::write(&save_path, &bytes[..]) {
             Ok(()) => enqueue_popup_notification(
-                format!("Saved \"{}\" to {}", info.filename, save_path.display()),
+                format!("Downloaded \"{}\".", info.filename),
                 PopupKind::Success,
                 Some(5.0),
             ),

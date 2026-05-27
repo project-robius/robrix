@@ -5109,6 +5109,9 @@ pub struct Message {
     /// what to save when the user clicks it. `None` for plain text messages,
     /// which hide the download button entirely.
     #[rust] download_info: Option<DownloadableAttachment>,
+    /// Cached so `set_data` can reset_hover only on the button that just
+    /// transitioned into visibility, not on every redraw.
+    #[rust] download_state: DownloadDisplayState,
 }
 
 impl Widget for Message {
@@ -5306,15 +5309,18 @@ impl Message {
         download_info: Option<DownloadableAttachment>,
         download_state: DownloadDisplayState,
     ) {
+        let prev_section_visible = self.download_info.is_some();
+        let prev_state = self.download_state;
+
         self.details = Some(details);
         self.download_info = download_info;
 
         let section_visible = self.download_info.is_some();
-        self.view.view(cx, ids!(content.download_section))
-            .set_visible(cx, section_visible);
+        self.view.view(cx, ids!(content.download_section)).set_visible(cx, section_visible);
         if let Some(info) = self.download_info.as_ref() {
             let download_button = self.view.button(cx, ids!(content.download_section.download_button));
             let downloading_view = self.view.view(cx, ids!(content.download_section.downloading_view));
+            let cancel_button = self.view.button(cx, ids!(content.download_section.downloading_view.cancel_button));
             let success_button = self.view.button(cx, ids!(content.download_section.success_button));
             let failure_button = self.view.button(cx, ids!(content.download_section.failure_button));
             download_button.set_text(cx, info.kind.button_text());
@@ -5322,7 +5328,18 @@ impl Message {
             downloading_view.set_visible(cx, matches!(download_state, DownloadDisplayState::InProgress));
             success_button.set_visible(cx, matches!(download_state, DownloadDisplayState::Succeeded));
             failure_button.set_visible(cx, matches!(download_state, DownloadDisplayState::Failed));
+            // Only reset hover for the button that is just now becoming visible.
+            let newly_visible = !prev_section_visible || prev_state != download_state;
+            if newly_visible {
+                match download_state {
+                    DownloadDisplayState::Idle => download_button.reset_hover(cx),
+                    DownloadDisplayState::InProgress => cancel_button.reset_hover(cx),
+                    DownloadDisplayState::Succeeded => success_button.reset_hover(cx),
+                    DownloadDisplayState::Failed => failure_button.reset_hover(cx),
+                }
+            }
         }
+        self.download_state = download_state;
     }
 }
 
