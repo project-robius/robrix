@@ -15,7 +15,7 @@ use matrix_sdk::{
                     AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
                 }
             },
-            sticker::{StickerEventContent, StickerMediaSource},
+            sticker::StickerEventContent,
         }, matrix_uri::MatrixId, uint
     }
 };
@@ -3758,48 +3758,32 @@ fn populate_message_view(
             let was_cached = existed && item_drawn_status.content_drawn;
 
             let text_or_image_ref = item.text_or_image(cx, ids!(content.message));
-            match source {
-                StickerMediaSource::Plain(owned_mxc_url) => {
-                    let filename = if body.is_empty() { "sticker".to_owned() } else { body.clone() };
-                    let size = info.size.map(u64::from);
-                    download_info = if was_cached {
-                        matches!(text_or_image_ref.status(), TextOrImageStatus::Text)
-                            .then(|| DownloadableAttachment {
-                                media_source: MediaSource::Plain(owned_mxc_url.clone()),
-                                filename,
-                                size,
-                                kind: DownloadKind::Image,
-                            })
-                    } else {
-                        let (is_image_fully_drawn, fallback) = populate_image_message_content_with_fallback(
-                            cx,
-                            &text_or_image_ref,
-                            Some(Box::new(info.clone())),
-                            MediaSource::Plain(owned_mxc_url.clone()),
-                            body,
-                            media_cache,
-                            filename,
-                            size,
-                            DownloadKind::Image,
-                        );
-                        new_drawn_status.content_drawn = is_image_fully_drawn;
-                        fallback
-                    };
-                }
-                // Encrypted sticker decryption isn't wired up yet; show a
-                // placeholder so the message doesn't render blank.
-                _ => {
-                    if !was_cached {
-                        let label = if body.is_empty() {
-                            "[Encrypted sticker]".to_owned()
-                        } else {
-                            format!("[Encrypted sticker: {body}]")
-                        };
-                        text_or_image_ref.show_text(cx, label);
-                        new_drawn_status.content_drawn = true;
-                    }
-                }
-            }
+            let media_source: MediaSource = source.clone().into();
+            let filename = if body.is_empty() { "sticker".to_owned() } else { body.clone() };
+            let size = info.size.map(u64::from);
+            download_info = if was_cached {
+                matches!(text_or_image_ref.status(), TextOrImageStatus::Text)
+                    .then(|| DownloadableAttachment {
+                        media_source,
+                        filename,
+                        size,
+                        kind: DownloadKind::Image,
+                    })
+            } else {
+                let (is_image_fully_drawn, fallback) = populate_image_message_content_with_fallback(
+                    cx,
+                    &text_or_image_ref,
+                    Some(Box::new(info.clone())),
+                    media_source,
+                    body,
+                    media_cache,
+                    filename,
+                    size,
+                    DownloadKind::Image,
+                );
+                new_drawn_status.content_drawn = is_image_fully_drawn;
+                fallback
+            };
             (item, was_cached)
         }
         // Handle messages that have been redacted (deleted).
@@ -4148,12 +4132,10 @@ fn populate_image_message_content(
 
     let mut fully_drawn = false;
 
-    // A closure that fetches and shows the image from the given `mxc_uri`,
-    // marking it as fully drawn if the image was available.
-    let mut fetch_and_show_image_uri = |cx: &mut Cx, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
-        match media_cache.try_get_media_or_fetch(&mxc_uri, MEDIA_THUMBNAIL_FORMAT.into()) {
+    let mut fetch_and_show_media_source = |cx: &mut Cx, media_source: MediaSource, image_info: Box<ImageInfo>| {
+        match media_cache.try_get_media_or_fetch(&media_source, MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
-                let show_image_result = text_or_image_ref.show_image(cx, Some(MediaSource::Plain(mxc_uri)),|cx, img| {
+                let show_image_result = text_or_image_ref.show_image(cx, Some(media_source), |cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
@@ -4169,7 +4151,7 @@ fn populate_image_message_content(
             (MediaCacheEntry::Requested, _media_format) => {
                 // If the image is being fetched, we try to show its blurhash.
                 if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
-                    let show_image_result = text_or_image_ref.show_image(cx, Some(MediaSource::Plain(mxc_uri)), |cx, img| {
+                    let show_image_result = text_or_image_ref.show_image(cx, Some(media_source), |cx, img| {
                         let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else {
                             return Err(image_cache::ImageError::EmptyData)
                         };
@@ -4202,7 +4184,7 @@ fn populate_image_message_content(
                             Err(e) => {
                                 error!("Failed to decode blurhash {e:?}");
                                 Err(image_cache::ImageError::EmptyData)
-                            }   
+                            }
                         }
                     });
                     if let Err(e) = show_image_result {
@@ -4218,26 +4200,13 @@ fn populate_image_message_content(
                     fully_drawn = true;
                     return;
                 }
-                text_or_image_ref
-                    .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
+                text_or_image_ref.show_text(
+                    cx,
+                    format!("{body}\n\nFailed to fetch image from {:?}", media_source_mxc(&media_source)),
+                );
                 // For now, we consider this as being "complete". In the future, we could support
                 // retrying to fetch thumbnail of the image on a user click/tap.
                 fully_drawn = true;
-            }
-        }
-    };
-
-    let mut fetch_and_show_media_source = |cx: &mut Cx, media_source: MediaSource, image_info: Box<ImageInfo>| {
-        match media_source {
-            MediaSource::Encrypted(encrypted) => {
-                // We consider this as "fully drawn" since we don't yet support encryption.
-                text_or_image_ref.show_text(
-                    cx,
-                    format!("{body}\n\n[TODO] fetch encrypted image at {:?}", encrypted.url)
-                );
-            },
-            MediaSource::Plain(mxc_uri) => {
-                fetch_and_show_image_uri(cx, mxc_uri, image_info)
             }
         }
     };
