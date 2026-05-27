@@ -66,6 +66,10 @@ impl MediaCache {
         }
     }
 
+    pub fn timeline_update_sender(&self) -> Option<&crossbeam_channel::Sender<TimelineUpdate>> {
+        self.timeline_update_sender.as_ref()
+    }
+
     /// Tries to get the media from the cache, or submits an async request to fetch it.
     ///
     /// This method *does not* block or wait for the media to be fetched,

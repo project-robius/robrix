@@ -711,6 +711,16 @@ pub enum MatrixRequest {
         destination: Arc<Mutex<crate::home::link_preview::TimestampedCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
+    /// Fetches a media attachment in full and writes it to `save_path`.
+    /// Shows a popup on success/failure; if `update_sender` is set, also
+    /// emits started/finished updates so the source timeline can show a
+    /// spinner.
+    DownloadMediaToFile {
+        media_source: MediaSource,
+        save_path: PathBuf,
+        filename: String,
+        update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    },
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -719,6 +729,14 @@ pub fn submit_async_request(req: MatrixRequest) {
         sender.send(req)
             .expect("BUG: matrix worker task receiver has died!");
     }
+}
+
+/// Spawns a one-off async task on the backend Tokio runtime.
+pub fn spawn_async_task<F>(future: F)
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    get_or_create_tokio_runtime().spawn(future);
 }
 
 /// Details of a login request that get submitted within [`MatrixRequest::Login`].
@@ -2162,6 +2180,53 @@ async fn matrix_worker_task(
                     SignalToUI::set_ui_signal();
                 });
             }
+
+            MatrixRequest::DownloadMediaToFile { media_source, save_path, filename, update_sender } => {
+                let Some(client) = get_client() else { continue };
+                Handle::current().spawn(async move {
+                    let mxc_uri = match &media_source {
+                        MediaSource::Plain(uri) => uri.clone(),
+                        MediaSource::Encrypted(file) => file.url.clone(),
+                    };
+                    let media_request = MediaRequestParameters {
+                        source: media_source,
+                        format: matrix_sdk::media::MediaFormat::File,
+                    };
+                    match client.media().get_media_content(&media_request, true).await {
+                        Ok(bytes) => match tokio::fs::write(&save_path, &bytes).await {
+                            Ok(()) => {
+                                log!("Saved downloaded attachment {filename:?} to {}", save_path.display());
+                                enqueue_popup_notification(
+                                    format!("Saved \"{filename}\" to {}", save_path.display()),
+                                    PopupKind::Success,
+                                    Some(5.0),
+                                );
+                            }
+                            Err(e) => {
+                                error!("Failed to write downloaded attachment {filename:?} to {}: {e}", save_path.display());
+                                enqueue_popup_notification(
+                                    format!("Failed to save \"{filename}\": {e}"),
+                                    PopupKind::Error,
+                                    None,
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to fetch media content for attachment {filename:?}: {e}");
+                            enqueue_popup_notification(
+                                format!("Failed to download \"{filename}\": {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
+                        }
+                    }
+                    if let Some(sender) = update_sender.as_ref() {
+                        let _ = sender.send(TimelineUpdate::AttachmentDownloadFinished(mxc_uri));
+                        SignalToUI::set_ui_signal();
+                    }
+                });
+            }
+
         }
     }
 
@@ -2170,8 +2235,15 @@ async fn matrix_worker_task(
 }
 
 
-/// The single global Tokio runtime that is used by all async tasks.
-static TOKIO_RUNTIME: Mutex<Option<tokio::runtime::Runtime>> = Mutex::new(None);
+/// Returns the global Tokio runtime, creating it on first use.
+fn get_or_create_tokio_runtime() -> &'static tokio::runtime::Runtime {
+    /// The single global Tokio runtime that is used by all async tasks.
+    static TOKIO_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(||
+        tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
+    );
+
+    &TOKIO_RUNTIME
+}
 
 /// The sender used by [`submit_async_request`] to send requests to the async worker thread.
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
@@ -2212,9 +2284,7 @@ pub fn block_on_async_with_timeout<T>(
     timeout: Option<Duration>,
     async_future: impl Future<Output = T>,
 ) -> Result<T, Elapsed> {
-    let rt = TOKIO_RUNTIME.lock().unwrap().get_or_insert_with(||
-        tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
-    ).handle().clone();
+    let rt = get_or_create_tokio_runtime().handle().clone();
 
     if let Some(timeout) = timeout {
         rt.block_on(async {
@@ -2231,10 +2301,7 @@ pub fn block_on_async_with_timeout<T>(
 ///
 /// Returns a handle to the Tokio runtime that is used to run async background tasks.
 pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
-    // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
-    let rt_handle = TOKIO_RUNTIME.lock().unwrap().get_or_insert_with(|| {
-        tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
-    }).handle().clone();
+    let rt_handle = get_or_create_tokio_runtime().handle().clone();
 
     let rt = rt_handle.clone();
     // Spawn the main async task that drives the Matrix client SDK and
@@ -2403,16 +2470,7 @@ pub fn set_sync_service_desired_running(running: bool, reason: &'static str) {
         return;
     }
 
-    let rt_handle = TOKIO_RUNTIME.lock().unwrap().as_ref().map(|rt| rt.handle().clone());
-    let Some(rt_handle) = rt_handle else {
-        log!(
-            "Stored Matrix sync desired state as {}; Tokio runtime is not running yet ({reason}).",
-            if running { "running" } else { "stopped" }
-        );
-        return;
-    };
-
-    rt_handle.spawn(apply_sync_service_desired_state(reason));
+    get_or_create_tokio_runtime().spawn(apply_sync_service_desired_state(reason));
 }
 
 async fn apply_sync_service_desired_state(reason: &'static str) {

@@ -698,14 +698,12 @@ impl RoomInputBar {
         #[cfg(feature = "tsp")]
         let sign_with_tsp = self.is_tsp_signing_enabled(cx);
 
-        let dialog = rfd::AsyncFileDialog::new()
-            .set_title("Select file to upload");
         let (sender, receiver) = std::sync::mpsc::channel();
         self.pending_file_selection = Some(receiver);
-        let dialog_task = dialog.pick_file();
+        let dialog = rfd::AsyncFileDialog::new();
 
-        cx.spawn_thread(move || {
-            let result = match futures::executor::block_on(dialog_task) {
+        crate::sliding_sync::spawn_async_task(async move {
+            let result = match dialog.pick_file().await {
                 Some(selected_file) => {
                     #[cfg(feature = "tsp")]
                     {
@@ -714,7 +712,7 @@ impl RoomInputBar {
                             timeline_kind,
                             in_reply_to,
                             sign_with_tsp,
-                        )
+                        ).await
                     }
                     #[cfg(not(feature = "tsp"))]
                     {
@@ -722,7 +720,7 @@ impl RoomInputBar {
                             selected_file.path().to_path_buf(),
                             timeline_kind,
                             in_reply_to,
-                        )
+                        ).await
                     }
                 }
                 None => PendingFileSelection::Cancelled,
@@ -966,53 +964,52 @@ enum ShowEditingPaneBehavior {
 }
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
-fn load_selected_file(
+async fn load_selected_file(
     selected_file_path: std::path::PathBuf,
     timeline_kind: TimelineKind,
     in_reply_to: Option<OwnedEventId>,
     #[cfg(feature = "tsp")]
     sign_with_tsp: bool,
 ) -> PendingFileSelection {
-    match std::fs::metadata(&selected_file_path) {
-        Ok(metadata) => {
-            if !metadata.is_file() {
-                return PendingFileSelection::Error("Cannot upload directories or special files".to_string());
-            }
-            let file_size = metadata.len();
-            if file_size == 0 {
-                return PendingFileSelection::Error("Cannot upload empty file".to_string());
-            }
-            let mime = mime_guess::from_path(&selected_file_path)
-                .first_or_octet_stream();
-            let preview_data = if crate::image_utils::is_displayable_image(mime.essence_str()) {
-                match std::fs::read(&selected_file_path) {
-                    Ok(data) => Some(std::sync::Arc::new(data)),
-                    Err(e) => return PendingFileSelection::Error(format!("Unable to read image preview: {e}")),
-                }
-            } else {
-                None
-            };
-            let name = selected_file_path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "unknown".to_string());
-
-            PendingFileSelection::Selected {
-                upload: AttachmentUpload {
-                    timeline_kind,
-                    file_data: crate::shared::file_upload_modal::FileUploadMetadata {
-                        path: selected_file_path,
-                        caption: Some(name),
-                        mime_type: mime.to_string(),
-                        preview_data,
-                        size: file_size,
-                    },
-                    in_reply_to,
-                    #[cfg(feature = "tsp")]
-                    sign_with_tsp,
-                },
-            }
+    let metadata = match tokio::fs::metadata(&selected_file_path).await {
+        Ok(m) => m,
+        Err(e) => return PendingFileSelection::Error(format!("Unable to access file: {e}")),
+    };
+    if !metadata.is_file() {
+        return PendingFileSelection::Error("Cannot upload directories or special files".to_string());
+    }
+    let file_size = metadata.len();
+    if file_size == 0 {
+        return PendingFileSelection::Error("Cannot upload empty file".to_string());
+    }
+    let mime = mime_guess::from_path(&selected_file_path)
+        .first_or_octet_stream();
+    let preview_data = if crate::image_utils::is_displayable_image(mime.essence_str()) {
+        match tokio::fs::read(&selected_file_path).await {
+            Ok(data) => Some(std::sync::Arc::new(data)),
+            Err(e) => return PendingFileSelection::Error(format!("Unable to read image preview: {e}")),
         }
-        Err(e) => PendingFileSelection::Error(format!("Unable to access file: {e}")),
+    } else {
+        None
+    };
+    let name = selected_file_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    PendingFileSelection::Selected {
+        upload: AttachmentUpload {
+            timeline_kind,
+            file_data: crate::shared::file_upload_modal::FileUploadMetadata {
+                path: selected_file_path,
+                caption: Some(name),
+                mime_type: mime.to_string(),
+                preview_data,
+                size: file_size,
+            },
+            in_reply_to,
+            #[cfg(feature = "tsp")]
+            sign_with_tsp,
+        },
     }
 }
