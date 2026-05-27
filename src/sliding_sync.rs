@@ -711,7 +711,7 @@ pub enum MatrixRequest {
         destination: Arc<Mutex<crate::home::link_preview::TimestampedCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
-    /// Reqeust to fetch a media attachment/file and save it to the given path.
+    /// Request to fetch a media attachment/file and save it to the given path.
     ///
     /// Sends a [`TimelineUpdate::AttachmentDownloadFinished`] upon success or failure.
     DownloadMediaToFile {
