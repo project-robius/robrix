@@ -2,13 +2,10 @@
 //! Used by the inline message button and the image viewer overlay.
 
 use std::sync::Arc;
-
-use makepad_widgets::SignalToUI;
 use matrix_sdk::ruma::events::room::MediaSource;
-
 use crate::home::room_screen::TimelineUpdate;
 use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
-use crate::sliding_sync::{MatrixRequest, spawn_async_task, submit_async_request};
+
 
 #[derive(Clone, Debug)]
 pub struct DownloadableAttachment {
@@ -59,6 +56,8 @@ pub fn start_attachment_download(
     info: DownloadableAttachment,
     update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 ) {
+    use crate::sliding_sync::{MatrixRequest, spawn_async_task, submit_async_request};
+
     let dialog = build_save_dialog(&info);
     spawn_async_task(async move {
         match dialog.save_file().await {
@@ -79,7 +78,7 @@ pub fn start_attachment_download(
                         MediaSource::Encrypted(file) => file.url.clone(),
                     };
                     let _ = sender.send(TimelineUpdate::AttachmentDownloadFinished(mxc));
-                    SignalToUI::set_ui_signal();
+                    makepad_widgets::SignalToUI::set_ui_signal();
                 }
             }
         }
