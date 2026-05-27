@@ -493,12 +493,9 @@ struct ImageViewer {
     /// from the continuous `FingerHoverOver` events that fire every frame.
     #[rust] last_mouse_pos: DVec2,
     #[rust] capped_dimension: DVec2,
-    /// Drives the overlay download button: visible when `Some`, fed to
-    /// `start_attachment_download` on click.
+    /// Info about how to download the image being shown.
     #[rust] downloadable: Option<DownloadableAttachment>,
-    /// Image bytes from the most recent `LoadState::Loaded`. Lets the
-    /// download button skip the SDK fetch round-trip and write straight
-    /// to disk.
+    /// A reference to the image being shown so we can easily save it to storage.
     #[rust] loaded_bytes: Option<Arc<[u8]>>,
 }
 
@@ -841,8 +838,6 @@ impl MatchEvent for ImageViewer {
             && let Some(info) = self.downloadable.clone()
         {
             was_overlay_button_clicked = true;
-            // Use the already-loaded bytes if we have them, otherwise fall
-            // back to the matrix-worker fetch path.
             if let Some(bytes) = self.loaded_bytes.clone() {
                 save_loaded_attachment(cx, info, bytes);
             } else {
@@ -850,9 +845,7 @@ impl MatchEvent for ImageViewer {
             }
         }
 
-        // Restart the auto-hide timer if any overlay button was clicked. If the
-        // mouse is still over the overlay the hover handler keeps the timer
-        // stopped anyway.
+        // Restart the auto-hide timer if any overlay button was clicked.
         if was_overlay_button_clicked && !self.mouse_over_overlay_ui {
             cx.stop_timer(self.hide_ui_timer);
             self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
@@ -1159,8 +1152,6 @@ impl ImageViewer {
                 .set_date_time(cx, timestamp);
         }
 
-        // New image starting to load: any cached bytes from a previous one
-        // are now stale, so a download click can't accidentally save them.
         self.loaded_bytes = None;
         self.downloadable = metadata.downloadable.clone();
         self.view.button(cx, ids!(download_button))

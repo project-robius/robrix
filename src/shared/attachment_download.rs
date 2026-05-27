@@ -1,5 +1,4 @@
-//! Save a Matrix media attachment to disk via the rfd save dialog.
-//! Used by the inline message button and the image viewer overlay.
+//! Download a Matrix media attachment and save it to storage.
 
 use std::sync::Arc;
 use makepad_widgets::Cx;
@@ -17,24 +16,21 @@ pub fn media_source_mxc(source: &MediaSource) -> &OwnedMxcUri {
     }
 }
 
-/// One entry in `TimelineUiState.pending_downloads`. Tracks an attachment
-/// download's lifecycle so the inline button can render the right view.
+/// Info about a download that has begun or recently completed.
 pub struct PendingDownload {
     pub mxc: OwnedMxcUri,
     pub state: PendingDownloadState,
 }
 
 pub enum PendingDownloadState {
-    /// Fetch+write in flight. The matrix worker owns the corresponding
-    /// `AbortHandle`; `MessageAction::CancelDownload` routes through
-    /// `MatrixRequest::CancelDownload` to abort it.
+    /// The download request has been submitted to and is being handled by
+    /// the backend worker task.
     InProgress,
-    /// Bytes hit disk. Shown for a few seconds before the entry is cleared.
+    /// The download was successful, and will show a success indicator for a few seconds.
     JustSucceeded,
-    /// Fetch or write failed. Shown for a few seconds before the entry is cleared.
+    /// The download failed, and will show an error indicator for a few seconds.
     JustFailed,
 }
-
 impl PendingDownloadState {
     pub fn display(&self) -> DownloadDisplayState {
         match self {
@@ -45,26 +41,24 @@ impl PendingDownloadState {
     }
 }
 
-/// What the inline download section should render. Decoupled from
-/// `PendingDownloadState` so the `Message` widget doesn't need to know
-/// about `AbortHandle`s.
+/// What the download section below a message should show.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum DownloadDisplayState {
-    /// Show the "Download …" button.
+    /// Default: show the download button.
     #[default]
     Idle,
-    /// Show the spinner + cancel button.
+    /// Show a loading spinner and cancel button.
     InProgress,
-    /// Briefly show a green "Saved" indicator.
+    /// Briefly show a green success button.
     Succeeded,
-    /// Briefly show a red "Failed" indicator.
+    /// Briefly show a red failed button.
     Failed,
 }
 
 /// How long (in seconds) the success/failure state stays visible before resetting the button.
 pub const DOWNLOAD_RESULT_DURATION_SECS: f64 = 5.0;
 
-
+/// Metadata describing an attachment/media file to be downloaded.
 #[derive(Clone, Debug)]
 pub struct DownloadableAttachment {
     pub media_source: MediaSource,
@@ -105,14 +99,12 @@ fn build_save_dialog(info: &DownloadableAttachment) -> rfd::AsyncFileDialog {
     }
 }
 
-/// Opens the save dialog, then submits the actual fetch+write request.
-/// Pass `update_sender` if the caller wants spinner updates routed back to
-/// a specific timeline; pass `None` from contexts without one (e.g. the
-/// image viewer overlay).
+/// Opens the save dialog, then submits a request to fetch and write the file.
 ///
-/// The dialog runs on a fresh OS thread (not a tokio task) because rfd's
-/// macOS backend falls back to a sync dialog and panics when called from
-/// a tokio worker thread.
+/// If `update_sender` is provided, it will be used to send progress updates to a timeline.
+///
+/// The save dialog runs on a newly-spawned OS-native thread (not a tokio task)
+/// because `rfd` requires it, at least on macOS.
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub fn start_attachment_download(
     cx: &mut Cx,
@@ -124,6 +116,7 @@ pub fn start_attachment_download(
     let dialog_task = build_save_dialog(&info).save_file();
     cx.spawn_thread(move || {
         match futures::executor::block_on(dialog_task) {
+            // If Some, the user chose a valid location from the file dialog.
             Some(handle) => {
                 submit_async_request(MatrixRequest::DownloadMediaToFile {
                     media_source: info.media_source,
@@ -132,9 +125,7 @@ pub fn start_attachment_download(
                     update_sender,
                 });
             }
-            // User cancelled. The action handler already marked this mxc as
-            // pending. Revert directly (skip the success/failure flash, since
-            // dismissing the dialog isn't really a failure).
+            // If None, the user cancelled the file dialog.
             None => {
                 if let Some(sender) = update_sender {
                     let mxc = media_source_mxc(&info.media_source).clone();
@@ -146,10 +137,7 @@ pub fn start_attachment_download(
     });
 }
 
-/// Like `start_attachment_download` but for callers that already have the
-/// bytes in memory (e.g. the image viewer). Skips the matrix worker
-/// round-trip and writes straight to disk on the same OS thread that
-/// hosted the save dialog.
+/// Saves an attachment already in memory directly to storage.
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub fn save_loaded_attachment(cx: &mut Cx, info: DownloadableAttachment, bytes: Arc<[u8]>) {
     let dialog_task = build_save_dialog(&info).save_file();
@@ -171,7 +159,6 @@ pub fn save_loaded_attachment(cx: &mut Cx, info: DownloadableAttachment, bytes: 
     });
 }
 
-/// Mobile: rfd doesn't have a save dialog there, so just tell the user.
 #[cfg(any(target_os = "ios", target_os = "android"))]
 pub fn start_attachment_download(
     _cx: &mut Cx,

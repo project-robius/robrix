@@ -720,9 +720,7 @@ pub enum MatrixRequest {
         filename: String,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
-    /// Abort an in-flight download started by `DownloadMediaToFile`.
-    /// No-op if the worker doesn't know about this mxc (already finished,
-    /// already cancelled, or the original request hasn't been processed yet).
+    /// Request to cancel an in-progress download.
     CancelDownload(OwnedMxcUri),
 }
 
@@ -771,9 +769,7 @@ async fn matrix_worker_task(
     let mut subscribers_own_user_read_receipts: HashMap<TimelineKind, JoinHandle<()>> = HashMap::new();
     // The async tasks that are spawned to subscribe to changes in the pinned events for each room.
     let mut subscribers_pinned_events: HashMap<OwnedRoomId, JoinHandle<()>> = HashMap::new();
-    // Abort handles for in-flight attachment-download tasks, keyed by mxc.
-    // Shared with each spawned task via `Arc` so the task can self-remove
-    // when it ends. `CancelDownload` looks up the handle and aborts it.
+    // Abort handles for in-progress download tasks, keyed by MxcUri.
     let download_tasks: Arc<Mutex<HashMap<OwnedMxcUri, futures_util::future::AbortHandle>>>
         = Arc::new(Mutex::new(HashMap::new()));
 
@@ -2249,13 +2245,11 @@ async fn matrix_worker_task(
                         });
                     }
                 };
-                // Wrap in Abortable so `CancelDownload` and the offline path
-                // can cleanly stop the fetch+write.
+
                 let mxc_for_cleanup = mxc_uri.clone();
                 download_tasks.lock().unwrap().insert(mxc_uri, abort_handle);
                 Handle::current().spawn(async move {
                     let _ = futures_util::future::Abortable::new(download_future, abort_registration).await;
-                    // Self-clean: drop our handle entry. (No-op if `CancelDownload` already removed us.)
                     tasks_for_cleanup.lock().unwrap().remove(&mxc_for_cleanup);
                 });
             }
