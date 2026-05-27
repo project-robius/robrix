@@ -27,7 +27,7 @@ use matrix_sdk::{
             space::{child::SpaceChildEventContent, parent::SpaceParentEventContent},
             InitialStateEvent, MessageLikeEventType, StateEventType
         }, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, int, uint
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
+    }, reqwest::{Client as ReqwestClient, Response as ReqwestResponse, StatusCode as ReqwestStatusCode, header::HeaderValue}, sliding_sync::VersionBuilder, Client, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
 };
 use matrix_sdk_ui::{
     RoomListService, Timeline, encryption_sync_service, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{LatestEventValue, RoomExt, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
@@ -49,7 +49,7 @@ use crate::{
     }, homeserver::{CapabilityProbeAction, HsCapabilities, IdentityProviderSummary}, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, room_preview_cache::{enqueue_room_preview_update, RoomPreviewUpdate}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state, take_skip_app_state_restore_once}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
-    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
+    }, proxy_config::{self, build_policy_reqwest_client, resolve_effective_proxy_url}, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
         avatar::AvatarState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, VecDiff, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
@@ -395,7 +395,7 @@ fn is_thread_unknown_parent_timeline_error(error: &matrix_sdk_ui::timeline::Erro
 async fn build_client(
     cli: &Cli,
     data_dir: &Path,
-) -> Result<(Client, ClientSessionPersisted), ClientBuildError> {
+) -> Result<(Client, ClientSessionPersisted)> {
     // Generate a unique subfolder name for the client database,
     // which allows multiple clients to run simultaneously.
     let now = chrono::Local::now();
@@ -419,6 +419,11 @@ async fn build_client(
         .unwrap_or("https://matrix-client.matrix.org/");
         // .unwrap_or("https://matrix.org/");
 
+    let effective_proxy = resolve_effective_proxy_url(cli.proxy.as_deref());
+    let http_client = build_policy_reqwest_client(
+        effective_proxy.as_deref(),
+        Some(Duration::from_secs(60)),
+    )?;
     let mut builder = Client::builder()
         .server_name_or_homeserver_url(homeserver_url)
         // Use a sqlite database to persist the client's encryption setup.
@@ -426,6 +431,7 @@ async fn build_client(
         .with_threading_support(matrix_sdk::ThreadingSupport::Enabled {
             with_subscriptions: true,
         })
+        .http_client(http_client)
         // The sliding sync proxy has now been deprecated in favor of native sliding sync.
         .sliding_sync_version_builder(VersionBuilder::DiscoverNative)
         .with_decryption_settings(DecryptionSettings {
@@ -439,21 +445,11 @@ async fn build_client(
         .with_enable_share_history_on_invite(true)
         .handle_refresh_tokens();
 
-    let effective_proxy = crate::proxy_config::resolve_effective_proxy_url(cli.proxy.as_deref());
-    if let Some(proxy) = effective_proxy.as_deref() {
-        if let Err(e) = crate::proxy_config::apply_proxy_to_process_env(Some(proxy)) {
-            warning!("Failed to apply proxy env before building Matrix client: {e}");
-        }
-    }
-    if let Some(proxy) = effective_proxy {
-        builder = builder.proxy(proxy);
-    }
-
     // Use a 60 second timeout for all requests to the homeserver.
     // Yes, this is a long timeout, but the standard matrix homeserver is often very slow.
     builder = builder.request_config(
         RequestConfig::new()
-            .timeout(std::time::Duration::from_secs(60))
+            .timeout(Duration::from_secs(60))
     );
 
     let client = builder.build().await?;
@@ -619,7 +615,7 @@ async fn login(
 pub(crate) async fn build_client_for_oidc(
     homeserver: Option<String>,
     proxy: Option<String>,
-) -> std::result::Result<(Client, ClientSessionPersisted), ClientBuildError> {
+) -> Result<(Client, ClientSessionPersisted)> {
     let cli = Cli { homeserver, proxy, ..Default::default() };
     build_client(&cli, app_data_dir()).await
 }
@@ -3581,13 +3577,22 @@ async fn matrix_worker_task(
                         "{homeserver}/_matrix/media/v3/download/{server_name}/{media_id}",
                     );
 
-                    let http_client = matrix_sdk::reqwest::Client::new();
+                    let http_client = match build_policy_reqwest_client(
+                        resolve_effective_proxy_url(None).as_deref(),
+                        None,
+                    ) {
+                        Ok(client) => client,
+                        Err(e) => {
+                            error!("Failed to build download HTTP client: {e}");
+                            return;
+                        }
+                    };
                     match http_client.get(&download_url).send().await {
                         Ok(resp) if resp.status().is_success() => {
                             // Extract filename from Content-Disposition header or use media_id
                             let filename = resp.headers()
                                 .get("content-disposition")
-                                .and_then(|v: &matrix_sdk::reqwest::header::HeaderValue| {
+                                .and_then(|v: &HeaderValue| {
                                     let val = String::from_utf8_lossy(v.as_bytes());
                                     // Parse filename="..." or filename*=UTF-8''...
                                     val.split("filename=").nth(1)
@@ -4363,7 +4368,7 @@ static REQUEST_SENDER: Mutex<Option<UnboundedSender<MatrixRequest>>> = Mutex::ne
 
 /// A client object that is proactively created during initialization
 /// in order to speed up the client-building process when the user logs in.
-static DEFAULT_SSO_CLIENT: Mutex<Option<(Client, ClientSessionPersisted)>> = Mutex::new(None);
+static DEFAULT_SSO_CLIENT: Mutex<Option<(Client, ClientSessionPersisted, Option<String>)>> = Mutex::new(None);
 
 /// Used to notify the SSO login task that the async creation of the `DEFAULT_SSO_CLIENT` has finished.
 static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(|| Arc::new(Notify::new()));
@@ -4396,7 +4401,11 @@ pub fn block_on_async_with_timeout<T>(
 ///
 /// Returns a handle to the Tokio runtime that is used to run async background tasks.
 pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
-    crate::proxy_config::load_and_apply_saved_proxy_to_process_env();
+    // Parse CLI once at startup and stash the proxy override so every later
+    // resolver (restore_session, downloads, the SSO pre-build below) sees the
+    // same value without re-parsing argv.
+    let cli_for_init = Cli::try_parse().ok().unwrap_or_default();
+    proxy_config::set_cli_proxy_override(cli_for_init.proxy.as_deref());
 
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
     let rt_handle = TOKIO_RUNTIME.lock().unwrap().get_or_insert_with(|| {
@@ -4405,6 +4414,7 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
 
     // Proactively build a Matrix Client in the background so that the SSO Server
     // can have a quicker start if needed (as it's rather slow to build this client).
+    let prebuild_proxy = resolve_effective_proxy_url(None);
     rt_handle.spawn(async move {
         let cli_has_valid_username_password = Cli::try_parse()
             .as_ref()
@@ -4431,10 +4441,10 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
             return;
         }
 
-        match build_client(&Cli::default(), app_data_dir()).await {
-            Ok(client_and_session) => {
+        match build_client(&cli_for_init, app_data_dir()).await {
+            Ok((client, session)) => {
                 DEFAULT_SSO_CLIENT.lock().unwrap()
-                    .get_or_insert(client_and_session);
+                    .get_or_insert((client, session, prebuild_proxy));
                 // Clear any stale failure flag (e.g., after the user configures a proxy).
                 clear_sso_prebuild_failure_flag();
             }
@@ -7069,27 +7079,30 @@ async fn spawn_sso_server(
     let client_and_session_opt = DEFAULT_SSO_CLIENT.lock().unwrap().take();
 
     Handle::current().spawn(async move {
-        let effective_proxy = crate::proxy_config::resolve_effective_proxy_url(proxy.as_deref());
-        if let Some(proxy) = effective_proxy.as_deref() {
-            if let Err(e) = crate::proxy_config::apply_proxy_to_process_env(Some(proxy)) {
-                warning!("Failed to apply proxy env before SSO login: {e}");
-            }
-        }
+        let effective_proxy = resolve_effective_proxy_url(proxy.as_deref());
 
         // Try to use the DEFAULT_SSO_CLIENT that we proactively created
         // during initialization (to speed up opening the SSO browser window).
-        let mut client_and_session = client_and_session_opt;
+        // Only reuse when both (a) the homeserver is the default and (b) the
+        // proxy baked into the cached client still matches the current effective
+        // proxy — otherwise the cached reqwest pool may be bound to a stale
+        // proxy URL that the user cleared or changed after startup.
+        let homeserver_is_default = homeserver_url.is_empty()
+            || homeserver_url == "matrix.org"
+            || Url::parse(&homeserver_url) == Url::parse("https://matrix-client.matrix.org/")
+            || Url::parse(&homeserver_url) == Url::parse("https://matrix.org/");
+        let cached_proxy_matches = client_and_session_opt
+            .as_ref()
+            .is_some_and(|(_, _, cached)| cached.as_deref() == effective_proxy.as_deref());
 
-        // If the DEFAULT_SSO_CLIENT is none (meaning it failed to build),
-        // or if the homeserver_url is *not* empty and isn't the default,
-        // we cannot use the DEFAULT_SSO_CLIENT, so we must build a new one.
+        let mut client_and_session = if homeserver_is_default && cached_proxy_matches {
+            client_and_session_opt.map(|(c, s, _)| (c, s))
+        } else {
+            None
+        };
+
         let mut build_client_error = None;
-        if client_and_session.is_none() || effective_proxy.is_some() || (
-            !homeserver_url.is_empty()
-                && homeserver_url != "matrix.org"
-                && Url::parse(&homeserver_url) != Url::parse("https://matrix-client.matrix.org/")
-                && Url::parse(&homeserver_url) != Url::parse("https://matrix.org/")
-        ) {
+        if client_and_session.is_none() {
             match build_client(
                 &Cli {
                     homeserver: homeserver_url.is_empty().not().then_some(homeserver_url),
@@ -7377,15 +7390,12 @@ pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
 /// response bodies are read as text and parsed via `serde_json::from_str`.
 fn build_discovery_http_client(
     proxy_override: Option<&str>,
-) -> anyhow::Result<matrix_sdk::reqwest::Client> {
-    let mut builder = matrix_sdk::reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5));
-    if let Some(proxy) = crate::proxy_config::resolve_effective_proxy_url(proxy_override) {
-        crate::proxy_config::validate_proxy_url(&proxy)
-            .map_err(|e| anyhow::anyhow!(e))?;
-        builder = builder.proxy(matrix_sdk::reqwest::Proxy::all(&proxy)?);
-    }
-    Ok(builder.build()?)
+) -> anyhow::Result<ReqwestClient> {
+    let effective_proxy = resolve_effective_proxy_url(proxy_override);
+    build_policy_reqwest_client(
+        effective_proxy.as_deref(),
+        Some(Duration::from_secs(5)),
+    )
 }
 
 async fn discover_homeserver_capabilities(
@@ -7397,7 +7407,7 @@ async fn discover_homeserver_capabilities(
     let http = build_discovery_http_client(proxy_override)?;
 
     // Helper: read response text and parse as JSON Value, returning Null on any failure.
-    async fn body_json(resp: matrix_sdk::reqwest::Response) -> Value {
+    async fn body_json(resp: ReqwestResponse) -> Value {
         match resp.text().await {
             Ok(text) => serde_json::from_str::<Value>(&text).unwrap_or(Value::Null),
             Err(_) => Value::Null,
@@ -7497,7 +7507,7 @@ async fn discover_homeserver_capabilities(
     let status = reg_resp.status();
     let body = body_json(reg_resp).await;
 
-    let (registration_enabled, uiaa_probe) = if status == matrix_sdk::reqwest::StatusCode::UNAUTHORIZED {
+    let (registration_enabled, uiaa_probe) = if status == ReqwestStatusCode::UNAUTHORIZED {
         // Expected UIAA challenge.
         match serde_json::from_value(body.clone()) {
             Ok(info) => (true, Some(info)),

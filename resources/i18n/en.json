@@ -39,7 +39,7 @@
   "settings.preferences.proxy.input.port": "7890",
   "settings.preferences.proxy.input.account": "",
   "settings.preferences.proxy.input.password": "",
-  "settings.preferences.proxy.popup.saved": "Saved proxy settings. Re-login to apply to the current Matrix session.",
+  "settings.preferences.proxy.popup.saved": "Proxy settings saved. Restart Robrix to apply the new proxy to the current session.",
   "settings.preferences.proxy.popup.cleared": "Cleared proxy settings.",
   "settings.preferences.proxy.popup.invalid": "Invalid proxy URL.",
   "settings.preferences.proxy.popup.clear_failed": "Failed to clear proxy settings.",

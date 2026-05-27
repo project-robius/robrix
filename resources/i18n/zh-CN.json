@@ -39,7 +39,7 @@
   "settings.preferences.proxy.input.port": "7890",
   "settings.preferences.proxy.input.account": "",
   "settings.preferences.proxy.input.password": "",
-  "settings.preferences.proxy.popup.saved": "代理设置已保存。请重新登录以应用到当前 Matrix 会话。",
+  "settings.preferences.proxy.popup.saved": "代理设置已保存。请重启 Robrix 让新代理生效。",
   "settings.preferences.proxy.popup.cleared": "代理设置已清除。",
   "settings.preferences.proxy.popup.invalid": "代理 URL 无效。",
   "settings.preferences.proxy.popup.clear_failed": "清除代理设置失败。",
