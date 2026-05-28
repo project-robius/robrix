@@ -106,7 +106,7 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
             .or_else(|_| img.load_jpg_from_data(cx, data))
     }
 
-    let res = match imghdr::from_bytes(data) {
+    match imghdr::from_bytes(data) {
         Some(imghdr::Type::Png) => img.load_png_from_data(cx, data),
         Some(imghdr::Type::Jpeg) => img.load_jpg_from_data(cx, data),
         Some(unsupported) => {
@@ -123,7 +123,7 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
                 ImageError::UnsupportedFormat
             })
         }
-    };
+    }
     // Disabled: dumping invalid user-selected image bytes can duplicate private or large files.
     // if let Err(err) = res.as_ref() {
     //     // debugging: dump out the bad image to disk
@@ -141,7 +141,6 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
     //     let _ = std::fs::write(path, data)
     //         .inspect_err(|e| error!("Failed to write bad image to disk: {e}"));
     // }
-    res
 }
 
 
