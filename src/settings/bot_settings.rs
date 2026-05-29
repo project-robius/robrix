@@ -559,7 +559,7 @@ impl BotSettings {
         self.last_synced_bot_settings = bot_settings.clone();
         self.view
             .check_box(cx, ids!(app_service_switch))
-            .set_active(cx, bot_settings.enabled);
+            .set_active(cx, bot_settings.enabled, Animate::No);
         self.view
             .text_input(cx, ids!(botfather_user_id_input))
             .set_text(cx, bot_settings.botfather_user_id.trim());

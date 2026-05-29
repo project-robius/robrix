@@ -25,15 +25,23 @@ pub struct WindowGeomState {
 
 
 /// Save the current app state to persistent storage.
-pub fn save_app_state(
-    app_state: AppState,
-    user_id: OwnedUserId,
-) -> anyhow::Result<()> {
-    let file = std::fs::File::create(
-        persistent_state_dir(&user_id).join(LATEST_APP_STATE_FILE_NAME)
-    )?;
+pub fn save_app_state(app_state: AppState, user_id: OwnedUserId) -> anyhow::Result<()> {
+    let bytes = serialize_app_state(&app_state)?;
+    save_app_state_bytes(&bytes, &user_id)
+}
+
+/// Serializes the current app state into the same format used by [`save_app_state`].
+pub fn serialize_app_state(app_state: &AppState) -> anyhow::Result<Vec<u8>> {
+    Ok(serde_json::to_vec(app_state)?)
+}
+
+/// Save pre-serialized app state bytes to persistent storage.
+pub fn save_app_state_bytes(app_state_json: &[u8], user_id: &UserId) -> anyhow::Result<()> {
+    let state_dir = persistent_state_dir(user_id);
+    std::fs::create_dir_all(&state_dir)?;
+    let file = std::fs::File::create(state_dir.join(LATEST_APP_STATE_FILE_NAME))?;
     let mut writer = std::io::BufWriter::new(file);
-    serde_json::to_writer(&mut writer, &app_state)?;
+    writer.write_all(app_state_json)?;
     writer.flush()?;
     log!("Successfully saved app state to persistent storage.");
     Ok(())

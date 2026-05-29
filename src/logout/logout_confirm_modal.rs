@@ -198,7 +198,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
             if let Some(successful) = self.final_success {
                 if is_logout_past_point_of_no_return() && !successful {
                     log!("User requested immediate restart after unrecoverable logout error");
-                    cx.quit();
+                    cx.request_quit(QuitReason::App);
                 }
 
                 cx.action(LogoutConfirmModalAction::Close { successful, was_internal: true });
