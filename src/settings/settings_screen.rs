@@ -1222,7 +1222,7 @@ impl SettingsScreen {
         } else {
             error!("Failed to get own profile for settings screen.");
         }
-        self.view.app_settings(cx, ids!(app_settings)).populate(cx, app_prefs);
+        self.view.app_settings(cx, ids!(app_settings)).populate(cx, app_prefs, app_language);
         self.view.bot_settings(cx, ids!(bot_settings)).populate(cx, bot_settings);
         self.load_saved_proxy_to_preferences_form(cx);
         self.view.translation_settings(cx, ids!(translation_settings)).populate(cx, translation_config);

@@ -39,7 +39,7 @@ script_mod! {
                 border_size: 1.0
                 border_radius: 4.0
             }
-            Label {
+            verification_verified_label := Label {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true}
                 draw_text +: {
@@ -66,7 +66,7 @@ script_mod! {
                 border_size: 1.0
                 border_radius: 4.0
             }
-            Label {
+            verification_unverified_label := Label {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true}
                 draw_text +: {
@@ -75,7 +75,7 @@ script_mod! {
                 }
                 text: "This device is not verified and can't view encrypted messages."
             }
-            Label {
+            verification_unverified_hint_label := Label {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true}
                 margin: Inset{top: 4, bottom: 1}
@@ -799,7 +799,7 @@ impl MatchEvent for AccountSettings {
             #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
             {
                 enqueue_popup_notification(
-                    "Deleting avatar is not yet supported on this platform.",
+                    tr_key(self.app_language, "settings.account.popup.avatar_delete_not_supported"),
                     PopupKind::Warning,
                     Some(4.0),
                 );
@@ -998,6 +998,15 @@ impl AccountSettings {
         self.view
             .button(cx, ids!(logout_button))
             .set_text(cx, tr_key(self.app_language, "settings.account.button.log_out"));
+        self.view
+            .label(cx, ids!(verification_verified_label))
+            .set_text(cx, tr_key(self.app_language, "settings.account.verification.verified"));
+        self.view
+            .label(cx, ids!(verification_unverified_label))
+            .set_text(cx, tr_key(self.app_language, "settings.account.verification.unverified"));
+        self.view
+            .label(cx, ids!(verification_unverified_hint_label))
+            .set_text(cx, tr_key(self.app_language, "settings.account.verification.unverified_hint"));
         self.populate_account_list(cx);
         self.view.redraw(cx);
     }
@@ -1023,8 +1032,16 @@ impl AccountSettings {
 
         let info_text = match self.own_device.as_ref() {
             Some(device) => match device.display_name.as_ref() {
-                Some(name) => format!("Session: \"{name}\",  Device ID: {}", device.device_id),
-                None => format!("Device ID: {}", device.device_id),
+                Some(name) => tr_fmt(
+                    self.app_language,
+                    "settings.account.verification.device_info.with_session",
+                    &[("session_name", name), ("device_id", device.device_id.as_str())],
+                ),
+                None => tr_fmt(
+                    self.app_language,
+                    "settings.account.verification.device_info.device_only",
+                    &[("device_id", device.device_id.as_str())],
+                ),
             },
             None => String::new(),
         };
