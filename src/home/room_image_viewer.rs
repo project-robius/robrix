@@ -1,5 +1,5 @@
 use makepad_widgets::*;
-use matrix_sdk_ui::timeline::EventTimelineItem;
+use matrix_sdk_ui::timeline::{EventTimelineItem, MsgLikeKind, TimelineItemContent};
 use matrix_sdk::{
     media::MediaFormat,
     reqwest::StatusCode,
@@ -57,6 +57,13 @@ pub fn get_image_name_and_filesize(event_tl_item: &EventTimelineItem) -> (String
                 .map(u64::from)
                 .unwrap_or(0);
             return (name, size);
+        }
+    }
+    if let TimelineItemContent::MsgLike(msg_like) = event_tl_item.content() {
+        if let MsgLikeKind::Sticker(sticker) = &msg_like.kind {
+            let content = sticker.content();
+            let size = content.info.size.map(u64::from).unwrap_or(0);
+            return (content.body.clone(), size);
         }
     }
     ("Unknown Image".to_string(), 0)
