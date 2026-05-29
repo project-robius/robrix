@@ -13,10 +13,10 @@ use crate::{
     avatar_cache::{self, clear_avatar_cache}, room_preview_cache::clear_room_preview_cache, home::{
         add_room::{CreateRoomModalAction, CreateRoomModalWidgetRefExt, StartChatModalAction, StartChatModalWidgetRefExt},
         bot_binding_modal::{BotBindingModalAction, BotBindingModalWidgetRefExt},
-        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt, mark_invite_modal_closed}, invite_screen::{InviteScreenWidgetRefExt, LeaveRoomResultAction}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, RoomScreenWidgetRefExt, TimelineUpdate, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, space_lobby::SpaceLobbyScreenWidgetRefExt, spaces_bar::SpacesBarRef
+        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt, mark_invite_modal_closed}, invite_screen::{InviteScreenWidgetRefExt, LeaveRoomResultAction}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::{RoomContextMenuAction, RoomContextMenuWidgetRefExt}, room_screen::{InviteAction, MessageAction, RoomScreenWidgetRefExt, TimelineUpdate, clear_timeline_states}, room_settings_modal::{RoomSettingsAction, RoomSettingsModalWidgetRefExt, StdinCommandAction}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, space_lobby::SpaceLobbyScreenWidgetRefExt, spaces_bar::SpacesBarRef
     }, i18n::{AppLanguage, tr_fmt, tr_key}, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, register::RegisterAction, room::BasicRoomDetails, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, file_upload_modal::{FilePreviewerAction, FileUploadModalWidgetRefExt}, forward_modal::{ForwardMessageModalAction, ForwardMessageModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, room_filter_input_bar::FilterAction}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RemoteDirectorySearchKind, RemoteDirectorySearchResult, TimelineKind, AccountSwitchAction, current_user_id, get_client, submit_async_request, get_timeline_update_sender}, updater::{UpdateCheckOutcome, check_for_updates, load_skipped_update_version, save_skipped_update_version, update_release_page_url}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, register::RegisterAction, room::BasicRoomDetails, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, file_upload_modal::{FilePreviewerAction, FileUploadModalWidgetRefExt}, forward_modal::{ForwardMessageModalAction, ForwardMessageModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, room_filter_input_bar::FilterAction}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RemoteDirectorySearchKind, RemoteDirectorySearchResult, RoomSettingsFetchedAction, TimelineKind, AccountSwitchAction, current_user_id, get_client, submit_async_request, get_timeline_update_sender}, updater::{UpdateCheckOutcome, check_for_updates, load_skipped_update_version, save_skipped_update_version, update_release_page_url}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }, settings::app_preferences::{AppPreferences, AppPreferencesAction, UiZoom}
@@ -123,6 +123,16 @@ script_mod! {
                         invite_modal := Modal {
                             content +: {
                                 invite_modal_inner := InviteModal {}
+                            }
+                        }
+
+                        // A modal to view and edit room settings.
+                        room_settings_modal := Modal {
+                            content +: {
+                                height: Fill,
+                                width: Fill,
+                                align: Align{x: 0.5, y: 0.1},
+                                room_settings_modal_inner := RoomSettingsModal {}
                             }
                         }
                         bot_binding_modal := Modal {
@@ -406,10 +416,21 @@ impl ScriptHook for App {
         });
     }
 
-    /// After initial creation, set the global singleton for the PopupList widget.
+    /// After initial creation, set the global singleton for the PopupList widget
+    /// and start a background thread to accept stdin commands for testing.
     fn on_after_new(&mut self, vm: &mut ScriptVm) {
         vm.with_cx_mut(|cx| {
             crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
+            cx.spawn_thread(|| {
+                use std::io::BufRead;
+                for line in std::io::stdin().lock().lines().flatten() {
+                    let line = line.trim().to_string();
+                    if !line.is_empty() {
+                        log!("[stdin] {}", line);
+                        Cx::post_action(StdinCommandAction(line));
+                    }
+                }
+            });
         });
     }
 }
@@ -1446,6 +1467,116 @@ impl MatchEvent for App {
                     continue;
                 }
                 _ => {}
+            }
+
+            // Handle StdinCommandAction for manual testing.
+            if let Some(StdinCommandAction(cmd)) = action.downcast_ref() {
+                let parts: Vec<&str> = cmd.splitn(2, ' ').collect();
+                match parts[0] {
+                    "open-room-settings" => {
+                        let keyword = parts.get(1).map(|s| s.trim()).unwrap_or("");
+                        let rooms_list = cx.get_global::<RoomsListRef>().clone();
+                        // Try: selected room → first joined room → keyword search
+                        let result = if keyword.is_empty() {
+                            self.app_state.selected_room
+                                .as_ref()
+                                .map(|sr| sr.room_id().to_owned())
+                                .or_else(|| rooms_list.get_first_joined_room_id())
+                        } else {
+                            rooms_list.get_matching_room_items(keyword, 1)
+                                .into_iter().next()
+                                .map(|(rni, _)| rni.room_id().to_owned())
+                        };
+                        if let Some(room_id) = result {
+                            log!("stdin: opening room settings for {}", room_id);
+                            cx.action(RoomSettingsAction::Open { room_id });
+                        } else {
+                            log!("stdin: no room found for '{}'", keyword);
+                        }
+                    }
+                    "close-room-settings" => {
+                        self.ui.modal(cx, ids!(room_settings_modal)).close(cx);
+                    }
+                    _ => log!("stdin: unknown command '{}'", cmd),
+                }
+                continue;
+            }
+
+            // Handle RoomSettingsAction.
+            match action.downcast_ref::<RoomSettingsAction>() {
+                Some(RoomSettingsAction::Open { room_id }) => {
+                    let room_id = room_id.clone();
+                    let rooms_list = cx.get_global::<RoomsListRef>().clone();
+                    let room_name = rooms_list.get_room_name(&room_id)
+                        .map(|rni| rni.to_string())
+                        .unwrap_or_else(|| room_id.as_str().to_string());
+                    let canonical_alias = rooms_list.get_room_canonical_alias(&room_id);
+                    let alias_str = canonical_alias.as_ref().map(|a| a.as_str());
+                    log!("RoomSettingsAction::Open for {} (name: {})", room_id, room_name);
+                    self.ui.room_settings_modal(cx, ids!(room_settings_modal_inner))
+                        .show_settings(cx, room_id.clone(), &room_name, "", alias_str);
+                    self.ui.modal(cx, ids!(room_settings_modal)).open(cx);
+                    submit_async_request(MatrixRequest::FetchRoomSettings { room_id });
+                    continue;
+                }
+                Some(RoomSettingsAction::Close) | Some(RoomSettingsAction::Cancel) => {
+                    self.ui.modal(cx, ids!(room_settings_modal)).close(cx);
+                    continue;
+                }
+                Some(RoomSettingsAction::Save { room_id, room_name, room_topic }) => {
+                    submit_async_request(MatrixRequest::SetRoomName {
+                        room_id: room_id.clone(),
+                        name: room_name.clone(),
+                    });
+                    if !room_topic.is_empty() {
+                        submit_async_request(MatrixRequest::SetRoomTopic {
+                            room_id: room_id.clone(),
+                            topic: room_topic.clone(),
+                        });
+                    }
+                    enqueue_popup_notification("Saving room settings…", PopupKind::Info, Some(3.0));
+                    self.ui.modal(cx, ids!(room_settings_modal)).close(cx);
+                    continue;
+                }
+                Some(RoomSettingsAction::LeaveRoom { room_id }) => {
+                    let room_id = room_id.clone();
+                    let rooms_list = cx.get_global::<RoomsListRef>().clone();
+                    let room_name_id = rooms_list.get_room_name(&room_id)
+                        .unwrap_or_else(|| RoomNameId::from(
+                            (matrix_sdk::RoomDisplayName::Empty, room_id.clone())
+                        ));
+                    cx.action(JoinLeaveRoomModalAction::Open {
+                        kind: JoinLeaveModalKind::LeaveRoom(BasicRoomDetails::Name(room_name_id)),
+                        show_tip: false,
+                    });
+                    self.ui.modal(cx, ids!(room_settings_modal)).close(cx);
+                    continue;
+                }
+                Some(RoomSettingsAction::AddLocalAddress { .. }) => {
+                    enqueue_popup_notification("Address management coming soon", PopupKind::Info, Some(3.0));
+                    continue;
+                }
+                Some(RoomSettingsAction::SetDirectoryPublish { .. }) => {
+                    enqueue_popup_notification("Directory publish coming soon", PopupKind::Info, Some(3.0));
+                    continue;
+                }
+                Some(RoomSettingsAction::SetMediaVisibility { .. }) | Some(RoomSettingsAction::None) => {
+                    continue;
+                }
+                None => {}
+            }
+
+            // Handle RoomSettingsFetchedAction.
+            if let Some(fetched) = action.downcast_ref::<RoomSettingsFetchedAction>() {
+                self.ui.room_settings_modal(cx, ids!(room_settings_modal_inner))
+                    .apply_fetched_settings(cx, fetched.topic.clone(), fetched.is_public);
+                continue;
+            }
+
+            // Handle RoomContextMenuAction::OpenRoomSettings.
+            if let Some(RoomContextMenuAction::OpenRoomSettings(room_id)) = action.downcast_ref::<RoomContextMenuAction>() {
+                cx.action(RoomSettingsAction::Open { room_id: room_id.clone() });
+                continue;
             }
 
             // Handle BotBindingModalAction to open/close the bot binding modal.
