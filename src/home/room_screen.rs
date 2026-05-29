@@ -2086,7 +2086,7 @@ script_mod! {
                 }
 
                 message := HtmlOrPlaintext { }
-                splash_card := Splash { visible: false }
+                splash_card := Splash { }
                 action_buttons := View {
                     visible: false
                     width: Fill

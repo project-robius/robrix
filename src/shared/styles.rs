@@ -270,6 +270,14 @@ script_mod! {
     mod.widgets.SETTINGS_CONTENT_PADDING = 16
     mod.widgets.SETTINGS_BUTTON_HEIGHT = 36
 
+    // The font size used for regular (non-title, non-subsection) text
+    // within any settings screen (e.g., dropdown labels, radio/toggle
+    // labels, inline helper text inside a control).
+    mod.widgets.SETTINGS_REGULAR_FONT_SIZE = 11
+    mod.widgets.SETTINGS_REGULAR_TEXT_STYLE = theme.font_regular {
+        font_size: (mod.widgets.SETTINGS_REGULAR_FONT_SIZE),
+    }
+
     // Text alignment compensation for non-Label widgets (LinkLabel, IconButton)
     // whose internal rendering origin differs from plain Label.
     mod.widgets.LINK_LABEL_LEFT_PAD = 6
