@@ -1139,7 +1139,17 @@ pub enum MatrixRequest {
     DownloadAndSaveFile {
         mxc_uri: OwnedMxcUri,
         app_language: crate::i18n::AppLanguage,
+        update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
+    /// Fetches a media attachment in full and writes it to the given path.
+    DownloadMediaToFile {
+        media_source: MediaSource,
+        save_path: PathBuf,
+        filename: String,
+        update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    },
+    /// Request to cancel an in-progress download.
+    CancelDownload(OwnedMxcUri),
     /// Request to send a message to the given room.
     SendMessage {
         timeline_kind: TimelineKind,
@@ -1813,6 +1823,17 @@ pub fn submit_async_request(req: MatrixRequest) {
     }
 }
 
+/// Spawns a one-off async task on the backend Tokio runtime.
+pub fn spawn_async_task<F>(future: F)
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    let rt_handle = TOKIO_RUNTIME.lock().unwrap().get_or_insert_with(|| {
+        tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
+    }).handle().clone();
+    rt_handle.spawn(future);
+}
+
 fn forward_success_feedback_text(destination_room_id: &RoomId) -> String {
     format!("Forwarded message to {destination_room_id}.")
 }
@@ -1926,6 +1947,8 @@ async fn matrix_worker_task(
     let mut subscribers_own_user_read_receipts: HashMap<TimelineKind, JoinHandle<()>> = HashMap::new();
     // The async tasks that are spawned to subscribe to changes in the pinned events for each room.
     let mut subscribers_pinned_events: HashMap<OwnedRoomId, JoinHandle<()>> = HashMap::new();
+    // In-flight attachment-download tasks keyed by MXC URI, for cancel support.
+    let download_tasks: Arc<Mutex<HashMap<OwnedMxcUri, futures_util::future::AbortHandle>>> = Arc::new(Mutex::new(HashMap::new()));
 
     while let Some(request) = request_receiver.recv().await {
         match request {
@@ -3558,12 +3581,27 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::DownloadAndSaveFile { mxc_uri, app_language } => {
-                let Some(client) = get_client() else { continue };
+            MatrixRequest::DownloadAndSaveFile { mxc_uri, app_language, update_sender } => {
+                let Some(client) = get_client() else {
+                    if let Some(sender) = update_sender.as_ref() {
+                        let _ = sender.send(TimelineUpdate::AttachmentDownloadFinished(
+                            mxc_uri.clone(),
+                            Err("Client unavailable".to_string()),
+                        ));
+                        SignalToUI::set_ui_signal();
+                    }
+                    continue;
+                };
 
                 let _download_task = Handle::current().spawn(async move {
                     use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
                     use crate::i18n::{tr_key, tr_fmt};
+                    let notify_download_finished = |update_sender: &Option<crossbeam_channel::Sender<TimelineUpdate>>, mxc_uri: &OwnedMxcUri, result: Result<(), String>| {
+                        if let Some(sender) = update_sender.as_ref() {
+                            let _ = sender.send(TimelineUpdate::AttachmentDownloadFinished(mxc_uri.clone(), result));
+                            SignalToUI::set_ui_signal();
+                        }
+                    };
 
                     log!("DownloadAndSaveFile: downloading {mxc_uri}");
 
@@ -3585,9 +3623,11 @@ async fn matrix_worker_task(
                         Ok(client) => client,
                         Err(e) => {
                             error!("Failed to build download HTTP client: {e}");
+                            notify_download_finished(&update_sender, &mxc_uri, Err(e.to_string()));
                             return;
                         }
                     };
+                    let mut result = Err("Download failed".to_string());
                     match http_client.get(&download_url).send().await {
                         Ok(resp) if resp.status().is_success() => {
                             // Extract filename from Content-Disposition header or use media_id
@@ -3607,6 +3647,7 @@ async fn matrix_worker_task(
                                     let downloads_dir = crate::app_data_dir().join("downloads");
                                     if let Err(e) = std::fs::create_dir_all(&downloads_dir) {
                                         error!("Failed to create downloads dir: {e:?}");
+                                        notify_download_finished(&update_sender, &mxc_uri, Err(e.to_string()));
                                         return;
                                     }
                                     let dest = downloads_dir.join(&filename);
@@ -3624,6 +3665,7 @@ async fn matrix_worker_task(
                                                 log!("Could not open file: {e:?}");
                                             }
                                             SignalToUI::set_ui_signal();
+                                            result = Ok(());
                                         }
                                         Err(e) => {
                                             error!("DownloadAndSaveFile: write failed: {e:?}");
@@ -3666,12 +3708,100 @@ async fn matrix_worker_task(
                             SignalToUI::set_ui_signal();
                         }
                     }
+                    notify_download_finished(&update_sender, &mxc_uri, result);
                 });
+            }
+
+            MatrixRequest::DownloadMediaToFile { media_source, save_path, filename, update_sender } => {
+                let Some(client) = get_client() else {
+                    if let Some(sender) = update_sender.as_ref() {
+                        let _ = sender.send(TimelineUpdate::AttachmentDownloadFinished(
+                            match &media_source {
+                                MediaSource::Plain(uri) => uri.clone(),
+                                MediaSource::Encrypted(file) => file.url.clone(),
+                            },
+                            Err("Client unavailable".to_string()),
+                        ));
+                        SignalToUI::set_ui_signal();
+                    }
+                    continue;
+                };
+
+                let mxc_uri = match &media_source {
+                    MediaSource::Plain(uri) => uri.clone(),
+                    MediaSource::Encrypted(file) => file.url.clone(),
+                };
+                let (abort_handle, abort_registration) = futures_util::future::AbortHandle::new_pair();
+                let mxc_for_task = mxc_uri.clone();
+                let mxc_for_finished = mxc_uri.clone();
+                let tasks_for_cleanup = download_tasks.clone();
+                let download_future = async move {
+                    let media_request = MediaRequestParameters {
+                        source: media_source,
+                        format: matrix_sdk::media::MediaFormat::File,
+                    };
+                    let result: Result<(), String> = match client.media().get_media_content(&media_request, true).await {
+                        Ok(bytes) => match tokio::fs::write(&save_path, &bytes).await {
+                            Ok(()) => {
+                                log!("Saved downloaded attachment {filename:?} to {}", save_path.display());
+                                enqueue_popup_notification(
+                                    format!("Saved \"{filename}\" to {}", save_path.display()),
+                                    PopupKind::Success,
+                                    Some(5.0),
+                                );
+                                Ok(())
+                            }
+                            Err(e) => {
+                                error!("Failed to write downloaded attachment {filename:?} to {}: {e}", save_path.display());
+                                enqueue_popup_notification(
+                                    format!("Failed to save \"{filename}\": {e}"),
+                                    PopupKind::Error,
+                                    None,
+                                );
+                                Err(e.to_string())
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to fetch media content for attachment {filename:?}: {e}");
+                            enqueue_popup_notification(
+                                format!("Failed to download \"{filename}\": {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
+                            Err(e.to_string())
+                        }
+                    };
+                    if let Some(sender) = update_sender {
+                        let _ = sender.send(TimelineUpdate::AttachmentDownloadFinished(mxc_for_finished, result));
+                        SignalToUI::set_ui_signal();
+                        let reset_sender = sender.clone();
+                        Handle::current().spawn(async move {
+                            tokio::time::sleep(std::time::Duration::from_secs_f64(
+                                crate::shared::attachment_download::DOWNLOAD_RESULT_DURATION_SECS,
+                            )).await;
+                            let _ = reset_sender.send(TimelineUpdate::AttachmentDownloadReset(mxc_for_task));
+                            SignalToUI::set_ui_signal();
+                        });
+                    }
+                };
+
+                let mxc_for_cleanup = mxc_uri.clone();
+                download_tasks.lock().unwrap().insert(mxc_uri, abort_handle);
+                Handle::current().spawn(async move {
+                    let _ = futures_util::future::Abortable::new(download_future, abort_registration).await;
+                    tasks_for_cleanup.lock().unwrap().remove(&mxc_for_cleanup);
+                });
+            }
+
+            MatrixRequest::CancelDownload(mxc) => {
+                if let Some(abort) = download_tasks.lock().unwrap().remove(&mxc) {
+                    abort.abort();
+                }
             }
 
             MatrixRequest::FetchMedia { media_request, on_fetched, destination, update_sender } => {
                 let Some(client) = get_client() else { continue };
-                
+
                 let _fetch_task = Handle::current().spawn(async move {
                     // log!("Sending fetch media request for {media_request:?}...");
                     let res = client.media().get_media_content(&media_request, true).await;
@@ -5262,14 +5392,6 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                         Ok(Err(e)) => {
                             if !is_logout_in_progress() && !is_account_switch_pending() {
                                 error!("Error: room list service loop task ended:\n\t{e:?}");
-                                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                    status: e.to_string(),
-                                });
-                                enqueue_popup_notification(
-                                    format!("Room list service error: {e}"),
-                                    PopupKind::Error,
-                                    None,
-                                );
                             }
                         },
                         Err(e) => {
@@ -5291,14 +5413,6 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                         Ok(Err(e)) => {
                             if !is_logout_in_progress() && !is_account_switch_pending() {
                                 error!("Error: space service loop task ended:\n\t{e:?}");
-                                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                    status: e.to_string(),
-                                });
-                                enqueue_popup_notification(
-                                    format!("Space service error: {e}"),
-                                    PopupKind::Error,
-                                    None,
-                                );
                             }
                         },
                         Err(e) => {

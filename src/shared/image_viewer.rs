@@ -14,7 +14,7 @@ use makepad_widgets::{
 use matrix_sdk_ui::timeline::EventTimelineItem;
 use thiserror::Error;
 use crate::{
-    shared::{avatar::AvatarWidgetExt, timestamp::TimestampWidgetRefExt},
+    shared::{attachment_download::{DownloadableAttachment, save_loaded_attachment, start_attachment_download}, avatar::AvatarWidgetExt, timestamp::TimestampWidgetRefExt},
     sliding_sync::TimelineKind,
 };
 
@@ -331,6 +331,12 @@ script_mod! {
                     icon_walk: Walk{width: 25, height: 25, margin: Inset{bottom: 2}}
                 }
 
+                download_button := mod.widgets.ImageViewerButton {
+                    visible: false
+                    draw_icon +: { svg: (ICON_DOWNLOAD) }
+                    icon_walk: Walk{width: 24, height: 24}
+                }
+
                 close_button := mod.widgets.ImageViewerButton {
                     draw_icon +: { svg: (ICON_CLOSE) }
                     icon_walk: Walk{width: 21, height: 21 }
@@ -487,6 +493,10 @@ struct ImageViewer {
     /// from the continuous `FingerHoverOver` events that fire every frame.
     #[rust] last_mouse_pos: DVec2,
     #[rust] capped_dimension: DVec2,
+    /// Drives the overlay download button: visible when `Some`, and used for save.
+    #[rust] downloadable: Option<DownloadableAttachment>,
+    /// Image bytes from the most recent `LoadState::Loaded`.
+    #[rust] loaded_bytes: Option<Arc<[u8]>>,
 }
 
 impl Widget for ImageViewer {
@@ -824,6 +834,17 @@ impl MatchEvent for ImageViewer {
             }
         }
 
+        if self.view.button(cx, ids!(download_button)).clicked(actions)
+            && let Some(info) = self.downloadable.clone()
+        {
+            was_overlay_button_clicked = true;
+            if let Some(bytes) = self.loaded_bytes.clone() {
+                save_loaded_attachment(info, bytes);
+            } else {
+                start_attachment_download(info, None);
+            }
+        }
+
         // Restart the auto-hide timer if any overlay button was clicked. If the
         // mouse is still over the overlay the hover handler keeps the timer
         // stopped anyway.
@@ -840,10 +861,16 @@ impl MatchEvent for ImageViewer {
                         self.next_frame = cx.new_next_frame();
                         if let Some(metadata) = metadata {
                             self.set_metadata(cx, metadata);
+                        } else {
+                            self.downloadable = None;
+                            self.loaded_bytes = None;
+                            self.view.button(cx, ids!(download_button))
+                                .set_visible(cx, false);
                         }
                         self.show_loading(cx);
                     }
                     LoadState::Loaded(image_bytes) => {
+                        self.loaded_bytes = Some(image_bytes.clone());
                         self.show_loaded(cx, image_bytes);
                     }
                     LoadState::FinishedBackgroundDecoding => {
@@ -896,6 +923,8 @@ impl ImageViewer {
         self.last_mouse_pos = DVec2::default();
         self.receiver = None;
         self.is_loaded = false;
+        self.downloadable = None;
+        self.loaded_bytes = None;
         self.image_container_size = DVec2::new();
         self.ui_overlay_visible = true;
         self.mouse_over_overlay_ui = false;
@@ -912,6 +941,8 @@ impl ImageViewer {
             .view
             .image(cx, ids!(rotated_image_container.rotated_image));
         rotated_image_ref.set_texture(cx, None);
+        self.view.button(cx, ids!(download_button))
+            .set_visible(cx, false);
     }
 
     /// Updates the shader uniforms of the rotated image widget with the current rotation,
@@ -1129,6 +1160,10 @@ impl ImageViewer {
                 .timestamp(cx, ids!(avatar_timestamp_view.timestamp))
                 .set_date_time(cx, timestamp);
         }
+        self.loaded_bytes = None;
+        self.downloadable = metadata.downloadable.clone();
+        self.view.button(cx, ids!(download_button))
+            .set_visible(cx, self.downloadable.is_some());
 
         if let Some((timeline_kind, event_timeline_item)) = &metadata.avatar_parameter {
             let (sender, _) = self.view.avatar(cx, ids!(avatar_timestamp_view.avatar)).set_avatar_and_get_username(
@@ -1171,6 +1206,11 @@ impl ImageViewerRef {
         inner.next_frame = cx.new_next_frame();
         if let Some(metadata) = metadata {
             inner.set_metadata(cx, metadata);
+        } else {
+            inner.downloadable = None;
+            inner.loaded_bytes = None;
+            inner.view.button(cx, ids!(download_button))
+                .set_visible(cx, false);
         }
         inner.show_loading(cx);
     }
@@ -1219,4 +1259,5 @@ pub struct ImageViewerMetaData {
     pub image_name: String,
     // Image size in bytes
     pub image_file_size: u64,
+    pub downloadable: Option<DownloadableAttachment>,
 }

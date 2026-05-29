@@ -6,7 +6,7 @@ use matrix_sdk::{
     ruma::events::room::{message::MessageType, MediaSource},
 };
 
-use crate::{media_cache::{MediaCache, MediaCacheEntry, media_source_mxc}, shared::image_viewer::{ImageViewerAction, ImageViewerError, LoadState}};
+use crate::{media_cache::{MediaCache, MediaCacheEntry}, shared::{attachment_download::media_source_mxc, image_viewer::{ImageViewerAction, ImageViewerError, LoadState}}};
 
 /// Populates the image viewer modal with the given media content.
 ///

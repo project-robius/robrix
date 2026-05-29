@@ -2,15 +2,7 @@ use std::{ops::{Deref, DerefMut}, sync::{Arc, Mutex}};
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use makepad_widgets::{error, SignalToUI};
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, reqwest::StatusCode, ruma::{events::room::MediaSource, OwnedMxcUri}, Error, HttpError};
-use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
-
-/// Returns the underlying `mxc://` URI for a Matrix media source.
-pub fn media_source_mxc(source: &MediaSource) -> &OwnedMxcUri {
-    match source {
-        MediaSource::Plain(mxc_uri) => mxc_uri,
-        MediaSource::Encrypted(file) => &file.url,
-    }
-}
+use crate::{home::room_screen::TimelineUpdate, shared::attachment_download::media_source_mxc, sliding_sync::{self, MatrixRequest}};
 
 /// The value type in the media cache, one per Matrix URI.
 #[derive(Debug, Clone)]
@@ -71,6 +63,10 @@ impl MediaCache {
             cache: HashMap::new(),
             timeline_update_sender,
         }
+    }
+
+    pub fn timeline_update_sender(&self) -> Option<&crossbeam_channel::Sender<TimelineUpdate>> {
+        self.timeline_update_sender.as_ref()
     }
 
     /// Tries to get the media from the cache, or submits an async request to fetch it.

@@ -17,6 +17,7 @@ script_mod! {
     mod.widgets.ICON_ROTATE_CW        = crate_resource("self://resources/icons/rotate_right_fa.svg")
     mod.widgets.ICON_ROTATE_CCW       = crate_resource("self://resources/icons/rotate_left_fa.svg")
     mod.widgets.ICON_COPY             = crate_resource("self://resources/icons/copy.svg")
+    mod.widgets.ICON_DOWNLOAD         = crate_resource("self://resources/icons/download.svg")
     mod.widgets.ICON_EDIT             = crate_resource("self://resources/icons/edit.svg")
     mod.widgets.ICON_EXTERNAL_LINK    = crate_resource("self://resources/icons/external_link.svg")
     mod.widgets.ICON_IMPORT           = crate_resource("self://resources/icons/import.svg") // TODO: FIX
