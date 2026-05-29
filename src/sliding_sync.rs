@@ -4001,6 +4001,39 @@ async fn matrix_worker_task(
                     continue;
                 };
 
+                let max_upload_size = match get_client() {
+                    Some(client) => match client.load_or_fetch_max_upload_size().await {
+                        Ok(max_upload_size) => Some(max_upload_size),
+                        Err(e) => {
+                            warning!("Could not fetch homeserver max upload size for {timeline_kind}: {e:?}; continuing without local size check.");
+                            None
+                        }
+                    },
+                    None => {
+                        warning!("Could not fetch homeserver max upload size for {timeline_kind}: client unavailable; continuing without local size check.");
+                        None
+                    }
+                };
+                if let Some(max_upload_size) = max_upload_size {
+                    let exceeds_max_upload_size = matrix_sdk::ruma::UInt::try_from(file_data.size)
+                        .map(|upload_size| upload_size > max_upload_size)
+                        .unwrap_or(true);
+                    if exceeds_max_upload_size {
+                        let max_size: u64 = max_upload_size.into();
+                        let _ = sender.send(TimelineUpdate::FileUploadError {
+                            error: format!(
+                                "File size ({}) exceeds homeserver upload limit ({}).",
+                                utils::format_file_size(file_data.size),
+                                utils::format_file_size(max_size),
+                            ),
+                            file_data,
+                            retryable: false,
+                        });
+                        SignalToUI::set_ui_signal();
+                        continue;
+                    }
+                }
+
                 // Spawn a new async task to send the attachment.
                 let _send_attachment_task = Handle::current().spawn(async move {
                     use matrix_sdk::attachment::AttachmentConfig;
@@ -4064,6 +4097,7 @@ async fn matrix_worker_task(
                             let _ = sender.send(TimelineUpdate::FileUploadError {
                                 error: format!("{e}"),
                                 file_data: file_data.clone(),
+                                retryable: true,
                             });
                             enqueue_popup_notification(
                                 format!("Failed to upload file: {e}"),
@@ -5134,14 +5168,6 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                                 log!("matrix worker task ended with error due to account switch: {e:?}");
                             } else {
                                 error!("Error: matrix worker task ended:\n\t{e:?}");
-                                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                    status: e.to_string(),
-                                });
-                                enqueue_popup_notification(
-                                    format!("Matrix worker error: {e}"),
-                                    PopupKind::Error,
-                                    None,
-                                );
                             }
                         },
                         Err(e) => {

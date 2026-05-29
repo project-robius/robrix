@@ -16,7 +16,7 @@ use matrix_sdk::{
                     AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent, VideoMessageEventContent
                 }
             },
-            sticker::{StickerEventContent, StickerMediaSource},
+            sticker::StickerEventContent,
         }, matrix_uri::MatrixId, uint
     }
 };
@@ -27,7 +27,7 @@ use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, e
 
 use matrix_sdk_ui::sync_service::State;
 use crate::{
-    app::{AppState, AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{bot_binding_modal::BotBindingModalAction, create_bot_modal::{CreateBotModalAction, CreateBotModalWidgetExt}, delete_bot_modal::{DeleteBotModalAction, DeleteBotModalWidgetExt}, edited_indicator::EditedIndicatorWidgetRefExt, encryption_notice::{EncryptionNoticeWidgetRefExt, first_other_member_display_name}, invite_modal::InviteModalAction, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::{RoomsListAction, RoomsListRef}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, i18n::{AppLanguage, tr_fmt, tr_key}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppState, AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{bot_binding_modal::BotBindingModalAction, create_bot_modal::{CreateBotModalAction, CreateBotModalWidgetExt}, delete_bot_modal::{DeleteBotModalAction, DeleteBotModalWidgetExt}, edited_indicator::EditedIndicatorWidgetRefExt, encryption_notice::{EncryptionNoticeWidgetRefExt, first_other_member_display_name}, invite_modal::InviteModalAction, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::{RoomsListAction, RoomsListRef}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, i18n::{AppLanguage, tr_fmt, tr_key}, media_cache::{MediaCache, MediaCacheEntry, media_source_mxc}, profile::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
@@ -6989,9 +6989,9 @@ impl RoomScreen {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .set_upload_abort_handle(handle);
                 }
-                TimelineUpdate::FileUploadError { error, file_data } => {
+                TimelineUpdate::FileUploadError { error, file_data, retryable } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .show_upload_error(cx, &error, file_data);
+                        .show_upload_error(cx, &error, file_data, retryable);
                 }
                 TimelineUpdate::FileUploadComplete => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
@@ -8672,6 +8672,7 @@ pub enum TimelineUpdate {
     FileUploadError {
         error: String,
         file_data: crate::shared::file_upload_modal::FileData,
+        retryable: bool,
     },
     /// File upload completed successfully.
     FileUploadComplete,
@@ -9745,23 +9746,19 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                if let StickerMediaSource::Plain(owned_mxc_url) = source {
-                    let image_info = info;
-                    let text_or_image_ref = item.text_or_image(cx, ids!(content.message));
-                    let is_image_fully_drawn = populate_image_message_content(
-                        cx,
-                        &text_or_image_ref,
-                        app_language,
-                        Some(Box::new(image_info.clone())),
-                        MediaSource::Plain(owned_mxc_url.clone()),
-                        body,
-                        media_cache,
-                    );
-                    new_drawn_status.content_drawn = is_image_fully_drawn;
-                    (item, false)
-                } else {
-                    (item, true)
-                }
+                let image_info = info;
+                let text_or_image_ref = item.text_or_image(cx, ids!(content.message));
+                let is_image_fully_drawn = populate_image_message_content(
+                    cx,
+                    &text_or_image_ref,
+                    app_language,
+                    Some(Box::new(image_info.clone())),
+                    source.clone().into(),
+                    body,
+                    media_cache,
+                );
+                new_drawn_status.content_drawn = is_image_fully_drawn;
+                (item, false)
             }
         } 
         // Handle messages that have been redacted (deleted).
@@ -10329,12 +10326,10 @@ fn populate_image_message_content(
 
     let mut fully_drawn = false;
 
-    // A closure that fetches and shows the image from the given `mxc_uri`,
-    // marking it as fully drawn if the image was available.
-    let mut fetch_and_show_image_uri = |cx: &mut Cx, mxc_uri: OwnedMxcUri, image_info: Box<ImageInfo>| {
-        match media_cache.try_get_media_or_fetch(&mxc_uri, MEDIA_THUMBNAIL_FORMAT.into()) {
+    let mut fetch_and_show_media_source = |cx: &mut Cx, media_source: MediaSource, image_info: Box<ImageInfo>| {
+        match media_cache.try_get_media_or_fetch(&media_source, MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
-                let show_image_result = text_or_image_ref.show_image(cx, Some(MediaSource::Plain(mxc_uri)),|cx, img| {
+                let show_image_result = text_or_image_ref.show_image(cx, Some(media_source), |cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
@@ -10350,7 +10345,7 @@ fn populate_image_message_content(
             (MediaCacheEntry::Requested, _media_format) => {
                 // If the image is being fetched, we try to show its blurhash.
                 if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
-                    let show_image_result = text_or_image_ref.show_image(cx, Some(MediaSource::Plain(mxc_uri)), |cx, img| {
+                    let show_image_result = text_or_image_ref.show_image(cx, Some(media_source), |cx, img| {
                         let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else {
                             return Err(image_cache::ImageError::EmptyData)
                         };
@@ -10383,7 +10378,7 @@ fn populate_image_message_content(
                             Err(e) => {
                                 error!("Failed to decode blurhash {e:?}");
                                 Err(image_cache::ImageError::EmptyData)
-                            }   
+                            }
                         }
                     });
                     if let Err(e) = show_image_result {
@@ -10400,25 +10395,10 @@ fn populate_image_message_content(
                     return;
                 }
                 text_or_image_ref
-                    .show_text(cx, tr_fmt(app_language, "room_screen.image.failed_to_fetch", &[("body", body), ("mxc_uri", &format!("{mxc_uri:?}"))]));
+                    .show_text(cx, tr_fmt(app_language, "room_screen.image.failed_to_fetch", &[("body", body), ("mxc_uri", &format!("{:?}", media_source_mxc(&media_source)))]));
                 // For now, we consider this as being "complete". In the future, we could support
                 // retrying to fetch thumbnail of the image on a user click/tap.
                 fully_drawn = true;
-            }
-        }
-    };
-
-    let mut fetch_and_show_media_source = |cx: &mut Cx, media_source: MediaSource, image_info: Box<ImageInfo>| {
-        match media_source {
-            MediaSource::Encrypted(encrypted) => {
-                // We consider this as "fully drawn" since we don't yet support encryption.
-                text_or_image_ref.show_text(
-                    cx,
-                    tr_fmt(app_language, "room_screen.image.encrypted_todo", &[("body", body), ("url", &format!("{:?}", encrypted.url))])
-                );
-            },
-            MediaSource::Plain(mxc_uri) => {
-                fetch_and_show_image_uri(cx, mxc_uri, image_info)
             }
         }
     };
