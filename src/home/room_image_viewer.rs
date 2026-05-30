@@ -42,17 +42,14 @@ pub fn populate_matrix_image_modal(
     }
 }
 
-/// Gets image name and file size in bytes from an event timeline item.
+/// Gets the image's file name and size in bytes from an event timeline item.
 pub fn get_image_name_and_filesize(event_tl_item: &EventTimelineItem) -> (String, u64) {
     if let Some(message) = event_tl_item.content().as_message() {
         if let MessageType::Image(image_content) = message.msgtype() {
-            let name = message.body().to_string();
-            let size = image_content
-                .info
-                .as_ref()
+            let name = image_content.filename().to_string();
+            let size = image_content.info.as_ref()
                 .and_then(|info| info.size)
-                .map(u64::from)
-                .unwrap_or(0);
+                .map_or(0, u64::from);
             return (name, size);
         }
     }

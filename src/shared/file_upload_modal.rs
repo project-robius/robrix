@@ -2,11 +2,12 @@
 //!
 //! This modal shows a preview of the file (image preview or file icon)
 //! along with file metadata and upload/cancel buttons.
+//!
+//! Also includes various helper functions to uploading/previewing attachments.
 
 use makepad_widgets::*;
 use ruma::OwnedEventId;
 use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
-use std::path::PathBuf;
 
 use crate::{
     sliding_sync::{MatrixRequest, TimelineKind, submit_async_request},
@@ -135,6 +136,7 @@ script_mod! {
                 width: Fill,
                 height: Fit,
                 is_multiline: true,
+                submit_on_enter: true,
                 empty_text: "Caption"
                 padding: 10,
                 draw_text +: {
@@ -148,7 +150,7 @@ script_mod! {
                 padding: 0,
                 margin: Inset{ left: 4.5}
                 draw_text +: {
-                    text_style: REGULAR_TEXT { font_size: 10 },
+                    text_style: REGULAR_TEXT { font_size: 11 },
                     color: (SMALL_STATE_TEXT_COLOR)
                 }
                 text: ""
@@ -161,10 +163,23 @@ script_mod! {
                 margin: Inset{ left: 4.5}
                 flow: Flow.Right { wrap: true }
                 draw_text +: {
-                    text_style: REGULAR_TEXT { font_size: 10 },
+                    text_style: REGULAR_TEXT { font_size: 11 },
                     color: (COLOR_TEXT_WARNING_NOT_FOUND)
                 }
                 text: "This file is large (over 10 MB). Are you sure you want to upload it to the homeserver?"
+            }
+
+            empty_attachment_warning_label := Label {
+                visible: false,
+                width: Fill,
+                padding: 0,
+                margin: Inset{ left: 4.5}
+                flow: Flow.Right { wrap: true }
+                draw_text +: {
+                    text_style: REGULAR_TEXT { font_size: 11 },
+                    color: (COLOR_TEXT_WARNING_NOT_FOUND)
+                }
+                text: "This file is empty (0 bytes). Are you sure you want to upload it?"
             }
         }
 
@@ -194,8 +209,9 @@ script_mod! {
 /// Metadata describing a file to be uploaded.
 #[derive(Clone, Debug)]
 pub struct FileUploadMetadata {
-    /// The file path on the local filesystem.
-    pub path: PathBuf,
+    /// The local source file. For Android content selections this is a temp
+    /// copy, auto-deleted once this metadata and all its clones drop.
+    pub source: robius_file_picker::LocalFile,
     /// The optional user-editable caption to send with the attachment.
     pub caption: Option<String>,
     /// The MIME type of the file.
@@ -207,9 +223,14 @@ pub struct FileUploadMetadata {
 }
 
 impl FileUploadMetadata {
+    /// The local filesystem path of the file to upload.
+    pub fn path(&self) -> &std::path::Path {
+        self.source.path()
+    }
+
     /// Returns the file name portion of the local path, or a fallback for invalid paths.
     pub fn file_name(&self) -> String {
-        self.path
+        self.path()
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("Unknown file")
@@ -264,9 +285,12 @@ impl Widget for FileUploadModal {
                 Cx::post_action(FilePreviewerAction::Hide);
             }
 
-            // Handle upload button
-            if self.button(cx, ids!(upload_button)).clicked(actions) {
-                let caption = match self.text_input(cx, ids!(caption_input)).text().trim() {
+            // Start upload if upload button is clicked or Enter/Return is pressed in the caption text input.
+            let caption_input = self.text_input(cx, ids!(caption_input));
+            if self.button(cx, ids!(upload_button)).clicked(actions)
+                || caption_input.returned(actions).is_some()
+            {
+                let caption = match caption_input.text().trim() {
                     "" => None,
                     caption => Some(caption.to_string()),
                 };
@@ -321,6 +345,8 @@ impl FileUploadModal {
             .set_text(cx, &format_decimal_file_size(file_data.size));
         self.label(cx, ids!(large_attachment_warning_label))
             .set_visible(cx, file_data.size > LARGE_ATTACHMENT_WARNING_THRESHOLD_BYTES);
+        self.label(cx, ids!(empty_attachment_warning_label))
+            .set_visible(cx, file_data.size == 0);
 
         // Show image preview if this is a displayable image
         let is_image = crate::image_utils::is_displayable_image(&file_data.mime_type);
@@ -431,4 +457,60 @@ impl FileUploadModalRef {
             inner.set_upload(cx, upload);
         }
     }
+}
+
+
+/// Builds an attachment and preview of the given local file that the user picked to upload.
+///
+/// `source` is stored in the returned upload so any temp copy persists
+/// until the upload completes, after which it's auto-cleans up.
+///
+/// This function might block doing filesystem I/O, so it should run on a bg thread.
+pub fn load_selected_file(
+    source: robius_file_picker::LocalFile,
+    timeline_kind: TimelineKind,
+    in_reply_to: Option<OwnedEventId>,
+    #[cfg(feature = "tsp")]
+    sign_with_tsp: bool,
+) -> Result<AttachmentUpload, String> {
+    let path = source.path();
+    let metadata = std::fs::metadata(path).map_err(
+        |e| format!("Unable to access file: {e}")
+    )?;
+    if !metadata.is_file() {
+        return Err("Cannot upload directories or special files".to_string());
+    }
+    let file_size = metadata.len();
+    let mime_type = source
+        .mime_type()
+        .filter(|m| !m.is_empty() && *m != "application/octet-stream")
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| mime_guess::from_path(path).first_or_octet_stream().to_string());
+    let preview_data = if crate::image_utils::is_displayable_image(&mime_type) {
+        match std::fs::read(path) {
+            Ok(data) => Some(std::sync::Arc::new(data)),
+            Err(e) => return Err(format!("Unable to read image preview: {e}")),
+        }
+    } else {
+        None
+    };
+    let name = source.display_name()
+        .filter(|n| !n.is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| path.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "unknown".to_string());
+
+    Ok(AttachmentUpload {
+        timeline_kind,
+        file_data: FileUploadMetadata {
+            source,
+            caption: Some(name),
+            mime_type,
+            preview_data,
+            size: file_size,
+        },
+        in_reply_to,
+        #[cfg(feature = "tsp")]
+        sign_with_tsp,
+    })
 }

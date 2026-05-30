@@ -839,9 +839,9 @@ impl MatchEvent for ImageViewer {
         {
             was_overlay_button_clicked = true;
             if let Some(bytes) = self.loaded_bytes.clone() {
-                save_loaded_attachment(cx, info, bytes);
+                save_loaded_attachment(info, bytes);
             } else {
-                start_attachment_download(cx, info, None);
+                start_attachment_download(info, None);
             }
         }
 
