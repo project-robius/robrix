@@ -254,6 +254,7 @@ pub struct AttachmentUpload {
 
 /// Actions used to show/hide the FileUploadModal.
 #[derive(Clone, Debug, Default)]
+#[allow(clippy::large_enum_variant)]
 pub enum FilePreviewerAction {
     /// No action.
     #[default]
