@@ -1,6 +1,6 @@
 ## Icons
 
-Nearly all icons used in Robrix are obtained from [SVG Repo](https://www.svgrepo.com/). Every icon downloaded from that website is used in accordance with [their licensing terms here]( https://www.svgrepo.com/page/licensing/).
+Nearly all icons used in Robrix are obtained from [SVG Repo](https://www.svgrepo.com/). Every icon downloaded from that website is used in accordance with [their licensing terms here](https://www.svgrepo.com/page/licensing/).
 
 
 Other icons are individually attributed below, as required.
