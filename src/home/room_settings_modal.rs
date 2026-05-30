@@ -1,5 +1,7 @@
 //! A modal dialog for viewing and editing room settings.
 
+use std::path::PathBuf;
+
 use makepad_widgets::*;
 use ruma::OwnedRoomId;
 
@@ -149,7 +151,7 @@ script_mod! {
 
                             room_name_input := RobrixTextInput {
                                 width: Fill
-                                height: 36
+                                height: 44
                                 empty_text: "Room name"
                             }
 
@@ -166,7 +168,7 @@ script_mod! {
 
                             room_topic_input := RobrixTextInput {
                                 width: Fill
-                                height: 72
+                                height: 120
                                 empty_text: "Room topic (optional)"
                                 is_multiline: true
                             }
@@ -535,6 +537,8 @@ pub enum RoomSettingsAction {
     SetMediaVisibility { room_id: OwnedRoomId, always_show: bool },
     /// Leave the room.
     LeaveRoom { room_id: OwnedRoomId },
+    /// Upload a new room avatar from the given local file path.
+    UploadRoomAvatar { room_id: OwnedRoomId, avatar_path: PathBuf },
     #[default]
     None,
 }
@@ -630,6 +634,31 @@ impl WidgetMatchEvent for RoomSettingsModal {
         if self.view.button(cx, ids!(leave_button)).clicked(actions) {
             if let Some(room_id) = self.room_id.clone() {
                 cx.action(RoomSettingsAction::LeaveRoom { room_id });
+            }
+        }
+
+        // Pencil / edit avatar button — open native file picker
+        if self.view.button(cx, ids!(pencil_button)).clicked(actions) {
+            if let Some(room_id) = self.room_id.clone() {
+                #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+                {
+                    use rfd::FileDialog;
+                    if let Some(path) = FileDialog::new()
+                        .add_filter("Image", &["png", "jpg", "jpeg"])
+                        .pick_file()
+                    {
+                        cx.action(RoomSettingsAction::UploadRoomAvatar { room_id, avatar_path: path });
+                    }
+                }
+                #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+                {
+                    use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
+                    enqueue_popup_notification(
+                        "Avatar upload not supported on this platform",
+                        PopupKind::Warning,
+                        Some(4.0),
+                    );
+                }
             }
         }
     }

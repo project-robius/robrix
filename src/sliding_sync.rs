@@ -1288,6 +1288,11 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         topic: String,
     },
+    /// Upload a new avatar image for a room from a local file path.
+    UploadRoomAvatar {
+        room_id: OwnedRoomId,
+        avatar_path: std::path::PathBuf,
+    },
 }
 
 fn add_octos_target_user_id(
@@ -3302,6 +3307,48 @@ async fn matrix_worker_task(
                         match room.set_room_topic(&topic).await {
                             Ok(_) => log!("Room topic set successfully."),
                             Err(e) => error!("Failed to set room topic: {e:?}"),
+                        }
+                    }
+                });
+            }
+
+            MatrixRequest::UploadRoomAvatar { room_id, avatar_path } => {
+                let Some(client) = get_client() else { continue };
+                let _upload_room_avatar_task = Handle::current().spawn(async move {
+                    let data = match std::fs::read(&avatar_path) {
+                        Ok(d) => d,
+                        Err(e) => {
+                            error!("Failed to read room avatar file {:?}: {e}", avatar_path);
+                            enqueue_popup_notification(
+                                "Failed to read image file",
+                                crate::shared::popup_list::PopupKind::Error,
+                                Some(5.0),
+                            );
+                            return;
+                        }
+                    };
+                    let content_type = match avatar_path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).as_deref() {
+                        Some("png") => IMAGE_PNG,
+                        Some("jpg") | Some("jpeg") => IMAGE_JPEG,
+                        _ => IMAGE_PNG,
+                    };
+                    if let Some(room) = client.get_room(&room_id) {
+                        match client.media().upload(&content_type, data, None).await {
+                            Ok(response) => {
+                                let mxc_uri = response.content_uri;
+                                match room.set_avatar_url(&mxc_uri, None).await {
+                                    Ok(_) => {
+                                        log!("Room avatar updated successfully.");
+                                        enqueue_popup_notification(
+                                            "Room avatar updated",
+                                            crate::shared::popup_list::PopupKind::Success,
+                                            Some(3.0),
+                                        );
+                                    }
+                                    Err(e) => error!("Failed to set room avatar URL: {e:?}"),
+                                }
+                            }
+                            Err(e) => error!("Failed to upload room avatar: {e:?}"),
                         }
                     }
                 });

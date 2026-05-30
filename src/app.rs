@@ -1560,6 +1560,14 @@ impl MatchEvent for App {
                     enqueue_popup_notification("Directory publish coming soon", PopupKind::Info, Some(3.0));
                     continue;
                 }
+                Some(RoomSettingsAction::UploadRoomAvatar { room_id, avatar_path }) => {
+                    submit_async_request(MatrixRequest::UploadRoomAvatar {
+                        room_id: room_id.clone(),
+                        avatar_path: avatar_path.clone(),
+                    });
+                    enqueue_popup_notification("Uploading room avatar…", PopupKind::Info, Some(3.0));
+                    continue;
+                }
                 Some(RoomSettingsAction::SetMediaVisibility { .. }) | Some(RoomSettingsAction::None) => {
                     continue;
                 }
