@@ -4,7 +4,7 @@ use mime::Mime;
 use clap::Parser;
 use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
-use futures_util::{future::join_all, pin_mut, StreamExt};
+use futures_util::{future::{Abortable, join_all}, pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
@@ -37,11 +37,11 @@ use hashbrown::{HashMap, HashSet};
 use crate::{
     app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
         add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
-    }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, room_preview_cache::{enqueue_room_preview_update, RoomPreviewUpdate}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
+    }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
-    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
-        avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId}, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}
+    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, shared::{
+        attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId}, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, VecDiff, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -711,14 +711,16 @@ pub enum MatrixRequest {
         destination: Arc<Mutex<crate::home::link_preview::TimestampedCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
-    /// Request to fetch a media attachment/file and save it to the given path.
+    /// Request to download a media attachment/file.
     ///
-    /// Sends a [`TimelineUpdate::AttachmentDownloadFinished`] upon success or failure.
-    DownloadMediaToFile {
+    /// The given callback `on_download_result` is called from the backend
+    /// matrix worker tokio task.
+    /// If the given McxUri was already downloading, the request is rejected
+    /// and `on_download_result` is called with `Cancelled`.
+    DownloadMedia {
         media_source: MediaSource,
-        save_path: PathBuf,
         filename: String,
-        update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+        on_download_result: Box<dyn FnOnce(MediaDownloadResult) + Send + 'static>,
     },
     /// Request to cancel an in-progress download.
     CancelDownload(OwnedMxcUri),
@@ -730,6 +732,16 @@ pub fn submit_async_request(req: MatrixRequest) {
         sender.send(req)
             .expect("BUG: matrix worker task receiver has died!");
     }
+}
+
+/// A media download in flight, tracked by MXC so duplicates are rejected and
+/// the fetch can be cancelled.
+struct ActiveDownload {
+    /// Aborts the underlying fetch when [`MatrixRequest::CancelDownload`] arrives.
+    abort_handle: futures_util::future::AbortHandle,
+    /// Delivers the result to the requester. Whichever of the completion or
+    /// cancellation path runs removes it from the map and calls it.
+    on_download_result: Box<dyn FnOnce(MediaDownloadResult) + Send + 'static>,
 }
 
 /// Spawns a one-off async task on the backend Tokio runtime.
@@ -769,8 +781,9 @@ async fn matrix_worker_task(
     let mut subscribers_own_user_read_receipts: HashMap<TimelineKind, JoinHandle<()>> = HashMap::new();
     // The async tasks that are spawned to subscribe to changes in the pinned events for each room.
     let mut subscribers_pinned_events: HashMap<OwnedRoomId, JoinHandle<()>> = HashMap::new();
-    // Abort handles for in-progress download tasks, keyed by MxcUri.
-    let download_tasks: Arc<Mutex<HashMap<OwnedMxcUri, futures_util::future::AbortHandle>>>
+    // The async tasks spawned to handle media downloads, keyed by MxcUri.
+    // Here we intentionally use a `std` Mutex, not async, since it's cheaper under no contention.
+    let download_tasks: Arc<Mutex<HashMap<OwnedMxcUri, ActiveDownload>>>
         = Arc::new(Mutex::new(HashMap::new()));
 
     while let Some(request) = request_receiver.recv().await {
@@ -1871,7 +1884,7 @@ async fn matrix_worker_task(
                             .unwrap_or(mime::APPLICATION_OCTET_STREAM);
 
                         let image_dimensions = if content_type.type_() == mime::IMAGE {
-                            image::ImageReader::open(&file_data.path)
+                            image::ImageReader::open(file_data.path())
                                 .ok()
                                 .and_then(|reader| reader.with_guessed_format().ok())
                                 .and_then(|reader| reader.into_dimensions().ok())
@@ -1909,7 +1922,7 @@ async fn matrix_worker_task(
                         };
 
                         let send_request = timeline.send_attachment(
-                            file_data.path.clone(),
+                            file_data.path().to_path_buf(),
                             content_type,
                             TimelineAttachmentConfig {
                                 info: Some(info),
@@ -1962,7 +1975,7 @@ async fn matrix_worker_task(
                         SignalToUI::set_ui_signal();
                     };
 
-                    match futures_util::future::Abortable::new(upload_future, abort_registration).await {
+                    match Abortable::new(upload_future, abort_registration).await {
                         Ok(()) => {}
                         Err(_) => {
                             log!("Attachment upload task {upload_id:?} for {monitor_timeline_kind} was aborted.");
@@ -2185,78 +2198,66 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::DownloadMediaToFile { media_source, save_path, filename, update_sender } => {
-                let Some(client) = get_client() else { continue };
-                let mxc_uri = match &media_source {
-                    MediaSource::Plain(uri) => uri.clone(),
-                    MediaSource::Encrypted(file) => file.url.clone(),
+            MatrixRequest::DownloadMedia { media_source, filename, on_download_result } => {
+                use crate::shared::attachment_download::{enqueue_already_downloading_notification, MediaDownloadResult};
+            
+                // Note: in this code block, we always want to call `on_download_result` with any error.
+
+                let Some(client) = get_client() else {
+                    on_download_result(MediaDownloadResult::Failed("Matrix client is not available".to_string()));
+                    continue;
                 };
+                let mxc_uri = media_source_mxc(&media_source).clone();
+                // Only allow a given MxcUri to be downloaded once at a time.
+                if download_tasks.lock().unwrap().contains_key(&mxc_uri) {
+                    enqueue_already_downloading_notification();
+                    on_download_result(MediaDownloadResult::Cancelled);
+                    continue;
+                }
                 let (abort_handle, abort_registration) = futures_util::future::AbortHandle::new_pair();
-                let mxc_for_task = mxc_uri.clone();
-                let mxc_for_finished = mxc_uri.clone();
-                let tasks_for_cleanup = download_tasks.clone();
+                let download_tasks2 = download_tasks.clone();
+                let mxc_uri2 = mxc_uri.clone();
                 let download_future = async move {
                     let media_request = MediaRequestParameters {
                         source: media_source,
                         format: matrix_sdk::media::MediaFormat::File,
                     };
-                    let result: Result<(), String> = match client.media().get_media_content(&media_request, true).await {
-                        Ok(bytes) => match tokio::fs::write(&save_path, &bytes).await {
-                            Ok(()) => {
-                                log!("Saved downloaded attachment {filename:?} to {}", save_path.display());
-                                enqueue_popup_notification(
-                                    format!("Downloaded \"{filename}\"."),
-                                    PopupKind::Success,
-                                    Some(crate::shared::attachment_download::DOWNLOAD_RESULT_DURATION_SECS),
-                                );
-                                Ok(())
+                    let res = match client.media().get_media_content(&media_request, true).await {
+                            Ok(bytes) => {
+                                log!("Downloaded attachment {filename:?} ({} bytes) to memory", bytes.len());
+                                Ok(bytes)
                             }
                             Err(e) => {
-                                error!("Failed to write downloaded attachment {filename:?} to {}: {e}", save_path.display());
-                                enqueue_popup_notification(
-                                    format!("Failed to save \"{filename}\": {e}"),
-                                    PopupKind::Error,
-                                    None,
-                                );
+                                error!("Failed to fetch media content for attachment {filename:?}: {e}");
                                 Err(e.to_string())
                             }
-                        }
-                        Err(e) => {
-                            error!("Failed to fetch media content for attachment {filename:?}: {e}");
-                            enqueue_popup_notification(
-                                format!("Failed to download \"{filename}\": {e}"),
-                                PopupKind::Error,
-                                None,
-                            );
-                            Err(e.to_string())
-                        }
-                    };
-                    if let Some(sender) = update_sender {
-                        let _ = sender.send(TimelineUpdate::AttachmentDownloadFinished(mxc_for_finished, result));
-                        SignalToUI::set_ui_signal();
-                        // Drop the success/failure indicator after a short delay.
-                        let reset_sender = sender.clone();
-                        Handle::current().spawn(async move {
-                            tokio::time::sleep(std::time::Duration::from_secs_f64(
-                                crate::shared::attachment_download::DOWNLOAD_RESULT_DURATION_SECS,
-                            )).await;
-                            let _ = reset_sender.send(TimelineUpdate::AttachmentDownloadReset(mxc_for_task));
-                            SignalToUI::set_ui_signal();
+                        };
+                    if let Some(active) = download_tasks2.lock().unwrap().remove(&mxc_uri2) {
+                        (active.on_download_result)(match res {
+                            Ok(bytes) => MediaDownloadResult::Downloaded(bytes),
+                            Err(e) => MediaDownloadResult::Failed(e),
                         });
                     }
                 };
-
-                let mxc_for_cleanup = mxc_uri.clone();
-                download_tasks.lock().unwrap().insert(mxc_uri, abort_handle);
+                
+                let download_tasks3 = download_tasks.clone();
+                let mxc_uri3 = mxc_uri.clone();
+                download_tasks.lock().unwrap().insert(
+                    mxc_uri,
+                    ActiveDownload { abort_handle, on_download_result },
+                );
                 Handle::current().spawn(async move {
-                    let _ = futures_util::future::Abortable::new(download_future, abort_registration).await;
-                    tasks_for_cleanup.lock().unwrap().remove(&mxc_for_cleanup);
+                    if Abortable::new(download_future, abort_registration).await.is_err() {
+                        if let Some(active) = download_tasks3.lock().unwrap().remove(&mxc_uri3) {
+                            (active.on_download_result)(MediaDownloadResult::Cancelled);
+                        }
+                    }
                 });
             }
 
             MatrixRequest::CancelDownload(mxc) => {
-                if let Some(abort) = download_tasks.lock().unwrap().remove(&mxc) {
-                    abort.abort();
+                if let Some(active) = download_tasks.lock().unwrap().get(&mxc) {
+                    active.abort_handle.abort();
                 }
             }
 
@@ -2907,7 +2908,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
         loop {
             tokio::select! {
-                // If we were notified but it got canceled, check the TOKEN_EXPIRED bool.
+                // If we were notified but it got cancelled, check the TOKEN_EXPIRED bool.
                 _ = TOKEN_EXPIRED_NOTIFY.notified() => {
                     if !TOKEN_EXPIRED.load(Ordering::Acquire) {
                         continue;

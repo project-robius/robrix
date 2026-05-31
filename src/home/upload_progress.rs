@@ -89,6 +89,7 @@ script_mod! {
 
 /// The current state of the upload view.
 #[derive(Clone, Debug, Default)]
+#[allow(clippy::large_enum_variant)]
 pub enum UploadViewState {
     /// Normal state - upload in progress or ready.
     #[default]

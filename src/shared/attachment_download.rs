@@ -1,12 +1,27 @@
 //! Download a Matrix media attachment and save it to storage.
 
-use std::sync::Arc;
-use makepad_widgets::Cx;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-use makepad_widgets::CxOsApi;
+use std::{sync::Arc, time::Duration};
+use makepad_widgets::SignalToUI;
 use matrix_sdk::ruma::{OwnedMxcUri, events::room::MediaSource};
-use crate::home::room_screen::TimelineUpdate;
-use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
+use crate::{
+    home::room_screen::TimelineUpdate,
+    shared::popup_list::{PopupKind, enqueue_popup_notification},
+    sliding_sync::{MatrixRequest, submit_async_request},
+};
+
+type TimelineUpdateSenderOption = Option<crossbeam_channel::Sender<TimelineUpdate>>;
+
+/// The result of a download request.
+pub enum MediaDownloadResult {
+    Downloaded(Vec<u8>),
+    Failed(String),
+    Cancelled,
+}
+
+pub fn enqueue_already_downloading_notification() {
+    const ALREADY_DOWNLOADING_MESSAGE: &str = "This media is already being downloaded.";
+    enqueue_popup_notification(ALREADY_DOWNLOADING_MESSAGE, PopupKind::Warning, Some(4.0));
+}
 
 /// The mxc URI inside any media source, whether plain or encrypted.
 pub fn media_source_mxc(source: &MediaSource) -> &OwnedMxcUri {
@@ -85,98 +100,135 @@ impl DownloadKind {
     }
 }
 
-/// Opens the rfd save dialog with sensible defaults for `info`.
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-fn build_save_dialog(info: &DownloadableAttachment) -> rfd::AsyncFileDialog {
-    let dialog = rfd::AsyncFileDialog::new().set_file_name(&info.filename);
-    if let Some(user_dirs) = robius_directories::UserDirs::new() {
-        let dir = user_dirs.download_dir()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| user_dirs.home_dir().to_path_buf());
-        dialog.set_directory(dir)
-    } else {
-        dialog
+/// Fetches the attachment bytes via the matrix worker, then shows the native
+/// save picker dialog with those bytes.
+///
+/// This *does* use the matrix SDK's media cache, so there's a good chance
+/// that an attachment, especially small ones, will be instantly served from the cache.
+///
+/// The download indicator stays in the "in-progress" state until everything is done.
+/// We transition to "success" only if the file is saved, "idle" if the user cancels,
+/// and "failure" if the download fails or write to storage fails.
+pub fn start_attachment_download(
+    info: DownloadableAttachment,
+    update_sender: TimelineUpdateSenderOption,
+) {
+    let mxc = media_source_mxc(&info.media_source).clone();
+    let filename = info.filename.clone();
+    submit_async_request(MatrixRequest::DownloadMedia {
+        media_source: info.media_source,
+        filename: info.filename,
+        on_download_result: Box::new(move |result| match result {
+            MediaDownloadResult::Downloaded(bytes) => {
+                show_save_dialog(filename, bytes, Some(mxc), update_sender)
+            }
+            MediaDownloadResult::Failed(e) => {
+                enqueue_popup_notification(
+                    format!("Failed to download \"{filename}\": {e}"),
+                    PopupKind::Error,
+                    None,
+                );
+                finish_download_indicator(&update_sender, Some(&mxc), DownloadOutcome::Failed);
+            }
+            MediaDownloadResult::Cancelled => {
+                finish_download_indicator(&update_sender, Some(&mxc), DownloadOutcome::Cancelled);
+            }
+        }),
+    });
+}
+
+/// Saves an attachment already in memory directly to storage, without showing any dialog.
+pub fn save_loaded_attachment(info: DownloadableAttachment, bytes: Arc<[u8]>) {
+    show_save_dialog(info.filename, bytes, None, None);
+}
+
+enum DownloadOutcome {
+    Succeeded,
+    Failed,
+    /// The user dismissed the save dialog; return the indicator to idle.
+    Cancelled,
+}
+
+/// Shows the native save-file dialog and writes `data` to the user-chosen location.
+fn show_save_dialog<D: AsRef<[u8]> + Send + 'static>(
+    filename: String,
+    data: D,
+    mxc: Option<OwnedMxcUri>,
+    update_sender: TimelineUpdateSenderOption,
+) {
+    use robius_file_picker::{PickedFile, FileDialog, StartLocation};
+    let filename2 = filename.clone();
+    let mxc2 = mxc.clone();
+    let sender2 = update_sender.clone();
+    let on_done = move |result: robius_file_picker::Result<Option<PickedFile>>| {
+        match result {
+            Ok(Some(_)) => {
+                enqueue_popup_notification(
+                    format!("Downloaded \"{filename2}\"."),
+                    PopupKind::Success,
+                    Some(DOWNLOAD_RESULT_DURATION_SECS),
+                );
+                finish_download_indicator(&update_sender, mxc.as_ref(), DownloadOutcome::Succeeded);
+            }
+            // User dismissed the save dialog. The bytes are discarded, but the
+            // matrix media cache makes a re-download effectively instant, so we
+            // just return the indicator to idle without a popup.
+            Ok(None) => {
+                finish_download_indicator(&update_sender, mxc.as_ref(), DownloadOutcome::Cancelled);
+            }
+            Err(e) => {
+                enqueue_popup_notification(
+                    format!("Failed to save \"{filename2}\": {e}"),
+                    PopupKind::Error,
+                    None,
+                );
+                finish_download_indicator(&update_sender, mxc.as_ref(), DownloadOutcome::Failed);
+            }
+        }
+    };
+
+    let res = FileDialog::new()
+        .set_file_name(&filename)
+        .set_start_location(StartLocation::Downloads)
+        .save_data(data, on_done);
+    if let Err(e) = res {
+        enqueue_popup_notification(
+            format!("Failed to open save dialog: {e}"),
+            PopupKind::Error,
+            None,
+        );
+        finish_download_indicator(&sender2, mxc2.as_ref(), DownloadOutcome::Failed);
     }
 }
 
-/// Opens the save dialog, then submits a request to fetch and write the file.
-///
-/// If `update_sender` is provided, it will be used to send progress updates to a timeline.
-///
-/// The save dialog runs on a newly-spawned OS-native thread (not a tokio task)
-/// because `rfd` requires it, at least on macOS.
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-pub fn start_attachment_download(
-    cx: &mut Cx,
-    info: DownloadableAttachment,
-    update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+/// Handles the completion of a download, whether success, failure, or cancelled.
+fn finish_download_indicator(
+    update_sender: &TimelineUpdateSenderOption,
+    mxc: Option<&OwnedMxcUri>,
+    outcome: DownloadOutcome,
 ) {
-    use crate::sliding_sync::{MatrixRequest, submit_async_request};
-
-    let dialog_task = build_save_dialog(&info).save_file();
-    cx.spawn_thread(move || {
-        match futures::executor::block_on(dialog_task) {
-            // If Some, the user chose a valid location from the file dialog.
-            Some(handle) => {
-                submit_async_request(MatrixRequest::DownloadMediaToFile {
-                    media_source: info.media_source,
-                    save_path: handle.path().to_path_buf(),
-                    filename: info.filename,
-                    update_sender,
-                });
-            }
-            // If None, the user cancelled the file dialog.
-            None => {
-                if let Some(sender) = update_sender {
-                    let mxc = media_source_mxc(&info.media_source).clone();
-                    let _ = sender.send(TimelineUpdate::AttachmentDownloadReset(mxc));
-                    makepad_widgets::SignalToUI::set_ui_signal();
-                }
-            }
+    let Some(sender) = update_sender.as_ref() else { return };
+    let Some(mxc) = mxc else { return };
+    match outcome {
+        DownloadOutcome::Cancelled => {
+            let _ = sender.send(TimelineUpdate::AttachmentDownloadReset(mxc.clone()));
+            SignalToUI::set_ui_signal();
         }
-    });
-}
-
-/// Saves an attachment already in memory directly to storage.
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-pub fn save_loaded_attachment(cx: &mut Cx, info: DownloadableAttachment, bytes: Arc<[u8]>) {
-    let dialog_task = build_save_dialog(&info).save_file();
-    cx.spawn_thread(move || {
-        let Some(handle) = futures::executor::block_on(dialog_task) else { return };
-        let save_path = handle.path().to_path_buf();
-        match std::fs::write(&save_path, &bytes[..]) {
-            Ok(()) => enqueue_popup_notification(
-                format!("Downloaded \"{}\".", info.filename),
-                PopupKind::Success,
-                Some(5.0),
-            ),
-            Err(e) => enqueue_popup_notification(
-                format!("Failed to save \"{}\": {e}", info.filename),
-                PopupKind::Error,
-                None,
-            ),
+        DownloadOutcome::Succeeded | DownloadOutcome::Failed => {
+            let result = match outcome {
+                DownloadOutcome::Succeeded => Ok(()),
+                _ => Err(String::new()),
+            };
+            let _ = sender.send(TimelineUpdate::AttachmentDownloadFinished(mxc.clone(), result));
+            SignalToUI::set_ui_signal();
+            // Clear the success/failure display after a short delay.
+            let sender = sender.clone();
+            let mxc = mxc.clone();
+            crate::sliding_sync::spawn_async_task(async move {
+                tokio::time::sleep(Duration::from_secs_f64(DOWNLOAD_RESULT_DURATION_SECS)).await;
+                let _ = sender.send(TimelineUpdate::AttachmentDownloadReset(mxc));
+                SignalToUI::set_ui_signal();
+            });
         }
-    });
-}
-
-#[cfg(any(target_os = "ios", target_os = "android"))]
-pub fn start_attachment_download(
-    _cx: &mut Cx,
-    _info: DownloadableAttachment,
-    _update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
-) {
-    enqueue_popup_notification(
-        "Saving attachments is not yet supported on mobile.",
-        PopupKind::Error,
-        Some(5.0),
-    );
-}
-
-#[cfg(any(target_os = "ios", target_os = "android"))]
-pub fn save_loaded_attachment(_cx: &mut Cx, _info: DownloadableAttachment, _bytes: Arc<[u8]>) {
-    enqueue_popup_notification(
-        "Saving attachments is not yet supported on mobile.",
-        PopupKind::Error,
-        Some(5.0),
-    );
+    }
 }
