@@ -390,10 +390,16 @@ impl LinkPreviewRef {
             title_link.url = link.to_string();
         }
         let text_or_image_ref = view_ref.text_or_image(cx, ids!(image));
+        let image_view = view_ref.view(cx, ids!(image_view));
         text_or_image_ref.show_default_image(cx);
         let link_preview_data = match link_preview_cache_entry {
             LinkPreviewCacheEntry::LoadedLinkPreview(link_preview_data) => link_preview_data,
-            LinkPreviewCacheEntry::Failed(_) => return (view_ref, true),
+            LinkPreviewCacheEntry::Failed(_) => {
+                // No preview could be fetched — collapse the image box and keep a clean
+                // text-only card (just the URL) instead of a broken-image placeholder.
+                image_view.set_visible(cx, false);
+                return (view_ref, true);
+            }
             LinkPreviewCacheEntry::Requested => return (view_ref, false),
         };
         if let Some(url) = &link_preview_data.url {
@@ -430,6 +436,7 @@ impl LinkPreviewRef {
 
         // Handle image through closure
         if let Some(image) = &link_preview_data.image {
+            image_view.set_visible(cx, true);
             let mut image_info = ImageInfo::default();
             image_info.mimetype = link_preview_data.image_type.clone();
             image_info.size = link_preview_data.image_size;
@@ -446,6 +453,10 @@ impl LinkPreviewRef {
                 "",
                 media_cache,
             );
+        } else {
+            // No og:image in the preview metadata — render a simple text-only card
+            // (title + description) instead of leaving a placeholder image box.
+            image_view.set_visible(cx, false);
         }
 
         (view_ref, fully_drawn)

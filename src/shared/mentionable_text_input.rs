@@ -229,6 +229,35 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
 ];
 
+/// agent-chat demo workflow commands. Unlike the bot commands above, robrix2 does
+/// NOT handle these on submit — they are plain text that the `wf_coordinator` agent
+/// interprets. They exist only as a `/` autocomplete convenience, and are offered
+/// only when a `wf_coordinator` agent is present in the room (see the workflow gate
+/// in `update_slash_command_list`). `needs_args` is unused for these (they always
+/// take the insert path in `on_slash_command_selected`).
+const WORKFLOW_SLASH_COMMANDS: &[SlashCommand] = &[
+    SlashCommand {
+        command: "/create-issue",
+        description_key: "slash_command.create_issue.description",
+        needs_args: true,
+    },
+    SlashCommand {
+        command: "/go",
+        description_key: "slash_command.go.description",
+        needs_args: true,
+    },
+    SlashCommand {
+        command: "/review",
+        description_key: "slash_command.review.description",
+        needs_args: true,
+    },
+    SlashCommand {
+        command: "/status",
+        description_key: "slash_command.status.description",
+        needs_args: false,
+    },
+];
+
 pub(crate) fn is_management_bot_room(
     app_service_enabled: bool,
     is_direct_room: bool,
@@ -281,16 +310,32 @@ fn find_slash_command_trigger_position(text: &str, cursor_pos: usize) -> Option<
     let line_start = current_segment.rfind('\n').map(|idx| idx + 1).unwrap_or(0);
     let line = text.get(line_start..cursor_pos)?;
 
-    if !line.starts_with('/') || line[1..].chars().any(char::is_whitespace) {
+    // The command being typed is the last whitespace-delimited token before the cursor.
+    let token_start = line.rfind(char::is_whitespace).map_or(0, |idx| idx + 1);
+    let token = &line[token_start..];
+    if !token.starts_with('/') {
         return None;
     }
 
-    Some(line_start)
+    // Trigger when the command is at the start of the line (`/cmd`) OR follows only a
+    // leading run of @mentions — the demo pattern `@wf_coordinator /create-issue`.
+    // Anything else before the command (plain words, paths like `see /tmp`) must NOT
+    // trigger the popup. (Mentions with spaces in their display text aren't supported as
+    // a prefix here; type the command at line start in that case.)
+    let prefix = &line[..token_start];
+    if !prefix.split_whitespace().all(|word| word.starts_with('@')) {
+        return None;
+    }
+
+    Some(line_start + token_start)
 }
 
-fn matching_slash_commands(search_text: &str) -> Vec<SlashCommand> {
+/// Prefix-filter a slash-command set by the typed query (the `/` and surrounding
+/// whitespace are ignored). Lets the popup combine the bot command set and the
+/// workflow command set depending on which are enabled for the room.
+fn matching_slash_commands_in(commands: &[SlashCommand], search_text: &str) -> Vec<SlashCommand> {
     let query = search_text.trim().trim_start_matches('/').to_ascii_lowercase();
-    SLASH_COMMANDS
+    commands
         .iter()
         .copied()
         .filter(|command| {
@@ -845,6 +890,22 @@ script_mod! {
         }
     }
 
+    // Non-selectable group label shown above each slash-command section when more than
+    // one command set is active (e.g. bot commands + workflow commands in the same room).
+    mod.widgets.SlashCommandSectionHeader = View {
+        width: Fill
+        height: Fit
+        margin: Inset{left: 4 right: 4 top: 6 bottom: 0}
+        padding: Inset{left: 12 right: 12 top: 2 bottom: 2}
+        section_label := Label {
+            height: Fit
+            draw_text +: {
+                color: #999
+                text_style: BOLD_TEXT {font_size: 9.0}
+            }
+        }
+    }
+
     // Template for loading indicator when members are being fetched
     mod.widgets.LoadingIndicator = View {
         width: Fill
@@ -968,6 +1029,7 @@ script_mod! {
         user_list_item: mod.widgets.UserListItem {}
         room_mention_list_item: mod.widgets.RoomMentionListItem {}
         slash_command_list_item: mod.widgets.SlashCommandListItem {}
+        slash_command_section_header: mod.widgets.SlashCommandSectionHeader {}
         loading_indicator: mod.widgets.LoadingIndicator {}
         no_matches_indicator: mod.widgets.NoMatchesIndicator {}
     }
@@ -1011,6 +1073,9 @@ pub struct MentionableTextInput {
     /// Template for slash command list items
     #[live]
     slash_command_list_item: Option<LivePtr>,
+    /// Template for a non-selectable slash-command section header
+    #[live]
+    slash_command_section_header: Option<LivePtr>,
     /// Template for loading indicator
     #[live]
     loading_indicator: Option<LivePtr>,
@@ -1106,20 +1171,31 @@ impl Widget for MentionableTextInput {
             modifiers,
             ..
         }) = event {
-            let send_on_enter = scope
-                .data
-                .get::<crate::app::AppState>()
-                .map(|app_state| app_state.app_prefs.send_on_enter)
-                .unwrap_or(true);
-            let should_submit = modifiers.logo
-                || modifiers.control
-                || send_on_enter && !modifiers.shift && !modifiers.alt;
-            if should_submit {
-                let text_input = self.cmd_text_input.text_input(cx, ids!(text_input));
-                let uid = text_input.widget_uid();
-                let text = text_input.text();
-                cx.widget_action(uid, makepad_widgets::text_input::TextInputAction::Returned(text, *modifiers));
-                return;
+            // When the autocomplete popup (mention OR slash command) is open AND a row
+            // is focused, a plain Enter must SELECT that row — which cmd_text_input
+            // .handle_event does below — instead of sending the message. Without this
+            // guard the send intercept fires first and the popup item can never be picked
+            // with Enter. We also require a focused selectable item so that a popup that
+            // is merely open-but-empty (loading / no matches) still lets Enter send.
+            // A Cmd/Ctrl modifier always force-sends, even with the popup open.
+            let popup_selecting = self.cmd_text_input.view(cx, ids!(popup)).visible()
+                && self.cmd_text_input.keyboard_focus_index().is_some();
+            let force_send = modifiers.logo || modifiers.control;
+            if !(popup_selecting && !force_send) {
+                let send_on_enter = scope
+                    .data
+                    .get::<crate::app::AppState>()
+                    .map(|app_state| app_state.app_prefs.send_on_enter)
+                    .unwrap_or(true);
+                let should_submit = force_send
+                    || send_on_enter && !modifiers.shift && !modifiers.alt;
+                if should_submit {
+                    let text_input = self.cmd_text_input.text_input(cx, ids!(text_input));
+                    let uid = text_input.widget_uid();
+                    let text = text_input.text();
+                    cx.widget_action(uid, makepad_widgets::text_input::TextInputAction::Returned(text, *modifiers));
+                    return;
+                }
             }
         }
 
@@ -1411,9 +1487,9 @@ impl MentionableTextInput {
         self.set_popup_header_text(cx, MENTION_POPUP_HEADER_TEXT);
     }
 
-    fn set_popup_header_for_slash_commands(&mut self, cx: &mut Cx, scope: &mut Scope) {
+    fn set_popup_header_for_slash_commands(&mut self, cx: &mut Cx, scope: &mut Scope, header_key: &str) {
         let app_language = Self::current_app_language(scope);
-        self.set_popup_header_text(cx, tr_key(app_language, "slash_command.header"));
+        self.set_popup_header_text(cx, tr_key(app_language, header_key));
     }
 
     fn active_search_text(&self) -> Option<String> {
@@ -1715,13 +1791,25 @@ impl MentionableTextInput {
         items_added
     }
 
+    /// Add a non-selectable group label (e.g. "Bot Commands" / "Workflow Commands") above
+    /// a slash-command section. Not added to the selectable set, so keyboard nav skips it.
+    fn add_slash_command_section_header(&mut self, cx: &mut Cx, app_language: AppLanguage, title_key: &str) {
+        let Some(ptr) = self.slash_command_section_header else {
+            return;
+        };
+        let item = crate::widget_ref_from_live_ptr(cx, Some(ptr));
+        item.label(cx, ids!(section_label))
+            .set_text(cx, tr_key(app_language, title_key));
+        self.cmd_text_input.add_unselectable_item(cx, item);
+    }
+
     fn update_slash_command_list(&mut self, cx: &mut Cx, scope: &mut Scope, search_text: &str) {
         let room_props = scope
             .props
             .get::<RoomScreenProps>()
             .expect("RoomScreenProps should be available in scope for MentionableTextInput");
 
-        let enabled = bot_command_popup_enabled(
+        let bot_enabled = bot_command_popup_enabled(
             room_props.app_service_enabled,
             room_props.is_direct_room,
             room_props.has_persisted_management_binding,
@@ -1729,7 +1817,17 @@ impl MentionableTextInput {
             room_props.resolved_parent_bot_user_id.as_ref(),
             &room_props.known_bot_user_ids,
         );
-        if !enabled {
+        // agent-chat demo: offer the workflow `/` commands when a `wf_coordinator`
+        // agent is in the room (robrix2 has no built-in "agent-chat room" concept).
+        // Match on display name OR localpart so it works regardless of the `ac_` MXID
+        // prefix and whatever friendly display name the agent carries.
+        let workflow_enabled = room_props.room_members.as_ref().is_some_and(|members| {
+            members.iter().any(|member| {
+                member.display_name() == Some("wf_coordinator")
+                    || member.user_id().localpart().contains("wf_coordinator")
+            })
+        });
+        if !bot_enabled && !workflow_enabled {
             if self.is_slash_command_popup_active() {
                 self.close_mention_popup(cx);
             }
@@ -1744,25 +1842,66 @@ impl MentionableTextInput {
 
         self.cmd_text_input.clear_items(cx);
         self.cmd_text_input.reset_list_scroll(cx);
-        self.set_popup_header_for_slash_commands(cx, scope);
 
-        let commands = matching_slash_commands(search_text);
-        if commands.is_empty() {
+        // Filter each enabled command set separately so they render as labelled,
+        // visually-separated sections (a room like octos-public has BOTH Octos bots and
+        // the wf_coordinator agent, so both sets are active).
+        let bot_matches = if bot_enabled {
+            matching_slash_commands_in(SLASH_COMMANDS, search_text)
+        } else {
+            Vec::new()
+        };
+        let workflow_matches = if workflow_enabled {
+            matching_slash_commands_in(WORKFLOW_SLASH_COMMANDS, search_text)
+        } else {
+            Vec::new()
+        };
+        if bot_matches.is_empty() && workflow_matches.is_empty() {
             self.close_mention_popup(cx);
             return;
         }
 
+        // In-list section headers appear only when BOTH groups are present; with a single
+        // group the popup's top header already labels it (no redundant section row).
+        let show_sections = !bot_matches.is_empty() && !workflow_matches.is_empty();
+        let header_key = if show_sections {
+            "slash_command.combined_header"
+        } else if !bot_matches.is_empty() {
+            "slash_command.header"
+        } else {
+            "slash_command.workflow_header"
+        };
+        self.set_popup_header_for_slash_commands(cx, scope, header_key);
+
         let app_language = Self::current_app_language(scope);
-        let items_added = self.add_slash_command_items(cx, app_language, &commands);
+        let mut items_added = 0usize;
+        let mut section_rows = 0usize;
+        if !bot_matches.is_empty() {
+            if show_sections {
+                self.add_slash_command_section_header(cx, app_language, "slash_command.header");
+                section_rows += 1;
+            }
+            items_added += self.add_slash_command_items(cx, app_language, &bot_matches);
+        }
+        if !workflow_matches.is_empty() {
+            if show_sections {
+                self.add_slash_command_section_header(cx, app_language, "slash_command.workflow_header");
+                section_rows += 1;
+            }
+            items_added += self.add_slash_command_items(cx, app_language, &workflow_matches);
+        }
 
         const SLASH_COMMAND_ITEM_HEIGHT: f64 = 48.0;
+        const SLASH_SECTION_HEADER_HEIGHT: f64 = 24.0;
         const LIST_PADDING: f64 = 4.0;
         let max_scroll_height = if cx.display_context.is_desktop() {
             DESKTOP_MAX_SCROLL_HEIGHT
         } else {
             MOBILE_MAX_SCROLL_HEIGHT
         };
-        let content_height = (items_added as f64 * SLASH_COMMAND_ITEM_HEIGHT) + LIST_PADDING;
+        let content_height = (items_added as f64 * SLASH_COMMAND_ITEM_HEIGHT)
+            + (section_rows as f64 * SLASH_SECTION_HEADER_HEIGHT)
+            + LIST_PADDING;
         self.set_list_scroll_height(cx, content_height.min(max_scroll_height));
 
         let popup = self.cmd_text_input.view(cx, ids!(popup));
@@ -3035,8 +3174,30 @@ mod tests {
     }
 
     #[test]
+    fn slash_command_trigger_is_found_after_leading_mention() {
+        // The demo pattern: @-mention the coordinator, then type the command.
+        let text = "@wf_coordinator /cre";
+        assert_eq!(
+            find_slash_command_trigger_position(text, text.len()),
+            Some("@wf_coordinator ".len())
+        );
+        let text2 = "@wf_coordinator @wf_reviewer /st";
+        assert_eq!(
+            find_slash_command_trigger_position(text2, text2.len()),
+            Some("@wf_coordinator @wf_reviewer ".len())
+        );
+    }
+
+    #[test]
+    fn slash_command_trigger_rejected_when_plain_word_precedes() {
+        // A non-mention word before the command must NOT trigger (e.g. a file path).
+        let text = "@wf_coordinator see /tmp";
+        assert_eq!(find_slash_command_trigger_position(text, text.len()), None);
+    }
+
+    #[test]
     fn slash_commands_filter_by_prefix_without_leading_slash() {
-        let commands = matching_slash_commands("li");
+        let commands = matching_slash_commands_in(SLASH_COMMANDS, "li");
         assert_eq!(commands, vec![SlashCommand {
             command: "/listbots",
             description_key: "slash_command.listbots.description",
@@ -3046,7 +3207,7 @@ mod tests {
 
     #[test]
     fn slash_commands_return_empty_for_unknown_prefix() {
-        assert!(matching_slash_commands("zzzznotacommand").is_empty());
+        assert!(matching_slash_commands_in(SLASH_COMMANDS, "zzzznotacommand").is_empty());
     }
 
     #[test]
