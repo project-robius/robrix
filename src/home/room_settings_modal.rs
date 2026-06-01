@@ -601,7 +601,7 @@ impl WidgetMatchEvent for RoomSettingsModal {
                 self.view.redraw(cx);
             } else {
                 self.view.label(cx, ids!(name_error_label)).set_visible(cx, false);
-                if let Some(room_id) = self.room_id.clone() {
+                if let Some(_room_id) = self.room_id.clone() {
                     cx.action(RoomSettingsAction::Save {
                         room_id,
                         room_name: name.trim().to_string(),
