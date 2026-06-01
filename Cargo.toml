@@ -80,6 +80,7 @@ thiserror = "2.0.16"
 tokio = { version = "1.43.1", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = "0.3.17"
 unicode-segmentation = "1.11.0"
+percent-encoding = "2.3"
 url = "2.5.0"
 
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
