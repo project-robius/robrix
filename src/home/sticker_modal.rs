@@ -781,7 +781,7 @@ impl StickerPackList {
                 thumb.redraw(cx);
             }
             row.check_box(cx, ids!(toggle_pill))
-                .set_active(cx, pack.is_active);
+                .set_active(cx, pack.is_active, Animate::No);
             self.children.push((row, pack));
         }
     }
