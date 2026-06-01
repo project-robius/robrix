@@ -10,7 +10,7 @@ use tokio::{task::JoinHandle, runtime::Handle, sync::mpsc::{unbounded_channel, U
 use tsp_sdk::{definitions::{PublicKeyData, PublicVerificationKeyData, VidEncryptionKeyType, VidSignatureKeyType}, vid::{verify_vid, VidError}, AskarSecureStorage, AsyncSecureStore, OwnedVid, ReceivedTspMessage, SecureStorage, VerifiedVid, Vid};
 use url::Url;
 
-use crate::{persistence::{self, tsp_wallets_dir, SavedTspState}, shared::popup_list::{enqueue_popup_notification, PopupKind}, sliding_sync::current_user_id, tsp::tsp_verification_modal::TspVerificationModalAction, utils::DebugWrapper};
+use crate::{persistence::{self, tsp_wallets_dir, SavedTspState}, proxy_config::{DEFAULT_NO_PROXY_BYPASS, resolve_effective_proxy_url}, shared::popup_list::{enqueue_popup_notification, PopupKind}, sliding_sync::current_user_id, tsp::tsp_verification_modal::TspVerificationModalAction, utils::DebugWrapper};
 
 
 pub mod create_did_modal;
@@ -604,10 +604,34 @@ pub enum TspRequest {
 }
 
 
+fn build_tsp_reqwest_proxy(proxy_url: &str) -> reqwest::Result<reqwest::Proxy> {
+    let no_proxy = reqwest::NoProxy::from_string(&DEFAULT_NO_PROXY_BYPASS.join(","));
+    Ok(reqwest::Proxy::all(proxy_url)?.no_proxy(no_proxy))
+}
+
+fn apply_tsp_proxy_policy(
+    mut builder: reqwest::ClientBuilder,
+    proxy_url: Option<&str>,
+) -> reqwest::Result<reqwest::ClientBuilder> {
+    match proxy_url.map(str::trim).filter(|proxy_url| !proxy_url.is_empty()) {
+        Some(proxy_url) => {
+            builder = builder.proxy(build_tsp_reqwest_proxy(proxy_url)?);
+        }
+        None => {
+            builder = builder.no_proxy();
+        }
+    }
+    Ok(builder)
+}
+
 fn create_reqwest_client() -> reqwest::Result<reqwest::Client> {
-    reqwest::ClientBuilder::new()
+    // TSP uses reqwest 0.12 while matrix-sdk exposes a different reqwest version,
+    // so this mirrors the shared proxy policy instead of reusing that builder type.
+    let builder = reqwest::ClientBuilder::new()
         .user_agent(format!("Robrix v{}", env!("CARGO_PKG_VERSION")))
-        .build()
+        .min_tls_version(reqwest::tls::Version::TLS_1_2);
+    let builder = apply_tsp_proxy_policy(builder, resolve_effective_proxy_url(None).as_deref())?;
+    builder.build()
 }
 
 
@@ -1390,5 +1414,39 @@ impl TspWalletSqliteUrl {
                     percent_encoding::NON_ALPHANUMERIC,
                 ).into()
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tsp_proxy_policy_disables_system_proxy_when_proxy_is_none() {
+        let client = apply_tsp_proxy_policy(reqwest::ClientBuilder::new(), None)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        drop(client);
+    }
+
+    #[test]
+    fn tsp_proxy_policy_attaches_no_proxy_bypass_for_local_addresses() {
+        let proxy = build_tsp_reqwest_proxy("http://127.0.0.1:7890").unwrap();
+        let proxy_debug = format!("{proxy:?}");
+
+        for expected in DEFAULT_NO_PROXY_BYPASS {
+            assert!(
+                proxy_debug.contains(expected),
+                "proxy debug {proxy_debug:?} should include bypass {expected}"
+            );
+        }
+        for unexpected in ["192.168.1.58", "10.42.0.1", "172.20.0.5"] {
+            assert!(
+                !proxy_debug.contains(unexpected),
+                "proxy debug {proxy_debug:?} should not hardcode specific LAN IP {unexpected}"
+            );
+        }
     }
 }

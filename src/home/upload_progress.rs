@@ -105,6 +105,7 @@ pub enum UploadViewState {
     Error {
         message: String,
         file_data: FileData,
+        retryable: bool,
     },
 }
 
@@ -148,7 +149,10 @@ impl Widget for UploadProgressView {
 
             // Handle retry button
             if self.button(cx, ids!(retry_button)).clicked(actions) {
-                if let UploadViewState::Error { file_data, .. } = &self.state {
+                if let UploadViewState::Error { file_data, retryable, .. } = &self.state {
+                    if !retryable {
+                        return;
+                    }
                     let file_data = file_data.clone();
                     cx.widget_action(self.widget_uid(), UploadProgressViewAction::Retry(file_data));
                     self.hide(cx);
@@ -220,16 +224,17 @@ impl UploadProgressView {
     }
 
     /// Shows an error state with the given message.
-    pub fn show_error(&mut self, cx: &mut Cx, error: &str, file_data: FileData) {
+    pub fn show_error(&mut self, cx: &mut Cx, error: &str, file_data: FileData, retryable: bool) {
         self.state = UploadViewState::Error {
             message: error.to_string(),
             file_data,
+            retryable,
         };
 
         // Update UI for error state
         self.label(cx, ids!(status_label))
             .set_text(cx, &format!("Error: {}", error));
-        self.button(cx, ids!(retry_button)).set_enabled(cx, true);
+        self.button(cx, ids!(retry_button)).set_enabled(cx, retryable);
         self.button(cx, ids!(cancel_button)).set_enabled(cx, true);
 
         // Set progress bar to error color - no longer apply color change via script_apply_eval
@@ -269,9 +274,9 @@ impl UploadProgressViewRef {
     }
 
     /// Shows an error state with the given message.
-    pub fn show_error(&self, cx: &mut Cx, error: &str, file_data: FileData) {
+    pub fn show_error(&self, cx: &mut Cx, error: &str, file_data: FileData, retryable: bool) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_error(cx, error, file_data);
+            inner.show_error(cx, error, file_data, retryable);
         }
     }
 }

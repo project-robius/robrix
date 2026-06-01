@@ -29,7 +29,7 @@ use matrix_sdk::{
             room::ImageInfo,
             AnyMessageLikeEventContent, InitialStateEvent, MessageLikeEventType, StateEventType
         }, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, int, uint
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
+    }, reqwest::{Client as ReqwestClient, Response as ReqwestResponse, StatusCode as ReqwestStatusCode, header::HeaderValue}, sliding_sync::VersionBuilder, Client, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
 };
 use matrix_sdk_ui::{
     RoomListService, Timeline, encryption_sync_service, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{LatestEventValue, RoomExt, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
@@ -51,7 +51,7 @@ use crate::{
     }, homeserver::{CapabilityProbeAction, HsCapabilities, IdentityProviderSummary}, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, room_preview_cache::{enqueue_room_preview_update, RoomPreviewUpdate}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state, take_skip_app_state_restore_once}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
-    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
+    }, proxy_config::{self, build_policy_reqwest_client, resolve_effective_proxy_url}, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, shared::{
         avatar::AvatarState, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, VecDiff, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
@@ -360,6 +360,7 @@ async fn reset_runtime_state_for_relogin() {
     if let Some(sync_service) = sync_service {
         sync_service.stop().await;
     }
+    SYNC_SERVICE_ASSUMED_RUNNING.store(false, Ordering::Release);
 
     CLIENT.lock().unwrap().take();
     DEFAULT_SSO_CLIENT.lock().unwrap().take();
@@ -397,7 +398,7 @@ fn is_thread_unknown_parent_timeline_error(error: &matrix_sdk_ui::timeline::Erro
 async fn build_client(
     cli: &Cli,
     data_dir: &Path,
-) -> Result<(Client, ClientSessionPersisted), ClientBuildError> {
+) -> Result<(Client, ClientSessionPersisted)> {
     // Generate a unique subfolder name for the client database,
     // which allows multiple clients to run simultaneously.
     let now = chrono::Local::now();
@@ -421,6 +422,11 @@ async fn build_client(
         .unwrap_or("https://matrix-client.matrix.org/");
         // .unwrap_or("https://matrix.org/");
 
+    let effective_proxy = resolve_effective_proxy_url(cli.proxy.as_deref());
+    let http_client = build_policy_reqwest_client(
+        effective_proxy.as_deref(),
+        Some(Duration::from_secs(60)),
+    )?;
     let mut builder = Client::builder()
         .server_name_or_homeserver_url(homeserver_url)
         // Use a sqlite database to persist the client's encryption setup.
@@ -428,6 +434,7 @@ async fn build_client(
         .with_threading_support(matrix_sdk::ThreadingSupport::Enabled {
             with_subscriptions: true,
         })
+        .http_client(http_client)
         // The sliding sync proxy has now been deprecated in favor of native sliding sync.
         .sliding_sync_version_builder(VersionBuilder::DiscoverNative)
         .with_decryption_settings(DecryptionSettings {
@@ -441,21 +448,11 @@ async fn build_client(
         .with_enable_share_history_on_invite(true)
         .handle_refresh_tokens();
 
-    let effective_proxy = crate::proxy_config::resolve_effective_proxy_url(cli.proxy.as_deref());
-    if let Some(proxy) = effective_proxy.as_deref() {
-        if let Err(e) = crate::proxy_config::apply_proxy_to_process_env(Some(proxy)) {
-            warning!("Failed to apply proxy env before building Matrix client: {e}");
-        }
-    }
-    if let Some(proxy) = effective_proxy {
-        builder = builder.proxy(proxy);
-    }
-
     // Use a 60 second timeout for all requests to the homeserver.
     // Yes, this is a long timeout, but the standard matrix homeserver is often very slow.
     builder = builder.request_config(
         RequestConfig::new()
-            .timeout(std::time::Duration::from_secs(60))
+            .timeout(Duration::from_secs(60))
     );
 
     let client = builder.build().await?;
@@ -621,7 +618,7 @@ async fn login(
 pub(crate) async fn build_client_for_oidc(
     homeserver: Option<String>,
     proxy: Option<String>,
-) -> std::result::Result<(Client, ClientSessionPersisted), ClientBuildError> {
+) -> Result<(Client, ClientSessionPersisted)> {
     let cli = Cli { homeserver, proxy, ..Default::default() };
     build_client(&cli, app_data_dir()).await
 }
@@ -1168,7 +1165,17 @@ pub enum MatrixRequest {
     DownloadAndSaveFile {
         mxc_uri: OwnedMxcUri,
         app_language: crate::i18n::AppLanguage,
+        update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
+    /// Fetches a media attachment in full and writes it to the given path.
+    DownloadMediaToFile {
+        media_source: MediaSource,
+        save_path: PathBuf,
+        filename: String,
+        update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    },
+    /// Request to cancel an in-progress download.
+    CancelDownload(OwnedMxcUri),
     /// Request to send a message to the given room.
     SendMessage {
         timeline_kind: TimelineKind,
@@ -1855,6 +1862,17 @@ pub fn submit_async_request(req: MatrixRequest) {
     }
 }
 
+/// Spawns a one-off async task on the backend Tokio runtime.
+pub fn spawn_async_task<F>(future: F)
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    let rt_handle = TOKIO_RUNTIME.lock().unwrap().get_or_insert_with(|| {
+        tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
+    }).handle().clone();
+    rt_handle.spawn(future);
+}
+
 fn forward_success_feedback_text(destination_room_id: &RoomId) -> String {
     format!("Forwarded message to {destination_room_id}.")
 }
@@ -1968,6 +1986,8 @@ async fn matrix_worker_task(
     let mut subscribers_own_user_read_receipts: HashMap<TimelineKind, JoinHandle<()>> = HashMap::new();
     // The async tasks that are spawned to subscribe to changes in the pinned events for each room.
     let mut subscribers_pinned_events: HashMap<OwnedRoomId, JoinHandle<()>> = HashMap::new();
+    // In-flight attachment-download tasks keyed by MXC URI, for cancel support.
+    let download_tasks: Arc<Mutex<HashMap<OwnedMxcUri, futures_util::future::AbortHandle>>> = Arc::new(Mutex::new(HashMap::new()));
 
     while let Some(request) = request_receiver.recv().await {
         match request {
@@ -3637,12 +3657,27 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::DownloadAndSaveFile { mxc_uri, app_language } => {
-                let Some(client) = get_client() else { continue };
+            MatrixRequest::DownloadAndSaveFile { mxc_uri, app_language, update_sender } => {
+                let Some(client) = get_client() else {
+                    if let Some(sender) = update_sender.as_ref() {
+                        let _ = sender.send(TimelineUpdate::AttachmentDownloadFinished(
+                            mxc_uri.clone(),
+                            Err("Client unavailable".to_string()),
+                        ));
+                        SignalToUI::set_ui_signal();
+                    }
+                    continue;
+                };
 
                 let _download_task = Handle::current().spawn(async move {
                     use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
                     use crate::i18n::{tr_key, tr_fmt};
+                    let notify_download_finished = |update_sender: &Option<crossbeam_channel::Sender<TimelineUpdate>>, mxc_uri: &OwnedMxcUri, result: Result<(), String>| {
+                        if let Some(sender) = update_sender.as_ref() {
+                            let _ = sender.send(TimelineUpdate::AttachmentDownloadFinished(mxc_uri.clone(), result));
+                            SignalToUI::set_ui_signal();
+                        }
+                    };
 
                     log!("DownloadAndSaveFile: downloading {mxc_uri}");
 
@@ -3657,13 +3692,24 @@ async fn matrix_worker_task(
                         "{homeserver}/_matrix/media/v3/download/{server_name}/{media_id}",
                     );
 
-                    let http_client = matrix_sdk::reqwest::Client::new();
+                    let http_client = match build_policy_reqwest_client(
+                        resolve_effective_proxy_url(None).as_deref(),
+                        None,
+                    ) {
+                        Ok(client) => client,
+                        Err(e) => {
+                            error!("Failed to build download HTTP client: {e}");
+                            notify_download_finished(&update_sender, &mxc_uri, Err(e.to_string()));
+                            return;
+                        }
+                    };
+                    let mut result = Err("Download failed".to_string());
                     match http_client.get(&download_url).send().await {
                         Ok(resp) if resp.status().is_success() => {
                             // Extract filename from Content-Disposition header or use media_id
                             let filename = resp.headers()
                                 .get("content-disposition")
-                                .and_then(|v: &matrix_sdk::reqwest::header::HeaderValue| {
+                                .and_then(|v: &HeaderValue| {
                                     let val = String::from_utf8_lossy(v.as_bytes());
                                     // Parse filename="..." or filename*=UTF-8''...
                                     val.split("filename=").nth(1)
@@ -3677,6 +3723,7 @@ async fn matrix_worker_task(
                                     let downloads_dir = crate::app_data_dir().join("downloads");
                                     if let Err(e) = std::fs::create_dir_all(&downloads_dir) {
                                         error!("Failed to create downloads dir: {e:?}");
+                                        notify_download_finished(&update_sender, &mxc_uri, Err(e.to_string()));
                                         return;
                                     }
                                     let dest = downloads_dir.join(&filename);
@@ -3694,6 +3741,7 @@ async fn matrix_worker_task(
                                                 log!("Could not open file: {e:?}");
                                             }
                                             SignalToUI::set_ui_signal();
+                                            result = Ok(());
                                         }
                                         Err(e) => {
                                             error!("DownloadAndSaveFile: write failed: {e:?}");
@@ -3736,12 +3784,100 @@ async fn matrix_worker_task(
                             SignalToUI::set_ui_signal();
                         }
                     }
+                    notify_download_finished(&update_sender, &mxc_uri, result);
                 });
+            }
+
+            MatrixRequest::DownloadMediaToFile { media_source, save_path, filename, update_sender } => {
+                let Some(client) = get_client() else {
+                    if let Some(sender) = update_sender.as_ref() {
+                        let _ = sender.send(TimelineUpdate::AttachmentDownloadFinished(
+                            match &media_source {
+                                MediaSource::Plain(uri) => uri.clone(),
+                                MediaSource::Encrypted(file) => file.url.clone(),
+                            },
+                            Err("Client unavailable".to_string()),
+                        ));
+                        SignalToUI::set_ui_signal();
+                    }
+                    continue;
+                };
+
+                let mxc_uri = match &media_source {
+                    MediaSource::Plain(uri) => uri.clone(),
+                    MediaSource::Encrypted(file) => file.url.clone(),
+                };
+                let (abort_handle, abort_registration) = futures_util::future::AbortHandle::new_pair();
+                let mxc_for_task = mxc_uri.clone();
+                let mxc_for_finished = mxc_uri.clone();
+                let tasks_for_cleanup = download_tasks.clone();
+                let download_future = async move {
+                    let media_request = MediaRequestParameters {
+                        source: media_source,
+                        format: matrix_sdk::media::MediaFormat::File,
+                    };
+                    let result: Result<(), String> = match client.media().get_media_content(&media_request, true).await {
+                        Ok(bytes) => match tokio::fs::write(&save_path, &bytes).await {
+                            Ok(()) => {
+                                log!("Saved downloaded attachment {filename:?} to {}", save_path.display());
+                                enqueue_popup_notification(
+                                    format!("Saved \"{filename}\" to {}", save_path.display()),
+                                    PopupKind::Success,
+                                    Some(5.0),
+                                );
+                                Ok(())
+                            }
+                            Err(e) => {
+                                error!("Failed to write downloaded attachment {filename:?} to {}: {e}", save_path.display());
+                                enqueue_popup_notification(
+                                    format!("Failed to save \"{filename}\": {e}"),
+                                    PopupKind::Error,
+                                    None,
+                                );
+                                Err(e.to_string())
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to fetch media content for attachment {filename:?}: {e}");
+                            enqueue_popup_notification(
+                                format!("Failed to download \"{filename}\": {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
+                            Err(e.to_string())
+                        }
+                    };
+                    if let Some(sender) = update_sender {
+                        let _ = sender.send(TimelineUpdate::AttachmentDownloadFinished(mxc_for_finished, result));
+                        SignalToUI::set_ui_signal();
+                        let reset_sender = sender.clone();
+                        Handle::current().spawn(async move {
+                            tokio::time::sleep(std::time::Duration::from_secs_f64(
+                                crate::shared::attachment_download::DOWNLOAD_RESULT_DURATION_SECS,
+                            )).await;
+                            let _ = reset_sender.send(TimelineUpdate::AttachmentDownloadReset(mxc_for_task));
+                            SignalToUI::set_ui_signal();
+                        });
+                    }
+                };
+
+                let mxc_for_cleanup = mxc_uri.clone();
+                download_tasks.lock().unwrap().insert(mxc_uri, abort_handle);
+                Handle::current().spawn(async move {
+                    let _ = futures_util::future::Abortable::new(download_future, abort_registration).await;
+                    tasks_for_cleanup.lock().unwrap().remove(&mxc_for_cleanup);
+                });
+            }
+
+            MatrixRequest::CancelDownload(mxc) => {
+                if let Some(abort) = download_tasks.lock().unwrap().remove(&mxc) {
+                    abort.abort();
+                }
             }
 
             MatrixRequest::FetchMedia { media_request, on_fetched, destination, update_sender } => {
                 let Some(client) = get_client() else { continue };
-                
+
                 let _fetch_task = Handle::current().spawn(async move {
                     // log!("Sending fetch media request for {media_request:?}...");
                     let res = client.media().get_media_content(&media_request, true).await;
@@ -4123,6 +4259,39 @@ async fn matrix_worker_task(
                     continue;
                 };
 
+                let max_upload_size = match get_client() {
+                    Some(client) => match client.load_or_fetch_max_upload_size().await {
+                        Ok(max_upload_size) => Some(max_upload_size),
+                        Err(e) => {
+                            warning!("Could not fetch homeserver max upload size for {timeline_kind}: {e:?}; continuing without local size check.");
+                            None
+                        }
+                    },
+                    None => {
+                        warning!("Could not fetch homeserver max upload size for {timeline_kind}: client unavailable; continuing without local size check.");
+                        None
+                    }
+                };
+                if let Some(max_upload_size) = max_upload_size {
+                    let exceeds_max_upload_size = matrix_sdk::ruma::UInt::try_from(file_data.size)
+                        .map(|upload_size| upload_size > max_upload_size)
+                        .unwrap_or(true);
+                    if exceeds_max_upload_size {
+                        let max_size: u64 = max_upload_size.into();
+                        let _ = sender.send(TimelineUpdate::FileUploadError {
+                            error: format!(
+                                "File size ({}) exceeds homeserver upload limit ({}).",
+                                utils::format_file_size(file_data.size),
+                                utils::format_file_size(max_size),
+                            ),
+                            file_data,
+                            retryable: false,
+                        });
+                        SignalToUI::set_ui_signal();
+                        continue;
+                    }
+                }
+
                 // Spawn a new async task to send the attachment.
                 let _send_attachment_task = Handle::current().spawn(async move {
                     use matrix_sdk::attachment::AttachmentConfig;
@@ -4186,6 +4355,7 @@ async fn matrix_worker_task(
                             let _ = sender.send(TimelineUpdate::FileUploadError {
                                 error: format!("{e}"),
                                 file_data: file_data.clone(),
+                                retryable: true,
                             });
                             enqueue_popup_notification(
                                 format!("Failed to upload file: {e}"),
@@ -4490,7 +4660,7 @@ static REQUEST_SENDER: Mutex<Option<UnboundedSender<MatrixRequest>>> = Mutex::ne
 
 /// A client object that is proactively created during initialization
 /// in order to speed up the client-building process when the user logs in.
-static DEFAULT_SSO_CLIENT: Mutex<Option<(Client, ClientSessionPersisted)>> = Mutex::new(None);
+static DEFAULT_SSO_CLIENT: Mutex<Option<(Client, ClientSessionPersisted, Option<String>)>> = Mutex::new(None);
 
 /// Used to notify the SSO login task that the async creation of the `DEFAULT_SSO_CLIENT` has finished.
 static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(|| Arc::new(Notify::new()));
@@ -4523,7 +4693,11 @@ pub fn block_on_async_with_timeout<T>(
 ///
 /// Returns a handle to the Tokio runtime that is used to run async background tasks.
 pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
-    crate::proxy_config::load_and_apply_saved_proxy_to_process_env();
+    // Parse CLI once at startup and stash the proxy override so every later
+    // resolver (restore_session, downloads, the SSO pre-build below) sees the
+    // same value without re-parsing argv.
+    let cli_for_init = Cli::try_parse().ok().unwrap_or_default();
+    proxy_config::set_cli_proxy_override(cli_for_init.proxy.as_deref());
 
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
     let rt_handle = TOKIO_RUNTIME.lock().unwrap().get_or_insert_with(|| {
@@ -4532,6 +4706,7 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
 
     // Proactively build a Matrix Client in the background so that the SSO Server
     // can have a quicker start if needed (as it's rather slow to build this client).
+    let prebuild_proxy = resolve_effective_proxy_url(None);
     rt_handle.spawn(async move {
         let cli_has_valid_username_password = Cli::try_parse()
             .as_ref()
@@ -4558,10 +4733,10 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
             return;
         }
 
-        match build_client(&Cli::default(), app_data_dir()).await {
-            Ok(client_and_session) => {
+        match build_client(&cli_for_init, app_data_dir()).await {
+            Ok((client, session)) => {
                 DEFAULT_SSO_CLIENT.lock().unwrap()
-                    .get_or_insert(client_and_session);
+                    .get_or_insert((client, session, prebuild_proxy));
                 // Clear any stale failure flag (e.g., after the user configures a proxy).
                 clear_sso_prebuild_failure_flag();
             }
@@ -4792,6 +4967,10 @@ pub fn current_user_id() -> Option<OwnedUserId> {
 
 /// The singleton sync service.
 static SYNC_SERVICE: Mutex<Option<Arc<SyncService>>> = Mutex::new(None);
+static SYNC_SERVICE_DESIRED_RUNNING: AtomicBool = AtomicBool::new(true);
+static SYNC_SERVICE_ASSUMED_RUNNING: AtomicBool = AtomicBool::new(false);
+static SYNC_SERVICE_LIFECYCLE_LOCK: LazyLock<tokio::sync::Mutex<()>> =
+    LazyLock::new(|| tokio::sync::Mutex::new(()));
 
 /// Flag to indicate an account switch is in progress.
 /// Contains the user_id to switch to, if any.
@@ -4832,6 +5011,73 @@ static TOKEN_EXPIRED_NOTIFY: LazyLock<Notify> = LazyLock::new(Notify::new);
 /// Get a reference to the current sync service, if available.
 pub fn get_sync_service() -> Option<Arc<SyncService>> {
     SYNC_SERVICE.lock().ok()?.as_ref().cloned()
+}
+
+pub fn sync_service_desired_running() -> bool {
+    SYNC_SERVICE_DESIRED_RUNNING.load(Ordering::Acquire)
+}
+
+pub fn set_sync_service_desired_running(running: bool, reason: &'static str) {
+    let previous = SYNC_SERVICE_DESIRED_RUNNING.swap(running, Ordering::AcqRel);
+    if previous == running && SYNC_SERVICE_ASSUMED_RUNNING.load(Ordering::Acquire) == running {
+        log!(
+            "Matrix sync service already desired {}; skipping lifecycle request ({reason}).",
+            if running { "running" } else { "stopped" }
+        );
+        return;
+    }
+
+    let rt_handle = TOKIO_RUNTIME.lock().unwrap().as_ref().map(|rt| rt.handle().clone());
+    let Some(rt_handle) = rt_handle else {
+        log!(
+            "Stored Matrix sync desired state as {}; Tokio runtime is not running yet ({reason}).",
+            if running { "running" } else { "stopped" }
+        );
+        return;
+    };
+
+    rt_handle.spawn(apply_sync_service_desired_state(reason));
+}
+
+async fn apply_sync_service_desired_state(reason: &'static str) {
+    let _guard = SYNC_SERVICE_LIFECYCLE_LOCK.lock().await;
+    loop {
+        let desired = SYNC_SERVICE_DESIRED_RUNNING.load(Ordering::Acquire);
+        if SYNC_SERVICE_ASSUMED_RUNNING.load(Ordering::Acquire) == desired {
+            break;
+        }
+
+        let Some(sync_service) = get_sync_service() else {
+            log!("Matrix sync service is not available while applying lifecycle request ({reason}).");
+            break;
+        };
+
+        if desired {
+            log!("Starting Matrix sync service after lifecycle request ({reason}).");
+            sync_service.start().await;
+        } else {
+            log!("Stopping Matrix sync service after lifecycle request ({reason}).");
+            sync_service.stop().await;
+        }
+        SYNC_SERVICE_ASSUMED_RUNNING.store(desired, Ordering::Release);
+    }
+}
+
+pub fn stop_sync_service_for_shutdown(timeout: Duration) -> Result<(), Elapsed> {
+    SYNC_SERVICE_DESIRED_RUNNING.store(false, Ordering::Release);
+    let Some(sync_service) = get_sync_service() else {
+        SYNC_SERVICE_ASSUMED_RUNNING.store(false, Ordering::Release);
+        return Ok(());
+    };
+
+    let result = block_on_async_with_timeout(Some(timeout), async move {
+        let _guard = SYNC_SERVICE_LIFECYCLE_LOCK.lock().await;
+        sync_service.stop().await;
+    });
+    if result.is_ok() {
+        SYNC_SERVICE_ASSUMED_RUNNING.store(false, Ordering::Release);
+    }
+    result
 }
 
 /// The list of users that the current user has chosen to ignore.
@@ -5203,13 +5449,14 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         handle_load_app_state(logged_in_user_id.to_owned());
         handle_sync_indicator_subscriber(&sync_service);
         handle_sync_service_state_subscriber(sync_service.state());
-        sync_service.start().await;
 
         let room_list_service = sync_service.room_list_service();
+        let sync_service = Arc::new(sync_service);
 
-        if let Some(_existing) = SYNC_SERVICE.lock().unwrap().replace(Arc::new(sync_service)) {
+        if let Some(_existing) = SYNC_SERVICE.lock().unwrap().replace(sync_service) {
             error!("BUG: unexpectedly replaced an existing sync service when initializing the matrix client.");
         }
+        apply_sync_service_desired_state("initial Matrix sync startup").await;
 
         let mut room_list_service_task = rt.spawn(room_list_service_loop(room_list_service));
         let mut space_service_task = rt.spawn(space_service_loop(client));
@@ -5251,14 +5498,6 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                                 log!("matrix worker task ended with error due to account switch: {e:?}");
                             } else {
                                 error!("Error: matrix worker task ended:\n\t{e:?}");
-                                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                    status: e.to_string(),
-                                });
-                                enqueue_popup_notification(
-                                    format!("Matrix worker error: {e}"),
-                                    PopupKind::Error,
-                                    None,
-                                );
                             }
                         },
                         Err(e) => {
@@ -5280,14 +5519,6 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                         Ok(Err(e)) => {
                             if !is_logout_in_progress() && !is_account_switch_pending() {
                                 error!("Error: room list service loop task ended:\n\t{e:?}");
-                                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                    status: e.to_string(),
-                                });
-                                enqueue_popup_notification(
-                                    format!("Room list service error: {e}"),
-                                    PopupKind::Error,
-                                    None,
-                                );
                             }
                         },
                         Err(e) => {
@@ -5309,14 +5540,6 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                         Ok(Err(e)) => {
                             if !is_logout_in_progress() && !is_account_switch_pending() {
                                 error!("Error: space service loop task ended:\n\t{e:?}");
-                                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                    status: e.to_string(),
-                                });
-                                enqueue_popup_notification(
-                                    format!("Space service error: {e}"),
-                                    PopupKind::Error,
-                                    None,
-                                );
                             }
                         },
                         Err(e) => {
@@ -5333,6 +5556,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             // Clear all backend state
             CLIENT.lock().unwrap().take();
             SYNC_SERVICE.lock().unwrap().take();
+            SYNC_SERVICE_ASSUMED_RUNNING.store(false, Ordering::Release);
             ALL_JOINED_ROOMS.lock().unwrap().clear();
             IGNORED_USERS.lock().unwrap().clear();
 
@@ -5376,10 +5600,11 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                     handle_load_app_state(switch_user_id.clone());
                     handle_sync_indicator_subscriber(&sync_service);
                     handle_sync_service_state_subscriber(sync_service.state());
-                    sync_service.start().await;
                     let room_list_service = sync_service.room_list_service();
+                    let sync_service = Arc::new(sync_service);
 
-                    SYNC_SERVICE.lock().unwrap().replace(Arc::new(sync_service));
+                    SYNC_SERVICE.lock().unwrap().replace(sync_service);
+                    apply_sync_service_desired_state("Matrix sync startup after account switch").await;
                     
                     let (login_sender, _login_receiver) = tokio::sync::mpsc::channel(1);
 
@@ -6376,6 +6601,7 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
             log!("Received a sync service state update: {state:?}");
             match state {
                 sync_service::State::Error(e) => {
+                    SYNC_SERVICE_ASSUMED_RUNNING.store(false, Ordering::Release);
                     if is_invalid_token_error(&e) {
                         // The access token is invalid; `handle_session_changes` will have
                         // already posted a LoginAction::LoginFailure, so just log here.
@@ -6389,12 +6615,17 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
                         TOKEN_EXPIRED_NOTIFY.notify_one();
                         if let Some(ss) = get_sync_service() {
                             ss.stop().await;
+                            SYNC_SERVICE_ASSUMED_RUNNING.store(false, Ordering::Release);
                         }
                         break;
                     } else {
+                        if !sync_service_desired_running() {
+                            log!("Not restarting sync service after error because lifecycle currently wants it stopped: {e}.");
+                            continue;
+                        }
                         log!("Restarting sync service due to error: {e}.");
-                        if let Some(ss) = get_sync_service() {
-                            ss.start().await;
+                        if get_sync_service().is_some() {
+                            apply_sync_service_desired_state("sync service error restart").await;
                         } else {
                             enqueue_popup_notification(
                                 "Unable to restart the Matrix sync service.\n\nPlease quit and restart Robrix.",
@@ -7196,27 +7427,30 @@ async fn spawn_sso_server(
     let client_and_session_opt = DEFAULT_SSO_CLIENT.lock().unwrap().take();
 
     Handle::current().spawn(async move {
-        let effective_proxy = crate::proxy_config::resolve_effective_proxy_url(proxy.as_deref());
-        if let Some(proxy) = effective_proxy.as_deref() {
-            if let Err(e) = crate::proxy_config::apply_proxy_to_process_env(Some(proxy)) {
-                warning!("Failed to apply proxy env before SSO login: {e}");
-            }
-        }
+        let effective_proxy = resolve_effective_proxy_url(proxy.as_deref());
 
         // Try to use the DEFAULT_SSO_CLIENT that we proactively created
         // during initialization (to speed up opening the SSO browser window).
-        let mut client_and_session = client_and_session_opt;
+        // Only reuse when both (a) the homeserver is the default and (b) the
+        // proxy baked into the cached client still matches the current effective
+        // proxy — otherwise the cached reqwest pool may be bound to a stale
+        // proxy URL that the user cleared or changed after startup.
+        let homeserver_is_default = homeserver_url.is_empty()
+            || homeserver_url == "matrix.org"
+            || Url::parse(&homeserver_url) == Url::parse("https://matrix-client.matrix.org/")
+            || Url::parse(&homeserver_url) == Url::parse("https://matrix.org/");
+        let cached_proxy_matches = client_and_session_opt
+            .as_ref()
+            .is_some_and(|(_, _, cached)| cached.as_deref() == effective_proxy.as_deref());
 
-        // If the DEFAULT_SSO_CLIENT is none (meaning it failed to build),
-        // or if the homeserver_url is *not* empty and isn't the default,
-        // we cannot use the DEFAULT_SSO_CLIENT, so we must build a new one.
+        let mut client_and_session = if homeserver_is_default && cached_proxy_matches {
+            client_and_session_opt.map(|(c, s, _)| (c, s))
+        } else {
+            None
+        };
+
         let mut build_client_error = None;
-        if client_and_session.is_none() || effective_proxy.is_some() || (
-            !homeserver_url.is_empty()
-                && homeserver_url != "matrix.org"
-                && Url::parse(&homeserver_url) != Url::parse("https://matrix-client.matrix.org/")
-                && Url::parse(&homeserver_url) != Url::parse("https://matrix.org/")
-        ) {
+        if client_and_session.is_none() {
             match build_client(
                 &Cli {
                     homeserver: homeserver_url.is_empty().not().then_some(homeserver_url),
@@ -7476,6 +7710,7 @@ pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
     cancel_active_oidc_flow();
     CLIENT.lock().unwrap().take();
     SYNC_SERVICE.lock().unwrap().take();
+    SYNC_SERVICE_ASSUMED_RUNNING.store(false, Ordering::Release);
     REQUEST_SENDER.lock().unwrap().take();
     IGNORED_USERS.lock().unwrap().clear();
     ALL_JOINED_ROOMS.lock().unwrap().clear();
@@ -7504,15 +7739,12 @@ pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
 /// response bodies are read as text and parsed via `serde_json::from_str`.
 fn build_discovery_http_client(
     proxy_override: Option<&str>,
-) -> anyhow::Result<matrix_sdk::reqwest::Client> {
-    let mut builder = matrix_sdk::reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5));
-    if let Some(proxy) = crate::proxy_config::resolve_effective_proxy_url(proxy_override) {
-        crate::proxy_config::validate_proxy_url(&proxy)
-            .map_err(|e| anyhow::anyhow!(e))?;
-        builder = builder.proxy(matrix_sdk::reqwest::Proxy::all(&proxy)?);
-    }
-    Ok(builder.build()?)
+) -> anyhow::Result<ReqwestClient> {
+    let effective_proxy = resolve_effective_proxy_url(proxy_override);
+    build_policy_reqwest_client(
+        effective_proxy.as_deref(),
+        Some(Duration::from_secs(5)),
+    )
 }
 
 async fn discover_homeserver_capabilities(
@@ -7524,7 +7756,7 @@ async fn discover_homeserver_capabilities(
     let http = build_discovery_http_client(proxy_override)?;
 
     // Helper: read response text and parse as JSON Value, returning Null on any failure.
-    async fn body_json(resp: matrix_sdk::reqwest::Response) -> Value {
+    async fn body_json(resp: ReqwestResponse) -> Value {
         match resp.text().await {
             Ok(text) => serde_json::from_str::<Value>(&text).unwrap_or(Value::Null),
             Err(_) => Value::Null,
@@ -7624,7 +7856,7 @@ async fn discover_homeserver_capabilities(
     let status = reg_resp.status();
     let body = body_json(reg_resp).await;
 
-    let (registration_enabled, uiaa_probe) = if status == matrix_sdk::reqwest::StatusCode::UNAUTHORIZED {
+    let (registration_enabled, uiaa_probe) = if status == ReqwestStatusCode::UNAUTHORIZED {
         // Expected UIAA challenge.
         match serde_json::from_value(body.clone()) {
             Ok(info) => (true, Some(info)),
