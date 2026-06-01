@@ -28,7 +28,7 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.ICO_LOCATION_PERSON = crate_resource("self://resources/icons/location-person.svg")
+    mod.widgets.ICON_LOCATION_PIN = crate_resource("self://resources/icons/location-pin.svg")
 
 
     mod.widgets.RoomInputBar = set_type_default() do #(RoomInputBar::register_widget(vm)) {
@@ -83,7 +83,7 @@ script_mod! {
                 align: Align{y: 1.0},
                 padding: 6,
 
-                // Attachment button for uploading files/images
+                // Attachment button for uploading files.
                 send_attachment_button := RobrixIconButton {
                     margin: 4
                     spacing: 0,
@@ -100,11 +100,28 @@ script_mod! {
                     text: "",
                 }
 
+                // Photo/video button for uploading media from the native media picker.
+                send_photo_video_button := RobrixIconButton {
+                    margin: 4
+                    spacing: 0,
+                    draw_icon +: {
+                        svg: (ICON_ADD_PHOTO)
+                        color: (COLOR_ACTIVE_PRIMARY_DARKER)
+                    },
+                    draw_bg +: {
+                        color: (COLOR_BG_PREVIEW)
+                        color_hover: #xE0E8F0
+                        color_down: #xD0D8E8
+                    }
+                    icon_walk: Walk{width: 21, height: 21}
+                    text: "",
+                }
+
                 location_button := RobrixIconButton {
                     margin: 4
                     spacing: 0,
                     draw_icon +: {
-                        svg: (mod.widgets.ICO_LOCATION_PERSON)
+                        svg: (mod.widgets.ICON_LOCATION_PIN)
                         color: (COLOR_ACTIVE_PRIMARY_DARKER)
                     },
                     draw_bg +: {
@@ -112,7 +129,7 @@ script_mod! {
                         color_hover: #E0E8F0
                         color_down: #D0D8E8
                     }
-                    icon_walk: Walk{width: 23, height: 23, margin: Inset{bottom: -1}}
+                    icon_walk: Walk{width: 21, height: 21}
                     text: "",
                 }
 
@@ -306,6 +323,12 @@ impl RoomInputBar {
         if self.button(cx, ids!(send_attachment_button)).clicked(actions) {
             log!("Add attachment button clicked; opening file picker...");
             self.open_file_picker(cx, room_screen_props.timeline_kind.clone());
+        }
+
+        // Handle the add photo/video button being clicked.
+        if self.button(cx, ids!(send_photo_video_button)).clicked(actions) {
+            log!("Add photo/video button clicked; opening media picker...");
+            self.open_photo_video_picker(cx, room_screen_props.timeline_kind.clone());
         }
 
         // Handle the add location button being clicked.
@@ -628,14 +651,46 @@ impl RoomInputBar {
             return;
         }
 
+        let on_picked = self.upload_picker_callback(cx, timeline_kind);
+        Self::handle_picker_launch_result(
+            robius_file_picker::FileDialog::new().pick_file(on_picked)
+        );
+    }
+
+    /// Shows the native media picker dialog to select a photo or video to be uploaded.
+    fn open_photo_video_picker(
+        &mut self,
+        cx: &mut Cx,
+        timeline_kind: TimelineKind,
+    ) {
+        if self.view.view(cx, ids!(upload_progress_view)).visible() {
+            enqueue_popup_notification(
+                "Finish or cancel the current upload before starting another one.",
+                PopupKind::Warning,
+                Some(7.0),
+            );
+            return;
+        }
+
+        let on_picked = self.upload_picker_callback(cx, timeline_kind);
+        Self::handle_picker_launch_result(
+            robius_file_picker::FileDialog::new().pick_image_or_video(on_picked)
+        );
+    }
+
+    fn upload_picker_callback(
+        &self,
+        _cx: &mut Cx,
+        timeline_kind: TimelineKind,
+    ) -> impl FnOnce(robius_file_picker::Result<Option<robius_file_picker::PickedFile>>) + Send + 'static {
         let in_reply_to = self.replying_to
             .as_ref()
             .and_then(|(event_tl_item, _embedded_event)| event_tl_item.event_id().map(ToOwned::to_owned));
         #[cfg(feature = "tsp")]
-        let sign_with_tsp = self.is_tsp_signing_enabled(cx);
+        let sign_with_tsp = self.is_tsp_signing_enabled(_cx);
 
         // `robius-file-picker` ensures that this `on_picked` callback runs on a bg thread.
-        let on_picked = move |result: robius_file_picker::Result<Option<robius_file_picker::PickedFile>>| {
+        move |result: robius_file_picker::Result<Option<robius_file_picker::PickedFile>>| {
             match result {
                 Ok(Some(picked)) => match picked.into_local_file() {
                     Ok(local_file) => {
@@ -665,9 +720,11 @@ impl RoomInputBar {
                     None,
                 ),
             }
-        };
+        }
+    }
 
-        match robius_file_picker::FileDialog::new().pick_file(on_picked) {
+    fn handle_picker_launch_result(result: robius_file_picker::Result<()>) {
+        match result {
             Ok(()) => {}
             Err(robius_file_picker::Error::AlreadyOpen) => {
                 enqueue_popup_notification(
