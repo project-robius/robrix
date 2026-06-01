@@ -1,5 +1,6 @@
 use makepad_widgets::ScriptVm;
 
+pub mod attachment_download;
 pub mod avatar;
 pub mod collapsible_header;
 pub mod expand_arrow;
