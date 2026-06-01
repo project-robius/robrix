@@ -7,6 +7,7 @@ script_mod! {
 
     mod.widgets.ICON_ADD              = crate_resource("self://resources/icons/add.svg")
     mod.widgets.ICON_ADD_REACTION     = crate_resource("self://resources/icons/add_reaction.svg")
+    mod.widgets.ICON_ADD_PHOTO        = crate_resource("self://resources/icons/add_photo.svg")
     mod.widgets.ICON_ADD_USER         = crate_resource("self://resources/icons/add_user.svg")
     mod.widgets.ICON_ADD_WALLET       = crate_resource("self://resources/icons/add_wallet.svg")
     mod.widgets.ICON_FORBIDDEN        = crate_resource("self://resources/icons/forbidden.svg")
