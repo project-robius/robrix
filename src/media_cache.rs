@@ -1,4 +1,4 @@
-use std::{ops::{Deref, DerefMut}, path::PathBuf, sync::{Arc, Mutex}, time::SystemTime};
+use std::{ops::{Deref, DerefMut}, path::PathBuf, sync::{Arc, Mutex}};
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use makepad_widgets::{error, SignalToUI};
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, reqwest::StatusCode, ruma::{events::room::MediaSource, OwnedMxcUri}, Error, HttpError};

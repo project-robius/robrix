@@ -601,7 +601,7 @@ impl VideoMessagePlayer {
         if self.loaded_poster.as_ref() == Some(&mxc_uri) {
             return true;
         }
-        match media_cache.try_get_media_or_fetch(&mxc_uri, utils::MEDIA_THUMBNAIL_FORMAT.into()) {
+        match media_cache.try_get_media_or_fetch(&MediaSource::Plain(mxc_uri.clone()), utils::MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _) => {
                 match crate::shared::image_viewer::get_png_or_jpg_image_buffer(data.to_vec()) {
                     Ok(image_buffer) => {
@@ -638,7 +638,7 @@ impl VideoMessagePlayer {
         if self.loaded_video.as_ref() == Some(&mxc_uri) {
             return true;
         }
-        match media_cache.try_get_media_or_fetch(&mxc_uri, MediaFormat::File) {
+        match media_cache.try_get_media_or_fetch(&MediaSource::Plain(mxc_uri.clone()), MediaFormat::File) {
             (MediaCacheEntry::Loaded(data), MediaFormat::File) => {
                 let mut path = media_cache.path_for(&mxc_uri);
                 if path.extension().is_none() {

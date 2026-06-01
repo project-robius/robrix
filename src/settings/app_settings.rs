@@ -551,11 +551,15 @@ impl AppSettings {
 
         self.view.text_input(cx, ids!(ui_zoom_input))
             .set_text(cx, &prefs.ui_zoom.format_percent());
+        #[cfg(target_os = "macos")]
+        let send_toggle_label = tr_key(self.app_language, "settings.preferences.app.send_shortcut.toggle.cmd");
+        #[cfg(not(target_os = "macos"))]
+        let send_toggle_label = tr_key(self.app_language, "settings.preferences.app.send_shortcut.toggle.ctrl");
         self.view.check_box(cx, ids!(send_on_cmd_enter_toggle))
-            .set_text(SEND_SHORTCUT_TOGGLE_LABEL);
+            .set_text(send_toggle_label);
         self.view.check_box(cx, ids!(send_on_cmd_enter_toggle))
             .set_active(cx, !prefs.send_on_enter, Animate::No);
-        Self::update_send_shortcut_description(cx, &self.view, prefs.send_on_enter);
+        self.update_send_shortcut_description(cx, prefs.send_on_enter);
 
         let (small, medium, unlimited, custom, custom_text) = match prefs.thumbnail_max_height {
             ThumbnailMaxHeight::Small => (true, false, false, false, String::new()),
