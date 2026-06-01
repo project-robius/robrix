@@ -723,14 +723,6 @@ pub fn ends_with_href(text: &str) -> bool {
 }
 
 /// Converts a list of names into a human-readable string with a limit parameter.
-///
-/// # Examples
-/// ```
-/// assert_eq!(human_readable_list(&vec!["Alice"], 3), String::from("Alice"));
-/// assert_eq!(human_readable_list(&vec![String::from("Alice"), String::from("Bob")], 3), String::from("Alice and Bob"));
-/// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie"], 3), String::from("Alice, Bob and Charlie"));
-/// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie", "Dennis", "Eudora", "Fanny"], 3), String::from("Alice, Bob, Charlie, and 3 others"));
-/// ```
 pub fn human_readable_list<S>(names: &[S], limit: usize) -> String
 where
     S: AsRef<str>

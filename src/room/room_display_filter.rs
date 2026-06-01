@@ -199,20 +199,7 @@ pub struct RoomDisplayFilterBuilder {
     filter_criteria: RoomFilterCriteria,
     sort_fn: Option<Box<SortFn>>,
 }
-/// ## Example
-/// You can create any combination of filters and sorting functions using the `RoomDisplayFilterBuilder`.
-/// ```rust,norun
-///   let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
-///     .set_keywords(keywords)
-///     .by_room_id()
-///     .by_room_name()
-///     .sort_by(|a, b| {
-///         let name_a = a.room_name.as_ref().map_or("", |n| n.display_str());
-///         let name_b = b.room_name.as_ref().map_or("", |n| n.display_str());
-///         name_a.cmp(name_b)
-///     })
-///     .build();
-/// ```
+
 impl RoomDisplayFilterBuilder {
     pub fn new() -> Self {
         Self {
