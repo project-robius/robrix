@@ -97,7 +97,7 @@
   "login.proxy_settings.input.port": "7890",
   "login.proxy_settings.input.account": "",
   "login.proxy_settings.input.password": "",
-  "login.proxy_settings.save": "Save",
+  "login.proxy_settings.save": "Save Proxy",
   "login.proxy_settings.saved.title": "Proxy Settings Saved",
   "login.proxy_settings.saved.body": "Proxy settings were saved successfully.",
   "login.proxy_settings.error.missing_address": "Please enter the proxy address.",

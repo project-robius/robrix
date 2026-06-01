@@ -693,6 +693,22 @@ pub type OnLinkPreviewFetchedFn = fn(
 );
 
 
+/// Result of [`MatrixRequest::FetchRoomSettings`].
+#[derive(Clone, Debug)]
+pub struct RoomSettingsFetchedAction {
+    pub room_id: OwnedRoomId,
+    pub topic: Option<String>,
+    pub is_public: bool,
+}
+
+/// Posted after a room avatar is successfully uploaded and set.
+#[derive(Clone, Debug)]
+pub struct RoomAvatarUploadedAction {
+    pub room_id: OwnedRoomId,
+    /// Raw image bytes of the newly uploaded avatar.
+    pub image_data: Arc<[u8]>,
+}
+
 /// Actions emitted in response to a [`MatrixRequest::GenerateMatrixLink`].
 #[derive(Clone, Debug)]
 pub enum MatrixLinkAction {
@@ -1310,6 +1326,26 @@ pub enum MatrixRequest {
         on_fetched: OnLinkPreviewFetchedFn,
         destination: Arc<Mutex<crate::home::link_preview::TimestampedCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    },
+    /// Fetch room-specific settings: topic and whether the room is public.
+    /// Response arrives as a [`RoomSettingsFetchedAction`].
+    FetchRoomSettings {
+        room_id: OwnedRoomId,
+    },
+    /// Set the display name (title) of a room.
+    SetRoomName {
+        room_id: OwnedRoomId,
+        name: String,
+    },
+    /// Set the topic of a room.
+    SetRoomTopic {
+        room_id: OwnedRoomId,
+        topic: String,
+    },
+    /// Upload a new avatar image for a room from a local file path.
+    UploadRoomAvatar {
+        room_id: OwnedRoomId,
+        avatar_path: std::path::PathBuf,
     },
 }
 
@@ -3335,6 +3371,95 @@ async fn matrix_worker_task(
                         display_name: device.display_name().map(ToOwned::to_owned),
                     });
                     Cx::post_action(AccountDataAction::OwnDeviceFetched(device_info));
+                });
+            }
+
+            MatrixRequest::FetchRoomSettings { room_id } => {
+                let Some(client) = get_client() else { continue };
+                let _fetch_room_settings_task = Handle::current().spawn(async move {
+                    if let Some(room) = client.get_room(&room_id) {
+                        let topic = room.topic();
+                        let is_public = room.is_public().unwrap_or(false);
+                        Cx::post_action(RoomSettingsFetchedAction { room_id, topic, is_public });
+                    }
+                });
+            }
+
+            MatrixRequest::SetRoomName { room_id, name } => {
+                let Some(client) = get_client() else { continue };
+                let _set_room_name_task = Handle::current().spawn(async move {
+                    if let Some(room) = client.get_room(&room_id) {
+                        match room.set_name(name).await {
+                            Ok(_) => log!("Room name set successfully."),
+                            Err(e) => {
+                                error!("Failed to set room name: {e:?}");
+                                enqueue_popup_notification(
+                                    "Failed to set room name",
+                                    crate::shared::popup_list::PopupKind::Error,
+                                    Some(5.0),
+                                );
+                            }
+                        }
+                    }
+                });
+            }
+
+            MatrixRequest::SetRoomTopic { room_id, topic } => {
+                let Some(client) = get_client() else { continue };
+                let _set_room_topic_task = Handle::current().spawn(async move {
+                    if let Some(room) = client.get_room(&room_id) {
+                        match room.set_room_topic(&topic).await {
+                            Ok(_) => log!("Room topic set successfully."),
+                            Err(e) => error!("Failed to set room topic: {e:?}"),
+                        }
+                    }
+                });
+            }
+
+            MatrixRequest::UploadRoomAvatar { room_id, avatar_path } => {
+                let Some(client) = get_client() else { continue };
+                let _upload_room_avatar_task = Handle::current().spawn(async move {
+                    let data = match std::fs::read(&avatar_path) {
+                        Ok(d) => d,
+                        Err(e) => {
+                            error!("Failed to read room avatar file {:?}: {e}", avatar_path);
+                            enqueue_popup_notification(
+                                "Failed to read image file",
+                                crate::shared::popup_list::PopupKind::Error,
+                                Some(5.0),
+                            );
+                            return;
+                        }
+                    };
+                    let content_type = match avatar_path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).as_deref() {
+                        Some("png") => IMAGE_PNG,
+                        Some("jpg") | Some("jpeg") => IMAGE_JPEG,
+                        _ => IMAGE_PNG,
+                    };
+                    let image_data: Arc<[u8]> = data.clone().into();
+                    if let Some(room) = client.get_room(&room_id) {
+                        match client.media().upload(&content_type, data, None).await {
+                            Ok(response) => {
+                                let mxc_uri = response.content_uri;
+                                match room.set_avatar_url(&mxc_uri, None).await {
+                                    Ok(_) => {
+                                        log!("Room avatar updated successfully.");
+                                        Cx::post_action(RoomAvatarUploadedAction {
+                                            room_id,
+                                            image_data,
+                                        });
+                                        enqueue_popup_notification(
+                                            "Room avatar updated",
+                                            crate::shared::popup_list::PopupKind::Success,
+                                            Some(3.0),
+                                        );
+                                    }
+                                    Err(e) => error!("Failed to set room avatar URL: {e:?}"),
+                                }
+                            }
+                            Err(e) => error!("Failed to upload room avatar: {e:?}"),
+                        }
+                    }
                 });
             }
 

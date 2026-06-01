@@ -1865,6 +1865,20 @@ impl RoomsListRef {
             )
     }
 
+    /// Returns the canonical alias of the given room, if it is known and loaded.
+    pub fn get_room_canonical_alias(&self, room_id: &OwnedRoomId) -> Option<ruma::OwnedRoomAliasId> {
+        let inner = self.borrow()?;
+        inner.all_joined_rooms
+            .get(room_id)
+            .and_then(|jr| jr.canonical_alias.clone())
+    }
+
+    /// Returns the room ID of the first available joined room (useful for testing).
+    pub fn get_first_joined_room_id(&self) -> Option<OwnedRoomId> {
+        let inner = self.borrow()?;
+        inner.all_joined_rooms.keys().next().cloned()
+    }
+
     /// Returns the currently-selected space (the one selected in the SpacesBar).
     pub fn get_selected_space(&self) -> Option<RoomNameId> {
         self.borrow()?.selected_space.clone()
