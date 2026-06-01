@@ -21,7 +21,6 @@ use matrix_sdk::media::MediaFormat;
 
 pub use crate::event_preview::VideoSummary;
 use crate::{
-    event_preview::format_mmss,
     media_cache::{MediaCache, MediaCacheEntry},
     shared::video_message_player_modal::VideoMessagePlayerModalAction,
     utils,
@@ -585,11 +584,6 @@ impl VideoMessagePlayer {
         self.view
             .button(cx, ids!(surface.controls.maximise_button))
             .set_visible(cx, self.show_maximise_button);
-
-        let total = format_mmss(self.total_secs());
-        self.view
-            .label(cx, ids!(surface.controls.slider_row.total_label))
-            .set_text(cx, &total);
         self.view(cx, ids!(error_label)).set_visible(cx, false);
     }
 
@@ -750,18 +744,6 @@ impl VideoMessagePlayer {
         self.summary
             .as_ref()
             .is_some_and(should_show_unplayable_overlay)
-    }
-
-    fn total_ms(&self) -> u64 {
-        self.summary
-            .as_ref()
-            .and_then(|s| s.duration_secs)
-            .map(|secs| (secs.max(0.0) * 1000.0).round() as u64)
-            .unwrap_or(0)
-    }
-
-    fn total_secs(&self) -> f64 {
-        self.total_ms() as f64 / 1000.0
     }
 
     // No-op while Makepad's Video widget drives play/pause/slider state.
