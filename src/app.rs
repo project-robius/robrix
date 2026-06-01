@@ -28,6 +28,7 @@ use crate::{
 };
 use crate::shared::room_filter_search_results::{RoomFilterResultAction, RoomFilterResultTarget};
 use crate::shared::room_filter_search_results::RoomFilterSearchResultsListWidgetRefExt;
+use crate::home::sticker_modal::StickerModalWidgetRefExt;
 
 script_mod! {
     use mod.prelude.widgets.*
