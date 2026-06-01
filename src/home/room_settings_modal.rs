@@ -662,7 +662,7 @@ impl WidgetMatchEvent for RoomSettingsModal {
                 }
             }
             #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-            if let Some(room_id) = self.room_id.clone() {
+            if let Some(_room_id) = self.room_id.clone() {
                 use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
                 enqueue_popup_notification(
                     "Avatar upload not supported on this platform",
