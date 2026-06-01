@@ -601,7 +601,7 @@ impl WidgetMatchEvent for RoomSettingsModal {
                 self.view.redraw(cx);
             } else {
                 self.view.label(cx, ids!(name_error_label)).set_visible(cx, false);
-                if let Some(_room_id) = self.room_id.clone() {
+                if let Some(room_id) = self.room_id.clone() {
                     cx.action(RoomSettingsAction::Save {
                         room_id,
                         room_name: name.trim().to_string(),
@@ -651,26 +651,24 @@ impl WidgetMatchEvent for RoomSettingsModal {
 
         // Pencil / edit avatar button — open native file picker
         if self.view.button(cx, ids!(pencil_button)).clicked(actions) {
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             if let Some(room_id) = self.room_id.clone() {
-                #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+                use rfd::FileDialog;
+                if let Some(path) = FileDialog::new()
+                    .add_filter("Image", &["png", "jpg", "jpeg"])
+                    .pick_file()
                 {
-                    use rfd::FileDialog;
-                    if let Some(path) = FileDialog::new()
-                        .add_filter("Image", &["png", "jpg", "jpeg"])
-                        .pick_file()
-                    {
-                        cx.action(RoomSettingsAction::UploadRoomAvatar { room_id, avatar_path: path });
-                    }
+                    cx.action(RoomSettingsAction::UploadRoomAvatar { room_id, avatar_path: path });
                 }
-                #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-                {
-                    use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
-                    enqueue_popup_notification(
-                        "Avatar upload not supported on this platform",
-                        PopupKind::Warning,
-                        Some(4.0),
-                    );
-                }
+            }
+            #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+            if let Some(room_id) = self.room_id.clone() {
+                use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
+                enqueue_popup_notification(
+                    "Avatar upload not supported on this platform",
+                    PopupKind::Warning,
+                    Some(4.0),
+                );
             }
         }
     }
