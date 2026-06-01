@@ -12,22 +12,6 @@
 //! - Matrix SDK objects that can panic during destruction
 //! - Need for progress feedback and cancellation support
 //!
-//! ## State Flow
-//!
-//! ```
-//! Idle (0%) → PreChecking (10%) → StoppingSyncService (20%) → LoggingOutFromServer (30%)
-//!     ↓                                                                    ↓
-//!   Failed ←─────────────────────────────────────────────────────── PointOfNoReturn (50%) ⚠️
-//!                                                                           ↓
-//!                                                                   ClosingTabs (60%) [Desktop Only]
-//!                                                                           ↓
-//!                                                                   CleaningAppState (70%)
-//!                                                                           ↓
-//!                                                                     Completed (100%)
-//!                                                                           ↓
-//!                                                                        Failed
-//! ```
-//!
 //! ## Critical Design Points
 //!
 //! ### Point of No Return (50% completion)
@@ -69,12 +53,6 @@
 //!    teardown of per-session tasks. The tokio runtime stays alive, since
 //!    tearing it down here would race with the new client's SQLite setup.
 //! 7. **Completed**: Send `LogoutAction::LogoutSuccess`
-//!
-//! ## Usage
-//!
-//! ```rust
-//! let result = logout_with_state_machine(is_desktop).await;
-//! ```
 //!
 //! Progress updates are sent via `LogoutAction::ProgressUpdate` for UI feedback.
 //! Errors are classified as `Recoverable` or `Unrecoverable` for appropriate handling.

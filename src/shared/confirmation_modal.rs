@@ -148,14 +148,7 @@ impl ActionDefaultRef for ConfirmationModalAction {
 /// Defines the content and behavior of a confirmation modal.
 ///
 /// Only the title and body text are required.
-/// Everything else can be left as default values like so:
-/// ```rust,no_run
-/// let content = ConfirmationModalContent {
-///     title_text: "Confirm deletion".into()
-///     body_text: "Are you sure you want to delete this file?".into()
-///     ..Default::default()
-/// };
-/// ```
+/// Everything else can be left as default values.
 #[derive(Default)]
 #[allow(clippy::type_complexity)]
 pub struct ConfirmationModalContent {
