@@ -6,6 +6,7 @@ use makepad_widgets::*;
 use ruma::OwnedRoomId;
 
 use crate::shared::avatar::AvatarWidgetExt;
+use crate::utils::load_png_or_jpg;
 
 /// A simple wrapper to carry stdin commands as Makepad actions.
 #[derive(Clone, Debug)]
@@ -230,6 +231,7 @@ script_mod! {
                                 width: 60
                                 height: 24
                                 padding: 4
+                                align: Align{x: 0.5, y: 0.5}
                                 draw_icon.svg: (ICON_EDIT)
                                 icon_walk: Walk{width: 12, height: 12}
                                 text: ""
@@ -355,13 +357,13 @@ script_mod! {
 
                         add_address_input := RobrixTextInput {
                             width: Fill
-                            height: 32
+                            height: 36
                             empty_text: "# e.g. my-room"
                         }
 
                         add_address_button := RobrixIconButton {
                             width: 60
-                            height: 32
+                            height: 36
                             padding: 6
                             icon_walk: Walk{width: 0, height: 0}
                             text: "Add"
@@ -453,6 +455,11 @@ script_mod! {
                         padding: Inset{top: 4, bottom: 4, left: 6, right: 4}
                         draw_text +: {
                             color: (MESSAGE_TEXT_COLOR)
+                            color_hover: (MESSAGE_TEXT_COLOR)
+                            color_focus: (MESSAGE_TEXT_COLOR)
+                            color_active: (MESSAGE_TEXT_COLOR)
+                            color_down: (MESSAGE_TEXT_COLOR)
+                            color_disabled: (MESSAGE_TEXT_COLOR)
                             text_style: REGULAR_TEXT {font_size: 10.5}
                         }
                         draw_bg +: {
@@ -472,6 +479,11 @@ script_mod! {
                         padding: Inset{top: 4, bottom: 4, left: 6, right: 4}
                         draw_text +: {
                             color: (MESSAGE_TEXT_COLOR)
+                            color_hover: (MESSAGE_TEXT_COLOR)
+                            color_focus: (MESSAGE_TEXT_COLOR)
+                            color_active: (MESSAGE_TEXT_COLOR)
+                            color_down: (MESSAGE_TEXT_COLOR)
+                            color_disabled: (MESSAGE_TEXT_COLOR)
                             text_style: REGULAR_TEXT {font_size: 10.5}
                         }
                         draw_bg +: {
@@ -708,6 +720,13 @@ impl RoomSettingsModal {
         self.view.redraw(cx);
     }
 
+    /// Update the avatar widget with freshly uploaded image bytes.
+    pub fn apply_avatar(&mut self, cx: &mut Cx, image_data: &[u8]) {
+        let _ = self.view.avatar(cx, ids!(room_avatar))
+            .show_image(cx, None, |cx, img| load_png_or_jpg(&img, cx, image_data));
+        self.view.redraw(cx);
+    }
+
     /// Apply fetched settings (topic, is_public) that arrived asynchronously.
     pub fn apply_fetched_settings(
         &mut self,
@@ -744,5 +763,11 @@ impl RoomSettingsModalRef {
     pub fn apply_fetched_settings(&self, cx: &mut Cx, topic: Option<String>, is_public: bool) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.apply_fetched_settings(cx, topic, is_public);
+    }
+
+    /// Update the avatar widget after a successful upload.
+    pub fn apply_avatar(&self, cx: &mut Cx, image_data: &[u8]) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.apply_avatar(cx, image_data);
     }
 }

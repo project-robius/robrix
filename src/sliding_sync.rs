@@ -702,6 +702,14 @@ pub struct RoomSettingsFetchedAction {
     pub is_public: bool,
 }
 
+/// Posted after a room avatar is successfully uploaded and set.
+#[derive(Clone, Debug)]
+pub struct RoomAvatarUploadedAction {
+    pub room_id: OwnedRoomId,
+    /// Raw image bytes of the newly uploaded avatar.
+    pub image_data: Arc<[u8]>,
+}
+
 /// Actions emitted in response to a [`MatrixRequest::GenerateMatrixLink`].
 #[derive(Clone, Debug)]
 pub enum MatrixLinkAction {
@@ -3332,6 +3340,7 @@ async fn matrix_worker_task(
                         Some("jpg") | Some("jpeg") => IMAGE_JPEG,
                         _ => IMAGE_PNG,
                     };
+                    let image_data: Arc<[u8]> = data.clone().into();
                     if let Some(room) = client.get_room(&room_id) {
                         match client.media().upload(&content_type, data, None).await {
                             Ok(response) => {
@@ -3339,6 +3348,10 @@ async fn matrix_worker_task(
                                 match room.set_avatar_url(&mxc_uri, None).await {
                                     Ok(_) => {
                                         log!("Room avatar updated successfully.");
+                                        Cx::post_action(RoomAvatarUploadedAction {
+                                            room_id,
+                                            image_data,
+                                        });
                                         enqueue_popup_notification(
                                             "Room avatar updated",
                                             crate::shared::popup_list::PopupKind::Success,
