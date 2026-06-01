@@ -97,7 +97,7 @@
   "login.proxy_settings.input.port": "7890",
   "login.proxy_settings.input.account": "",
   "login.proxy_settings.input.password": "",
-  "login.proxy_settings.save": "保存",
+  "login.proxy_settings.save": "保存代理",
   "login.proxy_settings.saved.title": "代理设置已保存",
   "login.proxy_settings.saved.body": "代理设置保存成功。",
   "login.proxy_settings.error.missing_address": "请输入代理地址。",
