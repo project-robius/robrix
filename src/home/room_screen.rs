@@ -32,7 +32,7 @@ use crate::{
     },
     room::{BasicRoomDetails, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, media_source_mxc, start_attachment_download}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageStatus, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, media_source_mxc, start_attachment_download}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageStatus, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -693,6 +693,10 @@ script_mod! {
             // to finish loading, e.g., when loading an older replied-to message.
             loading_pane := LoadingPane { }
 
+            // The popup menu for uploading/sending other content to this room,
+            // which is controlled by actions from the RoomInputBar.
+            room_input_popup_menu := RoomInputPopupMenu { }
+
 
             /*
              * TODO: add the action bar back in as a series of floating buttons.
@@ -766,6 +770,7 @@ impl Widget for RoomScreen {
         let portal_list = self.portal_list(cx, ids!(timeline.list));
         let user_profile_sliding_pane = self.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane));
         let loading_pane = self.loading_pane(cx, ids!(loading_pane));
+        let room_input_popup_menu = self.room_input_popup_menu(cx, ids!(room_input_popup_menu));
 
         // Handle actions here before processing timeline updates.
         // Normally (in most other widgets), the order of event handling doesn't matter much.
@@ -773,6 +778,10 @@ impl Widget for RoomScreen {
         // we want to handle those before processing any updates that might change
         // the set of timeline indices (which would invalidate the index values in any actions).
         if let Event::Actions(actions) = event {
+            if let Some(action) = room_input_popup_menu.selected(actions) {
+                self.handle_room_input_popup_menu_action(cx, action);
+            }
+
             for (index, wr) in portal_list.items_with_actions(actions) {
                 // Handle a hover-in action on the reaction list: show a reaction summary.
                 let reaction_list = wr.reaction_list(cx, ids!(reaction_list));
@@ -1016,7 +1025,27 @@ impl Widget for RoomScreen {
         //
         let is_interactive_hit = utils::is_interactive_hit_event(event);
         let is_pane_shown: bool;
-        if loading_pane.is_currently_shown(cx) {
+        let mut close_room_input_popup_menu_after_forwarding = false;
+        if room_input_popup_menu.is_open() {
+            if event.back_pressed() || matches!(event, Event::KeyUp(KeyEvent { key_code: KeyCode::Escape, .. })) {
+                room_input_popup_menu.close(cx);
+                is_pane_shown = true;
+            }
+            else if is_interactive_hit {
+                if room_input_popup_menu.is_event_within_popup_menu(cx, event) {
+                    is_pane_shown = true;
+                    room_input_popup_menu.handle_event(cx, event, scope);
+                } else {
+                    // Let outside clicks, hovers, and mouse moves fall through to the underlying UI.
+                    close_room_input_popup_menu_after_forwarding =
+                        room_input_popup_menu.should_dismiss_for_outside_event(cx, event);
+                    is_pane_shown = false;
+                }
+            } else {
+                is_pane_shown = false;
+            }
+        }
+        else if loading_pane.is_currently_shown(cx) {
             is_pane_shown = true;
             if is_interactive_hit {
                 loading_pane.handle_event(cx, event, scope);
@@ -1102,6 +1131,17 @@ impl Widget for RoomScreen {
                     return false;
                 }
 
+                match action
+                    .as_widget_action()
+                    .cast_ref::<RoomInputPopupMenuAction>()
+                {
+                    RoomInputPopupMenuAction::None => {}
+                    menu_action => {
+                        self.handle_room_input_popup_menu_action(cx, *menu_action);
+                        return false;
+                    }
+                }
+
                 // Handle the action that requests to show the user profile sliding pane.
                 if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
                     self.show_user_profile(
@@ -1160,9 +1200,16 @@ impl Widget for RoomScreen {
             });
             // Add back any unhandled actions to the global action list.
             cx.extend_actions(actions_generated_within_this_room_screen);
+
+            if close_room_input_popup_menu_after_forwarding {
+                let room_input_popup_menu =
+                    self.room_input_popup_menu(cx, ids!(room_input_popup_menu));
+                if room_input_popup_menu.is_open() {
+                    room_input_popup_menu.close(cx);
+                }
+            }
         }
     }
-
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // If the room isn't loaded yet, we show the restore status label only.
@@ -1373,6 +1420,51 @@ impl Widget for RoomScreen {
 impl RoomScreen {
     fn room_id(&self) -> Option<&OwnedRoomId> {
         self.room_name_id.as_ref().map(|r| r.room_id())
+    }
+
+    fn show_room_input_popup_menu(&mut self, cx: &mut Cx, button_rect: Rect) {
+        let popup_menu = self.room_input_popup_menu(cx, ids!(room_input_popup_menu));
+        let room_screen_rect = self.view(cx, ids!(room_screen_wrapper)).area().rect(cx);
+        let margin = Inset {
+            left: button_rect.pos.x - room_screen_rect.pos.x,
+            top: 0.0,
+            right: 0.0,
+            bottom: room_screen_rect.pos.y + room_screen_rect.size.y
+                - button_rect.pos.y
+                + 9.0
+        };
+
+        let mut main_content = popup_menu.view(cx, ids!(main_content));
+        script_apply_eval!(cx, main_content, {
+            margin: #(margin)
+        });
+        popup_menu.show(cx);
+        self.view.redraw(cx);
+    }
+
+    fn handle_room_input_popup_menu_action(
+        &mut self,
+        cx: &mut Cx,
+        action: RoomInputPopupMenuAction,
+    ) {
+        let room_input_bar = self.view.room_input_bar(cx, ids!(room_input_bar));
+        match action {
+            RoomInputPopupMenuAction::Show { button_rect } => {
+                self.show_room_input_popup_menu(cx, button_rect);
+            }
+            RoomInputPopupMenuAction::UploadPhotoOrVideo => {
+                let Some(timeline_kind) = self.timeline_kind.clone() else { return };
+                room_input_bar.open_photo_video_picker(cx, timeline_kind);
+            }
+            RoomInputPopupMenuAction::UploadFile => {
+                let Some(timeline_kind) = self.timeline_kind.clone() else { return };
+                room_input_bar.open_file_picker(cx, timeline_kind);
+            }
+            RoomInputPopupMenuAction::SendCurrentLocation => {
+                room_input_bar.show_current_location_preview(cx);
+            }
+            RoomInputPopupMenuAction::None => {}
+        }
     }
 
     /// Processes all pending background updates to the currently-shown timeline.

@@ -29,6 +29,7 @@ script_mod! {
     mod.widgets.ICON_INVITE           = crate_resource("self://resources/icons/invite.svg")
     mod.widgets.ICON_JOIN_ROOM        = crate_resource("self://resources/icons/join_room.svg")
     mod.widgets.ICON_JUMP             = crate_resource("self://resources/icons/go_back.svg")
+    mod.widgets.ICON_LOCATION_PIN     = crate_resource("self://resources/icons/location-pin.svg")
     mod.widgets.ICON_LOGOUT           = crate_resource("self://resources/icons/logout.svg")
     mod.widgets.ICON_LINK             = crate_resource("self://resources/icons/link.svg")
     mod.widgets.ICON_PIN              = crate_resource("self://resources/icons/pin.svg")
