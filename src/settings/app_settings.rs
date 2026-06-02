@@ -4,24 +4,10 @@ use makepad_widgets::*;
 
 use crate::{
     app::AppState,
+    i18n::{AppLanguage, tr_key},
     settings::app_preferences::{AppPreferences, AppPreferencesAction, ThumbnailMaxHeight, UiZoom, ViewModeOverride},
     shared::popup_list::{enqueue_popup_notification, PopupKind},
 };
-
-#[cfg(target_os = "macos")]
-const SEND_SHORTCUT_TOGGLE_LABEL: &str = "Send with Cmd⌘ + Enter";
-#[cfg(not(target_os = "macos"))]
-const SEND_SHORTCUT_TOGGLE_LABEL: &str = "Send with Ctrl + Enter";
-
-#[cfg(target_os = "macos")]
-const SEND_SHORTCUT_DESC_CMD: &str = "Currently: 'Cmd⌘ + Enter' to send, 'Enter' for a new line";
-#[cfg(not(target_os = "macos"))]
-const SEND_SHORTCUT_DESC_CMD: &str = "Currently: 'Ctrl + Enter' to send, 'Enter' for a new line";
-
-#[cfg(target_os = "macos")]
-const UI_ZOOM_DESCRIPTION: &str = "Scales the entire UI uniformly.\n'Cmd⌘ + +/-' zooms in or out, 'Cmd⌘ + 0' resets zoom";
-#[cfg(not(target_os = "macos"))]
-const UI_ZOOM_DESCRIPTION: &str = "Scales the entire UI uniformly.\n'Ctrl + +/-' zooms in or out, 'Ctrl + 0' resets zoom.";
 
 const DEFAULT_CUSTOM_THUMB_HEIGHT: u32 = 300;
 
@@ -214,7 +200,7 @@ script_mod! {
                 labels: ["Automatic (default)", "Force wide (desktop)", "Force narrow (mobile)"]
                 selected_item: 0
             }
-            mod.widgets.SettingsSectionDescription {
+            view_mode_description := mod.widgets.SettingsSectionDescription {
                 text: "By default, the app layout auto-adapts based on width."
             }
         }
@@ -354,7 +340,7 @@ script_mod! {
                         is_read_only: true
                     }
 
-                    Label {
+                    thumb_custom_pixels_label := Label {
                         width: Fit, height: Fit
                         draw_text +: {
                             color: (MESSAGE_TEXT_COLOR),
@@ -371,10 +357,18 @@ script_mod! {
 #[derive(Script, ScriptHook, Widget)]
 pub struct AppSettings {
     #[deref] view: View,
+    #[rust] app_language: AppLanguage,
+    #[rust] app_language_initialized: bool,
 }
 
 impl Widget for AppSettings {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if !self.app_language_initialized || self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         if let Event::Actions(actions) = event {
             self.handle_actions(cx, actions, scope);
         }
@@ -382,6 +376,12 @@ impl Widget for AppSettings {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let app_language = scope.data.get::<AppState>()
+            .map(|app_state| app_state.app_language)
+            .unwrap_or_default();
+        if !self.app_language_initialized || self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -397,7 +397,7 @@ impl AppSettings {
                 app_state.app_prefs.view_mode = new_mode;
                 app_state.app_prefs.on_view_mode_changed(cx);
                 enqueue_popup_notification(
-                    "Updated view mode setting.",
+                    tr_key(self.app_language, "settings.preferences.app.popup.updated_view_mode").to_string(),
                     PopupKind::Success,
                     Some(3.0),
                 );
@@ -438,7 +438,7 @@ impl AppSettings {
                 }
                 None if !text.trim().is_empty() => {
                     enqueue_popup_notification(
-                        "UI zoom must be a positive percentage, like 100 or 125%.",
+                        tr_key(self.app_language, "settings.preferences.app.popup.invalid_ui_zoom").to_string(),
                         PopupKind::Error,
                         Some(4.0),
                     );
@@ -463,10 +463,10 @@ impl AppSettings {
             let new_send_on_enter = !cmd_enter_active;
             if new_send_on_enter != app_state.app_prefs.send_on_enter {
                 app_state.app_prefs.send_on_enter = new_send_on_enter;
-                Self::update_send_shortcut_description(cx, &self.view, new_send_on_enter);
+                self.update_send_shortcut_description(cx, new_send_on_enter);
                 app_state.app_prefs.on_send_on_enter_changed(cx);
                 enqueue_popup_notification(
-                    "Updated send message shortcut.",
+                    tr_key(self.app_language, "settings.preferences.app.popup.updated_send_shortcut").to_string(),
                     PopupKind::Success,
                     Some(3.0),
                 );
@@ -499,7 +499,7 @@ impl AppSettings {
                 app_state.app_prefs.thumbnail_max_height = new_thumb;
                 app_state.app_prefs.on_thumbnail_max_height_changed(cx);
                 enqueue_popup_notification(
-                    "Updated max image thumbnail height.",
+                    tr_key(self.app_language, "settings.preferences.app.popup.updated_thumbnail_height").to_string(),
                     PopupKind::Success,
                     Some(3.0),
                 );
@@ -523,7 +523,7 @@ impl AppSettings {
                             app_state.app_prefs.thumbnail_max_height = new_thumb;
                             app_state.app_prefs.on_thumbnail_max_height_changed(cx);
                             enqueue_popup_notification(
-                                "Updated max image thumbnail height.",
+                                tr_key(self.app_language, "settings.preferences.app.popup.updated_thumbnail_height").to_string(),
                                 PopupKind::Success,
                                 Some(3.0),
                             );
@@ -531,7 +531,7 @@ impl AppSettings {
                     }
                     None if !text.trim().is_empty() => {
                         enqueue_popup_notification(
-                            "Custom thumbnail height must be a positive whole number.",
+                            tr_key(self.app_language, "settings.preferences.app.popup.invalid_thumbnail_height").to_string(),
                             PopupKind::Error,
                             Some(4.0),
                         );
@@ -542,20 +542,18 @@ impl AppSettings {
         }
     }
 
-    pub fn populate(&mut self, cx: &mut Cx, prefs: &AppPreferences) {
+    pub fn populate(&mut self, cx: &mut Cx, prefs: &AppPreferences, app_language: AppLanguage) {
+        if !self.app_language_initialized || self.app_language != app_language {
+            self.set_app_language(cx, app_language);
+        }
         self.view.drop_down(cx, ids!(view_mode_dropdown))
             .set_selected_item(cx, prefs.view_mode.to_index());
 
         self.view.text_input(cx, ids!(ui_zoom_input))
             .set_text(cx, &prefs.ui_zoom.format_percent());
-        self.view.label(cx, ids!(ui_zoom_description))
-            .set_text(cx, UI_ZOOM_DESCRIPTION);
-
         self.view.check_box(cx, ids!(send_on_cmd_enter_toggle))
-            .set_text(SEND_SHORTCUT_TOGGLE_LABEL);
-        self.view.check_box(cx, ids!(send_on_cmd_enter_toggle))
-            .set_active(cx, !prefs.send_on_enter);
-        Self::update_send_shortcut_description(cx, &self.view, prefs.send_on_enter);
+            .set_active(cx, !prefs.send_on_enter, Animate::No);
+        self.update_send_shortcut_description(cx, prefs.send_on_enter);
 
         let (small, medium, unlimited, custom, custom_text) = match prefs.thumbnail_max_height {
             ThumbnailMaxHeight::Small => (true, false, false, false, String::new()),
@@ -563,22 +561,98 @@ impl AppSettings {
             ThumbnailMaxHeight::Unlimited => (false, false, true, false, String::new()),
             ThumbnailMaxHeight::Custom(v) => (false, false, false, true, v.to_string()),
         };
-        self.view.radio_button(cx, ids!(thumb_small_radio)).set_active(cx, small);
-        self.view.radio_button(cx, ids!(thumb_medium_radio)).set_active(cx, medium);
-        self.view.radio_button(cx, ids!(thumb_unlimited_radio)).set_active(cx, unlimited);
-        self.view.radio_button(cx, ids!(thumb_custom_radio)).set_active(cx, custom);
+        self.view.radio_button(cx, ids!(thumb_small_radio)).set_active(cx, small, Animate::No);
+        self.view.radio_button(cx, ids!(thumb_medium_radio)).set_active(cx, medium, Animate::No);
+        self.view.radio_button(cx, ids!(thumb_unlimited_radio)).set_active(cx, unlimited, Animate::No);
+        self.view.radio_button(cx, ids!(thumb_custom_radio)).set_active(cx, custom, Animate::No);
         Self::set_thumb_custom_input_read_only(cx, &self.view, custom);
         Self::set_thumb_custom_input_disabled(cx, &self.view, custom);
         self.view.text_input(cx, ids!(thumb_custom_input)).set_text(cx, &custom_text);
     }
 
-    fn update_send_shortcut_description(cx: &mut Cx, view: &View, send_on_enter: bool) {
+    fn set_app_language(&mut self, cx: &mut Cx, app_language: AppLanguage) {
+        self.app_language = app_language;
+        self.app_language_initialized = true;
+        self.sync_app_language(cx);
+    }
+
+    fn sync_app_language(&mut self, cx: &mut Cx) {
+        self.view
+            .label(cx, ids!(preferences_app_title))
+            .set_text(cx, tr_key(self.app_language, "settings.preferences.app.title"));
+        self.view
+            .label(cx, ids!(preferences_view_mode_label))
+            .set_text(cx, tr_key(self.app_language, "settings.preferences.app.view_mode.label"));
+        self.view
+            .label(cx, ids!(preferences_ui_zoom_label))
+            .set_text(cx, tr_key(self.app_language, "settings.preferences.app.ui_zoom.label"));
+        self.view
+            .label(cx, ids!(preferences_send_shortcut_label))
+            .set_text(cx, tr_key(self.app_language, "settings.preferences.app.send_shortcut.label"));
+        self.view
+            .label(cx, ids!(preferences_thumb_height_label))
+            .set_text(cx, tr_key(self.app_language, "settings.preferences.app.thumbnail.label"));
+
+        self.view.text_input(cx, ids!(ui_zoom_input))
+            .set_empty_text(cx, tr_key(self.app_language, "settings.preferences.app.ui_zoom.input.placeholder").to_string());
+        self.view.text_input(cx, ids!(thumb_custom_input))
+            .set_empty_text(cx, tr_key(self.app_language, "settings.preferences.app.thumbnail.input.placeholder").to_string());
+
+        self.view.radio_button(cx, ids!(thumb_small_radio))
+            .set_text(tr_key(self.app_language, "settings.preferences.app.thumbnail.option.small"));
+        self.view.radio_button(cx, ids!(thumb_medium_radio))
+            .set_text(tr_key(self.app_language, "settings.preferences.app.thumbnail.option.medium"));
+        self.view.radio_button(cx, ids!(thumb_unlimited_radio))
+            .set_text(tr_key(self.app_language, "settings.preferences.app.thumbnail.option.unlimited"));
+        self.view.radio_button(cx, ids!(thumb_custom_radio))
+            .set_text(tr_key(self.app_language, "settings.preferences.app.thumbnail.option.custom"));
+        self.view.label(cx, ids!(thumb_custom_pixels_label))
+            .set_text(cx, tr_key(self.app_language, "settings.preferences.app.thumbnail.unit.pixels"));
+
+        self.view.label(cx, ids!(view_mode_description))
+            .set_text(cx, tr_key(self.app_language, "settings.preferences.app.view_mode.description"));
+
+        #[cfg(target_os = "macos")]
+        self.view.label(cx, ids!(ui_zoom_description))
+            .set_text(cx, tr_key(self.app_language, "settings.preferences.app.ui_zoom.description.cmd"));
+        #[cfg(not(target_os = "macos"))]
+        self.view.label(cx, ids!(ui_zoom_description))
+            .set_text(cx, tr_key(self.app_language, "settings.preferences.app.ui_zoom.description.ctrl"));
+
+        #[cfg(target_os = "macos")]
+        self.view.check_box(cx, ids!(send_on_cmd_enter_toggle))
+            .set_text(tr_key(self.app_language, "settings.preferences.app.send_shortcut.toggle.cmd"));
+        #[cfg(not(target_os = "macos"))]
+        self.view.check_box(cx, ids!(send_on_cmd_enter_toggle))
+            .set_text(tr_key(self.app_language, "settings.preferences.app.send_shortcut.toggle.ctrl"));
+
+        let selected_idx = self.view.drop_down(cx, ids!(view_mode_dropdown)).selected_item();
+        self.view.drop_down(cx, ids!(view_mode_dropdown)).set_labels(cx, vec![
+            tr_key(self.app_language, "settings.preferences.app.view_mode.option.automatic").to_string(),
+            tr_key(self.app_language, "settings.preferences.app.view_mode.option.force_wide").to_string(),
+            tr_key(self.app_language, "settings.preferences.app.view_mode.option.force_narrow").to_string(),
+        ]);
+        self.view.drop_down(cx, ids!(view_mode_dropdown)).set_selected_item(cx, selected_idx);
+        let send_on_enter = !self.view.check_box(cx, ids!(send_on_cmd_enter_toggle)).active(cx);
+        self.update_send_shortcut_description(cx, send_on_enter);
+
+        self.view.redraw(cx);
+    }
+
+    fn update_send_shortcut_description(&self, cx: &mut Cx, send_on_enter: bool) {
         let text = if send_on_enter {
-            "Currently: 'Enter' to send, 'Shift + Enter' for a new line"
+            tr_key(self.app_language, "settings.preferences.app.send_shortcut.description.enter")
         } else {
-            SEND_SHORTCUT_DESC_CMD
+            #[cfg(target_os = "macos")]
+            {
+                tr_key(self.app_language, "settings.preferences.app.send_shortcut.description.cmd")
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                tr_key(self.app_language, "settings.preferences.app.send_shortcut.description.ctrl")
+            }
         };
-        view.label(cx, ids!(send_shortcut_description)).set_text(cx, text);
+        self.view.label(cx, ids!(send_shortcut_description)).set_text(cx, text);
     }
 
     fn set_thumb_custom_input_read_only(cx: &mut Cx, view: &View, enabled: bool) {
@@ -593,9 +667,9 @@ impl AppSettings {
 }
 
 impl AppSettingsRef {
-    pub fn populate(&self, cx: &mut Cx, prefs: &AppPreferences) {
+    pub fn populate(&self, cx: &mut Cx, prefs: &AppPreferences, app_language: AppLanguage) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.populate(cx, prefs);
+        inner.populate(cx, prefs, app_language);
     }
 }
 

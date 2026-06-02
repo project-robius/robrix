@@ -241,69 +241,53 @@ script_mod! {
                             }
                         }
 
-                        LineH { width: 400, padding: 10, margin: Inset{top: 12, bottom: 5} }
-
                         preferences_proxy_title := TitleLabel {
                             text: "Proxy"
-                            draw_text +: {
-                                color: (COLOR_ACTIVE_PRIMARY)
-                            }
                         }
 
                         preferences_proxy_use_card := RoundedView {
                             width: Fill, height: Fit,
-                            flow: Right
-                            align: Align{x: 1.0, y: 0.5}
-                            show_bg: true
-                            draw_bg +: {
-                                color: #F5F5F5
-                                border_radius: 8.0
-                                border_size: 1.0
-                                border_color: #DADADA
-                            }
-                            padding: Inset{top: 12, bottom: 12, left: 12, right: 12}
-                            margin: Inset{left: 5, right: 8, top: 2}
-
-                            preferences_proxy_use_label := Label {
-                                width: Fill, height: Fit
-                                draw_text +: {
-                                    color: (COLOR_TEXT)
-                                    text_style: TITLE_TEXT {font_size: 12}
-                                }
-                                text: "Use proxy"
-                            }
-
-                            preferences_proxy_use_toggle := Toggle {
-                                width: Fit
-                                height: Fit
-                                padding: Inset{top: (SPACE_SM), right: (SPACE_SM), bottom: (SPACE_SM), left: (SPACE_SM)}
-                                text: ""
-                                active: false
-                                draw_bg +: {
-                                    size: 20.0
-                                    color_active: (COLOR_ACTIVE_PRIMARY)
-                                    border_color_active: (COLOR_ACTIVE_PRIMARY)
-                                    mark_color_active: #fff
-                                }
-                            }
-                        }
-
-                        preferences_proxy_fields_section := RoundedView {
-                            visible: false
-                            width: Fill, height: Fit,
                             flow: Down
-                            spacing: 0
                             show_bg: true
                             draw_bg +: {
-                                color: #F5F5F5
-                                border_radius: 8.0
-                                border_size: 1.0
-                                border_color: #DADADA
+                                color: #F8F8FA
+                                border_radius: (RADIUS_LG)
                             }
-                            padding: Inset{top: 4, left: 12, right: 12, bottom: 8}
-                            margin: Inset{left: 5, right: 8, top: 4}
+                            padding: Inset{left: (SPACE_MD), right: (SPACE_MD), top: (SPACE_SM), bottom: (SPACE_SM)}
+                            margin: Inset{top: (SPACE_XS)}
 
-                            preferences_proxy_address_row := View {
+                            View {
+                                width: Fill, height: Fit
+                                flow: Right
+                                align: Align{x: 1.0, y: 0.5}
+
+                                preferences_proxy_use_label := SubsectionLabel {
+                                    margin: Inset{top: 0, bottom: 0}
+                                    text: "Use proxy"
+                                }
+
+                                preferences_proxy_use_toggle := Toggle {
+                                    width: Fit
+                                    height: Fit
+                                    padding: Inset{top: (SPACE_SM), right: (SPACE_SM), bottom: (SPACE_SM), left: (SPACE_SM)}
+                                    text: ""
+                                    active: false
+                                    draw_bg +: {
+                                        size: 20.0
+                                        color_active: (COLOR_ACTIVE_PRIMARY)
+                                        border_color_active: (COLOR_ACTIVE_PRIMARY)
+                                        mark_color_active: #fff
+                                    }
+                                }
+                            }
+
+                            preferences_proxy_fields_section := View {
+                                visible: false
+                                width: Fill, height: Fit,
+                                flow: Down
+                                spacing: 0
+
+                                preferences_proxy_address_row := View {
                                 width: Fill, height: Fit,
                                 flow: Right
                                 align: Align{y: 0.5}
@@ -314,7 +298,7 @@ script_mod! {
                                     width: 90, height: Fit
                                     draw_text +: {
                                         color: (COLOR_TEXT)
-                                        text_style: TITLE_TEXT {font_size: 12}
+                                        text_style: REGULAR_TEXT {font_size: 12}
                                     }
                                     text: "Address"
                                 }
@@ -327,8 +311,6 @@ script_mod! {
                                 }
                             }
 
-                            LineH { draw_bg.color: #DDDDDD }
-
                             preferences_proxy_port_row := View {
                                 width: Fill, height: Fit,
                                 flow: Right
@@ -340,7 +322,7 @@ script_mod! {
                                     width: 90, height: Fit
                                     draw_text +: {
                                         color: (COLOR_TEXT)
-                                        text_style: TITLE_TEXT {font_size: 12}
+                                        text_style: REGULAR_TEXT {font_size: 12}
                                     }
                                     text: "Port"
                                 }
@@ -353,8 +335,6 @@ script_mod! {
                                 }
                             }
 
-                            LineH { draw_bg.color: #DDDDDD }
-
                             preferences_proxy_account_row := View {
                                 width: Fill, height: Fit,
                                 flow: Right
@@ -366,7 +346,7 @@ script_mod! {
                                     width: 90, height: Fit
                                     draw_text +: {
                                         color: (COLOR_TEXT)
-                                        text_style: TITLE_TEXT {font_size: 12}
+                                        text_style: REGULAR_TEXT {font_size: 12}
                                     }
                                     text: "Account"
                                 }
@@ -379,8 +359,6 @@ script_mod! {
                                 }
                             }
 
-                            LineH { draw_bg.color: #DDDDDD }
-
                             preferences_proxy_password_row := View {
                                 width: Fill, height: Fit,
                                 flow: Right
@@ -392,7 +370,7 @@ script_mod! {
                                     width: 90, height: Fit
                                     draw_text +: {
                                         color: (COLOR_TEXT)
-                                        text_style: TITLE_TEXT {font_size: 12}
+                                        text_style: REGULAR_TEXT {font_size: 12}
                                     }
                                     text: "Password"
                                 }
@@ -405,13 +383,33 @@ script_mod! {
                                     padding: Inset{top: 5, bottom: 5, left: 10, right: 10}
                                 }
                             }
-                        }
+                            }
 
-                        preferences_proxy_save_button := RobrixIconButton {
-                            width: Fit, height: Fit
-                            padding: Inset{left: 15, right: 15, top: 8, bottom: 8}
-                            margin: Inset{left: 5, top: 5, bottom: 4}
-                            text: "Save Proxy"
+                            preferences_proxy_error_label := Label {
+                                visible: false
+                                width: Fill, height: Fit
+                                margin: Inset{top: (SPACE_SM)}
+                                draw_text +: {
+                                    color: (COLOR_TEXT_WARNING_NOT_FOUND)
+                                    text_style: REGULAR_TEXT {font_size: 11}
+                                    wrap: Words
+                                }
+                                text: ""
+                            }
+
+                            preferences_proxy_save_button_row := View {
+                                width: Fill, height: Fit
+                                flow: Right
+                                align: Align{x: 0.0, y: 0.5}
+                                margin: Inset{top: (SPACE_SM)}
+
+                                preferences_proxy_save_button := RobrixIconButton {
+                                    width: Fit, height: Fit
+                                    padding: Inset{left: (SPACE_MD), right: (SPACE_MD), top: (SPACE_SM), bottom: (SPACE_SM)}
+                                    align: Align{x: 0.5, y: 0.5}
+                                    text: "Save Proxy"
+                                }
+                            }
                         }
                     }
                 }
@@ -711,10 +709,12 @@ impl Widget for SettingsScreen {
             }
 
             if self.view.button(cx, ids!(preferences_proxy_save_button)).clicked(actions) {
+                let error_label = self.view.label(cx, ids!(preferences_proxy_error_label));
                 match self.build_proxy_url_from_preferences(cx) {
                     Ok(proxy_url) => {
                         match crate::proxy_config::save_proxy_url(proxy_url.as_deref()) {
                             Ok(_) => {
+                                error_label.set_visible(cx, false);
                                 enqueue_popup_notification(
                                     tr_key(self.app_language, "settings.preferences.proxy.popup.saved").to_string(),
                                     PopupKind::Success,
@@ -722,30 +722,25 @@ impl Widget for SettingsScreen {
                                 );
                             }
                             Err(proxy_error) => {
-                                enqueue_popup_notification(
-                                    format!(
-                                        "{}\n\n{}",
-                                        tr_key(self.app_language, "settings.preferences.proxy.popup.invalid"),
-                                        proxy_error
-                                    ),
-                                    PopupKind::Error,
-                                    None,
-                                );
+                                error_label.set_text(cx, &format!(
+                                    "{}\n{}",
+                                    tr_key(self.app_language, "settings.preferences.proxy.popup.invalid"),
+                                    proxy_error,
+                                ));
+                                error_label.set_visible(cx, true);
                             }
                         }
                     }
                     Err(proxy_error) => {
-                        enqueue_popup_notification(
-                            format!(
-                                "{}\n\n{}",
-                                tr_key(self.app_language, "settings.preferences.proxy.popup.invalid"),
-                                proxy_error
-                            ),
-                            PopupKind::Error,
-                            None,
-                        );
+                        error_label.set_text(cx, &format!(
+                            "{}\n{}",
+                            tr_key(self.app_language, "settings.preferences.proxy.popup.invalid"),
+                            proxy_error,
+                        ));
+                        error_label.set_visible(cx, true);
                     }
                 }
+                self.redraw(cx);
             }
 
             if self.view.button(cx, ids!(category_account_button)).clicked(actions) {
@@ -968,10 +963,13 @@ impl SettingsScreen {
         self.preferences_use_proxy_enabled = enabled;
         self.view
             .check_box(cx, ids!(preferences_proxy_use_toggle))
-            .set_active(cx, enabled);
+            .set_active(cx, enabled, Animate::No);
         self.view
             .view(cx, ids!(preferences_proxy_fields_section))
             .set_visible(cx, enabled);
+        self.view
+            .label(cx, ids!(preferences_proxy_error_label))
+            .set_visible(cx, false);
         self.view.redraw(cx);
     }
 
@@ -1115,6 +1113,15 @@ impl SettingsScreen {
                 },
             );
 
+        // The preferences page is lazy-init: its widgets don't exist until the
+        // user first switches to it, so the saved proxy populated during
+        // SettingsScreen::populate misses the input refs. Re-load here once the
+        // page's widget tree is live so the proxy form reflects whatever was
+        // saved from the login modal.
+        if show_preferences {
+            self.load_saved_proxy_to_preferences_form(cx);
+        }
+
         let mut category_account_button = self.view.button(cx, ids!(category_account_button));
         let mut category_preferences_button = self.view.button(cx, ids!(category_preferences_button));
         let mut category_labs_button = self.view.button(cx, ids!(category_labs_button));
@@ -1222,7 +1229,7 @@ impl SettingsScreen {
         } else {
             error!("Failed to get own profile for settings screen.");
         }
-        self.view.app_settings(cx, ids!(app_settings)).populate(cx, app_prefs);
+        self.view.app_settings(cx, ids!(app_settings)).populate(cx, app_prefs, app_language);
         self.view.bot_settings(cx, ids!(bot_settings)).populate(cx, bot_settings);
         self.load_saved_proxy_to_preferences_form(cx);
         self.view.translation_settings(cx, ids!(translation_settings)).populate(cx, translation_config);

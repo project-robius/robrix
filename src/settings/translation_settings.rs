@@ -394,7 +394,7 @@ impl TranslationSettings {
             .set_visible(cx, config.enabled);
 
         self.view.check_box(cx, ids!(translation_switch))
-            .set_active(cx, config.enabled);
+            .set_active(cx, config.enabled, Animate::No);
         self.set_switch_state_label(cx, config.enabled);
     }
 

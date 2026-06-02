@@ -1113,13 +1113,7 @@ impl Widget for MentionableTextInput {
                 .unwrap_or(true);
             let should_submit = modifiers.logo
                 || modifiers.control
-                || (
-                    send_on_enter
-                    && !modifiers.shift
-                    && !modifiers.alt
-                    && !modifiers.logo
-                    && !modifiers.control
-                );
+                || send_on_enter && !modifiers.shift && !modifiers.alt;
             if should_submit {
                 let text_input = self.cmd_text_input.text_input(cx, ids!(text_input));
                 let uid = text_input.widget_uid();

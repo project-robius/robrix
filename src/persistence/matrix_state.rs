@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     app_data_dir,
     login::login_screen::LoginAction,
+    proxy_config::{build_policy_reqwest_client, resolve_effective_proxy_url},
 };
 
 /// The data needed to re-build a client.
@@ -367,22 +368,26 @@ pub async fn restore_session(
         status: status_str,
     });
     // Build the client with the previous settings from the session.
-    let mut client_builder = Client::builder()
+    // Use the same resolver as build_client so a CLI `--proxy` override at
+    // startup is honored on session restore. Match build_client's 60s reqwest
+    // timeout so restored sessions don't hang indefinitely on slow homeservers.
+    let effective_proxy = resolve_effective_proxy_url(None);
+    let http_client = build_policy_reqwest_client(
+        effective_proxy.as_deref(),
+        Some(std::time::Duration::from_secs(60)),
+    )
+        .map_err(|e| RestoreSessionError::ClientBuild {
+            user_id: user_id.clone(),
+            message: format!("Failed to build Matrix HTTP client with proxy policy: {e}"),
+        })?;
+    let client_builder = Client::builder()
         .homeserver_url(client_session.homeserver.clone())
         .sqlite_store(client_session.db_path.clone(), Some(&client_session.passphrase))
         .with_threading_support(matrix_sdk::ThreadingSupport::Enabled {
             with_subscriptions: true,
         })
+        .http_client(http_client)
         .handle_refresh_tokens();
-    let saved_proxy = crate::proxy_config::load_saved_proxy_url();
-    if let Some(proxy) = saved_proxy.as_deref() {
-        if let Err(e) = crate::proxy_config::apply_proxy_to_process_env(Some(proxy)) {
-            warning!("Failed to apply proxy env before restoring Matrix session: {e}");
-        }
-    }
-    if let Some(proxy) = saved_proxy {
-        client_builder = client_builder.proxy(proxy);
-    }
     let client = client_builder.build().await
         .map_err(|e| RestoreSessionError::ClientBuild {
             user_id: user_id.clone(),

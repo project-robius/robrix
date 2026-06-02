@@ -13,6 +13,9 @@ pub enum UpdateCheckOutcome {
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+use crate::proxy_config::{build_policy_reqwest_client, resolve_effective_proxy_url};
+
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 const DEFAULT_UPDATER_ENDPOINT: &str = "https://github.com/Project-Robius-China/robrix2/releases/latest/download/latest.json";
 const RELEASES_BASE_URL: &str = "https://github.com/Project-Robius-China/robrix2/releases";
 const SKIPPED_UPDATE_VERSION_FILE_NAME: &str = "skipped_update_version";
@@ -87,7 +90,11 @@ fn check_latest_version_without_signature(endpoint: &str, current_version: &str)
 
     let runtime = Runtime::new().map_err(|error| format!("Failed to create async runtime: {error}"))?;
     runtime.block_on(async move {
-        let response = matrix_sdk::reqwest::get(endpoint)
+        let proxy = resolve_effective_proxy_url(None);
+        let client = build_updater_http_client(proxy.as_deref())?;
+        let response = client
+            .get(endpoint)
+            .send()
             .await
             .map_err(|error| format!("Failed to fetch updater metadata: {error}"))?;
         if response.status().is_success() {
@@ -100,7 +107,9 @@ fn check_latest_version_without_signature(endpoint: &str, current_version: &str)
 
         if response.status() == StatusCode::NOT_FOUND && current_version.contains('-') {
             if let Some(fallback_endpoint) = endpoint_with_current_tag(endpoint, current_version) {
-                let fallback_response = matrix_sdk::reqwest::get(&fallback_endpoint)
+                let fallback_response = client
+                    .get(&fallback_endpoint)
+                    .send()
                     .await
                     .map_err(|error| format!("Failed to fetch updater metadata: {error}"))?;
                 if fallback_response.status().is_success() {
@@ -116,6 +125,17 @@ fn check_latest_version_without_signature(endpoint: &str, current_version: &str)
 
         Err(format!("Updater metadata request failed with status {}", response.status()))
     })
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+fn build_updater_http_client(
+    proxy_url: Option<&str>,
+) -> Result<matrix_sdk::reqwest::Client, String> {
+    build_policy_reqwest_client(
+        proxy_url,
+        Some(std::time::Duration::from_secs(10)),
+    )
+        .map_err(|error| format!("Failed to build updater HTTP client: {error}"))
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
@@ -212,4 +232,16 @@ pub fn check_for_updates() -> UpdateCheckOutcome {
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub fn check_for_updates() -> UpdateCheckOutcome {
     UpdateCheckOutcome::UnsupportedPlatform
+}
+
+#[cfg(all(test, any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn updater_http_client_disables_system_proxy_when_proxy_is_none() {
+        let client = build_updater_http_client(None).unwrap();
+
+        drop(client);
+    }
 }

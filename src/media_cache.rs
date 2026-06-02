@@ -1,8 +1,8 @@
-use std::{ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
+use std::{ops::{Deref, DerefMut}, sync::{Arc, Mutex}};
 use hashbrown::{hash_map::RawEntryMut, HashMap};
-use makepad_widgets::{error, log, SignalToUI};
+use makepad_widgets::{error, SignalToUI};
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, reqwest::StatusCode, ruma::{events::room::MediaSource, OwnedMxcUri}, Error, HttpError};
-use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
+use crate::{home::room_screen::TimelineUpdate, shared::attachment_download::media_source_mxc, sliding_sync::{self, MatrixRequest}};
 
 /// The value type in the media cache, one per Matrix URI.
 #[derive(Debug, Clone)]
@@ -65,6 +65,10 @@ impl MediaCache {
         }
     }
 
+    pub fn timeline_update_sender(&self) -> Option<&crossbeam_channel::Sender<TimelineUpdate>> {
+        self.timeline_update_sender.as_ref()
+    }
+
     /// Tries to get the media from the cache, or submits an async request to fetch it.
     ///
     /// This method *does not* block or wait for the media to be fetched,
@@ -79,9 +83,10 @@ impl MediaCache {
     /// Returns a tuple of the media cache entry and the media format of that cached entry.
     pub fn try_get_media_or_fetch(
         &mut self,
-        mxc_uri: &OwnedMxcUri,
+        source: &MediaSource,
         requested_format: MediaFormat,
     ) -> (MediaCacheEntry, MediaFormat) {
+        let mxc_uri = media_source_mxc(source);
         let mut post_request_retval = (MediaCacheEntry::Requested, requested_format.clone());
         let entry_ref_to_fetch: MediaCacheEntryRef;
 
@@ -156,7 +161,7 @@ impl MediaCache {
 
         sliding_sync::submit_async_request(MatrixRequest::FetchMedia {
             media_request: MediaRequestParameters {
-                source: MediaSource::Plain(mxc_uri.clone()),
+                source: source.clone(),
                 format: requested_format,
             },
             on_fetched: insert_into_cache,
@@ -273,23 +278,6 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
     let new_value = match data {
         Ok(data) => {
             let data = data.into();
-
-            // debugging: dump out the media image to disk
-            if false {
-                if let MediaSource::Plain(mxc_uri) = &request.source {
-                    log!("Fetched media for {mxc_uri}");
-                    let mut path = crate::temp_storage::get_temp_dir_path().clone();
-                    let filename = format!("{}_{}_{}",
-                        SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
-                        mxc_uri.server_name().unwrap(), mxc_uri.media_id().unwrap(),
-                    );
-                    path.push(filename);
-                    path.set_extension("png");
-                    log!("Writing user media image to disk: {:?}", path);
-                    std::fs::write(path, &data)
-                        .expect("Failed to write user media image to disk");
-                }
-            }
             MediaCacheEntry::Loaded(data)
         }
         Err(e) => error_to_media_cache_entry(e, &request)
