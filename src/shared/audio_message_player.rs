@@ -649,7 +649,7 @@ impl AudioMessagePlayer {
         mxc_uri: OwnedMxcUri,
         media_cache: &mut MediaCache,
     ) {
-        match media_cache.try_get_media_or_fetch(&mxc_uri, MediaFormat::File) {
+        match media_cache.try_get_media_or_fetch(&MediaSource::Plain(mxc_uri.clone()), MediaFormat::File) {
             (MediaCacheEntry::Loaded(data), MediaFormat::File) => {
                 self.begin_decode(cx, mxc_uri, data);
             }
