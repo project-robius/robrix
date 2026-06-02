@@ -1,0 +1,80 @@
+# Configuration for `cargo about generate`, which produces a verified
+# THIRD-PARTY-NOTICES file with the full text of every dependency's license.
+#
+#   cargo about generate --fail -c licenses/config/about.toml licenses/config/about.hbs -o licenses/THIRD-PARTY-NOTICES.html
+#
+# This covers Robrix's default build. The experimental `tsp` feature is NOT
+# included; to also document its deps, append `--features tsp`.
+
+# An empty `targets` (the default) applies NO platform filter, so the notice
+# covers the full dependency graph across every platform — the comprehensive,
+# compliance-safe superset. To scope the notice to only the platforms Robrix
+# actually ships on (a smaller, distribution-accurate set), uncomment below.
+targets = []
+# targets = [
+#     "x86_64-unknown-linux-gnu",
+#     "x86_64-pc-windows-msvc",
+#     "aarch64-apple-darwin",
+#     "x86_64-apple-darwin",
+#     "aarch64-linux-android",
+#     "armv7-linux-androideabi",
+#     "aarch64-apple-ios",
+# ]
+
+# Include build-dependencies; they ship in source distributions and their
+# attribution is cheap to keep. Dev-dependencies are not distributed.
+ignore-build-dependencies = false
+ignore-dev-dependencies = true
+
+# Every license expression that appears in the graph. For dual/multi licenses
+# (e.g. "MIT OR Apache-2.0") cargo-about satisfies the expression with the
+# first accepted license it can find text for.
+accepted = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-1-Clause",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "Unlicense",
+    "0BSD",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "OpenSSL",
+    "LGPL-2.1-or-later",
+]
+
+# Built-in clarifications cargo-about ships for crates whose license metadata
+# is hard to harvest automatically. Unmatched names are harmless no-ops.
+workarounds = [
+    "ring",
+    "rustls",
+    "chrono",
+    "clap",
+    "rustix",
+    "unicode-ident",
+    "bitvec",
+    "cocoa",
+    "wasmtime",
+]
+
+# The two Makepad sub-crates below omit the `license` field in their own
+# Cargo.toml. The Makepad project ships a single MIT LICENSE at its repo root
+# (Copyright 2023 Makepad B.V.); point the harvester at it explicitly.
+[makepad-latex-math.clarify]
+license = "MIT"
+[[makepad-latex-math.clarify.files]]
+path = "../../LICENSE"
+checksum = "3855d73a873244ec424ac5781d5d8fc8e2a789ff9d2f1cb804bec585a64ea88f"
+
+[makepad-regex.clarify]
+license = "MIT"
+[[makepad-regex.clarify.files]]
+path = "../../LICENSE"
+checksum = "3855d73a873244ec424ac5781d5d8fc8e2a789ff9d2f1cb804bec585a64ea88f"

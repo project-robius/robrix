@@ -1,0 +1,10 @@
+# Skip the auto-generated third-party license artifacts when spell-checking:
+# they contain third-party crate names (e.g. `flate2`, `writeable`) and verbatim
+# upstream license text (e.g. the OpenSSL license's "aheared"/"rouines") that we
+# neither control nor should edit. Hand-written files under licenses/ (e.g.
+# ATTRIBUTIONS.md and the cargo-about config/templates) are still checked.
+[files]
+extend-exclude = [
+    "licenses/THIRD-PARTY-NOTICES.html",
+    "licenses/THIRD-PARTY-LICENSES.md",
+]
