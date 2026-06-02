@@ -1131,13 +1131,11 @@ impl Widget for RoomScreen {
                     return false;
                 }
 
-                match action
-                    .as_widget_action()
-                    .cast_ref::<RoomInputPopupMenuAction>()
-                {
+                // Handle actions related to the room input popup menu.
+                match action.as_widget_action().cast() {
                     RoomInputPopupMenuAction::None => {}
-                    menu_action => {
-                        self.handle_room_input_popup_menu_action(cx, *menu_action);
+                    room_popup_menu_action => {
+                        self.handle_room_input_popup_menu_action(cx, room_popup_menu_action);
                         return false;
                     }
                 }

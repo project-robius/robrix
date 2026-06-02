@@ -86,21 +86,20 @@ script_mod! {
     }
 }
 
+/// Widget actions related to the room input popup menu.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum RoomInputPopupMenuAction {
+    /// Emitted by the RoomInputBar when the add button is clicked,
+    /// which is a request to show the room input popup menu.
     Show { button_rect: Rect },
+    /// Emitted by the RoomInputPopupMenu when the upload photo/video button is clicked.
     UploadPhotoOrVideo,
+    /// Emitted by the RoomInputPopupMenu when the upload file button is clicked.
     UploadFile,
+    /// Emitted by the RoomInputPopupMenu when the send location button is clicked.
     SendCurrentLocation,
     #[default]
     None,
-}
-
-impl ActionDefaultRef for RoomInputPopupMenuAction {
-    fn default_ref() -> &'static Self {
-        static DEFAULT: RoomInputPopupMenuAction = RoomInputPopupMenuAction::None;
-        &DEFAULT
-    }
 }
 
 #[derive(Script, ScriptHook, Widget)]
@@ -226,9 +225,9 @@ impl RoomInputPopupMenuRef {
     }
 
     pub fn selected(&self, actions: &Actions) -> Option<RoomInputPopupMenuAction> {
-        match actions.find_widget_action(self.widget_uid()).cast_ref() {
+        match actions.find_widget_action(self.widget_uid()).cast() {
             RoomInputPopupMenuAction::None => None,
-            action => Some(*action),
+            action => Some(action),
         }
     }
 
