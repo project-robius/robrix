@@ -5,7 +5,8 @@
 //! The widgets included in the RoomInputBar are:
 //! * a preview of the message the user is replying to.
 //! * the location preview (which allows you to send your current location to the room),
-//!   and a button to show the location preview.
+//!   plus a menu item to show the location preview.
+//! * a button that opens the RoomScreen-level popup menu for uploads/location.
 //! * If TSP is enabled, a checkbox to enable TSP signing for the outgoing message.
 //! * A MentionableTextInput, which allows the user to type a message
 //!   and mention other users via the `@` key.
@@ -21,14 +22,11 @@ use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FilePreviewerAction, FileUploadAttemptId, load_selected_file}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FilePreviewerAction, FileUploadAttemptId, load_selected_file}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
-
-
-    mod.widgets.ICON_LOCATION_PIN = crate_resource("self://resources/icons/location-pin.svg")
 
 
     mod.widgets.RoomInputBar = set_type_default() do #(RoomInputBar::register_widget(vm)) {
@@ -83,51 +81,17 @@ script_mod! {
                 align: Align{y: 1.0},
                 padding: 6,
 
-                // Attachment button for uploading files.
-                send_attachment_button := RobrixIconButton {
+                open_popup_menu_button := RobrixIconButton {
                     margin: 4
                     spacing: 0,
                     draw_icon +: {
-                        svg: (ICON_ADD_ATTACHMENT)
-                        color: (COLOR_ACTIVE_PRIMARY_DARKER)
-                    },
-                    draw_bg +: {
-                        color: (COLOR_BG_PREVIEW)
-                        color_hover: #E0E8F0
-                        color_down: #D0D8E8
-                    }
-                    icon_walk: Walk{width: 21, height: 21}
-                    text: "",
-                }
-
-                // Photo/video button for uploading media from the native media picker.
-                send_photo_video_button := RobrixIconButton {
-                    margin: 4
-                    spacing: 0,
-                    draw_icon +: {
-                        svg: (ICON_ADD_PHOTO)
+                        svg: (ICON_ADD)
                         color: (COLOR_ACTIVE_PRIMARY_DARKER)
                     },
                     draw_bg +: {
                         color: (COLOR_BG_PREVIEW)
                         color_hover: #xE0E8F0
                         color_down: #xD0D8E8
-                    }
-                    icon_walk: Walk{width: 21, height: 21}
-                    text: "",
-                }
-
-                location_button := RobrixIconButton {
-                    margin: 4
-                    spacing: 0,
-                    draw_icon +: {
-                        svg: (mod.widgets.ICON_LOCATION_PIN)
-                        color: (COLOR_ACTIVE_PRIMARY_DARKER)
-                    },
-                    draw_bg +: {
-                        color: (COLOR_BG_PREVIEW)
-                        color_hover: #E0E8F0
-                        color_down: #D0D8E8
                     }
                     icon_walk: Walk{width: 21, height: 21}
                     text: "",
@@ -319,31 +283,13 @@ impl RoomInputBar {
             self.redraw(cx);
         }
 
-        // Handle the add attachment button being clicked.
-        if self.button(cx, ids!(send_attachment_button)).clicked(actions) {
-            log!("Add attachment button clicked; opening file picker...");
-            self.open_file_picker(cx, room_screen_props.timeline_kind.clone());
-        }
-
-        // Handle the add photo/video button being clicked.
-        if self.button(cx, ids!(send_photo_video_button)).clicked(actions) {
-            log!("Add photo/video button clicked; opening media picker...");
-            self.open_photo_video_picker(cx, room_screen_props.timeline_kind.clone());
-        }
-
-        // Handle the add location button being clicked.
-        if self.button(cx, ids!(location_button)).clicked(actions) {
-            log!("Add location button clicked; requesting current location...");
-            if let Err(_e) = init_location_subscriber(cx) {
-                error!("Failed to initialize location subscriber");
-                enqueue_popup_notification(
-                    "Failed to initialize location services.",
-                    PopupKind::Error,
-                    None,
-                );
-            }
-            self.view.location_preview(cx, ids!(location_preview)).show();
-            self.redraw(cx);
+        let open_popup_menu_button = self.button(cx, ids!(open_popup_menu_button));
+        if open_popup_menu_button.clicked(actions) {
+            let button_rect = open_popup_menu_button.area().rect(cx);
+            cx.widget_action(
+                room_screen_props.room_screen_widget_uid,
+                RoomInputPopupMenuAction::Show { button_rect },
+            );
         }
 
         // Handle the send location button being clicked.
@@ -469,6 +415,19 @@ impl RoomInputBar {
         if self.view.editing_pane(cx, ids!(editing_pane)).was_hidden(actions) {
             self.on_editing_pane_hidden(cx);
         }
+    }
+
+    fn show_current_location_preview(&mut self, cx: &mut Cx) {
+        if let Err(_e) = init_location_subscriber(cx) {
+            error!("Failed to initialize location subscriber");
+            enqueue_popup_notification(
+                "Failed to initialize location services.",
+                PopupKind::Error,
+                None,
+            );
+        }
+        self.view.location_preview(cx, ids!(location_preview)).show();
+        self.redraw(cx);
     }
 
     /// Shows a preview of the given event that the user is currently replying to
@@ -794,6 +753,32 @@ impl RoomInputBarRef {
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.update_tombstone_footer(cx, tombstoned_room_id, successor_room_details);
+    }
+
+    /// Opens the native picker to upload a photo or video into this room.
+    pub fn open_photo_video_picker(
+        &self,
+        cx: &mut Cx,
+        timeline_kind: TimelineKind,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.open_photo_video_picker(cx, timeline_kind);
+    }
+
+    /// Opens the native picker to upload a file into this room.
+    pub fn open_file_picker(
+        &self,
+        cx: &mut Cx,
+        timeline_kind: TimelineKind,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.open_file_picker(cx, timeline_kind);
+    }
+
+    /// Shows the preview flow for sending the current location into this room.
+    pub fn show_current_location_preview(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.show_current_location_preview(cx);
     }
 
     /// Forwards the result of an edit request to the `EditingPane` widget

@@ -15,6 +15,7 @@ pub mod navigation_bar_button;
 pub mod popup_list;
 pub mod progress_bar;
 pub mod room_filter_input_bar;
+pub mod room_input_popup_menu;
 pub mod styles;
 pub mod text_or_image;
 pub mod timestamp;
@@ -37,6 +38,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     collapsible_header::script_mod(vm);
     timestamp::script_mod(vm);
     room_filter_input_bar::script_mod(vm);
+    room_input_popup_menu::script_mod(vm);
     avatar::script_mod(vm);
     text_or_image::script_mod(vm);
     html_or_plaintext::script_mod(vm);
