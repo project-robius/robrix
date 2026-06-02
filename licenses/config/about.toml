@@ -1,7 +1,7 @@
 # Configuration for `cargo about generate`, which produces a verified
 # THIRD-PARTY-NOTICES file with the full text of every dependency's license.
 #
-#   cargo about generate --fail about.hbs -o licenses/THIRD-PARTY-NOTICES.html
+#   cargo about generate --fail -c licenses/config/about.toml licenses/config/about.hbs -o licenses/THIRD-PARTY-NOTICES.html
 #
 # This covers Robrix's default build. The experimental `tsp` feature is NOT
 # included; to also document its deps, append `--features tsp`.
