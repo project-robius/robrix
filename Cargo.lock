@@ -4998,7 +4998,7 @@ dependencies = [
 [[package]]
 name = "robius-directories"
 version = "6.0.0"
-source = "git+https://github.com/project-robius/robius#d4360f34b57dec9c9fb3cde42f855457f372fa27"
+source = "git+https://github.com/project-robius/robius#34b78ddd57ca4fd09cb872c06f37f865285e927d"
 dependencies = [
  "dirs-sys",
  "jni",
@@ -5008,7 +5008,7 @@ dependencies = [
 [[package]]
 name = "robius-file-picker"
 version = "0.2.0"
-source = "git+https://github.com/project-robius/robius#d4360f34b57dec9c9fb3cde42f855457f372fa27"
+source = "git+https://github.com/project-robius/robius#34b78ddd57ca4fd09cb872c06f37f865285e927d"
 dependencies = [
  "android-build",
  "block2",
@@ -5029,7 +5029,7 @@ dependencies = [
 [[package]]
 name = "robius-location"
 version = "0.2.0"
-source = "git+https://github.com/project-robius/robius#d4360f34b57dec9c9fb3cde42f855457f372fa27"
+source = "git+https://github.com/project-robius/robius#34b78ddd57ca4fd09cb872c06f37f865285e927d"
 dependencies = [
  "android-build",
  "cfg-if",
@@ -5044,7 +5044,7 @@ dependencies = [
 [[package]]
 name = "robius-open"
 version = "0.2.0"
-source = "git+https://github.com/project-robius/robius#d4360f34b57dec9c9fb3cde42f855457f372fa27"
+source = "git+https://github.com/project-robius/robius#34b78ddd57ca4fd09cb872c06f37f865285e927d"
 dependencies = [
  "block2",
  "cfg-if",
@@ -5070,7 +5070,7 @@ dependencies = [
 [[package]]
 name = "robius-web-auth-session"
 version = "0.2.0"
-source = "git+https://github.com/project-robius/robius#d4360f34b57dec9c9fb3cde42f855457f372fa27"
+source = "git+https://github.com/project-robius/robius#34b78ddd57ca4fd09cb872c06f37f865285e927d"
 dependencies = [
  "block2",
  "cfg-if",
