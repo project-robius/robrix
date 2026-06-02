@@ -42,6 +42,8 @@ use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use crate::home::streaming_animation::StreamingAnimState;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
 use crate::shared::mentionable_text_input::MentionableTextInputAction;
+use crate::shared::video_message_player::VideoMessagePlayerWidgetRefExt;
+use crate::event_preview::summarize_video_message;
 
 use rangemap::RangeSet;
 
@@ -60,7 +62,7 @@ const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 100;
 /// expensive (CPU-bound, O(width*height)) and completely unnecessary since the
 /// result is inherently blurry. A 32×32 decode is ~240x faster than 500×500
 /// while being visually indistinguishable when scaled up.
-const BLURHASH_IMAGE_MAX_SIZE: u32 = 32;
+pub(crate) const BLURHASH_IMAGE_MAX_SIZE: u32 = 32;
 
 /// Use a larger batch when we are trying to fill the initial viewport,
 /// otherwise many short messages can trigger a long chain of tiny paginations.
@@ -2412,6 +2414,17 @@ script_mod! {
         }
     }
 
+    // Video message template. Embeds the inline `VideoMessagePlayer` widget
+    // above the existing html caption/metadata. The player is populated by
+    // `populate_video_message_content` in this file.
+    mod.widgets.VideoMessage = mod.widgets.Message {
+        body +: {
+            content +: {
+                video_player := mod.widgets.VideoMessagePlayer {}
+            }
+        }
+    }
+
 
     // The view used for each state event (non-messages) in a room's timeline.
     // The timestamp, profile picture, and text are all very small.
@@ -3581,6 +3594,7 @@ script_mod! {
             CondensedMessage := mod.widgets.CondensedMessage {}
             ImageMessage := mod.widgets.ImageMessage {}
             CondensedImageMessage := mod.widgets.CondensedImageMessage {}
+            VideoMessage := mod.widgets.VideoMessage {}
             SmallStateEvent := mod.widgets.SmallStateEvent {}
             SmallStateEventsSummary := mod.widgets.SmallStateEventsSummary {}
             Empty := mod.widgets.Empty {}
@@ -9803,7 +9817,7 @@ fn populate_message_view(
                     let template = if use_compact_view {
                         id!(CondensedMessage)
                     } else {
-                        id!(Message)
+                        id!(VideoMessage)
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
@@ -9813,9 +9827,11 @@ fn populate_message_view(
                             item.html_or_plaintext(cx, ids!(content.message));
                         new_drawn_status.content_drawn = populate_video_message_content(
                             cx,
+                            &item,
                             &html_or_plaintext_ref,
                             app_language,
                             video,
+                            media_cache,
                         );
                         (item, false)
                     }
@@ -10673,15 +10689,26 @@ fn populate_audio_message_content(
 }
 
 
-/// Draws a video message's content into the given `message_content_widget`.
+/// Draws a video message's content into the given message item.
+///
+/// Populates the embedded `VideoMessagePlayer` widget from the message's
+/// `source` (with `info.thumbnail_source` as the poster) and also writes
+/// a textual summary into the html fallback.
 ///
 /// Returns whether the video message content was fully drawn.
 fn populate_video_message_content(
     cx: &mut Cx,
+    item: &WidgetRef,
     message_content_widget: &HtmlOrPlaintextRef,
     app_language: AppLanguage,
     video: &VideoMessageEventContent,
+    media_cache: &mut MediaCache,
 ) -> bool {
+    let summary = summarize_video_message(video);
+    let poster_source = video.info.as_ref().and_then(|info| info.thumbnail_source.clone());
+    item.video_message_player(cx, ids!(content.video_player))
+        .populate_from_summary(cx, summary, video.source.clone(), poster_source, media_cache);
+
     // Display the file name, human-readable size, caption, and a button to download it.
     let filename = htmlize::escape_text(video.filename());
     let (duration, mime, size, dimensions) = video
