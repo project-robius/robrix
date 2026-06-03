@@ -35,10 +35,14 @@ use crate::{
     shared::{
         attachment_download::{DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, media_source_mxc, start_attachment_download}, avatar::{AvatarState, AvatarWidgetExt, AvatarWidgetRefExt}, confirmation_modal::{ConfirmationModalAction, ConfirmationModalContent, ConfirmationModalWidgetExt}, forward_modal::{ForwardMessageContent, ForwardMessageModalAction}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
-    sliding_sync::{BackwardsPaginateUntilEventRequest, FetchedRoomThread, MatrixRequest, PaginationDirection, RoomThreadsAction, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, current_user_id, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
+    sliding_sync::{BackwardsPaginateUntilEventRequest, FetchedRoomThread, MatrixRequest, PaginationDirection, RoomThreadsAction, SearchMessagesResultAction, SearchedMessage, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, current_user_id, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
+use crate::home::search_messages::{
+    MessageSearchHit, SearchMessagesAction, SearchMessagesButtonWidgetExt,
+    SearchMessagesSlidingPaneRef, SearchMessagesSlidingPaneWidgetExt,
+};
 use crate::home::streaming_animation::StreamingAnimState;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
 use crate::shared::mentionable_text_input::MentionableTextInputAction;
@@ -84,6 +88,39 @@ fn tl_idx_from_item_id(item_id: usize, has_encryption_notice: bool) -> Option<us
 
 fn item_id_from_tl_idx(tl_idx: usize, has_encryption_notice: bool) -> usize {
     tl_idx + usize::from(has_encryption_notice)
+}
+
+/// Returns a single-line preview of `s` collapsing internal whitespace and
+/// trimming to `max_chars` chars (counted in unicode scalar values). Appends
+/// an ellipsis when truncation occurred.
+fn truncate_preview(s: &str, max_chars: usize) -> String {
+    // Collapse runs of whitespace (including newlines) into single spaces so
+    // the preview reads as one line.
+    let normalized: String = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.chars().count() <= max_chars {
+        return normalized;
+    }
+    let mut out: String = normalized.chars().take(max_chars).collect();
+    out.push('…');
+    out
+}
+
+/// Convert a server-search `SearchedMessage` into the UI-facing
+/// `MessageSearchHit` consumed by `SearchMessagesSlidingPane`.
+fn message_search_hit_from_searched_message(m: &SearchedMessage) -> MessageSearchHit {
+    let sender_display = m
+        .sender_display_name
+        .clone()
+        .unwrap_or_else(|| m.sender_user_id.to_string());
+    let timestamp_display = unix_time_millis_to_datetime(m.timestamp)
+        .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+        .unwrap_or_default();
+    MessageSearchHit {
+        event_id: m.event_id.clone(),
+        sender_display,
+        timestamp_display,
+        body_preview: truncate_preview(&m.body, 240),
+    }
 }
 const MESSAGE_PROFILE_TOP_MARGIN: f64 = 4.5;
 const MESSAGE_PROFILE_AVATAR_SIZE: f64 = 48.0;
@@ -3593,6 +3630,14 @@ script_mod! {
         // A jump to bottom button (with an unread message badge) that is shown
         // when the timeline is not at the bottom.
         jump_to_bottom_button := JumpToBottomButton { }
+
+        // Floating search button at the top-right (mirrors jump-to-bottom).
+        // Clicking it opens the `search_messages_pane` sliding pane below.
+        search_messages_button := mod.widgets.SearchMessagesButton { }
+
+        // Right-sliding pane that hosts the search input and the
+        // server-side `/search` results list.
+        search_messages_pane := mod.widgets.SearchMessagesSlidingPane { }
     }
 
     mod.widgets.TranslationLangPopupButton = RobrixIconButton {
@@ -4564,6 +4609,36 @@ pub struct RoomScreen {
     #[rust] octos_action_button_contexts: HashMap<WidgetUid, OctosActionButtonContext>,
     #[rust] disabled_octos_action_source_event_ids: HashSet<OwnedEventId>,
     #[rust] selected_octos_action_by_source_event_id: HashMap<OwnedEventId, SelectedOctosActionState>,
+    /// Per-room state for the server-side search pane. Tracks the active
+    /// query, the room it targets, the most recent `next_batch` token, and
+    /// whether a request is currently in flight.
+    #[rust] search_state: RoomSearchState,
+}
+
+/// Tracks the active server-side message search shown in the
+/// `SearchMessagesSlidingPane`. Reset whenever the pane is closed, the
+/// query is cleared, or the room changes.
+#[derive(Default, Debug)]
+pub struct RoomSearchState {
+    /// The query string currently being searched. Empty when idle.
+    pub query: String,
+    /// The room the active query targets (used to ignore stale results
+    /// arriving after a room switch). `None` when idle.
+    pub room_id: Option<OwnedRoomId>,
+    /// `next_batch` token returned by the most recent search response.
+    /// `Some` means more pages are available.
+    pub next_batch: Option<String>,
+    /// Whether a request is currently in flight (initial or paginated).
+    pub request_in_flight: bool,
+}
+
+impl RoomSearchState {
+    fn reset(&mut self) {
+        self.query.clear();
+        self.room_id = None;
+        self.next_batch = None;
+        self.request_in_flight = false;
+    }
 }
 
 impl Drop for RoomScreen {
@@ -5079,7 +5154,7 @@ impl Widget for RoomScreen {
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
                     if portal_list.smooth_scroll_reached(actions) {
                         cx.widget_action(
-                            room_screen_widget_uid, 
+                            room_screen_widget_uid,
                             MessageAction::HighlightMessage(item_id),
                         );
                         tl.message_highlight_animation_state = MessageHighlightAnimationState::Off;
@@ -5088,6 +5163,15 @@ impl Widget for RoomScreen {
                     }
                 }
             }
+
+            // In-room message search actions: open/close the pane, react to
+            // query changes, and jump to a clicked result. The pane lives at
+            // `ids!(timeline.search_messages_pane)` and the floating button
+            // at `ids!(timeline.search_messages_button)`.
+            self.handle_search_messages_actions(cx, actions, &portal_list, &loading_pane);
+
+            // Server-side search results dispatched from sliding_sync.rs.
+            self.handle_search_messages_results(cx, actions);
 
             /*
             // close message action bar if scrolled.
@@ -7912,6 +7996,241 @@ impl RoomScreen {
             // and search our locally-known timeline history for the replied-to message.
         }
         self.redraw(cx);
+    }
+
+    // ============================== In-room message search ==============================
+
+    /// Reacts to the actions emitted by the search button + sliding pane:
+    ///   * `OpenRequested` → show the pane and grab key focus.
+    ///   * `CloseRequested` → animate the pane out and restore the button.
+    ///   * `QueryChanged` → submit a fresh `MatrixRequest::SearchMessages`
+    ///     (after the pane's own debounce). An empty query aborts any
+    ///     in-flight request and resets the pane to its idle state.
+    ///   * `LoadMoreRequested` → submit a paginated follow-up using the
+    ///     `next_batch` token stored on the room screen.
+    ///   * `JumpToEvent` → call `jump_to_event` and hide the pane.
+    fn handle_search_messages_actions(
+        &mut self,
+        cx: &mut Cx,
+        actions: &Actions,
+        portal_list: &PortalListRef,
+        loading_pane: &LoadingPaneRef,
+    ) {
+        let pane = self.search_messages_sliding_pane(cx, ids!(timeline.search_messages_pane));
+        let button = self.search_messages_button(cx, ids!(timeline.search_messages_button));
+
+        let mut requested_close = false;
+        let mut requested_open = false;
+        let mut new_query: Option<String> = None;
+        let mut load_more = false;
+        let mut jump_target: Option<OwnedEventId> = None;
+
+        for action in actions {
+            // Widget-emitted actions are wrapped in a `WidgetAction`, so we
+            // must unwrap via `as_widget_action()` before downcasting to the
+            // inner `SearchMessagesAction`. `cast_ref` falls back to the
+            // `None` sentinel for non-matching actions.
+            match action.as_widget_action().cast_ref::<SearchMessagesAction>() {
+                SearchMessagesAction::OpenRequested => requested_open = true,
+                SearchMessagesAction::CloseRequested => requested_close = true,
+                SearchMessagesAction::QueryChanged(q) => new_query = Some(q.clone()),
+                SearchMessagesAction::LoadMoreRequested => load_more = true,
+                SearchMessagesAction::JumpToEvent(ev) => jump_target = Some(ev.clone()),
+                SearchMessagesAction::None => {}
+            }
+        }
+
+        if requested_close {
+            pane.hide(cx);
+            button.set_visible(cx, true);
+            // Abort any in-flight search so its result doesn't race the
+            // pane's animate-out and re-show stale content.
+            submit_async_request(MatrixRequest::SearchMessages {
+                room_id: self.current_room_id_or_placeholder(),
+                search_term: String::new(),
+                next_batch: None,
+                abort_previous: true,
+            });
+            self.search_state.reset();
+            self.redraw(cx);
+            return;
+        }
+        if let Some(target) = jump_target {
+            pane.hide(cx);
+            button.set_visible(cx, true);
+            self.jump_to_event(cx, &target, None, portal_list, loading_pane);
+            return;
+        }
+        if requested_open {
+            pane.reset(cx);
+            pane.show(cx);
+            button.set_visible(cx, false);
+            self.search_state.reset();
+        }
+        if let Some(query) = new_query {
+            self.submit_message_search(cx, &pane, query);
+        }
+        if load_more {
+            self.submit_message_search_next_page(cx, &pane);
+        }
+    }
+
+    /// Submit a fresh server-side message search for `query`. Empty queries
+    /// reset the pane to its idle state and abort any in-flight search.
+    fn submit_message_search(
+        &mut self,
+        cx: &mut Cx,
+        pane: &SearchMessagesSlidingPaneRef,
+        query: String,
+    ) {
+        let trimmed = query.trim();
+        let Some(tl) = self.tl_state.as_ref() else {
+            pane.set_idle(cx);
+            return;
+        };
+        let room_id = tl.kind.room_id().clone();
+
+        if trimmed.is_empty() {
+            // Abort whatever's running and clear the pane.
+            submit_async_request(MatrixRequest::SearchMessages {
+                room_id,
+                search_term: String::new(),
+                next_batch: None,
+                abort_previous: true,
+            });
+            self.search_state.reset();
+            pane.set_idle(cx);
+            return;
+        }
+
+        // Bail out early if this room is encrypted — Matrix server-side
+        // search cannot see encrypted message bodies.
+        if let Some(room) = get_client().and_then(|c| c.get_room(&room_id)) {
+            if room.encryption_state().is_encrypted() {
+                self.search_state.reset();
+                pane.set_encrypted(cx);
+                return;
+            }
+        }
+
+        let query_owned = trimmed.to_string();
+        self.search_state = RoomSearchState {
+            query: query_owned.clone(),
+            room_id: Some(room_id.clone()),
+            next_batch: None,
+            request_in_flight: true,
+        };
+        pane.set_loading(cx, query_owned.clone());
+        submit_async_request(MatrixRequest::SearchMessages {
+            room_id,
+            search_term: query_owned,
+            next_batch: None,
+            abort_previous: true,
+        });
+    }
+
+    /// Submit a paginated follow-up for the currently-displayed search.
+    /// No-op when there is no `next_batch` token, when a request is already
+    /// in flight, or when the room has changed.
+    fn submit_message_search_next_page(
+        &mut self,
+        cx: &mut Cx,
+        pane: &SearchMessagesSlidingPaneRef,
+    ) {
+        if self.search_state.request_in_flight {
+            return;
+        }
+        let Some(next_batch) = self.search_state.next_batch.clone() else {
+            return;
+        };
+        let Some(state_room_id) = self.search_state.room_id.clone() else {
+            return;
+        };
+        let Some(tl) = self.tl_state.as_ref() else { return };
+        if tl.kind.room_id() != &state_room_id {
+            return;
+        }
+        if self.search_state.query.is_empty() {
+            return;
+        }
+        self.search_state.request_in_flight = true;
+        pane.set_loading(cx, self.search_state.query.clone());
+        submit_async_request(MatrixRequest::SearchMessages {
+            room_id: state_room_id,
+            search_term: self.search_state.query.clone(),
+            next_batch: Some(next_batch),
+            abort_previous: false,
+        });
+    }
+
+    /// Returns the current room ID for cancel-only search requests; falls
+    /// back to a placeholder (an empty `!:server`-style ID) when no room is
+    /// active. The placeholder is only used by abort calls where the
+    /// server-side handler short-circuits on empty `search_term` anyway.
+    fn current_room_id_or_placeholder(&self) -> OwnedRoomId {
+        self.tl_state
+            .as_ref()
+            .map(|tl| tl.kind.room_id().clone())
+            .unwrap_or_else(|| matrix_sdk::ruma::owned_room_id!("!none:none.invalid"))
+    }
+
+    /// Processes results posted by the sliding_sync.rs `SearchMessages`
+    /// handler. Stale results (different room or different query) are
+    /// dropped; matching results are pushed into the pane.
+    fn handle_search_messages_results(&mut self, cx: &mut Cx, actions: &Actions) {
+        let pane = self.search_messages_sliding_pane(cx, ids!(timeline.search_messages_pane));
+
+        for action in actions {
+            let Some(result) = action.downcast_ref::<SearchMessagesResultAction>() else {
+                continue;
+            };
+            match result {
+                SearchMessagesResultAction::Received {
+                    room_id,
+                    search_term,
+                    results,
+                    next_batch,
+                    total_count,
+                    is_initial_page,
+                } => {
+                    if !self.is_search_result_current(room_id, search_term) {
+                        continue;
+                    }
+                    self.search_state.request_in_flight = false;
+                    self.search_state.next_batch = next_batch.clone();
+                    let has_more = next_batch.is_some();
+                    let hits: Vec<MessageSearchHit> = results
+                        .iter()
+                        .map(message_search_hit_from_searched_message)
+                        .collect();
+                    if *is_initial_page {
+                        pane.set_results(cx, search_term.clone(), hits, *total_count, has_more);
+                    } else {
+                        pane.append_results(cx, hits, *total_count, has_more);
+                    }
+                }
+                SearchMessagesResultAction::Failed {
+                    room_id,
+                    search_term,
+                    error,
+                    was_initial_page: _,
+                } => {
+                    if !self.is_search_result_current(room_id, search_term) {
+                        continue;
+                    }
+                    self.search_state.request_in_flight = false;
+                    pane.set_error(cx, error.clone());
+                }
+            }
+        }
+    }
+
+    /// Returns true if a server search response targeting `(room_id,
+    /// search_term)` should be honored — i.e. it matches what the room
+    /// screen is currently displaying.
+    fn is_search_result_current(&self, room_id: &OwnedRoomId, search_term: &str) -> bool {
+        self.search_state.room_id.as_ref() == Some(room_id)
+            && self.search_state.query == search_term
     }
 
     /// Shows the user profile sliding pane with the given avatar info.

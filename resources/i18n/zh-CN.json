@@ -480,6 +480,12 @@
 
   "room_filter_input.placeholder": "筛选房间与空间...",
   "search_messages.button.todo": "搜索（待实现）",
+  "search_messages.button.tooltip": "搜索消息",
+  "search_messages.input.placeholder": "搜索消息...",
+  "search_messages.empty.idle": "输入以搜索此房间的消息。",
+  "search_messages.status.no_results": "未找到匹配。",
+  "search_messages.status.encrypted": "加密房间暂不支持服务端搜索。",
+  "search_messages.status.failed": "搜索失败，请重试。",
   "verification_badge.tooltip.verified": "此设备已完全验证。",
   "verification_badge.tooltip.unverified": "此设备尚未验证。若要查看加密消息历史，请在其他客户端中验证 Robrix。",
   "verification_badge.tooltip.unknown": "验证状态未知。",

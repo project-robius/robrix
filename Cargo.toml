@@ -96,6 +96,7 @@ quinn = { version = "0.11", default-features = false, optional = true }
 ## which is required to build this on Windows x86_64 without having to install NASM separately.
 aws-lc-rs = { version = "1.13", optional = true, features = ["prebuilt-nasm"] }
 percent-encoding = "2.3"
+pinyin = "0.10"
 ## The following reqwest 0.12 features were taken from the tsp_sdk's `Cargo.toml` file.
 ## This is only needed for the optional TSP feature; the matrix-sdk uses reqwest 0.13 internally,
 ## which is re-exported as `matrix_sdk::reqwest` and used by regular (non-TSP) Robrix code.

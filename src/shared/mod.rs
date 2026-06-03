@@ -12,6 +12,7 @@ pub mod html_or_plaintext;
 pub mod icon_button;
 pub mod jump_to_bottom_button;
 pub mod mentionable_text_input;
+pub mod pinyin_match;
 pub mod popup_list;
 pub mod progress_bar;
 pub mod room_filter_input_bar;
