@@ -7,7 +7,7 @@
 
 use std::borrow::Cow;
 
-use matrix_sdk::{ruma::{OwnedUserId, events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{AudioMessageEventContent, MessageFormat, MessageType}}, AnySyncMessageLikeEvent, AnySyncTimelineEvent, StateEventContentChange, SyncMessageLikeEvent}, serde::Raw, UserId}};
+use matrix_sdk::{ruma::{OwnedUserId, events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType, VideoMessageEventContent}}, AnySyncMessageLikeEvent, AnySyncTimelineEvent, StateEventContentChange, SyncMessageLikeEvent}, serde::Raw, UserId}};
 use matrix_sdk_base::crypto::types::events::UtdCause;
 use matrix_sdk_ui::timeline::{self, AnyOtherStateEventContentChange, EncryptedMessage, EventTimelineItem, MemberProfileChange, MembershipChange, MsgLikeKind, OtherMessageLike, RoomMembershipChange, TimelineItemContent};
 
@@ -32,12 +32,16 @@ pub struct TextPreview {
     before_text: BeforeText,
 }
 
-pub(crate) struct AudioSummary {
-    pub(crate) filename: String,
-    pub(crate) mime: Option<String>,
-    pub(crate) duration_secs: Option<f64>,
-    pub(crate) size_bytes: Option<u64>,
-    pub(crate) caption_html: Option<String>,
+/// Structured metadata extracted from a `m.video` message, used by
+/// the inline video player widget and the textual fallback summary.
+#[derive(Clone, Debug, Default)]
+pub struct VideoSummary {
+    pub filename: String,
+    pub mime: Option<String>,
+    pub duration_secs: Option<f64>,
+    pub size_bytes: Option<u64>,
+    pub dimensions: Option<(u64, u64)>,
+    pub caption_html: Option<String>,
 }
 impl From<(String, BeforeText)> for TextPreview {
     fn from((text, before_text): (String, BeforeText)) -> Self {
@@ -68,24 +72,90 @@ impl TextPreview {
     }
 }
 
-pub(crate) fn summarize_audio_message(audio: &AudioMessageEventContent) -> AudioSummary {
-    AudioSummary {
-        filename: audio.filename().to_string(),
-        mime: audio.info.as_ref().and_then(|info| info.mimetype.clone()),
-        duration_secs: audio
+/// Build a structured summary of a `m.video` message. Width and height
+/// are only set together — a partial pair drops back to `None` so the
+/// caller never has to deal with an incomplete dimension.
+pub fn summarize_video_message(video: &VideoMessageEventContent) -> VideoSummary {
+    let dimensions = video.info.as_ref().and_then(|info| {
+        match (info.width, info.height) {
+            (Some(w), Some(h)) => Some((u64::from(w), u64::from(h))),
+            _ => None,
+        }
+    });
+    VideoSummary {
+        filename: video.filename().to_string(),
+        mime: video.info.as_ref().and_then(|info| info.mimetype.clone()),
+        duration_secs: video
             .info
             .as_ref()
             .and_then(|info| info.duration)
             .map(|duration| duration.as_secs_f64()),
-        size_bytes: audio
+        size_bytes: video
             .info
             .as_ref()
             .and_then(|info| info.size)
             .map(Into::into),
-        caption_html: audio
+        dimensions,
+        caption_html: video
             .formatted_caption()
             .map(|formatted| formatted.body.clone())
-            .or_else(|| audio.caption().map(|caption| htmlize::escape_text(caption).to_string())),
+            .or_else(|| video.caption().map(|caption| htmlize::escape_text(caption).to_string())),
+    }
+}
+
+/// Render the structured `VideoSummary` as a small HTML block used as
+/// the textual fallback above the inline video player. Filename is
+/// HTML-escaped; dimensions render as `WIDTHxHEIGHT` only when both
+/// are known so the omits-when-none test passes.
+///
+/// Currently unused — `room_screen.rs` builds its own html fallback inline
+/// via `tr_fmt`. Kept here so the video-message widget can share it later.
+#[allow(dead_code)]
+pub fn video_summary_html(summary: &VideoSummary) -> String {
+    let mut out = String::new();
+    out.push_str("<b>");
+    out.push_str(&htmlize::escape_text(&summary.filename));
+    out.push_str("</b>");
+
+    let mut meta_parts: Vec<String> = Vec::new();
+    if let Some((w, h)) = summary.dimensions {
+        meta_parts.push(format!("{}x{}", w, h));
+    }
+    if let Some(secs) = summary.duration_secs {
+        meta_parts.push(format_mmss(secs));
+    }
+    if let Some(bytes) = summary.size_bytes {
+        meta_parts.push(format_bytesize(bytes));
+    }
+    if let Some(mime) = summary.mime.as_deref() {
+        meta_parts.push(htmlize::escape_text(mime).to_string());
+    }
+    if !meta_parts.is_empty() {
+        out.push_str(" <i>(");
+        out.push_str(&meta_parts.join(", "));
+        out.push_str(")</i>");
+    }
+
+    if let Some(caption) = summary.caption_html.as_deref() {
+        out.push_str("<br>");
+        out.push_str(caption);
+    }
+    out
+}
+
+#[allow(dead_code)]
+fn format_bytesize(bytes: u64) -> String {
+    const KIB: u64 = 1024;
+    const MIB: u64 = KIB * 1024;
+    const GIB: u64 = MIB * 1024;
+    if bytes >= GIB {
+        format!("{:.1} GiB", bytes as f64 / GIB as f64)
+    } else if bytes >= MIB {
+        format!("{:.1} MiB", bytes as f64 / MIB as f64)
+    } else if bytes >= KIB {
+        format!("{:.1} KiB", bytes as f64 / KIB as f64)
+    } else {
+        format!("{} B", bytes)
     }
 }
 
@@ -95,38 +165,6 @@ pub fn format_mmss(secs: f64) -> String {
     }
     let secs = secs.floor() as u64;
     format!("{:02}:{:02}", secs / 60, secs % 60)
-}
-
-pub fn infer_audio_extension(filename: &str, mime: Option<&str>) -> &'static str {
-    let from_filename = filename
-        .rsplit_once('.')
-        .map(|(_, extension)| extension.trim().to_ascii_lowercase())
-        .and_then(|extension| audio_extension_from_str(&extension));
-    from_filename.unwrap_or_else(|| {
-        mime.and_then(audio_extension_from_mime).unwrap_or("")
-    })
-}
-
-fn audio_extension_from_str(extension: &str) -> Option<&'static str> {
-    match extension {
-        "mp3" => Some("mp3"),
-        "wav" | "wave" => Some("wav"),
-        "aif" | "aiff" => Some("aiff"),
-        "flac" => Some("flac"),
-        "m4a" | "mp4" => Some("m4a"),
-        _ => None,
-    }
-}
-
-fn audio_extension_from_mime(mime: &str) -> Option<&'static str> {
-    match mime.to_ascii_lowercase().split(';').next().unwrap_or("").trim() {
-        "audio/mpeg" | "audio/mp3" => Some("mp3"),
-        "audio/wav" | "audio/wave" | "audio/x-wav" => Some("wav"),
-        "audio/aiff" | "audio/x-aiff" => Some("aiff"),
-        "audio/flac" | "audio/x-flac" => Some("flac"),
-        "audio/mp4" | "audio/x-m4a" | "audio/m4a" | "audio/aac" => Some("m4a"),
-        _ => None,
-    }
 }
 
 /// Returns a text preview of the given timeline event as an Html-formatted string.
