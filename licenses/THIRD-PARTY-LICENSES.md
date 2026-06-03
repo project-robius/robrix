@@ -288,9 +288,9 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `makepad-webp` | 0.2.4 | MIT OR Apache-2.0 |
 | `makepad-widgets` | 2.0.0 | MIT OR Apache-2.0 |
 | `makepad-zune-core` | 0.5.1 | MIT OR Apache-2.0 OR Zlib |
-| `makepad-zune-inflate` | 0.2.0 | MIT OR Apache-2.0 OR Zlib |
-| `makepad-zune-jpeg` | 0.5.12 | MIT OR Apache-2.0 OR Zlib |
-| `makepad-zune-png` | 0.5.1 | MIT OR Apache-2.0 OR Zlib |
+| `makepad-zune-inflate` | 0.2.54 | MIT OR Apache-2.0 OR Zlib |
+| `makepad-zune-jpeg` | 0.5.15 | MIT OR Apache-2.0 OR Zlib |
+| `makepad-zune-png` | 0.5.2 | MIT OR Apache-2.0 OR Zlib |
 | `maplit` | 1.0.2 | MIT OR Apache-2.0 |
 | `markup5ever` | 0.39.0 | MIT OR Apache-2.0 |
 | `matchers` | 0.2.0 | MIT |
@@ -452,7 +452,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `sharded-slab` | 0.1.7 | MIT |
 | `shlex` | 1.3.0 | MIT OR Apache-2.0 |
 | `signature` | 2.2.0 | Apache-2.0 OR MIT |
-| `simd-adler32` | 0.3.8 | MIT |
+| `simd-adler32` | 0.3.9 | MIT |
 | `simd-adler32` | 0.3.9 | MIT |
 | `siphasher` | 1.0.1 | MIT OR Apache-2.0 |
 | `slab` | 0.4.11 | MIT |
