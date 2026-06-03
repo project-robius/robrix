@@ -2363,6 +2363,7 @@ pub struct TimelineEndpoints {
     pub update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
     pub request_sender: TimelineRequestSender,
     pub successor_room: Option<SuccessorRoom>,
+    pub is_encrypted: bool,
 }
 
 /// Info about a timeline for a joined room or a thread in a joined room.
@@ -2371,8 +2372,7 @@ struct PerTimelineDetails {
     timeline: Arc<Timeline>,
     /// A clone-able sender for updates to this timeline.
     timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
-    /// A tuple of two separate channel endpoints that can only be taken *once* by the main UI thread.
-    ///
+    /// A tuple of two separate channel endpoints that can only be taken *once* by the main UI thread:
     /// 1. The single receiver that can receive updates from this timeline.
     ///    * When a new room is joined (or a thread is opened), an unbounded crossbeam channel will be created
     ///      and its sender given to a background task (the `timeline_subscriber_handler()`)
@@ -2585,6 +2585,7 @@ pub fn take_timeline_endpoints(kind: &TimelineKind) -> Option<TimelineEndpoints>
         update_receiver,
         request_sender,
         successor_room: details.timeline.room().successor_room(),
+        is_encrypted: details.timeline.room().encryption_state().is_encrypted(),
     })
 }
 
@@ -2624,6 +2625,7 @@ struct RoomListServiceRoomInfo {
     is_direct: bool,
     is_marked_unread: bool,
     is_tombstoned: bool,
+    is_encrypted: bool,
     tags: Option<Tags>,
     user_power_levels: Option<UserPowerLevels>,
     latest_event_timestamp: Option<MilliSecondsSinceUnixEpoch>,
@@ -2655,6 +2657,7 @@ impl RoomListServiceRoomInfo {
             is_direct: is_direct.unwrap_or(false),
             is_marked_unread: room.is_marked_unread(),
             is_tombstoned: room.is_tombstoned(),
+            is_encrypted: room.encryption_state().is_encrypted(),
             tags: tags.ok().flatten(),
             user_power_levels,
             latest_event_timestamp: room.latest_event_timestamp(),
@@ -3471,6 +3474,18 @@ async fn update_room(
                     }
                 } else {
                     error!("BUG: could not find JoinedRoomDetails for room {new_room_id} where power levels changed.");
+                }
+            }
+
+            if !old_room.is_encrypted && new_room.is_encrypted {
+                if let Some(timeline_update_sender) = get_timeline_update_sender(&new_room_id) {
+                    log!("Room {new_room_id} is now encrypted.");
+                    match timeline_update_sender.send(TimelineUpdate::RoomEncrypted) {
+                        Ok(_) => SignalToUI::set_ui_signal(),
+                        Err(_) => error!("Failed to send the RoomEncrypted update to room {new_room_id}"),
+                    }
+                } else {
+                    error!("BUG: could not find JoinedRoomDetails for room {new_room_id} that became encrypted.");
                 }
             }
         }

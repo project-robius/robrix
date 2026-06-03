@@ -1811,6 +1811,11 @@ impl RoomScreen {
                         .update_tombstone_footer(cx, tl.kind.room_id(), Some(&successor_room_details));
                     tl.tombstone_info = Some(successor_room_details);
                 }
+                TimelineUpdate::RoomEncrypted => {
+                    tl.is_encrypted = true;
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .update_encryption_status(cx, true);
+                }
                 TimelineUpdate::LinkPreviewFetched => {}
                 TimelineUpdate::FileUploadStarted { upload_id, file_name, in_reply_to, abort_handle } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
@@ -2491,7 +2496,7 @@ impl RoomScreen {
                         return;
                     }
                     if !self.is_loaded && self.all_rooms_loaded {
-                        panic!("BUG: timeline {kind} is not loaded, but its RoomScreen \
+                        error!("BUG: timeline {kind} is not loaded, but its RoomScreen \
                         was not waiting for its timeline to be loaded either.");
                     }
                     return;
@@ -2501,6 +2506,7 @@ impl RoomScreen {
                     update_sender,
                     request_sender,
                     successor_room,
+                    is_encrypted,
                 } = timeline_endpoints;
 
                 // Start with the basic tombstone info, and fetch the full details
@@ -2521,6 +2527,7 @@ impl RoomScreen {
                     // This doesn't mean that the user can actually perform all actions;
                     // the power levels will be updated from the homeserver once the room is opened.
                     user_power: UserPowerLevels::all(),
+                    is_encrypted,
                     // Room members start as None and get populated when fetched from the server
                     room_members: None,
                     // We assume timelines being viewed for the first time haven't been fully paginated.
@@ -2733,6 +2740,7 @@ impl RoomScreen {
             saved_room_input_bar_state,
             tl_state.user_power,
             tl_state.tombstone_info.as_ref(),
+            tl_state.is_encrypted,
         );
     }
 
@@ -3042,6 +3050,9 @@ pub enum TimelineUpdate {
     PinnedEvents(Vec<OwnedEventId>),
     /// An update containing the currently logged-in user's power levels for this room.
     UserPowerLevels(UserPowerLevels),
+    /// A notice that this room has been changed to use encryption.
+    /// It's only possible to go from unencrypted --> encrypted, not the other way.
+    RoomEncrypted,
     /// An update to the currently logged-in user's own read receipt for this room.
     OwnUserReadReceipt(Receipt),
     /// A notice that the given room has been tombstoned (closed)
@@ -3192,6 +3203,9 @@ struct TimelineUiState {
 
     /// The power levels of the currently logged-in user in this room.
     user_power: UserPowerLevels,
+
+    /// Whether this room is encrypted. Once enabled it can never be disabled.
+    is_encrypted: bool,
 
     /// The list of room members for this room.
     room_members: Option<Arc<Vec<RoomMember>>>,
