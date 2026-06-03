@@ -82,7 +82,8 @@ script_mod! {
                 padding: 6,
 
                 open_popup_menu_button := RobrixIconButton {
-                    margin: 4
+                    padding: 9
+                    margin: Inset { top: 4, left: 4, right: 4, bottom: 5}
                     spacing: 0,
                     draw_icon +: {
                         svg: (ICON_ADD)
@@ -94,7 +95,6 @@ script_mod! {
                         color_down: #xD0D8E8
                     }
                     icon_walk: Walk{width: 21, height: 21}
-                    text: "",
                 }
 
                 // A checkbox that enables TSP signing for the outgoing message.
@@ -105,7 +105,6 @@ script_mod! {
 
                 mentionable_text_input := MentionableTextInput {
                     width: Fill,
-                    height: Fit
                     margin: Inset {
                         top: 3, // add some space between the top border of the text input and the top border of the room input bar
                         bottom: 5.75, // to line up the middle of the text input with the middle of the buttons
@@ -125,11 +124,11 @@ script_mod! {
                 send_message_button := RobrixPositiveIconButton {
                     // Disabled by default; enabled when text is inputted
                     enabled: false,
+                    padding: 8
+                    margin: Inset { top: 4, left: 4, right: 4, bottom: 5}
                     spacing: 0,
-                    text: "",
-                    margin: 4
                     draw_icon +: { svg: (ICON_SEND) }
-                    icon_walk: Walk{width: 21, height: 21},
+                    icon_walk: Walk{width: 23, height: 23},
                 }
             }
 
@@ -175,6 +174,10 @@ pub struct RoomInputBar {
     /// Cached natural Fit height of the input_bar, used as the animation
     /// target when the editing pane is being hidden.
     #[rust] input_bar_natural_height: f64,
+    /// Whether the currently-displayed room is encrypted, used to style the send button.
+    #[rust] is_encrypted: bool,
+    /// Whether the send button is currently enabled (the message input is non-empty).
+    #[rust] is_send_enabled: bool,
 }
 
 impl ScriptHook for RoomInputBar {
@@ -394,7 +397,12 @@ impl RoomInputBar {
         } else {
             text_input.text().is_empty()
         };
-        self.enable_send_message_button(cx, !is_text_input_empty);
+        // Only restyle the button when its enabled state actually changes,
+        // not on every actions pass.
+        let should_enable = !is_text_input_empty;
+        if should_enable != self.is_send_enabled {
+            self.enable_send_message_button(cx, should_enable);
+        }
 
         // Handle the user pressing the up arrow in an empty message input box
         // to edit their latest sent message.
@@ -557,15 +565,18 @@ impl RoomInputBar {
         }
     }
 
-    /// Sets the send_message_button to be enabled and green, or disabled and gray.
+    /// Enables or disables (grays out) the send_message_button.
     ///
-    /// This should be called to update the button state when the message TextInput content changes.
+    /// When enabled, the button color is set based on the room's encryption state.
     fn enable_send_message_button(&mut self, cx: &mut Cx, enable: bool) {
+        self.is_send_enabled = enable;
         let mut send_message_button = self.view.button(cx, ids!(send_message_button));
-        let (fg_color, bg_color) = if enable {
+        let (fg_color, bg_color) = if !enable {
+            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
+        } else if self.is_encrypted {
             (COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN)
         } else {
-            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
+            (COLOR_PRIMARY, COLOR_ACTIVE_PRIMARY)
         };
         script_apply_eval!(cx, send_message_button, {
             enabled: #(enable),
@@ -587,15 +598,34 @@ impl RoomInputBar {
         self.view.view(cx, ids!(can_not_send_message_notice)).set_visible(cx, !can_send);
     }
 
-    /// Sets the message input's placeholder to reflect this room's encryption status.
-    fn update_encryption_status(&mut self, cx: &mut Cx, is_encrypted: bool) {
-        let empty_text = if is_encrypted {
-            "Send an encrypted message..."
+    /// Updates the send button (icon + color style) and empty message text
+    /// based on this room's encryption status.
+    fn update_encryption_state(&mut self, cx: &mut Cx, is_encrypted: bool) {
+        self.is_encrypted = is_encrypted;
+
+        // The send button is a "positive" green with a closed-lock badge when encrypted,
+        // and a standard button with an opened-lock badge when not encrypted.
+        let mut send_message_button = self.view.button(cx, ids!(send_message_button));
+        let empty_text: &str;
+        if is_encrypted {
+            apply_positive_button_style(cx, &mut send_message_button);
+            script_apply_eval!(cx, send_message_button, {
+                draw_icon.svg: mod.widgets.ICON_SEND_ENCRYPTED,
+            });
+            empty_text = "Send encrypted message…";
         } else {
-            "Send an unencrypted message..."
-        };
+            apply_primary_button_style(cx, &mut send_message_button);
+            script_apply_eval!(cx, send_message_button, {
+                draw_icon.svg: mod.widgets.ICON_SEND_UNENCRYPTED,
+            });
+            empty_text = "Send unencrypted message…";
+        }
+
         self.text_input(cx, ids!(input_bar.mentionable_text_input.text_input))
             .set_empty_text(cx, empty_text.to_string());
+
+        let enable = self.is_send_enabled;
+        self.enable_send_message_button(cx, enable);
     }
 
     /// Returns true if the TSP signing checkbox is checked, false otherwise.
@@ -767,9 +797,9 @@ impl RoomInputBarRef {
     }
 
     /// Updates the message input's placeholder based on this room's encryption status.
-    pub fn update_encryption_status(&self, cx: &mut Cx, is_encrypted: bool) {
+    pub fn update_encryption_state(&self, cx: &mut Cx, is_encrypted: bool) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.update_encryption_status(cx, is_encrypted);
+        inner.update_encryption_state(cx, is_encrypted);
     }
 
     /// Opens the native picker to upload a photo or video into this room.
@@ -849,7 +879,7 @@ impl RoomInputBarRef {
         //    This must happen before we restore the state of the `EditingPane`,
         //    because the call to `show_editing_pane()` might re-update the `input_bar`'s visibility.
         inner.update_user_power_levels(cx, user_power_levels);
-        inner.update_encryption_status(cx, is_encrypted);
+        inner.update_encryption_state(cx, is_encrypted);
 
         // 1. Restore the state of the TextInput within the MentionableTextInput.
         inner.text_input(cx, ids!(input_bar.mentionable_text_input.text_input))
