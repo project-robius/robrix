@@ -3,13 +3,12 @@
 //! Shows the app version and a set of external links (e.g., privacy policy).
 
 use makepad_widgets::*;
-
 use crate::shared::popup_list::{enqueue_popup_notification, PopupKind};
 
-const PRIVACY_POLICY_URL: &str = "https://robrix.app/privacy/";
 const HOMEPAGE_URL: &str = "https://robrix.app";
+const PRIVACY_POLICY_URL: &str = "https://robrix.app/privacy/";
 const SOURCE_URL: &str = "https://github.com/project-robius/robrix";
-const ISSUES_URL: &str = "https://github.com/project-robius/robrix/issues";
+const NEW_ISSUE_URL: &str = "https://github.com/project-robius/robrix/issues/new";
 
 const ROBRIX_VERSION: &str = env!("CARGO_PKG_VERSION");
 const ROBRIX_GIT_COMMIT_HASH: &str = env!("ROBRIX_GIT_COMMIT_HASH");
@@ -220,7 +219,7 @@ impl AboutSettings {
             open_url(SOURCE_URL);
         }
         if self.view.button(cx, ids!(issues_button)).clicked(actions) {
-            open_url(ISSUES_URL);
+            open_url(NEW_ISSUE_URL);
         }
     }
 
