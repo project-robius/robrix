@@ -18,7 +18,7 @@ use crate::{
     avatar_cache::{self, clear_avatar_cache}, room_preview_cache::clear_room_preview_cache, home::{
         add_room::{CreateRoomModalAction, CreateRoomModalWidgetRefExt, StartChatModalAction, StartChatModalWidgetRefExt},
         bot_binding_modal::{BotBindingModalAction, BotBindingModalWidgetRefExt},
-        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt, mark_invite_modal_closed}, invite_screen::{InviteScreenWidgetRefExt, LeaveRoomResultAction}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::{RoomContextMenuAction, RoomContextMenuWidgetRefExt}, room_screen::{InviteAction, MessageAction, RoomScreenWidgetRefExt, TimelineUpdate, clear_timeline_states}, room_settings_modal::{RoomSettingsAction, RoomSettingsModalWidgetRefExt, StdinCommandAction}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, space_lobby::SpaceLobbyScreenWidgetRefExt, spaces_bar::SpacesBarRef
+        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt, mark_invite_modal_closed}, invite_screen::{InviteScreenWidgetRefExt, LeaveRoomResultAction}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::{RoomContextMenuAction, RoomContextMenuWidgetRefExt}, room_screen::{InviteAction, MessageAction, RoomScreenWidgetRefExt, TimelineUpdate, clear_timeline_states}, room_settings_modal::{RoomSettingsAction, RoomSettingsModalWidgetRefExt}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, space_lobby::SpaceLobbyScreenWidgetRefExt, spaces_bar::SpacesBarRef
     }, i18n::{AppLanguage, tr_fmt, tr_key}, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, register::RegisterAction, room::BasicRoomDetails, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, file_upload_modal::{FilePreviewerAction, FileUploadModalWidgetRefExt}, forward_modal::{ForwardMessageModalAction, ForwardMessageModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, room_filter_input_bar::FilterAction}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RemoteDirectorySearchKind, RemoteDirectorySearchResult, RoomSettingsFetchedAction, RoomAvatarUploadedAction, TimelineKind, AccountSwitchAction, current_user_id, get_client, submit_async_request, get_timeline_update_sender}, updater::{UpdateCheckOutcome, check_for_updates, load_skipped_update_version, save_skipped_update_version, update_release_page_url}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
@@ -428,21 +428,10 @@ impl ScriptHook for App {
         });
     }
 
-    /// After initial creation, set the global singleton for the PopupList widget
-    /// and start a background thread to accept stdin commands for testing.
+    /// After initial creation, set the global singleton for the PopupList widget.
     fn on_after_new(&mut self, vm: &mut ScriptVm) {
         vm.with_cx_mut(|cx| {
             crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
-            cx.spawn_thread(|| {
-                use std::io::BufRead;
-                for line in std::io::stdin().lock().lines().flatten() {
-                    let line = line.trim().to_string();
-                    if !line.is_empty() {
-                        log!("[stdin] {}", line);
-                        Cx::post_action(StdinCommandAction(line));
-                    }
-                }
-            });
         });
     }
 }
@@ -1479,39 +1468,6 @@ impl MatchEvent for App {
                     continue;
                 }
                 _ => {}
-            }
-
-            // Handle StdinCommandAction for manual testing.
-            if let Some(StdinCommandAction(cmd)) = action.downcast_ref() {
-                let parts: Vec<&str> = cmd.splitn(2, ' ').collect();
-                match parts[0] {
-                    "open-room-settings" => {
-                        let keyword = parts.get(1).map(|s| s.trim()).unwrap_or("");
-                        let rooms_list = cx.get_global::<RoomsListRef>().clone();
-                        // Try: selected room → first joined room → keyword search
-                        let result = if keyword.is_empty() {
-                            self.app_state.selected_room
-                                .as_ref()
-                                .map(|sr| sr.room_id().to_owned())
-                                .or_else(|| rooms_list.get_first_joined_room_id())
-                        } else {
-                            rooms_list.get_matching_room_items(keyword, 1)
-                                .into_iter().next()
-                                .map(|(rni, _)| rni.room_id().to_owned())
-                        };
-                        if let Some(room_id) = result {
-                            log!("stdin: opening room settings for {}", room_id);
-                            cx.action(RoomSettingsAction::Open { room_id });
-                        } else {
-                            log!("stdin: no room found for '{}'", keyword);
-                        }
-                    }
-                    "close-room-settings" => {
-                        self.ui.modal(cx, ids!(room_settings_modal)).close(cx);
-                    }
-                    _ => log!("stdin: unknown command '{}'", cmd),
-                }
-                continue;
             }
 
             // Handle RoomSettingsAction.
