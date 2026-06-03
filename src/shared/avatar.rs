@@ -64,14 +64,14 @@ script_mod! {
             visible: false,
             align: Align { x: 0.5, y: 0.5 }
             img := Image {
-                fit: ImageFit.Stretch,
+                fit: ImageFit.CropToFill,
                 width: Fill, height: Fill,
                 draw_bg +: {
                     pixel: fn() {
-                        let maxed = max(self.rect_size.x, self.rect_size.y);
-                        let sdf = Sdf2d.viewport(self.pos * vec2(maxed, maxed));
-                        let r = maxed * 0.5;
-                        sdf.circle(r, r, r);
+                        let sdf = Sdf2d.viewport(self.pos * self.rect_size);
+                        let c = self.rect_size * 0.5;
+                        let r = min(self.rect_size.x, self.rect_size.y) * 0.5;
+                        sdf.circle(c.x, c.y, r);
                         sdf.fill_keep(self.get_color());
                         return sdf.result
                     }
