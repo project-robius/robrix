@@ -435,7 +435,7 @@ impl ScriptHook for App {
             crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
             cx.spawn_thread(|| {
                 use std::io::BufRead;
-                for line in std::io::stdin().lock().lines().flatten() {
+                for line in std::io::stdin().lock().lines().map_while(Result::ok) {
                     let line = line.trim().to_string();
                     if !line.is_empty() {
                         log!("[stdin] {}", line);
