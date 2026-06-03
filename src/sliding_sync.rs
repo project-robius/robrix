@@ -698,6 +698,22 @@ pub enum MatrixRequest {
         matrix_id: MatrixId,
         via: Vec<OwnedServerName>
     },
+    /// General Matrix Search API with given categories
+    SearchMessages {
+        /// The search criteria containing all search parameters
+        criteria: search::search_events::v3::Criteria,
+        /// Token for next batch of search results.
+        next_batch: Option<String>,
+        /// Abort previous search only when debouncing from typing search term.
+        abort_previous_search: bool,
+    },
+    /// Wait for a room's timeline to be loaded before jumping to a specific event.
+    WaitForRoomTimelineLoadedToJump {
+        /// The ID of the room to jump to.
+        room_id: OwnedRoomId,
+        /// The ID of the event to jump to.
+        event_id: OwnedEventId,
+    }
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
