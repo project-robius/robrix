@@ -1,29 +1,32 @@
+use std::fmt::Write;
 use std::sync::Arc;
 use futures_util::StreamExt;
-use makepad_widgets::{log, ActionDefaultRef, Cx, DefaultNone};
+use makepad_widgets::{log, Cx};
+use matrix_sdk_base::crypto::{AcceptedProtocols, CancelInfo, EmojiShortAuthString};
 use matrix_sdk::{
-    crypto::{AcceptedProtocols, CancelInfo, EmojiShortAuthString}, encryption::{verification::{
-        SasState, SasVerification, Verification, VerificationRequest,
-        VerificationRequestState,
-    }, VerificationState}, ruma::{
+    encryption::{
+        verification::{SasState, SasVerification, Verification, VerificationRequest, VerificationRequestState}, VerificationState}, ruma::{
         events::{
-            key::verification::{request::ToDeviceKeyVerificationRequestEvent, VerificationMethod}, room::message::{MessageType, OriginalSyncRoomMessageEvent}
+            key::verification::{request::ToDeviceKeyVerificationRequestEvent, VerificationMethod},
+            room::message::{MessageType, OriginalSyncRoomMessageEvent},
         },
         UserId,
     }, Client
 };
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}};
 
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Clone, Debug, Default)]
 pub enum VerificationStateAction {
     Update(VerificationState),
+    #[default]
     None,
 }
 
-pub fn add_verification_event_handlers_and_sync_client(client: Client) {
+
+pub fn add_verification_event_handlers_and_sync_client(client: Client) -> tokio::task::JoinHandle<()> {
     let mut verification_state_subscriber = client.encryption().verification_state();
     log!("Initial verification state is {:?}", verification_state_subscriber.get());
-    Handle::current().spawn(async move {
+    let verification_state_handle = Handle::current().spawn(async move {
         while let Some(state) = verification_state_subscriber.next().await {
             log!("Received a verification state update: {state:?}");
             Cx::post_action(VerificationStateAction::Update(state));
@@ -68,6 +71,8 @@ pub fn add_verification_event_handlers_and_sync_client(client: Client) {
             }
         }
     );
+
+    verification_state_handle
 }
 
 
@@ -75,13 +80,13 @@ async fn dump_devices(user_id: &UserId, client: &Client) -> String {
     let mut devices = String::new();
     for device in client.encryption().get_user_devices(user_id).await.unwrap().devices() {
         let current = client.device_id().is_some_and(|id| id == device.device_id());
-        devices.push_str(&format!(
-            "    {:<10} {:<30} {:<}{}\n",
+        let _ = writeln!(&mut devices,
+            "    {:<10} {:<30} {:<}{}",
             device.device_id(),
             device.display_name().unwrap_or("(unknown name)"),
             if device.is_verified() { "✅" } else { "❌" },
             if current { " <-- this device" } else { "" },
-        ));
+        );
     }
     format!("Currently-known devices of user {user_id}:\n{}",
         if devices.is_empty() { "    (none)" } else { &devices },
@@ -252,7 +257,7 @@ async fn request_verification_handler(client: Client, request: VerificationReque
 
 
 /// Actions related to verification that should be handled by the top-level app context.
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Clone, Debug, Default)]
 pub enum VerificationAction {
     /// Informs the main UI thread that a verification request has been received.
     RequestReceived(VerificationRequestActionState),
@@ -288,6 +293,7 @@ pub enum VerificationAction {
     SasConfirmationError(Arc<matrix_sdk::Error>),
     /// Informs the main UI thread that a verification request has been fully completed.
     RequestCompleted,
+    #[default]
     None,
 }
 

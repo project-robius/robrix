@@ -1,27 +1,30 @@
-use makepad_widgets::Cx;
+use makepad_widgets::ScriptVm;
 
 pub mod avatar;
-pub mod callout_tooltip;
 pub mod collapsible_header;
+pub mod expand_arrow;
 pub mod confirmation_modal;
 pub mod helpers;
 pub mod html_or_plaintext;
 pub mod icon_button;
 pub mod jump_to_bottom_button;
 pub mod mentionable_text_input;
+pub mod navigation_bar_button;
 pub mod popup_list;
 pub mod room_filter_input_bar;
 pub mod styles;
 pub mod text_or_image;
 pub mod timestamp;
-pub mod typing_animation;
+pub mod bouncing_dots;
+pub mod command_text_input;
 pub mod unread_badge;
 pub mod verification_badge;
 pub mod message_search_input_bar;
 pub mod restore_status_view;
+pub mod image_viewer;
 
 
-pub fn live_design(cx: &mut Cx) {
+pub fn script_mod(vm: &mut ScriptVm) {
     // Order matters here, as some widget definitions depend on others.
     styles::live_design(cx);
     helpers::live_design(cx);

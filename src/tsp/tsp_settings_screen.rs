@@ -1,117 +1,94 @@
+
 use makepad_widgets::*;
 
-use crate::{shared::{popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
+use crate::{shared::{popup_list::{enqueue_popup_notification, PopupKind}, styles::*}, tsp::{create_did_modal::CreateDidModalAction, create_wallet_modal::CreateWalletModalAction, submit_tsp_request, tsp_state_ref, TspIdentityAction, TspRequest, TspWalletAction, TspWalletEntry, TspWalletMetadata}};
 
-const REPUBLISH_IDENTITY_BUTTON_TEXT: &str = "Republish Current Identity to DID Server";
-
-live_design! {
+script_mod! {
     link tsp_enabled
 
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::helpers::*;
-    use crate::shared::styles::*;
-    use crate::shared::avatar::*;
-    use crate::shared::icon_button::*;
-    use crate::tsp::wallet_entry::*;
-
-    REPUBLISH_IDENTITY_BUTTON_TEXT = "Republish Current Identity to DID Server"
+    mod.widgets.REPUBLISH_IDENTITY_BUTTON_TEXT = "Republish Current Identity to DID Server"
 
     // The view containing all TSP-related settings.
-    pub TspSettingsScreen = {{TspSettingsScreen}} {
+    mod.widgets.TspSettingsScreen = #(TspSettingsScreen::register_widget(vm)) {
         width: Fill, height: Fit
         flow: Down
 
-        <TitleLabel> {
+        LineH { width: 425, padding: 10, margin: Inset{top: 20, bottom: 5} }
+
+        TitleLabel {
             text: "TSP Wallet Settings"
         }
 
-        <SubsectionLabel> {
+        SubsectionLabel {
             text: "Your active identity:"
         }
 
-        <View> {
+        View {
             width: Fill, height: Fit
             flow: Right,
             spacing: 10
 
-            copy_identity_button = <RobrixIconButton> {
-                margin: {left: 5}
+            copy_identity_button := RobrixNeutralIconButton {
+                margin: Inset{left: 5}
                 padding: 12,
                 spacing: 0,
-                draw_bg: {
-                    color: (COLOR_SECONDARY)
-                }
-                draw_icon: {
-                    svg_file: (ICON_COPY)
-                }
-                icon_walk: {width: 16, height: 16, margin: {right: -2} }
+                draw_icon.svg: (ICON_COPY)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{right: -2} }
             }
 
-            current_identity_label = <Label> {
+            current_identity_label := Label {
                 width: Fill, height: Fit
-                flow: RightWrap,
-                margin: {top: 10}
-                draw_text: {
-                    wrap: Line,
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                flow: Flow.Right{wrap: true},
+                margin: Inset{top: 8}
+                draw_text +: {
+                    text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
             }
         }
 
-        republish_identity_button = <RobrixIconButton> {
-            width: Fit, height: Fit,
+        republish_identity_button := RobrixIconButton {
+            width: Fit,
+            height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
             padding: 10,
-            margin: {top: 8, bottom: 10, left: 5},
-
-            draw_bg: {
-                color: (COLOR_ACTIVE_PRIMARY),
-                border_radius: 5
-            }
-            draw_icon: {
-                svg_file: (ICON_UPLOAD)
-                color: (COLOR_PRIMARY),
-            }
-            icon_walk: {width: 16, height: 16}
-            draw_text: {
-                color: (COLOR_PRIMARY),
-            }
-            text: (REPUBLISH_IDENTITY_BUTTON_TEXT)
+            margin: Inset{top: 8, bottom: 10, left: 5},
+            draw_icon.svg: (ICON_UPLOAD)
+            icon_walk: Walk{width: 16, height: 16}
+            text: mod.widgets.REPUBLISH_IDENTITY_BUTTON_TEXT
         }
 
 
-        <SubsectionLabel> {
+        SubsectionLabel {
             text: "Your Wallets:"
         }
 
-        no_wallets_label = <View> {
+        no_wallets_label := View {
             width: Fill, height: Fit
-            <Label> {
+            Label {
                 width: Fill, height: Fit
-                margin: {top: 10, bottom: 8, left: 13, right: 10},
-                flow: RightWrap,
-                draw_text: {
-                    wrap: Line,
-                    color: (COLOR_WARNING_NOT_FOUND),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                margin: Inset{top: 10, bottom: 8, left: 13, right: 10},
+                flow: Flow.Right{wrap: true},
+                draw_text +: {
+                    color: (COLOR_TEXT_WARNING_NOT_FOUND),
+                    text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
                 text: "No wallets found. Create or import a wallet."
             }
         }
 
-        <RoundedView> {
+        RoundedView {
             width: Fill, height: Fit
             margin: 5,
 
             show_bg: true,
-            draw_bg: {
-                color: #F6F8F9,
-                border_radius: 4.0,
+            draw_bg +: {
+                color: #F6F8F9
+                border_radius: 4.0
             }
 
-            wallet_list = <FlatList> {
+            wallet_list := FlatList {
                 width: Fill,
                 height: Fit,
                 spacing: 0.0
@@ -121,77 +98,48 @@ live_design! {
                 drag_scrolling: true,
                 scroll_bars: { show_scroll_x: false, show_scroll_y: false },
 
-                wallet_entry = <WalletEntry> { }
+                wallet_entry := WalletEntry { }
             }
         }
 
-        <View> {
-            margin: {top: 5},
+        View {
+            margin: Inset{top: 5},
             width: Fill, height: Fit
-            flow: RightWrap,
-            align: {y: 0.5},
+            flow: Flow.Right{wrap: true},
+            align: Align{y: 0.5},
             spacing: 10
 
-            create_did_button = <RobrixIconButton> {
-                width: Fit, height: Fit,
+            create_did_button := RobrixPositiveIconButton {
+                width: Fit,
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: 10,
-                margin: {left: 5},
-
-                draw_bg: {
-                    border_color: (COLOR_FG_ACCEPT_GREEN),
-                    color: (COLOR_BG_ACCEPT_GREEN),
-                    border_radius: 5
-                }
-                draw_icon: {
-                    svg_file: (ICON_ADD_USER)
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
-                icon_walk: {width: 21, height: Fit, margin: 0}
-                draw_text: {
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
+                margin: Inset{left: 5},
+                draw_icon.svg: (ICON_ADD_USER)
+                icon_walk: Walk{width: 19, height: Fit, margin: 0}
                 text: "Create New Identity (DID)"
             }
 
-            create_wallet_button = <RobrixIconButton> {
-                width: Fit, height: Fit,
+            create_wallet_button := RobrixPositiveIconButton {
+                width: Fit,
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: 10,
-                margin: {left: 5},
-
-                draw_bg: {
-                    border_color: (COLOR_FG_ACCEPT_GREEN),
-                    color: (COLOR_BG_ACCEPT_GREEN),
-                    border_radius: 5
-                }
-                draw_icon: {
-                    svg_file: (ICON_ADD_WALLET)
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
-                icon_walk: {width: 21, height: Fit, margin: 0}
-                draw_text: {
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
+                margin: Inset{left: 5},
+                draw_icon.svg: (ICON_ADD_WALLET)
+                icon_walk: Walk{width: 21, height: Fit, margin: 0}
                 text: "Create New Wallet"
             }
 
-            import_wallet_button = <RobrixIconButton> {
-                padding: {top: 10, bottom: 10, left: 12, right: 15}
-                margin: {left: 5}
-                draw_bg: {
-                    color: (COLOR_ACTIVE_PRIMARY)
-                }
-                draw_text: {
-                    color: (COLOR_PRIMARY)
-                    text_style: <REGULAR_TEXT> {}
-                }
+            import_wallet_button := RobrixIconButton {
+                width: Fit,
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                margin: Inset{left: 5}
                 text: "Import Existing Wallet"
-                // TODO: fix this icon, or pick a different SVG
-                // draw_icon: {
-                //     svg_file: (ICON_IMPORT)
-                //     color: (COLOR_PRIMARY)
-                // }
-                // icon_walk: {width: 16, height: 16}
-                icon_walk: {width: 0, height: 0}
+                draw_icon +: {
+                    svg: (ICON_IMPORT)
+                    color: (COLOR_PRIMARY)
+                }
+                icon_walk: Walk{width: 16, height: 16}
             }
         }
     }
@@ -247,7 +195,7 @@ impl WalletStatusAndDefault {
 }
 
 /// The view containing all TSP-related settings.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct TspSettingsScreen {
     #[deref] view: View,
 
@@ -281,19 +229,20 @@ impl Widget for TspSettingsScreen {
         let (current_did_text, current_did_text_color, show_republish_button) = match
             self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref())
         {
-            Some(current_did) => (current_did, COLOR_FG_ACCEPT_GREEN, true),
-            None => ("No default identity has been set.", COLOR_WARNING_NOT_FOUND, false),
+            Some(current_did) => (current_did.to_string(), COLOR_FG_ACCEPT_GREEN, true),
+            None => ("No default identity has been set.".to_string(), COLOR_TEXT_WARNING_NOT_FOUND, false),
         };
-        self.view.label(id!(current_identity_label)).apply_over(cx, live!(
-            text: (current_did_text),
-            draw_text: { color: (current_did_text_color) },
-        ));
-        self.view.button(id!(republish_identity_button)).set_visible(cx, show_republish_button);
+        let mut current_identity_label = self.view.label(cx, ids!(current_identity_label));
+        script_apply_eval!(cx, current_identity_label, {
+            text: #(current_did_text),
+            draw_text +: { color: #(current_did_text_color) },
+        });
+        self.view.button(cx, ids!(republish_identity_button)).set_visible(cx, show_republish_button);
 
 
         // If we don't have any wallets, show the "no wallets" label.
         let is_wallets_empty = self.wallets.as_ref().is_none_or(|w| w.is_empty());
-        self.view.view(id!(no_wallets_label)).set_visible(cx, is_wallets_empty);
+        self.view.view(cx, ids!(no_wallets_label)).set_visible(cx, is_wallets_empty);
 
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // Here, we only need to handle drawing the wallet list.
@@ -308,7 +257,7 @@ impl Widget for TspSettingsScreen {
 
             for (metadata, mut status_and_default) in (0..wallets.len()).filter_map(|i| wallets.get(i)) {
                 let item_live_id = LiveId::from_str(metadata.url.as_url_unencoded());
-                let item = list.item(cx, item_live_id, live_id!(wallet_entry)).unwrap();
+                let item = list.item(cx, item_live_id, id!(wallet_entry)).unwrap();
                 // Pass the wallet metadata in through Scope via props,
                 // and status/is_default via data.
                 let mut scope = Scope::with_data_props(&mut status_and_default, metadata);
@@ -321,7 +270,7 @@ impl Widget for TspSettingsScreen {
 
 impl MatchEvent for TspSettingsScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        let republish_identity_button = self.view.button(id!(republish_identity_button));
+        let mut republish_identity_button = self.view.button(cx, ids!(republish_identity_button));
 
         for action in actions {
             match action.downcast_ref() {
@@ -334,6 +283,7 @@ impl MatchEvent for TspSettingsScreen {
                         wallets.other_wallets.push((metadata.clone(), WalletStatus::Opened));
                     }
                     self.view.redraw(cx);
+                    continue;
                 }
 
                 // Remove the wallet from the list of drawn wallets.
@@ -348,22 +298,23 @@ impl MatchEvent for TspSettingsScreen {
                     else {
                         continue;
                     }
-                    enqueue_popup_notification(PopupItem {
-                        message: format!("Removed wallet \"{}\".", metadata.wallet_name),
-                        auto_dismissal_duration: Some(4.0),
-                        kind: PopupKind::Success,
-                    });
+                    enqueue_popup_notification(
+                        format!("Removed wallet \"{}\".", metadata.wallet_name),
+                        PopupKind::Success,
+                        Some(4.0),
+                    );
                     if *was_default {
                         // If the removed wallet was the default wallet, notify the user.
                         // The user should then select another wallet as the default.
-                        enqueue_popup_notification(PopupItem {
-                            message: String::from("The default wallet was removed.\n\n\
-                                TSP features will not work properly until you set a default wallet."),
-                            auto_dismissal_duration: None,
-                            kind: PopupKind::Warning,
-                        });
+                        enqueue_popup_notification(
+                            "The default wallet was removed.\n\n\
+                                TSP features will not work properly until you set a default wallet.",
+                            PopupKind::Warning,
+                            None,
+                        );
                     }
                     self.view.redraw(cx);
+                    continue;
                 }
 
                 // Update the default/active wallet.
@@ -379,13 +330,15 @@ impl MatchEvent for TspSettingsScreen {
                         wallets.other_wallets.insert(0, (previous_active, WalletStatus::Opened));
                     }
                     self.view.redraw(cx);
+                    continue;
                 }
                 Some(TspWalletAction::DefaultWalletChanged(Err(_))) => {
-                    enqueue_popup_notification(PopupItem {
-                        message: String::from("Failed to set default wallet, could not find or open selected wallet."),
-                        auto_dismissal_duration: None,
-                        kind: PopupKind::Error,
-                    });
+                    enqueue_popup_notification(
+                        "Failed to set default wallet, could not find or open selected wallet.",
+                        PopupKind::Error,
+                        None,
+                    );
+                    continue;
                 }
 
                 // Handle a newly-opened wallet.
@@ -397,106 +350,122 @@ impl MatchEvent for TspSettingsScreen {
                         wallets.other_wallets.push((metadata.clone(), WalletStatus::Opened));
                     }
                     self.view.redraw(cx);
+                    continue;
                 }
                 Some(TspWalletAction::WalletOpened(Err(e))) => {
-                    enqueue_popup_notification(PopupItem {
-                        message: format!("Failed to open wallet: {e}"),
-                        auto_dismissal_duration: None,
-                        kind: PopupKind::Error,
-                    });
+                    enqueue_popup_notification(
+                        format!("Failed to open wallet: {e}"),
+                        PopupKind::Error,
+                        None,
+                    );
+                    continue;
                 }
 
-                Some(TspWalletAction::CreateWalletError { .. }) // handled in the CreateWalletModal
-                | None => { }
+                // This is handled in the CreateWalletModal
+                Some(TspWalletAction::CreateWalletError { .. }) => { continue; }
+                None => { }
             }
 
-            if let Some(TspIdentityAction::DidRepublishResult(result)) = action.downcast_ref() {
-                // restore the republish button to its original state.
-                republish_identity_button.apply_over(cx, live!(
-                    enabled: true,
-                    text: (REPUBLISH_IDENTITY_BUTTON_TEXT),
-                ));
-                match result {
-                    Ok(did) => {
-                        enqueue_popup_notification(PopupItem {
-                            message: format!("Successfully republished identity \"{}\" to the DID server.", did),
-                            auto_dismissal_duration: Some(5.0),
-                            kind: PopupKind::Success,
-                        });
+            match action.downcast_ref() {
+                Some(TspIdentityAction::DidCreationResult(result)) => {
+                    // If there is no active identity, set the newly-created identity as active.
+                    let wallets = self.wallets.get_or_insert_default();
+                    if let (Ok(did), None) = (result, wallets.active_identity.as_ref()) {
+                        wallets.active_identity = Some(did.clone());
+                        self.view.redraw(cx);
                     }
-                    Err(e) => {
-                        enqueue_popup_notification(PopupItem {
-                            message: format!("Failed to republish identity to the DID server: {e}"),
-                            auto_dismissal_duration: None,
-                            kind: PopupKind::Error,
-                        });
-                    }
+                    continue;
                 }
+                Some(TspIdentityAction::DidRepublishResult(result)) => {
+                    // restore the republish button to its original state.
+                    script_apply_eval!(cx, republish_identity_button, {
+                        enabled: true,
+                        text: mod.widgets.REPUBLISH_IDENTITY_BUTTON_TEXT,
+                    });
+                    match result {
+                        Ok(did) => {
+                            enqueue_popup_notification(
+                                format!("Successfully republished identity \"{}\" to the DID server.", did),
+                                PopupKind::Success,
+                                Some(5.0),
+                            );
+                        }
+                        Err(e) => {
+                            enqueue_popup_notification(
+                                format!("Failed to republish identity to the DID server: {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
+                        }
+                    }
+                    continue;
+                }
+                Some(TspIdentityAction::SentDidAssociationRequest { .. }) => { continue; } // handled in the TspVerifyUser widget
+                Some(TspIdentityAction::ErrorSendingDidAssociationRequest { .. }) => { continue; } // handled in the TspVerifyUser widget
+                Some(TspIdentityAction::ReceivedDidAssociationResponse { .. }) => { continue; } // handled in the TspVerifyUser widget
+                Some(TspIdentityAction::ReceivedDidAssociationRequest { .. }) => { continue; } // handled in the TspVerificationModal widget
+                Some(TspIdentityAction::ReceiveLoopError { .. }) => { continue; } // handled in the top-level app
+                None => { }
             }
         }
 
-        // | Some(TspWalletAction::SentDidAssociationRequest { .. }) // handled in the TspVerifyUser widget
-        // | Some(TspWalletAction::ErrorSendingDidAssociationRequest { .. }) // handled in the TspVerifyUser widget
-        // | Some(TspWalletAction::ReceivedDidAssociationResponse { .. }) // handled in the TspVerifyUser widget
-        // | Some(TspWalletAction::ReceivedDidAssociationRequest(_)) // handled in the TspVerificationModal widget
-        // | Some(TspWalletAction::ReceiveLoopError { .. }) // handled in the top-level app
 
-        if self.view.button(id!(copy_identity_button)).clicked(actions) { 
+        if self.view.button(cx, ids!(copy_identity_button)).clicked(actions) { 
             if let Some(did) = self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref()) {
                 cx.copy_to_clipboard(did);
-                enqueue_popup_notification(PopupItem {
-                    message: String::from("Copied your default TSP identity to the clipboard."),
-                    auto_dismissal_duration: Some(3.0),
-                    kind: PopupKind::Success,
-                });
+                enqueue_popup_notification(
+                    "Copied your default TSP identity to the clipboard.",
+                    PopupKind::Success,
+                    Some(3.0),
+                );
             } else {
-                enqueue_popup_notification(PopupItem {
-                    message: String::from("No default TSP identity has been set."),
-                    auto_dismissal_duration: Some(4.0),
-                    kind: PopupKind::Warning,
-                });
+                enqueue_popup_notification(
+                    "No default TSP identity has been set.",
+                    PopupKind::Warning,
+                    Some(4.0),
+                );
             }
         }
 
         // Allow the user to republish their identity to the DID server.
         // This is primarily needed because some DID servers (e.g., the test servers)
         // frequently wipe their identity storage after a certain period of time.
-        if self.view.button(id!(republish_identity_button)).clicked(actions) {
+        if self.view.button(cx, ids!(republish_identity_button)).clicked(actions) {
             if self.has_default_wallet() {
                 if let Some(our_did) = self.wallets.as_ref().and_then(|ws| ws.active_identity.as_deref()) {
-                    republish_identity_button.apply_over(cx, live!(
+                    script_apply_eval!(cx, republish_identity_button, {
                         enabled: false,
                         text: "Republishing DID now...",
-                    ));
+                    });
 
                     submit_tsp_request(TspRequest::RepublishDid { did: our_did.to_string() });
                 } else {
-                    enqueue_popup_notification(PopupItem {
-                        message: String::from("You must set a default TSP identity to be republished."),
-                        auto_dismissal_duration: Some(5.0),
-                        kind: PopupKind::Error,
-                    });
+                    enqueue_popup_notification(
+                        "You must set a default TSP identity to be republished.",
+                        PopupKind::Error,
+                        Some(5.0),
+                    );
                 }
             }
         }
 
-        if self.view.button(id!(create_wallet_button)).clicked(actions) {
+        if self.view.button(cx, ids!(create_wallet_button)).clicked(actions) {
             cx.action(CreateWalletModalAction::Open);
         }
 
-        if self.view.button(id!(create_did_button)).clicked(actions) {
+        if self.view.button(cx, ids!(create_did_button)).clicked(actions) {
             if self.has_default_wallet() {
                 cx.action(CreateDidModalAction::Open);
             }
         }
 
-        if self.view.button(id!(import_wallet_button)).clicked(actions) {
+        if self.view.button(cx, ids!(import_wallet_button)).clicked(actions) {
             // TODO: support importing an existing wallet.
-            enqueue_popup_notification(PopupItem {
-                message: String::from("Importing an existing wallet is not yet implemented."),
-                auto_dismissal_duration: Some(4.0),
-                kind: PopupKind::Warning,
-            });
+            enqueue_popup_notification(
+                "Importing an existing wallet is not yet implemented.",
+                PopupKind::Warning,
+                Some(4.0),
+            );
         }
     }
 }
@@ -528,19 +497,19 @@ impl TspSettingsScreen {
     /// Returns `true` if a default wallet is set, `false` otherwise.
     fn has_default_wallet(&self) -> bool {
         let Some(wallets) = self.wallets.as_ref() else {
-            enqueue_popup_notification(PopupItem {
-                message: String::from("No TSP wallets found.\n\nPlease create or import a wallet."),
-                auto_dismissal_duration: Some(5.0),
-                kind: PopupKind::Warning,
-            });
+            enqueue_popup_notification(
+                "No TSP wallets found.\n\nPlease create or import a wallet.",
+                PopupKind::Warning,
+                Some(5.0),
+            );
             return false;
         };
         if wallets.active_wallet.is_none() {
-            enqueue_popup_notification(PopupItem {
-                message: String::from("No default TSP wallet is set.\n\nPlease select or create a default wallet."),
-                auto_dismissal_duration: Some(5.0),
-                kind: PopupKind::Warning,
-            });
+            enqueue_popup_notification(
+                "No default TSP wallet is set.\n\nPlease select or create a default wallet.",
+                PopupKind::Warning,
+                Some(5.0),
+            );
             return false;
         }
         true

@@ -29,8 +29,6 @@ pub enum UnrecoverableError {
     ComponentsCleared,
     /// Failed after point of no return
     PostPointOfNoReturnFailure(String),
-    /// Runtime restart failed
-    RuntimeRestartFailed,
 }
 
 impl fmt::Display for LogoutError {

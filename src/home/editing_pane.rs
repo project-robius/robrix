@@ -2,7 +2,6 @@ use makepad_widgets::{text::selection::Cursor, *};
 use matrix_sdk::{
     room::edit::EditedContent,
     ruma::{
-        OwnedRoomId,
         events::{
             poll::unstable_start::{UnstablePollAnswer, UnstablePollStartContentBlock},
             room::message::{FormattedBody, MessageType, RoomMessageEventContentWithoutRelation},
@@ -11,138 +10,114 @@ use matrix_sdk::{
 };
 use matrix_sdk_ui::timeline::{EventTimelineItem, MsgLikeKind, TimelineEventItemId, TimelineItemContent};
 
-use crate::shared::mentionable_text_input::MentionableTextInputWidgetExt;
+use crate::shared::mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt};
 use crate::{
-    shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, sliding_sync::{submit_async_request, MatrixRequest}
+    settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction},
+    shared::popup_list::{enqueue_popup_notification, PopupKind},
+    sliding_sync::{submit_async_request, MatrixRequest, TimelineKind},
 };
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::helpers::*;
-    use crate::shared::styles::*;
-    use crate::shared::avatar::*;
-    use crate::shared::icon_button::*;
-    use crate::shared::mentionable_text_input::MentionableTextInput;
 
-    EditingContent = <View> {
+    mod.widgets.EditingContent = RoundedView {
         width: Fill,
         height: Fit,
-        align: {x: 0.5, y: 1.0}, // centered horizontally, bottom-aligned
-        padding: { left: 20, right: 20, top: 10, bottom: 10 }
+        padding: Inset{ left: 20, right: 20, top: 10, bottom: 10 }
         spacing: 10,
         flow: Down,
 
+        // this must match the RoomInputBar exactly such that it overlaps atop it.
+        margin: Inset{left: -4, right: -4, bottom: -4 }
         show_bg: true,
-        draw_bg: {
+        draw_bg +: {
             color: (COLOR_PRIMARY)
+            border_radius: 5.0
+            border_color: (COLOR_SECONDARY)
+            border_size: 2.0
+            // shadow_color: #0006
+            // shadow_radius: 0.0
+            // shadow_offset: vec2(0.0,0.0)
         }
 
-        <View> {
-            width: Fill
-            height: Fit
+        View {
+            width: Fill, height: Fit
             flow: Right
-            align: {y: 0.5}
-            padding: {left: 5, right: 5}
+            align: Align{y: 0.5}
+            padding: Inset{left: 5, right: 5}
 
-            <Label> {
+            Label {
                 width: Fill,
-                draw_text: {
-                    text_style: <USERNAME_TEXT_STYLE> {},
+                flow: Right, // do not wrap
+                margin: Inset{top: 3}
+                draw_text +: {
+                    text_style: USERNAME_TEXT_STYLE {},
                     color: #222,
-                    wrap: Ellipsis,
                 }
-                text: "Editing message:"
+                text: "Editing:"
             }
 
-            cancel_button = <RobrixIconButton> {
+            cancel_button := RobrixNegativeIconButton {
                 width: Fit,
                 height: Fit,
                 padding: 13,
                 spacing: 0,
-                margin: {left: 5, right: 5},
+                margin: Inset{left: 5, right: 5},
 
-                draw_bg: {
-                    border_color: (COLOR_FG_DANGER_RED),
-                    color: (COLOR_BG_DANGER_RED)
-                    border_radius: 5
-                }
-                draw_icon: {
-                    svg_file: (ICON_CLOSE),
-                    color: (COLOR_FG_DANGER_RED)
-                }
-                icon_walk: {width: 16, height: 16, margin: 0}
+                draw_icon.svg: (ICON_CLOSE)
+                icon_walk: Walk{width: 16, height: 16, margin: 0}
             }
 
-            accept_button = <RobrixIconButton> {
+            accept_button := RobrixPositiveIconButton {
                 width: Fit,
                 height: Fit,
                 padding: 13,
                 spacing: 0,
-                margin: {left: 5, right: 5},
+                margin: Inset{left: 5},
 
-                draw_bg: {
-                    border_color: (COLOR_FG_ACCEPT_GREEN),
-                    color: (COLOR_BG_ACCEPT_GREEN)
-                    border_radius: 5
-                }
-                draw_icon: {
-                    svg_file: (ICON_CHECKMARK)
-                    color: (COLOR_FG_ACCEPT_GREEN),
-                }
-                icon_walk: {width: 16, height: 16, margin: 0}
+                draw_icon.svg: (ICON_CHECKMARK)
+                icon_walk: Walk{width: 16, height: 16, margin: 0}
             }
         }
 
-        <LineH> { }
+        LineH { }
 
-        edit_text_input = <MentionableTextInput> {
-            width: Fill, height: Fit,
-            margin: { bottom: 5 }
-            padding: { top: 3 }
-            align: {y: 0.5}
-            persistent = {
-                center = {
-                    text_input = {
-                        empty_text: "Enter edited message..."
-                    }
-                }
-            }
+        edit_text_input := MentionableTextInput {
+            width: Fill
+            height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
+            margin: Inset{ bottom: 5, top: 5 }
         }
     }
 
 
-    pub EditingPane = {{EditingPane}} {
+    mod.widgets.EditingPane = #(EditingPane::register_widget(vm)) {
+        ..mod.widgets.RoundedView
+
         visible: false,
         width: Fill,
-        height: Fit,
-        align: {x: 0.5, y: 1.0}
-        // TODO: FIXME: this is a hack to make the editing pane
-        //              able to slide out of the bottom of the screen.
-        //              (Waiting on a Makepad-level fix for this.)
-        margin: {top: 1000}
+        height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
+        align: Align{x: 0.5, y: 1.0}
 
-        editing_content = <EditingContent> { }
+        editing_content := mod.widgets.EditingContent { }
+        
+        slide: 1.0,
 
-        animator: {
-            panel = {
-                default: hide,
-                show = {
+        animator: Animator{
+            panel: {
+                default: @hide
+                show: AnimatorState{
                     redraw: true,
-                    from: {all: Forward {duration: 0.8}}
+                    from: {all: Forward {duration: 0.5}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
-                    apply: { margin: {top: 0} }
+                    apply: { slide: 0.0 }
                 }
-                hide = {
+                hide: AnimatorState{
                     redraw: true,
-                    from: {all: Forward {duration: 0.8}}
+                    from: {all: Forward {duration: 0.5}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
-                    // TODO: FIXME: this is a hack to make the editing pane
-                    //              able to slide out of the bottom of the screen.
-                    //              (Waiting on a Makepad-level fix for this.)
-                    apply: { margin: {top: 1000} }
+                    apply: { slide: 1.0 }
                 }
             }
         }
@@ -150,83 +125,129 @@ live_design! {
 }
 
 /// Action emitted by the EditingPane widget.
-#[derive(Clone, DefaultNone, Debug)]
+#[derive(Clone, Default, Debug)]
 pub enum EditingPaneAction {
-    /// The editing pane has been closed/hidden.
-    Hide,
+    /// The editing pane's hide animation has started.
+    HideAnimationStarted,
+    /// The editing pane has been fully closed/hidden.
+    Hidden,
+    #[default]
     None,
+}
+
+impl ActionDefaultRef for EditingPaneAction {
+    fn default_ref() -> &'static Self {
+        static DEFAULT: EditingPaneAction = EditingPaneAction::None;
+        &DEFAULT
+    }
 }
 
 /// The information maintained by the EditingPane widget.
 struct EditingPaneInfo {
     event_tl_item: EventTimelineItem,
-    room_id: OwnedRoomId,
+    timeline_kind: TimelineKind,
 }
 
 /// A view that slides in from the bottom of the screen to allow editing a message.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, Widget, Animator)]
 pub struct EditingPane {
-    #[deref]
-    view: View,
-    #[animator]
-    animator: Animator,
+    #[source] source: ScriptObjectRef,
+    #[deref] view: View,
+    #[apply_default] animator: Animator,
+    #[live] slide: f32,
 
-    #[rust]
-    info: Option<EditingPaneInfo>,
-    #[rust]
-    is_animating_out: bool,
+    #[rust] info: Option<EditingPaneInfo>,
+    #[rust] is_animating_out: bool,
+    #[rust] last_content_height: f64,
+    /// Used to force this widget's parent to do a re-draw
+    /// after the hide animation completes on this pane.
+    #[rust] next_frame: NextFrame,
+}
+
+impl ScriptHook for EditingPane {
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            let send_on_enter = cx.global::<AppPreferencesGlobal>().0.send_on_enter;
+            self.mentionable_text_input(cx, ids!(editing_content.edit_text_input))
+                .text_input_ref()
+                .set_submit_on_enter(send_on_enter);
+        });
+    }
 }
 
 impl Widget for EditingPane {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // Handle the next-frame event scheduled after hide animation completes.
+        // This forces a full redraw cycle so the parent relayouts properly.
+        if self.next_frame.is_event(event).is_some() {
+            cx.redraw_all();
+        }
+
         self.view.handle_event(cx, event, scope);
 
-        if !self.visible {
-            return;
-        }
-
-        let animator_action = self.animator_handle_event(cx, event);
-        if animator_action.must_redraw() {
-            self.redraw(cx);
-        }
-        // If the animator is in the `hide` state and has finished animating out,
-        // that means it has fully animated off-screen and can be set to invisible.
-        if self.animator_in_state(cx, id!(panel.hide)) {
-            match (self.is_animating_out, animator_action.is_animating()) {
-                (true, false) => {
-                    self.visible = false;
-                    self.info = None;
-                    cx.widget_action(self.widget_uid(), &scope.path, EditingPaneAction::Hide);
-                    cx.revert_key_focus();
-                    self.redraw(cx);
-                    return;
-                },
-                (false, true) => {
-                    self.is_animating_out = true;
-                    return;
-                },
-                _ => {},
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                if let Some(AppPreferencesAction::SendOnEnterChanged(v)) = action.downcast_ref() {
+                    self.mentionable_text_input(cx, ids!(editing_content.edit_text_input))
+                        .text_input_ref()
+                        .set_submit_on_enter(*v);
+                }
             }
         }
 
-        if let Event::Actions(actions) = event {
+        if !self.visible { return; }
 
-            let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input)).text_input_ref();
+        let animator_action = self.animator_handle_event(cx, event);
+        if animator_action.must_redraw() {
+            // During hide, redraw the entire UI so the parent RoomInputBar
+            // can animate the input_bar height in its draw_walk.
+            // During show, only this widget needs to redraw.
+            if self.is_animating_out {
+                cx.redraw_all();
+            } else {
+                self.redraw(cx);
+            }
+        }
+        // If we started animating the hide, check if the track has finished.
+        // `is_track_animating` returns false once the track has fully completed,
+        // even on the same frame that returned the last `Animating` action.
+        if self.is_animating_out {
+            if !self.animator.is_track_animating(id!(panel)) {
+                self.visible = false;
+                self.is_animating_out = false;
+                self.info = None;
+                cx.widget_action(self.widget_uid(), EditingPaneAction::Hidden);
+                cx.revert_key_focus();
+                self.redraw(cx);
+                self.next_frame = cx.new_next_frame();
+                return;
+            }
+        } else if self.animator_in_state(cx, ids!(panel.hide))
+            && matches!(animator_action, AnimatorAction::Animating { .. })
+        {
+            self.is_animating_out = true;
+        }
+
+        if let Event::Actions(actions) = event {
+            let edit_text_input = self
+                .mentionable_text_input(cx, ids!(editing_content.edit_text_input))
+                .text_input_ref();
 
             // Hide the editing pane if the cancel button was clicked
             // or if the `Escape` key was pressed within the edit text input.
-            if self.button(id!(cancel_button)).clicked(actions)
+            if self.button(cx, ids!(cancel_button)).clicked(actions)
                 || edit_text_input.escaped(actions)
             {
-                self.animator_play(cx, id!(panel.hide));
+                self.animator_play(cx, ids!(panel.hide));
+                cx.widget_action(self.widget_uid(), EditingPaneAction::HideAnimationStarted);
                 self.redraw(cx);
                 return;
             }
 
             let Some(info) = self.info.as_ref() else { return };
 
-            if self.button(id!(accept_button)).clicked(actions)
-                || edit_text_input.returned(actions).is_some_and(|(_, m)| m.is_primary())
+            if self.button(cx, ids!(accept_button)).clicked(actions)
+                || edit_text_input.returned(actions).is_some()
             {
                 let edited_text = edit_text_input.text().trim().to_string();
                 let edited_content = match info.event_tl_item.content() {
@@ -301,8 +322,13 @@ impl Widget for EditingPane {
                                         )
                                     },
                                     _non_editable => {
-                                        enqueue_popup_notification(PopupItem { message: "That message type cannot be edited.".into(), kind: PopupKind::Error, auto_dismissal_duration: None });
-                                        self.animator_play(cx, id!(panel.hide));
+                                        enqueue_popup_notification(
+                                            "That message type cannot be edited.",
+                                            PopupKind::Error,
+                                            None,
+                                        );
+                                        self.animator_play(cx, ids!(panel.hide));
+                                        cx.widget_action(self.widget_uid(), EditingPaneAction::HideAnimationStarted);
                                         self.redraw(cx);
                                         return;
                                     },
@@ -335,10 +361,10 @@ impl Widget for EditingPane {
                                     .try_into()
                                 else {
                                     enqueue_popup_notification(
-                                        PopupItem { message: "Failed to obtain existing poll answers while editing poll.".into(),
-                                        kind: PopupKind::Error,
-                                        auto_dismissal_duration: None
-                                    });
+                                        "Failed to obtain existing poll answers while editing poll.",
+                                        PopupKind::Error,
+                                        None,
+                                    );
                                     return;
                                 };
                                 let mut new_content_block = UnstablePollStartContentBlock::new(
@@ -357,19 +383,27 @@ impl Widget for EditingPane {
 
                             }
                             _ => {
-                                enqueue_popup_notification(PopupItem { message: "That event type cannot be edited.".into(), kind: PopupKind::Error, auto_dismissal_duration: None });
+                                enqueue_popup_notification(
+                                    "That event type cannot be edited.",
+                                    PopupKind::Error,
+                                    None,
+                                );
                                 return;
                             }
                         }
                     }
                     _ => {
-                        enqueue_popup_notification(PopupItem { message: "That event type cannot be edited.".into(), kind: PopupKind::Error, auto_dismissal_duration: None });
+                        enqueue_popup_notification(
+                            "That event type cannot be edited.",
+                            PopupKind::Error,
+                            None,
+                        );
                         return;
                     },
                 };
 
                 submit_async_request(MatrixRequest::EditMessage {
-                    room_id: info.room_id.clone(),
+                    timeline_kind: info.timeline_kind.clone(),
                     timeline_event_item_id: info.event_tl_item.identifier(),
                     edited_content,
                 });
@@ -379,11 +413,53 @@ impl Widget for EditingPane {
         }
     }
 
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, mut walk: Walk) -> DrawStep {
         if self.info.is_none() {
             self.visible = false;
         };
-        self.view.draw_walk(cx, scope, walk)
+
+        // Animate both the layout height and content position simultaneously:
+        // 1. walk.height grows from 0 to ch (and shrinks back during hide),
+        //    so the RoomInputBar border grows/shrinks smoothly.
+        // 2. Balanced margins on editing_content slide it within the pane:
+        //    margin.top pushes content below the clip boundary,
+        //    margin.bottom compensates so the Fit height stays constant.
+        //    The pane's show_bg provides the clipping.
+        let ch = self.last_content_height;
+        if self.slide > 0.001 {
+            let offset = if ch > 0.0 {
+                ch * self.slide as f64
+            } else {
+                10000.0
+            };
+            if let Some(mut ec) = self.view(cx, ids!(editing_content)).borrow_mut() {
+                ec.walk.margin.top = offset;
+                ec.walk.margin.bottom = -offset;
+            }
+            // Animate the layout height alongside the content slide,
+            // so the RoomInputBar border grows/shrinks smoothly.
+            if ch > 0.0 {
+                walk.height = Size::Fixed((ch * (1.0 - self.slide as f64)).max(0.0));
+            } else {
+                walk.height = Size::Fixed(0.0);
+            }
+        } else {
+            // Fully shown or not animating: reset margins.
+            if let Some(mut ec) = self.view(cx, ids!(editing_content)).borrow_mut() {
+                ec.walk.margin.top = 0.0;
+                ec.walk.margin.bottom = 0.0;
+            }
+        }
+
+        let step = self.view.draw_walk(cx, scope, walk);
+
+        // Read area rect AFTER drawing to capture this frame's layout.
+        let ec_height = self.view(cx, ids!(editing_content)).area().rect(cx).size.y;
+        if ec_height > 0.0 {
+            self.last_content_height = ec_height;
+        }
+
+        step
     }
 }
 
@@ -413,39 +489,61 @@ impl EditingPane {
         }
         match edit_result {
             Ok(()) => {
-                self.animator_play(cx, id!(panel.hide));
+                self.animator_play(cx, ids!(panel.hide));
+                cx.widget_action(self.widget_uid(), EditingPaneAction::HideAnimationStarted);
             },
             Err(e) => {
-                enqueue_popup_notification(PopupItem { message: format!("Failed to edit message: {}", e), kind: PopupKind::Error, auto_dismissal_duration: None });
+                enqueue_popup_notification(
+                    format!("Failed to edit message: {}", e),
+                    PopupKind::Error,
+                    None,
+                );
             },
         }
     }
 
     /// Shows the editing pane and sets it up to edit the given `event`'s content.
-    pub fn show(&mut self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId) {
+    pub fn show(
+        &mut self,
+        cx: &mut Cx,
+        event_tl_item: EventTimelineItem,
+        timeline_kind: TimelineKind,
+    ) {
         if !event_tl_item.is_editable() {
-            enqueue_popup_notification(PopupItem { message: "That message cannot be edited.".into(), kind: PopupKind::Error, auto_dismissal_duration: None });
+            enqueue_popup_notification(
+                "That message cannot be edited.",
+                PopupKind::Error,
+                None,
+            );
             return;
         }
 
-        let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
+        let edit_text_input = self.mentionable_text_input(cx, ids!(editing_content.edit_text_input));
 
         if let Some(message) = event_tl_item.content().as_message() {
             edit_text_input.set_text(cx, message.body());
         } else if let Some(poll) = event_tl_item.content().as_poll() {
             edit_text_input.set_text(cx, &poll.results().question);
         } else {
-            enqueue_popup_notification(PopupItem { message: "That message cannot be edited.".into(), kind: PopupKind::Error, auto_dismissal_duration: None });
+            enqueue_popup_notification(
+                "That message cannot be edited.",
+                PopupKind::Error,
+                Some(4.0),
+            );
             return;
         }
 
 
-        self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
+        self.info = Some(EditingPaneInfo {
+            event_tl_item,
+            timeline_kind,
+        });
 
         self.visible = true;
-        self.button(id!(accept_button)).reset_hover(cx);
-        self.button(id!(cancel_button)).reset_hover(cx);
-        self.animator_play(cx, id!(panel.show));
+        self.is_animating_out = false;
+        self.button(cx, ids!(accept_button)).reset_hover(cx);
+        self.button(cx, ids!(cancel_button)).reset_hover(cx);
+        self.animator_play(cx, ids!(panel.show));
 
         // Set the text input's cursor to the end and give it key focus.
         let inner_text_input = edit_text_input.text_input_ref();
@@ -455,6 +553,8 @@ impl EditingPane {
             Cursor { index: text_len, prefer_next_row: false },
             false,
         );
+        // TODO: this doesn't work, likely because of Makepad's bug in which you cannot
+        // give key focus to a widget that hasn't been drawn yet (as it has no Area).
         inner_text_input.set_key_focus(cx);
         self.redraw(cx);
     }
@@ -463,8 +563,8 @@ impl EditingPane {
     pub fn save_state(&self) -> Option<EditingPaneState> {
         self.info.as_ref().map(|info| EditingPaneState {
             event_tl_item: info.event_tl_item.clone(),
-            text_input_state: self
-                .mentionable_text_input(id!(editing_content.edit_text_input))
+            text_input_state: self.child_by_path(ids!(editing_content.edit_text_input))
+                .as_mentionable_text_input()
                 .text_input_ref()
                 .save_state(),
         })
@@ -475,17 +575,21 @@ impl EditingPane {
         &mut self,
         cx: &mut Cx,
         editing_pane_state: EditingPaneState,
-        room_id: OwnedRoomId,
+        timeline_kind: TimelineKind,
     ) {
         let EditingPaneState { event_tl_item, text_input_state } = editing_pane_state;
-        self.mentionable_text_input(id!(editing_content.edit_text_input))
+        self.mentionable_text_input(cx, ids!(editing_content.edit_text_input))
             .text_input_ref()
             .restore_state(cx, text_input_state);
-        self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
+        self.info = Some(EditingPaneInfo {
+            event_tl_item,
+            timeline_kind,
+        });
         self.visible = true;
-        self.button(id!(accept_button)).reset_hover(cx);
-        self.button(id!(cancel_button)).reset_hover(cx);
-        self.animator_play(cx, id!(panel.show));
+        self.is_animating_out = false;
+        self.button(cx, ids!(accept_button)).reset_hover(cx);
+        self.button(cx, ids!(cancel_button)).reset_hover(cx);
+        self.animator_play(cx, ids!(panel.show));
         self.redraw(cx);
 
         // In this function, we do not give key focus to the text input,
@@ -504,6 +608,11 @@ impl EditingPaneRef {
         inner.is_currently_shown(cx)
     }
 
+    /// Returns the current slide value (0.0 = fully shown, 1.0 = fully hidden).
+    pub fn slide(&self) -> f32 {
+        self.borrow().map_or(1.0, |inner| inner.slide)
+    }
+
     /// See [`EditingPane::handle_edit_result()`].
     pub fn handle_edit_result(
         &self,
@@ -511,18 +620,36 @@ impl EditingPaneRef {
         timeline_event_item_id: TimelineEventItemId,
         edit_result: Result<(), matrix_sdk_ui::timeline::Error>,
     ) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
+        let Some(mut inner) = self.borrow_mut() else { return };
         inner.handle_edit_result(cx, timeline_event_item_id, edit_result);
     }
 
+    /// Returns whether this `EditingPane` was hidden by the given actions, i.e.,
+    /// `true` if `actions` contains an [`EditingPaneAction::Hidden`] for this widget.
+    pub fn was_hidden(&self, actions: &Actions) -> bool {
+        matches!(
+            actions.find_widget_action(self.widget_uid()).cast_ref(),
+            EditingPaneAction::Hidden,
+        )
+    }
+
+    /// Returns whether this `EditingPane`'s hide animation started in the given actions.
+    pub fn was_hide_animation_started(&self, actions: &Actions) -> bool {
+        matches!(
+            actions.find_widget_action(self.widget_uid()).cast_ref(),
+            EditingPaneAction::HideAnimationStarted,
+        )
+    }
+
     /// See [`EditingPane::show()`].
-    pub fn show(&self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
-        inner.show(cx, event_tl_item, room_id);
+    pub fn show(
+        &self,
+        cx: &mut Cx,
+        event_tl_item: EventTimelineItem,
+        timeline_kind: TimelineKind,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return; };
+        inner.show(cx, event_tl_item, timeline_kind);
     }
 
     /// See [`EditingPane::save_state()`].
@@ -537,21 +664,29 @@ impl EditingPaneRef {
         &self,
         cx: &mut Cx,
         editing_pane_state: EditingPaneState,
-        room_id: OwnedRoomId,
+        timeline_kind: TimelineKind,
     ) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.restore_state(cx, editing_pane_state, room_id);
-        }
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.restore_state(cx, editing_pane_state, timeline_kind);
     }
 
     /// Hides the editing pane immediately and clears its state without animating it out.
+    ///
+    /// This function *DOES NOT* emit an [`EditingPaneAction::Hidden`] action.
     pub fn force_reset_hide(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.visible = false;
-        inner.animator_cut(cx, id!(panel.hide));
+        inner.animator_cut(cx, ids!(panel.hide));
         inner.is_animating_out = false;
         inner.info = None;
-        inner.redraw(cx);
+        // Reset editing_content margins in case we interrupted an animation.
+        if let Some(mut ec) = inner.view(cx, ids!(editing_content)).borrow_mut() {
+            ec.walk.margin.top = 0.0;
+            ec.walk.margin.bottom = 0.0;
+        }
+        // Redraw all so the parent RoomInputBar restores the input_bar
+        // height (its draw_walk reads the slide value, which is now 1.0).
+        cx.redraw_all();
     }
 }
 

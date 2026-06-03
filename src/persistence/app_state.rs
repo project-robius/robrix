@@ -1,13 +1,13 @@
-use makepad_widgets::{makepad_micro_serde::{DeRon, SerRon}, *};
+use std::io::Write;
+
+use makepad_widgets::*;
 use serde::{self, Deserialize, Serialize};
 use matrix_sdk::ruma::{OwnedUserId, UserId};
-use crate::{app::{AppState, SelectedRoom}, app_data_dir, persistence::persistent_state_dir};
+use crate::{app::AppState, app_data_dir, persistence::persistent_state_dir};
 
-
-const LATEST_APP_STATE_FILE_NAME: &str = "latest_app_state.ron";
+const LATEST_APP_STATE_FILE_NAME: &str = "latest_app_state.json";
 
 const WINDOW_GEOM_STATE_FILE_NAME: &str = "window_geom_state.json";
-
 
 /// Persistable state of the window's size, position, and fullscreen status.
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -20,26 +20,25 @@ pub struct WindowGeomState {
     pub is_fullscreen: bool,
 }
 
-
 /// Save the current app state to persistent storage.
-pub fn save_app_state(
-    app_state: AppState,
-    user_id: OwnedUserId,
-) -> anyhow::Result<()> {
-    std::fs::write(
-        persistent_state_dir(&user_id).join(LATEST_APP_STATE_FILE_NAME),
-        app_state.serialize_ron(),
-    )?;
-    for (tab_id, room) in &app_state.saved_dock_state.open_rooms {
-        match room {
-            SelectedRoom::JoinedRoom { room_id, .. }
-            | SelectedRoom::InvitedRoom { room_id, .. } => {
-                if !app_state.saved_dock_state.dock_items.contains_key(tab_id) {
-                    error!("Room id: {} already in dock state", room_id);
-                }
-            }
-        }
-    }
+pub fn save_app_state(app_state: AppState, user_id: OwnedUserId) -> anyhow::Result<()> {
+    let bytes = serialize_app_state(&app_state)?;
+    save_app_state_bytes(&bytes, &user_id)
+}
+
+/// Serializes the current app state into the same format used by [`save_app_state`].
+pub fn serialize_app_state(app_state: &AppState) -> anyhow::Result<Vec<u8>> {
+    Ok(serde_json::to_vec(app_state)?)
+}
+
+/// Save pre-serialized app state bytes to persistent storage.
+pub fn save_app_state_bytes(app_state_json: &[u8], user_id: &UserId) -> anyhow::Result<()> {
+    let state_dir = persistent_state_dir(user_id);
+    std::fs::create_dir_all(&state_dir)?;
+    let file = std::fs::File::create(state_dir.join(LATEST_APP_STATE_FILE_NAME))?;
+    let mut writer = std::io::BufWriter::new(file);
+    writer.write_all(app_state_json)?;
+    writer.flush()?;
     log!("Successfully saved app state to persistent storage.");
     Ok(())
 }
@@ -62,14 +61,43 @@ pub fn save_window_state(window_ref: WindowRef, cx: &Cx) -> anyhow::Result<()> {
 }
 
 /// Loads the App state from persistent storage.
-pub async fn load_app_state(user_id: &UserId) -> anyhow::Result<AppState> {
-    let content = match tokio::fs::read_to_string(persistent_state_dir(user_id).join(LATEST_APP_STATE_FILE_NAME)).await {
-        Ok(file) => file,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(AppState::default()),
-        Err(e) => return Err(e.into())
+///
+/// Return values:
+/// * `Ok(Some(app_state))` if a saved state file was found and parsed.
+/// * `Ok(None)` if no saved file exists, or if the file existed but wasn't valid.
+/// * `Err` if there was a functional error in trying to read the saved state file.
+pub async fn load_app_state(user_id: &UserId) -> anyhow::Result<Option<AppState>> {
+    let state_path = persistent_state_dir(user_id).join(LATEST_APP_STATE_FILE_NAME);
+    let file_bytes = match tokio::fs::read(&state_path).await {
+        Ok(fb) => fb,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            log!("No saved app state found, using default.");
+            return Ok(None);
+        }
+        Err(e) => return Err(e.into()),
     };
-    AppState::deserialize_ron(&content)
-        .map_err(|er| anyhow::Error::msg(er.msg))
+    match serde_json::from_slice(&file_bytes) {
+        Ok(app_state) => {
+            log!("Successfully loaded app state from persistent storage.");
+            Ok(Some(app_state))
+        }
+        Err(e) => {
+            error!(
+                "Failed to deserialize app state: {e}. This may be due to an incompatible format from a previous version."
+            );
+
+            // Backup the old file to preserve user's data
+            let backup_path = state_path.with_extension("json.bak");
+            if let Err(backup_err) = tokio::fs::rename(&state_path, &backup_path).await {
+                error!("Failed to backup old app state file: {}", backup_err);
+            } else {
+                log!("Old app state backed up to: {:?}", backup_path);
+            }
+
+            log!("Using default app state. Your previous tabs and selections will be reset.");
+            Ok(None)
+        }
+    }
 }
 
 /// Loads the window geometry's state from persistent storage.

@@ -7,278 +7,305 @@ use crate::sliding_sync::{submit_async_request, LoginByPassword, LoginRequest, M
 
 use super::login_status_modal::{LoginStatusModalAction, LoginStatusModalWidgetExt};
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::helpers::*;
-    use crate::shared::styles::*;
-    use crate::shared::icon_button::*;
-    use crate::login::login_status_modal::*;
+    mod.widgets.IMG_APP_LOGO = crate_resource("self://resources/icon_512.png")
+    mod.widgets.ICON_EYE_OPEN   = crate_resource("self://resources/icons/eye_open.svg")
+    mod.widgets.ICON_EYE_CLOSED = crate_resource("self://resources/icons/eye_closed.svg")
 
-    IMG_APP_LOGO = dep("crate://self/resources/robrix_logo_alpha.png")
-    ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
-
-    SsoButton = <RoundedView> {
+    mod.widgets.SsoButton = RoundedView {
         width: Fit,
         height: Fit,
-        cursor: Hand,
+        cursor: MouseCursor.Hand,
         visible: true,
         padding: 10,
-        margin: { left: 16.6, right: 16.6, top: 10, bottom: 10}
-        draw_bg: {
-            border_size: 0.5,
-            border_color: (#6c6c6c),
+        margin: Inset{ left: 16.6, right: 16.6, top: 10, bottom: 10}
+        draw_bg +: {
+            border_size: 0.5
+            border_color: #6c6c6c
             color: (COLOR_PRIMARY)
         }
     }
 
-    SsoImage = <Image> {
+    mod.widgets.SsoImage = Image {
         width: 30, height: 30,
-        draw_bg:{
-            uniform mask: 0.0
-            fn pixel(self) -> vec4 {
-                let color = sample2d(self.image, self.pos).xyzw;
-                let gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
-                let grayed = mix(color, vec4(gray, gray, gray, color.a), self.mask);
-                return grayed;
+        draw_bg +: {
+            mask: instance(0.0)
+            pixel: fn() {
+                let color = mix(self.get_color(), #3, self.async_load)
+                let gray = dot(color.rgb, vec3(0.299, 0.587, 0.114))
+                let grayed = mix(color, vec4(gray, gray, gray, color.a), self.mask)
+                return Pal.premul(vec4(grayed.xyz, grayed.w * self.opacity))
             }
         }
     }
 
 
-    pub LoginScreen = {{LoginScreen}} {
+    mod.widgets.LoginScreen = set_type_default() do #(LoginScreen::register_widget(vm)) {
+        ..mod.widgets.SolidView
+
         width: Fill, height: Fill,
-        align: {x: 0.5, y: 0.5}
+        align: Align{x: 0.5, y: 0.5}
         show_bg: true,
-        draw_bg: {
-            color: #FFF
+        draw_bg +: {
+            color: COLOR_SECONDARY
         }
 
-        <ScrollXYView> {
-            width: Fit, height: Fill,
-            // Note: *do NOT* vertically center this, it will break scrolling.
-            align: {x: 0.5}
+        ScrollYView {
+            width: Fill, height: Fill,
+            flow: Down, // Required for vertical scrolling to work.
+            align: Align{x: 0.5, y: 0.5}
             show_bg: true,
-            draw_bg: {
-                color: (COLOR_PRIMARY)
+            draw_bg.color: (COLOR_SECONDARY)
+
+            // allow the view to be scrollable but hide the actual scroll bar
+            scroll_bars: {
+                show_scroll_x: false, show_scroll_y: true,
+                scroll_bar_y: {
+                    bar_size: 0.0
+                    min_handle_size: 0.0
+                    drag_scrolling: true
+                }
             }
-        
-            <RoundedView> {
-                margin: 40
-                width: Fit, height: Fit
-                align: {x: 0.5, y: 0.5}
+
+            RoundedView {
+                margin: Inset{top: 50, bottom: 50}
+                width: Fill
+                height: Fit
+                align: Align{x: 0.5, y: 0.5}
                 flow: Overlay,
 
                 show_bg: true,
-                draw_bg: {
+                draw_bg +: {
                     color: (COLOR_SECONDARY)
                     border_radius: 6.0
                 }
 
-                <View> {
-                    width: Fit, height: Fit
+                View {
+                    width: Fill
+                    height: Fit
                     flow: Down
-                    align: {x: 0.5, y: 0.5}
-                    padding: 30
-                    margin: 40
+                    align: Align{x: 0.5, y: 0.5}
                     spacing: 15.0
 
-                    logo_image = <Image> {
-                        fit: Smallest,
+                    logo_image := Image {
+                        fit: ImageFit.Smallest,
                         width: 80
-                        source: (IMG_APP_LOGO),
+                        src: (mod.widgets.IMG_APP_LOGO),
                     }
 
-                    title = <Label> {
+                    title := Label {
                         width: Fit, height: Fit
-                        margin: { bottom: 5 }
+                        margin: Inset{ bottom: 5 }
                         padding: 0,
-                        draw_text: {
+                        draw_text +: {
                             color: (COLOR_TEXT)
-                            text_style: <TITLE_TEXT>{font_size: 16.0}
+                            text_style: TITLE_TEXT {font_size: 16.0}
                         }
                         text: "Login to Robrix"
                     }
 
-                    user_id_input = <RobrixTextInput> {
-                        width: 250, height: Fit
+                    user_id_input := RobrixTextInput {
+                        width: 275, height: Fit
                         flow: Right, // do not wrap
                         padding: 10,
                         empty_text: "User ID"
                     }
 
-                    password_input = <RobrixTextInput> {
-                        width: 250, height: Fit
-                        flow: Right, // do not wrap
-                        padding: 10,
-                        empty_text: "Password"
-                        is_password: true,
+                    View {
+                        width: 275, height: Fit
+                        flow: Overlay
+                        align: Align{x: 1.0, y: 0.5}
+
+                        password_input := RobrixTextInput {
+                            width: Fill, height: Fit
+                            flow: Right, // do not wrap
+                            padding: Inset{top: 10, bottom: 10, left: 10, right: 38}
+                            empty_text: "Password"
+                            is_password: true,
+                        }
+
+                        View {
+                            width: 38, height: Fill
+                            align: Align{x: 0.5, y: 0.5}
+
+                            show_password_button := RobrixNeutralIconButton {
+                                width: Fit, height: Fit,
+                                align: Align{x: 0.5, y: 0.5}
+                                padding: 5
+                                spacing: 0
+                                margin: 0
+                                draw_bg +: {
+                                    color: (COLOR_SECONDARY * 1.05)
+                                }
+                                draw_icon +: {
+                                    svg: (mod.widgets.ICON_EYE_CLOSED),
+                                    color: #8C8C8C,
+                                }
+                                icon_walk: Walk{width: 18, height: 18, margin: 0}
+                                text: ""
+                            }
+
+                            hide_password_button := RobrixNeutralIconButton {
+                                visible: false,
+                                align: Align{x: 0.5, y: 0.5}
+                                width: Fit, height: Fit,
+                                padding: 5
+                                spacing: 0
+                                margin: 0
+                                draw_bg +: {
+                                    color: (COLOR_SECONDARY * 1.05)
+                                }
+                                draw_icon +: {
+                                    svg: (mod.widgets.ICON_EYE_OPEN),
+                                    color: #8C8C8C,
+                                }
+                                icon_walk: Walk{width: 18, height: 18, margin: 0}
+                                text: ""
+                            }
+                        }
                     }
 
-                    <View> {
-                        width: 250, height: Fit,
+                    View {
+                        width: 275, height: Fit,
                         flow: Down,
 
-                        homeserver_input = <RobrixTextInput> {
-                            width: Fill, height: Fit,
+                        homeserver_input := RobrixTextInput {
+                            width: 275, height: Fit,
                             flow: Right, // do not wrap
-                            padding: {top: 3, bottom: 3}
+                            padding: Inset{top: 5, bottom: 5, left: 10, right: 10}
                             empty_text: "matrix.org"
-                            draw_text: {
-                                text_style: <TITLE_TEXT>{font_size: 10.0}
+                            draw_text +: {
+                                text_style: TITLE_TEXT {font_size: 10.0}
                             }
                         }
 
-                        <View> {
-                            width: 250,
+                        View {
+                            width: 275,
                             height: Fit,
                             flow: Right,
-                            padding: {top: 3, left: 2, right: 2}
+                            padding: Inset{top: 3, left: 2, right: 2}
                             spacing: 0.0,
-                            align: {x: 0.5, y: 0.5} // center horizontally and vertically
+                            align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
 
-                            left_line = <LineH> {
-                                draw_bg: { color: #C8C8C8 }
-                            }
+                            LineH { draw_bg.color: #C8C8C8 }
 
-                            <Label> {
+                            Label {
                                 width: Fit, height: Fit
                                 padding: 0
-                                draw_text: {
+                                draw_text +: {
                                     color: #8C8C8C
-                                    text_style: <REGULAR_TEXT>{font_size: 9}
+                                    text_style: REGULAR_TEXT {font_size: 9}
                                 }
                                 text: "Homeserver URL (optional)"
                             }
 
-                            right_line = <LineH> {
-                                draw_bg: { color: #C8C8C8 }
-                            }
+                            LineH { draw_bg.color: #C8C8C8 }
                         }
                     }
                     
 
-                    login_button = <RobrixIconButton> {
-                        width: 250,
+                    login_button := RobrixIconButton {
+                        width: 275,
                         height: 40
                         padding: 10
-                        margin: {top: 5, bottom: 10}
-                        align: {x: 0.5, y: 0.5}
-                        draw_bg: {
-                            color: (COLOR_ACTIVE_PRIMARY)
-                        }
-                        draw_text: {
-                            color: (COLOR_PRIMARY)
-                            text_style: <REGULAR_TEXT> {}
-                        }
+                        margin: Inset{top: 5, bottom: 10}
+                        align: Align{x: 0.5, y: 0.5}
                         text: "Login"
                     }
 
-                    left_line = <LineH> {
-                        margin: {bottom: -5}
-                        draw_bg: { color: #C8C8C8 }
+                    LineH {
+                        width: 275
+                        margin: Inset{bottom: -5}
+                        draw_bg.color: #C8C8C8
                     }
-                    <Label> {
+
+                    Label {
                         width: Fit, height: Fit
                         padding: 0,
-                        draw_text: {
+                        draw_text +: {
                             color: (COLOR_TEXT)
-                            text_style: <TITLE_TEXT>{font_size: 11.0}
+                            text_style: TITLE_TEXT {font_size: 11.0}
                         }
                         text: "Or, login with an SSO provider:"
                     }
 
-                    sso_view = <View> {
-                        align: {x: 0.5}
-                        width: 250, height: Fit,
-                        margin: {left: 5, right: 5} // make the inner view 240 pixels wide
-                        flow: RightWrap,
-                        apple_button = <SsoButton> {
-                            image = <SsoImage> {
-                                source: dep("crate://self/resources/img/apple.png")
+                    sso_view := View {
+                        width: 275, height: Fit,
+                        margin: Inset{left: 30, right: 5} // make the inner view 240 pixels wide
+                        flow: Flow.Right{wrap: true},
+                        apple_button := mod.widgets.SsoButton {
+                            image := mod.widgets.SsoImage {
+                                src: crate_resource("self://resources/img/apple.png")
                             }
                         }
-                        facebook_button = <SsoButton> {
-                            image = <SsoImage> {
-                                source: dep("crate://self/resources/img/facebook.png")
+                        facebook_button := mod.widgets.SsoButton {
+                            image := mod.widgets.SsoImage {
+                                src: crate_resource("self://resources/img/facebook.png")
                             }
                         }
-                        github_button = <SsoButton> {
-                            image = <SsoImage> {
-                                source: dep("crate://self/resources/img/github.png")
+                        github_button := mod.widgets.SsoButton {
+                            image := mod.widgets.SsoImage {
+                                src: crate_resource("self://resources/img/github.png")
                             }
                         }
-                        gitlab_button = <SsoButton> {
-                            image = <SsoImage> {
-                                source: dep("crate://self/resources/img/gitlab.png")
+                        gitlab_button := mod.widgets.SsoButton {
+                            image := mod.widgets.SsoImage {
+                                src: crate_resource("self://resources/img/gitlab.png")
                             }
                         }
-                        google_button = <SsoButton> {
-                            image = <SsoImage> {
-                                source: dep("crate://self/resources/img/google.png")
+                        google_button := mod.widgets.SsoButton {
+                            image := mod.widgets.SsoImage {
+                                src: crate_resource("self://resources/img/google.png")
                             }
                         }
-                        twitter_button = <SsoButton> {
-                            image = <SsoImage> {
-                                source: dep("crate://self/resources/img/x.png")
+                        twitter_button := mod.widgets.SsoButton {
+                            image := mod.widgets.SsoImage {
+                                src: crate_resource("self://resources/img/x.png")
                             }
                         }
                     }
 
-                    <View> {
-                        width: 250,
+                    View {
+                        width: 275,
                         height: Fit,
                         flow: Right,
                         // padding: 3,
                         spacing: 0.0,
-                        align: {x: 0.5, y: 0.5} // center horizontally and vertically
+                        align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
 
-                        left_line = <LineH> {
-                            draw_bg: { color: #C8C8C8 }
-                        }
+                        LineH { draw_bg.color: #C8C8C8 }
 
-                        <Label> {
+                        Label {
                             width: Fit, height: Fit
-                            padding: {left: 1, right: 1, top: 0, bottom: 0}
-                            draw_text: {
+                            padding: Inset{left: 1, right: 1, top: 0, bottom: 0}
+                            draw_text +: {
                                 color: #x6c6c6c
-                                text_style: <REGULAR_TEXT>{}
+                                text_style: REGULAR_TEXT {}
                             }
                             text: "Don't have an account?"
                         }
 
-                        right_line = <LineH> {
-                            draw_bg: { color: #C8C8C8 }
-                        }
+                        LineH { draw_bg.color: #C8C8C8 }
                     }
                     
-                    signup_button = <RobrixIconButton> {
+                    signup_button := RobrixIconButton {
                         width: Fit, height: Fit
-                        padding: {left: 15, right: 15, top: 10, bottom: 10}
-                        margin: {bottom: 5}
-                        align: {x: 0.5, y: 0.5}
-                        draw_bg: {
-                            color: (COLOR_ACTIVE_PRIMARY)
-                        }
-                        draw_text: {
-                            color: (COLOR_PRIMARY)
-                            text_style: <REGULAR_TEXT> {}
-                        }
-
+                        padding: Inset{left: 15, right: 15, top: 10, bottom: 10}
+                        margin: Inset{bottom: 5}
+                        align: Align{x: 0.5, y: 0.5}
                         text: "Sign up here"
                     }
                 }
 
                 // The modal that pops up to display login status messages,
                 // such as when the user is logging in or when there is an error.
-                login_status_modal = <Modal> {
-                    // width: Fit, height: Fit,
-                    // align: {x: 0.5, y: 0.5},
-
-                    content: {
-                        login_status_modal_inner = <LoginStatusModal> {}
+                login_status_modal := Modal {
+                    can_dismiss: false,
+                    content +: {
+                        login_status_modal_inner := mod.widgets.LoginStatusModal {}
                     }
                 }
             }
@@ -288,9 +315,12 @@ live_design! {
 
 static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-for-im/#creating-a-matrix-account";
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct LoginScreen {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
+    /// Whether the password field is currently showing plaintext.
+    #[rust] password_visible: bool,
     /// Boolean to indicate if the SSO login process is still in flight
     #[rust] sso_pending: bool,
     /// The URL to redirect to after logging in with SSO.
@@ -311,14 +341,25 @@ impl Widget for LoginScreen {
 
 impl MatchEvent for LoginScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        let login_button = self.view.button(id!(login_button));
-        let signup_button = self.view.button(id!(signup_button));
-        let user_id_input = self.view.text_input(id!(user_id_input));
-        let password_input = self.view.text_input(id!(password_input));
-        let homeserver_input = self.view.text_input(id!(homeserver_input));
+        let login_button = self.view.button(cx, ids!(login_button));
+        let signup_button = self.view.button(cx, ids!(signup_button));
+        let user_id_input = self.view.text_input(cx, ids!(user_id_input));
+        let password_input = self.view.text_input(cx, ids!(password_input));
+        let homeserver_input = self.view.text_input(cx, ids!(homeserver_input));
 
-        let login_status_modal = self.view.modal(id!(login_status_modal));
-        let login_status_modal_inner = self.view.login_status_modal(id!(login_status_modal_inner));
+        let login_status_modal = self.view.modal(cx, ids!(login_status_modal));
+        let login_status_modal_inner = self.view.login_status_modal(cx, ids!(login_status_modal_inner));
+
+        // Handle toggling password visibility
+        let show_pw_button = self.view.button(cx, ids!(show_password_button));
+        let hide_pw_button = self.view.button(cx, ids!(hide_password_button));
+        if show_pw_button.clicked(actions) || hide_pw_button.clicked(actions) {
+            self.password_visible = !self.password_visible;
+            password_input.toggle_is_password(cx);
+            show_pw_button.set_visible(cx, !self.password_visible);
+            hide_pw_button.set_visible(cx, self.password_visible);
+            self.redraw(cx);
+        }
 
         if signup_button.clicked(actions) {
             log!("Opening URL \"{}\"", MATRIX_SIGN_UP_URL);
@@ -336,15 +377,15 @@ impl MatchEvent for LoginScreen {
             if user_id.is_empty() {
                 login_status_modal_inner.set_title(cx, "Missing User ID");
                 login_status_modal_inner.set_status(cx, "Please enter a valid User ID.");
-                login_status_modal_inner.button_ref().set_text(cx, "Okay");
+                login_status_modal_inner.button_ref(cx).set_text(cx, "Okay");
             } else if password.is_empty() {
                 login_status_modal_inner.set_title(cx, "Missing Password");
                 login_status_modal_inner.set_status(cx, "Please enter a valid password.");
-                login_status_modal_inner.button_ref().set_text(cx, "Okay");
+                login_status_modal_inner.button_ref(cx).set_text(cx, "Okay");
             } else {
                 login_status_modal_inner.set_title(cx, "Logging in...");
                 login_status_modal_inner.set_status(cx, "Waiting for a login response...");
-                login_status_modal_inner.button_ref().set_text(cx, "Cancel");
+                login_status_modal_inner.button_ref(cx).set_text(cx, "Cancel");
                 submit_async_request(MatrixRequest::Login(LoginRequest::LoginByPassword(LoginByPassword {
                     user_id,
                     password,
@@ -356,7 +397,7 @@ impl MatchEvent for LoginScreen {
         }
         
         let provider_brands = ["apple", "facebook", "github", "gitlab", "google", "twitter"];
-        let button_set: &[&[LiveId]] = ids!(
+        let button_set: &[&[LiveId]] = ids_array!(
             apple_button, 
             facebook_button, 
             github_button, 
@@ -380,7 +421,7 @@ impl MatchEvent for LoginScreen {
                         cx,
                         &format!("Auto-logging in as user {user_id}...")
                     );
-                    let login_status_modal_button = login_status_modal_inner.button_ref();
+                    let login_status_modal_button = login_status_modal_inner.button_ref(cx);
                     login_status_modal_button.set_text(cx, "Cancel");
                     login_status_modal_button.set_enabled(cx, false); // Login cancel not yet supported
                     login_status_modal.open(cx);
@@ -388,7 +429,7 @@ impl MatchEvent for LoginScreen {
                 Some(LoginAction::Status { title, status }) => {
                     login_status_modal_inner.set_title(cx, title);
                     login_status_modal_inner.set_status(cx, status);
-                    let login_status_modal_button = login_status_modal_inner.button_ref();
+                    let login_status_modal_button = login_status_modal_inner.button_ref(cx);
                     login_status_modal_button.set_text(cx, "Cancel");
                     login_status_modal_button.set_enabled(cx, true);
                     login_status_modal.open(cx);
@@ -406,26 +447,22 @@ impl MatchEvent for LoginScreen {
                 Some(LoginAction::LoginFailure(error)) => {
                     login_status_modal_inner.set_title(cx, "Login Failed.");
                     login_status_modal_inner.set_status(cx, error);
-                    let login_status_modal_button = login_status_modal_inner.button_ref();
+                    let login_status_modal_button = login_status_modal_inner.button_ref(cx);
                     login_status_modal_button.set_text(cx, "Okay");
                     login_status_modal_button.set_enabled(cx, true);
                     login_status_modal.open(cx);
                     self.redraw(cx);
                 }
-                Some(LoginAction::SsoPending(ref pending)) => {
-                    for view_ref in self.view_set(button_set).iter() {
+                Some(LoginAction::SsoPending(pending)) => {
+                    let mask = if *pending { 1.0 } else { 0.0 };
+                    let cursor = if *pending { MouseCursor::NotAllowed } else { MouseCursor::Hand };
+                    for view_ref in self.view_set(cx, button_set).iter() {
                         let Some(mut view_mut) = view_ref.borrow_mut() else { continue };
-                        if *pending {
-                            view_mut.apply_over(cx, live! {
-                                cursor: NotAllowed,
-                                image = { draw_bg: { mask: 1.0 } }
-                            });
-                        } else {
-                            view_mut.apply_over(cx, live! {
-                                cursor: Hand,
-                                image = { draw_bg: { mask: 0.0 } }
-                            });
-                        }
+                        let mut image = view_mut.image(cx, ids!(image));
+                        script_apply_eval!(cx, image, {
+                            draw_bg.mask: #(mask)
+                        });
+                        view_mut.cursor = Some(cursor);
                     }
                     self.sso_pending = *pending;
                     self.redraw(cx);
@@ -439,17 +476,28 @@ impl MatchEvent for LoginScreen {
 
         // If the Login SSO screen's "cancel" button was clicked, send a http request to gracefully shutdown the SSO server
         if let Some(sso_redirect_url) = &self.sso_redirect_url {
-            let login_status_modal_button = login_status_modal_inner.button_ref();
+            let login_status_modal_button = login_status_modal_inner.button_ref(cx);
             if login_status_modal_button.clicked(actions) {
-                let request_id = live_id!(SSO_CANCEL_BUTTON);
+                let request_id = id!(SSO_CANCEL_BUTTON);
                 let request = HttpRequest::new(format!("{}/?login_token=",sso_redirect_url), HttpMethod::GET);
                 cx.http_request(request_id, request);
                 self.sso_redirect_url = None;
             }
         }
 
+        // On iOS there's no redirect server, so the cancel button dismisses
+        // the auth sheet instead. Its completion handler takes the normal
+        // SSO failure path, which resets state for the next attempt.
+        #[cfg(target_os = "ios")]
+        if self.sso_pending {
+            let login_status_modal_button = login_status_modal_inner.button_ref(cx);
+            if login_status_modal_button.clicked(actions) {
+                crate::sliding_sync::cancel_active_sso_auth_session();
+            }
+        }
+
         // Handle any of the SSO login buttons being clicked
-        for (view_ref, brand) in self.view_set(button_set).iter().zip(&provider_brands) {
+        for (view_ref, brand) in self.view_set(cx, button_set).iter().zip(&provider_brands) {
             if view_ref.finger_up(actions).is_some() && !self.sso_pending {
                 submit_async_request(MatrixRequest::SpawnSSOServer{
                     identity_provider_id: format!("oidc-{}",brand),
@@ -463,7 +511,7 @@ impl MatchEvent for LoginScreen {
 }
 
 /// Actions sent to or from the login screen.
-#[derive(Clone, DefaultNone, Debug)]
+#[derive(Clone, Default, Debug)]
 pub enum LoginAction {
     /// A positive response from the backend Matrix task to the login screen.
     LoginSuccess,
@@ -493,5 +541,6 @@ pub enum LoginAction {
     /// When an SSO-based login is pendng, pressing the cancel button will send
     /// an HTTP request to this SSO server URL to gracefully shut it down.
     SsoSetRedirectUrl(Url),
+    #[default]
     None,
 }

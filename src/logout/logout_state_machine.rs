@@ -23,10 +23,6 @@
 //!                                                                           ↓
 //!                                                                   CleaningAppState (70%)
 //!                                                                           ↓
-//!                                                                   ShuttingDownTasks (80%)
-//!                                                                           ↓
-//!                                                                   RestartingRuntime (90%)
-//!                                                                           ↓
 //!                                                                     Completed (100%)
 //!                                                                           ↓
 //!                                                                        Failed
@@ -68,10 +64,11 @@
 //! 3. **LoggingOutFromServer**: Call `client.matrix_auth().logout()` (60s timeout)
 //! 4. **PointOfNoReturn**: Set global flags, delete saved user ID
 //! 5. **ClosingTabs**: Close desktop tabs via `MainDesktopUiAction::CloseAllTabs`
-//! 6. **CleaningAppState**: Clear global resources and notify UI cleanup
-//! 7. **ShuttingDownTasks**: Call `shutdown_background_tasks()`
-//! 8. **RestartingRuntime**: Call `start_matrix_tokio()` for next login
-//! 9. **Completed**: Send `LogoutAction::LogoutSuccess`
+//! 6. **CleaningAppState**: Drops globals and signals `LOGOUT_NOTIFY`. The
+//!    login loop in `start_matrix_client_login_and_sync` does the actual
+//!    teardown of per-session tasks. The tokio runtime stays alive, since
+//!    tearing it down here would race with the new client's SQLite setup.
+//! 7. **Completed**: Send `LogoutAction::LogoutSuccess`
 //!
 //! ## Usage
 //!
@@ -89,12 +86,12 @@ use tokio::sync::{Mutex, Notify};
 use anyhow::{anyhow, Result};
 use makepad_widgets::{Cx, log};
 
+use crate::home::navigation_tab_bar::NavigationBarAction;
 use crate::persistence::delete_latest_user_id;
-use crate::settings::SettingsAction;
-use crate::sliding_sync::clean_app_state;
+use crate::sliding_sync::clear_app_state;
 use crate::{
     home::main_desktop_ui::MainDesktopUiAction,
-    sliding_sync::{get_client, get_sync_service, shutdown_background_tasks, start_matrix_tokio},
+    sliding_sync::{get_client, get_sync_service},
 };
 use super::logout_confirm_modal::{LogoutAction, ClearedComponentType};
 use super::logout_errors::{LogoutError, RecoverableError, UnrecoverableError};
@@ -114,12 +111,8 @@ pub enum LogoutState {
     PointOfNoReturn,
     /// Closing UI tabs (desktop only)
     ClosingTabs,
-    /// Cleaning up application state
+    /// Cleaning up application state.
     CleaningAppState,
-    /// Shutting down background tasks
-    ShuttingDownTasks,
-    /// Restarting the Matrix runtime
-    RestartingRuntime,
     /// Logout completed successfully
     Completed,
     /// Logout failed with error
@@ -395,9 +388,9 @@ impl LogoutStateMachine {
         ).await?;
         
         // All static resources (CLIENT, SYNC_SERVICE, etc.) are defined in the sliding_sync module,
-        // so the state machine delegates the cleanup operation to sliding_sync's clean_app_state function
+        // so the state machine delegates the cleanup operation to sliding_sync's clear_app_state function
         // rather than accessing these static variables directly from outside the module.
-        if let Err(e) = clean_app_state(&self.config).await {
+        if let Err(e) = clear_app_state(&self.config).await {
             let error = LogoutError::Unrecoverable(UnrecoverableError::PostPointOfNoReturnFailure(e.to_string()));
             self.transition_to(
                 LogoutState::Failed(error.clone()),
@@ -407,43 +400,16 @@ impl LogoutStateMachine {
             self.handle_error(&error).await;
             return Err(anyhow!(error));
         }
-        
-        // Shutdown tasks
-        self.transition_to(
-            LogoutState::ShuttingDownTasks,
-            "Shutting down background tasks...".to_string(),
-            80
-        ).await?;
-        
-        self.shutdown_background_tasks();
-        
-        // Restart runtime
-        self.transition_to(
-            LogoutState::RestartingRuntime,
-            "Restarting Matrix runtime...".to_string(),
-            90
-        ).await?;
-        
-        if let Err(e) = self.restart_runtime(){
-            let error = LogoutError::Unrecoverable(UnrecoverableError::RuntimeRestartFailed);
-            self.transition_to(
-                LogoutState::Failed(error.clone()),
-                format!("Failed to restart runtime: {}", e),
-                0
-            ).await?;
-            self.handle_error(&error).await;
-            return Err(anyhow!(error));
-        }
-        
-        // Success!
+
         self.transition_to(
             LogoutState::Completed,
             "Logout completed successfully".to_string(),
             100
         ).await?;
 
-        // CloseSetting after logout
-        Cx::post_action(SettingsAction::CloseSettings);
+        // Close the settings screen after logout, since its content
+        // is specific to the currently-logged-in user's account.
+        Cx::post_action(NavigationBarAction::CloseSettings);
 
         // Reset logout in progress flag
         set_logout_in_progress(false);
@@ -518,16 +484,6 @@ impl LogoutStateMachine {
         }
     }
     
-    fn shutdown_background_tasks(&self) {
-        shutdown_background_tasks();
-    }
-    
-    fn restart_runtime(&self) -> Result<()> {
-        start_matrix_tokio()
-            .map(|_| ())
-            .map_err(|e| anyhow!("Failed to restart runtime: {}", e))
-    }
-    
     /// Handle errors by posting appropriate actions
     async fn handle_error(&self, error: &LogoutError) {
         // Reset logout in progress flag on error (unless we've reached point of no return)
@@ -581,7 +537,7 @@ fn set_logout_in_progress(value: bool) {
 
 /// Execute logout using the state machine
 pub async fn logout_with_state_machine(is_desktop: bool) -> Result<()> {
-    log!("logout_with_state_machine called with is_desktop={}", is_desktop);
+    log!("logout_with_state_machine called with is_desktop: {}", is_desktop);
     
     let config = LogoutConfig {
         is_desktop,

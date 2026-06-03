@@ -1,46 +1,50 @@
 use makepad_widgets::*;
 
 use crate::{
-    app::{AppState, AppStateAction, SelectedRoom}, home::{room_screen::RoomScreenWidgetExt, rooms_list::RoomsListAction}
+    app::{AppState, AppStateAction, SelectedRoom}, home::{room_screen::RoomScreenWidgetExt, rooms_list::RoomsListAction, space_lobby::SpaceLobbyScreenWidgetExt}
 };
 
 use super::invite_screen::InviteScreenWidgetExt;
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::home::welcome_screen::WelcomeScreen;
-    use crate::home::room_screen::RoomScreen;
-    use crate::home::invite_screen::InviteScreen;
 
-    pub MainMobileUI = {{MainMobileUI}} {
+    mod.widgets.MainMobileUI = set_type_default() do #(MainMobileUI::register_widget(vm)) {
+        ..mod.widgets.SolidView
+
         width: Fill, height: Fill
+        align: Align{x: 0.0, y: 0.5}
         flow: Down,
-        show_bg: true
-        draw_bg: {
-            color: (COLOR_PRIMARY_DARKER)
-        }
-        align: {x: 0.0, y: 0.5}
 
-        welcome = <WelcomeScreen> {}
-        // TODO: see if we can remove these wrappers
-        room_view = <View> {
-            align: {x: 0.5, y: 0.5}
-            width: Fill, height: Fill
-            room_screen = <RoomScreen> {}
+        show_bg: true
+        draw_bg +: {
+            color: COLOR_PRIMARY_DARKER
         }
-        invite_view = <View> {
-            align: {x: 0.5, y: 0.5}
+
+        welcome := mod.widgets.WelcomeScreen {}
+
+        // TODO: see if we can remove these wrappers
+        room_view := View {
+            align: Align{x: 0.5, y: 0.5}
             width: Fill, height: Fill
-            invite_screen = <InviteScreen> {}
+            room_screen := mod.widgets.RoomScreen {}
+        }
+        invite_view := View {
+            align: Align{x: 0.5, y: 0.5}
+            width: Fill, height: Fill
+            invite_screen := mod.widgets.InviteScreen {}
+        }
+        space_lobby_view := View {
+            align: Align{x: 0.5, y: 0.5}
+            width: Fill, height: Fill
+            space_lobby_screen := mod.widgets.SpaceLobbyScreen {}
         }
     }
 }
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct MainMobileUI {
     #[deref]
     view: View,
@@ -57,9 +61,10 @@ impl Widget for MainMobileUI {
                     RoomsListAction::Selected(_selected_room) => {}
                     // Because the MainMobileUI is drawn based on the AppState only,
                     // all we need to do is update the AppState here.
-                    RoomsListAction::InviteAccepted { room_id, .. } => {
-                        cx.action(AppStateAction::UpgradedInviteToJoinedRoom(room_id));
+                    RoomsListAction::InviteAccepted { room_name_id: room_name } => {
+                        cx.action(AppStateAction::UpgradedInviteToJoinedRoom(room_name.room_id().clone()));
                     }
+                    RoomsListAction::OpenRoomContextMenu { .. } => {}
                     RoomsListAction::None => {}
                 }
             }
@@ -71,35 +76,58 @@ impl Widget for MainMobileUI {
         let show_welcome: bool;
         let show_room: bool;
         let show_invite: bool;
+        let show_space_lobby: bool;
 
         match app_state.selected_room.as_ref() {
-            Some(SelectedRoom::JoinedRoom { room_id, room_name }) => {
+            Some(SelectedRoom::JoinedRoom { room_name_id }) => {
                 show_welcome = false;
                 show_room = true;
                 show_invite = false;
+                show_space_lobby = false;
                 // Get a reference to the `RoomScreen` widget and tell it which room's data to show.
                 self.view
-                    .room_screen(id!(room_screen))
-                    .set_displayed_room(cx, room_id.clone().into(), room_name.clone());
+                    .room_screen(cx, ids!(room_screen))
+                    .set_displayed_room(cx, room_name_id, None);
             }
-            Some(SelectedRoom::InvitedRoom { room_id, room_name }) => {
+            Some(SelectedRoom::InvitedRoom { room_name_id }) => {
                 show_welcome = false;
                 show_room = false;
                 show_invite = true;
+                show_space_lobby = false;
                 self.view
-                    .invite_screen(id!(invite_screen))
-                    .set_displayed_invite(cx, room_id.clone().into(), room_name.clone());
+                    .invite_screen(cx, ids!(invite_screen))
+                    .set_displayed_invite(cx, room_name_id);
+            }
+            Some(SelectedRoom::Space { space_name_id }) => {
+                show_welcome = false;
+                show_room = false;
+                show_invite = false;
+                show_space_lobby = true;
+                self.view
+                    .space_lobby_screen(cx, ids!(space_lobby_screen))
+                    .set_displayed_space(cx, space_name_id);
+            }
+            Some(SelectedRoom::Thread { room_name_id, thread_root_event_id }) => {
+                show_welcome = false;
+                show_room = true;
+                show_invite = false;
+                show_space_lobby = false;
+                self.view
+                    .room_screen(cx, ids!(room_screen))
+                    .set_displayed_room(cx, room_name_id, Some(thread_root_event_id.clone()));
             }
             None => {
                 show_welcome = true;
                 show_room = false;
                 show_invite = false;
+                show_space_lobby = false;
             }
         }
 
-        self.view.view(id!(welcome)).set_visible(cx, show_welcome);
-        self.view.view(id!(room_view)).set_visible(cx, show_room);
-        self.view.view(id!(invite_view)).set_visible(cx, show_invite);
+        self.view.view(cx, ids!(welcome)).set_visible(cx, show_welcome);
+        self.view.view(cx, ids!(room_view)).set_visible(cx, show_room);
+        self.view.view(cx, ids!(invite_view)).set_visible(cx, show_invite);
+        self.view.view(cx, ids!(space_lobby_view)).set_visible(cx, show_space_lobby);
         self.view.draw_walk(cx, scope, walk)
     }
 }

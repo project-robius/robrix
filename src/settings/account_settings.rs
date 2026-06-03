@@ -1,232 +1,286 @@
+use std::cell::RefCell;
+
 use makepad_widgets::{text::selection::Cursor, *};
+use matrix_sdk::encryption::{identities::Device, VerificationState};
 
-use crate::{logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, styles::*}, utils};
+use crate::{app::ConfirmDeleteAction, avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, settings::PopulateMode, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{get_client, submit_async_request, AccountDataAction, MatrixRequest}, utils, verification::VerificationStateAction};
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::helpers::*;
-    use crate::shared::styles::*;
-    use crate::shared::avatar::*;
-    use crate::shared::icon_button::*;
 
     // The view containing all user account-related settings.
-    pub AccountSettings = {{AccountSettings}} {
+    mod.widgets.AccountSettings = #(AccountSettings::register_widget(vm)) {
         width: Fill, height: Fit
         flow: Down
 
-        <TitleLabel> {
+        TitleLabel {
             text: "Account Settings"
         }
 
-        <SubsectionLabel> {
+        // Verification banners. Both stay hidden until we know the state.
+        verification_banner_verified := RoundedView {
+            visible: false
+            width: Fill {max: 450},
+            height: Fit
+            flow: Right
+            align: Align {y: 0.5}
+            margin: Inset{top: 10, bottom: 5}
+            padding: Inset{top: 10, bottom: 9, left: 12, right: 12}
+            show_bg: true
+            draw_bg +: {
+                color: (COLOR_BG_ACCEPT_GREEN)
+                border_color: (COLOR_FG_ACCEPT_GREEN)
+                border_size: 1.0
+                border_radius: 4.0
+            }
+            Label {
+                width: Fill, height: Fit
+                flow: Flow.Right{wrap: true}
+                draw_text +: {
+                    color: (COLOR_FG_ACCEPT_GREEN),
+                    text_style: theme.font_bold { font_size: 11.5 },
+                }
+                text: "This device is verified and can access encrypted messages."
+            }
+        }
+
+        verification_banner_unverified := RoundedView {
+            visible: false
+            width: Fill {max: 478},
+            height: Fit
+            flow: Down,
+            align: Align {y: 0.5}
+            spacing: 0,
+            margin: Inset{top: 10, bottom: 5}
+            padding: Inset{top: 10, bottom: 13, left: 12, right: 12}
+            show_bg: true
+            draw_bg +: {
+                color: (COLOR_BG_DANGER_RED)
+                border_color: (COLOR_FG_DANGER_RED)
+                border_size: 1.0
+                border_radius: 4.0
+            }
+            Label {
+                width: Fill, height: Fit
+                flow: Flow.Right{wrap: true}
+                draw_text +: {
+                    color: (COLOR_FG_DANGER_RED),
+                    text_style: theme.font_bold { font_size: 11.5 },
+                }
+                text: "This device is not verified and can't view encrypted messages."
+            }
+            Label {
+                width: Fill, height: Fit
+                flow: Flow.Right{wrap: true}
+                margin: Inset { top: 4, bottom: 1}
+                draw_text +: {
+                    color: (MESSAGE_TEXT_COLOR),
+                    text_style: theme.font_regular { font_size: 11.5 },
+                }
+                text: "Verify it from another client using this info:"
+            }
+            // Filled in from Rust with the session name + device ID.
+            unverified_device_info_label := Label {
+                width: Fill, height: Fit
+                padding: Inset{left: 8}
+                flow: Flow.Right{wrap: true}
+                draw_text +: {
+                    color: (MESSAGE_TEXT_COLOR),
+                    text_style: theme.font_regular { font_size: 11.5 },
+                }
+                text: ""
+            }
+        }
+
+        SubsectionLabel {
             text: "Your Avatar:"
         }
 
-        <View> {
+        View {
             width: Fill, height: Fit
-            // TODO: I'd like to use RightWrap here, but Makepad doesn't yet
-            //       support RightWrap with align: {y: 0.5}.
-            flow: Right,
-            align: {y: 0.5}
+            flow: Right { wrap: true },
+            align: Align{y: 0.5}
 
-            our_own_avatar = <Avatar> {
+            our_own_avatar := Avatar {
                 width: 100,
                 height: 100,
                 margin: 10,
-                text_view = { text = { draw_text: {
-                    text_style: { font_size: 35.0 }
-                }}}
+                text_view +: {
+                    text +: {
+                        draw_text +: {
+                            text_style: theme.font_regular { font_size: 35.0 }
+                        }
+                    }
+                }
             }
 
-            <View> {
+            View {
                 width: Fit, height: Fit
                 flow: Down,
-                align: {y: 0.5}
-                padding: { left: 10, right: 10 }
+                align: Align{y: 0.5}
+                padding: Inset{ left: 10, right: 10 }
                 spacing: 10
+                margin: Inset{top: 15}
+                
+                View {
+                    width: Fit, height: Fit
+                    flow: Right,
+                    align: Align{y: 0.5}
+                    spacing: 10
 
-                upload_avatar_button = <RobrixIconButton> {
-                    padding: {top: 10, bottom: 10, left: 12, right: 15}
-                    margin: 0,
-                    draw_bg: {
-                        color: (COLOR_ACTIVE_PRIMARY)
+                    upload_avatar_button := RobrixIconButton {
+                        width: 140,
+                        height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
+                        padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                        margin: 0,
+                        draw_icon.svg: (ICON_UPLOAD)
+                        icon_walk: Walk{width: 16, height: 16}
+                        text: "Upload Avatar"
                     }
-                    draw_icon: {
-                        svg_file: (ICON_UPLOAD)
-                        color: (COLOR_PRIMARY)
+
+                    upload_avatar_spinner := LoadingSpinner {
+                        width: 16, height: 16
+                        visible: false
+                        draw_bg.color: (COLOR_ACTIVE_PRIMARY)
                     }
-                    draw_text: {
-                        color: (COLOR_PRIMARY)
-                        text_style: <REGULAR_TEXT> {}
-                    }
-                    icon_walk: {width: 16, height: 16}
-                    text: "Upload Avatar"
                 }
 
-                delete_avatar_button = <RobrixIconButton> {
-                    padding: {top: 10, bottom: 10, left: 12, right: 15}
-                    margin: 0,
-                    draw_bg: {
-                        color: (COLOR_BG_DANGER_RED)
-                        border_color: (COLOR_FG_DANGER_RED)
+                View {
+                    width: Fit, height: Fit
+                    flow: Right,
+                    align: Align{y: 0.5}
+                    spacing: 10
+
+                    delete_avatar_button := RobrixNegativeIconButton {
+                        width: 140,
+                        height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
+                        padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                        margin: 0,
+                        draw_icon.svg: (ICON_TRASH)
+                        icon_walk: Walk{ width: 16, height: 16 }
+                        text: "Delete Avatar"
                     }
-                    draw_icon: {
-                        svg_file: (ICON_TRASH),
-                        color: (COLOR_FG_DANGER_RED),
+
+                    delete_avatar_spinner := LoadingSpinner {
+                        width: 16, height: 16
+                        visible: false
+                        draw_bg.color: (COLOR_ACTIVE_PRIMARY)
                     }
-                    draw_text: {
-                        color: (COLOR_FG_DANGER_RED),
-                    }
-                    icon_walk: { width: 16, height: 16 }
-                    text: "Delete Avatar"
                 }
             }
         }
 
-        <SubsectionLabel> {
-            text: "Your Display Name:"
+        SubsectionLabel {
+            text: "Your Display Name"
         }
 
-        display_name_input = <SimpleTextInput> {
-            margin: {top: 3, left: 5, right: 5, bottom: 8},
-            width: 216, height: Fit
+        display_name_input := RobrixTextInput {
+            margin: Inset{top: 3, left: 5, right: 5, bottom: 8},
+            width: Fill { max: 226}, // to match the button width
+            height: Fit
             empty_text: "Add a display name..."
         }
 
-        <View> {
+        View {
             width: Fill, height: Fit
-            flow: RightWrap,
-            align: {y: 0.5},
-            spacing: 10
+            flow: Flow.Right{wrap: true},
+            align: Align{y: 0.5},
+            spacing: 10,
+            wrap_spacing: 10
 
             // These buttons are disabled by default, and enabled when the user
             // changes the `display_name_input` text.
-            accept_display_name_button = <RobrixIconButton> {
+            // These buttons start disabled; Rust code enables them and swaps
+            // their styles to RobrixNeutralIconButton / RobrixPositiveIconButton.
+            cancel_display_name_button := RobrixNeutralIconButton {
                 enabled: false,
-                width: Fit, height: Fit,
+                width: Fit,
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: 10,
-                margin: {left: 5},
+                margin: Inset{left: 5},
+                draw_icon.svg: (ICON_FORBIDDEN)
+                icon_walk: Walk{width: 16, height: 16, margin: 0}
+                text: "Cancel"
+            }
 
-                draw_bg: {
-                    border_color: (COLOR_FG_DISABLED),
-                    color: (COLOR_BG_DISABLED),
-                    border_radius: 5
-                }
-                draw_icon: {
-                    svg_file: (ICON_CHECKMARK)
-                    color: (COLOR_FG_DISABLED),
-                }
-                icon_walk: {width: 16, height: 16, margin: 0}
-                draw_text: {
-                    color: (COLOR_FG_DISABLED),
-                }
+            accept_display_name_button := RobrixPositiveIconButton {
+                enabled: false,
+                width: Fit, 
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
+                padding: 10,
+                margin: Inset{left: 5},
+                draw_icon.svg: (ICON_CHECKMARK)
+                icon_walk: Walk{width: 16, height: 16, margin: 0}
                 text: "Save Name"
             }
 
-            cancel_display_name_button = <RobrixIconButton> {
-                enabled: false,
-                width: Fit, height: Fit,
-                padding: 10,
-                margin: {left: 5},
-
-                draw_bg: {
-                    color: (COLOR_BG_DISABLED)
-                }
-                draw_icon: {
-                    svg_file: (ICON_FORBIDDEN),
-                    color: (COLOR_FG_DISABLED)
-                }
-                icon_walk: {width: 16, height: 16, margin: 0}
-                draw_text: {
-                    color: (COLOR_FG_DISABLED),
-                }
-                text: "Cancel"
+            save_name_spinner := LoadingSpinner {
+                width: 16, height: 16
+                margin: Inset{left: 5, top: 13} // vertically center with buttons
+                visible: false
+                draw_bg.color: (COLOR_ACTIVE_PRIMARY)
             }
         }
 
-        <SubsectionLabel> {
-            text: "Your User ID:"
+        SubsectionLabel {
+            text: "Your User ID"
         }
 
-        <View> {
+        View {
             width: Fill, height: Fit
             flow: Right,
             spacing: 10
 
-            copy_user_id_button = <RobrixIconButton> {
-                margin: {left: 5}
+            copy_user_id_button := RobrixNeutralIconButton {
+                enable_long_press: true,
+                margin: Inset{left: 5}
                 padding: 12,
                 spacing: 0,
-                draw_bg: {
-                    color: (COLOR_SECONDARY)
-                }
-                draw_icon: {
-                    svg_file: (ICON_COPY)
-                }
-                icon_walk: {width: 16, height: 16, margin: {right: -2} }
+                draw_icon.svg: (ICON_COPY)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{right: -2} }
             }
 
-            user_id = <Label> {
+            user_id := Label {
                 width: Fill, height: Fit
-                flow: RightWrap,
-                margin: {top: 10}
-                draw_text: {
-                    wrap: Line,
+                flow: Flow.Right{wrap: true},
+                margin: Inset{top: 9}
+                draw_text +: {
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: 11.5 },
                 }
                 text: "You are not logged in."
             }
         }
 
-        <SubsectionLabel> {
-            text: "Other actions:"
+        SubsectionLabel {
+            text: "Other Actions"
         }
 
-        <View> {
-            // margin: {top: 20},
+        View {
+            // margin: Inset{top: 20},
             width: Fill, height: Fit
-            flow: RightWrap,
-            align: {y: 0.5},
-            spacing: 10
+            flow: Flow.Right{wrap: true},
+            align: Align{y: 0.5},
+            spacing: 10,
+            wrap_spacing: 10
 
-            manage_account_button = <RobrixIconButton> {
-                
-                padding: {top: 10, bottom: 10, left: 12, right: 15}
-                margin: {left: 5}
-                draw_bg: {
-                    color: (COLOR_ACTIVE_PRIMARY)
-                }
-                draw_icon: {
-                    svg_file: (ICON_EXTERNAL_LINK)
-                    color: (COLOR_PRIMARY)
-                }
-                draw_text: {
-                    color: (COLOR_PRIMARY)
-                    text_style: <REGULAR_TEXT> {}
-                }
-                icon_walk: {width: 16, height: 16}
+            manage_account_button := RobrixIconButton {
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
+                padding: Inset{left: 12, right: 15}
+                margin: Inset{left: 5}
+                draw_icon.svg: (ICON_EXTERNAL_LINK)
+                icon_walk: Walk{width: 16, height: 16}
                 text: "Manage Account"
             }
 
-            logout_button = <RobrixIconButton> {
-                padding: {top: 10, bottom: 10, left: 12, right: 15}
-                margin: {left: 5}
-                draw_bg: {
-                    color: (COLOR_BG_DANGER_RED)
-                    border_color: (COLOR_FG_DANGER_RED)
-                }
-                draw_icon: {
-                    svg_file: (ICON_LOGOUT),
-                    color: (COLOR_FG_DANGER_RED),
-                }
-                draw_text: {
-                    color: (COLOR_FG_DANGER_RED),
-                }
-                icon_walk: { width: 16, height: 16, margin: {right: -2} }
+            logout_button := RobrixNegativeIconButton {
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                margin: Inset{left: 5}
+                draw_icon.svg: (ICON_LOGOUT)
+                icon_walk: Walk{ width: 16, height: 16, margin: Inset{right: -2} }
                 text: "Log out"
             }
         }
@@ -234,16 +288,79 @@ live_design! {
 }
 
 /// The view containing all user account-related settings.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, Widget)]
 pub struct AccountSettings {
     #[deref] view: View,
 
     #[rust] own_profile: Option<UserProfile>,
+    #[rust(VerificationState::Unknown)] verification_state: VerificationState,
+    #[rust] own_device: Option<Device>,
+}
+
+impl ScriptHook for AccountSettings {
+    fn on_after_apply(
+        &mut self,
+        vm: &mut ScriptVm,
+        apply: &Apply,
+        _scope: &mut Scope,
+        _value: ScriptValue,
+    ) {
+        // After apply, the DSL fields will be reset to their defaults,
+        // so we need to re-populate everything.
+        if let Some(client) = get_client() {
+            self.verification_state = client.encryption().verification_state().get();
+        }
+        if self.own_device.is_none() {
+            submit_async_request(MatrixRequest::GetOwnDevice);
+        }
+        let cx = vm.cx_mut();
+        self.update_verification_banner(cx);
+
+        // Restore user_id inline so the DSL placeholder never flashes.
+        // Anything that goes through `cx.with_vm` (button colors, avatar)
+        // can't run here, so it's handled later in `restore_after_reapply`.
+        if !apply.is_script_reapply() {
+            return;
+        }
+        let Some(own_profile) = self.own_profile.as_ref() else {
+            return;
+        };
+        let cached_user_id = own_profile.user_id.as_str().to_owned();
+        self.view
+            .label(cx, ids!(user_id))
+            .set_text(cx, &cached_user_id);
+    }
 }
 
 impl Widget for AccountSettings {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.match_event(cx, event);
+
+        let copy_user_id_button = self.view.button(cx, ids!(copy_user_id_button));
+        let copy_user_id_button_area = copy_user_id_button.area();
+        match event.hits(cx, copy_user_id_button_area) {
+            Hit::FingerHoverIn(_) | Hit::FingerLongPress(_) => {
+                cx.widget_action(
+                    copy_user_id_button.widget_uid(), 
+                    TooltipAction::HoverIn {
+                        text: "Copy User ID".to_string(),
+                        widget_rect: copy_user_id_button_area.rect(cx),
+                        options: CalloutTooltipOptions {
+                            position: TooltipPosition::Top,
+                            ..Default::default()
+                        },
+                    },
+                );
+            }
+            Hit::FingerHoverOut(_) => {
+                cx.widget_action(
+                    copy_user_id_button.widget_uid(), 
+                    TooltipAction::HoverOut,
+                );
+            }
+            _ => {}
+        }
+
         self.view.handle_event(cx, event, scope);
     }
 
@@ -253,87 +370,176 @@ impl Widget for AccountSettings {
 }
 
 impl MatchEvent for AccountSettings {
+    fn handle_signal(&mut self, cx: &mut Cx) {
+        if self.own_profile.is_none() {
+            return;
+        }
+        avatar_cache::process_avatar_updates(cx);
+
+        if let Some(profile) = self.own_profile.as_mut() {
+            profile.avatar_state.update_from_cache(cx);
+        }
+    }
+
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        // Handle LogoutAction::InProgress to update button state
+        let accept_display_name_button = self.view.button(cx, ids!(accept_display_name_button));
+        let cancel_display_name_button = self.view.button(cx, ids!(cancel_display_name_button));
+        let display_name_input = self.view.text_input(cx, ids!(display_name_input));
+        let delete_avatar_button = self.view.button(cx, ids!(delete_avatar_button));
+        let upload_avatar_button = self.view.button(cx, ids!(upload_avatar_button));
+
         for action in actions {
-            if let Some(LogoutAction::InProgress(value)) = action.downcast_ref() {
-                let logout_button = self.view.button(id!(logout_button));
-                if *value {
-                    logout_button.set_text(cx, "Log out in progress...");
-                    logout_button.set_enabled(cx, false);
-                    logout_button.reset_hover(cx);
-                } else {
-                    logout_button.set_text(cx, "Log out");
-                    logout_button.set_enabled(cx, true);
+            if let Some(VerificationStateAction::Update(state)) = action.downcast_ref() {
+                self.verification_state = *state;
+                self.update_verification_banner(cx);
+                continue;
+            }
+
+            // Handle LogoutAction::InProgress to update button state
+            if let Some(LogoutAction::InProgress(is_in_progress)) = action.downcast_ref() {
+                let logout_button = self.view.button(cx, ids!(logout_button));
+                logout_button.set_text(cx, if *is_in_progress { "Logging out..." } else { "Log out" });
+                logout_button.set_enabled(cx, !*is_in_progress);
+                logout_button.reset_hover(cx);
+                continue;
+            }
+
+            // Handle account data changes.
+            // Note: the NavigationTabBar handles removing stale data from the user_profile_cache,
+            // so here, we only need to update this widget's local profile info.
+            match action.downcast_ref() {
+                Some(AccountDataAction::AvatarChanged(new_avatar_url)) => {
+                    self.view.widget(cx, ids!(upload_avatar_spinner)).set_visible(cx, false);
+                    self.view.widget(cx, ids!(delete_avatar_spinner)).set_visible(cx, false);
+                    // Update our cached profile with the new avatar URL
+                    if let Some(profile) = self.own_profile.as_mut() {
+                        profile.avatar_state = AvatarState::Known(new_avatar_url.clone());
+                        profile.avatar_state.update_from_cache(cx);
+                        self.populate_avatar_views(cx);
+                        enqueue_popup_notification(
+                            format!("Successfully {} avatar.", if new_avatar_url.is_some() { "updated" } else { "deleted" }),
+                            PopupKind::Success,
+                            Some(4.0),
+                        );
+                    }
+                    continue;
                 }
+                Some(AccountDataAction::AvatarChangeFailed(err_msg)) => {
+                    self.view.widget(cx, ids!(upload_avatar_spinner)).set_visible(cx, false);
+                    self.view.widget(cx, ids!(delete_avatar_spinner)).set_visible(cx, false);
+                    // Re-enable the avatar buttons so user can try again
+                    Self::enable_upload_avatar_button(cx, true, &upload_avatar_button);
+                    Self::enable_delete_avatar_button(
+                        cx,
+                        self.own_profile.as_ref().is_some_and(|p| p.avatar_state.has_avatar()),
+                        &delete_avatar_button
+                    );
+                    enqueue_popup_notification(
+                        err_msg.clone(),
+                        PopupKind::Error,
+                        Some(4.0),
+                    );
+                    continue;
+                }
+                Some(AccountDataAction::DisplayNameChanged(new_name)) => {
+                    self.view.widget(cx, ids!(save_name_spinner)).set_visible(cx, false);
+                    // Update our cached profile with the new display name
+                    if let Some(profile) = self.own_profile.as_mut() {
+                        profile.username = new_name.clone();
+                    }
+                    // Update the display name text input and disable buttons
+                    let (text, len) = new_name.as_deref().map(|s| (s, s.len())).unwrap_or_default();
+                    display_name_input.set_text(cx, text);
+                    display_name_input.set_cursor(cx, Cursor { index: len, prefer_next_row: false }, false);
+                    display_name_input.set_is_read_only(cx, false);
+                    display_name_input.set_disabled(cx, false);
+                    Self::enable_display_name_buttons(cx, false, &accept_display_name_button, &cancel_display_name_button);
+                    enqueue_popup_notification(
+                        format!("Successfully {} display name.", if new_name.is_some() { "updated" } else { "removed" }),
+                        PopupKind::Success,
+                        Some(4.0),
+                    );
+                    continue;
+                }
+                Some(AccountDataAction::DisplayNameChangeFailed(err_msg)) => {
+                    self.view.widget(cx, ids!(save_name_spinner)).set_visible(cx, false);
+                    // Re-enable the buttons and text input so that the user can try again
+                    display_name_input.set_is_read_only(cx, false);
+                    display_name_input.set_disabled(cx, false);
+                    Self::enable_display_name_buttons(cx, true, &accept_display_name_button, &cancel_display_name_button);
+                    enqueue_popup_notification(
+                        err_msg.clone(),
+                        PopupKind::Error,
+                        Some(4.0),
+                    );
+                    continue;
+                }
+                Some(AccountDataAction::OwnDeviceFetched(device)) => {
+                    self.own_device = device.as_deref().cloned();
+                    self.update_verification_banner(cx);
+                    continue;
+                }
+                _ => {}
+            }
+
+            match action.downcast_ref() {
+                Some(AccountSettingsAction::AvatarDeleteStarted) => {
+                    self.view.widget(cx, ids!(delete_avatar_spinner)).set_visible(cx, true);
+                    Self::enable_upload_avatar_button(cx, false, &upload_avatar_button);
+                    Self::enable_delete_avatar_button(cx, false, &delete_avatar_button);
+                    continue;
+                }
+                Some(AccountSettingsAction::AvatarUploadStarted) => {
+                    self.view.widget(cx, ids!(upload_avatar_spinner)).set_visible(cx, true);
+                    Self::enable_upload_avatar_button(cx, false, &upload_avatar_button);
+                    Self::enable_delete_avatar_button(cx, false, &delete_avatar_button);
+                    continue;
+                }
+                _ => {}
             }
         }
-        
+
         let Some(own_profile) = &self.own_profile else { return };
 
-        if self.view.button(id!(upload_avatar_button)).clicked(actions) {
-            // TODO: support uploading a new avatar picture.
-            enqueue_popup_notification(PopupItem {
-                message: String::from("Avatar uploading is not yet implemented."),
-                auto_dismissal_duration: Some(4.0),
-                kind: PopupKind::Warning
-            });
+        if upload_avatar_button.clicked(actions) {
+            // TODO: uncomment the below once avatar uploading is implemented
+            // Self::enable_upload_avatar_button(cx, false, &upload_avatar_button);
+            // Self::enable_delete_avatar_button(cx, false, &delete_avatar_button);
+            enqueue_popup_notification(
+                "Avatar uploading is not yet implemented.",
+                PopupKind::Warning,
+                Some(4.0),
+            );
         }
 
-        if self.view.button(id!(delete_avatar_button)).clicked(actions) {
-            // TODO: support removing the avatar picture.
-            enqueue_popup_notification(PopupItem {
-                message: String::from("Avatar deletion is not yet implemented."),
-                auto_dismissal_duration: Some(4.0),
-                kind: PopupKind::Warning,
-            });
+        if delete_avatar_button.clicked(actions) {
+            // Don't immediately disable the buttons. Instead, we wait for the user
+            // to confirm the action in the confirmation modal,
+            // and then we disable the buttons in the AvatarDeleteStarted action handler.
+            let content = ConfirmationModalContent {
+                title_text: "Delete Avatar".into(),
+                body_text: "Are you sure you want to delete your avatar?".into(),
+                accept_button_text: Some("Delete".into()),
+                on_accept_clicked: Some(Box::new(|cx| {
+                    submit_async_request(MatrixRequest::SetAvatar { avatar_url: None });
+                    cx.action(AccountSettingsAction::AvatarDeleteStarted);
+                    enqueue_popup_notification(
+                        "Deleting your avatar...",
+                        PopupKind::Info,
+                        Some(5.0),
+                    );
+                })),
+                ..Default::default()
+            };
+            cx.action(ConfirmDeleteAction::Show(RefCell::new(Some(content))));
         }
 
-        let accept_display_name_button = self.view.button(id!(accept_display_name_button));
-        let cancel_display_name_button = self.view.button(id!(cancel_display_name_button));
-        let display_name_input = self.view.text_input(id!(display_name_input));
-        let enable_buttons = |cx: &mut Cx, enable: bool| {
-            accept_display_name_button.set_enabled(cx, enable);
-            cancel_display_name_button.set_enabled(cx, enable);
-            let (accept_button_fg_color, accept_button_bg_color) = if enable {
-                (COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN)
-            } else {
-                (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
-            };
-            let (cancel_button_fg_color, cancel_button_bg_color) = if enable {
-                (COLOR_FG_DANGER_RED, COLOR_BG_DANGER_RED)
-            } else {
-                (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
-            };
-            accept_display_name_button.apply_over(cx, live!(
-                draw_bg: {
-                    color: (accept_button_bg_color),
-                    border_color: (accept_button_fg_color),
-                },
-                draw_text: {
-                    color: (accept_button_fg_color),
-                },
-                draw_icon: {
-                    color: (accept_button_fg_color),
-                }
-            ));
-            cancel_display_name_button.apply_over(cx, live!(
-                draw_bg: {
-                    color: (cancel_button_bg_color),
-                    border_color: (cancel_button_fg_color),
-                },
-                draw_text: {
-                    color: (cancel_button_fg_color),
-                },
-                draw_icon: {
-                    color: (cancel_button_fg_color),
-                }
-            ));
-        };
-
+        // Enable the name change buttons if the user modified the display name to be different.
         if let Some(new_name) = display_name_input.changed(actions) {
-            let should_enable = new_name.as_str() != own_profile.username.as_deref().unwrap_or("");
-            enable_buttons(cx, should_enable);
+            let trimmed = new_name.trim();
+            let current_name = own_profile.username.as_deref().unwrap_or("");
+            let enable = trimmed != current_name;
+            Self::enable_display_name_buttons(cx, enable, &accept_display_name_button, &cancel_display_name_button);
         }
 
         if cancel_display_name_button.clicked(actions) {
@@ -341,54 +547,63 @@ impl MatchEvent for AccountSettings {
             let new_text = own_profile.username.as_deref().unwrap_or("");
             display_name_input.set_text(cx, new_text);
             display_name_input.set_cursor(cx, Cursor { index: new_text.len(), prefer_next_row: false }, false);
-            enable_buttons(cx, false);
+            Self::enable_display_name_buttons(cx, false, &accept_display_name_button, &cancel_display_name_button);
         }
 
         if accept_display_name_button.clicked(actions) {
-            // TODO: support changing the display name.
-            enqueue_popup_notification(PopupItem {
-                message: String::from("Display name change is not yet implemented."),
-                auto_dismissal_duration: Some(4.0),
-                kind: PopupKind::Warning
-            });
+            let new_display_name = match display_name_input.text().trim() {
+                "" => None,
+                name => Some(name.to_string()),
+            };
+            // While the request is in flight, show the loading spinner and disable the buttons & text input
+            submit_async_request(MatrixRequest::SetDisplayName { new_display_name });
+            self.view.widget(cx, ids!(save_name_spinner)).set_visible(cx, true);
+            display_name_input.set_disabled(cx, true);
+            display_name_input.set_is_read_only(cx, true);
+            Self::enable_display_name_buttons(cx, false, &accept_display_name_button, &cancel_display_name_button);
+            enqueue_popup_notification(
+                "Uploading new display name...",
+                PopupKind::Info,
+                Some(5.0),
+            );
         }
 
-        if self.view.button(id!(copy_user_id_button)).clicked(actions) {
+        if self.view.button(cx, ids!(copy_user_id_button)).clicked(actions) {
             cx.copy_to_clipboard(own_profile.user_id.as_str());
-            enqueue_popup_notification(PopupItem {
-                message: String::from("Copied your User ID to the clipboard."),
-                auto_dismissal_duration: Some(3.0),
-                kind: PopupKind::Success
-            });
+            enqueue_popup_notification(
+                "Copied your User ID to the clipboard.",
+                PopupKind::Success,
+                Some(3.0),
+            );
         }
 
-        if self.view.button(id!(manage_account_button)).clicked(actions) {
+        if self.view.button(cx, ids!(manage_account_button)).clicked(actions) {
             // TODO: support opening the user's account management page in a browser,
             //       or perhaps in an in-app pane if that's what is needed for regular UN+PW login.
-            enqueue_popup_notification(PopupItem {
-                message: String::from("Account management is not yet implemented."),
-                auto_dismissal_duration: Some(4.0),
-                kind: PopupKind::Warning
-            });
+            enqueue_popup_notification(
+                "Account management is not yet implemented.",
+                PopupKind::Warning,
+                Some(4.0),
+            );
         }
 
-        if self.view.button(id!(logout_button)).clicked(actions) {
+        if self.view.button(cx, ids!(logout_button)).clicked(actions) {
             cx.action(LogoutConfirmModalAction::Open);
         }
     }
 }
 
 impl AccountSettings {
-    /// Populate the account settings view with the user's profile data.
+    /// Populate avatar-related views with the user's profile data.
     ///
     /// This does nothing if `self.own_profile` is `None`.
-    fn populate_from_profile(&mut self, cx: &mut Cx) {
+    fn populate_avatar_views(&mut self, cx: &mut Cx) {
         let Some(own_profile) = &self.own_profile else {
-            error!("BUG: AccountSettings::populate_from_profile() called with no profile data.");
+            error!("BUG: AccountSettings::populate_avatar_views() called with no profile data.");
             return;
         };
 
-        let our_own_avatar = self.view.avatar(id!(our_own_avatar));
+        let our_own_avatar = self.view.avatar(cx, ids!(our_own_avatar));
         let mut drew_avatar = false;
         if let Some(avatar_img_data) = own_profile.avatar_state.data() {
             drew_avatar = our_own_avatar.show_image(
@@ -406,34 +621,239 @@ impl AccountSettings {
             );
         }
 
-        self.view
-            .text_input(id!(display_name_input))
-            .set_text(cx, own_profile.username.as_deref().unwrap_or_default());
-        self.view
-            .label(id!(user_id))
-            .set_text(cx, own_profile.user_id.as_str());
+        Self::enable_upload_avatar_button(
+            cx,
+            true,
+            &self.view.button(cx, ids!(upload_avatar_button))
+        );
+        Self::enable_delete_avatar_button(
+            cx,
+            own_profile.avatar_state.has_avatar(),
+            &self.view.button(cx, ids!(delete_avatar_button))
+        );
     }
 
-    /// Show and initializes the account settings within the SettingsScreen.
-    pub fn populate(&mut self, cx: &mut Cx, own_profile: UserProfile) {
-        self.own_profile = Some(own_profile);
-        self.populate_from_profile(cx);
+    /// Populates the account settings within the SettingsScreen.
+    /// Pass `Some(new_profile)` to replace the cached profile, or `None`
+    /// to use the existing `self.own_profile`.
+    ///
+    /// Don't call this from `Event::ScriptReapply`, since it unconditionally
+    /// `set_text`s `display_name_input`, which would wipe any in-progress edit.
+    /// Use [`Self::restore_after_reapply`] for that path.
+    pub fn populate(&mut self, cx: &mut Cx, new_profile: Option<UserProfile>) {
+        if let Some(new_profile) = new_profile {
+            self.own_profile = Some(new_profile);
+        }
+        self.populate_inner(cx, PopulateMode::Initial);
+    }
 
-        self.view.button(id!(upload_avatar_button)).reset_hover(cx);
-        self.view.button(id!(delete_avatar_button)).reset_hover(cx);
-        self.view.button(id!(accept_display_name_button)).reset_hover(cx);
-        self.view.button(id!(cancel_display_name_button)).reset_hover(cx);
-        self.view.button(id!(copy_user_id_button)).reset_hover(cx);
-        self.view.button(id!(manage_account_button)).reset_hover(cx);
-        self.view.button(id!(logout_button)).reset_hover(cx);
+    /// Restores widget state after `Event::ScriptReapply` reset DSL-bound
+    /// fields to their `script_mod!` defaults. See
+    /// [`PopulateMode::AfterReapply`] for what's re-applied vs left alone.
+    pub fn restore_after_reapply(&mut self, cx: &mut Cx) {
+        self.populate_inner(cx, PopulateMode::AfterReapply);
+    }
+
+    /// Shared core. The two modes only differ at the text-input writes
+    /// and display-name button enable logic. Avatar repaint, hover sweep,
+    /// and redraw are the same.
+    fn populate_inner(&mut self, cx: &mut Cx, mode: PopulateMode) {
+        let Some(own_profile) = self.own_profile.as_ref() else {
+            if matches!(mode, PopulateMode::Initial) {
+                error!("BUG: AccountSettings::populate() called with no cached profile.");
+            }
+            return;
+        };
+
+        let cached_user_id = own_profile.user_id.as_str().to_owned();
+        let cached_name = own_profile.username.clone().unwrap_or_default();
+        // Cloning here releases the `own_profile` borrow,
+        // so the `&mut self` calls below don't conflict.
+
+        // `display_name_input` is user-editable, so the modes diverge:
+        //   * Initial: write the cached username + user_id, buttons start disabled.
+        //   * AfterReapply: leave the input alone to preserve in-progress edits,
+        //     skip user_id (already restored in `on_after_apply`),
+        //     and re-derive the button enable state from whether the input still matches.
+        let modified = match mode {
+            PopulateMode::Initial => {
+                self.view.label(cx, ids!(user_id))
+                    .set_text(cx, &cached_user_id);
+                self.view.text_input(cx, ids!(display_name_input))
+                    .set_text(cx, &cached_name);
+                false
+            }
+            PopulateMode::AfterReapply => {
+                self.view.text_input(cx, ids!(display_name_input)).text() != cached_name
+            }
+        };
+
+        Self::enable_display_name_buttons(
+            cx,
+            modified,
+            &self.view.button(cx, ids!(accept_display_name_button)),
+            &self.view.button(cx, ids!(cancel_display_name_button)),
+        );
+
+        self.populate_avatar_views(cx);
+
+        self.view.button(cx, ids!(upload_avatar_button)).reset_hover(cx);
+        self.view.button(cx, ids!(delete_avatar_button)).reset_hover(cx);
+        self.view.button(cx, ids!(accept_display_name_button)).reset_hover(cx);
+        self.view.button(cx, ids!(cancel_display_name_button)).reset_hover(cx);
+        self.view.button(cx, ids!(copy_user_id_button)).reset_hover(cx);
+        self.view.button(cx, ids!(manage_account_button)).reset_hover(cx);
+        self.view.button(cx, ids!(logout_button)).reset_hover(cx);
         self.view.redraw(cx);
+    }
+
+    /// Show verification info based on `self.verification_state`.
+    ///
+    /// If unknown, nothing will be shown.
+    fn update_verification_banner(&mut self, cx: &mut Cx) {
+        let (verified, unverified) = match self.verification_state {
+            VerificationState::Verified => (true, false),
+            VerificationState::Unverified => (false, true),
+            VerificationState::Unknown => (false, false),
+        };
+        self.view.view(cx, ids!(verification_banner_verified)).set_visible(cx, verified);
+        self.view.view(cx, ids!(verification_banner_unverified)).set_visible(cx, unverified);
+
+        // Refill the session info even if the banner is hidden, so it's
+        // already right if it shows up later.
+        let info_text = match self.own_device.as_ref() {
+            Some(device) => match device.display_name() {
+                Some(name) => format!("Session: \"{name}\",  Device ID: {}", device.device_id()),
+                None       => format!("Device ID: {}", device.device_id()),
+            },
+            None => String::new(),
+        };
+        self.view.label(cx, ids!(unverified_device_info_label)).set_text(cx, &info_text);
+        self.view.redraw(cx);
+    }
+
+    /// Enable or disable the delete avatar button.
+    fn enable_delete_avatar_button(
+        cx: &mut Cx,
+        enable: bool,
+        delete_avatar_button: &ButtonRef,
+    ) {
+        let (delete_button_fg_color, delete_button_bg_color) = if enable {
+            (COLOR_FG_DANGER_RED, COLOR_BG_DANGER_RED)
+        } else {
+            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
+        };
+        let mut delete_avatar_button = delete_avatar_button.clone();
+        script_apply_eval!(cx, delete_avatar_button, {
+            enabled: #(enable),
+            draw_bg +: {
+                color: #(delete_button_bg_color),
+                border_color: #(delete_button_fg_color),
+            }
+            draw_icon +: {
+                color: #(delete_button_fg_color),
+            }
+            draw_text +: {
+                color: #(delete_button_fg_color),
+            }
+        });
+    }
+
+    /// Enable or disable the upload avatar button.
+    fn enable_upload_avatar_button(
+        cx: &mut Cx,
+        enable: bool,
+        upload_avatar_button: &ButtonRef,
+    ) {
+        let (upload_button_fg_color, upload_button_bg_color) = if enable {
+            (COLOR_PRIMARY, COLOR_ACTIVE_PRIMARY)
+        } else {
+            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
+        };
+        let mut upload_avatar_button = upload_avatar_button.clone();
+        script_apply_eval!(cx, upload_avatar_button, {
+            enabled: #(enable),
+            draw_bg +: {
+                color: #(upload_button_bg_color),
+                border_color: #(upload_button_fg_color),
+            }
+            draw_icon +: {
+                color: #(upload_button_fg_color),
+            }
+            draw_text +: {
+                color: #(upload_button_fg_color),
+            }
+        });
+    }
+
+    /// Enable or disable the display name accept and cancel buttons.
+    fn enable_display_name_buttons(
+        cx: &mut Cx,
+        enable: bool,
+        accept_display_name_button: &ButtonRef,
+        cancel_display_name_button: &ButtonRef,
+    ) {
+        let (accept_button_fg_color, accept_button_bg_color) = if enable {
+            (COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN)
+        } else {
+            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
+        };
+        let (cancel_button_fg_color, cancel_button_bg_color) = if enable {
+            (COLOR_FG_DANGER_RED, COLOR_BG_DANGER_RED)
+        } else {
+            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
+        };
+
+        let mut accept_display_name_button = accept_display_name_button.clone();
+        script_apply_eval!(cx, accept_display_name_button, {
+            enabled: #(enable),
+            draw_bg +: {
+                color: #(accept_button_bg_color),
+                border_color: #(accept_button_fg_color),
+            },
+            draw_text +: {
+                color: #(accept_button_fg_color),
+            },
+            draw_icon +: {
+                color: #(accept_button_fg_color),
+            }
+        });
+        let mut cancel_display_name_button = cancel_display_name_button.clone();
+        script_apply_eval!(cx, cancel_display_name_button, {
+            enabled: #(enable),
+            draw_bg +: {
+                color: #(cancel_button_bg_color),
+                border_color: #(cancel_button_fg_color),
+            },
+            draw_text +: {
+                color: #(cancel_button_fg_color),
+            },
+            draw_icon +: {
+                color: #(cancel_button_fg_color),
+            }
+        });
     }
 }
 
 impl AccountSettingsRef {
-    /// See [`AccountSettings::show()`].
-    pub fn populate(&self, cx: &mut Cx, own_profile: UserProfile) {
+    /// See [`AccountSettings::populate()`].
+    pub fn populate(&self, cx: &mut Cx, new_profile: Option<UserProfile>) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.populate(cx, own_profile);
+        inner.populate(cx, new_profile);
     }
+
+    /// See [`AccountSettings::restore_after_reapply()`].
+    pub fn restore_after_reapply(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.restore_after_reapply(cx);
+    }
+}
+
+/// Actions that are handled by the AccountSettings widget.
+#[derive(Debug)]
+pub enum AccountSettingsAction {
+    /// The avatar delete operation was started (e.g., confirmed in a modal).
+    AvatarDeleteStarted,
+    /// The avatar upload operation was started (e.g., confirmed in a modal).
+    AvatarUploadStarted,
 }

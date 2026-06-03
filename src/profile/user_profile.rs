@@ -1,54 +1,13 @@
-use std::{borrow::Cow, ops::{Deref, DerefMut}, sync::Arc};
+//! Widgets and types related to displaying info about a user profile.
+
+use std::{borrow::Cow, ops::{Deref, DerefMut}};
 use makepad_widgets::*;
-use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedMxcUri, OwnedRoomId, OwnedUserId}};
+use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId}};
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, shared::{avatar::AvatarWidgetExt, popup_list::{enqueue_popup_notification, PopupItem, PopupKind}}, sliding_sync::{current_user_id, is_user_ignored, submit_async_request, MatrixRequest}, utils
+    avatar_cache, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, current_user_id, is_user_ignored, submit_async_request}, utils
 };
+use super::user_profile_cache;
 
-use super::user_profile_cache::{self, get_user_profile_and_room_member};
-
-/// The currently-known state of a user's avatar.
-#[derive(Clone)]
-pub enum AvatarState {
-    /// It isn't yet known if this user has an avatar.
-    Unknown,
-    /// It is known that this user does or does not have an avatar.
-    Known(Option<OwnedMxcUri>),
-    /// This user does have an avatar, and it has been fetched successfully.
-    Loaded(Arc<[u8]>),
-    /// This user does have an avatar, but we failed to fetch it.
-    Failed,
-}
-impl std::fmt::Debug for AvatarState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AvatarState::Unknown        => write!(f, "Unknown"),
-            AvatarState::Known(Some(_)) => write!(f, "Known(Some)"),
-            AvatarState::Known(None)    => write!(f, "Known(None)"),
-            AvatarState::Loaded(data)   => write!(f, "Loaded({} bytes)", data.len()),
-            AvatarState::Failed         => write!(f, "Failed"),
-        }
-    }
-}
-impl AvatarState {
-    /// Returns the avatar data, if in the `Loaded` state.
-    pub fn data(&self) -> Option<&Arc<[u8]>> {
-        if let AvatarState::Loaded(data) = self {
-            Some(data)
-        } else {
-            None
-        }
-    }
-
-    /// Returns the avatar URI, if in the `Known` state and it exists.
-    pub fn uri(&self) -> Option<&OwnedMxcUri> {
-        if let AvatarState::Known(Some(uri)) = self {
-            Some(uri)
-        } else {
-            None
-        }
-    }
-}
 
 /// Information retrieved about a user: their displayable name, ID, and known avatar state.
 #[derive(Clone, Debug)]
@@ -101,277 +60,224 @@ impl DerefMut for UserProfileAndRoomId {
     }
 }
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::helpers::*;
-    use crate::shared::styles::*;
-    use crate::shared::avatar::*;
-    use crate::shared::icon_button::*;
 
-    use link::tsp_link::TspVerifyUser;
 
-    ICON_DOUBLE_CHAT = dep("crate://self/resources/icons/double_chat.svg")
+    mod.widgets.ICON_DOUBLE_CHAT = crate_resource("self://resources/icons/double_chat.svg")
 
-    UserProfileView = <ScrollXYView> {
+    let UserProfileView = ScrollXYView {
         width: Fill,
         height: Fill,
-        align: {x: 0.5, y: 0},
-        padding: {left: 15, right: 15, top: 15, bottom: 50}
+        align: Align{x: 0.5, y: 0},
+        padding: Inset{left: 15, right: 15, top: 15, bottom: 50}
         spacing: 20,
         flow: Down,
-        cursor: Default,
+        cursor: MouseCursor.Default,
 
-        show_bg: true,
-        draw_bg: {
-            color: (COLOR_PRIMARY)
-        }
-
-        personal_info = <View> {
+        personal_info := View {
             width: Fill, height: Fit
-            align: {x: 0.5, y: 0.0}
-            padding: {left: 10, right: 10}
+            align: Align{x: 0.5, y: 0.0}
+            padding: Inset{left: 10, right: 10}
             spacing: 3
             flow: Down
 
-            avatar = <Avatar> {
+            avatar := Avatar {
                 width: 150,
                 height: 150,
                 margin: 10.0,
-                text_view = { text = { draw_text: {
-                    text_style: { font_size: 40.0 }
-                }}}
+                text_view +: {
+                    text +: {
+                        draw_text +: {
+                            text_style: theme.font_regular { font_size: 40.0 }
+                        }
+                    }
+                }
             }
 
-            user_name = <Label> {
-                width: Fit, height: Fit
-                draw_text: {
-                    wrap: Word,
+            user_name := Label {
+                width: Fill, height: Fit
+                align: Align{x: 0.5}
+                flow: Flow.Right{wrap: true}
+                draw_text +: {
                     color: #000,
-                    text_style: <USERNAME_TEXT_STYLE>{ font_size: 12 },
+                    text_style: USERNAME_TEXT_STYLE { font_size: 12 },
                 }
                 text: "User Name"
             }
 
-            user_id = <Label> {
-                width: Fit, height: Fit
-                draw_text: {
-                    wrap: Line,
+            user_id := Label {
+                width: Fill, height: Fit
+                align: Align{x: 0.5}
+                flow: Flow.Right{wrap: true}
+                draw_text +: {
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
                 text: "User ID"
             }
         }
 
-        <LineH> { padding: 15 }
+        LineH { padding: 15 }
         
-        membership = <View> {
+        membership := View {
             width: Fill,
             height: Fit,
             flow: Down,
             spacing: 3,
-            align: {x: 0.0, y: 0.0}
-            padding: {left: 10, right: 10}
+            align: Align{x: 0.0, y: 0.0}
+            padding: Inset{left: 10, right: 10}
 
-            membership_title_label = <Label> {
+            membership_title_label := Label {
                 width: Fill, height: Fit
-                draw_text: {
-                    wrap: Word,
-                    text_style: <USERNAME_TEXT_STYLE>{ font_size: 11.5 },
+                flow: Flow.Right{wrap: true}
+                draw_text +: {
+                    text_style: USERNAME_TEXT_STYLE { font_size: 11.5 },
                     color: #000
                 }
                 text: "Membership in this room"
             }
 
-            membership_status_label = <Label> {
-                margin: { left: 7 }
+            membership_status_label := Label {
+                margin: Inset{ left: 7 }
                 width: Fill, height: Fit
-                draw_text: {
-                    wrap: Line,
+                flow: Flow.Right{wrap: true}
+                draw_text +: {
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
                 text: "Unknown"
             }
 
-            role_info_label = <Label> {
-                margin: { left: 7 }
+            role_info_label := Label {
+                margin: Inset{ left: 7 }
                 width: Fill, height: Fit
-                draw_text: {
-                    wrap: Line,
+                flow: Flow.Right{wrap: true}
+                draw_text +: {
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
                 }
                 text: "Unknown"
             }
         }
 
-        <LineH> { padding: 15 }
+        LineH { padding: 15 }
 
-        actions = <View> {
+        action_buttons := View {
             width: Fill, height: Fit
             flow: Down,
             spacing: 10,
-            padding: {left: 10., right: 10, bottom: 10}
+            padding: Inset{left: 10., right: 10, bottom: 10}
 
-            <Label> {
+            Label {
                 width: Fill, height: Fit
-                draw_text: {
-                    wrap: Line,
-                    text_style: <USERNAME_TEXT_STYLE>{ font_size: 11.5 },
+                flow: Flow.Right{wrap: true}
+                draw_text +: {
+                    text_style: USERNAME_TEXT_STYLE { font_size: 11.5 },
                     color: #000
                 }
                 text: "Actions"
             }
 
-            direct_message_button = <RobrixIconButton> {
-                // TODO: support this button. Once this is implemented, uncomment the line in draw_walk()
-                enabled: false,
+            direct_message_button := RobrixIconButton {
                 margin: 0,
-                padding: {top: 10, bottom: 10, left: 12, right: 15}
-                draw_bg: {
-                    color: (COLOR_ACTIVE_PRIMARY)
-                }
-                draw_icon: {
-                    svg_file: (ICON_DOUBLE_CHAT)
-                    color: (COLOR_PRIMARY)
-                }
-                draw_text: {
-                    color: (COLOR_PRIMARY)
-                    text_style: <REGULAR_TEXT> {}
-                }
-                icon_walk: {width: 22, height: 16, margin: {left: -5, right: -3, top: 1, bottom: -1} }
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                draw_icon.svg: (mod.widgets.ICON_DOUBLE_CHAT)
+                icon_walk: Walk{width: 22, height: 16, margin: Inset{left: -5, right: -3, top: 1, bottom: -1} }
                 text: "Direct Message"
             }
 
-            copy_link_to_user_button = <RobrixIconButton> {
-                padding: {top: 10, bottom: 10, left: 12, right: 15}
+            copy_link_to_user_button := RobrixNeutralIconButton {
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
-                draw_bg: {
-                    color: (COLOR_SECONDARY)
-                }
-                draw_icon: {
-                    svg_file: (ICON_COPY)
-                }
-                icon_walk: {width: 16, height: 16, margin: {left: -1, right: -1} }
+                draw_icon.svg: (ICON_COPY)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -1, right: -1} }
                 text: "Copy Link to User"
             }
 
-            jump_to_read_receipt_button = <RobrixIconButton> {
+            jump_to_read_receipt_button := RobrixNeutralIconButton {
                 enabled: false, // TODO: support this button
-                padding: {top: 10, bottom: 10, left: 12, right: 15}
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
-                draw_bg: {
-                    color: (COLOR_SECONDARY)
-                }
-                draw_icon: {
-                    svg_file: (ICON_JUMP)
-                }
-                icon_walk: {width: 14, height: 16, margin: {left: -1, right: 1.5}}
+                draw_icon.svg: (ICON_JUMP)
+                icon_walk: Walk{width: 14, height: 16, margin: Inset{left: -1, right: 1.5}}
                 text: "Jump to Read Receipt"
             }
 
-            ignore_user_button = <RobrixIconButton> {
-                padding: {top: 10, bottom: 10, left: 12, right: 15}
+            ignore_user_button := RobrixNegativeIconButton {
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
-                draw_icon: {
-                    svg_file: (ICON_FORBIDDEN)
-                    color: (COLOR_FG_DANGER_RED),
-                }
-                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -0.5} }
-
-                draw_bg: {
-                    border_color: (COLOR_FG_DANGER_RED),
-                    color: (COLOR_BG_DANGER_RED)
-                }
+                draw_icon.svg: (ICON_FORBIDDEN)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -0.5} }
                 text: "Ignore (Block) User"
-                draw_text:{
-                    color: (COLOR_FG_DANGER_RED),
-                }
             }
         }
 
         // A view that allows the user to verify a new DID and associate it
         // with a particular Matrix User ID.
-        tsp_verify_user = <TspVerifyUser> { }
+        tsp_verify_user := TspVerifyUser { }
     }
 
 
-    pub UserProfileSlidingPane = {{UserProfileSlidingPane}} {
+    mod.widgets.UserProfileSlidingPane = #(UserProfileSlidingPane::register_widget(vm)) {
         visible: false,
         flow: Overlay,
         width: Fill,
         height: Fill,
-        align: {x: 1.0, y: 0}
+        align: Align{x: 1.0, y: 0}
 
-        bg_view = <View> {
+        bg_view := SolidView {
             width: Fill
             height: Fill
             visible: false,
             show_bg: true
-            draw_bg: {
-                uniform bg_color: #000000BB
-                fn pixel(self) -> vec4 {
-                    return self.bg_color;
-                }
-            }
+            draw_bg.color: #000000BB
         }
 
-        main_content = <FadeView> {
+        main_content := SolidView {
             width: 300,
             height: Fill
             flow: Overlay,
-            align: {x: 1.0}
+            align: Align{x: 1.0}
 
-            user_profile_view = <UserProfileView> { }
+            show_bg: true,
+            draw_bg.color: (COLOR_PRIMARY)
+
+            user_profile_view := UserProfileView { }
 
             // The "X" close button on the top right
-            close_button = <RobrixIconButton> {
+            close_button := RobrixNeutralIconButton {
                 width: Fit,
                 height: Fit,
                 spacing: 0,
                 margin: 7,
                 padding: 15,
-
-                draw_bg: {
-                    color: (COLOR_SECONDARY)
-                }
-                draw_icon: {
-                    svg_file: (ICON_CLOSE),
-                    fn get_color(self) -> vec4 {
-                        return #x0;
-                    }
-                }
-                icon_walk: {width: 14, height: 14}
+                draw_icon.svg: (ICON_CLOSE)
+                icon_walk: Walk{width: 14, height: 14}
             }
         }
 
-        animator: {
-            panel = {
-                default: hide,
-                show = {
-                    redraw: true,
-                    from: {all: Forward {duration: 0.4}}
-                    ease: ExpDecay {d1: 0.80, d2: 0.97}
-                    apply: {
-                        main_content = { margin: {right: 0} },
-                        bg_view = {
-                            draw_bg: { bg_color: #000000BB }
-                        }
-                    }
-                }
-                hide = {
+        slide: 1.0,
+
+        animator: Animator {
+            panel: {
+                default: @hide
+                show: AnimatorState{
                     redraw: true,
                     from: {all: Forward {duration: 0.5}}
-                    ease: ExpDecay {d1: 0.80, d2: 0.97}
+                    ease: Ease.ExpDecay {d1: 0.80, d2: 0.97}
                     apply: {
-                        main_content = { margin: {right: -300} },
-                        bg_view = {
-                            draw_bg: { bg_color: #x00000000 }
-                        }
+                        slide: 0.0
+                    }
+                }
+                hide: AnimatorState{
+                    redraw: true,
+                    from: {all: Forward {duration: 0.5}}
+                    ease: Ease.ExpDecay {d1: 0.80, d2: 0.97}
+                    apply: {
+                        slide: 1.0
                     }
                 }
             }
@@ -380,9 +286,10 @@ live_design! {
 }
 
 
-#[derive(Clone, DefaultNone, Debug)]
+#[derive(Clone, Default, Debug)]
 pub enum ShowUserProfileAction {
     ShowUserProfile(UserProfileAndRoomId),
+    #[default]
     None,
 }
 
@@ -431,6 +338,7 @@ impl UserProfilePaneInfo {
         self.room_member.as_ref().map_or(
             "Role: Unknown".into(),
             |member| match member.suggested_role_for_power_level() {
+                RoomMemberRole::Creator => "Role: Creator".into(),
                 RoomMemberRole::Administrator => "Role: Admin".into(),
                 RoomMemberRole::Moderator => "Role: Moderator".into(),
                 RoomMemberRole::User => "Role: Standard User".into(),
@@ -439,10 +347,12 @@ impl UserProfilePaneInfo {
     }
 }
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget, Animator)]
 pub struct UserProfileSlidingPane {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
-    #[animator] animator: Animator,
+    #[apply_default] animator: Animator,
+    #[live] slide: f32,
 
     #[rust] info: Option<UserProfilePaneInfo>,
     #[rust] is_animating_out: bool,
@@ -458,22 +368,17 @@ impl Widget for UserProfileSlidingPane {
         if animator_action.must_redraw() {
             self.redraw(cx);
         }
-        // If the animator is in the `hide` state and has finished animating out,
-        // that means it has fully animated off-screen and can be set to invisible.
-        if self.animator_in_state(cx, id!(panel.hide)) {
-            match (self.is_animating_out, animator_action.is_animating()) {
-                (true, false) => {
-                    self.visible = false;
-                    cx.revert_key_focus();
-                    self.view(id!(bg_view)).set_visible(cx, false);
-                    self.redraw(cx);
-                    return;
-                }
-                (false, true) => {
-                    self.is_animating_out = true;
-                }
-                _ => { }
-            }
+
+        // If we're animating the pane closed and the animation track has finished
+        // (the Animator removes ended tracks on the same frame it returns the last
+        // Animating action), hide everything and mark the pane as invisible.
+        if self.is_animating_out && !self.animator.is_track_animating(id!(panel)) {
+            self.visible = false;
+            self.is_animating_out = false;
+            cx.revert_key_focus();
+            self.view(cx, ids!(bg_view)).set_visible(cx, false);
+            self.redraw(cx);
+            return;
         }
 
         let area = self.view.area();
@@ -487,7 +392,7 @@ impl Widget for UserProfileSlidingPane {
         let close_pane = {
             matches!(
                 event,
-                Event::Actions(actions) if self.button(id!(close_button)).clicked(actions)
+                Event::Actions(actions) if self.button(cx, ids!(close_button)).clicked(actions)
             )
             || event.back_pressed()
             || match event.hits_with_capture_overload(cx, area, true) {
@@ -498,13 +403,14 @@ impl Widget for UserProfileSlidingPane {
                 }
                 Hit::FingerUp(fue) if fue.is_over => {
                     fue.mouse_button().is_some_and(|b| b.is_back())
-                    || !self.view(id!(main_content)).area().rect(cx).contains(fue.abs)
+                    || !self.view(cx, ids!(main_content)).area().rect(cx).contains(fue.abs)
                 }
                 _ => false,
             }
         };
         if close_pane {
-            self.animator_play(cx, id!(panel.hide));
+            self.is_animating_out = true;
+            self.animator_play(cx, ids!(panel.hide));
             self.redraw(cx);
             return;
         }
@@ -517,11 +423,12 @@ impl Widget for UserProfileSlidingPane {
             // Re-fetch the currently-displayed user profile info from the cache in case it was updated.
             let mut redraw_this_pane = false;
             if let Some(our_info) = self.info.as_mut() {
-                if let (Some(new_profile), room_member) = get_user_profile_and_room_member(
+                if let Some((new_profile, room_member)) = user_profile_cache::with_user_profile(
                     cx,
                     our_info.user_id.clone(),
-                    &our_info.room_id,
+                    Some(&our_info.room_id),
                     false,
+                    |profile, rooms| (profile.clone(), rooms.get(&our_info.room_id).cloned())
                 ) {
                     let prev_avatar_state = our_info.avatar_state.clone();
                     our_info.user_profile = new_profile;
@@ -534,11 +441,8 @@ impl Widget for UserProfileSlidingPane {
                         our_info.avatar_state = AvatarState::Known(Some(avatar_uri));
                     }
                     // If we know the avatar URI, try to get/fetch the actual avatar image data.
-                    if let AvatarState::Known(Some(uri)) = &our_info.avatar_state {
-                        if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, uri.to_owned()) {
-                            our_info.avatar_state = AvatarState::Loaded(data);
-                        }
-                    }
+                    our_info.avatar_state.update_from_cache(cx);
+
                     // If the new avatar state is fully `Loaded`, keep it as is.
                     // If the new avatar state is *not* fully `Loaded`, but the previous one was, keep the previous one.
                     match (prev_avatar_state, &mut our_info.avatar_state) {
@@ -559,17 +463,22 @@ impl Widget for UserProfileSlidingPane {
         let Some(info) = self.info.as_ref() else { return };
 
         if let Event::Actions(actions) = event {
+            if self.button(cx, ids!(direct_message_button)).clicked(actions) {
+                submit_async_request(MatrixRequest::OpenOrCreateDirectMessage {
+                    user_profile: info.user_profile.clone(),
+                    // Don't just create a new DM room; we want to first get confirmation from the user.
+                    allow_create: false,
+                });
+            }
 
-            // TODO: handle actions for the `direct_message_button`
-
-            if self.button(id!(copy_link_to_user_button)).clicked(actions) {
+            if self.button(cx, ids!(copy_link_to_user_button)).clicked(actions) {
                 let matrix_to_uri = info.user_id.matrix_to_uri().to_string();
                 cx.copy_to_clipboard(&matrix_to_uri);
-                enqueue_popup_notification(PopupItem {
-                    message: String::from("Copied User ID to the clipboard."),
-                    auto_dismissal_duration: Some(3.0),
-                    kind: PopupKind::Success
-                });
+                enqueue_popup_notification(
+                    "Copied User ID to the clipboard.",
+                    PopupKind::Success,
+                    Some(3.0),
+                );
             }
 
             // TODO: implement the third button: `jump_to_read_receipt_button`,
@@ -578,7 +487,7 @@ impl Widget for UserProfileSlidingPane {
 
             // The `ignore_user_button` require room membership info.
             if let Some(room_member) = info.room_member.as_ref() {
-                if self.button(id!(ignore_user_button)).clicked(actions) {
+                if self.button(cx, ids!(ignore_user_button)).clicked(actions) {
                     submit_async_request(MatrixRequest::IgnoreUser {
                         ignore: !room_member.is_ignored(),
                         room_id: info.room_id.clone(),
@@ -600,39 +509,56 @@ impl Widget for UserProfileSlidingPane {
             return self.view.draw_walk(cx, scope, walk);
         };
 
+        // Use the `slide` value to position main_content.
+        // slide=0.0 means fully shown; slide=1.0 means fully hidden (off-screen right).
+        let panel_width = 300.0;
+        let right_margin = -(self.slide * panel_width);
+        let mut main_content = self.view(cx, ids!(main_content));
+        script_apply_eval!(cx, main_content, {
+            margin.right: #(right_margin)
+        });
+        // Also derive the bg_view overlay alpha from `slide`.
+        // The animator can only interpolate struct fields, not child view properties,
+        // so we compute the bg color here from the smoothly-animated `slide` value.
+        let bg_alpha = (1.0 - self.slide) * 0.733; // 0.733 ≈ 0xBB/0xFF
+        let bg_color = vec4(0.0, 0.0, 0.0, bg_alpha);
+        let mut bg_view = self.view(cx, ids!(bg_view));
+        script_apply_eval!(cx, bg_view, {
+            draw_bg +: { color: #(bg_color) }
+        });
+
         // Set the user name, using the user ID as a fallback.
-        self.label(id!(user_name)).set_text(cx, info.displayable_name());
-        self.label(id!(user_id)).set_text(cx, info.user_id.as_str());
+        self.label(cx, ids!(user_name)).set_text(cx, info.displayable_name());
+        self.label(cx, ids!(user_id)).set_text(cx, info.user_id.as_str());
 
         // Set the avatar image, using the user name as a fallback.
-        let avatar_ref = self.avatar(id!(avatar));
+        let avatar_ref = self.avatar(cx, ids!(avatar));
         info.avatar_state
             .data()
             .and_then(|data| avatar_ref.show_image(cx, None, |cx, img| utils::load_png_or_jpg(&img, cx, data)).ok())
             .unwrap_or_else(|| avatar_ref.show_text(cx, None, None, info.displayable_name()));
 
         // Set the membership status and role in the room.
-        self.label(id!(membership_title_label)).set_text(cx, &info.membership_title());
-        self.label(id!(membership_status_label)).set_text(cx, info.membership_status());
-        self.label(id!(role_info_label)).set_text(cx, info.role_in_room().as_ref());
+        self.label(cx, ids!(membership_title_label)).set_text(cx, &info.membership_title());
+        self.label(cx, ids!(membership_status_label)).set_text(cx, info.membership_status());
+        self.label(cx, ids!(role_info_label)).set_text(cx, info.role_in_room().as_ref());
 
-        // Draw and enable/disable the buttons according to user and room membership info:
-        // * `direct_message_button` is disabled if the user is the same as the account user,
+        // Draw and show/hide the buttons according to user and room membership info:
+        // * `direct_message_button` is hidden if the user is the same as the account user,
         //    since you cannot direct message yourself.
         // * `copy_link_to_user_button` is always enabled with the same text.
         // * `jump_to_read_receipt_button` is always enabled with the same text.
-        // * `ignore_user_button` is disabled if the user is not a member of the room,
+        // * `ignore_user_button` is hidden if the user is not a member of the room,
         //    or if the user is the same as the account user, since you cannot ignore yourself.
         //    * The button text changes to "Unignore" if the user is already ignored.
         let is_pane_showing_current_account = info.room_member.as_ref()
             .map(|rm| rm.is_account_user())
             .unwrap_or_else(|| current_user_id().is_some_and(|uid| uid == info.user_id));
 
-        // TODO: uncomment the line below once the `direct_message_button` logic is implemented.
-        // self.button(id!(direct_message_button)).set_enabled(!is_pane_showing_current_account);
+        self.button(cx, ids!(direct_message_button)).set_visible(cx, !is_pane_showing_current_account);
 
-        let ignore_user_button = self.button(id!(ignore_user_button));
-        ignore_user_button.set_enabled(cx, !is_pane_showing_current_account && info.room_member.is_some());
+        let ignore_user_button = self.button(cx, ids!(ignore_user_button));
+        ignore_user_button.set_visible(cx, !is_pane_showing_current_account && info.room_member.is_some());
         // Unfortunately the Matrix SDK's RoomMember type does not properly track
         // the `ignored` state of a user, so we have to maintain it separately.
         let is_ignored = info.room_member.as_ref()
@@ -659,21 +585,22 @@ impl UserProfileSlidingPane {
     /// retrieve the user's room membership info from the local cache,
     /// and then submit a request to asynchronously fetch it from the server
     /// if it's not found in the cache.
-    pub fn set_info(&mut self, _cx: &mut Cx, mut info: UserProfilePaneInfo) {
+    pub fn set_info(&mut self, cx: &mut Cx, mut info: UserProfilePaneInfo) {
         if info.room_member.is_none() {
-            if let (new_profile, Some(room_member)) = get_user_profile_and_room_member(
-                _cx,
+            if let Some((new_profile, Some(room_member))) = user_profile_cache::with_user_profile(
+                cx,
                 info.user_id.clone(),
-                &info.room_id,
+                Some(&info.room_id),
                 true,
+                |profile, rooms| (profile.clone(), rooms.get(&info.room_id).cloned())
             ) {
                 log!("Found user {} room member info in cache", info.user_id);
                 // Update avatar state, preferring that of the room member info.
                 if let Some(uri) = room_member.avatar_url() {
                     info.avatar_state = AvatarState::Known(Some(uri.to_owned()));
                 }
-                else if let Some(p) = new_profile.as_ref() {
-                    match &p.avatar_state {
+                else {
+                    match new_profile.avatar_state {
                         s @ AvatarState::Known(Some(_)) | s @ AvatarState::Loaded(_) => {
                             info.avatar_state = s.clone();
                         }
@@ -684,22 +611,18 @@ impl UserProfileSlidingPane {
                 if info.username.is_none() {
                     info.username = room_member.display_name()
                         .map(|dn| dn.to_owned())
-                        .or_else(|| new_profile.and_then(|p| p.username.clone()));
+                        .or_else(|| new_profile.username.clone());
                 }
                 info.room_member = Some(room_member);
             }
         }
-        if let AvatarState::Known(Some(uri)) = &info.avatar_state {
-            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(_cx, uri.clone()) {
-                info.avatar_state = AvatarState::Loaded(data);
-            }
-        }
-        
+        info.avatar_state.update_from_cache(cx);
+
         // If TSP is enabled, populate the TSP verification info for this user.
         #[cfg(feature = "tsp")] {
             use crate::tsp::verify_user::TspVerifyUserWidgetExt;
-            self.view.tsp_verify_user(id!(tsp_verify_user))
-                .show(_cx, info.user_id.clone());
+            self.view.tsp_verify_user(cx, ids!(tsp_verify_user))
+                .show(cx, info.user_id.clone());
         }
 
         self.info = Some(info);
@@ -707,15 +630,16 @@ impl UserProfileSlidingPane {
 
     pub fn show(&mut self, cx: &mut Cx) {
         self.visible = true;
+        self.is_animating_out = false;
         cx.set_key_focus(self.view.area());
-        self.animator_play(cx, id!(panel.show));
-        self.view(id!(bg_view)).set_visible(cx, true);
+        self.animator_play(cx, ids!(panel.show));
+        self.view(cx, ids!(bg_view)).set_visible(cx, true);
 
-        self.view.button(id!(close_button)).reset_hover(cx);
-        self.view.button(id!(direct_message_button)).reset_hover(cx);
-        self.view.button(id!(copy_link_to_user_button)).reset_hover(cx);
-        self.view.button(id!(jump_to_read_receipt_button)).reset_hover(cx);
-        self.view.button(id!(ignore_user_button)).reset_hover(cx);
+        self.view.button(cx, ids!(close_button)).reset_hover(cx);
+        self.view.button(cx, ids!(direct_message_button)).reset_hover(cx);
+        self.view.button(cx, ids!(copy_link_to_user_button)).reset_hover(cx);
+        self.view.button(cx, ids!(jump_to_read_receipt_button)).reset_hover(cx);
+        self.view.button(cx, ids!(ignore_user_button)).reset_hover(cx);
         self.redraw(cx);
     }
 }
@@ -728,9 +652,9 @@ impl UserProfileSlidingPaneRef {
     }
 
     /// See [`UserProfileSlidingPane::set_info()`]
-    pub fn set_info(&self, _cx: &mut Cx, info: UserProfilePaneInfo) {
+    pub fn set_info(&self, cx: &mut Cx, info: UserProfilePaneInfo) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_info(_cx, info);
+        inner.set_info(cx, info);
     }
 
     /// See [`UserProfileSlidingPane::show()`]

@@ -1,0 +1,687 @@
+//! The NavigationTabBar shows a bar of icon buttons that allow the user to
+//! navigate or switch between various top-level views in Robrix.
+//!
+//! The bar is positioned either within the left side bar (in the wide "Desktop" view mode)
+//! or along the bottom of the app window (in the narrow "Mobile" view mode).
+//!
+//! All the buttons in this bar — including the `ProfileIcon` and the entries
+//! in the embedded `SpacesBar` — are instances of the unified
+//! [`NavigationBarButton`](crate::shared::navigation_bar_button::NavigationBarButton)
+//! base widget, which provides hover and "selected" background animations.
+//!
+//! Their order in Mobile view (horizontally from left to right) is:
+//! 1. Home (house icon): the main view that shows all rooms across all spaces.
+//! 2. Add Room (plus sign icon): a separate view that allows adding (joining) existing rooms,
+//!    exploring public rooms, or creating new rooms/spaces.
+//! 3. Spaces: a button that toggles the `SpacesBar` (shows/hides it).
+//!    * This is NOT a regular radio button, it's a separate toggle.
+//!    * This is only shown in Mobile view mode, because the `SpacesBar` is always shown
+//!      within the NavigationTabBar itself in Desktop view mode.
+//! 4. Profile/Settings (user profile avatar): the `ProfileIcon` with a
+//!    verification badge. This single button serves as both the user-avatar
+//!    indicator and the entry point to the SettingsScreen.
+//!    * Upon click, this shows the SettingsScreen as normal, and is visually
+//!      marked as the selected tab.
+//!
+//! The order in Desktop view (vertically from top to bottom) is:
+//! 1. Profile/Settings
+//! 2. Home
+//! 3. Add/Join
+//! 4. ----- separator -----
+//!      SpacesBar content
+//!
+
+use makepad_widgets::*;
+use serde::{Deserialize, Serialize};
+use crate::{
+    avatar_cache::{self, AvatarCacheEntry},
+    login::login_screen::LoginAction,
+    logout::logout_confirm_modal::LogoutAction,
+    profile::{
+        user_profile::UserProfile,
+        user_profile_cache::{self, UserProfileUpdate},
+    },
+    settings::app_preferences::{effective_is_desktop, AppPreferencesAction, ViewModeOverride},
+    shared::{
+        avatar::{AvatarState, AvatarWidgetExt},
+        navigation_bar_button::{NavigationBarButton, NavigationBarButtonWidgetExt},
+        styles::*,
+        verification_badge::VerificationBadgeWidgetExt
+    },
+    sliding_sync::{current_user_id, AccountDataAction},
+    utils::{self, RoomNameId},
+};
+
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
+
+
+    // The base style definition for icon buttons in the NavigationTabBar.
+    mod.widgets.NavigationTabButton = mod.widgets.NavigationBarButton {
+        width: Fill,
+        height: (NAVIGATION_TAB_BAR_SIZE - 4),
+        padding: 5,
+        margin: 2,
+        align: Align{x: 0.5, y: 0.5}
+        flow: Down,
+    }
+
+    mod.widgets.ProfileIcon = #(ProfileIcon::register_widget(vm)) {
+        ..mod.widgets.NavigationBarButton
+
+        // ProfileIcon emits its own dynamic tooltip (with verification badge info)
+        // from Rust, so leave the built-in tooltip text empty.
+        tooltip_text: ""
+
+        // Use the same size/shape bounds as other buttons in the NavigationTabBar
+        width: Fill,
+        height: (NAVIGATION_TAB_BAR_SIZE - 4)
+        padding: 0,
+        margin: 2,
+        align: Align{ x: 0.5, y: 0.5 }
+
+        avatar_with_badge := View {
+            width: (NAVIGATION_TAB_BAR_SIZE - 4)
+            height: (NAVIGATION_TAB_BAR_SIZE - 4)
+            flow: Overlay
+            align: Align { x: 0.5, y: 0.5 }
+
+            our_own_avatar := Avatar {
+                width: (mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE)
+                height: (mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE)
+                // If no avatar picture, use white text on a dark background.
+                text_view +: {
+                    draw_bg.color: (COLOR_FG_DISABLED),
+                    text +: {
+                        draw_text +: {
+                            text_style: theme.font_regular { font_size: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_FONT_SIZE },
+                            color: (COLOR_PRIMARY),
+                        }
+                    }
+                }
+            }
+
+            // A Fill-sized View that aligns the badge (which is Fit-sized)
+            // to the top-right corner of the wrapper. Since the wrapper is
+            // larger than the avatar, the badge ends up sitting near the
+            // avatar's outer top-right corner, half-overlapping the avatar.
+            // The right/top margin nudges the badge a few pixels south-west
+            // so it sits visually centered on the avatar's corner.
+            View {
+                width: Fill,
+                height: Fill,
+                align: Align { x: 1.0, y: 0.0 }
+                margin: Inset { left: 0, bottom: 0, top: 2, right: 2 }
+                verification_badge := VerificationBadge {}
+            }
+        }
+    }
+
+    mod.widgets.HomeButton = mod.widgets.NavigationTabButton {
+        tooltip_text: "All Rooms"
+        Icon {
+            margin: 0,
+            icon_walk: Walk {
+                margin: 0,
+                width: 30,
+                height: 30
+            }
+            draw_icon +: {
+                color: (COLOR_NAVIGATION_TAB_FG)
+                svg: (ICON_HOME)
+            }
+        }
+    }
+
+    mod.widgets.AddRoomButton = mod.widgets.NavigationTabButton {
+        tooltip_text: "Add/Join Room"
+        Icon {
+            margin: 0,
+            icon_walk: Walk {
+                margin: 0,
+                width: 30,
+                height: 30
+            }
+            draw_icon +: {
+                color: (COLOR_NAVIGATION_TAB_FG)
+                svg: (ICON_ADD)
+            }
+        }
+    }
+
+    // Built on `NavigationTabButton` so it shares the size/padding and
+    // hover animation. Its toggling is independent of navigation selection,
+    // so the parent never calls `set_selected` on it.
+    mod.widgets.ToggleSpacesBarButton = mod.widgets.NavigationTabButton {
+        tooltip_text: "Toggle Spaces"
+        Icon {
+            margin: 0,
+            icon_walk: Walk {
+                margin: 0,
+                width: 30,
+                height: 30
+            }
+            draw_icon +: {
+                color: (COLOR_NAVIGATION_TAB_FG)
+                svg: (ICON_SQUARES)
+            }
+        }
+    }
+
+    mod.widgets.Separator = LineH { margin: 8 }
+
+    mod.widgets.NavigationTabBar = #(NavigationTabBar::register_widget(vm)) {
+        Desktop := RoundedView {
+            flow: Down,
+            align: Align{x: 0.5}
+            padding: Inset{
+                top: 8.,
+                bottom: (8.0 + mod.widgets.SAFE_INSET_PAD_BOTTOM),
+                left: (mod.widgets.SAFE_INSET_PAD_LEFT),
+            }
+            width: (mod.widgets.NAVIGATION_TAB_BAR_SIZE + mod.widgets.SAFE_INSET_PAD_LEFT),
+            height: Fill
+
+            draw_bg +: {
+                color: (COLOR_SECONDARY)
+                border_radius: 4.0
+            }
+
+            CachedWidget {
+                profile_icon := mod.widgets.ProfileIcon {}
+            }
+            CachedWidget {
+                home_button := mod.widgets.HomeButton {}
+            }
+            CachedWidget {
+                add_room_button := mod.widgets.AddRoomButton {}
+            }
+
+            mod.widgets.Separator {}
+
+            CachedWidget {
+                root_spaces_bar := mod.widgets.SpacesBar {}
+            }
+        }
+
+        Mobile := RoundedView {
+            flow: Right
+            align: Align{x: 0.5, y: 0.5}
+            width: Fill,
+            // On mobile, the nav bar is at the bottom, so we let it fill the entire space
+            // *including* drawing within the safe inset areas,
+            // and the bottom-pad its content so the buttons aren't drawn in the safe areas.
+            height: (mod.widgets.NAVIGATION_TAB_BAR_SIZE + mod.widgets.SAFE_INSET_PAD_BOTTOM),
+            padding: Inset{
+                bottom: (mod.widgets.SAFE_INSET_PAD_BOTTOM),
+                left: (mod.widgets.SAFE_INSET_PAD_LEFT),
+                right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
+            }
+
+            draw_bg +: {
+                color: (COLOR_SECONDARY)
+                border_radius: 4.0
+            }
+
+            CachedWidget {
+                home_button := mod.widgets.HomeButton {}
+            }
+            CachedWidget {
+                add_room_button := mod.widgets.AddRoomButton {}
+            }
+
+            toggle_spaces_bar_button := mod.widgets.ToggleSpacesBarButton {}
+
+            CachedWidget {
+                profile_icon := mod.widgets.ProfileIcon {}
+            }
+        }
+    }
+}
+
+/// The icon in the NavigationTabBar that shows the user's avatar.
+///
+/// This widget serves as both the visual user-avatar indicator AND the
+/// entry point to the SettingsScreen — clicking it opens settings and
+/// marks this button as the currently-selected navigation tab.
+///
+/// `ProfileIcon` derefs into [`NavigationBarButton`], so it inherits the
+/// hover/selected background animations and emits
+/// `NavigationBarButtonAction::Clicked` on tap (handled by `NavigationTabBar`
+/// to navigate to the Settings screen). Its dynamic tooltip (which includes
+/// verification badge state) is emitted by this widget itself rather than
+/// using `NavigationBarButton`'s built-in `tooltip_text`.
+#[derive(Script, Widget)]
+pub struct ProfileIcon {
+    #[deref] inner: NavigationBarButton,
+    #[rust] own_profile: Option<UserProfile>,
+}
+
+impl ScriptHook for ProfileIcon {
+    fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            if self.own_profile.is_none() {
+                self.own_profile = get_own_profile(cx);
+            }
+        });
+    }
+}
+
+impl Widget for ProfileIcon {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if self.own_profile.is_none() {
+            self.own_profile = get_own_profile(cx);
+        }
+
+        // A UI Signal indicates that a user profile or avatar may have been updated.
+        if let Event::Signal = event {
+            let mut needs_redraw = false;
+            // Refetch our profile if we don't have it yet.
+            if self.own_profile.is_none() {
+                user_profile_cache::process_user_profile_updates(cx);
+                self.own_profile = get_own_profile(cx);
+                needs_redraw = true;
+            }
+            // If we're waiting for an avatar image, process avatar updates.
+            if let Some(p) = self.own_profile.as_mut() && p.avatar_state.uri().is_some() {
+                avatar_cache::process_avatar_updates(cx);
+                let new_data = p.avatar_state.update_from_cache(cx);
+                needs_redraw |= new_data.is_some();
+                if new_data.is_some() {
+                    user_profile_cache::enqueue_user_profile_update(
+                        UserProfileUpdate::UserProfileOnly(p.clone())
+                    );
+                }
+            }
+            if needs_redraw {
+                self.inner.redraw(cx);
+            }
+        }
+
+        // Handle actions related to the currently-logged-in user account,
+        // such as changing their avatar, display name, etc.
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
+                    self.own_profile = get_own_profile(cx);
+                    self.inner.redraw(cx);
+                    continue;
+                }
+
+                if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
+                    self.own_profile = None;
+                    self.inner.redraw(cx);
+                    continue;
+                }
+
+                // Handle account data changes (e.g., avatar updated/removed)
+                match action.downcast_ref() {
+                    Some(AccountDataAction::AvatarChanged(None)) => {
+                        // Update both this widget's local profile info and the user profile cache.
+                        if let Some(p) = self.own_profile.as_mut() {
+                            p.avatar_state = AvatarState::Known(None);
+                            user_profile_cache::enqueue_user_profile_update(
+                                UserProfileUpdate::UserProfileOnly(p.clone())
+                            );
+                            self.inner.redraw(cx);
+                        }
+                        continue;
+                    }
+                    Some(AccountDataAction::AvatarChanged(Some(new_uri))) => {
+                        if let Some(p) = self.own_profile.as_mut() {
+                            p.avatar_state = AvatarState::Known(Some(new_uri.clone()));
+                            p.avatar_state.update_from_cache(cx);
+                            user_profile_cache::enqueue_user_profile_update(
+                                UserProfileUpdate::UserProfileOnly(p.clone())
+                            );
+                            self.inner.redraw(cx);
+                        }
+                        continue;
+                    }
+                    Some(AccountDataAction::AvatarChangeFailed(_)) => {
+                        // this is only handled in the account settings screen
+                        continue;
+                    }
+                    Some(AccountDataAction::DisplayNameChanged(new_display_name)) => {
+                        if let Some(p) = self.own_profile.as_mut() {
+                            p.username = new_display_name.clone();
+                            user_profile_cache::enqueue_user_profile_update(
+                                UserProfileUpdate::UserProfileOnly(p.clone())
+                            );
+                            self.inner.redraw(cx);
+                        }
+                        continue;
+                    }
+                    Some(AccountDataAction::DisplayNameChangeFailed(_)) => {
+                        // this is only handled in the account settings screen
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Forward to the inner NavigationBarButton, which handles hover/selected
+        // animations and emits `NavigationBarButtonAction::Clicked` on tap.
+        self.inner.handle_event(cx, event, scope);
+
+        // Emit ProfileIcon's own dynamic tooltip (which includes verification
+        // badge state). This is in addition to (not instead of) the inner
+        // button's hit handling: calling `event.hits()` twice on the same area
+        // is safe in Makepad — both calls return the same hit.
+        let area = self.inner.view.area();
+        match event.hits(cx, area) {
+            Hit::FingerLongPress(_) | Hit::FingerHoverIn(_) => {
+                let (verification_str, bg_color) = self.inner.view
+                    .verification_badge(cx, ids!(verification_badge))
+                    .tooltip_content();
+                let text = self.own_profile.as_ref().map_or_else(
+                    || String::from("Not logged in (or disconnected).\n\nClick/tap to access all settings."),
+                    |p| format!("Logged in {verification_str}as \"{}\".\n\nClick/tap to access all settings.", p.displayable_name()),
+                );
+                let mut options = CalloutTooltipOptions {
+                    position: if effective_is_desktop(cx) { TooltipPosition::Right } else { TooltipPosition::Top },
+                    ..Default::default()
+                };
+                if let Some(c) = bg_color {
+                    options.bg_color = c;
+                }
+                cx.widget_action(
+                    self.widget_uid(),
+                    TooltipAction::HoverIn {
+                        text,
+                        widget_rect: area.rect(cx),
+                        options,
+                    },
+                );
+            }
+            Hit::FingerHoverOut(_) => {
+                cx.widget_action(self.widget_uid(),  TooltipAction::HoverOut);
+            }
+            _ => { }
+        };
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let our_own_avatar = self.inner.view.avatar(cx, ids!(our_own_avatar));
+        let Some(own_profile) = self.own_profile.as_ref() else {
+            // If we don't have a profile, default to an unknown avatar.
+            our_own_avatar.show_text(
+                cx,
+                Some(COLOR_FG_DISABLED),
+                None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
+                "",
+            );
+            return self.inner.draw_walk(cx, scope, walk);
+        };
+
+        let mut drew_avatar = false;
+        if let Some(avatar_img_data) = own_profile.avatar_state.data() {
+            drew_avatar = our_own_avatar.show_image(
+                cx,
+                None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
+                |cx, img| utils::load_png_or_jpg(&img, cx, avatar_img_data),
+            ).is_ok();
+        }
+        if !drew_avatar {
+            our_own_avatar.show_text(
+                cx,
+                Some(COLOR_ROBRIX_PURPLE),
+                None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
+                own_profile.displayable_name(),
+            );
+        }
+
+        self.inner.draw_walk(cx, scope, walk)
+    }
+}
+
+impl ProfileIconRef {
+    /// Visually marks this `ProfileIcon` as selected (or not).
+    /// Forwards to [`NavigationBarButton::set_selected`].
+    pub fn set_selected(&self, cx: &mut Cx, is_selected: bool) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.inner.set_selected(cx, is_selected);
+    }
+}
+
+
+/// The tab bar with buttons that navigate through top-level app pages.
+///
+/// * In the "desktop" (wide) layout, this is a vertical bar on the left.
+/// * In the "mobile" (narrow) layout, this is a horizontal bar on the bottom.
+#[derive(Script, Widget)]
+pub struct NavigationTabBar {
+    #[deref] view: AdaptiveView,
+
+    #[rust] is_spaces_bar_shown: bool,
+
+    /// The most recently applied view-mode override,
+    #[rust] applied_view_mode: ViewModeOverride,
+
+    /// The tab currently visually marked as selected.
+    #[rust] selected_tab: SelectedTab,
+}
+
+impl ScriptHook for NavigationTabBar {
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            self.apply_selected_tab(cx, None);
+        });
+    }
+
+    fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            self.apply_selected_tab(cx, None);
+        });
+    }
+}
+
+impl NavigationTabBar {
+    /// Installs a variant selector on our root `AdaptiveView` that honors the
+    /// given [`ViewModeOverride`] preference. `Automatic` falls back to the
+    /// default width-based selector.
+    fn apply_view_mode(&mut self, mode: ViewModeOverride) {
+        self.view.set_variant_selector(mode.variant_selector());
+        self.applied_view_mode = mode;
+    }
+
+    /// Updates which navigation tab button is visually marked as selected,
+    /// enforcing mutual exclusion across all buttons (like a radio button group).
+    ///
+    /// If `tab` is `None`, the existing selection is re-applied without changing it.
+    fn apply_selected_tab(&mut self, cx: &mut Cx, tab: Option<SelectedTab>) {
+        if let Some(t) = tab {
+            self.selected_tab = t;
+        }
+        let home    = self.view.navigation_bar_button(cx, ids!(home_button));
+        let add     = self.view.navigation_bar_button(cx, ids!(add_room_button));
+        let profile = self.view.profile_icon(cx, ids!(profile_icon));
+        match &self.selected_tab {
+            SelectedTab::Home => {
+                home.set_selected(cx, true);
+                add.set_selected(cx, false);
+                profile.set_selected(cx, false);
+            }
+            SelectedTab::AddRoom => {
+                home.set_selected(cx, false);
+                add.set_selected(cx, true);
+                profile.set_selected(cx, false);
+            }
+            SelectedTab::Settings => {
+                home.set_selected(cx, false);
+                add.set_selected(cx, false);
+                profile.set_selected(cx, true);
+            }
+            SelectedTab::Space { .. } => {
+                home.set_selected(cx, false);
+                add.set_selected(cx, false);
+                profile.set_selected(cx, false);
+            }
+        }
+    }
+}
+
+impl Widget for NavigationTabBar {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+
+        if let Event::Actions(actions) = event {
+            // Handle clicks on each of the navigation tab buttons.
+            // Each click both updates the visual selection and emits the
+            // corresponding `NavigationBarAction` for downstream handling.
+            if self.view.navigation_bar_button(cx, ids!(home_button)).clicked(actions) {
+                self.apply_selected_tab(cx, Some(SelectedTab::Home));
+                cx.action(NavigationBarAction::GoToHome);
+            }
+            else if self.view.navigation_bar_button(cx, ids!(add_room_button)).clicked(actions) {
+                self.apply_selected_tab(cx, Some(SelectedTab::AddRoom));
+                cx.action(NavigationBarAction::GoToAddRoom);
+            }
+            else {
+                // ProfileIcon's inner NavigationBarButton emits the click action,
+                // and ProfileIcon derefs into it, so the same `clicked()` check works.
+                let profile_icon_ref = self.view.profile_icon(cx, ids!(profile_icon));
+                let profile_clicked = profile_icon_ref
+                    .borrow()
+                    .is_some_and(|p| p.inner.clicked(actions));
+                if profile_clicked {
+                    self.apply_selected_tab(cx, Some(SelectedTab::Settings));
+                    cx.action(NavigationBarAction::OpenSettings);
+                }
+            }
+
+            if self.view.navigation_bar_button(cx, ids!(toggle_spaces_bar_button)).clicked(actions) {
+                self.is_spaces_bar_shown = !self.is_spaces_bar_shown;
+                cx.action(NavigationBarAction::ToggleSpacesBar);
+            }
+
+            for action in actions {
+                // If another widget programmatically selected a new tab,
+                // update our buttons' visual selection state accordingly.
+                if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
+                    self.apply_selected_tab(cx, Some(tab.clone()));
+                    continue;
+                }
+
+                // Upon login (mostly re-login), go back to the home tab
+                // because the profile/settings tab will have been selected upon logout.
+                if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
+                    self.apply_selected_tab(cx, Some(SelectedTab::Home));
+                    cx.action(NavigationBarAction::GoToHome);
+                    continue;
+                }
+
+                if let Some(AppPreferencesAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
+                    if *new_mode != self.applied_view_mode {
+                        self.apply_view_mode(*new_mode);
+                        self.view.redraw(cx);
+                    }
+                }
+            }
+        }
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+
+/// Which top-level view is currently shown, and which navigation tab is selected.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SelectedTab {
+    #[default]
+    Home,
+    AddRoom,
+    Settings,
+    // AlertsInbox,
+    Space { space_name_id: RoomNameId },
+}
+
+
+/// Actions for navigating through the top-level views of the app,
+/// e.g., when the user clicks/taps on a button in the NavigationTabBar.
+///
+/// ## Tip: you only want to handle `TabSelected`
+/// The most important variant is `TabSelected`, which is most likely the action
+/// that you want to handle in other widgets, if you care about which
+/// top-level navigation tab is currently selected.
+/// This is because the `TabSelected` variant will always occur even if the
+/// other actions do not occur --- for example, if the user chooses to jump
+/// to a different view (or back to a previous view) without explicitly clicking
+/// a navigation tab button, e.g., via a keyboard shortcut, or programmatically.
+///
+/// Only one widget, the `HomeScreen`, should emit the `TabSelected` action.
+/// All other widgets should handle only that action in order to ensure
+/// consistent behavior.
+///
+/// ## More details
+/// There are 3 kinds of actions within this one enum:
+/// 1. "Leading-edge" ("request") actions emitted by the NavigationTabBar
+///    when the user selects a particular button/space.
+///    * Includes `GoToHome`, `GoToAddRoom`, `GoToSpace`, `OpenSettings`, `CloseSettings`.
+/// 2. "Trailing-edge" ("response") actions that are emitted by the `HomeScreen` widget
+///    in response to a leading-edge action.
+///    * This includes only the `TabSelected` variant.
+///    * This is what all other widgets should handle if they want/need to respond
+///      to changes in the top-level app-wide navigation selection.
+/// 3. Other actions that aren't requests/responses to navigate to a different view.
+///    * This only includes the `ToggleSpacesBar` variant.
+#[derive(Debug, PartialEq, Eq)]
+pub enum NavigationBarAction {
+    /// Go to the main rooms content view.
+    GoToHome,
+    /// Go the add/join/explore room view.
+    GoToAddRoom,
+    /// Go to the Settings view (open the `SettingsScreen`).
+    OpenSettings,
+    /// Close the Settings view (`SettingsScreen`), returning to the previous view.
+    CloseSettings,
+    /// Go the space screen for the given space.
+    GoToSpace { space_name_id: RoomNameId },
+
+    // TODO: add GoToAlertsInbox, once we add that button/screen
+
+    /// The given tab was selected as the active top-level view.
+    /// This is needed to ensure that the proper tab is marked as selected. 
+    TabSelected(SelectedTab),
+    /// Toggle whether the SpacesBar is shown, i.e., show/hide it.
+    /// This is only applicable in the Mobile view mode, because the SpacesBar
+    /// is always shown in Desktop view mode.
+    ToggleSpacesBar,
+}
+
+
+/// Returns the current user's profile and avatar, if available.
+pub fn get_own_profile(cx: &mut Cx) -> Option<UserProfile> {
+    let mut own_profile = None;
+    if let Some(own_user_id) = current_user_id() {
+        let avatar_uri_to_fetch = user_profile_cache::with_user_profile(
+            cx,
+            own_user_id,
+            None,
+            true,
+            |new_profile, _rooms| {
+                let avatar_uri_to_fetch = new_profile.avatar_state.uri().cloned();
+                own_profile = Some(new_profile.clone());
+                avatar_uri_to_fetch
+            },
+        );
+        // If we have an avatar URI to fetch, try to fetch it.
+        if let Some(Some(avatar_uri)) = avatar_uri_to_fetch {
+            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, &avatar_uri) {
+                if let Some(p) = own_profile.as_mut() {
+                    p.avatar_state = AvatarState::Loaded(data);
+                    // Update the user profile cache with the new avatar data.
+                    user_profile_cache::enqueue_user_profile_update(
+                        UserProfileUpdate::UserProfileOnly(p.clone())
+                    );
+                }
+            }
+        }
+    }
+
+    own_profile
+}

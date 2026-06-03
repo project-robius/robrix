@@ -4,42 +4,40 @@
 //! with an underline to indicate that it is clickable.
 //! Upon hover, it shows a tooltip with the date and time when the message was edited.
 //!
-//! On click, this widget opens a scrollabel modal dialog that shows the full edit history
+//! On click, this widget opens a scrollable modal dialog that shows the full edit history
 //! of the message, including all previous content versions and their timestamps.
 
 use chrono::{DateTime, Local};
 use makepad_widgets::*;
 use matrix_sdk_ui::timeline::EventTimelineItem;
 
-use crate::{shared::callout_tooltip::TooltipAction, utils::unix_time_millis_to_datetime};
+use crate::utils::unix_time_millis_to_datetime;
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
 
-    pub EDITED_INDICATOR_FONT_SIZE  = 9.5
-    pub EDITED_INDICATOR_FONT_COLOR = #666666
+    mod.widgets.EDITED_INDICATOR_FONT_SIZE = 9.5
+    mod.widgets.EDITED_INDICATOR_FONT_COLOR = #666666
 
-    pub EditedIndicator = {{EditedIndicator}} {
+    mod.widgets.EditedIndicator = #(EditedIndicator::register_widget(vm)) {
         visible: false, // default to hidden
         width: Fit, height: Fit
         flow: Right,
         padding: 0,
-        margin: { top: 5 }
+        margin: Inset{ top: 5 }
 
         // TODO: re-enable this once we have implemented the edit history modal
-        // cursor: Hand,
+        // cursor: MouseCursor.Hand,
 
-        edit_html = <Html> {
+        edit_html := Html {
             width: Fit, height: Fit
             flow: Right, // do not wrap
             padding: 0,
             margin: 0,
 
-            font_size: (EDITED_INDICATOR_FONT_SIZE),
+            font_size: (mod.widgets.EDITED_INDICATOR_FONT_SIZE),
             font_color: (COLOR_ROBRIX_PURPLE),
             body: "(<u>edited</u>)",
         }
@@ -47,7 +45,7 @@ live_design! {
 }
 
 /// A interactive label that indicates a message has been edited.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct EditedIndicator {
     #[deref] view: View,
     #[rust] latest_edit_ts: Option<DateTime<Local>>,
@@ -60,7 +58,6 @@ impl Widget for EditedIndicator {
         let area = self.view.area();
         let should_hover_in = match event.hits(cx, area) {
             Hit::FingerLongPress(_)
-            | Hit::FingerHoverOver(..) // TODO: remove once CalloutTooltip bug is fixed
             | Hit::FingerHoverIn(..) => true,
             // TODO: show edit history modal on click
             // Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => {
@@ -68,7 +65,7 @@ impl Widget for EditedIndicator {
             //     false
             // },
             Hit::FingerHoverOut(_) => {
-                cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
+                cx.widget_action(self.widget_uid(),  TooltipAction::HoverOut);
                 false
             }
             _ => false,
@@ -82,13 +79,14 @@ impl Widget for EditedIndicator {
                 "Last edit time unknown".to_string()
             };
             cx.widget_action(
-                self.widget_uid(),
-                &scope.path,
+                self.widget_uid(), 
                 TooltipAction::HoverIn {
-                    widget_rect: area.rect(cx),
                     text,
-                    bg_color: None,
-                    text_color: None,
+                    widget_rect: area.rect(cx),
+                    options: CalloutTooltipOptions {
+                        position: TooltipPosition::Right,
+                        ..Default::default()
+                    }
                 },
             );
         }
@@ -124,10 +122,11 @@ impl EditedIndicatorRef {
 
 
 /// Actions emitted by an `EditedIndicator` widget.
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Clone, Debug, Default)]
 pub enum EditedIndicatorAction {
     /// The indicator was clicked, and thus we should open
     /// a modal/dialog showing the message's full edit history.
     ShowEditHistory,
+    #[default]
     None,
 }

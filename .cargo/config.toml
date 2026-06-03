@@ -3,3 +3,7 @@
 [target.'cfg(all())']
 rustflags = ["--cfg", "ruma_identifiers_storage=\"Arc\""]
 
+## Override the bundle/package ID that Makepad uses by default with Robrix's ID.
+[env]
+MAKEPAD_BUNDLE_IDENTIFIER = { value = "rs.robius.robrix", force = true }
+

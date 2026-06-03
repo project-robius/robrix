@@ -1,0 +1,19 @@
+name: Setup cargo-makepad
+description: Resolve Makepad revision from Cargo.lock and install cargo-makepad.
+inputs:
+  lockfile:
+    description: Path to Cargo.lock
+    required: false
+    default: Cargo.lock
+runs:
+  using: composite
+  steps:
+    - name: Resolve Makepad revision
+      id: makepad
+      shell: bash
+      run: |
+        bash "$GITHUB_ACTION_PATH/scripts/resolve-makepad-rev.sh" "${{ inputs.lockfile }}" >> "$GITHUB_OUTPUT"
+    - name: Install cargo-makepad
+      shell: bash
+      run: |
+        cargo install --force --git "${{ steps.makepad.outputs.repo }}" --rev "${{ steps.makepad.outputs.rev }}" cargo-makepad

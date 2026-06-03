@@ -2,97 +2,86 @@ use std::sync::Arc;
 
 use makepad_widgets::*;
 use tokio::sync::Notify;
-use crate::{shared::styles::COLOR_FG_DANGER_RED, sliding_sync::{submit_async_request, MatrixRequest}};
+use crate::settings::app_preferences::effective_is_desktop;
+use crate::sliding_sync::{submit_async_request, MatrixRequest};
 use super::logout_state_machine::is_logout_past_point_of_no_return;
 
-live_design! {
-    use link::theme::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::styles::*;
-    use crate::shared::icon_button::RobrixIconButton;
 
     // A modal dialog that displays logout confirmation
-    pub LogoutConfirmModal = {{LogoutConfirmModal}} {
-        width: Fit,
-        height: Fit,
+    mod.widgets.LogoutConfirmModal = #(LogoutConfirmModal::register_widget(vm)) {
+        width: Fit
+        height: Fit
 
-        <RoundedView> {
-            width: 400,
-            height: Fit,
-            flow: Down,
-            align: {x: 0.5},
-            padding: 25,
-            spacing: 10,
+        RoundedView {
+            width: 400
+            height: Fit
+            align: Align{x: 0.5}
+            flow: Down
+            padding: Inset{top: 30, right: 25, bottom: 20, left: 25}
 
-            show_bg: true,
-            draw_bg: {
-                color: #FFFFFF
+            show_bg: true
+            draw_bg +: {
+                color: (COLOR_PRIMARY)
+                border_radius: 4.0
             }
-            margin: 0
 
-            <View> {
+            title_view := View {
                 width: Fill,
                 height: Fit,
-                flow: Right,
-                padding: {top: 0, bottom: 10},
-                align: {x: 0.5, y: 0.0},
+                padding: Inset{top: 0, bottom: 25}
+                align: Align{x: 0.5, y: 0.0}
 
-                title = <Label> {
-                    text: "Confirm Logout",
-                    draw_text: {
-                            text_style: <TITLE_TEXT>{font_size: 18},
-                            color: #000000
+                title := Label {
+                    width: Fill
+                    height: Fit
+                    align: Align{x: 0.5}
+                    flow: Flow.Right{wrap: true},
+                    draw_text +: {
+                        text_style: TITLE_TEXT {font_size: 13},
+                        color: #000
                     }
+                    text: "Confirm Logout"
                 }
             }
 
-            message = <Label> {
-                width: Fill,
-                margin: {top: 10, bottom: 20},
-                draw_text: {
-                    text_style: <REGULAR_TEXT>{
-                        font_size: 14,
-                    },
-                    color: #000000,
-                    wrap: Word
+            message := Label {
+                width: Fill
+                height: Fit
+                flow: Flow.Right{wrap: true},
+                draw_text +: {
+                    text_style: REGULAR_TEXT {font_size: 11},
+                    color: #000
                 },
                 text: "Are you sure you want to logout?"
             }
 
-            <View> {
-                width: Fill,
-                height: Fit,
+            View {
+                width: Fill, height: Fit
                 flow: Right,
-                align: {x: 0.5, y: 0.5},
-                spacing: 10.0,
+                padding: Inset{top: 20, bottom: 10}
+                align: Align{x: 1.0, y: 0.5}
+                spacing: 20
 
-                cancel_button = <RobrixIconButton> {
-                    width: Fit, height: Fit,
-                    padding: 10,
-                    draw_bg: {
-                        color: (COLOR_SECONDARY)
-                    },
+                cancel_button := RobrixNeutralIconButton {
+                    width: 120,
+                    align: Align{x: 0.5, y: 0.5}
+                    padding: 12,
+                    draw_icon.svg: (ICON_FORBIDDEN)
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                     text: "Cancel"
-                    draw_text: {
-                        color: (COLOR_TEXT)
-                        text_style: <REGULAR_TEXT> {font_size: 14}
-                    },
                 }
 
-                confirm_button = <RobrixIconButton> {
-                    width: Fit, height: Fit,
-                    padding: 10,
-                    draw_bg: { color: (COLOR_BG_DANGER_RED) },
-                    draw_icon: {
-                            svg_file: (ICON_LOGOUT)
-                            color: (COLOR_FG_DANGER_RED),
-                    },
+                confirm_button := RobrixNegativeIconButton {
+                    width: 120
+                    align: Align{x: 0.5, y: 0.5}
+                    padding: 12,
+                    draw_icon.svg: (ICON_LOGOUT)
+                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                     text: "Logout Now"
-                    draw_text: {
-                        color: (COLOR_FG_DANGER_RED)
-                        text_style: <REGULAR_TEXT> {font_size: 14}
-                    },
                 }
             }
         }
@@ -100,7 +89,7 @@ live_design! {
 }
 
 /// A modal dialog that displays logout confirmation.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct LogoutConfirmModal {
     #[deref] view: View,
     /// Whether the modal is in a final state, meaning the user can only click "Okay" to close it.
@@ -112,7 +101,7 @@ pub struct LogoutConfirmModal {
 }
 
 /// Actions handled by the parent widget of the [`LogoutConfirmModal`].
-#[derive(Clone, Debug, DefaultNone)]
+#[derive(Clone, Debug, Default)]
 pub enum LogoutConfirmModalAction {
     /// The modal should be opened
     Open,
@@ -124,6 +113,7 @@ pub enum LogoutConfirmModalAction {
         /// Whether the modal was dismissed by the user clicking an internal button.
         was_internal: bool,
     },
+    #[default]
     None,
 }
 
@@ -172,12 +162,13 @@ impl std::fmt::Debug for LogoutAction {
 
 /// Indicates which critical component was cleared during a failed logout attempt
 /// that reached the point of no return, requiring application restart.
-#[derive(Clone, Copy, Debug, DefaultNone)]
+#[derive(Clone, Copy, Debug, Default)]
 pub enum ClearedComponentType {
     /// The Matrix client was cleared during logout
     Client,
     /// The sync service was cleared during logout
     SyncService,
+    #[default]
     None,
 }
 
@@ -194,8 +185,8 @@ impl Widget for LogoutConfirmModal {
 
 impl WidgetMatchEvent for LogoutConfirmModal {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let cancel_button = self.button(id!(cancel_button));
-        let confirm_button = self.button(id!(confirm_button));
+        let cancel_button = self.button(cx, ids!(cancel_button));
+        let mut confirm_button = self.button(cx, ids!(confirm_button));
 
         let modal_dismissed = actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
         let cancel_clicked = cancel_button.clicked(actions);
@@ -211,7 +202,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
             if let Some(successful) = self.final_success {
                 if is_logout_past_point_of_no_return() && !successful {
                     log!("User requested immediate restart after unrecoverable logout error");
-                    cx.quit();
+                    cx.request_quit(QuitReason::App);
                 }
 
                 cx.action(LogoutConfirmModalAction::Close { successful, was_internal: true });
@@ -225,7 +216,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                 cancel_button.set_text(cx, "Abort");
                 cancel_button.set_enabled(cx, true);
 
-                submit_async_request(MatrixRequest::Logout { is_desktop: cx.display_context.is_desktop() });
+                submit_async_request(MatrixRequest::Logout { is_desktop: effective_is_desktop(cx) });
                 needs_redraw = true;
             }
         }
@@ -245,13 +236,13 @@ impl WidgetMatchEvent for LogoutConfirmModal {
 
                 Some(LogoutAction::LogoutFailure(error)) => {
                     if is_logout_past_point_of_no_return() {
-                        self.label(id!(title)).set_text(cx, "Logout error, please restart Robrix.");
+                        self.label(cx, ids!(title)).set_text(cx, "Logout error, please restart Robrix.");
                         self.set_message(cx, "The logout process encountered an error when communicating with the homeserver. Since your login session has been partially invalidated, Robrix must restart in order to continue to properly function.");
 
                         confirm_button.set_text(cx, "Restart now");
-                        confirm_button.apply_over(cx, live!{
-                            draw_bg: {
-                                color: (COLOR_FG_DANGER_RED)
+                        script_apply_eval!(cx, confirm_button, {
+                            draw_bg +: {
+                                color: mod.widgets.COLOR_FG_DANGER_RED
                             }
                         });
                         confirm_button.set_enabled(cx, true);
@@ -270,13 +261,13 @@ impl WidgetMatchEvent for LogoutConfirmModal {
                 }
 
                 Some(LogoutAction::ApplicationRequiresRestart { .. }) => {
-                    self.label(id!(title)).set_text(cx, "Logout error, please restart Robrix.");
+                    self.label(cx, ids!(title)).set_text(cx, "Logout error, please restart Robrix.");
                     self.set_message(cx, "Application is in an inconsistent state and needs to be restarted to continue.");
 
                     confirm_button.set_text(cx, "Restart now");
-                    confirm_button.apply_over(cx, live!{
-                        draw_bg: {
-                            color: (COLOR_FG_DANGER_RED)
+                    script_apply_eval!(cx, confirm_button, {
+                        draw_bg +: {
+                            color: mod.widgets.COLOR_FG_DANGER_RED
                         }
                     });
                     confirm_button.set_enabled(cx, true);
@@ -310,12 +301,12 @@ impl WidgetMatchEvent for LogoutConfirmModal {
 impl LogoutConfirmModal {
     /// Sets the message text displayed in the body of the modal.
     pub fn set_message(&mut self, cx: &mut Cx, message: &str) {
-        self.label(id!(message)).set_text(cx, message);
+        self.label(cx, ids!(message)).set_text(cx, message);
     }
 
     fn reset_state(&mut self, cx: &mut Cx) {
-        let cancel_button = self.button(id!(cancel_button));
-        let confirm_button = self.button(id!(confirm_button));
+        let cancel_button = self.button(cx, ids!(cancel_button));
+        let confirm_button = self.button(cx, ids!(confirm_button));
         self.final_success = None;
         self.set_message(cx, "Are you sure you want to logout?");
         confirm_button.set_enabled(cx, true);

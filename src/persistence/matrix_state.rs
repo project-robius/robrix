@@ -17,16 +17,28 @@ use crate::{
 };
 
 /// The data needed to re-build a client.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ClientSessionPersisted {
     /// The URL of the homeserver of the user.
     pub homeserver: String,
 
-    /// The path of the database.
+    /// The database path. New sessions store this as a relative subfolder
+    /// (joined with `app_data_dir()` at restore time); legacy sessions
+    /// may have an absolute path. `restore_session` handles both.
     pub db_path: PathBuf,
 
     /// The passphrase of the database.
     pub passphrase: String,
+}
+
+impl std::fmt::Debug for ClientSessionPersisted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClientSessionPersisted")
+            .field("homeserver", &self.homeserver)
+            .field("db_path", &self.db_path)
+            .field("passphrase", &"<REDACTED>")
+            .finish()
+    }
 }
 
 /// The full session to persist.
@@ -103,14 +115,150 @@ pub fn session_file_path(user_id: &UserId) -> PathBuf {
 const LATEST_USER_ID_FILE_NAME: &str = "latest_user_id.txt";
 
 /// Returns the user ID of the most recently-logged in user session.
-pub fn most_recent_user_id() -> Option<OwnedUserId> {
-    std::fs::read_to_string(
+pub async fn most_recent_user_id() -> Option<OwnedUserId> {
+    tokio::fs::read_to_string(
         app_data_dir().join(LATEST_USER_ID_FILE_NAME)
     )
+    .await
     .ok()?
     .trim()
     .try_into()
     .ok()
+}
+
+/// Resolves the path that `restore_session()` would actually open.
+fn resolve_db_path(stored: PathBuf) -> PathBuf {
+    if !stored.is_absolute() {
+        return app_data_dir().join(stored);
+    }
+    if stored.exists() {
+        return stored;
+    }
+    let Some(name) = stored.file_name() else {
+        return stored;
+    };
+    // iOS sandbox UUID changes across reinstalls; the absolute path
+    // baked into the session is now stale. Use the basename instead.
+    app_data_dir().join(name)
+}
+
+/// Returns the set of `db` paths referenced by any saved session file.
+///
+/// This basically scans every saved user session dir, not just the most recent one,
+/// to help ensure that db dirs don't get orphaned on the filesystem forever.
+async fn collect_referenced_db_paths() -> std::collections::HashSet<PathBuf> {
+    use std::collections::HashSet;
+    let mut paths = HashSet::new();
+    let data_dir = app_data_dir();
+
+    let Ok(mut entries) = tokio::fs::read_dir(data_dir).await else {
+        return paths;
+    };
+
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if name.starts_with("db_") {
+            continue;
+        }
+        let session_file = path.join("persistent_state").join("session");
+        let Ok(bytes) = tokio::fs::read(&session_file).await else {
+            continue;
+        };
+        let session: FullSessionPersisted = match serde_json::from_slice(&bytes) {
+            Ok(s) => s,
+            Err(e) => {
+                log!("collect_referenced_db_paths: skipping unparsable session file {}: {e}",
+                    session_file.display(),
+                );
+                continue;
+            }
+        };
+        paths.insert(resolve_db_path(session.client_session.db_path));
+    }
+
+    paths
+}
+
+/// Deletes `db_*` subdirs not referenced by any saved session. Only touches
+/// entries that match the `db_*` prefix and that came from
+/// `read_dir(app_data_dir())`, so it can't escape the data dir even with a
+/// malicious session file.
+pub async fn cleanup_orphan_db_dirs() {
+    let data_dir = app_data_dir();
+    let active = collect_referenced_db_paths().await;
+
+    let mut entries = match tokio::fs::read_dir(data_dir).await {
+        Ok(e) => e,
+        Err(e) => {
+            log!("cleanup_orphan_db_dirs: could not read data dir {}: {e}", data_dir.display());
+            return;
+        }
+    };
+
+    let mut deleted = 0usize;
+    let mut bytes_freed = 0u64;
+    let mut kept = 0usize;
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.starts_with("db_") {
+            continue;
+        }
+        if active.contains(&path) {
+            kept += 1;
+            // log!("cleanup_orphan_db_dirs: preserving referenced db dir: {}", path.display());
+            continue;
+        }
+        let size = dir_size_bytes(&path).await.unwrap_or(0);
+        match tokio::fs::remove_dir_all(&path).await {
+            Ok(()) => {
+                deleted += 1;
+                bytes_freed += size;
+                log!(
+                    "cleanup_orphan_db_dirs: deleted orphaned db dir ({} bytes): {}",
+                    size,
+                    path.display(),
+                );
+            }
+            Err(e) => {
+                log!(
+                    "cleanup_orphan_db_dirs: failed to delete {}: {e}",
+                    path.display(),
+                );
+            }
+        }
+    }
+
+    if deleted > 0 || kept > 0 {
+        log!(
+            "cleanup_orphan_db_dirs: deleted {deleted} orphan(s), freed {bytes_freed} bytes; kept {kept} active referenced",
+        );
+    }
+}
+
+/// Recursive size sum, best-effort. Just for the cleanup log line.
+async fn dir_size_bytes(path: &std::path::Path) -> Option<u64> {
+    let mut total = 0u64;
+    let mut entries = tokio::fs::read_dir(path).await.ok()?;
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let Ok(md) = entry.metadata().await else {
+            continue;
+        };
+        if md.is_file() {
+            total = total.saturating_add(md.len());
+        } else if md.is_dir() {
+            // matrix-sdk-sqlite doesn't nest subdirectories, but be safe.
+            if let Some(sub) = Box::pin(dir_size_bytes(&entry.path())).await {
+                total = total.saturating_add(sub);
+            }
+        }
+    }
+    Some(total)
 }
 
 /// Save which user was the most recently logged in.
@@ -130,7 +278,13 @@ async fn save_latest_user_id(user_id: &UserId) -> anyhow::Result<()> {
 pub async fn restore_session(
     user_id: Option<OwnedUserId>
 ) -> anyhow::Result<(Client, Option<String>)> {
-    let Some(user_id) = user_id.or_else(most_recent_user_id) else {
+    let user_id = if let Some(user_id) = user_id {
+        Some(user_id)
+    } else {
+        most_recent_user_id().await
+    };
+
+    let Some(user_id) = user_id else {
         log!("Could not find previous latest User ID");
         bail!("Could not find previous latest User ID");
     };
@@ -152,7 +306,7 @@ pub async fn restore_session(
         serde_json::from_str(&serialized_session)?;
 
     let status_str = format!(
-        "Loaded session file for {user_id}. Trying to connect to homeserver ({})...",
+        "Loaded session file for:\n{user_id}\n\nTrying to connect to homeserver...\n{}",
         client_session.homeserver,
     );
     log!("{status_str}");
@@ -160,10 +314,28 @@ pub async fn restore_session(
         title: "Connecting to homeserver".into(),
         status: status_str,
     });
+    let original_stored = client_session.db_path.clone();
+    let db_path = resolve_db_path(client_session.db_path);
+    if db_path != original_stored {
+        log!(
+            "Stored db_path '{}' relocated to '{}'",
+            original_stored.display(),
+            db_path.display(),
+        );
+    }
+    log!(
+        "Restoring session for {user_id} with db at: {} (stored as: {})",
+        db_path.display(),
+        original_stored.display(),
+    );
+    let store_config = crate::sliding_sync::build_sqlite_store_config(&db_path, &client_session.passphrase);
     // Build the client with the previous settings from the session.
     let client = Client::builder()
         .homeserver_url(client_session.homeserver)
-        .sqlite_store(client_session.db_path, Some(&client_session.passphrase))
+        .sqlite_store_with_config_and_cache_path(store_config, None::<&std::path::Path>)
+        .with_threading_support(matrix_sdk::ThreadingSupport::Enabled {
+            with_subscriptions: true,
+        })
         .handle_refresh_tokens()
         .build()
         .await?;

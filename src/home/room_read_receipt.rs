@@ -1,58 +1,55 @@
 use crate::home::room_screen::RoomScreenTooltipActions;
-use crate::profile::user_profile_cache::get_user_profile_and_room_member;
+use crate::profile::user_profile_cache::get_user_display_name_for_room;
 use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt};
+use crate::sliding_sync::TimelineKind;
 use crate::utils::human_readable_list;
 use indexmap::IndexMap;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
+use crate::{LivePtr, widget_ref_from_live_ptr};
+use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, OwnedRoomId};
 use matrix_sdk_ui::timeline::EventTimelineItem;
 
 use std::cmp;
-
 
 
 /// The maximum number of items to display in the read receipts AvatarRow
 /// and its accompanying tooltip.
 pub const MAX_VISIBLE_AVATARS_IN_READ_RECEIPT: usize = 3;
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    use crate::shared::avatar::*;
-    use crate::shared::styles::*;
 
-    pub AvatarRow = {{AvatarRow}} {
-        align: {y: 0.5},
-        avatar_template: <Avatar> {
-            // margin: {top: 2}
+    mod.widgets.AvatarRow = #(AvatarRow::register_widget(vm)) {
+        align: Align{y: 0.5},
+        avatar_template: Avatar {
             width: 15.0,
             height: 15.0,
-            text_view = {
-                text = {
-                    draw_text: {
-                        text_style: { font_size: 6.0 }
+            text_view +: {
+                text +: {
+                    draw_text +: {
+                        text_style: theme.font_regular { font_size: 6.0 }
                     }
                 }
             }
         }
-        margin: {top: 5, right: 0},
+        margin: Inset{top: 5, right: 0},
         width: Fit,
         height: 15.0,
-        plus_template: <Label> {
+        plus_template: Label {
             padding: 0,
             flow: Right, // do not wrap
-            draw_text: {
+            draw_text +: {
                 color: #x0,
-                text_style: <TITLE_TEXT>{ font_size: 10}
+                text_style: TITLE_TEXT { font_size: 10}
             }
             text: ""
         }
     }
 }
 /// The widget that displays a list of read receipts.
-#[derive(Live, Widget, LiveHook)]
+#[derive(Script, Widget, ScriptHook)]
 pub struct AvatarRow {
     #[redraw]
     #[live]
@@ -88,7 +85,7 @@ pub struct AvatarRow {
 }
 
 impl Widget for AvatarRow {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
         let Some(read_receipts) = &self.read_receipts else {
             return;
         };
@@ -100,11 +97,10 @@ impl Widget for AvatarRow {
 
         let should_hover_in = match event.hits(cx, self.area) {
             Hit::FingerLongPress(_)
-            | Hit::FingerHoverOver(..) // TODO: remove once CalloutTooltip bug is fixed
             | Hit::FingerHoverIn(..) => true,
             Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => true,
             Hit::FingerHoverOut(_) => {
-                cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
+                cx.widget_action(uid,  RoomScreenTooltipActions::HoverOut);
                 false
             }
             _ => false,
@@ -112,11 +108,9 @@ impl Widget for AvatarRow {
         if should_hover_in {
             if let Some(read_receipts) = &self.read_receipts {
                 cx.widget_action(
-                    uid,
-                    &scope.path,
+                    uid, 
                     RoomScreenTooltipActions::HoverInReadReceipt {
                         widget_rect,
-                        bg_color: None,
                         read_receipts: read_receipts.clone(),
                     },
                 );
@@ -163,7 +157,7 @@ impl AvatarRow {
     pub fn set_avatar_row(
         &mut self,
         cx: &mut Cx,
-        room_id: &RoomId,
+        timeline_kind: &TimelineKind,
         event_id: Option<&EventId>,
         receipts_map: &IndexMap<OwnedUserId, Receipt>,
     ) {
@@ -171,19 +165,25 @@ impl AvatarRow {
             self.buttons.clear();
             for _ in 0..cmp::min(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT, receipts_map.len()) {
                 self.buttons.push((
-                    WidgetRef::new_from_ptr(cx, self.avatar_template).as_avatar(),
+                    widget_ref_from_live_ptr(cx, self.avatar_template).as_avatar(),
                     false,
                 ));
             }
-            self.label = Some(WidgetRef::new_from_ptr(cx, self.plus_template).as_label());
+            self.label = Some(widget_ref_from_live_ptr(cx, self.plus_template).as_label());
             self.read_receipts = Some(receipts_map.clone());
         }
         for ((avatar_ref, drawn), (user_id, _)) in
             self.buttons.iter_mut().zip(receipts_map.iter().rev())
         {
             if !*drawn {
-                let (_, drawn_status) =
-                    avatar_ref.set_avatar_and_get_username(cx, room_id, user_id, None, event_id);
+                let (_, drawn_status) = avatar_ref.set_avatar_and_get_username(
+                    cx,
+                    timeline_kind,
+                    user_id,
+                    None,
+                    event_id,
+                    true,
+                );
                 *drawn = drawn_status;
             }
         }
@@ -210,12 +210,12 @@ impl AvatarRowRef {
     pub fn set_avatar_row(
         &mut self,
         cx: &mut Cx,
-        room_id: &RoomId,
+        timeline_kind: &TimelineKind,
         event_id: Option<&EventId>,
         receipts_map: &IndexMap<OwnedUserId, Receipt>,
     ) {
         if let Some(ref mut inner) = self.borrow_mut() {
-            inner.set_avatar_row(cx, room_id, event_id, receipts_map);
+            inner.set_avatar_row(cx, timeline_kind, event_id, receipts_map);
         }
     }
 }
@@ -229,12 +229,12 @@ impl AvatarRowRef {
 pub fn populate_read_receipts(
     item: &WidgetRef,
     cx: &mut Cx,
-    room_id: &RoomId,
+    timeline_kind: &TimelineKind,
     event_tl_item: &EventTimelineItem,
 ) {
-    item.avatar_row(id!(avatar_row)).set_avatar_row(
+    item.avatar_row(cx, ids!(avatar_row)).set_avatar_row(
         cx,
-        room_id,
+        timeline_kind,
         event_tl_item.event_id(),
         event_tl_item.read_receipts(),
     );
@@ -251,20 +251,16 @@ pub fn populate_read_receipts(
 pub fn populate_tooltip(
     cx: &mut Cx,
     read_receipts: IndexMap<OwnedUserId, Receipt>,
-    room_id: &RoomId,
+    room_id: &OwnedRoomId,
 ) -> String {
     let mut display_names: Vec<String> = read_receipts
         .iter()
         .rev()
         .take(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT)
         .map(|(user_id, _)| {
-            if let (Some(profile), _) =
-                get_user_profile_and_room_member(cx, user_id.clone(), room_id, true)
-            {
-                profile.displayable_name().to_owned()
-            } else {
-                user_id.to_string()
-            }
+            get_user_display_name_for_room(cx, user_id.clone(), Some(room_id), true)
+                .into_option()
+                .unwrap_or_else(|| user_id.to_string())
         })
         .collect();
     for _ in display_names.len()..read_receipts.len() {

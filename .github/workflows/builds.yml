@@ -7,7 +7,7 @@
 # │   Host OS       │   Target        │   Build Tool    │
 # ├─────────────────┼─────────────────┼─────────────────┤
 # │ Ubuntu Latest   │ Linux x86_64    │ cargo build     │
-# │ macOS 13 Intel  │ macOS x86_64    │ cargo build     │
+# │ macOS 15 Intel  │ macOS x86_64    │ cargo build     │
 # │ macOS 14 ARM64  │ macOS ARM64     │ cargo build     │
 # │ Windows 2022    │ Windows x86_64  │ cargo build     │
 # │ macOS 14        │ iOS aarch64     │ cargo-makepad   │
@@ -54,7 +54,6 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   CARGO_INCREMENTAL: 0
-  RUSTFLAGS: "-D warnings"
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════════════════
@@ -82,7 +81,8 @@ jobs:
             libxcursor-dev \
             libx11-dev \
             libasound2-dev \
-            libpulse-dev
+            libpulse-dev \
+            libwayland-dev libxkbcommon-dev
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -93,8 +93,10 @@ jobs:
           key: ubuntu-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Build
+        env:
+          RUSTFLAGS: "-D warnings"
         run: |
-          cargo build
+          cargo build --profile fast
 
   build_macos:
     name: Build macOS (${{ matrix.arch }})
@@ -108,7 +110,7 @@ jobs:
           - os: macos-14
             arch: arm64
           # Intel Macs (x86_64 architecture)
-          - os: macos-13
+          - os: macos-15-intel
             arch: x86_64
     steps:
       - uses: actions/checkout@v4
@@ -122,13 +124,18 @@ jobs:
           key: macos-${{ matrix.arch }}-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Build
+        env:
+          RUSTFLAGS: "-D warnings"
         run: |
-          cargo build
+          cargo build --profile fast
 
   build_windows:
     name: Build Windows
     runs-on: windows-2022
     if: github.event.pull_request.draft == false
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -141,8 +148,10 @@ jobs:
           key: windows-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Build
+        env:
+          RUSTFLAGS: "-D warnings"
         run: |
-          cargo build
+          cargo build --profile fast
 
   # ═══════════════════════════════════════════════════════════════════════════════════════
   # CROSS-PLATFORM MOBILE BUILDS
@@ -165,13 +174,16 @@ jobs:
         run: |
           rustup toolchain install nightly
 
-      - name: Install cargo-makepad
-        run: |
-          cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
+      - name: Setup cargo-makepad
+        uses: ./.github/actions/setup-cargo-makepad
 
       - name: Install iOS toolchain
         run: |
           cargo makepad apple ios install-toolchain
+
+      - name: Install bindgen-cli for aws-lc-sys cross-compilation
+        run: |
+          cargo install --force --locked bindgen-cli
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -179,6 +191,9 @@ jobs:
           key: ios-macos-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Build for iOS targets
+        env:
+          RUSTFLAGS: "-D warnings"
+          AWS_LC_SYS_CMAKE_BUILDER: 1
         run: |
           # Install iOS targets
           rustup target add aarch64-apple-ios
@@ -187,8 +202,12 @@ jobs:
           cargo makepad apple ios \
           --org=rs.robius \
           --app=robrix \
-          run-sim -p robrix
-        continue-on-error: true # iOS builds may fail due to signing requirements in CI
+          build -p robrix \
+          --config profile.dev.opt-level=0 \
+          --config profile.dev.debug=false \
+          --config profile.dev.lto=\"off\" \
+          --config profile.dev.strip=true \
+          --config profile.dev.debug-assertions=false
 
   build_android_on_macos:
     name: Build Android (macOS Host)
@@ -200,13 +219,12 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-makepad
-        run: |
-          cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
+      - name: Setup cargo-makepad
+        uses: ./.github/actions/setup-cargo-makepad
 
       - name: Install Android toolchain
         run: |
-          cargo makepad android install-toolchain
+          cargo makepad android install-toolchain --full-ndk
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -214,8 +232,16 @@ jobs:
           key: android-macos-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Build Android APK
+        env:
+          RUSTFLAGS: "-D warnings"
+          AWS_LC_SYS_CMAKE_BUILDER: 1
         run: |
-          cargo makepad android build -p robrix
+          cargo makepad android build -p robrix \
+          --config profile.dev.opt-level=0 \
+          --config profile.dev.debug=false \
+          --config profile.dev.lto=\"off\" \
+          --config profile.dev.strip=true \
+          --config profile.dev.debug-assertions=false
 
   build_android_on_linux:
     name: Build Android (Linux Host)
@@ -227,13 +253,12 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-makepad
-        run: |
-          cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
+      - name: Setup cargo-makepad
+        uses: ./.github/actions/setup-cargo-makepad
 
       - name: Install Android toolchain
         run: |
-          cargo makepad android install-toolchain
+          cargo makepad android install-toolchain --full-ndk
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -241,13 +266,24 @@ jobs:
           key: android-linux-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Build Android APK
+        env:
+          RUSTFLAGS: "-D warnings"
+          AWS_LC_SYS_CMAKE_BUILDER: 1
         run: |
-          cargo makepad android build -p robrix
+          cargo makepad android build -p robrix \
+          --config profile.dev.opt-level=0 \
+          --config profile.dev.debug=false \
+          --config profile.dev.lto=\"off\" \
+          --config profile.dev.strip=true \
+          --config profile.dev.debug-assertions=false
 
   build_android_on_windows:
     name: Build Android (Windows Host)
     runs-on: windows-2022
     if: github.event.pull_request.draft == false
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -259,17 +295,31 @@ jobs:
         with:
           key: android-windows-build-${{ hashFiles('Cargo.lock') }}
 
-      - name: Install cargo-makepad
-        run: |
-          cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
+      - name: Setup cargo-makepad
+        uses: ./.github/actions/setup-cargo-makepad
 
       - name: Install Android toolchain
         run: |
-          cargo makepad android install-toolchain
+          cargo makepad android install-toolchain --full-ndk
+
+      - name: Install Ninja
+        run: choco install ninja -y
+        shell: powershell
 
       - name: Build Android APK
+        env:
+          RUSTFLAGS: "-D warnings"
+          AWS_LC_SYS_CMAKE_BUILDER: 1
+          CMAKE_GENERATOR: Ninja
         run: |
-          cargo makepad android build -p robrix
+          ## Note: we can't use the profile here because cargo-makepad doesn't support custom profiles.
+          # cargo makepad android build -p robrix --profile fast
+          cargo makepad android build -p robrix \
+          --config profile.dev.opt-level=0 \
+          --config profile.dev.debug=false \
+          --config profile.dev.lto=\"off\" \
+          --config profile.dev.strip=true \
+          --config profile.dev.debug-assertions=false
 
   # Build Summary
   build_summary:

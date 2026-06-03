@@ -1,0 +1,102 @@
+use makepad_widgets::*;
+
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
+
+    mod.widgets.BouncingDots = #(BouncingDots::register_widget(vm)) {
+        width: 24,
+        height: 12,
+        flow: Down,
+
+        show_bg: true,
+        draw_bg +: {
+            color: uniform(#x000),
+            anim_time: uniform(0.0),
+            freq: uniform(0.9),  // Animation frequency
+            phase_offset: uniform(5.0), // Phase difference
+            dot_radius: uniform(1.5), // Dot radius
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size);
+                let amplitude = self.rect_size.y * 0.21;
+                let center_y = self.rect_size.y * 0.5;
+                // Create three circle SDFs
+                sdf.circle(
+                    self.rect_size.x * 0.25, 
+                    amplitude * sin(self.anim_time * 2.0 * PI * self.freq) + center_y, 
+                    self.dot_radius
+                );
+                sdf.fill(self.color);
+                sdf.circle(
+                    self.rect_size.x * 0.5, 
+                    amplitude * sin(self.anim_time * 2.0 * PI * self.freq + self.phase_offset) + center_y, 
+                    self.dot_radius
+                );
+                sdf.fill(self.color);
+                sdf.circle(
+                    self.rect_size.x * 0.75, 
+                    amplitude * sin(self.anim_time * 2.0 * PI * self.freq + self.phase_offset * 2) + center_y, 
+                    self.dot_radius
+                );
+                sdf.fill(self.color);
+                return sdf.result;
+            }
+        }
+
+        animator: Animator {
+            dots: {
+                default: @off
+                off: AnimatorState{
+                    redraw: true,
+                    from: {all: Forward {duration: 0.0}}
+                    apply: {
+                        draw_bg: {anim_time: 0.0}
+                    }
+                }
+                on: AnimatorState{
+                    redraw: true,
+                    from: {all: Loop {duration: 1.0, end: 1.0}}
+                    apply: {
+                        draw_bg: {anim_time: 1.0}
+                    }
+                }
+            }
+        }
+        
+    }
+}
+
+#[derive(Script, ScriptHook, Widget, Animator)]
+pub struct BouncingDots {
+    #[source] source: ScriptObjectRef,
+    #[deref] view: View,
+    #[apply_default] animator: Animator,
+}
+impl Widget for BouncingDots {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if self.animator_handle_event(cx, event).must_redraw() {
+            self.redraw(cx);
+        }
+        self.view.handle_event(cx, event, scope);
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+
+impl BouncingDotsRef {
+    /// Starts animation of the bouncing dots.
+    pub fn start_animation(&self, cx: &mut Cx) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.animator_play(cx, ids!(dots.on));
+        }
+    }
+    /// Stops animation of the bouncing dots.
+    pub fn stop_animation(&self, cx: &mut Cx) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.animator_play(cx, ids!(dots.off));
+        }
+    }
+}

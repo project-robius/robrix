@@ -3,32 +3,29 @@
 
 use makepad_widgets::*;
 
-live_design! {
-    use link::theme::*;
-    use link::widgets::*;
-    use link::shaders::*;
 
-    pub UNREAD_HIGHLIGHT_COLOR = #FF0000;
-    pub UNREAD_DEFAULT_COLOR = #AAAAAA;
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
 
-    pub UnreadBadge = {{UnreadBadge}} {
+    mod.widgets.UnreadBadge = #(UnreadBadge::register_widget(vm)) {
+
         width: 30, height: 20,
-        align: { x: 0.5, y: 0.5 }
+        align: Align{ x: 0.5, y: 0.5 }
         flow: Overlay,
 
-        rounded_view = <View> {
+        rounded_view := View {
             width: Fill,
             height: Fill,
             show_bg: true,
-            draw_bg: {
-                instance highlight: 0.0,
-                instance highlight_color: (UNREAD_HIGHLIGHT_COLOR),
-                instance default_color: (UNREAD_DEFAULT_COLOR),
-                instance border_radius: 4.0
-                // Adjust this border_size to larger value to make oval smaller 
-                instance border_size: 2.0
-                fn pixel(self) -> vec4 {
-                    let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+            draw_bg +: {
+                badge_color: instance((COLOR_UNREAD_BADGE_MESSAGES)),
+                border_radius: instance(4.0)
+                // Set this border_size to a larger value to make the oval smaller 
+                border_size: instance(2.0)
+
+                pixel: fn() {
+                    let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                     sdf.box(
                         self.border_size,
                         1.0,
@@ -36,30 +33,32 @@ live_design! {
                         self.rect_size.y - 2.0,
                         max(1.0, self.border_radius)
                     )
-                    sdf.fill_keep(mix(self.default_color, self.highlight_color, self.highlight));
+                    sdf.fill_keep(self.badge_color);
                     return sdf.result;
                 }
             }
         }
         // Label that displays the unread message count
-        label_count = <Label> {
+        label_count := Label {
             padding: 0,
             width: Fit,
             height: Fit,
             flow: Right, // do not wrap
             text: "",
-            draw_text: {
+            draw_text +: {
                 color: #ffffff,
-                text_style: {font_size: 8.0},
+                text_style: theme.font_regular {font_size: 8.0},
             }
         }
     }
 }
 
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Script, ScriptHook, Widget)]
 pub struct UnreadBadge {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
+    #[live] is_marked_unread: bool,
     #[live] unread_mentions: u64,
     #[live] unread_messages: u64,
 }
@@ -89,12 +88,25 @@ impl Widget for UnreadBadge {
         // If there are unread mentions, show red badge and the number of unread mentions
         if self.unread_mentions > 0 {
             let (border_size, plus_sign) = format_border_and_truncation(self.unread_mentions);
-            self.label(id!(label_count))
+            self.label(cx, ids!(label_count))
                 .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(self.unread_mentions, 99)));
-            self.view(id!(rounded_view)).apply_over(cx, live!{
-                draw_bg: {
-                    border_size: (border_size),
-                    highlight: 1.0
+            let mut rounded_view = self.view(cx, ids!(rounded_view));
+            script_apply_eval!(cx, rounded_view, {
+                draw_bg +: {
+                    border_size: #(border_size),
+                    badge_color: mod.widgets.COLOR_UNREAD_BADGE_MENTIONS
+                }
+            });
+            self.visible = true;
+        }
+        // If there are no unread mentions but this is marked as unread, show the badge as a dot.
+        else if self.is_marked_unread {
+            self.label(cx, ids!(label_count)).set_text(cx, "");
+            let mut rounded_view = self.view(cx, ids!(rounded_view));
+            script_apply_eval!(cx, rounded_view, {
+                draw_bg +: {
+                    border_size: 6.0, // larger value = smaller dot
+                    badge_color: mod.widgets.COLOR_UNREAD_BADGE_MARKED
                 }
             });
             self.visible = true;
@@ -102,18 +114,19 @@ impl Widget for UnreadBadge {
         // If there are no unread mentions but there are unread messages, show gray badge and the number of unread messages
         else if self.unread_messages > 0 {
             let (border_size, plus_sign) = format_border_and_truncation(self.unread_messages);
-            self.label(id!(label_count))
+            self.label(cx, ids!(label_count))
                 .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(self.unread_messages, 99)));
-            self.view(id!(rounded_view)).apply_over(cx, live!{
-                draw_bg: {
-                    border_size: (border_size),
-                    highlight: 0.0
+            let mut rounded_view = self.view(cx, ids!(rounded_view));
+            script_apply_eval!(cx, rounded_view, {
+                draw_bg +: {
+                    border_size: #(border_size),
+                    badge_color: mod.widgets.COLOR_UNREAD_BADGE_MESSAGES
                 }
             });
             self.visible = true;
         }
         else {
-            // If there are no unread mentions and no unread messages, hide the badge
+            // If there are no unreads of any kind, hide the badge
             self.visible = false;
         }
 
@@ -123,11 +136,12 @@ impl Widget for UnreadBadge {
 
 impl UnreadBadgeRef {
     /// Sets the unread mentions and messages counts without explicitly redrawing the badge.
-    pub fn update_counts(&self, num_unread_mentions: u64, num_unread_messages: u64) {
+    pub fn update_counts(&self, is_marked_unread: bool, num_unread_mentions: u64, num_unread_messages: u64) {
         if let Some(mut inner) = self.borrow_mut() {
+            inner.is_marked_unread = is_marked_unread;
             inner.unread_mentions = num_unread_mentions;
             inner.unread_messages = num_unread_messages;
-            inner.visible = num_unread_mentions > 0 || num_unread_messages > 0;
+            inner.visible = is_marked_unread || num_unread_mentions > 0 || num_unread_messages > 0;
         }
     }
 }

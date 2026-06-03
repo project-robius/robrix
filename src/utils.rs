@@ -1,15 +1,20 @@
-// Ignore clippy warnings in `DeRon` macro derive bodies.
-#![allow(clippy::question_mark)]
-
-use std::{borrow::Cow, fmt::Display, ops::{Deref, DerefMut}, str::{Chars, FromStr}, time::SystemTime};
+use std::{borrow::Cow, ops::{Deref, DerefMut}, time::SystemTime};
+use serde::{Deserialize, Serialize};
+use url::Url;
 
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
-use makepad_widgets::{error, image_cache::ImageError, makepad_micro_serde::{DeRon, DeRonErr, DeRonState, SerRon, SerRonState}, Cx, Event, ImageRef};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
+use makepad_widgets::{Cx, Event, ImageRef, error, image_cache::ImageError};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}, RoomDisplayName};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
-use crate::{room::RoomPreviewAvatar, sliding_sync::{submit_async_request, MatrixRequest}};
+use crate::{
+    room::FetchedRoomAvatar,
+    sliding_sync::{submit_async_request, MatrixRequest, TimelineKind},
+};
+
+/// The scheme for GEO links, used for location messages in Matrix.
+pub const GEO_URI_SCHEME: &str = "geo:";
 
 
 /// A wrapper type that implements the `Debug` trait for non-`Debug` types.
@@ -70,12 +75,15 @@ pub fn is_interactive_hit_event(event: &Event) -> bool {
 pub enum ImageFormat {
     Png,
     Jpeg,
+    XIcon,
 }
+
 impl ImageFormat {
     pub fn from_mimetype(mimetype: &str) -> Option<Self> {
         match mimetype {
             "image/png" => Some(Self::Png),
             "image/jpeg" => Some(Self::Jpeg),
+            "image/x-icon" => Some(Self::XIcon),
             _ => None,
         }
     }
@@ -130,30 +138,232 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
 }
 
 
+/// Parses a CSS-style hex color string into a `Vec4` with RGBA components in `[0.0, 1.0]`.
+///
+/// Supports the following formats (with or without a leading `#`):
+/// * 3 hex digits: `RGB` (each digit is doubled, alpha = 1.0)
+/// * 4 hex digits: `RGBA` (each digit is doubled)
+/// * 6 hex digits: `RRGGBB` (alpha = 1.0)
+/// * 8 hex digits: `RRGGBBAA`
+pub fn vec4_from_hex_str(s: &str) -> Option<makepad_widgets::Vec4> {
+    let s = s.strip_prefix('#').unwrap_or(s);
+    let (r, g, b, a) = match s.len() {
+        3 => {
+            let r = u8::from_str_radix(&s[0..1], 16).ok()?;
+            let g = u8::from_str_radix(&s[1..2], 16).ok()?;
+            let b = u8::from_str_radix(&s[2..3], 16).ok()?;
+            (r * 17, g * 17, b * 17, 255)
+        }
+        4 => {
+            let r = u8::from_str_radix(&s[0..1], 16).ok()?;
+            let g = u8::from_str_radix(&s[1..2], 16).ok()?;
+            let b = u8::from_str_radix(&s[2..3], 16).ok()?;
+            let a = u8::from_str_radix(&s[3..4], 16).ok()?;
+            (r * 17, g * 17, b * 17, a * 17)
+        }
+        6 => {
+            let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+            (r, g, b, 255)
+        }
+        8 => {
+            let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+            let a = u8::from_str_radix(&s[6..8], 16).ok()?;
+            (r, g, b, a)
+        }
+        _ => return None,
+    };
+    Some(makepad_widgets::vec4(
+        r as f32 / 255.0,
+        g as f32 / 255.0,
+        b as f32 / 255.0,
+        a as f32 / 255.0,
+    ))
+}
+
+/// A simplified version of `eyeball_im::VectorDiff` that uses `Vec` instead of `imbl::Vector`.
+///
+/// This is used to communicate room order changes from the room list service to the RoomsList widget.
+#[derive(Debug)]
+pub enum VecDiff<T> {
+    /// Append the given elements at the end.
+    Append { values: Vec<T> },
+    /// Clear the list.
+    Clear,
+    /// Insert an element at the given index.
+    Insert { index: usize, value: T },
+    /// Set (replace) the element at the given index.
+    Set { index: usize, value: T },
+    /// Remove the element at the given index.
+    Remove { index: usize },
+    /// Push an element at the front.
+    PushFront { value: T },
+    /// Push an element at the back.
+    PushBack { value: T },
+    /// Pop an element from the front.
+    PopFront,
+    /// Pop an element from the back.
+    PopBack,
+    /// Truncate the list to the given length.
+    Truncate { length: usize },
+}
+
+
 pub fn unix_time_millis_to_datetime(millis: MilliSecondsSinceUnixEpoch) -> Option<DateTime<Local>> {
     let millis: i64 = millis.get().into();
     Local.timestamp_millis_opt(millis).single()
 }
 
+/// Replaces all line breaks, tabs, paragraphs and other separators with a single space `' '`.
+///
+/// If `is_html` is true, it also removes line-breaking tags, e.g., `<br>`.
+pub fn replace_linebreaks_separators<'a>(s: &'a str, is_html: bool) -> Cow<'a, str> {
+    #[inline]
+    fn is_separator(byte: u8) -> bool {
+        matches!(byte, b'\n' | b'\r' | b'\t' | 0x0B | 0x0C)
+    }
+
+    #[inline]
+    fn is_html_break_tag(tag_name: &[u8]) -> bool {
+        tag_name.eq_ignore_ascii_case(b"br")
+            || tag_name.eq_ignore_ascii_case(b"p")
+            || tag_name.eq_ignore_ascii_case(b"hr")
+            || tag_name.eq_ignore_ascii_case(b"div")
+    }
+
+    #[inline]
+    fn html_tag_causes_break(tag_content: &[u8]) -> bool {
+        let mut i = 0;
+        while i < tag_content.len() && tag_content[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= tag_content.len() {
+            return false;
+        }
+
+        if tag_content[i] == b'/' {
+            i += 1;
+            while i < tag_content.len() && tag_content[i].is_ascii_whitespace() {
+                i += 1;
+            }
+        }
+
+        let name_start = i;
+        while i < tag_content.len() && tag_content[i].is_ascii_alphanumeric() {
+            i += 1;
+        }
+        if name_start == i {
+            return false;
+        }
+
+        is_html_break_tag(&tag_content[name_start..i])
+    }
+
+    let mut has_allocated = false;
+    let mut out = String::new();
+    let mut segment_start = 0;
+    let bytes = s.as_bytes();
+
+    if !is_html {
+        for (i, &byte) in bytes.iter().enumerate() {
+            if is_separator(byte) {
+                if !has_allocated {
+                    has_allocated = true;
+                    out = String::with_capacity(s.len());
+                }
+                out.push_str(&s[segment_start..i]);
+                out.push(' ');
+                segment_start = i + 1;
+            }
+        }
+    } else {
+        let mut i = 0;
+        while i < bytes.len() {
+            let byte = bytes[i];
+
+            if is_separator(byte) {
+                if !has_allocated {
+                    has_allocated = true;
+                    out = String::with_capacity(s.len());
+                }
+                out.push_str(&s[segment_start..i]);
+                out.push(' ');
+                i += 1;
+                segment_start = i;
+                continue;
+            }
+
+            if byte == b'<' {
+                let mut tag_end = i + 1;
+                while tag_end < bytes.len() && bytes[tag_end] != b'>' {
+                    tag_end += 1;
+                }
+
+                if tag_end < bytes.len() && html_tag_causes_break(&bytes[i + 1..tag_end]) {
+                    if !has_allocated {
+                        has_allocated = true;
+                        out = String::with_capacity(s.len());
+                    }
+                    out.push_str(&s[segment_start..i]);
+                    out.push(' ');
+                    i = tag_end + 1;
+                    segment_start = i;
+                    continue;
+                }
+
+                if tag_end < bytes.len() {
+                    i = tag_end + 1;
+                    continue;
+                }
+            }
+
+            i += 1;
+        }
+    }
+
+    if segment_start == 0 {
+        return Cow::Borrowed(s);
+    }
+
+    out.push_str(&s[segment_start..]);
+    Cow::Owned(out)
+}
+
+/// Looks for and removes the `<mx-reply>` element from the given HTML message body, if it exists.
+///
+/// Follows this behavior defined in the Matrix spec:
+/// <https://spec.matrix.org/v1.13/client-server-api/#rich-replies>
+pub fn remove_mx_reply(html_message_body: &str) -> &str {
+    const MX_REPLY_START: &str = "<mx-reply>";
+    const MX_REPLY_END:   &str = "</mx-reply>";
+    if html_message_body.trim().starts_with(MX_REPLY_START) {
+        if let Some(end) = html_message_body.find(MX_REPLY_END) {
+            if let Some(after) = html_message_body.get(end + MX_REPLY_END.len() ..) {
+                return after;
+            }
+        }
+    }
+    html_message_body
+}
+
 /// Returns a string error message, handling special cases related to joining/leaving rooms.
 pub fn stringify_join_leave_error(
     error: &matrix_sdk::Error,
-    room_name: Option<&str>,
+    room_name_id: &RoomNameId,
     was_join: bool,
     was_invite: bool,
 ) -> String {
-    let room_str = room_name.map_or_else(
-        || String::from("room"),
-        |r| format!("\"{r}\""),
-    );
     let msg_opt = match error {
         // The below is a stupid hack to workaround `WrongRoomState` being private.
         // We get the string representation of the error and then search for the "got" state.
         matrix_sdk::Error::WrongRoomState(wrs) => {
             if was_join && wrs.to_string().contains(", got: Joined") {
-                Some(format!("Failed to join {room_str}: it has already been joined."))
+                Some(format!("Failed to join {room_name_id}: it has already been joined."))
             } else if !was_join && wrs.to_string().contains(", got: Left") {
-                Some(format!("Failed to leave {room_str}: it has already been left."))
+                Some(format!("Failed to leave {room_name_id}: it has already been left."))
             } else {
                 None
             }
@@ -165,7 +375,7 @@ pub fn stringify_join_leave_error(
             if error.as_client_api_error().is_some_and(|e| e.status_code.as_u16() == 404) =>
         {
             Some(format!(
-                "Failed to {} {room_str}: the room no longer exists on the server.{}",
+                "Failed to {} {room_name_id}: the room no longer exists on the server.{}",
                 if was_join { "join" } else { "leave" },
                 if was_join && was_invite { "\n\nYou may safely reject this invite." } else { "" },
             ))
@@ -180,7 +390,7 @@ pub fn stringify_join_leave_error(
             (false, true) => "reject invite to",
             (false, false) => "leave",
         },
-        room_str,
+        room_name_id,
         error
     ))
 }
@@ -191,18 +401,15 @@ pub fn stringify_pagination_error(
     error: &matrix_sdk_ui::timeline::Error,
     room_name: &str,
 ) -> String {
-    use matrix_sdk::event_cache::{paginator::PaginatorError, EventCacheError};
+    use matrix_sdk::{paginators::PaginatorError, event_cache::EventCacheError};
     use matrix_sdk_ui::timeline::Error as TimelineError;
 
     #[allow(clippy::single_match)]
-    let match_paginator_error = |paginator_error: &PaginatorError| {
-        match paginator_error {
-            PaginatorError::SdkError(sdk_error) => match sdk_error.deref() {
-                matrix_sdk::Error::Http(http_error) => match http_error.deref() {
-                    matrix_sdk::HttpError::Reqwest(reqwest_error) if reqwest_error.is_timeout() => {
-                        return Some(format!("Failed to load earlier messages in \"{room_name}\": request timed out."));
-                    }
-                    _ => {}
+    let match_sdk_error = |sdk_error: &matrix_sdk::Error| {
+        match sdk_error {
+            matrix_sdk::Error::Http(http_error) => match http_error.deref() {
+                matrix_sdk::HttpError::Reqwest(reqwest_error) if reqwest_error.is_timeout() => {
+                    return Some(format!("Failed to load earlier messages in \"{room_name}\": request timed out."));
                 }
                 _ => {}
             }
@@ -216,14 +423,11 @@ pub fn stringify_pagination_error(
             return format!("Failed to load earlier messages in \"{room_name}\": \
                 pagination is not supported in this timeline focus mode.");
         }
-        TimelineError::PaginationError(PaginationError::Paginator(paginator_error)) => {
-            if let Some(message) = match_paginator_error(paginator_error) {
-                return message;
-            }
-        }
-        TimelineError::EventCacheError(EventCacheError::BackpaginationError(paginator_error)) => {
-            if let Some(message) = match_paginator_error(paginator_error) {
-                return message;
+        TimelineError::PaginationError(PaginationError::Pagination(PaginatorError::SdkError(sdk_error)))
+        | TimelineError::EventCacheError(EventCacheError::PaginationError(sdk_error)) =>
+        {
+            if let Some(message) = match_sdk_error(sdk_error) {
+                return message; 
             }
         }
         _ => {}
@@ -232,16 +436,6 @@ pub fn stringify_pagination_error(
 }
 
 
-/// Returns a string representation of the room name or ID.
-pub fn room_name_or_id(
-    room_name: Option<impl Into<String>>,
-    room_id: impl AsRef<RoomId>,
-) -> String {
-    room_name.map_or_else(
-        || format!("Room ID {}", room_id.as_ref()),
-        |name| name.into(),
-    )
-}
 
 /// Formats a given Unix timestamp in milliseconds into a relative human-readable date.
 ///
@@ -388,8 +582,16 @@ pub fn trim_start_html_whitespace(mut text: &str) -> &str {
 }
 
 /// Looks for bare links in the given `text` and converts them into proper HTML links.
-pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
-    use linkify::{LinkFinder, LinkKind};
+///
+/// If `links_found` is provided, it will be populated with the list of URLs found in the text.
+pub fn linkify_get_urls<'t>(
+    text: &'t str,
+    is_html: bool,
+    mut links_found: Option<&mut Vec<Url>>,
+) -> Cow<'t, str> {
+    const MAILTO: &str = "mailto:";
+
+    use linkify::{Link, LinkFinder, LinkKind};
     let mut links = LinkFinder::new()
         .links(text)
         .peekable();
@@ -410,17 +612,37 @@ pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
     let mut last_end_index = 0;
     for link in links {
         let link_txt = link.as_str();
-        // Only linkify the URL if it's not already part of an HTML href attribute.
-        let is_link_within_href_attr = text.get(..link.start())
-            .is_some_and(ends_with_href);
-        let is_link_within_html_tag = text.get(link.end() ..)
-            .is_some_and(|after| after.trim_end().starts_with("</a>"));
 
-        if is_link_within_href_attr || is_link_within_html_tag {
+        // Only linkify the URL if it's not already part of an HTML or mailto href attribute.
+        let is_link_within_href_attr = text.get(.. link.start())
+            .is_some_and(ends_with_href);
+        let is_link_within_html_tag = |link: &Link| {
+            text.get(link.end() ..)
+                .is_some_and(|after| after.trim_end().starts_with("</a>"))
+        };
+        let is_mailto_link_within_href_attr = |link: &Link| {
+            if !matches!(link.kind(), LinkKind::Email) { return false; }
+            let mailto_start = link.start().saturating_sub(MAILTO.len());
+            text.get(mailto_start .. link.start())
+                .is_some_and(|t| t == MAILTO)
+                .then(|| text.get(.. mailto_start))
+                .flatten()
+                .is_some_and(ends_with_href)
+        };
+
+        if is_link_within_href_attr
+            || is_link_within_html_tag(&link)
+            || is_mailto_link_within_href_attr(&link)
+        {
             linkified_text = format!(
                 "{linkified_text}{}",
                 text.get(last_end_index..link.end()).unwrap_or_default(),
             );
+            if let Some(links_found) = links_found.as_mut() {
+                if let Ok(url) = Url::parse(link_txt) {
+                    links_found.push(url);
+                }
+            }
         } else {
             match link.kind() {
                 LinkKind::Url => {
@@ -430,6 +652,11 @@ pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
                         htmlize::escape_attribute(link_txt),
                         htmlize::escape_text(link_txt),
                     );
+                    if let Some(links_found) = links_found.as_mut() {
+                        if let Ok(url) = Url::parse(link_txt) {
+                            links_found.push(url);
+                        }
+                    }
                 }
                 LinkKind::Email => {
                     linkified_text = format!(
@@ -447,10 +674,15 @@ pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
     linkified_text.push_str(
         &escaped(text.get(last_end_index..).unwrap_or_default())
     );
-    // makepad_widgets::log!("Original text:\n{:?}\nLinkified text:\n{:?}", text, linkified_text);
     Cow::Owned(linkified_text)
 }
 
+/// Looks for bare links in the given `text` and converts them into proper HTML links.
+///
+/// To obtain the list of found URLs, use [`linkify_get_urls()`] instead.
+pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
+    linkify_get_urls(text, is_html, None)
+}
 
 /// Returns true if the given `text` string ends with a valid href attribute opener.
 ///
@@ -465,7 +697,7 @@ pub fn ends_with_href(text: &str) -> bool {
     let mut substr = text.trim_end();
     // Search backwards for a single quote, double quote, or an equals sign.
     match substr.as_bytes().last() {
-        Some(b'\'' | b'"') => {
+        Some(b'\'' | b'"')
             if substr
                 .get(.. substr.len().saturating_sub(1))
                 .map(|s| {
@@ -473,11 +705,8 @@ pub fn ends_with_href(text: &str) -> bool {
                     substr.as_bytes().last() == Some(&b'=')
                 })
                 .unwrap_or(false)
-            {
-                substr = &substr[..substr.len().saturating_sub(1)];
-            } else {
-                return false;
-            }
+        => {
+            substr = &substr[..substr.len().saturating_sub(1)];
         }
         Some(b'=') => {
             substr = &substr[..substr.len().saturating_sub(1)];
@@ -556,7 +785,9 @@ pub fn get_or_fetch_event_sender(
             if let Some(room_id) = room_id {
                 if let Some(event_id) = event_tl_item.event_id() {
                     submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                        room_id: room_id.clone(),
+                        timeline_kind: TimelineKind::MainRoom {
+                            room_id: room_id.clone(),
+                        },
                         event_id: event_id.to_owned(),
                     });
                 }
@@ -628,73 +859,199 @@ pub fn build_grapheme_byte_positions(text: &str) -> Vec<usize> {
     positions
 }
 
-/// A RON-(de)serializable wrapper around [`OwnedRoomId`].
-#[derive(Clone, Debug)]
-pub struct OwnedRoomIdRon(pub OwnedRoomId);
-impl SerRon for OwnedRoomIdRon {
-    /// Serialize a `OwnedRoomId` to its string form, using ron.
-    fn ser_ron(&self, d: usize, s: &mut SerRonState) {
-        self.0.to_string().ser_ron(d, s);
+/// The name and ID of a room or space.
+///
+/// Two `RoomNameId`s are considered equal if they have the same room ID;
+/// the name string is ignored for purposes of equality testing.
+///
+/// This type combines `RoomDisplayName` with `OwnedRoomId` to provide:
+/// * Automatic fallback to room ID when displaying empty/unknown room names.
+/// * Type-safe room name handling throughout the codebase.
+/// * Simplified `Display` implementation that doesn't require passing room_id separately.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct RoomNameId {
+    display_name: RoomDisplayName,
+    room_id: OwnedRoomId,
+}
+
+impl RoomNameId {
+    /// Create a new `RoomNameId` with the given display name and room ID.
+    pub fn new(display_name: RoomDisplayName, room_id: OwnedRoomId) -> Self {
+        Self { display_name, room_id }
+    }
+
+    /// Creates a new `RoomNameId` with an empty display name.
+    pub fn empty(room_id: OwnedRoomId) -> Self {
+        Self::new(RoomDisplayName::Empty, room_id)
+    }
+
+    /// Creates a new `RoomNameId` from a `Room`.
+    pub async fn from_room(room: &matrix_sdk::Room) -> Self {
+        Self::new(
+            room.display_name().await.unwrap_or(RoomDisplayName::Empty),
+            room.room_id().to_owned(),
+        )
+    }
+
+    /// Get a reference to the underlying display name.
+    #[inline]
+    pub fn display_name(&self) -> &RoomDisplayName {
+        &self.display_name
+    }
+
+    /// Get a reference to the room ID or space ID.
+    #[inline]
+    pub fn room_id(&self) -> &OwnedRoomId {
+        &self.room_id
+    }
+
+    /// Returns `true` if the display name is `Empty` only (not `EmptyWas` or other).
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        matches!(self.display_name, RoomDisplayName::Empty)
+    }
+
+    /// Get the display name as a string for avatar generation.
+    ///
+    /// Returns `None` for `RoomDisplayName::Empty` (no name to use for avatar).
+    /// For `EmptyWas`, returns the previous name (preserving the old name for avatar).
+    /// For other variants, returns the string representation.
+    /// Unlike `Display::to_string()`, this does NOT fall back to the room ID for Empty names.
+    pub fn name_for_avatar(&self) -> Option<&str> {
+        match &self.display_name {
+            RoomDisplayName::Empty => None,
+            // Use previous name so that avatars show "A" for "Empty(was Alice)", not "E".
+            RoomDisplayName::EmptyWas(name)
+            | RoomDisplayName::Aliased(name)
+            | RoomDisplayName::Calculated(name)
+            | RoomDisplayName::Named(name) => Some(name.as_str()),
+        }
+    }
+
+    /// Convert into the inner display name and room ID.
+    pub fn into_inner(self) -> (RoomDisplayName, OwnedRoomId) {
+        (self.display_name, self.room_id)
     }
 }
-impl DeRon for OwnedRoomIdRon {
-    fn de_ron(s: &mut DeRonState, i: &mut Chars) -> Result<Self, DeRonErr> {
-        OwnedRoomId::from_str(&String::de_ron(s, i)?)
-            .map(OwnedRoomIdRon)
-            .map_err(|e| DeRonErr {
-                msg: e.to_string(),
-                line: s.line,
-                col: s.col,
-            })
+
+impl PartialEq for RoomNameId {
+    fn eq(&self, other: &Self) -> bool {
+        self.room_id == other.room_id
     }
 }
-impl From<OwnedRoomId> for OwnedRoomIdRon {
-    fn from(room_id: OwnedRoomId) -> Self {
-        OwnedRoomIdRon(room_id)
-    }
-}
-impl<'a> From<&'a OwnedRoomIdRon> for &'a OwnedRoomId {
-    fn from(room_id: &'a OwnedRoomIdRon) -> Self {
-        &room_id.0
-    }
-}
-impl From<OwnedRoomIdRon> for OwnedRoomId {
-    fn from(room_id: OwnedRoomIdRon) -> Self {
-        room_id.0
-    }
-}
-impl<'a> From<&'a OwnedRoomIdRon> for &'a RoomId {
-    fn from(room_id: &'a OwnedRoomIdRon) -> Self {
-        &room_id.0
-    }
-}
-impl AsRef<RoomId> for OwnedRoomIdRon {
-    fn as_ref(&self) -> &RoomId {
-        &self.0
-    }
-}
-impl Deref for OwnedRoomIdRon {
-    type Target = OwnedRoomId;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl Display for OwnedRoomIdRon {
+impl Eq for RoomNameId { }
+impl std::fmt::Debug for RoomNameId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        let mut ds = f.debug_struct("RoomNameId");
+        match &self.display_name {
+            RoomDisplayName::Empty => ds.field("name", &"Empty"),
+            RoomDisplayName::EmptyWas(name) => ds.field("name", &format!("Empty Room (was \"{name}\")")),
+            RoomDisplayName::Aliased(name)
+            | RoomDisplayName::Calculated(name)
+            | RoomDisplayName::Named(name) => ds.field("name", name)
+        };
+        ds.field("ID", &self.room_id)
+            .finish()
+    }
+}
+impl std::ops::Deref for RoomNameId {
+    type Target = RoomDisplayName;
+
+    fn deref(&self) -> &Self::Target {
+        &self.display_name
+    }
+}
+impl AsRef<RoomDisplayName> for RoomNameId {
+    fn as_ref(&self) -> &RoomDisplayName {
+        &self.display_name
+    }
+}
+impl AsRef<RoomId> for RoomNameId {
+    fn as_ref(&self) -> &RoomId {
+        &self.room_id
+    }
+}
+impl AsRef<OwnedRoomId> for RoomNameId {
+    fn as_ref(&self) -> &OwnedRoomId {
+        &self.room_id
+    }
+}
+
+/// Display implementation that automatically handles Empty names by falling back to room ID.
+///
+/// - `Empty` → displays room ID
+/// - `EmptyWas(name)` → displays "Empty Room (was "name")"
+/// - Other variants → displays the name as-is
+impl std::fmt::Display for RoomNameId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.display_name {
+            RoomDisplayName::Empty => write!(f, "Room ID {}", self.room_id),
+            RoomDisplayName::EmptyWas(name) => write!(f, "Empty Room (was \"{}\")", name),
+            other => write!(f, "{}", other),
+        }
+    }
+}
+impl From<(RoomDisplayName, OwnedRoomId)> for RoomNameId {
+    fn from((display_name, room_id): (RoomDisplayName, OwnedRoomId)) -> Self {
+        Self::new(display_name, room_id)
+    }
+}
+impl From<(&RoomDisplayName, &OwnedRoomId)> for RoomNameId {
+    fn from((display_name, room_id): (&RoomDisplayName, &OwnedRoomId)) -> Self {
+        Self::new(display_name.clone(), room_id.clone())
+    }
+}
+impl From<(Option<RoomDisplayName>, OwnedRoomId)> for RoomNameId {
+    fn from((display_name, room_id): (Option<RoomDisplayName>, OwnedRoomId)) -> Self {
+        Self::new(display_name.unwrap_or(RoomDisplayName::Empty), room_id)
     }
 }
 
 /// Returns a text avatar string containing the first character of the room name.
 ///
 /// Skips the first character if it is a `#` or `!`, the sigils used for Room aliases and Room IDs.
-pub fn avatar_from_room_name(room_name: Option<&str>) -> RoomPreviewAvatar {
+pub fn avatar_from_room_name(room_name: Option<&str>) -> FetchedRoomAvatar {
     let first = room_name.and_then(|rn| rn
         .graphemes(true)
         .find(|&g| g != "#" && g != "!")
         .map(ToString::to_string)
     ).unwrap_or_else(|| String::from("?"));
-    RoomPreviewAvatar::Text(first)
+    FetchedRoomAvatar::Text(first)
+}
+
+
+#[cfg(test)]
+mod tests_room_name {
+    use super::*;
+    use std::convert::TryFrom;
+    use matrix_sdk::RoomDisplayName;
+    use matrix_sdk::ruma::OwnedRoomId;
+
+    fn sample_room_id(raw: &str) -> OwnedRoomId {
+        OwnedRoomId::try_from(raw).expect("valid room id")
+    }
+
+    #[test]
+    fn to_string_prefers_display_name() {
+        let room_id = sample_room_id("!preferred:example.org");
+        let room_name = RoomNameId::new(RoomDisplayName::Named("Hello World".into()), room_id.clone());
+        assert_eq!(room_name.to_string(), "Hello World");
+        assert_eq!(room_name.room_id().as_str(), room_id.as_str());
+    }
+
+    #[test]
+    fn to_string_falls_back_to_id_when_empty() {
+        let room_id = sample_room_id("!fallback:example.org");
+        let room_name = RoomNameId::new(RoomDisplayName::Empty, room_id.clone());
+        assert_eq!(room_name.to_string(), format!("Room ID {}", room_id.as_str()));
+    }
+
+    #[test]
+    fn to_string_includes_context_for_empty_was() {
+        let room_id = sample_room_id("!emptywas:example.org");
+        let room_name = RoomNameId::new(RoomDisplayName::EmptyWas("Prior Name".into()), room_id);
+        assert_eq!(room_name.to_string(), "Empty Room (was \"Prior Name\")");
+    }
 }
 
 #[cfg(test)]
@@ -844,6 +1201,20 @@ mod tests_linkify {
         let text = "Check out this website: <a href=\"https://example.com\">https://example.com</a>";
         let expected = "Check out this website: <a href=\"https://example.com\">https://example.com</a>";
         assert_eq!(linkify(text, true).as_ref(), expected);
+    }
+
+    #[test]
+    fn test_linkify14() {
+        let text = "<p>If you have any questions please drop us an email to <a href=\"mailto:legal@matrix.org\">legal@matrix.org</a></p>";
+        let expected = text;
+        assert_eq!(linkify(text, true).as_ref(), expected);
+    }
+
+    #[test]
+    fn test_linkify15() {
+        let text = "If you have any questions please drop us an email to:legal@matrix.org";
+        let expected = "If you have any questions please drop us an email to:<a href=\"mailto:legal@matrix.org\">legal@matrix.org</a>";
+        assert_eq!(linkify(text, false).as_ref(), expected);
     }
 }
 

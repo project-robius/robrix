@@ -3,74 +3,83 @@
 [![Robrix Matrix Chat](https://img.shields.io/matrix/robius-robrix%3Amatrix.org?server_fqdn=matrix.org&style=flat&logo=matrix&label=Robrix%20Matrix%20Chat&color=B7410E)](https://matrix.to/#/#robius-robrix:matrix.org)
 [![Project Robius Matrix Chat](https://img.shields.io/matrix/robius-general%3Amatrix.org?server_fqdn=matrix.org&style=flat&logo=matrix&label=Project%20Robius%20Matrix%20Chat&color=B7410E)](https://matrix.to/#/#robius:matrix.org)
 
-Robrix is a Matrix chat client written in Rust to demonstrate the functionality of [Project Robius](https://github.com/project-robius), a framework for multi-platform application development in Rust. Robrix is written using the [Makepad UI toolkit](https://github.com/makepad/makepad/).
-
-▶️  [Click here to see the Robrix project tracker!](https://github.com/orgs/project-robius/projects/4/)
-
-> [!NOTE]
-> ⚠️ Robrix is a work-in-progress that doesn't yet support all Matrix chat features.
+Robrix is a Matrix chat client written in Rust to exemplify the features of [Project Robius](https://github.com/project-robius), a framework for multi-platform application development in Rust. Robrix is written using the [Makepad UI toolkit](https://github.com/makepad/makepad/).
 
 Check out our most recent talks and presentations for more info:
-  * Robrix: a pure Rust multi-platform app for chat and beyond (from [GOSIM China 2024](https://china2024.gosim.org/schedules/robrix--a-pure-rust-multi-platform-matrix-client-and-more))
+  * Robrix: a complex, multi-platform app in Rust for secure chat using Matrix ([Rust China Conf 2025](https://rustcc.cn/2025conf/schedule.html))
+    * Videos: [YouTube link](https://www.youtube.com/watch?v=kB-JdmG5kE4), [BiliBili Link](https://www.bilibili.com/video/BV1XJnjzKEZQ)
+    * Slides:
+      [PowerPoint (13MB)](https://github.com/project-robius/files/blob/6e34bb5a650a42e0e33e47dfb987424fbf58ab8a/GOSIM%20China%202025/Robrix%20Taslk%20GOSIM%20China%20Hangzhou%202025.pptx),
+      [PDF version (13MB)](https://github.com/project-robius/files/blob/6e34bb5a650a42e0e33e47dfb987424fbf58ab8a/GOSIM%20China%202025/Robrix%20Taslk%20GOSIM%20China%20Hangzhou%202025.pdf)
+  * Robrix: a pure Rust multi-platform app for chat and beyond ([GOSIM China 2024](https://china2024.gosim.org/schedules/robrix--a-pure-rust-multi-platform-matrix-client-and-more))
     * Videos: [YouTube link](https://www.youtube.com/watch?v=DO5C7aITVyU), [BiliBili link](https://www.bilibili.com/video/BV1BxUUYcEy5/)
     * Slides:
       [PowerPoint (25MB)](https://github.com/project-robius/files/blob/99bc71ab0eebb0a9ed1aa367253c398ff0622c6f/GOSIM%20China%202024/Robrix%20Talk%20GOSIM%20China%20October%2017%2C%202024.pdf),
       [PDF version (6MB)](https://github.com/project-robius/files/blob/main/GOSIM%20China%202024/Robrix%20Talk%20GOSIM%20China%20October%2017%2C%202024.pdf)
-  * [An interview on Matrix Live!](https://www.youtube.com/watch?v=O_bChwDHE3U)
-  * Robrix: a Matrix chat client and more (from [GOSIM Europe 2024](https://europe2024.gosim.org/schedule#fediverse))
+  * [An interview about Robrix on Matrix Live!](https://www.youtube.com/watch?v=O_bChwDHE3U)
+  * Robrix: a Matrix chat client and more ([GOSIM Europe 2024](https://europe2024.gosim.org/schedule#fediverse))
     * Videos: [YouTube link](https://www.youtube.com/watch?v=P8RGF942A5g), [BiliBili link](https://www.bilibili.com/video/BV1oS411N7k6/)
     * Slides:
       [PowerPoint (22MB)](https://github.com/project-robius/files/raw/3ac0a9d2e9f3c78ea51b4875abe02d288fa3685f/RustNL%202024%20and%20GOSIM%20Europe%202024/Robrix%20Talk%20GOSIM%20Europe%20May%206,%202024.pptx),
       [PDF version (16MB)](https://github.com/project-robius/files/blob/3ac0a9d2e9f3c78ea51b4875abe02d288fa3685f/RustNL%202024%20and%20GOSIM%20Europe%202024/Robrix%20Talk%20GOSIM%20Europe%20May%206%2C%202024.pdf)
 
 
+> [!NOTE]
+> ▶️  [Click here to see the Robrix project tracker!](https://github.com/orgs/project-robius/projects/4/)
+
+
 The following table shows which host systems can currently be used to build Robrix for which target platforms.
-| Host OS | Target Platform | Builds? | Runs? |
-| ------- | --------------- | ------- | ----- |
-| macOS   | macOS           | ✅      | ✅    |
-| macOS   | Android         | ✅      | ✅    |
-| macOS   | iOS             | ✅      | ✅    |
-| Linux   | Linux           | ✅      | ✅    |
-| Linux   | Android         | ✅      | ✅    |
-| Windows | Windows         | ✅      | ✅    |
-| Windows | Android         | ✅      | ✅    |
+| Target Platform | Host OS         | Builds? | Runs? |
+| --------------- | --------------- | ------- | ----- |
+| macOS           | macOS           | ✅      | ✅    |
+| Linux           | Linux           | ✅      | ✅    |
+| Windows         | Windows         | ✅      | ✅    |
+| Android         | *Any*           | ✅      | ✅    |
+| iOS             | macOS           | ✅      | ✅    |
+| OpenHarmony     | *Any*           | ✅      | 🚧    |
 
 
 ## Known issues
- - Drag-n-drop on Linux isn't implemented by Makepad, so you cannot drag room tabs around yet. (see: https://github.com/makepad/makepad/issues/650)
- - There is currently no way to explicitly log out of Robrix. You can run `robrix --login-screen` to show the login screen upon app startup, or delete the app data directory.
  - Matrix-specific links (`https://matrix.to/...`) aren't fully handled in-app yet.
  - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled gradually via back pagination, but the viewport position is not maintained.
  - Currently, accessing system geolocation on Android may not succeed due to failing to prompt the user for permission. Please enable the location permission in the App Info settings page for Robrix, and then it should work as expected.
 
-## Building & Running Robrix on Desktop
 
+> [!IMPORTANT]
+> Robrix only works with Matrix homeservers that support native Sliding Sync, just like other modern clients (e.g., Element X).
+
+
+## Building & Running Robrix on Desktop
 1. First, [install Rust](https://www.rust-lang.org/tools/install).
 
-2. If you're building on **Linux** or **WSL** on Windows, install the required dependencies. Otherwise, proceed to step 3.
-   * `openssl`, `clang`/`libclang`, `binfmt`, `Xcursor`/`X11`, `asound`/`pulse`.
+2. Install `cmake`, which is required for some Matrix SDK dependencies.
+   * macOS: `brew install cmake`
+   * Windows: `choco install cmake` (or install `cmake` using Visual Studio)
+   * Linux: see step 3 below.
+
+3. If you're building on **Linux** or **WSL** on Windows, install the required dependencies. Otherwise, proceed to step 4.
+   * `openssl`, `clang`/`libclang`, `cmake`, `binfmt`, `Xcursor`/`X11`, `asound`/`pulse`.
 
    On a Debian-like Linux distro (e.g., Ubuntu), run the following:
    ```sh
    sudo apt-get update
-   sudo apt-get install libssl-dev libsqlite3-dev pkg-config binfmt-support libxcursor-dev libx11-dev libasound2-dev libpulse-dev
+   sudo apt-get install libssl-dev cmake llvm clang libclang-dev libsqlite3-dev pkg-config binfmt-support libxcursor-dev libx11-dev libasound2-dev libpulse-dev libwayland-dev libxkbcommon-dev
    ```
 
-3. Then, build and run Robrix.
+4. Then, build and run Robrix.
    ```sh
    cargo run --release
    ```   
-> [!TIP]
-> The `--release` argument is optional. You can remove it for quicker builds, or replace it with `--profile release-lto` or `--profile distribution` for longer builds with higher performance.    
-> See the various `[profile.*]` sections in the [Cargo.toml](./Cargo.toml) file.
 
-   Optionally, you can provide a username and password on the command line for fast auto-login. Note that you only have to specify this once; after one successful login, Robrix will automatically re-login the most recent user without having to specify the user ID or password.
-   ```sh
-   cargo run --release -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
-   ```
-    * Note that if you enter your password on the command line, you should wrap it in **single quotes** (not double quotes) in order to prevent your shell from treating certain symbols as globs/regex patterns.
-    * The `HOMESERVER_URL` argument is optional and uses the `matrix.org` homeserver by default.
-    * The specified homeserver must support native Sliding Sync, the same requirement as Element X.
+> [!TIP]
+> If you get a build error from `aws-lc-sys` about a **"COMPILER BUG DETECTED"** related to `memcmp`
+> ([GCC #95189](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95189)),
+> your GCC version is too old (GCC 9 and earlier are affected).
+> The easiest fix is to build using `clang` instead:
+> ```sh
+> CC=clang CXX=clang++ cargo run --release
+> ```
+> Alternatively, upgrade GCC to version 10 or newer.
 
 
 ## Building & Running Robrix on Mobile: Android, iOS, iPadOS
@@ -81,9 +90,9 @@ The following table shows which host systems can currently be used to build Robr
    ```
 
 ### Android
-2. Use `cargo-makepad` to install the Android toolchain:
+2. Use `cargo-makepad` to install the Android toolchain with the full NDK included:
    ```sh
-   cargo makepad android install-toolchain
+   cargo makepad android install-toolchain --full-ndk
    ```
 
 3. Build and run Robrix using `cargo-makepad`:
@@ -102,7 +111,7 @@ The following table shows which host systems can currently be used to build Robr
    ```
 
 3. Perform the following one-time setup steps:
-   1. If running on a real iOS device, enable your iPhone's Developer Mode:
+   1. If running on a real iOS device, [enable Developer Mode on your device](https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device):
       Settings → Privacy & Security → Developer Mode → turn on Developer Mode and reboot.
    2. Ensure your Apple Developer account is properly set up on your Mac.
    3. Create an empty "dummy" project in Xcode:
@@ -121,6 +130,12 @@ The following table shows which host systems can currently be used to build Robr
      --app=robrix \
      run-sim -p robrix --release
    ```
+> [!TIP]
+> If you get errors from the simulator, update your simulator tooling:
+> ```sh
+> xcodebuild -downloadPlatform iOS
+> ```
+
 
 #### Running on a real iOS device
 4. Run the following command to show all provisioning profiles, signing identities, and device identifiers on your Mac.
@@ -187,17 +202,19 @@ These are generally sorted in order of priority. If you're interested in helping
 - [ ] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
 - [ ] Display multimedia (audio/video/gif) message events: https://github.com/project-robius/robrix/issues/120
 - [x] User settings screen
-- [ ] Dedicated view of spaces
-- [ ] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81
+- [x] Dedicated view of spaces: https://github.com/project-robius/robrix/pull/636
+- [x] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81, https://github.com/project-robius/robrix/pull/585
 - [ ] Search messages within a room: https://github.com/project-robius/robrix/issues/122
 - [ ] Room browser, search for public rooms
 - [x] Accept/reject room invites
 - [x] Join room by accepting invite
-- [ ] Knock on room (request to join)
-- [ ] Administrative abilities: ban, kick, etc
-- [ ] Room creation/settings/info screen
+- [x] Join room by searching for room alias, room ID, or via a Matrix link
+- [x] Knock on room (request to join)
+- [x] Leave joined and invited rooms
+- [ ] Room settings/info screen
 - [ ] Room members pane
-- [ ] Offline mode with persistent event cache: https://github.com/project-robius/robrix/pull/445
+- [ ] Administrative abilities: ban, kick, etc
+- [x] Offline mode with persistent event cache: https://github.com/project-robius/robrix/pull/445
 
 
 ## Packaging Robrix for Distribution on Desktop Platforms
@@ -222,10 +239,7 @@ cargo install --locked --git https://github.com/project-robius/robius-packaging-
 ```sh
 cargo packager --release ## --verbose is optional
 ```
-  * If you want to hide the default cmd prompt console on Windows, use the following config:
-    ```sh
-    RUSTFLAGS="--cfg hide_windows_console" cargo packager --release
-    ```
+  * On Windows, the cmd prompt console is hidden by default via the `hide_windows_console` Cargo feature. If you need to keep the console visible (e.g., to debug a detached launch), build with `--no-default-features`.
 
 
 ### Platform-specific considerations
@@ -272,4 +286,4 @@ You can immediately double-click the `Robrix.app` bundle to run it, or you can d
 If you'd like to modify the .dmg background, here is the [Google Drawings file used to generate the MacOS .dmg background image](https://docs.google.com/drawings/d/10ALUgNV7v-4bRTIE5Wb2vNyXpl2Gj3YJcl7Q2AGpvDw/edit?usp=sharing).
 
 ## Credits
-X logo: https://www.vecteezy.com/png/42148611-new-twitter-x-logo-twitter-icon-x-social-media-icon (shobumiah)
+* X logo: https://www.vecteezy.com/png/42148611-new-twitter-x-logo-twitter-icon-x-social-media-icon (shobumiah)

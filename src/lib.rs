@@ -1,8 +1,40 @@
+#![recursion_limit = "256"]
+
 use std::{path::Path, sync::OnceLock};
 
+use makepad_widgets::ScriptNew;
 use robius_directories::ProjectDirs;
 
 pub use makepad_widgets;
+
+#[macro_export]
+macro_rules! live {
+    ($($tt:tt)*) => {
+        makepad_widgets::script! { $($tt)* }
+    };
+}
+
+pub type LivePtr = makepad_widgets::ScriptValue;
+
+
+pub fn widget_ref_from_live_ptr(
+    cx: &mut makepad_widgets::Cx,
+    ptr: Option<LivePtr>,
+) -> makepad_widgets::WidgetRef {
+    ptr.map_or_else(makepad_widgets::WidgetRef::empty, |value| {
+        cx.with_vm(|vm| makepad_widgets::WidgetRef::script_from_value(vm, value))
+    })
+}
+
+pub fn view_from_live_ptr(
+    cx: &mut makepad_widgets::Cx,
+    ptr: Option<LivePtr>,
+) -> makepad_widgets::View {
+    cx.with_vm(|vm| match ptr {
+        Some(value) => makepad_widgets::View::script_from_value(vm, value),
+        None => makepad_widgets::View::script_new(vm),
+    })
+}
 
 /// The top-level main application module.
 pub mod app;
@@ -42,7 +74,9 @@ pub mod tsp_dummy;
 
 // Matrix stuff
 pub mod sliding_sync;
+pub mod space_service_sync;
 pub mod avatar_cache;
+pub mod room_preview_cache;
 pub mod media_cache;
 pub mod verification;
 
@@ -50,8 +84,7 @@ pub mod utils;
 pub mod temp_storage;
 pub mod location;
 
-
-pub const APP_QUALIFIER: &str = "org";
+pub const APP_QUALIFIER: &str = "rs";
 pub const APP_ORGANIZATION: &str = "robius";
 pub const APP_NAME: &str = "robrix";
 

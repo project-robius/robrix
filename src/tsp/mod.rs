@@ -10,7 +10,7 @@ use tokio::{task::JoinHandle, runtime::Handle, sync::mpsc::{unbounded_channel, U
 use tsp_sdk::{definitions::{PublicKeyData, PublicVerificationKeyData, VidEncryptionKeyType, VidSignatureKeyType}, vid::{verify_vid, VidError}, AskarSecureStorage, AsyncSecureStore, OwnedVid, ReceivedTspMessage, SecureStorage, VerifiedVid, Vid};
 use url::Url;
 
-use crate::{persistence::{self, tsp_wallets_dir, SavedTspState}, shared::popup_list::{enqueue_popup_notification, PopupItem, PopupKind}, tsp::tsp_verification_modal::TspVerificationModalAction, utils::DebugWrapper};
+use crate::{persistence::{self, tsp_wallets_dir, SavedTspState}, shared::popup_list::{enqueue_popup_notification, PopupKind}, sliding_sync::current_user_id, tsp::tsp_verification_modal::TspVerificationModalAction, utils::DebugWrapper};
 
 
 pub mod create_did_modal;
@@ -22,15 +22,15 @@ pub mod tsp_verification_modal;
 pub mod wallet_entry;
 pub mod verify_user;
 
-pub fn live_design(cx: &mut Cx) {
-    create_did_modal::live_design(cx);
-    create_wallet_modal::live_design(cx);
-    wallet_entry::live_design(cx);
-    verify_user::live_design(cx);
-    sign_anycast_checkbox::live_design(cx);
-    tsp_sign_indicator::live_design(cx);
-    tsp_verification_modal::live_design(cx);
-    tsp_settings_screen::live_design(cx);
+pub fn script_mod(vm: &mut ScriptVm) {
+    create_did_modal::script_mod(vm);
+    create_wallet_modal::script_mod(vm);
+    wallet_entry::script_mod(vm);
+    verify_user::script_mod(vm);
+    sign_anycast_checkbox::script_mod(vm);
+    tsp_sign_indicator::script_mod(vm);
+    tsp_verification_modal::script_mod(vm);
+    tsp_settings_screen::script_mod(vm);
 }
 
 /// The sender used by [`submit_tsp_request()`] to send TSP requests to the async worker thread.
@@ -43,21 +43,21 @@ static TSP_REQUEST_SENDER: OnceLock<UnboundedSender<TspRequest>> = OnceLock::new
 /// informing them of the error with a recommendation to restart the app.
 pub fn submit_tsp_request(req: TspRequest) {
     let Some(sender) = TSP_REQUEST_SENDER.get() else {
-        enqueue_popup_notification(PopupItem {
-            message: "Failed to submit TSP request: TSP request sender was not initialized.\n\n\
-                Please restart Robrix to continue using TSP features.".into(),
-            auto_dismissal_duration: None,
-            kind: PopupKind::Error
-        });
+        enqueue_popup_notification(
+            "Failed to submit TSP request: TSP request sender was not initialized.\n\n\
+                Please restart Robrix to continue using TSP features.",
+            PopupKind::Error,
+            None,
+        );
         return;
     };
     if sender.send(req).is_err() {
-        enqueue_popup_notification(PopupItem {
-            message: "Failed to submit TSP request: the background TSP worker task has died.\n\n\
-                Please restart Robrix to continue using TSP features.".into(),
-            auto_dismissal_duration: None,
-            kind: PopupKind::Error
-        });
+        enqueue_popup_notification(
+            "Failed to submit TSP request: the background TSP worker task has died.\n\n\
+                Please restart Robrix to continue using TSP features.",
+            PopupKind::Error,
+            None,
+        );
     }
 }
 
@@ -70,9 +70,9 @@ struct ReceiveLoopTask {
 
 
 /// The global singleton TSP state, storing all known TSP wallets.
-static TSP_STATE: Mutex<TspState> = Mutex::new(TspState::new());
+static TSP_STATE: OnceLock<Mutex<TspState>> = OnceLock::new();
 pub fn tsp_state_ref() -> &'static Mutex<TspState> {
-    &TSP_STATE
+    TSP_STATE.get_or_init(|| Mutex::new(TspState::new()))
 }
 
 /// The current actively-used (singleton) state of TSP wallets known to Robrix.
@@ -95,14 +95,14 @@ pub struct TspState {
     pending_verification_requests: SmallVec<[TspVerificationDetails; 1]>,
 }
 impl TspState {
-    const fn new() -> Self {
+    fn new() -> Self {
         Self {
             current_wallet: None,
             other_wallets: Vec::new(),
             current_local_vid: None,
             associations: BTreeMap::new(),
             receive_loop_tasks: BTreeMap::new(),
-            pending_verification_requests: SmallVec::new_const(),
+            pending_verification_requests: SmallVec::new(),
         }
     }
 
@@ -144,23 +144,23 @@ impl TspState {
                     current_local_vid = Some(saved_local_vid);
                 } else {
                     warning!("Previously-saved local VID {saved_local_vid} was not found in default wallet.");
-                    enqueue_popup_notification(PopupItem {
-                        message: format!("Previously-saved local VID \"{saved_local_vid}\" \
+                    enqueue_popup_notification(
+                        format!("Previously-saved local VID \"{saved_local_vid}\" \
                             was not found in default wallet.\n\n\
                             Please select a default wallet and then a new default VID."),
-                        auto_dismissal_duration: None,
-                        kind: PopupKind::Warning
-                    });
+                         PopupKind::Warning,
+                         None,
+                    );
                 }
             } else {
                 warning!("Found a previously-saved local VID {saved_local_vid}, but not the default wallet that contained it.");
-                enqueue_popup_notification(PopupItem {
-                    message: format!("Found a previously-saved local VID \"{saved_local_vid}\", \
+                enqueue_popup_notification(
+                    format!("Found a previously-saved local VID \"{saved_local_vid}\", \
                         but not the default wallet that contained it.\n\n\
                         Please select or create a default wallet and a new default VID."),
-                    auto_dismissal_duration: None,
-                    kind: PopupKind::Warning
-                });
+                    PopupKind::Warning,
+                    None,
+                );
             }
         }
 
@@ -174,7 +174,7 @@ impl TspState {
             current_local_vid,
             associations: saved_state.associations,
             receive_loop_tasks: BTreeMap::new(),
-            pending_verification_requests: SmallVec::new_const(),
+            pending_verification_requests: SmallVec::new(),
         })
     }
 
@@ -387,14 +387,14 @@ pub fn tsp_init(rt_handle: tokio::runtime::Handle) -> anyhow::Result<()> {
             Ok(()) => log!("TSP state initialized successfully."),
             Err(e) => {
                 error!("Failed to initialize TSP state: {e:?}");
-                enqueue_popup_notification(PopupItem {
-                    message: format!(
+                enqueue_popup_notification(
+                    format!(
                         "Failed to initialize TSP state. \
                         Your TSP wallets may not be fully available. Error: {e}",
                     ),
-                    auto_dismissal_duration: None,
-                    kind: PopupKind::Error,
-                });
+                    PopupKind::Error,
+                    None,
+                );
             }
         }
 
@@ -426,11 +426,11 @@ pub fn tsp_init(rt_handle: tokio::runtime::Handle) -> anyhow::Result<()> {
                         }
                         Ok(Err(e)) => {
                             error!("Error: async TSP worker task ended:\n\t{e:?}");
-                            enqueue_popup_notification(PopupItem {
-                                message: format!("TSP background worker error: {e}"),
-                                auto_dismissal_duration: None,
-                                kind: PopupKind::Error
-                            });
+                            enqueue_popup_notification(
+                                format!("TSP background worker error: {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
                         },
                         Err(e) => {
                             error!("BUG: failed to join async_tsp_worker task: {e:?}");
@@ -451,12 +451,12 @@ async fn inner_tsp_init() -> anyhow::Result<()> {
     let saved_tsp_state = persistence::load_tsp_state().await?;
     let mut new_tsp_state = TspState::deserialize_from(saved_tsp_state).await?;
     if new_tsp_state.has_content() && new_tsp_state.current_wallet.is_none() {
-        enqueue_popup_notification(PopupItem {
-            message: String::from("TSP wallet(s) were loaded successfully, but no default wallet was set.\n\n\
-                TSP features will not work properly until you set a default wallet."),
-            auto_dismissal_duration: None,
-            kind: PopupKind::Warning,
-        });
+        enqueue_popup_notification(
+            "TSP wallet(s) were loaded successfully, but no default wallet was set.\n\n\
+                TSP features will not work properly until you set a default wallet.",
+            PopupKind::Warning,
+            None,
+        );
     }
     // If there is a private VID and a current wallet, spawn a receive loop
     // to listen for incoming messages for that private VID.
@@ -470,7 +470,7 @@ async fn inner_tsp_init() -> anyhow::Result<()> {
             &private_vid,
         );
     }
-    *TSP_STATE.lock().unwrap() = new_tsp_state;
+    *tsp_state_ref().lock().unwrap() = new_tsp_state;
     Ok(())
 }
 
@@ -604,6 +604,13 @@ pub enum TspRequest {
 }
 
 
+fn create_reqwest_client() -> reqwest::Result<reqwest::Client> {
+    reqwest::ClientBuilder::new()
+        .user_agent(format!("Robrix v{}", env!("CARGO_PKG_VERSION")))
+        .build()
+}
+
+
 /// The entry point for an async worker thread that processes TSP-related async tasks.
 ///
 /// All this task does is wait for [`TspRequests`] from other threads
@@ -616,12 +623,7 @@ async fn async_tsp_worker(
     // Allow lazy initialization of the reqwest client.
     let mut __reqwest_client = None;
     let mut get_reqwest_client = || {
-        __reqwest_client.get_or_insert_with(|| {
-            reqwest::ClientBuilder::new()
-                .user_agent(format!("Robrix v{}", env!("CARGO_PKG_VERSION")))
-                .build()
-                .unwrap()
-        }).clone()
+        __reqwest_client.get_or_insert_with(|| create_reqwest_client().unwrap()).clone()
     };
 
     while let Some(req) = request_receiver.recv().await { match req {
@@ -856,7 +858,8 @@ async fn create_did_and_add_to_wallet(
     let did = store_did_in_wallet(&cw_db, private_vid, metadata, alias, did)?;
 
     {
-        // If there's no default VID, set this new one as the default
+        // If there's no default VID, set this new one as the default,
+        // associate our currently-logged-in Matrix User ID with it,
         // and start a receive loop to listen for incoming requests for it.
         let mut tsp_state = tsp_state_ref().lock().unwrap();
         if tsp_state.current_local_vid.is_none() {
@@ -867,6 +870,14 @@ async fn create_did_and_add_to_wallet(
                 &cw_db,
                 &new_vid,
             );
+            if let Some(user_id) = current_user_id() {
+                tsp_state.associations
+                    .entry(user_id.clone())
+                    .or_insert_with(|| {
+                        log!("Automatically associating DID \"{did}\" with the current Matrix User ID \"{user_id}\".");
+                        did.clone()
+                    });
+            }
         }
     }
     Ok(did)
@@ -1015,7 +1026,6 @@ async fn republish_did(
         .json(&vid_dup)
         .send()
         .await
-        .inspect(|r| log!("DID server responded with status code {}", r.status()))
         .map_err(|e| anyhow!("Could not republish VID. The DID server responded with error: {e}"))?;
 
     match response.status() {
@@ -1046,6 +1056,11 @@ async fn receive_messages_for_vid(
     private_vid_to_receive_on: String,
     mut request_rx: UnboundedReceiver<TspReceiveLoopRequest>,
 ) -> Result<(), anyhow::Error> {
+    // Ensure that our receiving VID is currently published to the DID server.
+    if republish_did(&private_vid_to_receive_on, &create_reqwest_client()?).await.is_ok() {
+        log!("Auto-republished DID \"{private_vid_to_receive_on}\" to its DID server.");
+    }
+
     let mut message_stream = wallet_db.receive(&private_vid_to_receive_on).await?;
 
     loop {
