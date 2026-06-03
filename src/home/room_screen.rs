@@ -1814,7 +1814,7 @@ impl RoomScreen {
                 TimelineUpdate::RoomEncrypted => {
                     tl.is_encrypted = true;
                     self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .update_encryption_status(cx, true);
+                        .update_encryption_state(cx, true);
                 }
                 TimelineUpdate::LinkPreviewFetched => {}
                 TimelineUpdate::FileUploadStarted { upload_id, file_name, in_reply_to, abort_handle } => {
