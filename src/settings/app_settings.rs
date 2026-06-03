@@ -34,7 +34,7 @@ script_mod! {
             color: (MESSAGE_TEXT_COLOR),
             color_hover: (MESSAGE_TEXT_COLOR),
             color_active: (COLOR_ACTIVE_PRIMARY_DARKER),
-            text_style: SETTINGS_REGULAR_TEXT_STYLE {},
+            text_style: REGULAR_TEXT {},
         }
 
         draw_bg +: {
@@ -78,7 +78,7 @@ script_mod! {
             color_hover: (MESSAGE_TEXT_COLOR),
             color_focus: (MESSAGE_TEXT_COLOR),
             color_down: (MESSAGE_TEXT_COLOR),
-            text_style: SETTINGS_REGULAR_TEXT_STYLE {},
+            text_style: REGULAR_TEXT {},
         }
 
         draw_bg +: {
@@ -153,7 +153,7 @@ script_mod! {
             color_active: (MESSAGE_TEXT_COLOR),
             color_focus: (MESSAGE_TEXT_COLOR),
             color_down: (MESSAGE_TEXT_COLOR),
-            text_style: SETTINGS_REGULAR_TEXT_STYLE {},
+            text_style: REGULAR_TEXT {},
         }
 
         draw_bg +: {
@@ -274,7 +274,7 @@ script_mod! {
                 draw_bg +: { size: 21 }
                 text: ""
                 draw_text +: {
-                    text_style: SETTINGS_REGULAR_TEXT_STYLE {},
+                    text_style: REGULAR_TEXT {},
                 }
             }
 
@@ -551,6 +551,12 @@ impl AppSettings {
 
         self.view.text_input(cx, ids!(ui_zoom_input))
             .set_text(cx, &prefs.ui_zoom.format_percent());
+        #[cfg(target_os = "macos")]
+        let send_toggle_label = tr_key(self.app_language, "settings.preferences.app.send_shortcut.toggle.cmd");
+        #[cfg(not(target_os = "macos"))]
+        let send_toggle_label = tr_key(self.app_language, "settings.preferences.app.send_shortcut.toggle.ctrl");
+        self.view.check_box(cx, ids!(send_on_cmd_enter_toggle))
+            .set_text(send_toggle_label);
         self.view.check_box(cx, ids!(send_on_cmd_enter_toggle))
             .set_active(cx, !prefs.send_on_enter, Animate::No);
         self.update_send_shortcut_description(cx, prefs.send_on_enter);
