@@ -1,0 +1,4 @@
+## 2024-05-17 - XSS Vulnerability in Event Previews
+**Vulnerability:** User-controlled fields like room aliases, canonical alias, custom guest access, and custom join rules were directly injected into text previews without HTML escaping when `format_as_html` was true in `src/event_preview.rs`.
+**Learning:** The existing codebase lacked a systematic escaping mechanism for dynamic preview content, allowing user inputs to break out of HTML rendering contexts (e.g., Makepad `show_html`). This happened because formatting was done directly using `format!` and `String::push_str` with raw inputs.
+**Prevention:** When injecting strings into HTML contexts, always use `htmlize::escape_text`. For fields conditionally rendered as HTML (returning `Cow<'_, str>`), explicitly use `Cow::Owned(htmlize::escape_text(input).into_owned())` to ensure both arms return identical types.

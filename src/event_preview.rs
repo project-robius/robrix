@@ -453,7 +453,11 @@ pub fn text_preview_of_other_state(
             let mut s = String::from("set this room's aliases to ");
             let last_alias = content.aliases.len() - 1;
             for (i, alias) in content.aliases.iter().enumerate() {
-                s.push_str(alias.as_str());
+                if format_as_html {
+                    s.push_str(&htmlize::escape_text(alias.as_str()));
+                } else {
+                    s.push_str(alias.as_str());
+                }
                 if i != last_alias {
                     s.push_str(", ");
                 }
@@ -465,9 +469,13 @@ pub fn text_preview_of_other_state(
             Some(String::from("set this room's avatar picture."))
         }
         AnyOtherStateEventContentChange::RoomCanonicalAlias(StateEventContentChange::Original { content, .. }) => {
-            Some(format!("set the main address of this room to {}.",
-                content.alias.as_ref().map(|a| a.as_str()).unwrap_or("none")
-            ))
+            let alias = content.alias.as_ref().map(|a| a.as_str()).unwrap_or("none");
+            let alias = if format_as_html {
+                Cow::Owned(htmlize::escape_text(alias).into_owned())
+            } else {
+                Cow::Borrowed(alias)
+            };
+            Some(format!("set the main address of this room to {}.", alias))
         }
         AnyOtherStateEventContentChange::RoomCreate(StateEventContentChange::Original { content, .. }) => {
             Some(format!("created this room (v{}).", content.room_version.as_str()))
@@ -479,17 +487,28 @@ pub fn text_preview_of_other_state(
             Some(match &content.guest_access {
                 GuestAccess::CanJoin => String::from("has allowed guests to join this room."),
                 GuestAccess::Forbidden => String::from("has forbidden guests from joining this room."),
-                custom => format!("has set custom guest access rules for this room: {}", custom.as_str()),
+                custom => {
+                    let custom_str = if format_as_html {
+                        Cow::Owned(htmlize::escape_text(custom.as_str()).into_owned())
+                    } else {
+                        Cow::Borrowed(custom.as_str())
+                    };
+                    format!("has set custom guest access rules for this room: {}", custom_str)
+                }
             })
         }
         AnyOtherStateEventContentChange::RoomHistoryVisibility(StateEventContentChange::Original { content, .. }) => {
             Some(format!("set this room's history to be visible by {}",
                 match &content.history_visibility {
-                    HistoryVisibility::Invited => "invited users, since they were invited.",
-                    HistoryVisibility::Joined => "joined users, since they joined.",
-                    HistoryVisibility::Shared => "joined users, for all of time.",
-                    HistoryVisibility::WorldReadable => "anyone for all time.",
-                    custom => custom.as_str(),
+                    HistoryVisibility::Invited => Cow::Borrowed("invited users, since they were invited."),
+                    HistoryVisibility::Joined => Cow::Borrowed("joined users, since they joined."),
+                    HistoryVisibility::Shared => Cow::Borrowed("joined users, for all of time."),
+                    HistoryVisibility::WorldReadable => Cow::Borrowed("anyone for all time."),
+                    custom => if format_as_html {
+                        Cow::Owned(htmlize::escape_text(custom.as_str()).into_owned())
+                    } else {
+                        Cow::Borrowed(custom.as_str())
+                    },
                 },
             ))
         }
@@ -501,7 +520,14 @@ pub fn text_preview_of_other_state(
                 JoinRule::Restricted(_) => String::from("set this room to be joinable by invite only or with restrictions."),
                 JoinRule::KnockRestricted(_) => String::from("set this room to be joinable by invite only or requestable with restrictions."),
                 JoinRule::Invite  => String::from("set this room to be joinable by invite only."),
-                custom => format!("set custom join rules for this room: {}", custom.as_str()),
+                custom => {
+                    let custom_str = if format_as_html {
+                        Cow::Owned(htmlize::escape_text(custom.as_str()).into_owned())
+                    } else {
+                        Cow::Borrowed(custom.as_str())
+                    };
+                    format!("set custom join rules for this room: {}", custom_str)
+                }
             })
         }
         AnyOtherStateEventContentChange::RoomPinnedEvents(StateEventContentChange::Original { content, .. }) => {
