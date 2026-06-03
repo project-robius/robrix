@@ -587,6 +587,17 @@ impl RoomInputBar {
         self.view.view(cx, ids!(can_not_send_message_notice)).set_visible(cx, !can_send);
     }
 
+    /// Sets the message input's placeholder to reflect this room's encryption status.
+    fn update_encryption_status(&mut self, cx: &mut Cx, is_encrypted: bool) {
+        let empty_text = if is_encrypted {
+            "Send an encrypted message..."
+        } else {
+            "Send an unencrypted message..."
+        };
+        self.text_input(cx, ids!(input_bar.mentionable_text_input.text_input))
+            .set_empty_text(cx, empty_text.to_string());
+    }
+
     /// Returns true if the TSP signing checkbox is checked, false otherwise.
     ///
     /// If TSP is not enabled, this will always return false.
@@ -755,6 +766,12 @@ impl RoomInputBarRef {
         inner.update_tombstone_footer(cx, tombstoned_room_id, successor_room_details);
     }
 
+    /// Updates the message input's placeholder based on this room's encryption status.
+    pub fn update_encryption_status(&self, cx: &mut Cx, is_encrypted: bool) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.update_encryption_status(cx, is_encrypted);
+    }
+
     /// Opens the native picker to upload a photo or video into this room.
     pub fn open_photo_video_picker(
         &self,
@@ -816,6 +833,7 @@ impl RoomInputBarRef {
         saved_state: RoomInputBarState,
         user_power_levels: UserPowerLevels,
         tombstone_info: Option<&SuccessorRoomDetails>,
+        is_encrypted: bool,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         let RoomInputBarState {
@@ -831,6 +849,7 @@ impl RoomInputBarRef {
         //    This must happen before we restore the state of the `EditingPane`,
         //    because the call to `show_editing_pane()` might re-update the `input_bar`'s visibility.
         inner.update_user_power_levels(cx, user_power_levels);
+        inner.update_encryption_status(cx, is_encrypted);
 
         // 1. Restore the state of the TextInput within the MentionableTextInput.
         inner.text_input(cx, ids!(input_bar.mentionable_text_input.text_input))
