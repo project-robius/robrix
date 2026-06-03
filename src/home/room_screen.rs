@@ -7,7 +7,7 @@ use hashbrown::{HashMap, HashSet};
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    OwnedServerName, RoomDisplayName, media::{MediaFormat, MediaRequestParameters}, room::RoomMember, ruma::{
+    OwnedServerName, media::{MediaFormat, MediaRequestParameters}, room::RoomMember, ruma::{
         EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId, events::{
             receipt::Receipt,
             room::{
@@ -34,7 +34,7 @@ use crate::{
     shared::{
         attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, media_source_mxc, start_attachment_download}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageStatus, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
-    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
+    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -1067,37 +1067,19 @@ impl Widget for RoomScreen {
         //       so the only thing we'd need here is the conditional below.
 
         if !is_pane_shown || !is_interactive_hit {
-            // Create a Scope with RoomScreenProps containing the room members.
+            // Create a Scope with RoomScreenProps.
             // This scope is needed by child widgets like MentionableTextInput during event handling.
             let room_props = if let Some(tl) = self.tl_state.as_ref() {
-                let room_id = tl.kind.room_id().clone();
-                let room_members = tl.room_members.clone();
-
-                // Fetch room data once to avoid duplicate expensive lookups
-                let (room_display_name, room_avatar_url) = get_client()
-                    .and_then(|client| client.get_room(&room_id))
-                    .map(|room| (
-                        room.cached_display_name().unwrap_or(RoomDisplayName::Empty),
-                        room.avatar_url()
-                    ))
-                    .unwrap_or((RoomDisplayName::Empty, None));
-
                 RoomScreenProps {
                     room_screen_widget_uid,
-                    room_name_id: RoomNameId::new(room_display_name, room_id),
                     timeline_kind: tl.kind.clone(),
-                    room_members,
-                    room_avatar_url,
                 }
-            } else if let Some(room_name) = &self.room_name_id {
+            } else if self.room_name_id.is_some() {
                 // Fallback case: we have a room_name but no tl_state yet
                 RoomScreenProps {
                     room_screen_widget_uid,
-                    room_name_id: room_name.clone(),
                     timeline_kind: self.timeline_kind.clone()
                         .expect("BUG: room_name_id was set but timeline_kind was missing"),
-                    room_members: None,
-                    room_avatar_url: None,
                 }
             } else {
                 // No room selected yet, skip event handling that requires room context
@@ -1109,10 +1091,7 @@ impl Widget for RoomScreen {
                 let room_id = owned_room_id!("!dummy:matrix.org");
                 RoomScreenProps {
                     room_screen_widget_uid,
-                    room_name_id: RoomNameId::empty(room_id.clone()),
                     timeline_kind: TimelineKind::MainRoom { room_id },
-                    room_members: None,
-                    room_avatar_url: None,
                 }
             };
             let mut room_scope = Scope::with_props(&room_props);
@@ -2924,10 +2903,7 @@ impl RoomScreenRef {
 /// from a RoomScreen widget to its child widgets for event/draw handlers.
 pub struct RoomScreenProps {
     pub room_screen_widget_uid: WidgetUid,
-    pub room_name_id: RoomNameId,
     pub timeline_kind: TimelineKind,
-    pub room_members: Option<Arc<Vec<RoomMember>>>,
-    pub room_avatar_url: Option<OwnedMxcUri>,
 }
 
 
