@@ -1,6 +1,6 @@
 use std::{io::ErrorKind, path::{Path, PathBuf}, sync::OnceLock, time::Duration};
 
-use makepad_widgets::warning;
+use makepad_widgets::{log, warning};
 use matrix_sdk::reqwest::{Client, ClientBuilder, NoProxy, Proxy, tls};
 use serde::{Deserialize, Serialize};
 use url::{Host, Url};
@@ -232,8 +232,14 @@ pub fn apply_policy_to_reqwest_builder(
     proxy_url: Option<&str>,
 ) -> anyhow::Result<ClientBuilder> {
     match normalize_proxy_url(proxy_url) {
-        Some(proxy_url) => Ok(builder.proxy(build_reqwest_proxy(&proxy_url)?)),
-        None => Ok(builder.no_proxy()),
+        Some(proxy_url) => {
+            log!("[proxy_config] Building reqwest client WITH proxy: {proxy_url}");
+            Ok(builder.proxy(build_reqwest_proxy(&proxy_url)?))
+        }
+        None => {
+            log!("[proxy_config] Building reqwest client with NO proxy (direct)");
+            Ok(builder.no_proxy())
+        }
     }
 }
 
