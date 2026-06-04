@@ -492,7 +492,7 @@ script_mod! {
 
                 slider := SliderMinimal {
                     width: Fill
-                    height: 20
+                    height: 30
                     min: 0.0
                     max: 1.0
                     step: 0.0
@@ -505,10 +505,34 @@ script_mod! {
                         val_color: #x111827
                         handle_color: #x111827
                     }
+                    // Hide the slider's own numeric value label (it overlaps
+                    // the track at this height and is redundant with the
+                    // adjacent `elapsed_label` showing MM:SS).
+                    draw_text +: {
+                        color: #00000000
+                        color_hover: #00000000
+                        color_focus: #00000000
+                        color_drag: #00000000
+                    }
+                    // Push the slider's value label down so it sits below
+                    // the track instead of clipping at the top edge.
+                    label_walk: Walk {
+                        width: Fill
+                        height: Fit
+                        margin: Inset { top: 56.0, bottom: 0.0 }
+                    }
+                    // The slider also embeds a `TextInput` (color is
+                    // `theme.color_text_val` — white on this theme) which
+                    // renders the numeric value separately from `draw_text`.
+                    // Push it down with a top margin so it doesn't clip
+                    // against the slider's top edge.
+                    text_input +: {
+                        margin: { top: 56.0 }
+                    }
                 }
 
                 elapsed_label := Label {
-                    width: 46
+                    width: 30
                     height: Fit
                     text: "00:00"
                     draw_text +: {

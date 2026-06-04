@@ -2426,6 +2426,14 @@ script_mod! {
         }
     }
 
+    mod.widgets.AudioMessage = mod.widgets.Message {
+        body +: {
+            content +: {
+                audio_player := mod.widgets.AudioMessagePlayer {}
+            }
+        }
+    }
+
 
     // The view used for each state event (non-messages) in a room's timeline.
     // The timestamp, profile picture, and text are all very small.
