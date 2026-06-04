@@ -2,7 +2,7 @@
 use makepad_widgets::*;
 use url::Url;
 
-use crate::{app::{AppState, AppUpdateAction, BotSettingsState}, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, i18n::{AppLanguage, I18nKey, language_dropdown_labels, tr, tr_fmt, tr_key}, persistence, profile::user_profile::UserProfile, settings::{account_settings::AccountSettingsWidgetExt, app_preferences::AppPreferences, app_settings::AppSettingsWidgetExt, bot_settings::BotSettingsWidgetExt, translation_settings::TranslationSettingsWidgetExt}, shared::{expand_arrow::ExpandArrow, popup_list::{PopupKind, enqueue_popup_notification}, styles::{apply_neutral_button_style, apply_primary_button_style}}, sliding_sync::current_user_id, updater::{UpdateCheckOutcome, check_for_updates}};
+use crate::{app::{AppState, AppUpdateAction, BotSettingsState}, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, i18n::{AppLanguage, I18nKey, language_dropdown_labels, tr, tr_fmt, tr_key}, persistence, proxy_config::{validate_proxy_url_for_user_input, ProxyInputError}, profile::user_profile::UserProfile, settings::{account_settings::AccountSettingsWidgetExt, app_preferences::AppPreferences, app_settings::AppSettingsWidgetExt, bot_settings::BotSettingsWidgetExt, translation_settings::TranslationSettingsWidgetExt}, shared::{expand_arrow::ExpandArrow, popup_list::{PopupKind, enqueue_popup_notification}, styles::{apply_neutral_button_style, apply_primary_button_style}}, sliding_sync::current_user_id, updater::{UpdateCheckOutcome, check_for_updates}};
 
 const CONTRIBUTE_REPO_URL: &str = "https://github.com/Project-Robius-China/robrix2";
 
@@ -450,7 +450,7 @@ script_mod! {
                         }
 
                         // --- TSP card ---
-                        RoundedView {
+                        tsp_settings_card := RoundedView {
                             width: Fill, height: Fit
                             flow: Down
                             padding: Inset{left: (SPACE_MD), right: (SPACE_MD), top: (SPACE_SM), bottom: (SPACE_MD)}
@@ -870,6 +870,12 @@ impl SettingsScreen {
         self.sync_app_language(cx);
     }
 
+    fn sync_tsp_settings_card_visibility(&mut self, cx: &mut Cx) {
+        self.view
+            .view(cx, ids!(tsp_settings_card))
+            .set_visible(cx, cfg!(feature = "tsp"));
+    }
+
     fn sync_app_language(&mut self, cx: &mut Cx) {
         self.view
             .label(cx, ids!(settings_header_title))
@@ -938,6 +944,7 @@ impl SettingsScreen {
         self.view
             .translation_settings(cx, ids!(translation_settings))
             .set_app_language(cx, self.app_language);
+        self.sync_tsp_settings_card_visibility(cx);
         self.view
             .label(cx, ids!(contribute_title))
             .set_text(cx, tr_key(self.app_language, "settings.contribute.title"));
@@ -1071,7 +1078,14 @@ impl SettingsScreen {
         }
 
         let proxy_url = proxy_url.to_string();
-        crate::proxy_config::validate_proxy_url(&proxy_url)?;
+        validate_proxy_url_for_user_input(&proxy_url).map_err(|e| match e {
+            ProxyInputError::InvalidHost(host) => tr_fmt(
+                self.app_language,
+                "settings.preferences.proxy.error.invalid_host",
+                &[("host", host.as_str())],
+            ),
+            other => other.to_string(),
+        })?;
         Ok(Some(proxy_url))
     }
 
@@ -1112,6 +1126,7 @@ impl SettingsScreen {
                     id!(contribute_settings_page)
                 },
             );
+        self.sync_tsp_settings_card_visibility(cx);
 
         // The preferences page is lazy-init: its widgets don't exist until the
         // user first switches to it, so the saved proxy populated during

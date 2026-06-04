@@ -3,7 +3,7 @@ use std::ops::Not;
 use makepad_widgets::*;
 use url::Url;
 
-use crate::{app::AppState, homeserver::{login_mode, CapabilityProbeAction, LoginMode}, i18n::{AppLanguage, tr_fmt, tr_key}, sliding_sync::{submit_async_request, AccountSwitchAction, LoginByPassword, LoginRequest, MatrixRequest}};
+use crate::{app::AppState, homeserver::{login_mode, CapabilityProbeAction, LoginMode}, i18n::{AppLanguage, tr_fmt, tr_key}, proxy_config::{validate_proxy_url_for_user_input, ProxyInputError}, sliding_sync::{submit_async_request, AccountSwitchAction, LoginByPassword, LoginRequest, MatrixRequest}};
 use crate::register::{validation::normalize_homeserver_url, RegisterAction};
 
 use super::login_status_modal::{LoginStatusModalAction, LoginStatusModalWidgetExt};
@@ -916,7 +916,14 @@ impl LoginScreen {
         }
 
         let proxy_url = proxy_url.to_string();
-        crate::proxy_config::validate_proxy_url(&proxy_url)?;
+        validate_proxy_url_for_user_input(&proxy_url).map_err(|e| match e {
+            ProxyInputError::InvalidHost(host) => tr_fmt(
+                self.app_language,
+                "login.proxy_settings.error.invalid_host",
+                &[("host", host.as_str())],
+            ),
+            other => other.to_string(),
+        })?;
         Ok(Some(proxy_url))
     }
 
