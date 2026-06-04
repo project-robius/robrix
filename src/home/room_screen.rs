@@ -42,8 +42,9 @@ use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use crate::home::streaming_animation::StreamingAnimState;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
 use crate::shared::mentionable_text_input::MentionableTextInputAction;
+use crate::shared::audio_message_player::AudioMessagePlayerWidgetRefExt;
 use crate::shared::video_message_player::VideoMessagePlayerWidgetRefExt;
-use crate::event_preview::summarize_video_message;
+use crate::event_preview::{summarize_audio_message, summarize_video_message};
 
 use rangemap::RangeSet;
 
