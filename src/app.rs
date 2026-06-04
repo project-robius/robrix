@@ -28,7 +28,7 @@ use crate::{
 };
 use crate::shared::room_filter_search_results::{RoomFilterResultAction, RoomFilterResultTarget};
 use crate::shared::room_filter_search_results::RoomFilterSearchResultsListWidgetRefExt;
-use crate::home::sticker_modal::StickerModalWidgetRefExt;
+use crate::shared::video_message_player_modal::WindowFullscreenAction;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -875,6 +875,17 @@ impl MatchEvent for App {
                 continue;
             }
 
+            match action.downcast_ref::<WindowFullscreenAction>() {
+                Some(WindowFullscreenAction::Enable) => {
+                    self.ui.window(cx, ids!(main_window)).fullscreen(cx);
+                    continue;
+                }
+                Some(WindowFullscreenAction::Disable) => {
+                    self.ui.window(cx, ids!(main_window)).disable_fullscreen(cx);
+                    continue;
+                }
+                None => {}
+            }
             match action.downcast_ref() {
                 Some(LogoutConfirmModalAction::Open) => {
                     self.ui.logout_confirm_modal(cx, ids!(logout_confirm_modal_inner)).reset_state(cx);
