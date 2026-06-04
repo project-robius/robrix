@@ -637,6 +637,16 @@ pub enum StickerGridAction {
 /// Field names mirror the scalar `/api/widgets/assets` response shape
 /// (`AssetCollection { id, assets: [Asset { asset_type, name, description,
 /// thumbnail, purchased, .. }] }`), with `thumbnail_bytes` populated after
+/// Lightweight sticker tuple `(mxc_url, https_url, body)` used when
+/// piping sticker data between the catalog cache, the sticker pane, and
+/// the image-loader pipeline. Kept as a tuple (vs. a named struct) so
+/// the existing pattern-matching call sites don't have to change.
+pub type StickerEntry = (String, String, String);
+
+/// `(pack_id, pack_name, stickers)` representing one active pack as
+/// passed into `populate_sticker_pane` / cache hydration paths.
+pub type ActiveStickerPack = (String, String, Vec<StickerEntry>);
+
 /// a follow-up HTTP fetch.
 #[derive(Clone, Debug)]
 pub struct StickerPack {
@@ -1178,11 +1188,11 @@ impl WidgetMatchEvent for StickerModal {
 
                         // Load any newly active packs that aren't yet in the Stickers pane.
                         let existing_ids = self.sticker_pane_pack_ids.clone();
-                        let new_to_load: Vec<(String, String, Vec<(String, String, String)>)> =
+                        let new_to_load: Vec<ActiveStickerPack> =
                             self.cached_packs.iter()
                                 .filter(|p| p.is_active && !existing_ids.contains(&p.id))
                                 .filter_map(|pack| {
-                                    let infos: Vec<(String, String, String)> = pack.stickers.iter()
+                                    let infos: Vec<StickerEntry> = pack.stickers.iter()
                                         .filter(|s| !s.https_url.is_empty())
                                         .map(|s| (s.url.clone(), s.https_url.clone(), s.body.clone()))
                                         .collect();
@@ -1300,11 +1310,11 @@ impl StickerModal {
         self.set_active_tab(cx, ActiveTab::Stickers);
 
         if let Some(cached) = load_catalog_cache() {
-            let active_packs: Vec<(String, String, Vec<(String, String, String)>)> =
+            let active_packs: Vec<ActiveStickerPack> =
                 cached.packs.iter()
                     .filter(|p| p.is_active)
                     .filter_map(|pack| {
-                        let infos: Vec<(String, String, String)> = pack.stickers.iter()
+                        let infos: Vec<StickerEntry> = pack.stickers.iter()
                             .filter(|s| !s.https_url.is_empty())
                             .map(|s| (s.mxc_url.clone(), s.https_url.clone(), s.body.clone()))
                             .collect();
@@ -1344,11 +1354,11 @@ impl StickerModal {
         self.view.view(cx, ids!(tab_bar)).set_visible(cx, true);
         self.view.label(cx, ids!(modal_title)).set_text(cx, "Sticker Packs");
         if let Some(cached) = load_catalog_cache() {
-            let active_packs: Vec<(String, String, Vec<(String, String, String)>)> =
+            let active_packs: Vec<ActiveStickerPack> =
                 cached.packs.iter()
                     .filter(|p| p.is_active)
                     .filter_map(|pack| {
-                        let infos: Vec<(String, String, String)> = pack.stickers.iter()
+                        let infos: Vec<StickerEntry> = pack.stickers.iter()
                             .filter(|s| !s.https_url.is_empty())
                             .map(|s| (s.mxc_url.clone(), s.https_url.clone(), s.body.clone()))
                             .collect();
@@ -1431,11 +1441,11 @@ impl StickerModal {
     /// sticker load has been triggered yet (e.g. the modal opened on the
     /// Catalog tab because there was no cache hit on startup).
     fn ensure_sticker_pane_loaded(&mut self, cx: &mut Cx) {
-        let active_packs: Vec<(String, String, Vec<(String, String, String)>)> =
+        let active_packs: Vec<ActiveStickerPack> =
             self.cached_packs.iter()
                 .filter(|p| p.is_active)
                 .filter_map(|pack| {
-                    let infos: Vec<(String, String, String)> = pack.stickers.iter()
+                    let infos: Vec<StickerEntry> = pack.stickers.iter()
                         .filter(|s| !s.https_url.is_empty())
                         .map(|s| (s.url.clone(), s.https_url.clone(), s.body.clone()))
                         .collect();

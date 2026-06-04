@@ -96,6 +96,10 @@ pub enum VolumeAction {
 pub type SharedPlayerState = Arc<Mutex<VideoPlayerState>>;
 pub type SharedVolumeState = Arc<Mutex<VideoVolumeState>>;
 
+/// `(width, height, rgba_pixels)` produced by the blurhash decoder worker
+/// and shipped through a `Receiver` into the video player.
+pub type BlurhashDecoded = (u32, u32, Vec<u8>);
+
 // ============================================================================
 // Cross-widget actions
 // ============================================================================
@@ -428,7 +432,7 @@ pub struct VideoMessagePlayer {
     #[rust]
     blurhash_texture_key: Option<(String, u32, u32)>,
     #[rust]
-    blurhash_receiver: Option<Receiver<Option<(u32, u32, Vec<u8>)>>>,
+    blurhash_receiver: Option<Receiver<Option<BlurhashDecoded>>>,
     #[rust]
     play_enabled: bool,
 
