@@ -3,7 +3,7 @@ use std::{io::ErrorKind, path::{Path, PathBuf}, sync::OnceLock, time::Duration};
 use makepad_widgets::warning;
 use matrix_sdk::reqwest::{Client, ClientBuilder, NoProxy, Proxy, tls};
 use serde::{Deserialize, Serialize};
-use url::Url;
+use url::{Host, Url};
 
 const POLICY_USER_AGENT: &str = concat!(
     "Robrix/", env!("CARGO_PKG_VERSION"), " (matrix-rust-sdk)"
@@ -66,20 +66,88 @@ pub fn normalize_proxy_url(proxy_url: Option<&str>) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+/// Why a user-entered proxy URL was rejected.
+///
+/// Returned by [`validate_proxy_url_for_user_input`] so UI callers can localize
+/// the message via the i18n layer. `Display` renders the English fallback used
+/// by non-UI paths (load/build/CLI) where no user is present to localize for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProxyInputError {
+    /// The string is not a parseable URL. Carries the parser detail.
+    InvalidUrl(String),
+    /// Scheme is not http/https. Carries the offending scheme.
+    UnsupportedScheme(String),
+    /// Host is not an IP / `localhost` / dotted domain — almost always a typo.
+    /// Carries the rejected host.
+    InvalidHost(String),
+    /// The URL has no host component.
+    MissingHost,
+}
+
+impl std::fmt::Display for ProxyInputError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProxyInputError::InvalidUrl(detail) => write!(f, "Invalid proxy URL: {detail}"),
+            ProxyInputError::UnsupportedScheme(scheme) => {
+                write!(f, "Unsupported proxy URL scheme `{scheme}`. Use http or https.")
+            }
+            ProxyInputError::InvalidHost(host) => write!(
+                f,
+                "Invalid proxy host `{host}`. Use an IP address, `localhost`, or a domain name like `proxy.example.com`."
+            ),
+            ProxyInputError::MissingHost => write!(f, "Proxy URL must include a host."),
+        }
+    }
+}
+
 pub fn validate_proxy_url(proxy_url: &str) -> Result<(), String> {
+    validate_proxy_url_typed(proxy_url).map_err(|e| e.to_string())
+}
+
+fn validate_proxy_url_typed(proxy_url: &str) -> Result<(), ProxyInputError> {
+    let Some(parsed_url) = parse_supported_proxy_url(proxy_url)? else {
+        return Ok(());
+    };
+
+    if parsed_url.host().is_none() {
+        return Err(ProxyInputError::MissingHost);
+    }
+
+    Ok(())
+}
+
+fn parse_supported_proxy_url(proxy_url: &str) -> Result<Option<Url>, ProxyInputError> {
     let proxy_url = proxy_url.trim();
     if proxy_url.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
 
     let parsed_url = Url::parse(proxy_url)
-        .map_err(|e| format!("Invalid proxy URL: {e}"))?;
+        .map_err(|e| ProxyInputError::InvalidUrl(e.to_string()))?;
 
     match parsed_url.scheme() {
-        "http" | "https" => Ok(()),
-        scheme => Err(format!(
-            "Unsupported proxy URL scheme `{scheme}`. Use http or https."
-        )),
+        "http" | "https" => {}
+        scheme => return Err(ProxyInputError::UnsupportedScheme(scheme.to_string())),
+    }
+
+    Ok(Some(parsed_url))
+}
+
+pub fn validate_proxy_url_for_user_input(proxy_url: &str) -> Result<(), ProxyInputError> {
+    let Some(parsed_url) = parse_supported_proxy_url(proxy_url)? else {
+        return Ok(());
+    };
+
+    // Keep this check non-blocking: do not perform DNS from UI form paths.
+    // Without network lookup we cannot distinguish a valid private-DNS single
+    // label like `proxy` from a typo like `qweqwe`, so require user-entered
+    // domain names to be `localhost` or contain a dot.
+    match parsed_url.host() {
+        Some(Host::Ipv4(_) | Host::Ipv6(_)) => Ok(()),
+        Some(Host::Domain(domain)) if domain.eq_ignore_ascii_case("localhost") => Ok(()),
+        Some(Host::Domain(domain)) if domain.contains('.') => Ok(()),
+        Some(Host::Domain(domain)) => Err(ProxyInputError::InvalidHost(domain.to_string())),
+        None => Err(ProxyInputError::MissingHost),
     }
 }
 
@@ -278,6 +346,45 @@ mod tests {
             POLICY_USER_AGENT.contains("matrix-rust-sdk"),
             "expected UA to mark the SDK family for homeserver tooling, got {POLICY_USER_AGENT:?}"
         );
+    }
+
+    #[test]
+    fn validate_proxy_url_accepts_single_label_domain_syntax() {
+        validate_proxy_url("http://proxy:3128")
+            .expect("single-label proxy hosts are valid in private DNS and container networks");
+    }
+
+    #[test]
+    fn validate_proxy_url_for_user_input_rejects_bare_single_label_host() {
+        let err = validate_proxy_url_for_user_input("http://qweqwe:8080")
+            .expect_err("bare single-label hosts should be rejected without DNS lookup");
+        assert_eq!(err, ProxyInputError::InvalidHost("qweqwe".to_string()));
+    }
+
+    #[test]
+    fn validate_proxy_url_for_user_input_accepts_non_blocking_address_shapes() {
+        for ok in [
+            "http://127.0.0.1:7890",
+            "http://[::1]:7890",
+            "http://localhost:7890",
+            "https://proxy.example.invalid:443",
+        ] {
+            validate_proxy_url_for_user_input(ok)
+                .unwrap_or_else(|e| panic!("expected {ok:?} to validate without DNS, got error {e:?}"));
+        }
+    }
+
+    #[test]
+    fn validate_proxy_url_accepts_ip_localhost_and_fqdn() {
+        for ok in [
+            "http://127.0.0.1:7890",
+            "http://[::1]:7890",
+            "http://localhost:7890",
+            "https://proxy.example.com:443",
+        ] {
+            validate_proxy_url(ok)
+                .unwrap_or_else(|e| panic!("expected {ok:?} to validate, got error {e:?}"));
+        }
     }
 
     #[test]
