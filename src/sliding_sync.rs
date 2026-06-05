@@ -1103,6 +1103,23 @@ pub enum MatrixRequest {
         kind: RemoteDirectorySearchKind,
         limit: u64,
     },
+    /// Request to fetch a page of the user's homeserver's public room directory.
+    ///
+    /// Used by the dedicated public room directory browser screen.
+    /// Pagination is driven by the `since` cursor: the first request passes `None`,
+    /// then each response's `next_batch` is fed back in on subsequent calls.
+    FetchPublicDirectoryPage {
+        /// The search term; empty string means "no filter" (browse server's default order).
+        search_term: String,
+        /// Whether to fetch rooms or spaces.
+        kind: DirectoryRoomKind,
+        /// Pagination cursor. `None` for the first page.
+        since: Option<String>,
+        /// Optional page size hint to the server (server may ignore or cap).
+        limit: Option<u64>,
+        /// Discriminator so stale responses can be discarded when the user changes the query.
+        query_id: u64,
+    },
     /// Request to search room messages on the server via the Matrix
     /// `POST /_matrix/client/v3/search` endpoint (room_events category).
     ///
@@ -1415,6 +1432,13 @@ pub enum MatrixRequest {
     UploadRoomAvatar {
         room_id: OwnedRoomId,
         avatar_path: std::path::PathBuf,
+    },
+    /// Request to create a new room. Submitted by `CreateRoomScreen`.
+    /// On success the handler also issues `invite_user_by_id` for each
+    /// entry in `config.initial_invitees` — per-invitee failures are
+    /// rolled up into `CreateRoomAction::PartialInvite`.
+    CreateRoomFromConfig {
+        config: crate::home::create_room::CreateRoomConfig,
     },
 }
 
@@ -1956,6 +1980,52 @@ pub enum RemoteDirectorySearchResult {
     Space {
         space_name_id: RoomNameId,
         avatar_uri: Option<OwnedMxcUri>,
+    },
+}
+
+/// Whether the public directory browser is fetching rooms or spaces.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DirectoryRoomKind {
+    Rooms,
+    Spaces,
+}
+
+/// A single entry returned by `MatrixRequest::FetchPublicDirectoryPage`.
+///
+/// Carries the richer fields the directory browser shows per row (topic, member count, alias),
+/// which the existing slim `RemoteDirectorySearchResult` deliberately omits.
+#[derive(Clone, Debug)]
+pub struct PublicRoomDirectoryEntry {
+    pub room_id: OwnedRoomId,
+    /// The displayable name. Falls back to canonical alias, then room id.
+    pub display_name: String,
+    pub canonical_alias: Option<String>,
+    pub topic: Option<String>,
+    pub num_joined_members: u64,
+    pub avatar_uri: Option<OwnedMxcUri>,
+    pub is_space: bool,
+    pub world_readable: bool,
+    pub guest_can_join: bool,
+}
+
+/// Actions emitted by the worker thread in response to
+/// `MatrixRequest::FetchPublicDirectoryPage`.
+#[derive(Clone, Debug)]
+pub enum PublicDirectoryAction {
+    /// A page of results arrived.
+    Page {
+        query_id: u64,
+        /// `true` if this was the first page (continuation pages append).
+        is_first_page: bool,
+        rooms: Vec<PublicRoomDirectoryEntry>,
+        /// Server-supplied cursor for the next page; `None` means no more pages.
+        next_batch: Option<String>,
+    },
+    /// The request failed.
+    Failed {
+        query_id: u64,
+        is_first_page: bool,
+        error: String,
     },
 }
 
@@ -2992,6 +3062,82 @@ async fn matrix_worker_task(
                 });
             }
 
+            MatrixRequest::FetchPublicDirectoryPage { search_term, kind, since, limit, query_id } => {
+                let Some(client) = get_client() else { continue };
+                let _fetch_task = Handle::current().spawn(async move {
+                    let is_first_page = since.is_none();
+                    let trimmed = search_term.trim();
+
+                    let mut filter = PublicRoomsFilter::new();
+                    if !trimmed.is_empty() {
+                        filter.generic_search_term = Some(trimmed.to_owned());
+                    }
+                    filter.room_types = match kind {
+                        DirectoryRoomKind::Rooms => vec![RoomTypeFilter::Default],
+                        DirectoryRoomKind::Spaces => vec![RoomTypeFilter::Space],
+                    };
+
+                    let mut request = get_public_rooms_filtered::v3::Request::new();
+                    request.filter = filter;
+                    request.since = since.clone();
+                    if let Some(limit) = limit {
+                        if let Ok(limit_uint) = matrix_sdk::ruma::UInt::try_from(limit) {
+                            request.limit = Some(limit_uint);
+                        }
+                    }
+
+                    log!(
+                        "[public_directory] -> POST /_matrix/client/v3/publicRooms \
+                         query_id={query_id} is_first_page={is_first_page} kind={kind:?} \
+                         search_term={trimmed:?} since={since:?} limit={limit:?}"
+                    );
+
+                    match client.public_rooms_filtered(request).await {
+                        Ok(response) => {
+                            log!(
+                                "[public_directory] <- OK query_id={query_id} \
+                                 rooms={} next_batch={:?}",
+                                response.chunk.len(),
+                                response.next_batch,
+                            );
+                            let rooms = response.chunk.into_iter().map(|room| {
+                                let display_name = room.name.clone()
+                                    .or_else(|| room.canonical_alias.as_ref().map(ToString::to_string))
+                                    .unwrap_or_else(|| room.room_id.to_string());
+                                PublicRoomDirectoryEntry {
+                                    room_id: room.room_id.clone(),
+                                    display_name,
+                                    canonical_alias: room.canonical_alias.as_ref().map(ToString::to_string),
+                                    topic: room.topic,
+                                    num_joined_members: room.num_joined_members.into(),
+                                    avatar_uri: room.avatar_url,
+                                    is_space: matches!(kind, DirectoryRoomKind::Spaces),
+                                    world_readable: room.world_readable,
+                                    guest_can_join: room.guest_can_join,
+                                }
+                            }).collect();
+                            Cx::post_action(PublicDirectoryAction::Page {
+                                query_id,
+                                is_first_page,
+                                rooms,
+                                next_batch: response.next_batch,
+                            });
+                        }
+                        Err(e) => {
+                            log!(
+                                "[public_directory] <- ERROR query_id={query_id} \
+                                 is_first_page={is_first_page} error={e}"
+                            );
+                            Cx::post_action(PublicDirectoryAction::Failed {
+                                query_id,
+                                is_first_page,
+                                error: e.to_string(),
+                            });
+                        }
+                    }
+                });
+            }
+
             MatrixRequest::SearchMessages { room_id, search_term, next_batch, abort_previous } => {
                 if abort_previous {
                     if let Some(handle) = SEARCH_MESSAGES_ABORT.lock().unwrap().take() {
@@ -3278,7 +3424,10 @@ async fn matrix_worker_task(
                                 space_link_error = Some(error.to_string());
                             }
 
-                            let room_name_id = RoomNameId::from_room(&room).await;
+                            let room_name_id = RoomNameId::new(
+                                RoomDisplayName::Named(room_name.clone()),
+                                room.room_id().to_owned(),
+                            );
                             Cx::post_action(CreateRoomAction::Created {
                                 room_name_id,
                                 parent_space_id,
@@ -4860,6 +5009,70 @@ async fn matrix_worker_task(
 
                     on_fetched(url, destination, result, update_sender);
                     SignalToUI::set_ui_signal();
+                });
+            }
+
+            MatrixRequest::CreateRoomFromConfig { config } => {
+                let Some(client) = get_client() else { continue };
+
+                Handle::current().spawn(async move {
+                    use crate::home::create_room::CreateRoomFromConfigAction;
+                    let room_name = config.name.trim().to_owned();
+                    let request = config.to_ruma_request();
+                    let invitees = config.initial_invitees.clone();
+                    let avatar_bytes = config.avatar_bytes.clone();
+                    let avatar_mime = config.avatar_mime.clone();
+                    match client.create_room(request).await {
+                        Ok(room) => {
+                            let room_id = room.room_id().to_owned();
+                            if let (Some(bytes), Some(mime_str)) = (avatar_bytes, avatar_mime) {
+                                match mime_str.parse::<mime::Mime>() {
+                                    Ok(mime) => {
+                                        if let Err(err) = room
+                                            .upload_avatar(&mime, bytes, None)
+                                            .await
+                                        {
+                                            error!(
+                                                "create_room: avatar upload for {room_id} failed: {err:?}"
+                                            );
+                                        }
+                                    }
+                                    Err(err) => {
+                                        error!(
+                                            "create_room: avatar mime {mime_str} unparseable: {err:?}"
+                                        );
+                                    }
+                                }
+                            }
+
+                            let mut failed = Vec::new();
+                            for invitee in invitees.iter() {
+                                if let Err(err) = room.invite_user_by_id(invitee).await {
+                                    error!(
+                                        "create_room: invite of {invitee} to {room_id} failed: {err:?}"
+                                    );
+                                    failed.push(invitee.clone());
+                                }
+                            }
+                            if failed.is_empty() {
+                                Cx::post_action(CreateRoomFromConfigAction::Created {
+                                    room_id,
+                                    room_name,
+                                });
+                            } else {
+                                Cx::post_action(CreateRoomFromConfigAction::PartialInvite {
+                                    room_id,
+                                    room_name,
+                                    failed,
+                                });
+                            }
+                        }
+                        Err(error) => {
+                            Cx::post_action(CreateRoomFromConfigAction::Failed {
+                                reason: error.to_string(),
+                            });
+                        }
+                    }
                 });
             }
         }

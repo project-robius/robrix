@@ -1873,12 +1873,6 @@ impl RoomsListRef {
             .and_then(|jr| jr.canonical_alias.clone())
     }
 
-    /// Returns the room ID of the first available joined room (useful for testing).
-    pub fn get_first_joined_room_id(&self) -> Option<OwnedRoomId> {
-        let inner = self.borrow()?;
-        inner.all_joined_rooms.keys().next().cloned()
-    }
-
     /// Returns the currently-selected space (the one selected in the SpacesBar).
     pub fn get_selected_space(&self) -> Option<RoomNameId> {
         self.borrow()?.selected_space.clone()

@@ -271,6 +271,16 @@ script_mod! {
                             add_room_screen := mod.widgets.AddRoomScreen {}
                         }
                     }
+
+                    directory_page := SolidView {
+                        width: Fill, height: Fill
+                        show_bg: true,
+                        draw_bg.color: (COLOR_PRIMARY)
+
+                        CachedWidget {
+                            directory_screen := mod.widgets.DirectoryScreen {}
+                        }
+                    }
                 }
             }
 
@@ -316,6 +326,14 @@ script_mod! {
 
                                 CachedWidget {
                                     add_room_screen := mod.widgets.AddRoomScreen {}
+                                }
+                            }
+
+                            directory_page := View {
+                                width: Fill, height: Fill
+
+                                CachedWidget {
+                                    directory_screen := mod.widgets.DirectoryScreen {}
                                 }
                             }
                         }
@@ -470,6 +488,15 @@ impl Widget for HomeScreen {
                             self.view.redraw(cx);
                         }
                     }
+                    Some(NavigationBarAction::GoToDirectory) => {
+                        if !matches!(app_state.selected_tab, SelectedTab::Directory) {
+                            self.previous_selection = app_state.selected_tab.clone();
+                            app_state.selected_tab = SelectedTab::Directory;
+                            cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
+                            self.update_active_page_from_selection(cx, app_state);
+                            self.view.redraw(cx);
+                        }
+                    }
                     Some(NavigationBarAction::GoToSpace { space_name_id }) => {
                         let new_space_selection = SelectedTab::Space { space_name_id: space_name_id.clone() };
                         if app_state.selected_tab != new_space_selection {
@@ -557,6 +584,7 @@ impl HomeScreen {
                     | SelectedTab::Home => id!(home_page),
                     SelectedTab::Settings => id!(settings_page),
                     SelectedTab::AddRoom => id!(add_room_page),
+                    SelectedTab::Directory => id!(directory_page),
                 },
             )
     }

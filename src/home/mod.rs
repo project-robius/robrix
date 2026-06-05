@@ -3,6 +3,7 @@ use makepad_widgets::{ScriptVm, event::{DigitId, FingerDownEvent, FingerLongPres
 pub mod add_room;
 pub mod bot_binding_modal;
 pub mod create_bot_modal;
+pub mod create_room;
 pub mod delete_bot_modal;
 pub mod edited_indicator;
 pub mod editing_pane;
@@ -37,6 +38,7 @@ pub mod link_preview;
 pub mod room_image_viewer;
 pub mod streaming_animation;
 pub mod upload_progress;
+pub mod directory_screen;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ContextMenuOpenGesture {
@@ -89,6 +91,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     global_message_search::script_mod(vm);
     loading_pane::script_mod(vm);
     location_preview::script_mod(vm);
+    create_room::script_mod(vm);
     add_room::script_mod(vm);
     bot_binding_modal::script_mod(vm);
     create_bot_modal::script_mod(vm);
@@ -120,6 +123,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     navigation_tab_bar::script_mod(vm);
     // Note: upload_progress::script_mod is called earlier in app.rs
     // because RoomInputBar depends on it.
+    directory_screen::script_mod(vm);
     // Keep HomeScreen last, it references many widgets registered above.
     home_screen::script_mod(vm);
 }
