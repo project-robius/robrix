@@ -729,12 +729,49 @@ pub enum AccountDataAction {
     /// Result of [`MatrixRequest::GetOwnDevice`].
     /// * `None` if not logged in or the crypto store isn't ready yet.
     OwnDeviceFetched(Option<OwnDeviceInfo>),
+    /// Result of [`MatrixRequest::GetDeviceList`] — every device this user
+    /// has signed in with on the homeserver. Includes the current device.
+    DeviceListFetched(Vec<DeviceInfo>),
+    /// Failure result for [`MatrixRequest::GetDeviceList`].
+    DeviceListFetchFailed(String),
+    /// Result of [`MatrixRequest::DeleteDevice`].
+    DeviceDeleteResult {
+        device_id: String,
+        outcome: DeviceDeleteOutcome,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OwnDeviceInfo {
     pub device_id: String,
     pub display_name: Option<String>,
+}
+
+/// One entry from the homeserver's `/devices` list.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeviceInfo {
+    pub device_id: String,
+    /// User-set device label, e.g. "robrix-un-pw". `None` when never set
+    /// (display the standard "Unknown device" fallback in that case).
+    pub display_name: Option<String>,
+    /// Last public IP this device hit the homeserver from.
+    pub last_seen_ip: Option<String>,
+    /// Unix-millisecond timestamp of the last server-side activity.
+    pub last_seen_ts_ms: Option<i64>,
+}
+
+/// Outcome of attempting to delete a single device.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DeviceDeleteOutcome {
+    /// The server accepted the deletion.
+    Removed,
+    /// The server returned a 401 User-Interactive Auth challenge. The user
+    /// must complete it in a browser before the next retry can succeed.
+    /// `fallback_url` is the homeserver's UIA fallback page for whichever
+    /// auth flow stage the server picked first.
+    NeedsAuth { fallback_url: String },
+    /// Anything else (network error, 403, server bug, …).
+    Error(String),
 }
 
 /// Actions emitted in response to account switching.
@@ -1150,6 +1187,13 @@ pub enum MatrixRequest {
     /// Request to fetch our own [`Device`].
     /// The response is delivered via [`AccountDataAction::OwnDeviceFetched`].
     GetOwnDevice,
+    /// Request to list every device this user has signed in with.
+    /// Response: [`AccountDataAction::DeviceListFetched`] on success,
+    /// [`AccountDataAction::DeviceListFetchFailed`] on error.
+    GetDeviceList,
+    /// Request to delete one device from the user's account. Response:
+    /// [`AccountDataAction::DeviceDeleteResult`] in all cases.
+    DeleteDevice { device_id: String },
     /// Request to fetch an Avatar image from the server.
     /// Upon completion of the async media request, the `on_fetched` function
     /// will be invoked with the content of an `AvatarUpdate`.
@@ -1919,6 +1963,26 @@ pub enum PublicDirectoryAction {
         is_first_page: bool,
         error: String,
     },
+}
+
+/// Extracts a UIA fallback URL the user can open in a browser to complete
+/// re-authentication. Returns `None` if the error wasn't a UIA challenge
+/// (caller should treat that as a transport / server error).
+///
+/// Constructs the URL per the Matrix spec:
+///   `{homeserver}/_matrix/client/v3/auth/{stage}/fallback/web?session={session}`
+/// using the first uncompleted stage from the first auth flow.
+fn extract_uia_fallback(
+    client: &matrix_sdk::Client,
+    err: &matrix_sdk::HttpError,
+) -> Option<String> {
+    let uiaa = err.as_uiaa_response()?;
+    let session = uiaa.session.as_ref()?;
+    let stage = uiaa.flows.first()?.stages.first()?;
+    let homeserver = client.homeserver();
+    Some(format!(
+        "{homeserver}_matrix/client/v3/auth/{stage}/fallback/web?session={session}"
+    ))
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -3444,6 +3508,70 @@ async fn matrix_worker_task(
                         display_name: device.display_name().map(ToOwned::to_owned),
                     });
                     Cx::post_action(AccountDataAction::OwnDeviceFetched(device_info));
+                });
+            }
+
+            MatrixRequest::GetDeviceList => {
+                let Some(client) = get_client() else { continue };
+                let _get_device_list_task = Handle::current().spawn(async move {
+                    match client.devices().await {
+                        Ok(resp) => {
+                            let devices = resp
+                                .devices
+                                .into_iter()
+                                .map(|d| DeviceInfo {
+                                    device_id: d.device_id.to_string(),
+                                    display_name: d.display_name,
+                                    last_seen_ip: d.last_seen_ip,
+                                    last_seen_ts_ms: d
+                                        .last_seen_ts
+                                        .map(|ts| ts.get().into()),
+                                })
+                                .collect::<Vec<_>>();
+                            log!("Fetched {} device(s)", devices.len());
+                            Cx::post_action(AccountDataAction::DeviceListFetched(devices));
+                        }
+                        Err(e) => {
+                            error!("Failed to list devices: {e:?}");
+                            Cx::post_action(AccountDataAction::DeviceListFetchFailed(
+                                e.to_string(),
+                            ));
+                        }
+                    }
+                });
+            }
+
+            MatrixRequest::DeleteDevice { device_id } => {
+                let Some(client) = get_client() else { continue };
+                let _delete_device_task = Handle::current().spawn(async move {
+                    let id: matrix_sdk::ruma::OwnedDeviceId = device_id.clone().into();
+                    let outcome = match client.delete_devices(&[id], None).await {
+                        Ok(_) => {
+                            log!("Deleted device {device_id}");
+                            DeviceDeleteOutcome::Removed
+                        }
+                        Err(e) => {
+                            // Try to extract a UIA `session` + fallback URL from
+                            // the homeserver response. If the error is a UIA
+                            // challenge, the server gave us a list of auth
+                            // flows; we build the fallback URL Synapse-style:
+                            //   {homeserver}/_matrix/client/r0/auth/{stage}/fallback/web?session={session}
+                            match extract_uia_fallback(&client, &e) {
+                                Some(fallback_url) => {
+                                    log!("DeleteDevice requires UIA, fallback: {fallback_url}");
+                                    DeviceDeleteOutcome::NeedsAuth { fallback_url }
+                                }
+                                None => {
+                                    error!("DeleteDevice failed: {e:?}");
+                                    DeviceDeleteOutcome::Error(e.to_string())
+                                }
+                            }
+                        }
+                    };
+                    Cx::post_action(AccountDataAction::DeviceDeleteResult {
+                        device_id,
+                        outcome,
+                    });
                 });
             }
 
