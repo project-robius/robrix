@@ -4,7 +4,12 @@
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::{fs::{File, OpenOptions}, io::Write, sync::Mutex};
-use std::{cell::RefCell, collections::HashMap};
+use std::{
+    cell::RefCell,
+    collections::{hash_map::DefaultHasher, HashMap},
+    hash::{Hash, Hasher},
+    time::Duration,
+};
 use makepad_widgets::*;
 use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId, events::room::message::RoomMessageEventContent}};
 use serde::{Deserialize, Serialize};
@@ -13,20 +18,22 @@ use crate::{
     avatar_cache::{self, clear_avatar_cache}, room_preview_cache::clear_room_preview_cache, home::{
         add_room::{CreateRoomModalAction, CreateRoomModalWidgetRefExt, StartChatModalAction, StartChatModalWidgetRefExt},
         bot_binding_modal::{BotBindingModalAction, BotBindingModalWidgetRefExt},
-        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt, mark_invite_modal_closed}, invite_screen::{InviteScreenWidgetRefExt, LeaveRoomResultAction}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, RoomScreenWidgetRefExt, TimelineUpdate, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, space_lobby::SpaceLobbyScreenWidgetRefExt, spaces_bar::SpacesBarRef
+        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt, mark_invite_modal_closed}, invite_screen::{InviteScreenWidgetRefExt, LeaveRoomResultAction}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::{RoomContextMenuAction, RoomContextMenuWidgetRefExt}, room_screen::{InviteAction, MessageAction, RoomScreenWidgetRefExt, TimelineUpdate, clear_timeline_states}, room_settings_modal::{RoomSettingsAction, RoomSettingsModalWidgetRefExt}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, space_lobby::SpaceLobbyScreenWidgetRefExt, spaces_bar::SpacesBarRef
     }, i18n::{AppLanguage, tr_fmt, tr_key}, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, register::RegisterAction, room::BasicRoomDetails, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, file_upload_modal::{FilePreviewerAction, FileUploadModalWidgetRefExt}, forward_modal::{ForwardMessageModalAction, ForwardMessageModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, room_filter_input_bar::FilterAction}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RemoteDirectorySearchKind, RemoteDirectorySearchResult, TimelineKind, AccountSwitchAction, current_user_id, get_client, submit_async_request, get_timeline_update_sender}, updater::{UpdateCheckOutcome, check_for_updates, load_skipped_update_version, save_skipped_update_version, update_release_page_url}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, register::RegisterAction, room::BasicRoomDetails, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, file_upload_modal::{FilePreviewerAction, FileUploadModalWidgetRefExt}, forward_modal::{ForwardMessageModalAction, ForwardMessageModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, room_filter_input_bar::FilterAction}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RemoteDirectorySearchKind, RemoteDirectorySearchResult, RoomSettingsFetchedAction, RoomAvatarUploadedAction, TimelineKind, AccountSwitchAction, current_user_id, get_client, submit_async_request, get_timeline_update_sender}, updater::{UpdateCheckOutcome, check_for_updates, load_skipped_update_version, save_skipped_update_version, update_release_page_url}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }, settings::app_preferences::{AppPreferences, AppPreferencesAction, UiZoom}
 };
 use crate::shared::room_filter_search_results::{RoomFilterResultAction, RoomFilterResultTarget};
 use crate::shared::room_filter_search_results::RoomFilterSearchResultsListWidgetRefExt;
+use crate::shared::video_message_player_modal::WindowFullscreenAction;
 
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
+    use mod.draw.KeyCode
 
     load_all_resources() do #(App::script_component(vm)) {
         ui: Root {
@@ -43,7 +50,12 @@ script_mod! {
                         }
                     }
                 }
-            
+
+                window_menu := WindowMenu {
+                    main := MenuItem.Main{items:[@app_menu]}
+                    app_menu := MenuItem.Sub { name:"Robrix" items:[@quit] }
+                    quit := MenuItem.Item { name:"Quit Robrix" key: KeyCode.KeyQ enabled: true }
+                }
 
                 body +: {
                     show_bg: true
@@ -123,6 +135,16 @@ script_mod! {
                         invite_modal := Modal {
                             content +: {
                                 invite_modal_inner := InviteModal {}
+                            }
+                        }
+
+                        // A modal to view and edit room settings.
+                        room_settings_modal := Modal {
+                            content +: {
+                                height: Fill,
+                                width: Fill,
+                                align: Align{x: 0.5, y: 0.1},
+                                room_settings_modal_inner := RoomSettingsModal {}
                             }
                         }
                         bot_binding_modal := Modal {
@@ -383,6 +405,7 @@ pub struct App {
     #[live] ui: WidgetRef,
     /// The top-level app state, shared across various parts of the app.
     #[rust] app_state: AppState,
+    #[rust] lifecycle: AppLifecycle,
     #[rust] auth_ui_state: AuthUiState,
     /// The details of a room we're waiting on to be loaded so that we can navigate to it.
     /// This can be either a room we're waiting to join, or one we're waiting to be invited to.
@@ -830,6 +853,17 @@ impl MatchEvent for App {
                 continue;
             }
 
+            match action.downcast_ref::<WindowFullscreenAction>() {
+                Some(WindowFullscreenAction::Enable) => {
+                    self.ui.window(cx, ids!(main_window)).fullscreen(cx);
+                    continue;
+                }
+                Some(WindowFullscreenAction::Disable) => {
+                    self.ui.window(cx, ids!(main_window)).disable_fullscreen(cx);
+                    continue;
+                }
+                None => {}
+            }
             match action.downcast_ref() {
                 Some(LogoutConfirmModalAction::Open) => {
                     self.ui.logout_confirm_modal(cx, ids!(logout_confirm_modal_inner)).reset_state(cx);
@@ -1448,6 +1482,98 @@ impl MatchEvent for App {
                 _ => {}
             }
 
+            // Handle RoomSettingsAction.
+            match action.downcast_ref::<RoomSettingsAction>() {
+                Some(RoomSettingsAction::Open { room_id }) => {
+                    let room_id = room_id.clone();
+                    let rooms_list = cx.get_global::<RoomsListRef>().clone();
+                    let room_name = rooms_list.get_room_name(&room_id)
+                        .map(|rni| rni.to_string())
+                        .unwrap_or_else(|| room_id.as_str().to_string());
+                    let canonical_alias = rooms_list.get_room_canonical_alias(&room_id);
+                    let alias_str = canonical_alias.as_ref().map(|a| a.as_str());
+                    log!("RoomSettingsAction::Open for {} (name: {})", room_id, room_name);
+                    self.ui.room_settings_modal(cx, ids!(room_settings_modal_inner))
+                        .show_settings(cx, room_id.clone(), &room_name, "", alias_str);
+                    self.ui.modal(cx, ids!(room_settings_modal)).open(cx);
+                    submit_async_request(MatrixRequest::FetchRoomSettings { room_id });
+                    continue;
+                }
+                Some(RoomSettingsAction::Close) | Some(RoomSettingsAction::Cancel) => {
+                    self.ui.modal(cx, ids!(room_settings_modal)).close(cx);
+                    continue;
+                }
+                Some(RoomSettingsAction::Save { room_id, room_name, room_topic }) => {
+                    submit_async_request(MatrixRequest::SetRoomName {
+                        room_id: room_id.clone(),
+                        name: room_name.clone(),
+                    });
+                    if !room_topic.is_empty() {
+                        submit_async_request(MatrixRequest::SetRoomTopic {
+                            room_id: room_id.clone(),
+                            topic: room_topic.clone(),
+                        });
+                    }
+                    enqueue_popup_notification("Saving room settings…", PopupKind::Info, Some(3.0));
+                    self.ui.modal(cx, ids!(room_settings_modal)).close(cx);
+                    continue;
+                }
+                Some(RoomSettingsAction::LeaveRoom { room_id }) => {
+                    let room_id = room_id.clone();
+                    let rooms_list = cx.get_global::<RoomsListRef>().clone();
+                    let room_name_id = rooms_list.get_room_name(&room_id)
+                        .unwrap_or_else(|| RoomNameId::from(
+                            (matrix_sdk::RoomDisplayName::Empty, room_id.clone())
+                        ));
+                    cx.action(JoinLeaveRoomModalAction::Open {
+                        kind: JoinLeaveModalKind::LeaveRoom(BasicRoomDetails::Name(room_name_id)),
+                        show_tip: false,
+                    });
+                    self.ui.modal(cx, ids!(room_settings_modal)).close(cx);
+                    continue;
+                }
+                Some(RoomSettingsAction::AddLocalAddress { .. }) => {
+                    enqueue_popup_notification("Address management coming soon", PopupKind::Info, Some(3.0));
+                    continue;
+                }
+                Some(RoomSettingsAction::SetDirectoryPublish { .. }) => {
+                    enqueue_popup_notification("Directory publish coming soon", PopupKind::Info, Some(3.0));
+                    continue;
+                }
+                Some(RoomSettingsAction::UploadRoomAvatar { room_id, avatar_path }) => {
+                    submit_async_request(MatrixRequest::UploadRoomAvatar {
+                        room_id: room_id.clone(),
+                        avatar_path: avatar_path.clone(),
+                    });
+                    enqueue_popup_notification("Uploading room avatar…", PopupKind::Info, Some(3.0));
+                    continue;
+                }
+                Some(RoomSettingsAction::SetMediaVisibility { .. }) | Some(RoomSettingsAction::None) => {
+                    continue;
+                }
+                None => {}
+            }
+
+            // Handle RoomSettingsFetchedAction.
+            if let Some(fetched) = action.downcast_ref::<RoomSettingsFetchedAction>() {
+                self.ui.room_settings_modal(cx, ids!(room_settings_modal_inner))
+                    .apply_fetched_settings(cx, fetched.topic.clone(), fetched.is_public);
+                continue;
+            }
+
+            // Handle RoomAvatarUploadedAction — refresh the avatar widget.
+            if let Some(uploaded) = action.downcast_ref::<RoomAvatarUploadedAction>() {
+                self.ui.room_settings_modal(cx, ids!(room_settings_modal_inner))
+                    .apply_avatar(cx, &uploaded.image_data);
+                continue;
+            }
+
+            // Handle RoomContextMenuAction::OpenRoomSettings.
+            if let Some(RoomContextMenuAction::OpenRoomSettings(room_id)) = action.downcast_ref::<RoomContextMenuAction>() {
+                cx.action(RoomSettingsAction::Open { room_id: room_id.clone() });
+                continue;
+            }
+
             // Handle BotBindingModalAction to open/close the bot binding modal.
             match action.downcast_ref() {
                 Some(BotBindingModalAction::Open(room_name_id)) => {
@@ -1593,6 +1719,44 @@ fn clear_all_app_state(cx: &mut Cx) {
     clear_room_preview_cache(cx);
 }
 
+#[derive(Debug)]
+struct AppLifecycle {
+    is_foreground: bool,
+    is_active: bool,
+    last_app_state_save: Option<AppStateSaveFingerprint>,
+    shutdown_started: bool,
+}
+
+impl Default for AppLifecycle {
+    fn default() -> Self {
+        Self {
+            is_foreground: true,
+            is_active: true,
+            last_app_state_save: None,
+            shutdown_started: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct AppStateSaveFingerprint {
+    user_id: OwnedUserId,
+    hash: u64,
+    len: usize,
+}
+
+impl AppStateSaveFingerprint {
+    fn new(user_id: OwnedUserId, bytes: &[u8]) -> Self {
+        let mut hasher = DefaultHasher::new();
+        bytes.hash(&mut hasher);
+        Self {
+            user_id,
+            hash: hasher.finish(),
+            len: bytes.len(),
+        }
+    }
+}
+
 impl AppMain for App {
     fn script_mod(vm: &mut ScriptVm) -> makepad_widgets::ScriptValue {
         // Order matters: base widgets first, then app widgets, then app UI.
@@ -1639,47 +1803,124 @@ impl AppMain for App {
 
         self.handle_ui_zoom_shortcuts(cx, event);
 
-        if let Event::Shutdown = event {
-            let window_ref = self.ui.window(cx, ids!(main_window));
-            if let Err(e) = persistence::save_window_state(window_ref, cx) {
-                error!("Failed to save window state. Error: {e}");
-            }
-            if let Some(user_id) = current_user_id() {
-                let app_state = self.app_state.clone();
-                if let Err(e) = persistence::save_app_state(app_state, user_id) {
-                    error!("Failed to save app state. Error: {e}");
-                }
-            }
-            #[cfg(feature = "tsp")] {
-                // Save the TSP wallet state, if it exists, with a 3-second timeout.
-                let tsp_state = std::mem::take(&mut *crate::tsp::tsp_state_ref().lock().unwrap());
-                let res = crate::sliding_sync::block_on_async_with_timeout(
-                    Some(std::time::Duration::from_secs(3)),
-                    async move {
-                        match tsp_state.close_and_serialize().await {
-                            Ok(saved_state) => match persistence::save_tsp_state_async(saved_state).await {
-                                Ok(_) => { }
-                                Err(e) => error!("Failed to save TSP wallet state. Error: {e}"),
-                            }
-                            Err(e) => error!("Failed to close and serialize TSP wallet state. Error: {e}"),
-                        }
-                    },
-                );
-                if let Err(_e) = res {
-                    error!("Failed to save TSP wallet state before app shutdown. Error: Timed Out.");
-                }
-            }
-        }
-        
         // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
-
+        self.handle_lifecycle_event(cx, event);
     }
 }
 
 impl App {
+    fn handle_lifecycle_event(&mut self, cx: &mut Cx, event: &Event) {
+        match event {
+            Event::QuitRequested(e) => {
+                log!("Received quit request: {:?}. Persisting state before allowing quit.", e.reason);
+                self.persist_runtime_state(cx, "quit request");
+            }
+            Event::Pause => {
+                if self.lifecycle.is_active {
+                    log!("App paused; persisting runtime state.");
+                    self.lifecycle.is_active = false;
+                }
+                self.persist_runtime_state(cx, "pause");
+            }
+            Event::Resume => {
+                if !self.lifecycle.is_active {
+                    log!("App resumed.");
+                    self.lifecycle.is_active = true;
+                }
+                crate::sliding_sync::set_sync_service_desired_running(true, "app resume");
+            }
+            Event::Background => {
+                if self.lifecycle.is_foreground {
+                    log!("App entered background; persisting state and stopping Matrix sync.");
+                    self.lifecycle.is_foreground = false;
+                }
+                self.persist_runtime_state(cx, "background");
+                crate::sliding_sync::set_sync_service_desired_running(false, "app background");
+            }
+            Event::WindowCloseRequested(e)
+                if self.ui.window(cx, ids!(main_window)).window_id() == Some(e.window_id) => {
+                    log!("Main window close requested; persisting runtime state.");
+                    self.persist_runtime_state(cx, "main window close request");
+                }
+            Event::Foreground => {
+                if !self.lifecycle.is_foreground {
+                    log!("App entered foreground; starting Matrix sync.");
+                    self.lifecycle.is_foreground = true;
+                }
+                crate::sliding_sync::set_sync_service_desired_running(true, "app foreground");
+            }
+            Event::Shutdown => self.handle_shutdown(cx),
+            _ => {}
+        }
+    }
+
+    fn persist_runtime_state(&mut self, cx: &mut Cx, reason: &'static str) {
+        let window_ref = self.ui.window(cx, ids!(main_window));
+        if let Err(e) = persistence::save_window_state(window_ref, cx) {
+            error!("Failed to save window state during {reason}. Error: {e}");
+        }
+
+        let Some(user_id) = current_user_id() else {
+            log!("Skipping app state persistence during {reason}: no logged-in Matrix user.");
+            return;
+        };
+
+        let app_state_json = match persistence::serialize_app_state(&self.app_state) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                error!("Failed to serialize app state during {reason}. Error: {e}");
+                return;
+            }
+        };
+        let fingerprint = AppStateSaveFingerprint::new(user_id.clone(), &app_state_json);
+        if self.lifecycle.last_app_state_save.as_ref() == Some(&fingerprint) {
+            log!("Skipping app state persistence during {reason}: state is unchanged.");
+            return;
+        }
+
+        if let Err(e) = persistence::save_app_state_bytes(&app_state_json, &user_id) {
+            error!("Failed to save app state during {reason}. Error: {e}");
+        } else {
+            self.lifecycle.last_app_state_save = Some(fingerprint);
+        }
+    }
+
+    fn handle_shutdown(&mut self, cx: &mut Cx) {
+        if self.lifecycle.shutdown_started {
+            log!("Ignoring duplicate shutdown lifecycle event.");
+            return;
+        }
+        self.lifecycle.shutdown_started = true;
+
+        self.persist_runtime_state(cx, "shutdown");
+
+        if let Err(_e) = crate::sliding_sync::stop_sync_service_for_shutdown(Duration::from_secs(3)) {
+            error!("Failed to stop Matrix sync service before shutdown. Error: Timed out.");
+        }
+
+        #[cfg(feature = "tsp")] {
+            let tsp_state = std::mem::take(&mut *crate::tsp::tsp_state_ref().lock().unwrap());
+            let res = crate::sliding_sync::block_on_async_with_timeout(
+                Some(Duration::from_secs(3)),
+                async move {
+                    match tsp_state.close_and_serialize().await {
+                        Ok(saved_state) => match persistence::save_tsp_state_async(saved_state).await {
+                            Ok(_) => { }
+                            Err(e) => error!("Failed to save TSP wallet state. Error: {e}"),
+                        }
+                        Err(e) => error!("Failed to close and serialize TSP wallet state. Error: {e}"),
+                    }
+                },
+            );
+            if let Err(_e) = res {
+                error!("Failed to save TSP wallet state before app shutdown. Error: Timed Out.");
+            }
+        }
+    }
+
     fn apply_ui_zoom(&mut self, cx: &mut Cx, new_zoom: UiZoom) {
         if new_zoom != self.app_state.app_prefs.ui_zoom {
             self.app_state.app_prefs.ui_zoom = new_zoom;
@@ -2881,8 +3122,10 @@ mod tests {
 
     #[test]
     fn test_app_state_roundtrip_preserves_selected_room_with_empty_dock() {
-        let mut state = AppState::default();
-        state.selected_room = Some(joined_room("!room:example.org", "octosbot"));
+        let state = AppState {
+            selected_room: Some(joined_room("!room:example.org", "octosbot")),
+            ..Default::default()
+        };
         assert!(
             state.saved_dock_state_home.open_rooms.is_empty(),
             "precondition: this test simulates the mobile case where selected_room persists without desktop dock tabs",

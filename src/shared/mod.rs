@@ -1,5 +1,6 @@
 use makepad_widgets::ScriptVm;
 
+pub mod attachment_download;
 pub mod avatar;
 pub mod collapsible_header;
 pub mod expand_arrow;
@@ -24,7 +25,8 @@ pub mod unread_badge;
 pub mod verification_badge;
 pub mod restore_status_view;
 pub mod image_viewer;
-
+pub mod video_message_player;
+pub mod video_message_player_modal;
 
 pub fn script_mod(vm: &mut ScriptVm) {
     // Order matters here, as some widget definitions depend on others.
@@ -52,4 +54,6 @@ pub fn script_mod(vm: &mut ScriptVm) {
     progress_bar::script_mod(vm);
     file_upload_modal::script_mod(vm);
     forward_modal::script_mod(vm);
+    video_message_player::script_mod(vm);
+    video_message_player_modal::script_mod(vm);
 }

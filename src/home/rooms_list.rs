@@ -24,7 +24,7 @@ use ruma::events::tag::TagName;
 use tokio::sync::mpsc::UnboundedSender;
 use matrix_sdk::{RoomState, ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}};
 use crate::{
-    app::{AppState, SelectedRoom},
+    app::{AppState, AppStateAction, SelectedRoom},
     home::{
         ContextMenuOpenGesture,
         add_room::CreateRoomAction,
@@ -660,6 +660,12 @@ impl RoomsList {
         }
 
         self.update_displayed_rooms(cx, false);
+    }
+
+    fn set_current_active_room(&mut self, cx: &mut Cx, selected_room: Option<SelectedRoom>) {
+        if self.current_active_room == selected_room { return; }
+        self.current_active_room = selected_room;
+        self.redraw(cx);
     }
 
     /// Handle all pending updates to the list of all rooms.
@@ -1426,12 +1432,11 @@ impl Widget for RoomsList {
                     continue;
                 }
 
-                self.current_active_room = Some(new_selected_room.clone());
+                self.set_current_active_room(cx, Some(new_selected_room.clone()));
                 cx.widget_action(
                     self.widget_uid(), 
                     RoomsListAction::Selected(new_selected_room),
                 );
-                self.redraw(cx);
             }
             // Handle a room being right-clicked or long-pressed by opening the room context menu.
             else if let RoomsListEntryAction::SecondaryClicked(room_id, pos, opening_gesture) = action.as_widget_action().cast() {
@@ -1461,12 +1466,11 @@ impl Widget for RoomsList {
                 if self.current_active_room.as_ref().is_some_and(|current| current == &new_selected_space) {
                     continue;
                 }
-                self.current_active_room = Some(new_selected_space.clone());
+                self.set_current_active_room(cx, Some(new_selected_space.clone()));
                 cx.widget_action(
                     self.widget_uid(), 
                     RoomsListAction::Selected(new_selected_space),
                 );
-                self.redraw(cx);
             }
             // Handle a collapsible header being clicked.
             else if let CollapsibleHeaderAction::Toggled { category } = action.as_widget_action().cast() {
@@ -1491,6 +1495,17 @@ impl Widget for RoomsList {
         // Second, handle any other actions that came from other widgets/components.
         if let Event::Actions(actions) = event {
             for action in actions {
+                if let Some(AppStateAction::RoomFocused(selected_room)) = action.downcast_ref() {
+                    self.set_current_active_room(cx, Some(selected_room.clone()));
+                    continue;
+                }
+
+                if let Some(AppStateAction::FocusNone) = action.downcast_ref() {
+                    self.set_current_active_room(cx, None);
+                    continue;
+                }
+
+                // Clear widget state upon logout.
                 if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
                     while PENDING_ROOM_UPDATES.pop().is_some() {}
                     self.invited_rooms.borrow_mut().clear();
@@ -1848,6 +1863,14 @@ impl RoomsListRef {
                     .get(room_id)
                     .map(|ir| ir.room_name_id.clone())
             )
+    }
+
+    /// Returns the canonical alias of the given room, if it is known and loaded.
+    pub fn get_room_canonical_alias(&self, room_id: &OwnedRoomId) -> Option<ruma::OwnedRoomAliasId> {
+        let inner = self.borrow()?;
+        inner.all_joined_rooms
+            .get(room_id)
+            .and_then(|jr| jr.canonical_alias.clone())
     }
 
     /// Returns the currently-selected space (the one selected in the SpacesBar).
