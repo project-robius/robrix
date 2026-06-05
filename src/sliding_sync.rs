@@ -1325,6 +1325,13 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         avatar_path: std::path::PathBuf,
     },
+    /// Request to create a new room. Submitted by `CreateRoomScreen`.
+    /// On success the handler also issues `invite_user_by_id` for each
+    /// entry in `config.initial_invitees` — per-invitee failures are
+    /// rolled up into `CreateRoomAction::PartialInvite`.
+    CreateRoomFromConfig {
+        config: crate::home::create_room::CreateRoomConfig,
+    },
 }
 
 fn add_octos_target_user_id(
@@ -3124,7 +3131,10 @@ async fn matrix_worker_task(
                                 space_link_error = Some(error.to_string());
                             }
 
-                            let room_name_id = RoomNameId::from_room(&room).await;
+                            let room_name_id = RoomNameId::new(
+                                RoomDisplayName::Named(room_name.clone()),
+                                room.room_id().to_owned(),
+                            );
                             Cx::post_action(CreateRoomAction::Created {
                                 room_name_id,
                                 parent_space_id,
@@ -4706,6 +4716,70 @@ async fn matrix_worker_task(
 
                     on_fetched(url, destination, result, update_sender);
                     SignalToUI::set_ui_signal();
+                });
+            }
+
+            MatrixRequest::CreateRoomFromConfig { config } => {
+                let Some(client) = get_client() else { continue };
+
+                Handle::current().spawn(async move {
+                    use crate::home::create_room::CreateRoomFromConfigAction;
+                    let room_name = config.name.trim().to_owned();
+                    let request = config.to_ruma_request();
+                    let invitees = config.initial_invitees.clone();
+                    let avatar_bytes = config.avatar_bytes.clone();
+                    let avatar_mime = config.avatar_mime.clone();
+                    match client.create_room(request).await {
+                        Ok(room) => {
+                            let room_id = room.room_id().to_owned();
+                            if let (Some(bytes), Some(mime_str)) = (avatar_bytes, avatar_mime) {
+                                match mime_str.parse::<mime::Mime>() {
+                                    Ok(mime) => {
+                                        if let Err(err) = room
+                                            .upload_avatar(&mime, bytes, None)
+                                            .await
+                                        {
+                                            error!(
+                                                "create_room: avatar upload for {room_id} failed: {err:?}"
+                                            );
+                                        }
+                                    }
+                                    Err(err) => {
+                                        error!(
+                                            "create_room: avatar mime {mime_str} unparseable: {err:?}"
+                                        );
+                                    }
+                                }
+                            }
+
+                            let mut failed = Vec::new();
+                            for invitee in invitees.iter() {
+                                if let Err(err) = room.invite_user_by_id(invitee).await {
+                                    error!(
+                                        "create_room: invite of {invitee} to {room_id} failed: {err:?}"
+                                    );
+                                    failed.push(invitee.clone());
+                                }
+                            }
+                            if failed.is_empty() {
+                                Cx::post_action(CreateRoomFromConfigAction::Created {
+                                    room_id,
+                                    room_name,
+                                });
+                            } else {
+                                Cx::post_action(CreateRoomFromConfigAction::PartialInvite {
+                                    room_id,
+                                    room_name,
+                                    failed,
+                                });
+                            }
+                        }
+                        Err(error) => {
+                            Cx::post_action(CreateRoomFromConfigAction::Failed {
+                                reason: error.to_string(),
+                            });
+                        }
+                    }
                 });
             }
         }
