@@ -491,7 +491,7 @@ impl Widget for NavigationTabBar {
                                 }
                             }
                         }
-                        SelectedTab::Space { .. } => {
+                        SelectedTab::Space { .. } | SelectedTab::Directory => {
                             for rb in radio_button_set.iter() {
                                 if let Some(mut rb_inner) = rb.borrow_mut() {
                                     rb_inner.animator_play(cx, ids!(active.off));
@@ -536,6 +536,10 @@ pub enum SelectedTab {
     Home,
     AddRoom,
     Settings,
+    /// The public room directory browser screen.
+    /// Entered from the sidebar header's compass button; no dedicated tab in the
+    /// navigation bar (so no button to keep selected here).
+    Directory,
     // AlertsInbox,
     Space { space_name_id: RoomNameId },
 }
@@ -575,6 +579,8 @@ pub enum NavigationBarAction {
     GoToHome,
     /// Go the add/join/explore room view.
     GoToAddRoom,
+    /// Go to the public room directory browser view (`DirectoryScreen`).
+    GoToDirectory,
     /// Go to the Settings view (open the `SettingsScreen`).
     OpenSettings,
     /// Close the Settings view (`SettingsScreen`), returning to the previous view.

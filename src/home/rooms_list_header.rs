@@ -47,6 +47,47 @@ script_mod! {
             }
         },
 
+        open_directory_button := View {
+            width: Fit,
+            height: Fit
+            margin: Inset{right: 1}
+            flow: Overlay,
+
+            Icon {
+                draw_icon +: {
+                    svg: (ICON_HIERARCHY)
+                    color: (COLOR_TEXT)
+                }
+                icon_walk: Walk{width: 18, height: Fit, margin: Inset{bottom: 2}}
+            }
+
+            directory_click_area := Button {
+                width: Fill,
+                height: Fill
+                padding: Inset{top: 6, bottom: 6, left: 6, right: 6}
+                spacing: 0,
+                text: ""
+                draw_bg +: {
+                    color: #0000
+                    color_hover: #0000
+                    color_down: #0000
+                    border_color: #0000
+                    border_color_hover: #0000
+                    border_color_down: #0000
+                    border_color_focus: #0000
+                    border_size: 0.0
+                    border_radius: 0.0
+                }
+                draw_text +: {
+                    color: #0000
+                    color_hover: #0000
+                    color_down: #0000
+                    color_focus: #0000
+                }
+                icon_walk: Walk{width: 0, height: 0}
+            }
+        }
+
         open_room_filter_modal_button := View {
             width: Fit,
             height: Fit
@@ -148,6 +189,9 @@ impl Widget for RoomsListHeader {
             self.set_app_language(cx, app_language);
         }
         if let Event::Actions(actions) = event {
+            if self.view.button(cx, ids!(open_directory_button.directory_click_area)).clicked(actions) {
+                cx.action(NavigationBarAction::GoToDirectory);
+            }
             if self.view.button(cx, ids!(open_room_filter_modal_button.click_area)).clicked(actions) {
                 cx.action(RoomsListHeaderAction::OpenRoomFilterModal);
             }
