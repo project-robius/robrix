@@ -565,6 +565,19 @@ impl CreateRoomScreen {
         self.sync_visibility_card_highlight(cx);
     }
 
+    /// Mobile stub: file picker isn't available on iOS / Android, so we
+    /// just tell the user. The `rfd` crate is gated to desktop targets in
+    /// `Cargo.toml`, which is why the function body has to be split.
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    fn handle_avatar_upload(&mut self, _cx: &mut Cx) {
+        enqueue_popup_notification(
+            "Avatar upload is not supported on this platform.".to_string(),
+            PopupKind::Warning,
+            Some(4.0),
+        );
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     fn handle_avatar_upload(&mut self, cx: &mut Cx) {
         let Some(path) = rfd::FileDialog::new()
             .add_filter("Image", &["png", "jpg", "jpeg", "gif"])
