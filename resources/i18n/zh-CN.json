@@ -599,7 +599,7 @@
   "room_screen.file.save_failed": "保存文件失败。",
   "room_screen.file.saved_at": "文件已保存到 {path}",
   "room_screen.file.encrypted_not_supported": "暂不支持下载加密文件。",
-  "room_screen.audio.preview_html": "音频：<b>{filename}</b>{mime}{duration}{size}{caption}<br> → <i>暂不支持音频播放。</i>",
+  "room_screen.audio.preview_html": "音频：<b>{filename}</b>{mime}{duration}{size}{caption}",
   "room_screen.video.preview_html": "视频：<b>{filename}</b>{mime}{duration}{size}{dimensions}{caption}<br> → <i>暂不支持视频播放。</i>",
   "room_screen.location.label": "位置：",
   "room_screen.location.open_osm": "在 OpenStreetMap 中打开",

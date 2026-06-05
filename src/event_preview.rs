@@ -7,7 +7,7 @@
 
 use std::borrow::Cow;
 
-use matrix_sdk::{ruma::{OwnedUserId, events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType, VideoMessageEventContent}}, AnySyncMessageLikeEvent, AnySyncTimelineEvent, StateEventContentChange, SyncMessageLikeEvent}, serde::Raw, UserId}};
+use matrix_sdk::{ruma::{OwnedUserId, events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{AudioMessageEventContent, MessageFormat, MessageType, VideoMessageEventContent}}, AnySyncMessageLikeEvent, AnySyncTimelineEvent, StateEventContentChange, SyncMessageLikeEvent}, serde::Raw, UserId}};
 use matrix_sdk_base::crypto::types::events::UtdCause;
 use matrix_sdk_ui::timeline::{self, AnyOtherStateEventContentChange, EncryptedMessage, EventTimelineItem, MemberProfileChange, MembershipChange, MsgLikeKind, OtherMessageLike, RoomMembershipChange, TimelineItemContent};
 
@@ -41,6 +41,18 @@ pub struct VideoSummary {
     pub duration_secs: Option<f64>,
     pub size_bytes: Option<u64>,
     pub dimensions: Option<(u64, u64)>,
+    pub caption_html: Option<String>,
+}
+
+/// Structured metadata extracted from an `m.audio` message, used by
+/// the inline audio player widget. Mirrors [`VideoSummary`] minus the
+/// `dimensions` field (audio has no width/height).
+#[derive(Clone, Debug, Default)]
+pub struct AudioSummary {
+    pub filename: String,
+    pub mime: Option<String>,
+    pub duration_secs: Option<f64>,
+    pub size_bytes: Option<u64>,
     pub caption_html: Option<String>,
 }
 impl From<(String, BeforeText)> for TextPreview {
@@ -165,6 +177,70 @@ pub fn format_mmss(secs: f64) -> String {
     }
     let secs = secs.floor() as u64;
     format!("{:02}:{:02}", secs / 60, secs % 60)
+}
+
+/// Build a structured summary of an `m.audio` message — the audio
+/// counterpart to [`summarize_video_message`].
+pub fn summarize_audio_message(audio: &AudioMessageEventContent) -> AudioSummary {
+    AudioSummary {
+        filename: audio.filename().to_string(),
+        mime: audio.info.as_ref().and_then(|info| info.mimetype.clone()),
+        duration_secs: audio
+            .info
+            .as_ref()
+            .and_then(|info| info.duration)
+            .map(|duration| duration.as_secs_f64()),
+        size_bytes: audio
+            .info
+            .as_ref()
+            .and_then(|info| info.size)
+            .map(Into::into),
+        caption_html: audio
+            .formatted_caption()
+            .map(|formatted| formatted.body.clone())
+            .or_else(|| audio.caption().map(|caption| htmlize::escape_text(caption).to_string())),
+    }
+}
+
+/// Best-effort extension hint for the symphonia decoder. Prefers the
+/// filename extension when it matches a known audio container, else
+/// derives one from the MIME type, else falls back to `"mp3"`.
+pub fn infer_audio_extension(filename: &str, mime: Option<&str>) -> &'static str {
+    let from_filename = filename
+        .rsplit_once('.')
+        .map(|(_, ext)| ext.trim().to_ascii_lowercase());
+    match from_filename.as_deref() {
+        Some("mp3") => "mp3",
+        Some("m4a") => "m4a",
+        Some("aac") => "aac",
+        Some("flac") => "flac",
+        Some("ogg") => "ogg",
+        Some("oga") => "oga",
+        Some("opus") => "opus",
+        Some("wav") => "wav",
+        Some("webm") => "webm",
+        _ => mime.and_then(audio_extension_from_mime).unwrap_or("mp3"),
+    }
+}
+
+fn audio_extension_from_mime(mime: &str) -> Option<&'static str> {
+    match mime
+        .to_ascii_lowercase()
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+    {
+        "audio/mpeg" | "audio/mp3" => Some("mp3"),
+        "audio/mp4" | "audio/m4a" | "audio/x-m4a" => Some("m4a"),
+        "audio/aac" => Some("aac"),
+        "audio/flac" | "audio/x-flac" => Some("flac"),
+        "audio/ogg" => Some("ogg"),
+        "audio/opus" => Some("opus"),
+        "audio/wav" | "audio/x-wav" | "audio/wave" => Some("wav"),
+        "audio/webm" => Some("webm",),
+        _ => None,
+    }
 }
 
 /// Returns a text preview of the given timeline event as an Html-formatted string.

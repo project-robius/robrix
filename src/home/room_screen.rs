@@ -42,8 +42,9 @@ use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use crate::home::streaming_animation::StreamingAnimState;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
 use crate::shared::mentionable_text_input::MentionableTextInputAction;
+use crate::shared::audio_message_player::AudioMessagePlayerWidgetRefExt;
 use crate::shared::video_message_player::VideoMessagePlayerWidgetRefExt;
-use crate::event_preview::summarize_video_message;
+use crate::event_preview::{summarize_audio_message, summarize_video_message};
 
 use rangemap::RangeSet;
 
@@ -2425,6 +2426,14 @@ script_mod! {
         }
     }
 
+    mod.widgets.AudioMessage = mod.widgets.Message {
+        body +: {
+            content +: {
+                audio_player := mod.widgets.AudioMessagePlayer {}
+            }
+        }
+    }
+
 
     // The view used for each state event (non-messages) in a room's timeline.
     // The timestamp, profile picture, and text are all very small.
@@ -3595,6 +3604,7 @@ script_mod! {
             ImageMessage := mod.widgets.ImageMessage {}
             CondensedImageMessage := mod.widgets.CondensedImageMessage {}
             VideoMessage := mod.widgets.VideoMessage {}
+            AudioMessage := mod.widgets.AudioMessage {}
             SmallStateEvent := mod.widgets.SmallStateEvent {}
             SmallStateEventsSummary := mod.widgets.SmallStateEventsSummary {}
             Empty := mod.widgets.Empty {}
@@ -9789,7 +9799,7 @@ fn populate_message_view(
                     let template = if use_compact_view {
                         id!(CondensedMessage)
                     } else {
-                        id!(Message)
+                        id!(AudioMessage)
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
@@ -9799,9 +9809,11 @@ fn populate_message_view(
                             item.html_or_plaintext(cx, ids!(content.message));
                         new_drawn_status.content_drawn = populate_audio_message_content(
                             cx,
+                            &item,
                             &html_or_plaintext_ref,
                             app_language,
                             audio,
+                            media_cache,
                         );
                         (item, false)
                     }
@@ -10640,15 +10652,28 @@ fn populate_file_message_content(
     true
 }
 
-/// Draws an audio message's content into the given `message_content_widget`.
+/// Draws an audio message's content into the given message item.
+///
+/// Populates the embedded `AudioMessagePlayer` widget from the message's
+/// `source` and also writes a textual summary into the html fallback for
+/// accessibility / when playback is unavailable.
 ///
 /// Returns whether the audio message content was fully drawn.
 fn populate_audio_message_content(
     cx: &mut Cx,
+    item: &WidgetRef,
     message_content_widget: &HtmlOrPlaintextRef,
     app_language: AppLanguage,
     audio: &AudioMessageEventContent,
+    media_cache: &mut MediaCache,
 ) -> bool {
+    // Populate the embedded inline audio player. The player handles
+    // fetching, decoding and playback; we just hand it a summary +
+    // source.
+    let summary = summarize_audio_message(audio);
+    item.audio_message_player(cx, ids!(content.audio_player))
+        .populate_from_summary(cx, summary, audio.source.clone(), media_cache);
+
     // Display the file name, human-readable size, caption, and a button to download it.
     let filename = htmlize::escape_text(audio.filename());
     let (duration, mime, size) = audio
@@ -10672,8 +10697,6 @@ fn populate_audio_message_content(
         .map(|fb| format!("<br><i>{}</i>", fb.body))
         .or_else(|| audio.caption().map(|c| format!("<br><i>{c}</i>")))
         .unwrap_or_default();
-
-    // TODO: add an audio to play the audio file
 
     message_content_widget.show_html(
         cx,

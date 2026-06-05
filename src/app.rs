@@ -693,6 +693,10 @@ impl MatchEvent for App {
         }
     }
 
+    fn handle_audio_devices(&mut self, cx: &mut Cx, devices: &AudioDevicesEvent) {
+        cx.use_audio_outputs(&devices.default_output());
+    }
+
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         self.sync_app_language(cx);
 
