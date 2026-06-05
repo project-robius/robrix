@@ -4746,7 +4746,7 @@ async fn matrix_worker_task(
                                     }
                                     Err(err) => {
                                         error!(
-                                            "create_room: avatar mime {mime_str} unparseable: {err:?}"
+                                            "create_room: avatar mime {mime_str} unparsable: {err:?}"
                                         );
                                     }
                                 }
