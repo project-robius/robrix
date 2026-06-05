@@ -17,10 +17,13 @@ script_mod! {
     mod.widgets.ICON_ROTATE_CW        = crate_resource("self://resources/icons/rotate_right_fa.svg")
     mod.widgets.ICON_ROTATE_CCW       = crate_resource("self://resources/icons/rotate_left_fa.svg")
     mod.widgets.ICON_COPY             = crate_resource("self://resources/icons/copy.svg")
+    mod.widgets.ICON_DOWNLOAD         = crate_resource("self://resources/icons/download.svg")
     mod.widgets.ICON_EDIT             = crate_resource("self://resources/icons/edit.svg")
     mod.widgets.ICON_EXTERNAL_LINK    = crate_resource("self://resources/icons/external_link.svg")
     mod.widgets.ICON_IMPORT           = crate_resource("self://resources/icons/import.svg") // TODO: FIX
+    mod.widgets.ICON_GLOBE            = crate_resource("self://resources/icons/globe.svg")
     mod.widgets.ICON_HIERARCHY        = crate_resource("self://resources/icons/hierarchy.svg")
+    mod.widgets.ICON_LOCK             = crate_resource("self://resources/icons/lock.svg")
     mod.widgets.ICON_HOME             = crate_resource("self://resources/icons/home.svg")
     mod.widgets.ICON_HTML_FILE        = crate_resource("self://resources/icons/html_file.svg")
     mod.widgets.ICON_INFO             = crate_resource("self://resources/icons/info.svg")
@@ -268,6 +271,14 @@ script_mod! {
     // Settings screen layout
     mod.widgets.SETTINGS_CONTENT_PADDING = 16
     mod.widgets.SETTINGS_BUTTON_HEIGHT = 36
+
+    // The font size used for regular (non-title, non-subsection) text
+    // within any settings screen (e.g., dropdown labels, radio/toggle
+    // labels, inline helper text inside a control).
+    mod.widgets.SETTINGS_REGULAR_FONT_SIZE = 11
+    mod.widgets.SETTINGS_REGULAR_TEXT_STYLE = theme.font_regular {
+        font_size: (mod.widgets.SETTINGS_REGULAR_FONT_SIZE),
+    }
 
     // Text alignment compensation for non-Label widgets (LinkLabel, IconButton)
     // whose internal rendering origin differs from plain Label.

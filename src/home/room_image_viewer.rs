@@ -6,7 +6,7 @@ use matrix_sdk::{
     ruma::events::room::{message::MessageType, MediaSource},
 };
 
-use crate::{media_cache::{MediaCache, MediaCacheEntry}, shared::image_viewer::{ImageViewerAction, ImageViewerError, LoadState}};
+use crate::{media_cache::{MediaCache, MediaCacheEntry}, shared::{attachment_download::media_source_mxc, image_viewer::{ImageViewerAction, ImageViewerError, LoadState}}};
 
 /// Populates the image viewer modal with the given media content.
 ///
@@ -18,11 +18,8 @@ pub fn populate_matrix_image_modal(
     media_source: MediaSource,
     media_cache: &mut MediaCache,
 ) {
-    let MediaSource::Plain(mxc_uri) = media_source else {
-        return;
-    };
     // Try to get media from cache or trigger fetch
-    let media_entry = media_cache.try_get_media_or_fetch(&mxc_uri, MediaFormat::File);
+    let media_entry = media_cache.try_get_media_or_fetch(&media_source, MediaFormat::File);
 
     // Handle the different media states
     match media_entry {
@@ -39,7 +36,7 @@ pub fn populate_matrix_image_modal(
             };
             cx.action(ImageViewerAction::Show(LoadState::Error(error)));
             // Remove failed media entry from cache for MediaFormat::File so as to start all over again from loading Thumbnail.
-            media_cache.remove_cache_entry(&mxc_uri, Some(MediaFormat::File));
+            media_cache.remove_cache_entry(media_source_mxc(&media_source), Some(MediaFormat::File));
         }
         _ => {}
     }

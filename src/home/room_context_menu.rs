@@ -240,12 +240,9 @@ impl WidgetMatchEvent for RoomContextMenu {
             close_menu = true;
         }
         else if self.button(cx, ids!(room_settings_button)).clicked(actions) {
-            // TODO: handle/implement this
-            enqueue_popup_notification(
-                tr_key(self.app_language, "room_context_menu.popup.settings_not_implemented"),
-                PopupKind::Warning,
-                Some(5.0),
-            );
+            if let Some(details) = &self.details {
+                cx.action(RoomContextMenuAction::OpenRoomSettings(details.room_name_id.room_id().clone()));
+            }
             close_menu = true;
         }
         else if self.button(cx, ids!(notifications_button)).clicked(actions) {

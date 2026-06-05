@@ -3,7 +3,7 @@ use std::ops::Not;
 use makepad_widgets::*;
 use url::Url;
 
-use crate::{app::AppState, homeserver::{login_mode, CapabilityProbeAction, LoginMode}, i18n::{AppLanguage, tr_fmt, tr_key}, sliding_sync::{submit_async_request, AccountSwitchAction, LoginByPassword, LoginRequest, MatrixRequest}};
+use crate::{app::AppState, homeserver::{login_mode, CapabilityProbeAction, LoginMode}, i18n::{AppLanguage, tr_fmt, tr_key}, proxy_config::{validate_proxy_url_for_user_input, ProxyInputError}, sliding_sync::{submit_async_request, AccountSwitchAction, LoginByPassword, LoginRequest, MatrixRequest}};
 use crate::register::{validation::normalize_homeserver_url, RegisterAction};
 
 use super::login_status_modal::{LoginStatusModalAction, LoginStatusModalWidgetExt};
@@ -54,10 +54,10 @@ script_mod! {
         draw_bg +: {
             mask: instance(0.0)
             pixel: fn() {
-                let color = self.get_color();
-                let gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
-                let grayed = mix(color, vec4(gray, gray, gray, color.a), self.mask);
-                return grayed;
+                let color = mix(self.get_color(), #3, self.async_load)
+                let gray = dot(color.rgb, vec3(0.299, 0.587, 0.114))
+                let grayed = mix(color, vec4(gray, gray, gray, color.a), self.mask)
+                return Pal.premul(vec4(grayed.xyz, grayed.w * self.opacity))
             }
         }
     }
@@ -131,52 +131,53 @@ script_mod! {
 
                     View {
                         width: 275, height: Fit
-                        flow: Overlay,
+                        flow: Overlay
+                        align: Align{x: 1.0, y: 0.5}
 
                         password_input := RobrixTextInput {
                             width: Fill, height: Fit
                             flow: Right, // do not wrap
-                            padding: Inset{top: 10, bottom: 10, left: 10, right: 40}
+                            padding: Inset{top: 10, bottom: 10, left: 10, right: 38}
                             empty_text: "Password"
                             is_password: true,
                         }
 
                         View {
-                            width: Fill, height: Fill
-                            align: Align{x: 1.0, y: 0.5}
+                            width: 38, height: Fill
+                            align: Align{x: 0.5, y: 0.5}
 
-                            show_password_button := Button {
-                                width: 36, height: 36,
-                                padding: 6,
+                            show_password_button := RobrixNeutralIconButton {
+                                width: Fit, height: Fit,
+                                align: Align{x: 0.5, y: 0.5}
+                                padding: 5
+                                spacing: 0
+                                margin: 0
                                 draw_bg +: {
-                                    color: #0000
-                                    color_hover: #0000
-                                    color_down: #0000
-                                    border_size: 0.0
+                                    color: (COLOR_SECONDARY * 1.05)
                                 }
                                 draw_icon +: {
                                     svg: (mod.widgets.ICON_EYE_CLOSED),
                                     color: #8C8C8C,
                                 }
-                                icon_walk: Walk{width: 20, height: 20}
+                                icon_walk: Walk{width: 18, height: 18, margin: 0}
                                 text: ""
                             }
 
-                            hide_password_button := Button {
+                            hide_password_button := RobrixNeutralIconButton {
                                 visible: false,
-                                width: 36, height: 36,
-                                padding: 6,
+                                align: Align{x: 0.5, y: 0.5}
+                                width: Fit, height: Fit,
+                                padding: 5
+                                spacing: 0
+                                margin: 0
                                 draw_bg +: {
-                                    color: #0000
-                                    color_hover: #0000
-                                    color_down: #0000
-                                    border_size: 0.0
+                                    color: (COLOR_SECONDARY * 1.05)
                                 }
                                 draw_icon +: {
                                     svg: (mod.widgets.ICON_EYE_OPEN),
                                     color: #8C8C8C,
                                 }
-                                icon_walk: Walk{width: 20, height: 20}
+                                icon_walk: Walk{width: 18, height: 18, margin: 0}
                                 text: ""
                             }
                         }
@@ -450,12 +451,12 @@ script_mod! {
                         proxy_settings_modal_inner := RoundedView {
                             width: 380, height: Fit,
                             flow: Down
-                            spacing: 12.0
-                            padding: Inset{top: 18, left: 16, right: 16, bottom: 16}
+                            spacing: 14.0
+                            padding: Inset{top: 20, left: 20, right: 20, bottom: 20}
                             show_bg: true
                             draw_bg +: {
                                 color: (COLOR_PRIMARY)
-                                border_radius: 10.0
+                                border_radius: 8.0
                                 border_size: 1.0
                                 border_color: #D8D8D8
                             }
@@ -466,88 +467,65 @@ script_mod! {
                                 align: Align{x: 1.0, y: 0.5}
                                 spacing: 8.0
 
-                                proxy_settings_title := Label {
+                                proxy_settings_title := TitleLabel {
                                     width: Fill, height: Fit
-                                    draw_text +: {
-                                        color: (COLOR_ACTIVE_PRIMARY)
-                                        text_style: TITLE_TEXT {font_size: 14}
-                                    }
+                                    margin: Inset{top: 0}
                                     text: "Network proxy settings"
                                 }
 
                                 proxy_settings_close_button := RobrixNeutralIconButton {
                                     width: Fit, height: Fit
-                                    padding: Inset{left: 7, right: 4, top: 7, bottom: 7}
+                                    padding: Inset{left: 6, right: 6, top: 6, bottom: 6}
+                                    spacing: 0
                                     text: ""
                                     icon_walk: Walk{width: 14, height: 14, margin: 0}
+                                    label_walk: Walk{width: 0, height: 0, margin: 0}
                                     draw_icon.svg: (ICON_CLOSE)
                                 }
                             }
 
                             proxy_use_card := RoundedView {
                                 width: Fill, height: Fit,
-                                flow: Right,
-                                align: Align{x: 1.0, y: 0.5}
-                                show_bg: true
-                                draw_bg +: {
-                                    color: #F5F5F5
-                                    border_radius: 8.0
-                                    border_size: 1.0
-                                    border_color: #DADADA
-                                }
-                                padding: Inset{top: 12, bottom: 12, left: 12, right: 12}
-
-                                proxy_use_label := Label {
-                                    width: Fill, height: Fit
-                                    draw_text +: {
-                                        color: (COLOR_TEXT)
-                                        text_style: TITLE_TEXT {font_size: 12}
-                                    }
-                                    text: "Use proxy"
-                                }
-
-                                proxy_use_toggle := Toggle {
-                                    width: 52, height: 28
-                                    text: ""
-                                    active: false
-                                    icon_walk: Walk{width: 0, height: 0, margin: 0}
-                                    label_walk: Walk{width: 0, height: 0, margin: 0}
-                                    draw_bg +: {
-                                        size: 18.0
-                                        color: #E3E7EF
-                                        color_hover: #E3E7EF
-                                        color_down: #D5DBE6
-                                        color_active: (COLOR_ACTIVE_PRIMARY)
-                                        border_radius: 14.0
-                                        border_size: 1.5
-                                        border_color: #7E879A
-                                        border_color_hover: #7E879A
-                                        border_color_down: #6F788D
-                                        border_color_active: (COLOR_ACTIVE_PRIMARY_DARKER)
-                                        mark_color: #2D3A57
-                                        mark_color_hover: #2D3A57
-                                        mark_color_down: #2D3A57
-                                        mark_color_active: #FFFFFF
-                                        mark_color_active_hover: #FFFFFF
-                                    }
-                                }
-                            }
-
-                            proxy_fields_section := RoundedView {
-                                visible: false
-                                width: Fill, height: Fit,
                                 flow: Down
-                                spacing: 0
                                 show_bg: true
                                 draw_bg +: {
-                                    color: #F5F5F5
-                                    border_radius: 8.0
-                                    border_size: 1.0
-                                    border_color: #DADADA
+                                    color: #F8F8FA
+                                    border_radius: (RADIUS_LG)
                                 }
-                                padding: Inset{top: 4, left: 12, right: 12, bottom: 8}
+                                padding: Inset{left: (SPACE_MD), right: (SPACE_MD), top: (SPACE_SM), bottom: (SPACE_SM)}
 
-                                proxy_address_row := View {
+                                View {
+                                    width: Fill, height: Fit
+                                    flow: Right
+                                    align: Align{x: 1.0, y: 0.5}
+
+                                    proxy_use_label := SubsectionLabel {
+                                        margin: Inset{top: 0, bottom: 0}
+                                        text: "Use proxy"
+                                    }
+
+                                    proxy_use_toggle := Toggle {
+                                        width: Fit
+                                        height: Fit
+                                        padding: Inset{top: (SPACE_SM), right: (SPACE_SM), bottom: (SPACE_SM), left: (SPACE_SM)}
+                                        text: ""
+                                        active: false
+                                        draw_bg +: {
+                                            size: 20.0
+                                            color_active: (COLOR_ACTIVE_PRIMARY)
+                                            border_color_active: (COLOR_ACTIVE_PRIMARY)
+                                            mark_color_active: #fff
+                                        }
+                                    }
+                                }
+
+                                proxy_fields_section := View {
+                                    visible: false
+                                    width: Fill, height: Fit,
+                                    flow: Down
+                                    spacing: 0
+
+                                    proxy_address_row := View {
                                     width: Fill, height: Fit,
                                     flow: Right
                                     align: Align{y: 0.5}
@@ -558,7 +536,7 @@ script_mod! {
                                         width: 90, height: Fit
                                         draw_text +: {
                                             color: (COLOR_TEXT)
-                                            text_style: TITLE_TEXT {font_size: 12}
+                                            text_style: REGULAR_TEXT {font_size: 12}
                                         }
                                         text: "Address"
                                     }
@@ -571,8 +549,6 @@ script_mod! {
                                     }
                                 }
 
-                                LineH { draw_bg.color: #DDDDDD }
-
                                 proxy_port_row := View {
                                     width: Fill, height: Fit,
                                     flow: Right
@@ -584,7 +560,7 @@ script_mod! {
                                         width: 90, height: Fit
                                         draw_text +: {
                                             color: (COLOR_TEXT)
-                                            text_style: TITLE_TEXT {font_size: 12}
+                                            text_style: REGULAR_TEXT {font_size: 12}
                                         }
                                         text: "Port"
                                     }
@@ -597,8 +573,6 @@ script_mod! {
                                     }
                                 }
 
-                                LineH { draw_bg.color: #DDDDDD }
-
                                 proxy_account_row := View {
                                     width: Fill, height: Fit,
                                     flow: Right
@@ -610,7 +584,7 @@ script_mod! {
                                         width: 90, height: Fit
                                         draw_text +: {
                                             color: (COLOR_TEXT)
-                                            text_style: TITLE_TEXT {font_size: 12}
+                                            text_style: REGULAR_TEXT {font_size: 12}
                                         }
                                         text: "Account"
                                     }
@@ -623,8 +597,6 @@ script_mod! {
                                     }
                                 }
 
-                                LineH { draw_bg.color: #DDDDDD }
-
                                 proxy_password_row := View {
                                     width: Fill, height: Fit,
                                     flow: Right
@@ -636,7 +608,7 @@ script_mod! {
                                         width: 90, height: Fit
                                         draw_text +: {
                                             color: (COLOR_TEXT)
-                                            text_style: TITLE_TEXT {font_size: 12}
+                                            text_style: REGULAR_TEXT {font_size: 12}
                                         }
                                         text: "Password"
                                     }
@@ -650,11 +622,31 @@ script_mod! {
                                     }
                                 }
                             }
+                            }
 
-                            proxy_settings_save_button := RobrixIconButton {
-                                width: 120, height: 40
+                            proxy_settings_error_label := Label {
+                                visible: false
+                                width: Fill, height: Fit
+                                margin: Inset{top: 0, bottom: 0, left: 2, right: 2}
+                                draw_text +: {
+                                    color: (COLOR_TEXT_WARNING_NOT_FOUND)
+                                    text_style: REGULAR_TEXT {font_size: 11}
+                                    wrap: Words
+                                }
+                                text: ""
+                            }
+
+                            proxy_settings_save_button_row := View {
+                                width: Fill, height: Fit
+                                flow: Right
                                 align: Align{x: 0.5, y: 0.5}
-                                text: "Save"
+                                margin: Inset{top: 2}
+
+                                proxy_settings_save_button := RobrixIconButton {
+                                    width: 160, height: 42
+                                    align: Align{x: 0.5, y: 0.5}
+                                    text: "Save Proxy"
+                                }
                             }
                         }
                     }
@@ -814,10 +806,13 @@ impl LoginScreen {
         self.use_proxy_enabled = enabled;
         self.view
             .check_box(cx, ids!(proxy_use_toggle))
-            .set_active(cx, enabled);
+            .set_active(cx, enabled, Animate::No);
         self.view
             .view(cx, ids!(proxy_fields_section))
             .set_visible(cx, enabled);
+        self.view
+            .label(cx, ids!(proxy_settings_error_label))
+            .set_visible(cx, false);
         self.redraw(cx);
     }
 
@@ -921,7 +916,14 @@ impl LoginScreen {
         }
 
         let proxy_url = proxy_url.to_string();
-        crate::proxy_config::validate_proxy_url(&proxy_url)?;
+        validate_proxy_url_for_user_input(&proxy_url).map_err(|e| match e {
+            ProxyInputError::InvalidHost(host) => tr_fmt(
+                self.app_language,
+                "login.proxy_settings.error.invalid_host",
+                &[("host", host.as_str())],
+            ),
+            other => other.to_string(),
+        })?;
         Ok(Some(proxy_url))
     }
 
@@ -1027,11 +1029,13 @@ impl WidgetMatchEvent for LoginScreen {
 
         if self.view.button(cx, ids!(proxy_settings_button)).clicked(actions) {
             self.sync_proxy_settings_modal_layout(cx);
+            self.view.label(cx, ids!(proxy_settings_error_label)).set_visible(cx, false);
             proxy_settings_modal.open(cx);
             self.redraw(cx);
         }
 
         if self.view.button(cx, ids!(proxy_settings_close_button)).clicked(actions) {
+            self.view.label(cx, ids!(proxy_settings_error_label)).set_visible(cx, false);
             proxy_settings_modal.close(cx);
             self.redraw(cx);
         }
@@ -1049,18 +1053,18 @@ impl WidgetMatchEvent for LoginScreen {
         }
 
         if self.view.button(cx, ids!(proxy_settings_save_button)).clicked(actions) {
+            let error_label = self.view.label(cx, ids!(proxy_settings_error_label));
             match self.build_proxy_url_from_form(cx) {
                 Ok(proxy_url) => {
                     if let Err(e) = crate::proxy_config::save_proxy_url(proxy_url.as_deref()) {
                         warning!("Failed to persist proxy configuration from proxy settings modal: {e}");
-                        login_status_modal_inner.set_title(cx, tr_key(self.app_language, "login.status.invalid_proxy.title"));
                         let error_text = tr_fmt(self.app_language, "login.status.invalid_proxy.body", &[
                             ("error", e.as_str()),
                         ]);
-                        login_status_modal_inner.set_status(cx, &error_text);
-                        login_status_modal_inner.button_ref(cx).set_text(cx, tr_key(self.app_language, "login.status.okay"));
-                        login_status_modal.open(cx);
+                        error_label.set_text(cx, &error_text);
+                        error_label.set_visible(cx, true);
                     } else {
+                        error_label.set_visible(cx, false);
                         proxy_settings_modal.close(cx);
                         login_status_modal_inner.set_title(cx, tr_key(self.app_language, "login.proxy_settings.saved.title"));
                         login_status_modal_inner.set_status(cx, tr_key(self.app_language, "login.proxy_settings.saved.body"));
@@ -1070,13 +1074,11 @@ impl WidgetMatchEvent for LoginScreen {
                     self.redraw(cx);
                 }
                 Err(proxy_validation_error) => {
-                    login_status_modal_inner.set_title(cx, tr_key(self.app_language, "login.status.invalid_proxy.title"));
                     let error_text = tr_fmt(self.app_language, "login.status.invalid_proxy.body", &[
                         ("error", proxy_validation_error.as_str()),
                     ]);
-                    login_status_modal_inner.set_status(cx, &error_text);
-                    login_status_modal_inner.button_ref(cx).set_text(cx, tr_key(self.app_language, "login.status.okay"));
-                    login_status_modal.open(cx);
+                    error_label.set_text(cx, &error_text);
+                    error_label.set_visible(cx, true);
                     self.redraw(cx);
                 }
             }

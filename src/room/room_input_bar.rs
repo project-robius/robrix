@@ -2290,11 +2290,11 @@ impl RoomInputBarRef {
     }
 
     /// Shows an upload error with retry option.
-    pub fn show_upload_error(&self, cx: &mut Cx, error: &str, file_data: FileData) {
+    pub fn show_upload_error(&self, cx: &mut Cx, error: &str, file_data: FileData, retryable: bool) {
         let Some(inner) = self.borrow() else { return };
         inner.child_by_path(ids!(upload_progress_view))
             .as_upload_progress_view()
-            .show_error(cx, error, file_data);
+            .show_error(cx, error, file_data, retryable);
     }
 
     /// Handles a confirmed file upload from the file upload modal.
