@@ -54,14 +54,17 @@ script_mod! {
             spacing: 12
             align: Align{y: 0.5}
 
+            // Generic device glyph. Matrix's `/devices` endpoint doesn't
+            // expose a device type, so we don't try to guess laptop vs
+            // phone vs browser — one icon for all.
             device_card_icon := Label {
                 width: 36, height: 36
                 align: Align{x: 0.5, y: 0.5}
                 draw_text +: {
-                    color: #x808080
-                    text_style: theme.font_bold { font_size: 20.0 }
+                    color: #x606066
+                    text_style: theme.font_regular { font_size: 22.0 }
                 }
-                text: "?"
+                text: "💻"
             }
 
             device_card_name_col := View {
@@ -87,8 +90,11 @@ script_mod! {
                 }
             }
 
-            device_card_remove_button := Button {
-                text: "🗑  Remove device"
+            // Destructive action — red text on the standard "negative"
+            // outlined background. The plain `Button` widget had white
+            // text on white background, invisible.
+            device_card_remove_button := RobrixNegativeIconButton {
+                text: "Remove device"
                 width: Fit, height: 32
             }
         }
@@ -163,8 +169,8 @@ script_mod! {
                     text_style: theme.font_bold { font_size: 16.0 }
                 }
             }
-            devices_refresh_button := Button {
-                text: "↻ Refresh"
+            devices_refresh_button := RobrixNeutralIconButton {
+                text: "Refresh"
                 width: Fit, height: 32
             }
         }

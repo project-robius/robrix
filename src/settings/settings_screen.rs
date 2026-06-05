@@ -1134,6 +1134,7 @@ impl SettingsScreen {
     fn sync_selected_category(&mut self, cx: &mut Cx) {
         let show_account = self.selected_category == SettingsCategory::Account;
         let show_preferences = self.selected_category == SettingsCategory::Preferences;
+        let show_devices = self.selected_category == SettingsCategory::Devices;
         let show_labs = self.selected_category == SettingsCategory::Labs;
         let show_contribute = self.selected_category == SettingsCategory::Contribute;
 
@@ -1145,6 +1146,8 @@ impl SettingsScreen {
                     id!(account_settings_page)
                 } else if show_preferences {
                     id!(preferences_settings_page)
+                } else if show_devices {
+                    id!(devices_settings_page)
                 } else if show_labs {
                     id!(labs_settings_page)
                 } else {
@@ -1164,6 +1167,7 @@ impl SettingsScreen {
 
         let mut category_account_button = self.view.button(cx, ids!(category_account_button));
         let mut category_preferences_button = self.view.button(cx, ids!(category_preferences_button));
+        let mut category_devices_button = self.view.button(cx, ids!(category_devices_button));
         let mut category_labs_button = self.view.button(cx, ids!(category_labs_button));
         let mut category_contribute_button = self.view.button(cx, ids!(category_contribute_button));
 
@@ -1176,6 +1180,11 @@ impl SettingsScreen {
             apply_primary_button_style(cx, &mut category_preferences_button);
         } else {
             apply_neutral_button_style(cx, &mut category_preferences_button);
+        }
+        if show_devices {
+            apply_primary_button_style(cx, &mut category_devices_button);
+        } else {
+            apply_neutral_button_style(cx, &mut category_devices_button);
         }
         if show_labs {
             apply_primary_button_style(cx, &mut category_labs_button);
@@ -1190,6 +1199,7 @@ impl SettingsScreen {
 
         category_account_button.reset_hover(cx);
         category_preferences_button.reset_hover(cx);
+        category_devices_button.reset_hover(cx);
         category_labs_button.reset_hover(cx);
         category_contribute_button.reset_hover(cx);
         self.view.redraw(cx);

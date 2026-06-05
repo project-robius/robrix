@@ -17,7 +17,7 @@ script_mod! {
         height: Fit
 
         wrapper := RoundedView {
-            width: 400
+            width: 560
             height: Fit
             align: Align{x: 0.5}
             flow: Down
