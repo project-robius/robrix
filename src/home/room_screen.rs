@@ -9931,6 +9931,7 @@ fn populate_message_view(
                 let is_image_fully_drawn = populate_image_message_content(
                     cx,
                     &text_or_image_ref,
+                    None,
                     app_language,
                     Some(Box::new(image_info.clone())),
                     source.clone().into(),

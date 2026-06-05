@@ -98,11 +98,16 @@ impl AnimatedImage {
         body: &str,
         media_cache: &mut MediaCache,
     ) -> bool {
-        match media_cache.try_get_media_or_fetch(&mxc_uri, MediaFormat::File) {
+        // `try_get_media_or_fetch` now takes a `&MediaSource` rather than
+        // a `&OwnedMxcUri`, so wrap the plain URI in a `MediaSource::Plain`
+        // for the cache lookup. The same wrapped value is reused below as
+        // the source we record on the widget.
+        let source = MediaSource::Plain(mxc_uri.clone());
+        match media_cache.try_get_media_or_fetch(&source, MediaFormat::File) {
             (MediaCacheEntry::Loaded(data), MediaFormat::File) => {
                 let cache_key = animated_image_cache_key(&mxc_uri, body);
                 if let Err(e) =
-                    self.show_image_data(cx, Some(MediaSource::Plain(mxc_uri)), cache_key, &data)
+                    self.show_image_data(cx, Some(source.clone()), cache_key, &data)
                 {
                     let err_str = format!("{body}\n\nFailed to display animated image: {e:?}");
                     error!("{err_str}");
