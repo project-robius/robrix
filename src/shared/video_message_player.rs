@@ -217,6 +217,7 @@ fn set_active_video(uid: WidgetUid) {
 }
 
 #[cfg(test)]
+#[allow(dead_code)] // scaffolding for tests not yet written
 #[derive(Debug, PartialEq)]
 enum PosterLayerDecision {
     SetPosterTexture,
@@ -225,6 +226,7 @@ enum PosterLayerDecision {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 fn poster_layer_decision(
     entry: &MediaCacheEntry,
     blurhash: Option<&str>,
@@ -249,6 +251,7 @@ fn poster_layer_decision(
 }
 
 #[cfg(test)]
+#[allow(dead_code)] // scaffolding for tests not yet written
 #[derive(Debug, PartialEq)]
 enum VideoFileLayerDecision {
     SetSourceUrl(PathBuf),
@@ -257,6 +260,7 @@ enum VideoFileLayerDecision {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 fn video_file_layer_decision(
     entry: &MediaCacheEntry,
     format: &MediaFormat,

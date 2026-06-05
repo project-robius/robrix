@@ -843,6 +843,40 @@ pub enum SearchMessagesResultAction {
     },
 }
 
+/// A single message hit returned by [`MatrixRequest::SearchAllMessages`].
+///
+/// Same shape as [`SearchedMessage`] but additionally carries `room_id`,
+/// since global search results span multiple rooms.
+#[derive(Clone, Debug)]
+pub struct GlobalSearchHit {
+    pub event_id: OwnedEventId,
+    pub room_id: OwnedRoomId,
+    pub sender_user_id: OwnedUserId,
+    pub sender_display_name: Option<String>,
+    pub body: String,
+    pub timestamp: MilliSecondsSinceUnixEpoch,
+}
+
+/// Action dispatched in response to a [`MatrixRequest::SearchAllMessages`].
+///
+/// Mirrors [`SearchMessagesResultAction`] but without a room id at the top
+/// level (each hit carries its own).
+#[derive(Clone, Debug)]
+pub enum GlobalMessageSearchAction {
+    Received {
+        search_term: String,
+        hits: Vec<GlobalSearchHit>,
+        next_batch: Option<String>,
+        total_count: u64,
+        is_initial_page: bool,
+    },
+    Failed {
+        search_term: String,
+        error: String,
+        was_initial_page: bool,
+    },
+}
+
 /// Either a main room timeline or a thread-focused timeline.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TimelineKind {
@@ -1080,6 +1114,18 @@ pub enum MatrixRequest {
     /// the user types a different query while results are still arriving.
     SearchMessages {
         room_id: OwnedRoomId,
+        search_term: String,
+        next_batch: Option<String>,
+        abort_previous: bool,
+    },
+    /// Search messages across **all** of the user's joined rooms via the
+    /// Matrix `/_matrix/client/v3/search` endpoint. Same plumbing as
+    /// [`MatrixRequest::SearchMessages`] but the request omits the
+    /// `RoomEventFilter::rooms` constraint so the server searches every
+    /// room the user has joined. The 2-character minimum is enforced
+    /// here rather than at the call site so a stray short query is
+    /// silently dropped.
+    SearchAllMessages {
         search_term: String,
         next_batch: Option<String>,
         abort_previous: bool,
@@ -3035,6 +3081,100 @@ async fn matrix_worker_task(
                     }
                 });
                 *SEARCH_MESSAGES_ABORT.lock().unwrap() = Some(join_handle.abort_handle());
+            }
+
+            MatrixRequest::SearchAllMessages { search_term, next_batch, abort_previous } => {
+                if abort_previous {
+                    if let Some(handle) = SEARCH_ALL_MESSAGES_ABORT.lock().unwrap().take() {
+                        handle.abort();
+                    }
+                }
+                let search_term = search_term.trim().to_owned();
+                // Enforce the 2-character minimum here so a stray short
+                // query (e.g. from a glitchy keystroke) never hits the
+                // server. The button-disabled state in the UI is the
+                // primary guard; this is belt-and-braces.
+                if search_term.chars().count() < 2 {
+                    continue;
+                }
+                let Some(client) = get_client() else { continue };
+
+                // Build the /search request without a `rooms` filter so
+                // the server searches every room the user has joined.
+                let mut criteria = search_events::v3::Criteria::new(search_term.clone());
+                criteria.filter = RoomEventFilter::empty();
+                criteria.order_by = Some(search_events::v3::OrderBy::Recent);
+                criteria.event_context = search_events::v3::EventContext::new();
+                criteria.event_context.after_limit = uint!(0);
+                criteria.event_context.before_limit = uint!(0);
+                criteria.event_context.include_profile = true;
+                let mut categories = search_events::v3::Categories::new();
+                categories.room_events = Some(criteria);
+                let mut req = search_events::v3::Request::new(categories);
+                req.next_batch = next_batch.clone();
+
+                let is_initial_page = next_batch.is_none();
+                let search_term_for_task = search_term.clone();
+                let join_handle = Handle::current().spawn(async move {
+                    match client.send(req).await {
+                        Ok(response) => {
+                            let result = response.search_categories.room_events;
+                            let total_count: u64 = result.count
+                                .map(|c| c.into())
+                                .unwrap_or(0);
+                            let next_batch = result.next_batch;
+                            let mut hits: Vec<GlobalSearchHit> =
+                                Vec::with_capacity(result.results.len());
+                            for item in result.results.into_iter() {
+                                let Some(raw_event) = item.result else { continue };
+                                let Ok(event) = raw_event.deserialize() else { continue };
+                                let AnyTimelineEvent::MessageLike(msg_like) = event else { continue };
+                                let event_id = msg_like.event_id().to_owned();
+                                let room_id = msg_like.room_id().to_owned();
+                                let sender_user_id = msg_like.sender().to_owned();
+                                let timestamp = msg_like.origin_server_ts();
+                                // Prefer the replacement content body when an edit exists.
+                                let mut body: Option<String> = None;
+                                let mut content = msg_like.original_content();
+                                if let Some(replace) = msg_like.relations().replace {
+                                    content = replace.original_content();
+                                }
+                                if let Some(AnyMessageLikeEventContent::RoomMessage(message)) = content {
+                                    body = Some(message.body().to_string());
+                                }
+                                let Some(body) = body else { continue };
+                                let sender_display_name = item.context
+                                    .profile_info
+                                    .get(&sender_user_id)
+                                    .and_then(|p| p.displayname.clone());
+                                hits.push(GlobalSearchHit {
+                                    event_id,
+                                    room_id,
+                                    sender_user_id,
+                                    sender_display_name,
+                                    body,
+                                    timestamp,
+                                });
+                            }
+                            Cx::post_action(GlobalMessageSearchAction::Received {
+                                search_term: search_term_for_task,
+                                hits,
+                                next_batch,
+                                total_count,
+                                is_initial_page,
+                            });
+                        }
+                        Err(e) => {
+                            error!("MatrixRequest::SearchAllMessages failed: {e}");
+                            Cx::post_action(GlobalMessageSearchAction::Failed {
+                                search_term: search_term_for_task,
+                                error: e.to_string(),
+                                was_initial_page: is_initial_page,
+                            });
+                        }
+                    }
+                });
+                *SEARCH_ALL_MESSAGES_ABORT.lock().unwrap() = Some(join_handle.abort_handle());
             }
 
             MatrixRequest::GetSuccessorRoomDetails { tombstoned_room_id } => {
@@ -5131,6 +5271,12 @@ static ACCOUNT_SWITCH_TARGET: Mutex<Option<OwnedUserId>> = Mutex::new(None);
 /// task. Used to cancel an in-flight server search when the user changes the
 /// query while results are still arriving (`abort_previous = true`).
 static SEARCH_MESSAGES_ABORT: Mutex<Option<tokio::task::AbortHandle>> = Mutex::new(None);
+
+/// Same as [`SEARCH_MESSAGES_ABORT`] but for the global (cross-room) search
+/// initiated by [`MatrixRequest::SearchAllMessages`]. Kept as a separate
+/// handle so an in-flight per-room search isn't accidentally cancelled by a
+/// global one or vice versa.
+static SEARCH_ALL_MESSAGES_ABORT: Mutex<Option<tokio::task::AbortHandle>> = Mutex::new(None);
 
 /// Check if an account switch is pending (non-consuming peek).
 fn is_account_switch_pending() -> bool {
