@@ -78,6 +78,15 @@ script_mod! {
                     text: "Preferences"
                 }
 
+                category_devices_button := RobrixNeutralIconButton {
+                    width: Fit, height: Fit,
+                    padding: Inset{top: (SPACE_SM), bottom: (SPACE_SM), left: (SPACE_MD), right: (SPACE_MD)}
+                    spacing: 0,
+                    icon_walk: Walk{width: 0, height: 0, margin: 0}
+                    draw_bg +: { border_radius: (RADIUS_MD) }
+                    text: "Devices"
+                }
+
                 category_labs_button := RobrixNeutralIconButton {
                     width: Fit, height: Fit,
                     padding: Inset{top: (SPACE_SM), bottom: (SPACE_SM), left: (SPACE_MD), right: (SPACE_MD)}
@@ -414,6 +423,18 @@ script_mod! {
                     }
                 }
 
+                devices_settings_page := ScrollXYView {
+                    width: Fill, height: Fill
+                    flow: Down
+
+                    devices_settings_section := View {
+                        width: Fill, height: Fill
+                        flow: Down
+                        spacing: (SPACE_SM)
+                        devices_settings := DevicesScreen {}
+                    }
+                }
+
                 labs_settings_page := ScrollXYView {
                     width: Fill, height: Fill
                     flow: Down
@@ -593,6 +614,7 @@ enum SettingsCategory {
     #[default]
     Account,
     Preferences,
+    Devices,
     Labs,
     Contribute,
 }
@@ -748,6 +770,9 @@ impl Widget for SettingsScreen {
             }
             else if self.view.button(cx, ids!(category_preferences_button)).clicked(actions) {
                 self.set_selected_category(cx, SettingsCategory::Preferences);
+            }
+            else if self.view.button(cx, ids!(category_devices_button)).clicked(actions) {
+                self.set_selected_category(cx, SettingsCategory::Devices);
             }
             else if self.view.button(cx, ids!(category_labs_button)).clicked(actions) {
                 self.set_selected_category(cx, SettingsCategory::Labs);
