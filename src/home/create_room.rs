@@ -553,9 +553,9 @@ impl CreateRoomScreen {
         self.view.text_input(cx, ids!(name_input)).set_text(cx, "");
         self.view.text_input(cx, ids!(topic_input)).set_text(cx, "");
         self.view.text_input(cx, ids!(invitees_input)).set_text(cx, "");
-        self.view.radio_button(cx, ids!(visibility_public)).set_active(cx, false);
-        self.view.radio_button(cx, ids!(visibility_private)).set_active(cx, true);
-        self.view.check_box(cx, ids!(e2ee_toggle)).set_active(cx, false);
+        self.view.radio_button(cx, ids!(visibility_public)).set_active(cx, false, Animate::No);
+        self.view.radio_button(cx, ids!(visibility_private)).set_active(cx, true, Animate::No);
+        self.view.check_box(cx, ids!(e2ee_toggle)).set_active(cx, false, Animate::No);
         self.avatar_bytes = None;
         self.avatar_mime = None;
         self.view.image(cx, ids!(avatar_preview_image)).set_visible(cx, false);
