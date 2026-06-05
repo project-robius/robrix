@@ -11,8 +11,9 @@ pub struct AppPreferences {
     #[serde(default)]
     pub view_mode: ViewModeOverride,
     /// * If `true` (default), plain Enter sends the message (Shift+Enter inserts a newline).
-    /// * If `false`, Cmd+Enter (macOS) / Ctrl+Enter (other platforms) sends the
-    ///   message and plain Enter inserts a newline.
+    /// * If `false`, Cmd+Enter (Apple platforms) / Ctrl+Enter (other platforms) sends the
+    ///   message and plain Enter inserts a newline. This is only relevant for physical keyboards;
+    ///   virtual/soft keyboards always insert a newline upon Enter.
     #[serde(default)]
     pub send_on_enter: bool,
     /// Max height of image thumbnails in the room timeline.

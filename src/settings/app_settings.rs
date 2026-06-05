@@ -8,19 +8,19 @@ use crate::{
     shared::popup_list::{enqueue_popup_notification, PopupKind},
 };
 
-#[cfg(target_os = "macos")]
+#[cfg(target_vendor = "apple")]
 const SEND_SHORTCUT_TOGGLE_LABEL: &str = "Send with Cmd⌘ + Enter";
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(target_vendor = "apple"))]
 const SEND_SHORTCUT_TOGGLE_LABEL: &str = "Send with Ctrl + Enter";
 
-#[cfg(target_os = "macos")]
+#[cfg(target_vendor = "apple")]
 const SEND_SHORTCUT_DESC_CMD: &str = "Currently: 'Cmd⌘ + Enter' to send, 'Enter' for a new line";
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(target_vendor = "apple"))]
 const SEND_SHORTCUT_DESC_CMD: &str = "Currently: 'Ctrl + Enter' to send, 'Enter' for a new line";
 
-#[cfg(target_os = "macos")]
+#[cfg(target_vendor = "apple")]
 const UI_ZOOM_DESCRIPTION: &str = "Scales the entire UI uniformly.\n'Cmd⌘ + +/-' zooms in or out, 'Cmd⌘ + 0' resets zoom";
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(target_vendor = "apple"))]
 const UI_ZOOM_DESCRIPTION: &str = "Scales the entire UI uniformly.\n'Ctrl + +/-' zooms in or out, 'Ctrl + 0' resets zoom.";
 
 
@@ -280,11 +280,11 @@ script_mod! {
 
 
         SubsectionLabel {
-            text: "Send Message Keyboard Shortcut"
+            text: "Keyboard Shortcut to Send Message"
         }
 
         send_on_cmd_enter_toggle := ToggleFlat {
-            margin: Inset{left: 6.5, top: 5, bottom: 5}
+            margin: Inset{left: 6.5, top: 5, bottom: 6}
             padding: Inset { left: 15}
             active: false,
             draw_bg +: { size: 21 }
@@ -298,6 +298,11 @@ script_mod! {
             text: "Current setting: \"Enter\" to send, \"Shift + Enter\" for a new line"
         }
 
+        send_shortcut_soft_keyboard_warning := mod.widgets.SettingsSectionDescription {
+            visible: false // shown only on iOS/Android, see `populate_safe()``
+            draw_text +: { color: (COLOR_TEXT_WARNING_NOT_FOUND) }
+            text: "Note: this only applies to physical (hardware) keyboards."
+        }
 
         SubsectionLabel {
             text: "Maximum Height of Thumbnails"
@@ -595,10 +600,9 @@ impl AppSettings {
         self.view.text_input(cx, ids!(thumb_custom_input)).set_text(cx, &custom_text);
     }
 
-    /// Restores the code-set fields the apply walk just reset to DSL defaults:
-    /// toggle label, description, dropdown index, custom-input read-only flag.
-    /// None of these go through `cx.with_vm`, so it's safe to call from
-    /// `on_after_apply`. Doing it inline is what prevents the one-frame flicker.
+    /// Re-populated fields set by code, for use after an apply action reset things to DSL defaults.
+    ///
+    /// This is safe to call from `on_after_apply` since it doesn't use `cx.with_vm`.
     fn populate_safe(cx: &mut Cx, view: &View, prefs: &AppPreferences) {
         view.drop_down(cx, ids!(view_mode_dropdown))
             .set_selected_item(cx, prefs.view_mode.to_index());
@@ -611,6 +615,11 @@ impl AppSettings {
         view.check_box(cx, ids!(send_on_cmd_enter_toggle))
             .set_text(SEND_SHORTCUT_TOGGLE_LABEL);
         Self::update_send_shortcut_description(cx, view, prefs.send_on_enter);
+
+        // The send shortcut only applies to a physical keyboard, so the
+        // soft-keyboard caveat is only relevant on iOS/Android.
+        view.widget(cx, ids!(send_shortcut_soft_keyboard_warning))
+            .set_visible(cx, cfg!(any(target_os = "ios", target_os = "android")));
 
         let custom_active = matches!(prefs.thumbnail_max_height, ThumbnailMaxHeight::Custom(_));
         Self::set_thumb_custom_input_read_only(cx, view, custom_active);
