@@ -7,7 +7,7 @@ use std::sync::{mpsc::Receiver, Arc};
 use chrono::{DateTime, Local};
 use makepad_widgets::{
     event::TouchUpdateEvent,
-    image_cache::{ImageBuffer, ImageError},
+    image_cache::{decode_image_from_data, looks_like_svg, ImageBuffer, ImageError},
     *,
 };
 use matrix_sdk_ui::timeline::EventTimelineItem;
@@ -22,24 +22,15 @@ use crate::{
 /// The timeout for hiding the UI overlays after no user mouse/tap activity.
 const SHOW_UI_DURATION: f64 = 3.0;
 
-/// Loads the given image `data` into an `ImageBuffer` as either a PNG or JPEG, using the `imghdr` library to determine which format it is.
+/// Duration of one 90° rotation spin, in seconds (matches the DSL const).
+const ROTATION_ANIMATION_DURATION_SECS: f64 = 0.2;
+
+/// Decodes the given image `data` into an `ImageBuffer`, auto-detecting any
+/// image format that makepad supports.
 ///
-/// Returns an error if either load fails or if the image format is unknown.
-pub fn get_png_or_jpg_image_buffer(data: Vec<u8>) -> Result<ImageBuffer, ImageError> {
-    match imghdr::from_bytes(&data) {
-        Some(imghdr::Type::Png) => {
-            ImageBuffer::from_png(&data)
-        },
-        Some(imghdr::Type::Jpeg) => {
-            ImageBuffer::from_jpg(&data)
-        },
-        Some(_unsupported) => {
-            Err(ImageError::UnsupportedFormat)
-        }
-        None => {
-            Err(ImageError::UnsupportedFormat)
-        }
-    }
+/// Returns an error if the format is unsupported or decoding fails.
+pub fn get_image_buffer(data: Vec<u8>) -> Result<ImageBuffer, ImageError> {
+    decode_image_from_data(&data)
 }
 
 /// Configuration for zoom and pan settings in the image viewer.
@@ -112,8 +103,6 @@ script_mod! {
 
     mod.widgets.UI_ANIMATION_DURATION_SECS = 0.4
 
-    mod.widgets.ROTATION_ANIMATION_DURATION_SECS = 0.2
-
     mod.widgets.ImageViewerButton = RobrixNeutralIconButton {
 
         width: 44, height: 44
@@ -153,7 +142,10 @@ script_mod! {
                 align: Align{x: 0.5, y: 0.5}
                 rotated_image := Image {
                     width: Fill, height: Fill,
-                    fit: ImageFit.Smallest
+                    // The viewer computes the exact frame size itself (and the
+                    // shader handles fit + rotation), so don't let the widget
+                    // re-fit the texture's own aspect over our rotated frame.
+                    fit: ImageFit.Stretch
                 }
             }
 
@@ -345,63 +337,6 @@ script_mod! {
         }
 
         animator: Animator{
-            mode: {
-                default: @upright
-                degree_neg90: AnimatorState{
-                    redraw: false,
-                    from: {all: Forward {duration: (mod.widgets.ROTATION_ANIMATION_DURATION_SECS)}}
-                    apply: {
-                        image_layer: { rotated_image_container: { rotated_image: {
-                            draw_bg: {rotation: -90.0}
-                        }}}
-                    }
-                }
-                upright: AnimatorState{
-                    redraw: false,
-                    from: {all: Forward {duration: (mod.widgets.ROTATION_ANIMATION_DURATION_SECS)}}
-                    apply: {
-                        image_layer: { rotated_image_container: { rotated_image: {
-                            draw_bg: {rotation: 0.0}
-                        }}}
-                    }
-                }
-                degree_90: AnimatorState{
-                    redraw: false,
-                    from: {all: Forward {duration: (mod.widgets.ROTATION_ANIMATION_DURATION_SECS)}}
-                    apply: {
-                        image_layer: { rotated_image_container: { rotated_image: {
-                            draw_bg: {rotation: 90.0}
-                        }}}
-                    }
-                }
-                degree_180: AnimatorState{
-                    redraw: false,
-                    from: {all: Forward {duration: (mod.widgets.ROTATION_ANIMATION_DURATION_SECS)}}
-                    apply: {
-                        image_layer: { rotated_image_container: { rotated_image: {
-                            draw_bg: {rotation: 180.0}
-                        }}}
-                    }
-                }
-                degree_270: AnimatorState{
-                    redraw: false,
-                    from: {all: Forward {duration: (mod.widgets.ROTATION_ANIMATION_DURATION_SECS)}}
-                    apply: {
-                        image_layer: { rotated_image_container: { rotated_image: {
-                            draw_bg: {rotation: 270.0}
-                        }}}
-                    }
-                }
-                degree_360: AnimatorState{
-                    redraw: false,
-                    from: {all: Forward {duration: 0.0}}
-                    apply: {
-                        image_layer: { rotated_image_container: { rotated_image: {
-                            draw_bg: {rotation: 360.0}
-                        }}}
-                    }
-                }
-            }
             hover: {
                 default: @off
                 off: AnimatorState{
@@ -493,6 +428,19 @@ struct ImageViewer {
     /// from the continuous `FingerHoverOver` events that fire every frame.
     #[rust] last_mouse_pos: DVec2,
     #[rust] capped_dimension: DVec2,
+    /// The image's intrinsic (unrotated) pixel size, kept so we can re-fit the
+    /// rotated bounding box at every angle of the spin.
+    #[rust] natural_dimension: DVec2,
+    /// The currently-displayed rotation angle in degrees (continuous during the
+    /// animated spin; settles on a multiple of 90°).
+    #[rust] current_angle: f64,
+    /// Animation endpoints for the in-progress rigid rotation.
+    #[rust] rotation_anim_from: f64,
+    #[rust] rotation_target_angle: f64,
+    /// Wall-clock start of the rotation animation (set on its first frame).
+    #[rust] rotation_anim_start_time: Option<f64>,
+    /// Drives the per-frame rotation animation.
+    #[rust] rotation_next_frame: NextFrame,
     /// Info about how to download the image being shown.
     #[rust] downloadable: Option<DownloadableAttachment>,
     /// A reference to the image being shown so we can easily save it to storage.
@@ -504,41 +452,12 @@ impl Widget for ImageViewer {
         self.view.handle_event(cx, event, scope);
         self.match_event(cx, event);
 
-        // Handle the app window being resized.
+        // Handle the app window being resized: re-fit for the new container.
+        // `display_current_image` re-lays out at the current angle and zoom; the
+        // pan margin persists on the widget, so zoom/pan are retained.
         if matches!(event, Event::WindowGeomChange(_)) {
-            let image_container_rect = self.view.area().rect(cx);
-            self.image_container_size = image_container_rect.size;
-
-            // Save current drag state to retain zoom and pan
-            let saved_zoom_level = self.drag_state.zoom_level;
-            let saved_pan_offset = self.drag_state.pan_offset;
-
-            // Recalculate base dimensions for new container size
-            self.display_using_texture(cx);
-
-            // Restore drag state
-            self.drag_state.zoom_level = saved_zoom_level;
-            self.drag_state.pan_offset = saved_pan_offset;
-
-            // Reapply zoom and pan if they differ from defaults
-            if saved_zoom_level != 1.0 || saved_pan_offset.is_some() {
-                let mut rotated_image = self.view.image(cx, ids!(rotated_image));
-                let width = self.capped_dimension.x * saved_zoom_level;
-                let height = self.capped_dimension.y * saved_zoom_level;
-
-                if let Some(offset) = saved_pan_offset {
-                    script_apply_eval!(cx, rotated_image, {
-                        margin +: { top: #(offset.y), left: #(offset.x) },
-                        width: #(width),
-                        height: #(height),
-                    });
-                } else {
-                    script_apply_eval!(cx, rotated_image, {
-                        width: #(width),
-                        height: #(height),
-                    });
-                }
-            }
+            self.image_container_size = self.view.area().rect(cx).size;
+            self.display_current_image(cx);
         }
 
         // Handle hover events for UI overlay elements.
@@ -686,9 +605,12 @@ impl Widget for ImageViewer {
                 }
                 Ok(Err(error)) => {
                     let error = match error {
-                        ImageError::JpgDecode(_) | ImageError::PngDecode(_) => {
-                            ImageViewerError::UnsupportedFormat
-                        }
+                        ImageError::JpgDecode(_)
+                        | ImageError::PngDecode(_)
+                        | ImageError::GifDecode(_)
+                        | ImageError::WebpDecode(_)
+                        | ImageError::BmpDecode(_)
+                        | ImageError::QoiDecode(_) => ImageViewerError::UnsupportedFormat,
                         ImageError::EmptyData => ImageViewerError::BadData,
                         ImageError::PathNotFound(_) => ImageViewerError::NotFound,
                         ImageError::UnsupportedFormat => ImageViewerError::UnsupportedFormat,
@@ -718,19 +640,10 @@ impl Widget for ImageViewer {
         }
 
         if self.next_frame.is_event(event).is_some() {
-            self.display_using_texture(cx);
+            self.display_current_image(cx);
         }
-        else if let Event::NextFrame(_) = event {
-            let animation_id = match self.rotation_step {
-                0 => ids!(mode.upright),    // 0°
-                1 => ids!(mode.degree_90),  // 90°
-                2 => ids!(mode.degree_180), // 180°
-                3 => ids!(mode.degree_270), // 270°
-                _ => ids!(mode.upright),
-            };
-            if self.animator.in_state(cx, animation_id) {
-                self.is_animating_rotation = matches!(animator_action, AnimatorAction::Animating { .. });
-            }
+        if let Some(ne) = self.rotation_next_frame.is_event(event) {
+            self.advance_rotation(cx, ne.time);
         }
 
         if event.back_pressed()
@@ -811,27 +724,12 @@ impl MatchEvent for ImageViewer {
 
         if self.view.button(cx, ids!(rotate_cw_button)).clicked(actions) {
             was_overlay_button_clicked = true;
-            if !self.is_animating_rotation {
-                self.is_animating_rotation = true;
-                if self.rotation_step == 3 {
-                    self.animator_cut(cx, ids!(mode.degree_neg90));
-                }
-                self.rotation_step = (self.rotation_step + 1) % 4; // Rotate 90 degrees clockwise
-                self.update_rotation_animation(cx);
-            }
+            self.start_rotation(cx, 90.0);
         }
 
         if self.view.button(cx, ids!(rotate_ccw_button)).clicked(actions) {
             was_overlay_button_clicked = true;
-            if !self.is_animating_rotation {
-                self.is_animating_rotation = true;
-                if self.rotation_step == 0 {
-                    self.rotation_step = 4;
-                    self.animator_cut(cx, ids!(mode.degree_360));
-                }
-                self.rotation_step = (self.rotation_step - 1) % 4; // Rotate 90 degrees clockwise
-                self.update_rotation_animation(cx);
-            }
+            self.start_rotation(cx, -90.0);
         }
 
         if self.view.button(cx, ids!(download_button)).clicked(actions)
@@ -910,6 +808,9 @@ impl ImageViewer {
     /// Reset state.
     pub fn reset(&mut self, cx: &mut Cx) {
         self.rotation_step = 0; // Reset to upright (0°)
+        self.current_angle = 0.0;
+        self.rotation_target_angle = 0.0;
+        self.rotation_anim_start_time = None;
         self.is_animating_rotation = false; // Reset animation state
         self.previous_pinch_distance = None; // Reset pinch tracking
         self.mouse_cursor_hover_over_image = false; // Reset hover state
@@ -928,7 +829,6 @@ impl ImageViewer {
         // Snap to fully visible (no animation on reset).
         self.animator_cut(cx, ids!(ui_animator.show));
         self.reset_drag_state(cx);
-        self.animator_cut(cx, ids!(mode.upright));
         let rotated_image_ref = self
             .view
             .image(cx, ids!(rotated_image_container.rotated_image));
@@ -937,32 +837,6 @@ impl ImageViewer {
 
     /// Updates the shader uniforms of the rotated image widget with the current rotation,
     /// and requests a redraw.
-    fn update_rotation_animation(&mut self, cx: &mut Cx) {
-        // Map rotation step to animation state
-        let animation_id = match self.rotation_step {
-            0 => ids!(mode.upright),    // 0°
-            1 => ids!(mode.degree_90),  // 90°
-            2 => ids!(mode.degree_180), // 180°
-            3 => ids!(mode.degree_270), // 270°
-            _ => ids!(mode.upright),
-        };
-        self.animator_play(cx, animation_id);
-
-        // Also directly set the rotation value on the image's draw_bg shader,
-        // in case the animator apply paths don't work for deeply nested children.
-        let rotation_deg = match self.rotation_step {
-            0 => 0.0_f64,
-            1 => 90.0,
-            2 => 180.0,
-            3 => 270.0,
-            _ => 0.0,
-        };
-        let mut rotated_image = self.view.image(cx, ids!(rotated_image));
-        script_apply_eval!(cx, rotated_image, {
-            draw_bg +: { rotation: #(rotation_deg) }
-        });
-    }
-
     /// Resets the drag state of the modal to its initial state.
     ///
     /// This function can be used to reset drag state when the magnifying glass is toggled off.
@@ -976,7 +850,7 @@ impl ImageViewer {
         });
         rotated_image_container.redraw(cx);
 
-        self.update_rotation_animation(cx);
+        self.apply_rotation_frame(cx);
     }
 
     /// Displays an image in the image viewer widget.
@@ -986,6 +860,23 @@ impl ImageViewer {
         if self.receiver.is_some() {
             return;
         }
+        // SVG is a vector format: load it straight into the image widget (which
+        // renders it natively and stays crisp at any zoom) instead of decoding to
+        // a raster texture on a worker thread.
+        if looks_like_svg(image_bytes) {
+            let rotated_image = self.image(cx, ids!(rotated_image));
+            let load_state = match rotated_image.load_image_from_data(cx, image_bytes) {
+                Ok(()) => {
+                    self.texture = None;
+                    self.next_frame = cx.new_next_frame();
+                    LoadState::FinishedBackgroundDecoding
+                }
+                Err(_) => LoadState::Error(ImageViewerError::BadData),
+            };
+            cx.action(ImageViewerAction::Show(load_state));
+            self.show_overlay_ui(cx, true);
+            return;
+        }
         if let Some(new_value) = self.background_task_id.checked_add(1) {
             self.background_task_id = new_value;
         }
@@ -993,7 +884,7 @@ impl ImageViewer {
         self.receiver = Some((self.background_task_id, receiver));
         let image_bytes_clone = image_bytes.to_vec();
         cx.spawn_thread(move || {
-            let _ = sender.send(get_png_or_jpg_image_buffer(image_bytes_clone));
+            let _ = sender.send(get_image_buffer(image_bytes_clone));
             SignalToUI::set_ui_signal();
         });
         self.show_overlay_ui(cx, true);
@@ -1002,59 +893,107 @@ impl ImageViewer {
     /// Displays an image in the image viewer widget using the provided texture.
     /// 
     /// `Texture` is an optional `Texture` that can be set to display an image. If `None`, the image is cleared.
-    pub fn display_using_texture(&mut self, cx: &mut Cx) {
+    pub fn display_current_image(&mut self, cx: &mut Cx) {
         if self.image_container_size.length() == 0.0 {
             return;
         }
-        let texture = self.texture.clone();
         let mut rotated_image = self.image(cx, ids!(rotated_image));
-        let (texture_width, texture_height) = texture
-            .as_ref()
-            .and_then(|texture| texture.get_format(cx).vec_width_height())
-            .unwrap_or_default();
-        
-        // Calculate scaling factors for both dimensions
-        let scale_x = self.image_container_size.x / texture_width as f64;
-        let scale_y = self.image_container_size.y / texture_height as f64;
-        
-        // Use the smaller scale factor to ensure image fits within container
-        let scale = scale_x.min(scale_y);
-        
-        let capped_width = (texture_width as f64 * scale).floor();
-        let capped_height = (texture_height as f64 * scale).floor();
-        self.capped_dimension = DVec2{
-            x: capped_width,
-            y: capped_height
+        // Natural (unrotated) size: the texture's dimensions for raster images,
+        // or the intrinsic SVG size when an SVG has been loaded into the widget.
+        let natural = if self.texture.is_some() {
+            let texture = self.texture.clone();
+            rotated_image.set_texture(cx, texture);
+            self.texture
+                .as_ref()
+                .and_then(|t| t.get_format(cx).vec_width_height())
+                .map(|(w, h)| DVec2 { x: w as f64, y: h as f64 })
+                .unwrap_or_default()
+        } else {
+            rotated_image
+                .size_in_pixels(cx)
+                .map(|(w, h)| DVec2 { x: w as f64, y: h as f64 })
+                .unwrap_or_default()
         };
-        
-        rotated_image.set_texture(cx, texture);
+        if natural.x == 0.0 || natural.y == 0.0 {
+            return;
+        }
+        self.natural_dimension = natural;
+        if !self.is_animating_rotation {
+            self.current_angle = f64::from(self.rotation_step) * 90.0;
+        }
+        self.apply_rotation_frame(cx);
+    }
+
+    /// Lays the image out for the current rotation angle: the on-screen frame is
+    /// the rotated bounding box (fit to the viewport and the current zoom), and
+    /// the shader is told the image's own pixel size so it rotates *rigidly* —
+    /// a non-square image keeps its correct aspect ratio at every angle.
+    fn apply_rotation_frame(&mut self, cx: &mut Cx) {
+        let (w, h) = (self.natural_dimension.x, self.natural_dimension.y);
+        if w <= 0.0 || h <= 0.0 || self.image_container_size.length() == 0.0 {
+            return;
+        }
+        let rad = self.current_angle.to_radians();
+        let (ca, sa) = (rad.cos().abs(), rad.sin().abs());
+        let bbox_w = w * ca + h * sa;
+        let bbox_h = w * sa + h * ca;
+        let fit = (self.image_container_size.x / bbox_w)
+            .min(self.image_container_size.y / bbox_h);
+        self.capped_dimension = DVec2 { x: bbox_w * fit, y: bbox_h * fit };
+        let zoom = self.drag_state.zoom_level;
+        let frame_w = self.capped_dimension.x * zoom;
+        let frame_h = self.capped_dimension.y * zoom;
+        let image_w = w * fit * zoom;
+        let image_h = h * fit * zoom;
+        let angle = self.current_angle;
+        let mut rotated_image = self.view.image(cx, ids!(rotated_image));
         script_apply_eval!(cx, rotated_image, {
-            width: #(capped_width),
-            height: #(capped_height),
+            width: #(frame_w),
+            height: #(frame_h),
+            draw_bg +: {
+                rotation: #(angle),
+                image_dim_w: #(image_w),
+                image_dim_h: #(image_h),
+            }
         });
+    }
+
+    /// Starts an animated rigid rotation by `delta_deg` (±90°), unless one is
+    /// already running. The spin itself is driven per frame in `handle_event`.
+    fn start_rotation(&mut self, cx: &mut Cx, delta_deg: f64) {
+        if self.is_animating_rotation || self.natural_dimension.x <= 0.0 {
+            return;
+        }
+        self.is_animating_rotation = true;
+        self.rotation_anim_from = self.current_angle;
+        self.rotation_target_angle = self.current_angle + delta_deg;
+        self.rotation_anim_start_time = None;
+        self.rotation_next_frame = cx.new_next_frame();
+    }
+
+    /// Advances the rigid rotation animation by one frame. Returns true while the
+    /// animation is still running.
+    fn advance_rotation(&mut self, cx: &mut Cx, now: f64) {
+        let start = *self.rotation_anim_start_time.get_or_insert(now);
+        let t = ((now - start) / ROTATION_ANIMATION_DURATION_SECS).clamp(0.0, 1.0);
+        let eased = t * t * (3.0 - 2.0 * t); // smoothstep
+        self.current_angle =
+            self.rotation_anim_from + (self.rotation_target_angle - self.rotation_anim_from) * eased;
+        if t >= 1.0 {
+            self.current_angle = self.rotation_target_angle;
+            self.is_animating_rotation = false;
+            self.rotation_step = self.rotation_target_angle.div_euclid(90.0).rem_euclid(4.0) as i8;
+        } else {
+            self.rotation_next_frame = cx.new_next_frame();
+        }
+        self.apply_rotation_frame(cx);
     }
 
     /// Adjust the zoom level of the image viewer based on the provided zoom factor.
     fn adjust_zoom(&mut self, cx: &mut Cx, zoom_factor: f64) {
-        let mut rotated_image = self.view.image(cx, ids!(rotated_image));
-        let size = rotated_image.area().rect(cx).size;
-        let capped_dimension = self.capped_dimension;
-        let target_zoom = self.drag_state.zoom_level * zoom_factor;
-        let (width, height) = if target_zoom < self.config.min_zoom {
-            (capped_dimension.x * self.config.min_zoom, capped_dimension.y * self.config.min_zoom)
-        } else {
-            let actual_zoom_factor = target_zoom / self.drag_state.zoom_level;
-            self.drag_state.zoom_level = target_zoom;
-            self.drag_state.zoom_level = (self.drag_state.zoom_level * 1000.0).round() / 1000.0;
-            let width = (size.x * actual_zoom_factor * 1000.0).round() / 1000.0;
-            let height = (size.y * actual_zoom_factor * 1000.0).round() / 1000.0;
-            (width, height)
-        };
-
-        script_apply_eval!(cx, rotated_image, {
-            width: #(width),
-            height: #(height),
-        });
+        let target_zoom = (self.drag_state.zoom_level * zoom_factor).max(self.config.min_zoom);
+        self.drag_state.zoom_level = (target_zoom * 1000.0).round() / 1000.0;
+        self.apply_rotation_frame(cx);
     }
 
     /// Handle touch update events, specifically the pinch gesture to zoom in/out.

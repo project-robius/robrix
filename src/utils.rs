@@ -4,7 +4,7 @@ use url::Url;
 
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
-use makepad_widgets::{Cx, Event, ImageRef, error, image_cache::ImageError};
+use makepad_widgets::{Cx, Event, ImageRef, image_cache::ImageError};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}, RoomDisplayName};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
@@ -77,71 +77,32 @@ pub fn is_interactive_hit_event(event: &Event) -> bool {
     )
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ImageFormat {
-    Png,
-    Jpeg,
-    XIcon,
+/// Returns true if the given MIME type is an image format that makepad can display.
+pub fn is_supported_image_mimetype(mimetype: &str) -> bool {
+    matches!(
+        mimetype,
+        "image/png"
+            | "image/jpeg"
+            | "image/jpg"
+            | "image/gif"
+            | "image/webp"
+            | "image/bmp"
+            | "image/x-bmp"
+            | "image/x-ms-bmp"
+            | "image/x-icon"
+            | "image/vnd.microsoft.icon"
+            | "image/qoi"
+            | "image/x-qoi"
+            | "image/svg+xml"
+    )
 }
 
-impl ImageFormat {
-    pub fn from_mimetype(mimetype: &str) -> Option<Self> {
-        match mimetype {
-            "image/png" => Some(Self::Png),
-            "image/jpeg" => Some(Self::Jpeg),
-            "image/x-icon" => Some(Self::XIcon),
-            _ => None,
-        }
-    }
-}
-
-/// Loads the given image `data` into the given `ImageRef` as either a
-/// PNG or JPEG, using the `imghdr` library to determine which format it is.
+/// Loads the given image `data` into the given `ImageRef`, auto-detecting any
+/// image format that makepad supports (PNG, JPEG, GIF, WebP, BMP, ICO, QOI).
 ///
-/// Returns an error if either load fails or if the image format is unknown.
-pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), ImageError> {
-
-    fn attempt_both(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), ImageError> {
-        img.load_png_from_data(cx, data)
-            .or_else(|_| img.load_jpg_from_data(cx, data))
-    }
-
-    let res = match imghdr::from_bytes(data) {
-        Some(imghdr::Type::Png) => img.load_png_from_data(cx, data),
-        Some(imghdr::Type::Jpeg) => img.load_jpg_from_data(cx, data),
-        Some(unsupported) => {
-            // Attempt to load it as a PNG or JPEG anyway, since imghdr isn't perfect.
-            attempt_both(img, cx, data).map_err(|_| {
-                error!("load_png_or_jpg(): The {unsupported:?} image format is unsupported");
-                ImageError::UnsupportedFormat
-            })
-        }
-        None => {
-            // Attempt to load it as a PNG or JPEG anyway, since imghdr isn't perfect.
-            attempt_both(img, cx, data).map_err(|_| {
-                error!("load_png_or_jpg(): Unknown image format");
-                ImageError::UnsupportedFormat
-            })
-        }
-    };
-    // Disabled: dumping invalid user-selected image bytes can duplicate private or large files.
-    // if let Err(err) = res.as_ref() {
-    //     // debugging: dump out the bad image to disk
-    //     let mut path = crate::temp_storage::get_temp_dir_path().clone();
-    //     let filename = format!(
-    //         "img_{}",
-    //         std::time::SystemTime::now()
-    //             .duration_since(std::time::SystemTime::UNIX_EPOCH)
-    //             .map(|d| d.as_millis())
-    //             .unwrap_or_else(|_| rand::random::<u128>()),
-    //     );
-    //     path.push(filename);
-    //     path.set_extension("unknown");
-    //     error!("Failed to load PNG/JPG: {err}. Dumping bad image: {:?}", path);
-    //     let _ = std::fs::write(path, data)
-    //         .inspect_err(|e| error!("Failed to write bad image to disk: {e}"));
-    // }
-    res
+/// Returns an error if the format is unsupported or decoding fails.
+pub fn load_image(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), ImageError> {
+    img.load_image_from_data(cx, data)
 }
 
 

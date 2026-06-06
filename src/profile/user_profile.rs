@@ -535,7 +535,7 @@ impl Widget for UserProfileSlidingPane {
         let avatar_ref = self.avatar(cx, ids!(avatar));
         info.avatar_state
             .data()
-            .and_then(|data| avatar_ref.show_image(cx, None, |cx, img| utils::load_png_or_jpg(&img, cx, data)).ok())
+            .and_then(|data| avatar_ref.show_image(cx, None, |cx, img| utils::load_image(&img, cx, data)).ok())
             .unwrap_or_else(|| avatar_ref.show_text(cx, None, None, info.displayable_name()));
 
         // Set the membership status and role in the room.
