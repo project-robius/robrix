@@ -2,6 +2,7 @@ use makepad_widgets::ScriptVm;
 
 pub mod attachment_download;
 pub mod audio_message_player;
+pub mod animated_image;
 pub mod avatar;
 pub mod collapsible_header;
 pub mod expand_arrow;
@@ -40,6 +41,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     timestamp::script_mod(vm);
     room_filter_input_bar::script_mod(vm);
     audio_message_player::script_mod(vm);
+    animated_image::script_mod(vm);
     avatar::script_mod(vm);
     room_filter_search_results::script_mod(vm);
     text_or_image::script_mod(vm);
