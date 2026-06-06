@@ -8,10 +8,6 @@ use ruma::OwnedRoomId;
 use crate::shared::avatar::AvatarWidgetExt;
 use crate::utils::load_png_or_jpg;
 
-/// A simple wrapper to carry stdin commands as Makepad actions.
-#[derive(Clone, Debug)]
-pub struct StdinCommandAction(pub String);
-
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*

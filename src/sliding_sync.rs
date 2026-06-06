@@ -15,8 +15,10 @@ use matrix_sdk::{
             room::{Visibility, create_room::v3::{Request as CreateRoomRequest, RoomPreset}},
             directory::get_public_rooms_filtered,
             error::ErrorKind,
+            filter::RoomEventFilter,
             profile::{AvatarUrl, DisplayName, set_avatar_url},
             receipt::create_receipt::v3::ReceiptType,
+            search::search_events,
             uiaa::{AuthData, AuthType, Dummy},
         }}, directory::{Filter as PublicRoomsFilter, RoomTypeFilter}, events::{
             direct::DirectUserIdentifier,
@@ -25,9 +27,8 @@ use matrix_sdk::{
                 encryption::RoomEncryptionEventContent, member::MembershipState, message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
             },
             space::{child::SpaceChildEventContent, parent::SpaceParentEventContent},
-            sticker::StickerEventContent,
-            room::ImageInfo,
-            AnyMessageLikeEventContent, InitialStateEvent, MessageLikeEventType, StateEventType
+            AnyMessageLikeEventContent, AnyTimelineEvent, sticker::StickerEventContent,
+            room::ImageInfo, InitialStateEvent, MessageLikeEventType, StateEventType
         }, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, int, uint
     }, reqwest::{Client as ReqwestClient, Response as ReqwestResponse, StatusCode as ReqwestStatusCode, header::HeaderValue}, sliding_sync::VersionBuilder, Client, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
 };
@@ -731,12 +732,49 @@ pub enum AccountDataAction {
     /// Result of [`MatrixRequest::GetOwnDevice`].
     /// * `None` if not logged in or the crypto store isn't ready yet.
     OwnDeviceFetched(Option<OwnDeviceInfo>),
+    /// Result of [`MatrixRequest::GetDeviceList`] — every device this user
+    /// has signed in with on the homeserver. Includes the current device.
+    DeviceListFetched(Vec<DeviceInfo>),
+    /// Failure result for [`MatrixRequest::GetDeviceList`].
+    DeviceListFetchFailed(String),
+    /// Result of [`MatrixRequest::DeleteDevice`].
+    DeviceDeleteResult {
+        device_id: String,
+        outcome: DeviceDeleteOutcome,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OwnDeviceInfo {
     pub device_id: String,
     pub display_name: Option<String>,
+}
+
+/// One entry from the homeserver's `/devices` list.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeviceInfo {
+    pub device_id: String,
+    /// User-set device label, e.g. "robrix-un-pw". `None` when never set
+    /// (display the standard "Unknown device" fallback in that case).
+    pub display_name: Option<String>,
+    /// Last public IP this device hit the homeserver from.
+    pub last_seen_ip: Option<String>,
+    /// Unix-millisecond timestamp of the last server-side activity.
+    pub last_seen_ts_ms: Option<i64>,
+}
+
+/// Outcome of attempting to delete a single device.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DeviceDeleteOutcome {
+    /// The server accepted the deletion.
+    Removed,
+    /// The server returned a 401 User-Interactive Auth challenge. The user
+    /// must complete it in a browser before the next retry can succeed.
+    /// `fallback_url` is the homeserver's UIA fallback page for whichever
+    /// auth flow stage the server picked first.
+    NeedsAuth { fallback_url: String },
+    /// Anything else (network error, 403, server bug, …).
+    Error(String),
 }
 
 /// Actions emitted in response to account switching.
@@ -795,6 +833,85 @@ pub enum RoomThreadsAction {
         room_id: OwnedRoomId,
         from: Option<String>,
         error: String,
+    },
+}
+
+/// A single message hit returned by [`MatrixRequest::SearchMessages`].
+///
+/// We pre-extract just the fields the UI needs (sender display name, plain
+/// body, timestamp, event ID) so the action stays cheap to clone and
+/// `Cx::post_action` doesn't have to ship the full ruma event back to the
+/// UI thread.
+#[derive(Clone, Debug)]
+pub struct SearchedMessage {
+    pub event_id: OwnedEventId,
+    pub sender_user_id: OwnedUserId,
+    pub sender_display_name: Option<String>,
+    pub body: String,
+    pub timestamp: MilliSecondsSinceUnixEpoch,
+}
+
+/// Action dispatched in response to a [`MatrixRequest::SearchMessages`].
+///
+/// The UI matches on `room_id` + `search_term` to ignore stale results from
+/// requests that have since been superseded.
+#[derive(Clone, Debug)]
+pub enum SearchMessagesResultAction {
+    Received {
+        room_id: OwnedRoomId,
+        search_term: String,
+        results: Vec<SearchedMessage>,
+        /// If `Some`, more results are available via this token.
+        next_batch: Option<String>,
+        /// Total count of matches reported by the server (the spec returns
+        /// `count` as `Option<UInt>`; we coerce to `u64`).
+        total_count: u64,
+        /// Whether this batch was the first page (i.e. request had no
+        /// `next_batch` token). The UI uses this to know when to *replace*
+        /// vs *append* its current result list.
+        is_initial_page: bool,
+    },
+    Failed {
+        room_id: OwnedRoomId,
+        search_term: String,
+        error: String,
+        /// Whether this was the initial page (so the UI can keep showing the
+        /// previous results when a pagination request fails).
+        was_initial_page: bool,
+    },
+}
+
+/// A single message hit returned by [`MatrixRequest::SearchAllMessages`].
+///
+/// Same shape as [`SearchedMessage`] but additionally carries `room_id`,
+/// since global search results span multiple rooms.
+#[derive(Clone, Debug)]
+pub struct GlobalSearchHit {
+    pub event_id: OwnedEventId,
+    pub room_id: OwnedRoomId,
+    pub sender_user_id: OwnedUserId,
+    pub sender_display_name: Option<String>,
+    pub body: String,
+    pub timestamp: MilliSecondsSinceUnixEpoch,
+}
+
+/// Action dispatched in response to a [`MatrixRequest::SearchAllMessages`].
+///
+/// Mirrors [`SearchMessagesResultAction`] but without a room id at the top
+/// level (each hit carries its own).
+#[derive(Clone, Debug)]
+pub enum GlobalMessageSearchAction {
+    Received {
+        search_term: String,
+        hits: Vec<GlobalSearchHit>,
+        next_batch: Option<String>,
+        total_count: u64,
+        is_initial_page: bool,
+    },
+    Failed {
+        search_term: String,
+        error: String,
+        was_initial_page: bool,
     },
 }
 
@@ -1048,6 +1165,50 @@ pub enum MatrixRequest {
         kind: RemoteDirectorySearchKind,
         limit: u64,
     },
+    /// Request to fetch a page of the user's homeserver's public room directory.
+    ///
+    /// Used by the dedicated public room directory browser screen.
+    /// Pagination is driven by the `since` cursor: the first request passes `None`,
+    /// then each response's `next_batch` is fed back in on subsequent calls.
+    FetchPublicDirectoryPage {
+        /// The search term; empty string means "no filter" (browse server's default order).
+        search_term: String,
+        /// Whether to fetch rooms or spaces.
+        kind: DirectoryRoomKind,
+        /// Pagination cursor. `None` for the first page.
+        since: Option<String>,
+        /// Optional page size hint to the server (server may ignore or cap).
+        limit: Option<u64>,
+        /// Discriminator so stale responses can be discarded when the user changes the query.
+        query_id: u64,
+    },
+    /// Request to search room messages on the server via the Matrix
+    /// `POST /_matrix/client/v3/search` endpoint (room_events category).
+    ///
+    /// Dispatched by the per-room search pane. Results are returned via
+    /// [`SearchMessagesResultAction`]. Set `next_batch = None` for a fresh
+    /// search; set it to a previous response's `next_batch` token to load
+    /// the next page. When `abort_previous` is true the in-flight search
+    /// task (if any) is cancelled before starting the new one — used when
+    /// the user types a different query while results are still arriving.
+    SearchMessages {
+        room_id: OwnedRoomId,
+        search_term: String,
+        next_batch: Option<String>,
+        abort_previous: bool,
+    },
+    /// Search messages across **all** of the user's joined rooms via the
+    /// Matrix `/_matrix/client/v3/search` endpoint. Same plumbing as
+    /// [`MatrixRequest::SearchMessages`] but the request omits the
+    /// `RoomEventFilter::rooms` constraint so the server searches every
+    /// room the user has joined. The 2-character minimum is enforced
+    /// here rather than at the call site so a stray short query is
+    /// silently dropped.
+    SearchAllMessages {
+        search_term: String,
+        next_batch: Option<String>,
+        abort_previous: bool,
+    },
     /// Request to fetch the full details (the room preview) of a tombstoned room.
     GetSuccessorRoomDetails {
         tombstoned_room_id: OwnedRoomId,
@@ -1159,6 +1320,13 @@ pub enum MatrixRequest {
     /// Request to fetch our own [`Device`].
     /// The response is delivered via [`AccountDataAction::OwnDeviceFetched`].
     GetOwnDevice,
+    /// Request to list every device this user has signed in with.
+    /// Response: [`AccountDataAction::DeviceListFetched`] on success,
+    /// [`AccountDataAction::DeviceListFetchFailed`] on error.
+    GetDeviceList,
+    /// Request to delete one device from the user's account. Response:
+    /// [`AccountDataAction::DeviceDeleteResult`] in all cases.
+    DeleteDevice { device_id: String },
     /// Request to fetch an Avatar image from the server.
     /// Upon completion of the async media request, the `on_fetched` function
     /// will be invoked with the content of an `AvatarUpdate`.
@@ -1346,6 +1514,13 @@ pub enum MatrixRequest {
     UploadRoomAvatar {
         room_id: OwnedRoomId,
         avatar_path: std::path::PathBuf,
+    },
+    /// Request to create a new room. Submitted by `CreateRoomScreen`.
+    /// On success the handler also issues `invite_user_by_id` for each
+    /// entry in `config.initial_invitees` — per-invitee failures are
+    /// rolled up into `CreateRoomAction::PartialInvite`.
+    CreateRoomFromConfig {
+        config: crate::home::create_room::CreateRoomConfig,
     },
 }
 
@@ -1888,6 +2063,72 @@ pub enum RemoteDirectorySearchResult {
         space_name_id: RoomNameId,
         avatar_uri: Option<OwnedMxcUri>,
     },
+}
+
+/// Whether the public directory browser is fetching rooms or spaces.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DirectoryRoomKind {
+    Rooms,
+    Spaces,
+}
+
+/// A single entry returned by `MatrixRequest::FetchPublicDirectoryPage`.
+///
+/// Carries the richer fields the directory browser shows per row (topic, member count, alias),
+/// which the existing slim `RemoteDirectorySearchResult` deliberately omits.
+#[derive(Clone, Debug)]
+pub struct PublicRoomDirectoryEntry {
+    pub room_id: OwnedRoomId,
+    /// The displayable name. Falls back to canonical alias, then room id.
+    pub display_name: String,
+    pub canonical_alias: Option<String>,
+    pub topic: Option<String>,
+    pub num_joined_members: u64,
+    pub avatar_uri: Option<OwnedMxcUri>,
+    pub is_space: bool,
+    pub world_readable: bool,
+    pub guest_can_join: bool,
+}
+
+/// Actions emitted by the worker thread in response to
+/// `MatrixRequest::FetchPublicDirectoryPage`.
+#[derive(Clone, Debug)]
+pub enum PublicDirectoryAction {
+    /// A page of results arrived.
+    Page {
+        query_id: u64,
+        /// `true` if this was the first page (continuation pages append).
+        is_first_page: bool,
+        rooms: Vec<PublicRoomDirectoryEntry>,
+        /// Server-supplied cursor for the next page; `None` means no more pages.
+        next_batch: Option<String>,
+    },
+    /// The request failed.
+    Failed {
+        query_id: u64,
+        is_first_page: bool,
+        error: String,
+    },
+}
+
+/// Extracts a UIA fallback URL the user can open in a browser to complete
+/// re-authentication. Returns `None` if the error wasn't a UIA challenge
+/// (caller should treat that as a transport / server error).
+///
+/// Constructs the URL per the Matrix spec:
+///   `{homeserver}/_matrix/client/v3/auth/{stage}/fallback/web?session={session}`
+/// using the first uncompleted stage from the first auth flow.
+fn extract_uia_fallback(
+    client: &matrix_sdk::Client,
+    err: &matrix_sdk::HttpError,
+) -> Option<String> {
+    let uiaa = err.as_uiaa_response()?;
+    let session = uiaa.session.as_ref()?;
+    let stage = uiaa.flows.first()?.stages.first()?;
+    let homeserver = client.homeserver();
+    Some(format!(
+        "{homeserver}_matrix/client/v3/auth/{stage}/fallback/web?session={session}"
+    ))
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -2960,6 +3201,267 @@ async fn matrix_worker_task(
                 });
             }
 
+            MatrixRequest::FetchPublicDirectoryPage { search_term, kind, since, limit, query_id } => {
+                let Some(client) = get_client() else { continue };
+                let _fetch_task = Handle::current().spawn(async move {
+                    let is_first_page = since.is_none();
+                    let trimmed = search_term.trim();
+
+                    let mut filter = PublicRoomsFilter::new();
+                    if !trimmed.is_empty() {
+                        filter.generic_search_term = Some(trimmed.to_owned());
+                    }
+                    filter.room_types = match kind {
+                        DirectoryRoomKind::Rooms => vec![RoomTypeFilter::Default],
+                        DirectoryRoomKind::Spaces => vec![RoomTypeFilter::Space],
+                    };
+
+                    let mut request = get_public_rooms_filtered::v3::Request::new();
+                    request.filter = filter;
+                    request.since = since.clone();
+                    if let Some(limit) = limit {
+                        if let Ok(limit_uint) = matrix_sdk::ruma::UInt::try_from(limit) {
+                            request.limit = Some(limit_uint);
+                        }
+                    }
+
+                    log!(
+                        "[public_directory] -> POST /_matrix/client/v3/publicRooms \
+                         query_id={query_id} is_first_page={is_first_page} kind={kind:?} \
+                         search_term={trimmed:?} since={since:?} limit={limit:?}"
+                    );
+
+                    match client.public_rooms_filtered(request).await {
+                        Ok(response) => {
+                            log!(
+                                "[public_directory] <- OK query_id={query_id} \
+                                 rooms={} next_batch={:?}",
+                                response.chunk.len(),
+                                response.next_batch,
+                            );
+                            let rooms = response.chunk.into_iter().map(|room| {
+                                let display_name = room.name.clone()
+                                    .or_else(|| room.canonical_alias.as_ref().map(ToString::to_string))
+                                    .unwrap_or_else(|| room.room_id.to_string());
+                                PublicRoomDirectoryEntry {
+                                    room_id: room.room_id.clone(),
+                                    display_name,
+                                    canonical_alias: room.canonical_alias.as_ref().map(ToString::to_string),
+                                    topic: room.topic,
+                                    num_joined_members: room.num_joined_members.into(),
+                                    avatar_uri: room.avatar_url,
+                                    is_space: matches!(kind, DirectoryRoomKind::Spaces),
+                                    world_readable: room.world_readable,
+                                    guest_can_join: room.guest_can_join,
+                                }
+                            }).collect();
+                            Cx::post_action(PublicDirectoryAction::Page {
+                                query_id,
+                                is_first_page,
+                                rooms,
+                                next_batch: response.next_batch,
+                            });
+                        }
+                        Err(e) => {
+                            log!(
+                                "[public_directory] <- ERROR query_id={query_id} \
+                                 is_first_page={is_first_page} error={e}"
+                            );
+                            Cx::post_action(PublicDirectoryAction::Failed {
+                                query_id,
+                                is_first_page,
+                                error: e.to_string(),
+                            });
+                        }
+                    }
+                });
+            }
+
+            MatrixRequest::SearchMessages { room_id, search_term, next_batch, abort_previous } => {
+                if abort_previous {
+                    if let Some(handle) = SEARCH_MESSAGES_ABORT.lock().unwrap().take() {
+                        handle.abort();
+                    }
+                }
+                let search_term = search_term.trim().to_owned();
+                if search_term.is_empty() {
+                    continue;
+                }
+                let Some(client) = get_client() else { continue };
+
+                // Build the /search request.
+                let mut room_filter = RoomEventFilter::empty();
+                room_filter.rooms = Some(vec![room_id.clone()]);
+                let mut criteria = search_events::v3::Criteria::new(search_term.clone());
+                criteria.filter = room_filter;
+                criteria.order_by = Some(search_events::v3::OrderBy::Recent);
+                criteria.event_context = search_events::v3::EventContext::new();
+                criteria.event_context.after_limit = uint!(0);
+                criteria.event_context.before_limit = uint!(0);
+                criteria.event_context.include_profile = true;
+                let mut categories = search_events::v3::Categories::new();
+                categories.room_events = Some(criteria);
+                let mut req = search_events::v3::Request::new(categories);
+                req.next_batch = next_batch.clone();
+
+                let is_initial_page = next_batch.is_none();
+                let room_id_for_task = room_id.clone();
+                let search_term_for_task = search_term.clone();
+                let join_handle = Handle::current().spawn(async move {
+                    match client.send(req).await {
+                        Ok(response) => {
+                            let result = response.search_categories.room_events;
+                            let total_count: u64 = result.count
+                                .map(|c| c.into())
+                                .unwrap_or(0);
+                            let next_batch = result.next_batch;
+                            let mut results: Vec<SearchedMessage> = Vec::with_capacity(result.results.len());
+                            for item in result.results.into_iter() {
+                                let Some(raw_event) = item.result else { continue };
+                                let Ok(event) = raw_event.deserialize() else { continue };
+                                let AnyTimelineEvent::MessageLike(msg_like) = event else { continue };
+                                let event_id = msg_like.event_id().to_owned();
+                                let sender_user_id = msg_like.sender().to_owned();
+                                let timestamp = msg_like.origin_server_ts();
+                                // Prefer the replacement content body when an edit exists.
+                                let mut body: Option<String> = None;
+                                let mut content = msg_like.original_content();
+                                if let Some(replace) = msg_like.relations().replace {
+                                    content = replace.original_content();
+                                }
+                                if let Some(AnyMessageLikeEventContent::RoomMessage(message)) = content {
+                                    body = Some(message.body().to_string());
+                                }
+                                let Some(body) = body else { continue };
+                                let sender_display_name = item.context
+                                    .profile_info
+                                    .get(&sender_user_id)
+                                    .and_then(|p| p.displayname.clone());
+                                results.push(SearchedMessage {
+                                    event_id,
+                                    sender_user_id,
+                                    sender_display_name,
+                                    body,
+                                    timestamp,
+                                });
+                            }
+                            Cx::post_action(SearchMessagesResultAction::Received {
+                                room_id: room_id_for_task,
+                                search_term: search_term_for_task,
+                                results,
+                                next_batch,
+                                total_count,
+                                is_initial_page,
+                            });
+                        }
+                        Err(e) => {
+                            error!("MatrixRequest::SearchMessages failed for room {room_id_for_task}: {e}");
+                            Cx::post_action(SearchMessagesResultAction::Failed {
+                                room_id: room_id_for_task,
+                                search_term: search_term_for_task,
+                                error: e.to_string(),
+                                was_initial_page: is_initial_page,
+                            });
+                        }
+                    }
+                });
+                *SEARCH_MESSAGES_ABORT.lock().unwrap() = Some(join_handle.abort_handle());
+            }
+
+            MatrixRequest::SearchAllMessages { search_term, next_batch, abort_previous } => {
+                if abort_previous {
+                    if let Some(handle) = SEARCH_ALL_MESSAGES_ABORT.lock().unwrap().take() {
+                        handle.abort();
+                    }
+                }
+                let search_term = search_term.trim().to_owned();
+                // Enforce the 2-character minimum here so a stray short
+                // query (e.g. from a glitchy keystroke) never hits the
+                // server. The button-disabled state in the UI is the
+                // primary guard; this is belt-and-braces.
+                if search_term.chars().count() < 2 {
+                    continue;
+                }
+                let Some(client) = get_client() else { continue };
+
+                // Build the /search request without a `rooms` filter so
+                // the server searches every room the user has joined.
+                let mut criteria = search_events::v3::Criteria::new(search_term.clone());
+                criteria.filter = RoomEventFilter::empty();
+                criteria.order_by = Some(search_events::v3::OrderBy::Recent);
+                criteria.event_context = search_events::v3::EventContext::new();
+                criteria.event_context.after_limit = uint!(0);
+                criteria.event_context.before_limit = uint!(0);
+                criteria.event_context.include_profile = true;
+                let mut categories = search_events::v3::Categories::new();
+                categories.room_events = Some(criteria);
+                let mut req = search_events::v3::Request::new(categories);
+                req.next_batch = next_batch.clone();
+
+                let is_initial_page = next_batch.is_none();
+                let search_term_for_task = search_term.clone();
+                let join_handle = Handle::current().spawn(async move {
+                    match client.send(req).await {
+                        Ok(response) => {
+                            let result = response.search_categories.room_events;
+                            let total_count: u64 = result.count
+                                .map(|c| c.into())
+                                .unwrap_or(0);
+                            let next_batch = result.next_batch;
+                            let mut hits: Vec<GlobalSearchHit> =
+                                Vec::with_capacity(result.results.len());
+                            for item in result.results.into_iter() {
+                                let Some(raw_event) = item.result else { continue };
+                                let Ok(event) = raw_event.deserialize() else { continue };
+                                let AnyTimelineEvent::MessageLike(msg_like) = event else { continue };
+                                let event_id = msg_like.event_id().to_owned();
+                                let room_id = msg_like.room_id().to_owned();
+                                let sender_user_id = msg_like.sender().to_owned();
+                                let timestamp = msg_like.origin_server_ts();
+                                // Prefer the replacement content body when an edit exists.
+                                let mut body: Option<String> = None;
+                                let mut content = msg_like.original_content();
+                                if let Some(replace) = msg_like.relations().replace {
+                                    content = replace.original_content();
+                                }
+                                if let Some(AnyMessageLikeEventContent::RoomMessage(message)) = content {
+                                    body = Some(message.body().to_string());
+                                }
+                                let Some(body) = body else { continue };
+                                let sender_display_name = item.context
+                                    .profile_info
+                                    .get(&sender_user_id)
+                                    .and_then(|p| p.displayname.clone());
+                                hits.push(GlobalSearchHit {
+                                    event_id,
+                                    room_id,
+                                    sender_user_id,
+                                    sender_display_name,
+                                    body,
+                                    timestamp,
+                                });
+                            }
+                            Cx::post_action(GlobalMessageSearchAction::Received {
+                                search_term: search_term_for_task,
+                                hits,
+                                next_batch,
+                                total_count,
+                                is_initial_page,
+                            });
+                        }
+                        Err(e) => {
+                            error!("MatrixRequest::SearchAllMessages failed: {e}");
+                            Cx::post_action(GlobalMessageSearchAction::Failed {
+                                search_term: search_term_for_task,
+                                error: e.to_string(),
+                                was_initial_page: is_initial_page,
+                            });
+                        }
+                    }
+                });
+                *SEARCH_ALL_MESSAGES_ABORT.lock().unwrap() = Some(join_handle.abort_handle());
+            }
+
             MatrixRequest::GetSuccessorRoomDetails { tombstoned_room_id } => {
                 let Some(client) = get_client() else { continue };
                 let (sender, successor_room) = {
@@ -3061,7 +3563,10 @@ async fn matrix_worker_task(
                                 space_link_error = Some(error.to_string());
                             }
 
-                            let room_name_id = RoomNameId::from_room(&room).await;
+                            let room_name_id = RoomNameId::new(
+                                RoomDisplayName::Named(room_name.clone()),
+                                room.room_id().to_owned(),
+                            );
                             Cx::post_action(CreateRoomAction::Created {
                                 room_name_id,
                                 parent_space_id,
@@ -3371,6 +3876,70 @@ async fn matrix_worker_task(
                         display_name: device.display_name().map(ToOwned::to_owned),
                     });
                     Cx::post_action(AccountDataAction::OwnDeviceFetched(device_info));
+                });
+            }
+
+            MatrixRequest::GetDeviceList => {
+                let Some(client) = get_client() else { continue };
+                let _get_device_list_task = Handle::current().spawn(async move {
+                    match client.devices().await {
+                        Ok(resp) => {
+                            let devices = resp
+                                .devices
+                                .into_iter()
+                                .map(|d| DeviceInfo {
+                                    device_id: d.device_id.to_string(),
+                                    display_name: d.display_name,
+                                    last_seen_ip: d.last_seen_ip,
+                                    last_seen_ts_ms: d
+                                        .last_seen_ts
+                                        .map(|ts| ts.get().into()),
+                                })
+                                .collect::<Vec<_>>();
+                            log!("Fetched {} device(s)", devices.len());
+                            Cx::post_action(AccountDataAction::DeviceListFetched(devices));
+                        }
+                        Err(e) => {
+                            error!("Failed to list devices: {e:?}");
+                            Cx::post_action(AccountDataAction::DeviceListFetchFailed(
+                                e.to_string(),
+                            ));
+                        }
+                    }
+                });
+            }
+
+            MatrixRequest::DeleteDevice { device_id } => {
+                let Some(client) = get_client() else { continue };
+                let _delete_device_task = Handle::current().spawn(async move {
+                    let id: matrix_sdk::ruma::OwnedDeviceId = device_id.clone().into();
+                    let outcome = match client.delete_devices(&[id], None).await {
+                        Ok(_) => {
+                            log!("Deleted device {device_id}");
+                            DeviceDeleteOutcome::Removed
+                        }
+                        Err(e) => {
+                            // Try to extract a UIA `session` + fallback URL from
+                            // the homeserver response. If the error is a UIA
+                            // challenge, the server gave us a list of auth
+                            // flows; we build the fallback URL Synapse-style:
+                            //   {homeserver}/_matrix/client/r0/auth/{stage}/fallback/web?session={session}
+                            match extract_uia_fallback(&client, &e) {
+                                Some(fallback_url) => {
+                                    log!("DeleteDevice requires UIA, fallback: {fallback_url}");
+                                    DeviceDeleteOutcome::NeedsAuth { fallback_url }
+                                }
+                                None => {
+                                    error!("DeleteDevice failed: {e:?}");
+                                    DeviceDeleteOutcome::Error(e.to_string())
+                                }
+                            }
+                        }
+                    };
+                    Cx::post_action(AccountDataAction::DeviceDeleteResult {
+                        device_id,
+                        outcome,
+                    });
                 });
             }
 
@@ -4696,6 +5265,70 @@ async fn matrix_worker_task(
                     SignalToUI::set_ui_signal();
                 });
             }
+
+            MatrixRequest::CreateRoomFromConfig { config } => {
+                let Some(client) = get_client() else { continue };
+
+                Handle::current().spawn(async move {
+                    use crate::home::create_room::CreateRoomFromConfigAction;
+                    let room_name = config.name.trim().to_owned();
+                    let request = config.to_ruma_request();
+                    let invitees = config.initial_invitees.clone();
+                    let avatar_bytes = config.avatar_bytes.clone();
+                    let avatar_mime = config.avatar_mime.clone();
+                    match client.create_room(request).await {
+                        Ok(room) => {
+                            let room_id = room.room_id().to_owned();
+                            if let (Some(bytes), Some(mime_str)) = (avatar_bytes, avatar_mime) {
+                                match mime_str.parse::<mime::Mime>() {
+                                    Ok(mime) => {
+                                        if let Err(err) = room
+                                            .upload_avatar(&mime, bytes, None)
+                                            .await
+                                        {
+                                            error!(
+                                                "create_room: avatar upload for {room_id} failed: {err:?}"
+                                            );
+                                        }
+                                    }
+                                    Err(err) => {
+                                        error!(
+                                            "create_room: avatar mime {mime_str} unparsable: {err:?}"
+                                        );
+                                    }
+                                }
+                            }
+
+                            let mut failed = Vec::new();
+                            for invitee in invitees.iter() {
+                                if let Err(err) = room.invite_user_by_id(invitee).await {
+                                    error!(
+                                        "create_room: invite of {invitee} to {room_id} failed: {err:?}"
+                                    );
+                                    failed.push(invitee.clone());
+                                }
+                            }
+                            if failed.is_empty() {
+                                Cx::post_action(CreateRoomFromConfigAction::Created {
+                                    room_id,
+                                    room_name,
+                                });
+                            } else {
+                                Cx::post_action(CreateRoomFromConfigAction::PartialInvite {
+                                    room_id,
+                                    room_name,
+                                    failed,
+                                });
+                            }
+                        }
+                        Err(error) => {
+                            Cx::post_action(CreateRoomFromConfigAction::Failed {
+                                reason: error.to_string(),
+                            });
+                        }
+                    }
+                });
+            }
         }
     }
 
@@ -5100,6 +5733,17 @@ static SYNC_SERVICE_LIFECYCLE_LOCK: LazyLock<tokio::sync::Mutex<()>> =
 /// Flag to indicate an account switch is in progress.
 /// Contains the user_id to switch to, if any.
 static ACCOUNT_SWITCH_TARGET: Mutex<Option<OwnedUserId>> = Mutex::new(None);
+
+/// Abort handle for the most recently-spawned `MatrixRequest::SearchMessages`
+/// task. Used to cancel an in-flight server search when the user changes the
+/// query while results are still arriving (`abort_previous = true`).
+static SEARCH_MESSAGES_ABORT: Mutex<Option<tokio::task::AbortHandle>> = Mutex::new(None);
+
+/// Same as [`SEARCH_MESSAGES_ABORT`] but for the global (cross-room) search
+/// initiated by [`MatrixRequest::SearchAllMessages`]. Kept as a separate
+/// handle so an in-flight per-room search isn't accidentally cancelled by a
+/// global one or vice versa.
+static SEARCH_ALL_MESSAGES_ABORT: Mutex<Option<tokio::task::AbortHandle>> = Mutex::new(None);
 
 /// Check if an account switch is pending (non-consuming peek).
 fn is_account_switch_pending() -> bool {

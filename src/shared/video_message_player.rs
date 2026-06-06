@@ -96,6 +96,12 @@ pub enum VolumeAction {
 pub type SharedPlayerState = Arc<Mutex<VideoPlayerState>>;
 pub type SharedVolumeState = Arc<Mutex<VideoVolumeState>>;
 
+/// Result of an off-thread blurhash decode: `(width, height, rgba)`.
+/// Wrapped in `Option` because the worker reports `None` on failure
+/// (decode error, zero dimensions, etc.) so the UI can fall back to a
+/// solid placeholder.
+type BlurhashDecodeResult = Option<(u32, u32, Vec<u8>)>;
+
 /// `(width, height, rgba_pixels)` produced by the blurhash decoder worker
 /// and shipped through a `Receiver` into the video player.
 pub type BlurhashDecoded = (u32, u32, Vec<u8>);
@@ -221,6 +227,7 @@ fn set_active_video(uid: WidgetUid) {
 }
 
 #[cfg(test)]
+#[allow(dead_code)] // scaffolding for tests not yet written
 #[derive(Debug, PartialEq)]
 enum PosterLayerDecision {
     SetPosterTexture,
@@ -229,6 +236,7 @@ enum PosterLayerDecision {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 fn poster_layer_decision(
     entry: &MediaCacheEntry,
     blurhash: Option<&str>,
@@ -253,6 +261,7 @@ fn poster_layer_decision(
 }
 
 #[cfg(test)]
+#[allow(dead_code)] // scaffolding for tests not yet written
 #[derive(Debug, PartialEq)]
 enum VideoFileLayerDecision {
     SetSourceUrl(PathBuf),
@@ -261,6 +270,7 @@ enum VideoFileLayerDecision {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 fn video_file_layer_decision(
     entry: &MediaCacheEntry,
     format: &MediaFormat,
@@ -432,7 +442,7 @@ pub struct VideoMessagePlayer {
     #[rust]
     blurhash_texture_key: Option<(String, u32, u32)>,
     #[rust]
-    blurhash_receiver: Option<Receiver<Option<BlurhashDecoded>>>,
+    blurhash_receiver: Option<Receiver<BlurhashDecodeResult>>,
     #[rust]
     play_enabled: bool,
 

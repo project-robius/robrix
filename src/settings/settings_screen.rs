@@ -2,7 +2,7 @@
 use makepad_widgets::*;
 use url::Url;
 
-use crate::{app::{AppState, AppUpdateAction, BotSettingsState}, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, i18n::{AppLanguage, I18nKey, language_dropdown_labels, tr, tr_fmt, tr_key}, persistence, profile::user_profile::UserProfile, settings::{account_settings::AccountSettingsWidgetExt, app_preferences::AppPreferences, app_settings::AppSettingsWidgetExt, bot_settings::BotSettingsWidgetExt, translation_settings::TranslationSettingsWidgetExt}, shared::{expand_arrow::ExpandArrow, popup_list::{PopupKind, enqueue_popup_notification}, styles::{apply_neutral_button_style, apply_primary_button_style}}, sliding_sync::current_user_id, updater::{UpdateCheckOutcome, check_for_updates}};
+use crate::{app::{AppState, AppUpdateAction, BotSettingsState}, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, i18n::{AppLanguage, I18nKey, language_dropdown_labels, tr, tr_fmt, tr_key}, persistence, proxy_config::{validate_proxy_url_for_user_input, ProxyInputError}, profile::user_profile::UserProfile, settings::{account_settings::AccountSettingsWidgetExt, app_preferences::AppPreferences, app_settings::AppSettingsWidgetExt, bot_settings::BotSettingsWidgetExt, translation_settings::TranslationSettingsWidgetExt}, shared::{expand_arrow::ExpandArrow, popup_list::{PopupKind, enqueue_popup_notification}, styles::{apply_neutral_button_style, apply_primary_button_style}}, sliding_sync::current_user_id, updater::{UpdateCheckOutcome, check_for_updates}};
 
 const CONTRIBUTE_REPO_URL: &str = "https://github.com/Project-Robius-China/robrix2";
 
@@ -76,6 +76,15 @@ script_mod! {
                     icon_walk: Walk{width: 0, height: 0, margin: 0}
                     draw_bg +: { border_radius: (RADIUS_MD) }
                     text: "Preferences"
+                }
+
+                category_devices_button := RobrixNeutralIconButton {
+                    width: Fit, height: Fit,
+                    padding: Inset{top: (SPACE_SM), bottom: (SPACE_SM), left: (SPACE_MD), right: (SPACE_MD)}
+                    spacing: 0,
+                    icon_walk: Walk{width: 0, height: 0, margin: 0}
+                    draw_bg +: { border_radius: (RADIUS_MD) }
+                    text: "Devices"
                 }
 
                 category_labs_button := RobrixNeutralIconButton {
@@ -414,6 +423,18 @@ script_mod! {
                     }
                 }
 
+                devices_settings_page := ScrollXYView {
+                    width: Fill, height: Fill
+                    flow: Down
+
+                    devices_settings_section := View {
+                        width: Fill, height: Fill
+                        flow: Down
+                        spacing: (SPACE_SM)
+                        devices_settings := DevicesScreen {}
+                    }
+                }
+
                 labs_settings_page := ScrollXYView {
                     width: Fill, height: Fill
                     flow: Down
@@ -593,6 +614,7 @@ enum SettingsCategory {
     #[default]
     Account,
     Preferences,
+    Devices,
     Labs,
     Contribute,
 }
@@ -748,6 +770,9 @@ impl Widget for SettingsScreen {
             }
             else if self.view.button(cx, ids!(category_preferences_button)).clicked(actions) {
                 self.set_selected_category(cx, SettingsCategory::Preferences);
+            }
+            else if self.view.button(cx, ids!(category_devices_button)).clicked(actions) {
+                self.set_selected_category(cx, SettingsCategory::Devices);
             }
             else if self.view.button(cx, ids!(category_labs_button)).clicked(actions) {
                 self.set_selected_category(cx, SettingsCategory::Labs);
@@ -1078,7 +1103,14 @@ impl SettingsScreen {
         }
 
         let proxy_url = proxy_url.to_string();
-        crate::proxy_config::validate_proxy_url(&proxy_url)?;
+        validate_proxy_url_for_user_input(&proxy_url).map_err(|e| match e {
+            ProxyInputError::InvalidHost(host) => tr_fmt(
+                self.app_language,
+                "settings.preferences.proxy.error.invalid_host",
+                &[("host", host.as_str())],
+            ),
+            other => other.to_string(),
+        })?;
         Ok(Some(proxy_url))
     }
 
@@ -1102,6 +1134,7 @@ impl SettingsScreen {
     fn sync_selected_category(&mut self, cx: &mut Cx) {
         let show_account = self.selected_category == SettingsCategory::Account;
         let show_preferences = self.selected_category == SettingsCategory::Preferences;
+        let show_devices = self.selected_category == SettingsCategory::Devices;
         let show_labs = self.selected_category == SettingsCategory::Labs;
         let show_contribute = self.selected_category == SettingsCategory::Contribute;
 
@@ -1113,6 +1146,8 @@ impl SettingsScreen {
                     id!(account_settings_page)
                 } else if show_preferences {
                     id!(preferences_settings_page)
+                } else if show_devices {
+                    id!(devices_settings_page)
                 } else if show_labs {
                     id!(labs_settings_page)
                 } else {
@@ -1132,6 +1167,7 @@ impl SettingsScreen {
 
         let mut category_account_button = self.view.button(cx, ids!(category_account_button));
         let mut category_preferences_button = self.view.button(cx, ids!(category_preferences_button));
+        let mut category_devices_button = self.view.button(cx, ids!(category_devices_button));
         let mut category_labs_button = self.view.button(cx, ids!(category_labs_button));
         let mut category_contribute_button = self.view.button(cx, ids!(category_contribute_button));
 
@@ -1144,6 +1180,11 @@ impl SettingsScreen {
             apply_primary_button_style(cx, &mut category_preferences_button);
         } else {
             apply_neutral_button_style(cx, &mut category_preferences_button);
+        }
+        if show_devices {
+            apply_primary_button_style(cx, &mut category_devices_button);
+        } else {
+            apply_neutral_button_style(cx, &mut category_devices_button);
         }
         if show_labs {
             apply_primary_button_style(cx, &mut category_labs_button);
@@ -1158,6 +1199,7 @@ impl SettingsScreen {
 
         category_account_button.reset_hover(cx);
         category_preferences_button.reset_hover(cx);
+        category_devices_button.reset_hover(cx);
         category_labs_button.reset_hover(cx);
         category_contribute_button.reset_hover(cx);
         self.view.redraw(cx);

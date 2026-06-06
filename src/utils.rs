@@ -89,6 +89,23 @@ impl ImageFormat {
     }
 }
 
+pub fn is_animated_image_mime(mime: &str) -> bool {
+    ["image/gif", "image/apng", "image/webp"]
+        .iter()
+        .any(|animated_mime| mime.eq_ignore_ascii_case(animated_mime))
+}
+
+pub fn is_animated_image_filename(name: &str) -> bool {
+    name.rsplit_once('.')
+        .map(|(_, extension)| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "gif" | "apng" | "webp"
+            )
+        })
+        .unwrap_or(false)
+}
+
 /// Loads the given image `data` into the given `ImageRef` as either a
 /// PNG or JPEG, using the `imghdr` library to determine which format it is.
 ///

@@ -18,7 +18,7 @@ use crate::{
     avatar_cache::{self, clear_avatar_cache}, room_preview_cache::clear_room_preview_cache, home::{
         add_room::{CreateRoomModalAction, CreateRoomModalWidgetRefExt, StartChatModalAction, StartChatModalWidgetRefExt},
         bot_binding_modal::{BotBindingModalAction, BotBindingModalWidgetRefExt},
-        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt, mark_invite_modal_closed}, invite_screen::{InviteScreenWidgetRefExt, LeaveRoomResultAction}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::{RoomContextMenuAction, RoomContextMenuWidgetRefExt}, room_screen::{InviteAction, MessageAction, RoomScreenWidgetRefExt, TimelineUpdate, clear_timeline_states}, room_settings_modal::{RoomSettingsAction, RoomSettingsModalWidgetRefExt, StdinCommandAction}, sticker_modal::StickerModalWidgetRefExt, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, space_lobby::SpaceLobbyScreenWidgetRefExt, spaces_bar::SpacesBarRef
+        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt, mark_invite_modal_closed}, invite_screen::{InviteScreenWidgetRefExt, LeaveRoomResultAction}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::{RoomContextMenuAction, RoomContextMenuWidgetRefExt}, room_screen::{InviteAction, MessageAction, RoomScreenWidgetRefExt, TimelineUpdate, clear_timeline_states}, room_settings_modal::{RoomSettingsAction, RoomSettingsModalWidgetRefExt}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, space_lobby::SpaceLobbyScreenWidgetRefExt, spaces_bar::SpacesBarRef
     }, i18n::{AppLanguage, tr_fmt, tr_key}, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, register::RegisterAction, room::BasicRoomDetails, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, file_upload_modal::{FilePreviewerAction, FileUploadModalWidgetRefExt}, forward_modal::{ForwardMessageModalAction, ForwardMessageModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, room_filter_input_bar::FilterAction}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RemoteDirectorySearchKind, RemoteDirectorySearchResult, RoomSettingsFetchedAction, RoomAvatarUploadedAction, TimelineKind, AccountSwitchAction, current_user_id, get_client, submit_async_request, get_timeline_update_sender}, updater::{UpdateCheckOutcome, check_for_updates, load_skipped_update_version, save_skipped_update_version, update_release_page_url}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
@@ -29,6 +29,9 @@ use crate::{
 use crate::shared::room_filter_search_results::{RoomFilterResultAction, RoomFilterResultTarget};
 use crate::shared::room_filter_search_results::RoomFilterSearchResultsListWidgetRefExt;
 use crate::shared::video_message_player_modal::WindowFullscreenAction;
+use crate::home::global_message_search::{GlobalMessageSearchUiAction, GlobalMessageSearchWidgetRefExt};
+use crate::home::sticker_modal::StickerModalWidgetRefExt;
+use crate::sliding_sync::GlobalMessageSearchAction;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -233,6 +236,30 @@ script_mod! {
                                             search_results_list := mod.widgets.RoomFilterSearchResultsList {}
                                         }
                                     }
+
+                                    // "Search in all rooms" — fires a cross-room
+                                    // message search via
+                                    // `MatrixRequest::SearchAllMessages`.
+                                    // Mounted OUTSIDE the bounded
+                                    // ScrollYView above so it stays
+                                    // visible even when the rooms list
+                                    // is long enough to fill the scroll
+                                    // area. Always visible for
+                                    // discoverability; clicking with an
+                                    // empty/short query is a no-op.
+                                    global_search_button_row := View {
+                                        width: Fill,
+                                        height: Fit,
+                                        margin: Inset{top: 8}
+                                        global_search_button := RobrixNeutralIconButton {
+                                            width: Fill,
+                                            text: "Search in all rooms"
+                                        }
+                                    }
+
+                                    // Results live inside their own widget so the
+                                    // existing rooms list above stays unchanged.
+                                    global_message_search := GlobalMessageSearch {}
                                 }
                             }
                         }
@@ -422,6 +449,15 @@ pub struct App {
     /// This can be either a room we're waiting to join, or one we're waiting to be invited to.
     /// Also includes an optional room ID to be closed once the awaited room has been loaded.
     #[rust] waiting_to_navigate_to_room: Option<(BasicRoomDetails, Option<OwnedRoomId>)>,
+    /// Pending jump-to-event request from a global message search click.
+    /// Set when the user clicks a hit in `GlobalMessageSearch`; cleared
+    /// once the target room finishes loading and we've dispatched
+    /// `MessageAction::JumpToEvent` to the room screen.
+    ///
+    /// Stored as `(room_id, event_id)` so the `RoomLoadedSuccessfully`
+    /// handler can confirm the load event matches the room we're
+    /// waiting on before firing the scroll.
+    #[rust] pending_jump_to_event: Option<(OwnedRoomId, OwnedEventId)>,
     /// A stack of previously-selected rooms for mobile navigation.
     /// When a view is popped off the stack, the previous `selected_room` is restored from here.
     #[rust] mobile_room_nav_stack: Vec<SelectedRoom>,
@@ -440,21 +476,10 @@ impl ScriptHook for App {
         });
     }
 
-    /// After initial creation, set the global singleton for the PopupList widget
-    /// and start a background thread to accept stdin commands for testing.
+    /// After initial creation, set the global singleton for the PopupList widget.
     fn on_after_new(&mut self, vm: &mut ScriptVm) {
         vm.with_cx_mut(|cx| {
             crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
-            cx.spawn_thread(|| {
-                use std::io::BufRead;
-                for line in std::io::stdin().lock().lines().map_while(Result::ok) {
-                    let line = line.trim().to_string();
-                    if !line.is_empty() {
-                        log!("[stdin] {}", line);
-                        Cx::post_action(StdinCommandAction(line));
-                    }
-                }
-            });
         });
     }
 }
@@ -713,6 +738,10 @@ impl MatchEvent for App {
             let keywords = std::mem::take(&mut self.pending_room_filter_keywords);
             self.update_room_filter_modal_results(cx, &keywords);
         }
+    }
+
+    fn handle_audio_devices(&mut self, cx: &mut Cx, devices: &AudioDevicesEvent) {
+        cx.use_audio_outputs(&devices.default_output());
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
@@ -1049,6 +1078,130 @@ impl MatchEvent for App {
                 cx.stop_timer(self.room_filter_debounce_timer);
                 self.pending_room_filter_keywords = keywords.clone();
                 self.room_filter_debounce_timer = cx.start_timeout(0.12);
+
+                // Clear any previously-shown global results since the
+                // query has changed (stale). The "Search in all rooms"
+                // button is always rendered; its click handler enforces
+                // the 2-char minimum.
+                if let Some(mut g) = self.ui.global_message_search(
+                    cx,
+                    ids!(room_filter_modal_inner.global_message_search),
+                ).borrow_mut() {
+                    g.clear(cx);
+                }
+                continue;
+            }
+
+            // Click on "Search in all rooms" → submit cross-room search.
+            // Always-rendered button; silently no-ops when the query is
+            // too short.
+            if self.ui.button(cx, ids!(room_filter_modal_inner.global_search_button_row.global_search_button)).clicked(actions) {
+                let query = self.ui
+                    .text_input(cx, ids!(room_filter_modal_inner.room_filter_input_bar.input))
+                    .text()
+                    .trim()
+                    .to_string();
+                if query.chars().count() >= 2 {
+                    if let Some(mut g) = self.ui.global_message_search(
+                        cx,
+                        ids!(room_filter_modal_inner.global_message_search),
+                    ).borrow_mut() {
+                        g.set_loading(cx, query.clone());
+                    }
+                    submit_async_request(MatrixRequest::SearchAllMessages {
+                        search_term: query,
+                        next_batch: None,
+                        abort_previous: true,
+                    });
+                } else {
+                    enqueue_popup_notification(
+                        "Type at least 2 characters to search.",
+                        PopupKind::Info,
+                        Some(2.0),
+                    );
+                }
+                continue;
+            }
+
+            // Forward GlobalMessageSearchAction (response from sliding_sync) into the widget.
+            if let Some(g_action) = action.downcast_ref::<GlobalMessageSearchAction>() {
+                let widget_ref = self.ui.global_message_search(
+                    cx,
+                    ids!(room_filter_modal_inner.global_message_search),
+                );
+                if let Some(mut g) = widget_ref.borrow_mut() {
+                    match g_action {
+                        GlobalMessageSearchAction::Received {
+                            search_term, hits, next_batch, total_count, is_initial_page,
+                        } => {
+                            if *is_initial_page {
+                                g.set_results(
+                                    cx,
+                                    search_term.clone(),
+                                    hits.clone(),
+                                    *total_count,
+                                    next_batch.clone(),
+                                );
+                            } else {
+                                g.append_results(
+                                    cx,
+                                    hits.clone(),
+                                    *total_count,
+                                    next_batch.clone(),
+                                );
+                            }
+                        }
+                        GlobalMessageSearchAction::Failed { error, .. } => {
+                            g.set_error(cx, error.clone());
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // Result row click → close the modal, navigate to the target
+            // room, and stash the event id so the scroll fires once the
+            // room finishes loading.
+            if let GlobalMessageSearchUiAction::JumpToEvent { room_id, event_id } =
+                action.as_widget_action().cast_ref()
+            {
+                self.ui.modal(cx, ids!(room_filter_modal)).close(cx);
+                if let Some(room_name_id) = cx.get_global::<RoomsListRef>().get_room_name(room_id) {
+                    // Stash the (room_id, event_id) pair; the
+                    // `RoomLoadedSuccessfully` handler will pick it up
+                    // and dispatch the scroll to the now-active room
+                    // screen.
+                    self.pending_jump_to_event = Some((room_id.clone(), event_id.clone()));
+                    cx.widget_action(
+                        self.ui.widget_uid(),
+                        RoomsListAction::Selected(SelectedRoom::JoinedRoom { room_name_id }),
+                    );
+                } else {
+                    enqueue_popup_notification(
+                        "Could not open room — not yet known to this client.",
+                        PopupKind::Warning,
+                        Some(3.0),
+                    );
+                }
+                continue;
+            }
+
+            // "Load more" click → submit a paginated follow-up.
+            if let GlobalMessageSearchUiAction::LoadMoreClicked = action.as_widget_action().cast_ref() {
+                let widget_ref = self.ui.global_message_search(
+                    cx,
+                    ids!(room_filter_modal_inner.global_message_search),
+                );
+                if let Some(g) = widget_ref.borrow() {
+                    if let Some(token) = g.next_batch().map(str::to_owned) {
+                        let query = g.last_query().to_owned();
+                        submit_async_request(MatrixRequest::SearchAllMessages {
+                            search_term: query,
+                            next_batch: Some(token),
+                            abort_previous: false,
+                        });
+                    }
+                }
                 continue;
             }
 
@@ -1357,6 +1510,23 @@ impl MatchEvent for App {
                     }
                     continue;
                 }
+                // If the freshly-loaded room is the one a global-search
+                // hit is waiting on, dispatch `MessageAction::JumpToEvent`
+                // so the room screen scrolls to (and paginates back to,
+                // if needed) the matching event.
+                Some(AppStateAction::RoomLoadedSuccessfully { room_name_id, .. }) if
+                    self.pending_jump_to_event.as_ref()
+                        .is_some_and(|(rid, _)| rid == room_name_id.room_id()) =>
+                {
+                    if let Some((_, event_id)) = self.pending_jump_to_event.take() {
+                        log!("Loaded awaited room {room_name_id:?}, jumping to event {event_id}");
+                        cx.widget_action(
+                            self.ui.widget_uid(),
+                            MessageAction::JumpToEvent(event_id),
+                        );
+                    }
+                    continue;
+                }
                 _ => {}
             }
 
@@ -1502,39 +1672,6 @@ impl MatchEvent for App {
                     continue;
                 }
                 _ => {}
-            }
-
-            // Handle StdinCommandAction for manual testing.
-            if let Some(StdinCommandAction(cmd)) = action.downcast_ref() {
-                let parts: Vec<&str> = cmd.splitn(2, ' ').collect();
-                match parts[0] {
-                    "open-room-settings" => {
-                        let keyword = parts.get(1).map(|s| s.trim()).unwrap_or("");
-                        let rooms_list = cx.get_global::<RoomsListRef>().clone();
-                        // Try: selected room → first joined room → keyword search
-                        let result = if keyword.is_empty() {
-                            self.app_state.selected_room
-                                .as_ref()
-                                .map(|sr| sr.room_id().to_owned())
-                                .or_else(|| rooms_list.get_first_joined_room_id())
-                        } else {
-                            rooms_list.get_matching_room_items(keyword, 1)
-                                .into_iter().next()
-                                .map(|(rni, _)| rni.room_id().to_owned())
-                        };
-                        if let Some(room_id) = result {
-                            log!("stdin: opening room settings for {}", room_id);
-                            cx.action(RoomSettingsAction::Open { room_id });
-                        } else {
-                            log!("stdin: no room found for '{}'", keyword);
-                        }
-                    }
-                    "close-room-settings" => {
-                        self.ui.modal(cx, ids!(room_settings_modal)).close(cx);
-                    }
-                    _ => log!("stdin: unknown command '{}'", cmd),
-                }
-                continue;
             }
 
             // Handle RoomSettingsAction.
