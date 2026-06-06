@@ -102,6 +102,10 @@ pub type SharedVolumeState = Arc<Mutex<VideoVolumeState>>;
 /// solid placeholder.
 type BlurhashDecodeResult = Option<(u32, u32, Vec<u8>)>;
 
+/// `(width, height, rgba_pixels)` produced by the blurhash decoder worker
+/// and shipped through a `Receiver` into the video player.
+pub type BlurhashDecoded = (u32, u32, Vec<u8>);
+
 // ============================================================================
 // Cross-widget actions
 // ============================================================================

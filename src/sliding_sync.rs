@@ -27,7 +27,8 @@ use matrix_sdk::{
                 encryption::RoomEncryptionEventContent, member::MembershipState, message::RoomMessageEventContent, power_levels::RoomPowerLevels, MediaSource
             },
             space::{child::SpaceChildEventContent, parent::SpaceParentEventContent},
-            AnyMessageLikeEventContent, AnyTimelineEvent, InitialStateEvent, MessageLikeEventType, StateEventType
+            AnyMessageLikeEventContent, AnyTimelineEvent, sticker::StickerEventContent,
+            room::ImageInfo, InitialStateEvent, MessageLikeEventType, StateEventType
         }, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, int, uint
     }, reqwest::{Client as ReqwestClient, Response as ReqwestResponse, StatusCode as ReqwestStatusCode, header::HeaderValue}, sliding_sync::VersionBuilder, Client, Error, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
 };
@@ -972,6 +973,30 @@ pub enum MatrixRequest {
     /// Request the currently-authenticated user's access token for copying to
     /// external Matrix client integrations such as Hermes/OpenClaw.
     GetAccessTokenForCopy,
+    /// Load the user's sticker pack catalog by talking to the public scalar
+    /// widgets API (`integrations.element.io`). On success posts a
+    /// [`crate::home::sticker_modal::StickerCatalogAction::Ready`] action with
+    /// the parsed pack list; on failure posts the `Failed` variant.
+    LoadStickerCatalog,
+    /// Enable or disable a single sticker pack on the scalar widgets API.
+    /// Fired by the per-row `ToggleFlat` in the sticker modal.
+    SetStickerPackState {
+        /// The pack's wire identifier (`Asset::asset_type` on the wire,
+        /// e.g. `"isabella"`).
+        asset_type: String,
+        /// `true` → enable, `false` → disable.
+        enable: bool,
+    },
+    /// Fetch image bytes for the individual stickers in one pack.
+    /// Fired when the user taps the "▸" drill-down button for an active pack.
+    /// On success posts [`crate::home::sticker_modal::StickerGridAction::Ready`];
+    /// on failure posts the `Failed` variant.
+    LoadPackStickers {
+        pack_id: String,
+        pack_name: String,
+        /// `(mxc_url, https_url, body)` tuples for each sticker in the pack.
+        sticker_infos: Vec<(String, String, String)>,
+    },
     /// Probe a homeserver's registration capabilities.
     /// Sent from RegisterScreen's Next button; result arrives via
     /// `CapabilityProbeAction::Discovered` / `Failed`.
@@ -1359,6 +1384,19 @@ pub enum MatrixRequest {
         target_user_id: OwnedUserId,
         explicit_room: bool,
         source_event_id: OwnedEventId,
+    },
+    /// Send an `m.sticker` event to the given room.
+    SendSticker {
+        timeline_kind: TimelineKind,
+        /// Human-readable description (the `body` field).
+        body: String,
+        /// Original `mxc://` URL of the sticker image.
+        mxc_url: String,
+        /// Image dimensions in pixels (0 when unknown).
+        width: u32,
+        height: u32,
+        /// File size in bytes (0 when unknown).
+        size: u64,
     },
     /// Request to send a file attachment to the given room.
     SendAttachment {
@@ -2285,6 +2323,43 @@ async fn matrix_worker_task(
 
             MatrixRequest::GetAccessTokenForCopy => {
                 Cx::post_action(access_token_copy_result_for_client(get_client()));
+            }
+
+            MatrixRequest::LoadStickerCatalog => {
+                use crate::home::sticker_modal::{
+                    StickerCatalogAction, load_sticker_catalog, report_failure,
+                };
+                let Some(client) = get_client() else {
+                    report_failure("not logged in");
+                    continue;
+                };
+                let _task = Handle::current().spawn(async move {
+                    match load_sticker_catalog(client).await {
+                        Ok(packs) => Cx::post_action(StickerCatalogAction::Ready { packs }),
+                        Err(e) => report_failure(e),
+                    }
+                });
+            }
+
+            MatrixRequest::SetStickerPackState { asset_type, enable } => {
+                use crate::home::sticker_modal::set_pack_state;
+                let Some(client) = get_client() else { continue };
+                let _task = Handle::current().spawn(async move {
+                    if let Err(e) = set_pack_state(client, asset_type, enable).await {
+                        log!("[sticker] set_pack_state failed: {e}");
+                    }
+                });
+            }
+
+            MatrixRequest::LoadPackStickers { pack_id, pack_name, sticker_infos } => {
+                use crate::home::sticker_modal::load_pack_stickers_streaming;
+                // `load_pack_stickers_streaming` posts StickerGridAction::Ready
+                // from disk-cache data immediately, then posts
+                // StickerImagePatchAction batches for any cache-miss images —
+                // no additional action posting needed here.
+                let _task = Handle::current().spawn(async move {
+                    load_pack_stickers_streaming(pack_id, pack_name, sticker_infos).await;
+                });
             }
 
             MatrixRequest::DiscoverHomeserverCapabilities { url, proxy } => {
@@ -4812,6 +4887,57 @@ async fn matrix_worker_task(
                             });
                         }
                     }
+                });
+            }
+
+            MatrixRequest::SendSticker { timeline_kind, body, mxc_url, width, height, size } => {
+                log!("[sticker-dbg] LAYER4: MatrixRequest::SendSticker received timeline={timeline_kind} body={body:?} mxc={mxc_url:?} w={width} h={height} size={size}");
+                let Some((timeline, _sender)) = get_timeline_and_sender(&timeline_kind) else {
+                    log!("BUG: {timeline_kind} not found for send sticker request");
+                    continue;
+                };
+                if mxc_url.is_empty() {
+                    log!("SendSticker: mxc_url is empty, skipping");
+                    continue;
+                }
+                let _task = Handle::current().spawn(async move {
+                    use ruma::events::room::{MediaSource, ThumbnailInfo};
+                    use ruma::UInt;
+                    let mxc_uri = OwnedMxcUri::from(mxc_url);
+                    let mut info = ImageInfo::new();
+                    let mimetype = "image/png".to_owned();
+                    let uint_w = if width > 0 { Some(UInt::from(width)) } else { None };
+                    let uint_h = if height > 0 { Some(UInt::from(height)) } else { None };
+                    let uint_s = if size > 0 { UInt::try_from(size).ok() } else { None };
+                    info.width = uint_w;
+                    info.height = uint_h;
+                    info.size = uint_s;
+                    info.mimetype = Some(mimetype.clone());
+                    info.thumbnail_source = Some(MediaSource::Plain(mxc_uri.clone()));
+                    info.thumbnail_info = Some(Box::new({
+                        let mut ti = ThumbnailInfo::new();
+                        ti.width = uint_w;
+                        ti.height = uint_h;
+                        ti.size = uint_s;
+                        ti.mimetype = Some(mimetype);
+                        ti
+                    }));
+                    let content = AnyMessageLikeEventContent::Sticker(
+                        StickerEventContent::new(body, info, mxc_uri),
+                    );
+                    log!("[sticker-dbg] LAYER4-async: calling timeline.send() for {timeline_kind}");
+                    match timeline.send(content).await {
+                        Ok(_) => log!("[sticker-dbg] LAYER4-async: OK sent sticker to {timeline_kind}."),
+                        Err(e) => {
+                            error!("[sticker-dbg] LAYER4-async: FAILED send sticker to {timeline_kind}: {e:?}");
+                            enqueue_popup_notification(
+                                format!("Failed to send sticker: {e}"),
+                                PopupKind::Error,
+                                None,
+                            );
+                        }
+                    }
+                    SignalToUI::set_ui_signal();
                 });
             }
 

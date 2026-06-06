@@ -514,6 +514,7 @@ script_mod! {
     mod.widgets.ICO_MENU = crate_resource("self://resources/icons/menu.svg")
     mod.widgets.ICO_THREADS = crate_resource("self://resources/icons/double_chat.svg")
     mod.widgets.ICO_TRANSLATE = crate_resource("self://resources/icons/translate.svg")
+    mod.widgets.ICO_MORE_VERT = crate_resource("self://resources/icons/more_vert.svg")
 
     mod.widgets.TranslationLangItem = View {
         width: Fill, height: 36
@@ -852,6 +853,44 @@ script_mod! {
                     }
                 }
 
+                // Drawer that floats above the input bar. Currently only
+                // contains a "Sticker" button; the layout matches
+                // `more_actions_popup` so additional drawer entries can
+                // slot in later without restructuring.
+                sticker_drawer_popup := View {
+                    visible: false
+                    width: Fit
+                    height: Fit
+                    flow: Right{wrap: true}
+                    align: Align{x: 0.0, y: 0.5}
+                    margin: Inset{left: 5, top: 1, bottom: 1}
+                    padding: Inset{left: 0, right: 0, top: 0, bottom: 0}
+                    spacing: 6
+
+                    sticker_drawer_button := RobrixIconButton {
+                        width: Fit
+                        align: Align{x: 0.0, y: 0.5}
+                        margin: Inset{top: 1, bottom: 1}
+                        padding: Inset{left: 10, right: 10, top: 8, bottom: 8}
+                        spacing: 0
+                        draw_bg +: {
+                            color: (COLOR_BG_PREVIEW)
+                            color_hover: #E0E8F0
+                            color_down: #D0D8E8
+                            border_size: 1.0
+                            border_color: (COLOR_SECONDARY)
+                        }
+                        draw_text +: {
+                            color: (COLOR_TEXT)
+                            color_hover: (COLOR_TEXT)
+                            color_down: (COLOR_TEXT)
+                            text_style: MESSAGE_TEXT_STYLE { font_size: 10.5 }
+                        }
+                        icon_walk: Walk{width: 0, height: 0}
+                        text: "Sticker",
+                    }
+                }
+
                 emoji_picker_popup := View {
                     visible: false
                     width: Fit
@@ -886,6 +925,23 @@ script_mod! {
                         margin: Inset{bottom: 9, left: 6, right: 0}
                     }
 
+                    // Opens the sticker drawer above the input bar.
+                    sticker_drawer_toggle_button := RobrixIconButton {
+                        margin: Inset{left: 1, right: 1, top: 4, bottom: 4}
+                        spacing: 0,
+                        draw_icon +: {
+                            svg: (mod.widgets.ICO_MORE_VERT)
+                            color: (COLOR_ACTIVE_PRIMARY_DARKER)
+                        },
+                        draw_bg +: {
+                            color: (COLOR_BG_PREVIEW)
+                            color_hover: #E0E8F0
+                            color_down: #D0D8E8
+                        }
+                        icon_walk: Walk{width: 19, height: 19}
+                        text: "",
+                    }
+
                     // Attachment button for uploading files/images
                     send_attachment_button := RobrixIconButton {
                         margin: Inset{left: 3, right: 1, top: 4, bottom: 4}
@@ -900,6 +956,23 @@ script_mod! {
                             color_down: #D0D8E8
                         }
                         icon_walk: Walk{width: 21, height: 21}
+                        text: "",
+                    }
+
+                    // Opens the modal showing only the user's added stickers.
+                    my_stickers_button := RobrixIconButton {
+                        margin: Inset{left: 1, right: 1, top: 4, bottom: 4}
+                        spacing: 0,
+                        draw_icon +: {
+                            svg: (ICON_SQUARES)
+                            color: (COLOR_ACTIVE_PRIMARY_DARKER)
+                        },
+                        draw_bg +: {
+                            color: (COLOR_BG_PREVIEW)
+                            color_hover: #E0E8F0
+                            color_down: #D0D8E8
+                        }
+                        icon_walk: Walk{width: 18, height: 18}
                         text: "",
                     }
 
@@ -1086,6 +1159,8 @@ pub struct RoomInputBar {
     #[rust] is_location_card_expanded: bool,
     /// Whether the emoji picker popup is currently expanded.
     #[rust] is_emoji_picker_expanded: bool,
+    /// Whether the sticker drawer popup (above the input bar) is open.
+    #[rust] is_sticker_drawer_open: bool,
     /// Cached natural Fit height of the input_bar, used as the animation
     /// target when the editing pane is being hidden.
     #[rust] input_bar_natural_height: f64,
@@ -1424,6 +1499,53 @@ impl RoomInputBar {
         if self.button(cx, ids!(send_attachment_button)).clicked(actions) {
             log!("Add attachment button clicked; opening file picker...");
             self.open_file_picker(cx);
+        }
+
+        // Open the sticker modal showing only the user's added stickers.
+        if self.button(cx, ids!(my_stickers_button)).clicked(actions) {
+            cx.action(crate::home::sticker_modal::StickerModalAction::OpenStickersOnly);
+        }
+
+        // Send a sticker selected from the sticker modal to the current room.
+        for action in actions {
+            if let Some(send) = action.downcast_ref::<crate::home::sticker_modal::StickerSendAction>() {
+                log!("[sticker-dbg] LAYER3: StickerSendAction reached room_input_bar body={:?} url={:?}", send.sticker.body, send.sticker.url);
+                let Some(props) = scope.props.get::<RoomScreenProps>() else {
+                    log!("[sticker-dbg] LAYER3: ERROR - no RoomScreenProps in scope");
+                    break;
+                };
+                let sticker = send.sticker.clone();
+                crate::sliding_sync::submit_async_request(
+                    crate::sliding_sync::MatrixRequest::SendSticker {
+                        timeline_kind: props.timeline_kind.clone(),
+                        body: sticker.body.clone(),
+                        mxc_url: sticker.url.clone(),
+                        width: sticker.width,
+                        height: sticker.height,
+                        size: sticker.image_bytes.len() as u64,
+                    },
+                );
+                break;
+            }
+        }
+
+        // Toggle the sticker drawer popup that floats above the input bar.
+        if self.button(cx, ids!(sticker_drawer_toggle_button)).clicked(actions) {
+            self.is_sticker_drawer_open = !self.is_sticker_drawer_open;
+            self.view
+                .view(cx, ids!(sticker_drawer_popup))
+                .set_visible(cx, self.is_sticker_drawer_open);
+            self.redraw(cx);
+        }
+
+        // Open the sticker modal from the drawer.
+        if self.button(cx, ids!(sticker_drawer_button)).clicked(actions) {
+            self.is_sticker_drawer_open = false;
+            self.view
+                .view(cx, ids!(sticker_drawer_popup))
+                .set_visible(cx, false);
+            cx.action(crate::home::sticker_modal::StickerModalAction::Open);
+            self.redraw(cx);
         }
 
         if self.button(cx, ids!(bot_menu_button)).clicked(actions) {

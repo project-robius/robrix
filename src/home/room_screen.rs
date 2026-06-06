@@ -2394,6 +2394,68 @@ script_mod! {
     }
 
     mod.widgets.IMG_MSG_FIT = Fit{max: FitBound.Abs(200.0)}
+    mod.widgets.STICKER_HEIGHT = 150.0
+
+    // Sticker message templates: fixed height, width determined by aspect ratio.
+    mod.widgets.StickerMessage = mod.widgets.Message {
+        body +: {
+            content +: {
+                width: Fill,
+                height: Fit
+                padding: Inset{ left: 10.0 }
+
+                message := TextOrImage {
+                    width: Fit, height: Fit,
+                    image_view +: { width: Fit, height: Fit, image +: {
+                        height: (mod.widgets.STICKER_HEIGHT)
+                        width: (mod.widgets.STICKER_HEIGHT)
+                        fit: ImageFit.Smallest
+                    } }
+                    default_image_view +: { width: Fit, height: Fit, image +: {
+                        height: (mod.widgets.STICKER_HEIGHT)
+                        width: (mod.widgets.STICKER_HEIGHT)
+                        fit: ImageFit.Smallest
+                    } }
+                }
+                View {
+                    width: Fill,
+                    height: Fit,
+                    flow: Right,
+                    reaction_list := mod.widgets.ReactionList { }
+                    avatar_row := mod.widgets.AvatarRow {}
+                }
+                thread_root_summary := mod.widgets.ThreadRootSummary {}
+            }
+        }
+    }
+
+    mod.widgets.CondensedStickerMessage = mod.widgets.CondensedMessage {
+        body +: {
+            content +: {
+                message := TextOrImage {
+                    width: Fit, height: Fit,
+                    image_view +: { width: Fit, height: Fit, image +: {
+                        height: (mod.widgets.STICKER_HEIGHT)
+                        width: (mod.widgets.STICKER_HEIGHT)
+                        fit: ImageFit.Smallest
+                    } }
+                    default_image_view +: { width: Fit, height: Fit, image +: {
+                        height: (mod.widgets.STICKER_HEIGHT)
+                        width: (mod.widgets.STICKER_HEIGHT)
+                        fit: ImageFit.Smallest
+                    } }
+                }
+                View {
+                    width: Fill,
+                    height: Fit,
+                    flow: Right,
+                    reaction_list := mod.widgets.ReactionList { }
+                    avatar_row := mod.widgets.AvatarRow {}
+                }
+                thread_root_summary := mod.widgets.ThreadRootSummary {}
+            }
+        }
+    }
 
     // The view used for each static image-based message event in a room's timeline.
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
@@ -3677,6 +3739,8 @@ script_mod! {
             CondensedImageMessage := mod.widgets.CondensedImageMessage {}
             VideoMessage := mod.widgets.VideoMessage {}
             AudioMessage := mod.widgets.AudioMessage {}
+            StickerMessage := mod.widgets.StickerMessage {}
+            CondensedStickerMessage := mod.widgets.CondensedStickerMessage {}
             SmallStateEvent := mod.widgets.SmallStateEvent {}
             SmallStateEventsSummary := mod.widgets.SmallStateEventsSummary {}
             Empty := mod.widgets.Empty {}
@@ -10358,9 +10422,9 @@ fn populate_message_view(
             let StickerEventContent { body, info, source, .. } = sticker.content();
 
             let template = if use_compact_view {
-                id!(CondensedImageMessage)
+                id!(CondensedStickerMessage)
             } else {
-                id!(ImageMessage)
+                id!(StickerMessage)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
 

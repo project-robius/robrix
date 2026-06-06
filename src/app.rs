@@ -30,6 +30,7 @@ use crate::shared::room_filter_search_results::{RoomFilterResultAction, RoomFilt
 use crate::shared::room_filter_search_results::RoomFilterSearchResultsListWidgetRefExt;
 use crate::shared::video_message_player_modal::WindowFullscreenAction;
 use crate::home::global_message_search::{GlobalMessageSearchUiAction, GlobalMessageSearchWidgetRefExt};
+use crate::home::sticker_modal::StickerModalWidgetRefExt;
 use crate::sliding_sync::GlobalMessageSearchAction;
 
 script_mod! {
@@ -289,6 +290,17 @@ script_mod! {
                                 width: Fill,
                                 align: Align{x: 0.5, y: 0.5},
                                 event_source_modal_inner := EventSourceModal {}
+                            }
+                        }
+
+                        // Sticker pack catalog modal (opened by the sticker
+                        // drawer in the room input bar).
+                        sticker_modal := Modal {
+                            content +: {
+                                height: Fill,
+                                width: Fill,
+                                align: Align{x: 0.5, y: 0.5},
+                                sticker_modal_inner := StickerModal {}
                             }
                         }
 
@@ -1811,6 +1823,29 @@ impl MatchEvent for App {
                 }
                 Some(EventSourceModalAction::Close) => {
                     self.ui.modal(cx, ids!(event_source_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
+            }
+
+            // Handle StickerModalAction to open/close the sticker catalog modal.
+            match action.downcast_ref::<crate::home::sticker_modal::StickerModalAction>() {
+                Some(crate::home::sticker_modal::StickerModalAction::Open) => {
+                    self.ui
+                        .sticker_modal(cx, ids!(sticker_modal_inner))
+                        .show(cx);
+                    self.ui.modal(cx, ids!(sticker_modal)).open(cx);
+                    continue;
+                }
+                Some(crate::home::sticker_modal::StickerModalAction::OpenStickersOnly) => {
+                    self.ui
+                        .sticker_modal(cx, ids!(sticker_modal_inner))
+                        .show_stickers_only(cx);
+                    self.ui.modal(cx, ids!(sticker_modal)).open(cx);
+                    continue;
+                }
+                Some(crate::home::sticker_modal::StickerModalAction::Close) => {
+                    self.ui.modal(cx, ids!(sticker_modal)).close(cx);
                     continue;
                 }
                 _ => {}
