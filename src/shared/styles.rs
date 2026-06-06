@@ -37,6 +37,7 @@ script_mod! {
     mod.widgets.ICON_PIN              = crate_resource("self://resources/icons/pin.svg")
     mod.widgets.ICON_REPLY            = crate_resource("self://resources/icons/reply.svg")
     mod.widgets.ICON_SEARCH           = crate_resource("self://resources/icons/search.svg")
+    mod.widgets.ICON_THREADS          = crate_resource("self://resources/icons/double_chat.svg")
     mod.widgets.ICON_SEND             = crate_resource("self://resources/icon_send.svg")
     mod.widgets.ICON_SETTINGS         = crate_resource("self://resources/icons/settings.svg")
     mod.widgets.ICON_SQUARES          = crate_resource("self://resources/icons/squares_filled.svg")
