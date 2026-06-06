@@ -742,7 +742,7 @@ impl AudioMessagePlayer {
                     if error.is_empty() {
                         "Unsupported audio format".to_string()
                     } else {
-                        "Unsupported audio format".to_string()
+                        format!("Unsupported audio forma with error {:?}", error)
                     },
                 );
             }
