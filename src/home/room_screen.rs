@@ -33,7 +33,7 @@ use crate::{
     },
     room::{BasicRoomDetails, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, translation, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        attachment_download::{DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, media_source_mxc, start_attachment_download}, avatar::{AvatarState, AvatarWidgetExt, AvatarWidgetRefExt}, confirmation_modal::{ConfirmationModalAction, ConfirmationModalContent, ConfirmationModalWidgetExt}, forward_modal::{ForwardMessageContent, ForwardMessageModalAction}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        attachment_download::{DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, media_source_mxc, start_attachment_download}, avatar::{AvatarState, AvatarWidgetExt, AvatarWidgetRefExt}, confirmation_modal::{ConfirmationModalAction, ConfirmationModalContent, ConfirmationModalWidgetExt}, forward_modal::{ForwardMessageContent, ForwardMessageModalAction}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetExt, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, FetchedRoomThread, MatrixRequest, PaginationDirection, RoomThreadsAction, SearchMessagesResultAction, SearchedMessage, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, current_user_id, get_client, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -2715,15 +2715,9 @@ script_mod! {
             flow: Right
             spacing: 8
 
-            title := Label {
+            title := HtmlOrPlaintext {
                 width: Fill
                 height: Fit
-                flow: Flow.Right{wrap: true}
-                draw_text +: {
-                    text_style: USERNAME_TEXT_STYLE { font_size: 10.8 }
-                    color: #1F1F1F
-                }
-                text: ""
             }
 
             time := Label {
@@ -2748,15 +2742,53 @@ script_mod! {
             text: ""
         }
 
-        preview := Label {
+        preview := HtmlOrPlaintext {
             width: Fill
             height: Fit
-            flow: Flow.Right{wrap: true}
-            draw_text +: {
-                text_style: MESSAGE_TEXT_STYLE { font_size: 10.0 }
-                color: (COLOR_TEXT)
+        }
+    }
+
+    // Floating circular button that opens the `ThreadsSlidingPane`.
+    // Mirrors `SearchMessagesButton`'s layout (Fill/Fill overlay aligned
+    // top-right) but reserves 65px on the right so the search button keeps
+    // the rightmost slot and the threads button sits just before it.
+    mod.widgets.ThreadsButton = #(ThreadsButton::register_widget(vm)) {
+        width: Fill,
+        height: Fill,
+        flow: Overlay,
+        align: Align{x: 1.0, y: 0.0},
+        padding: Inset{right: 65},
+        visible: true,
+
+        View {
+            width: 65, height: 65,
+            align: Align{x: 0.5, y: 0.0},
+            flow: Overlay,
+
+            inner_button := RobrixIconButton {
+                spacing: 0,
+                width: 40, height: 40,
+                align: Align{x: 0.5, y: 0.5},
+                margin: Inset{top: 8},
+
+                draw_icon +: {
+                    svg: (ICON_THREADS),
+                    color: #555,
+                }
+                icon_walk: Walk{width: 18, height: 18}
+
+                draw_bg +: {
+                    background_color: #edededce,
+                    background_color_hover: #d0d0d0ce,
+                    pixel: fn() {
+                        let sdf = Sdf2d.viewport(self.pos * self.rect_size);
+                        let c = self.rect_size * 0.5;
+                        sdf.circle(c.x, c.x, c.x);
+                        sdf.fill_keep(mix(self.background_color, self.background_color_hover, self.hover));
+                        return sdf.result
+                    }
+                }
             }
-            text: ""
         }
     }
 
@@ -3658,6 +3690,10 @@ script_mod! {
         // when the timeline is not at the bottom.
         jump_to_bottom_button := JumpToBottomButton { }
 
+        // Floating threads button at the top-right, sitting just before the
+        // search button. Clicking it opens the `threads_sliding_pane`.
+        threads_button := mod.widgets.ThreadsButton { }
+
         // Floating search button at the top-right (mirrors jump-to-bottom).
         // Clicking it opens the `search_messages_pane` sliding pane below.
         search_messages_button := mod.widgets.SearchMessagesButton { }
@@ -3844,6 +3880,10 @@ script_mod! {
 pub enum ThreadsPaneAction {
     OpenThread(OwnedEventId),
     LoadMoreRequested,
+    /// The pane's close button (or Esc / back / click-outside) was triggered.
+    /// The room screen should call `hide_threads_pane` to animate the pane
+    /// out and re-show the floating threads button.
+    CloseRequested,
     #[default]
     None,
 }
@@ -3851,6 +3891,20 @@ pub enum ThreadsPaneAction {
 impl ActionDefaultRef for ThreadsPaneAction {
     fn default_ref() -> &'static Self {
         static DEFAULT: ThreadsPaneAction = ThreadsPaneAction::None;
+        &DEFAULT
+    }
+}
+
+#[derive(Clone, Default, Debug)]
+pub enum ThreadsButtonAction {
+    OpenRequested,
+    #[default]
+    None,
+}
+
+impl ActionDefaultRef for ThreadsButtonAction {
+    fn default_ref() -> &'static Self {
+        static DEFAULT: ThreadsButtonAction = ThreadsButtonAction::None;
         &DEFAULT
     }
 }
@@ -3936,18 +3990,27 @@ pub struct ThreadsPaneEntry {
 
 impl Widget for ThreadsPaneEntry {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.view.handle_event(cx, event, scope);
-
-        let Some(thread_root_event_id) = self.thread_root_event_id.clone() else { return };
-        match event.hits(cx, self.view.area()) {
-            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                cx.widget_action(
-                    self.widget_uid(),
-                    ThreadsPaneAction::OpenThread(thread_root_event_id),
-                );
+        // Hit-test the parent area BEFORE propagating to children, so the inner
+        // HtmlOrPlaintext (and its TextFlow / HtmlLink children) don't steal
+        // FingerDown/Up — mirrors the pattern in rooms_list_entry.rs.
+        if let Some(thread_root_event_id) = self.thread_root_event_id.clone() {
+            let area = self.view.area();
+            match event.hits(cx, area) {
+                Hit::FingerDown(_) => {
+                    cx.set_key_focus(area);
+                }
+                Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                    log!("ThreadsPaneEntry: tap detected, emitting OpenThread({})", thread_root_event_id);
+                    cx.widget_action(
+                        self.widget_uid(),
+                        ThreadsPaneAction::OpenThread(thread_root_event_id),
+                    );
+                }
+                _ => {}
             }
-            _ => {}
         }
+
+        self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -3958,10 +4021,10 @@ impl Widget for ThreadsPaneEntry {
 impl ThreadsPaneEntry {
     fn set_entry(&mut self, cx: &mut Cx, entry: &ThreadsPaneEntryInfo) {
         self.thread_root_event_id = Some(entry.thread_root_event_id.clone());
-        self.label(cx, ids!(title)).set_text(cx, &entry.title);
+        self.html_or_plaintext(cx, ids!(title)).show_html(cx, &entry.title);
         self.label(cx, ids!(time)).set_text(cx, &entry.time);
         self.label(cx, ids!(subtitle)).set_text(cx, &entry.subtitle);
-        self.label(cx, ids!(preview)).set_text(cx, &entry.preview);
+        self.html_or_plaintext(cx, ids!(preview)).show_html(cx, &entry.preview);
     }
 }
 
@@ -4038,6 +4101,48 @@ impl RoomInfoPeopleEntryRef {
     }
 }
 
+#[derive(Script, ScriptHook, Widget)]
+pub struct ThreadsButton {
+    #[deref] view: View,
+}
+
+impl Widget for ThreadsButton {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let button_area = self.button(cx, ids!(inner_button)).area();
+        match event.hits(cx, button_area) {
+            Hit::FingerHoverIn(_) | Hit::FingerLongPress(_) => {
+                cx.widget_action(
+                    self.widget_uid(),
+                    TooltipAction::HoverIn {
+                        text: String::from("Threads"),
+                        widget_rect: button_area.rect(cx),
+                        options: CalloutTooltipOptions {
+                            position: TooltipPosition::Left,
+                            ..Default::default()
+                        },
+                    },
+                );
+            }
+            Hit::FingerHoverOut(_) => {
+                cx.widget_action(self.widget_uid(), TooltipAction::HoverOut);
+            }
+            _ => {}
+        }
+
+        self.view.handle_event(cx, event, scope);
+
+        if let Event::Actions(actions) = event {
+            if self.button(cx, ids!(inner_button)).clicked(actions) {
+                cx.widget_action(self.widget_uid(), ThreadsButtonAction::OpenRequested);
+            }
+        }
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
 #[derive(Script, ScriptHook, Widget, Animator)]
 pub struct ThreadsSlidingPane {
     #[source] source: ScriptObjectRef,
@@ -4090,7 +4195,7 @@ impl Widget for ThreadsSlidingPane {
             }
         };
         if close_pane {
-            self.hide(cx);
+            cx.widget_action(self.widget_uid(), ThreadsPaneAction::CloseRequested);
         }
 
         if let Event::Actions(actions) = event {
@@ -4705,7 +4810,6 @@ impl Widget for RoomScreen {
         let portal_list = self.portal_list(cx, ids!(timeline.list));
         let user_profile_sliding_pane = self.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane));
         let threads_sliding_pane = self.threads_sliding_pane(cx, ids!(threads_sliding_pane));
-        let threads_sliding_pane_widget_uid = threads_sliding_pane.widget_uid();
         let room_info_sliding_pane = self.room_info_sliding_pane(cx, ids!(room_info_sliding_pane));
         let room_info_sliding_pane_widget_uid = room_info_sliding_pane.widget_uid();
         let loading_pane = self.loading_pane(cx, ids!(loading_pane));
@@ -5066,24 +5170,32 @@ impl Widget for RoomScreen {
                     }
                 }
 
-                match action
-                    .as_widget_action()
-                    .widget_uid_eq(threads_sliding_pane_widget_uid)
-                    .cast_ref()
-                {
+                // No `widget_uid_eq` filter here — `OpenThread` is emitted from
+                // a `ThreadsPaneEntry` (a list item), not from the pane itself,
+                // so its widget_uid is the entry's. `LoadMoreRequested` and
+                // `CloseRequested` come from the pane, but `cast_ref` handles
+                // all three regardless of emitter.
+                match action.as_widget_action().cast_ref::<ThreadsPaneAction>() {
                     ThreadsPaneAction::OpenThread(thread_root_event_id) => {
-                        let Some(room_name_id) = self.room_name_id.as_ref().cloned() else { continue };
+                        log!("RoomScreen: OpenThread received, jumping to {}", thread_root_event_id);
                         threads_sliding_pane.hide(cx);
-                        cx.widget_action(
-                            room_screen_widget_uid,
-                            RoomsListAction::Selected(SelectedRoom::Thread {
-                                room_name_id,
-                                thread_root_event_id: thread_root_event_id.clone(),
-                            }),
+                        self.view.threads_button(cx, ids!(timeline.threads_button))
+                            .set_visible(cx, true);
+                        self.jump_to_event(
+                            cx,
+                            thread_root_event_id,
+                            None,
+                            &portal_list,
+                            &loading_pane,
                         );
                     }
                     ThreadsPaneAction::LoadMoreRequested => {
                         self.request_more_threads(cx, true);
+                    }
+                    ThreadsPaneAction::CloseRequested => {
+                        threads_sliding_pane.hide(cx);
+                        self.view.threads_button(cx, ids!(timeline.threads_button))
+                            .set_visible(cx, true);
                     }
                     ThreadsPaneAction::None => {}
                 }
@@ -5196,6 +5308,14 @@ impl Widget for RoomScreen {
             // `ids!(timeline.search_messages_pane)` and the floating button
             // at `ids!(timeline.search_messages_button)`.
             self.handle_search_messages_actions(cx, actions, &portal_list, &loading_pane);
+
+            // Floating threads button click → open the threads sliding pane.
+            for action in actions {
+                if let ThreadsButtonAction::OpenRequested = action.as_widget_action().cast_ref() {
+                    self.show_threads_pane(cx);
+                    break;
+                }
+            }
 
             // Server-side search results dispatched from sliding_sync.rs.
             self.handle_search_messages_results(cx, actions);
@@ -8280,6 +8400,7 @@ impl RoomScreen {
         }
         self.refresh_threads_pane(cx);
         self.threads_sliding_pane(cx, ids!(threads_sliding_pane)).show(cx);
+        self.threads_button(cx, ids!(timeline.threads_button)).set_visible(cx, false);
         self.redraw(cx);
     }
 
@@ -8316,6 +8437,7 @@ impl RoomScreen {
 
     fn hide_threads_pane(&mut self, cx: &mut Cx) {
         self.threads_sliding_pane(cx, ids!(threads_sliding_pane)).hide(cx);
+        self.threads_button(cx, ids!(timeline.threads_button)).set_visible(cx, true);
     }
 
     fn refresh_room_info_pane(&mut self, cx: &mut Cx) {
