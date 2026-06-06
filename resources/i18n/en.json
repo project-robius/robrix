@@ -484,6 +484,12 @@
 
   "room_filter_input.placeholder": "Filter rooms & spaces...",
   "search_messages.button.todo": "Search (TODO)",
+  "search_messages.button.tooltip": "Search messages",
+  "search_messages.input.placeholder": "Search messages...",
+  "search_messages.empty.idle": "Type to search messages in this room.",
+  "search_messages.status.no_results": "No matches found.",
+  "search_messages.status.encrypted": "Server-side search is not supported in encrypted rooms.",
+  "search_messages.status.failed": "Search failed. Try again.",
   "verification_badge.tooltip.verified": "This device is fully verified.",
   "verification_badge.tooltip.unverified": "This device is unverified. To view your encrypted message history, please verify Robrix from another client.",
   "verification_badge.tooltip.unknown": "Verification state is unknown.",

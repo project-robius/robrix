@@ -25,6 +25,7 @@ pub mod rooms_list_entry;
 pub mod rooms_list_header;
 pub mod rooms_sidebar;
 pub mod search_messages;
+pub mod global_message_search;
 pub mod space_lobby;
 pub mod spaces_bar;
 pub mod navigation_tab_bar;
@@ -87,6 +88,7 @@ pub fn consume_context_menu_opening_finger_up(
 
 pub fn script_mod(vm: &mut ScriptVm) {
     search_messages::script_mod(vm);
+    global_message_search::script_mod(vm);
     loading_pane::script_mod(vm);
     location_preview::script_mod(vm);
     create_room::script_mod(vm);
