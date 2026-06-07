@@ -897,7 +897,7 @@ impl ImageViewer {
         if self.image_container_size.length() == 0.0 {
             return;
         }
-        let mut rotated_image = self.image(cx, ids!(rotated_image));
+        let rotated_image = self.image(cx, ids!(rotated_image));
         // Natural (unrotated) size: the texture's dimensions for raster images,
         // or the intrinsic SVG size when an SVG has been loaded into the widget.
         let natural = if self.texture.is_some() {
