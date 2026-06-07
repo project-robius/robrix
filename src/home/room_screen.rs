@@ -34,7 +34,7 @@ use crate::{
     shared::{
         attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, media_source_mxc, start_attachment_download}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageStatus, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
-    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
+    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints}, utils::{self, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -4199,13 +4199,17 @@ fn populate_image_message_content(
         .map(|info| (info.mimetype.as_deref(), info.width, info.height))
         .unwrap_or_default();
 
-    // If we have a known mimetype and it's not a static image,
-    // then show a message about it being unsupported (e.g., for animated gifs).
+    // If the mimetype is known but isn't an image format makepad can decode,
+    // show a message that it's unsupported.
     if let Some(mime) = mimetype.as_ref() {
-        if ImageFormat::from_mimetype(mime).is_none() {
+        if !utils::is_supported_image_mimetype(mime) {
             text_or_image_ref.show_text(
                 cx,
-                format!("{body}\nUnsupported type {mime:?}"),
+                format!("{}{}Unsupported type {:?}",
+                    body,
+                    if body.trim().is_empty() { "" } else { "\n" },
+                    mime,
+                ),
             );
             return true; // consider this as fully drawn
         }
@@ -4217,7 +4221,7 @@ fn populate_image_message_content(
         match media_cache.try_get_media_or_fetch(&media_source, MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
                 let show_image_result = text_or_image_ref.show_image(cx, Some(media_source), |cx, img| {
-                    utils::load_png_or_jpg(&img, cx, &data)
+                    utils::load_image(&img, cx, &data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
                 if let Err(e) = show_image_result {

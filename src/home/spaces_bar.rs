@@ -479,7 +479,7 @@ impl Widget for SpacesBar {
                                 let res = avatar_ref.show_image(
                                     cx,
                                     None,
-                                    |cx, img_ref| utils::load_png_or_jpg(&img_ref, cx, image_data),
+                                    |cx, img_ref| utils::load_image(&img_ref, cx, image_data),
                                 );
                                 if res.is_err() {
                                     avatar_ref.show_text(

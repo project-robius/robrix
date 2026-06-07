@@ -587,7 +587,7 @@ impl Widget for AddRoomScreen {
                         let res = room_avatar.show_image(
                             cx,
                             None,
-                            |cx, img_ref| utils::load_png_or_jpg(&img_ref, cx, image_data),
+                            |cx, img_ref| utils::load_image(&img_ref, cx, image_data),
                         );
                         if res.is_err() {
                             room_avatar.show_text(

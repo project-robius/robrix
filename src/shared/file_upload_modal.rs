@@ -360,7 +360,7 @@ impl FileUploadModal {
 
             // Load image data into the preview
             if let Some(preview_data) = &file_data.preview_data {
-                if let Err(e) = crate::utils::load_png_or_jpg(&image_preview, cx, preview_data) {
+                if let Err(e) = crate::utils::load_image(&image_preview, cx, preview_data) {
                     makepad_widgets::error!("Failed to load image preview: {:?}", e);
                     // Fall back to file icon
                     image_preview_container.set_visible(cx, false);

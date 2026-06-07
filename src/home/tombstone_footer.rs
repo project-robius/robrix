@@ -182,7 +182,7 @@ impl TombstoneFooter {
                         let res = successor_room_avatar.show_image(
                             cx,
                             None,
-                            |cx, img_ref| utils::load_png_or_jpg(&img_ref, cx, image_data),
+                            |cx, img_ref| utils::load_image(&img_ref, cx, image_data),
                         );
                         if res.is_err() {
                             successor_room_avatar.show_text(
