@@ -166,7 +166,11 @@ askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
 ## Note: matrix-sdk currently uses a git dependency for ruma,
 ## so we patch the git source, not crates-io.
 [patch."https://github.com/ruma/ruma"]
-ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
+## Temporary: the `tolerant_sliding_sync_strings` branch makes simplified sliding sync
+## tolerate non-string name/avatar fields instead of failing the whole response.
+## Revert to the `tsp` branch once that fix is merged into it. See:
+## https://github.com/project-robius/robrix/issues/886
+ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tolerant_sliding_sync_strings" }
 
 [build-dependencies]
 toml = "1"
