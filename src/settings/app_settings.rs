@@ -290,6 +290,40 @@ script_mod! {
             }
         }
 
+        // Experimental remote agent-chat support. Hidden by default; only shown (in
+        // `populate`) when the crate is built with the `agent_chat` Cargo feature.
+        agent_chat_section := RoundedView {
+            width: Fill, height: Fit
+            flow: Down
+            visible: false
+            padding: Inset{left: (SPACE_MD), right: (SPACE_MD), top: (SPACE_SM), bottom: (SPACE_MD)}
+            show_bg: true
+            draw_bg +: {
+                color: #F8F8FA
+                border_radius: (RADIUS_LG)
+            }
+
+            preferences_agent_chat_label := SubsectionLabel {
+                margin: Inset{top: 0, bottom: (SPACE_XS)}
+                text: "Agent-chat support (experimental)"
+            }
+
+            agent_chat_enable_toggle := ToggleFlat {
+                margin: Inset{left: 6.5, top: 5, bottom: 5}
+                padding: Inset { left: 15}
+                active: false,
+                draw_bg +: { size: 21 }
+                text: ""
+                draw_text +: {
+                    text_style: REGULAR_TEXT {},
+                }
+            }
+
+            agent_chat_description := mod.widgets.SettingsSectionDescription {
+                text: ""
+            }
+        }
+
         RoundedView {
             width: Fill, height: Fit
             flow: Down
@@ -473,6 +507,22 @@ impl AppSettings {
             }
         }
 
+        #[cfg(feature = "agent_chat")]
+        {
+            let agent_chat_toggle = self.view.check_box(cx, ids!(agent_chat_enable_toggle));
+            if let Some(enabled) = agent_chat_toggle.changed(actions) {
+                if enabled != app_state.app_prefs.agent_chat_enabled {
+                    app_state.app_prefs.agent_chat_enabled = enabled;
+                    app_state.app_prefs.on_agent_chat_enabled_changed(cx);
+                    enqueue_popup_notification(
+                        tr_key(self.app_language, "settings.preferences.app.popup.updated_agent_chat").to_string(),
+                        PopupKind::Success,
+                        Some(3.0),
+                    );
+                }
+            }
+        }
+
         let radios = self.view.radio_button_set(cx, ids_array!(
             thumb_small_radio,
             thumb_medium_radio,
@@ -561,6 +611,15 @@ impl AppSettings {
             .set_active(cx, !prefs.send_on_enter, Animate::No);
         self.update_send_shortcut_description(cx, prefs.send_on_enter);
 
+        // Reveal + sync the agent-chat toggle only in `agent_chat` feature builds.
+        // (The DSL keeps `agent_chat_section` hidden by default for non-feature builds.)
+        #[cfg(feature = "agent_chat")]
+        {
+            self.view.view(cx, ids!(agent_chat_section)).set_visible(cx, true);
+            self.view.check_box(cx, ids!(agent_chat_enable_toggle))
+                .set_active(cx, prefs.agent_chat_enabled, Animate::No);
+        }
+
         let (small, medium, unlimited, custom, custom_text) = match prefs.thumbnail_max_height {
             ThumbnailMaxHeight::Small => (true, false, false, false, String::new()),
             ThumbnailMaxHeight::Medium => (false, true, false, false, String::new()),
@@ -595,6 +654,14 @@ impl AppSettings {
         self.view
             .label(cx, ids!(preferences_send_shortcut_label))
             .set_text(cx, tr_key(self.app_language, "settings.preferences.app.send_shortcut.label"));
+        self.view
+            .label(cx, ids!(preferences_agent_chat_label))
+            .set_text(cx, tr_key(self.app_language, "settings.preferences.app.agent_chat.label"));
+        self.view.check_box(cx, ids!(agent_chat_enable_toggle))
+            .set_text(tr_key(self.app_language, "settings.preferences.app.agent_chat.toggle"));
+        self.view
+            .label(cx, ids!(agent_chat_description))
+            .set_text(cx, tr_key(self.app_language, "settings.preferences.app.agent_chat.description"));
         self.view
             .label(cx, ids!(preferences_thumb_height_label))
             .set_text(cx, tr_key(self.app_language, "settings.preferences.app.thumbnail.label"));

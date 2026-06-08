@@ -116,6 +116,12 @@ default = []
 ## Enables experimental support for using TSP wallets.
 tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:reqwest"]
 
+## Enables experimental remote agent-chat support (the `/create-issue`, `/go`,
+## `/review`, `/status` workflow slash-commands shown in rooms that contain a
+## `*_coordinator` agent). Off by default; even when compiled in, it must also
+## be turned on at runtime via Settings → Preferences → "Enable agent-chat support".
+agent_chat = []
+
 ## Hides the command prompt console on Windows.
 hide_windows_console = []
 

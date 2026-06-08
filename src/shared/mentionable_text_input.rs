@@ -235,6 +235,10 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
 /// only when a `wf_coordinator` agent is present in the room (see the workflow gate
 /// in `update_slash_command_list`). `needs_args` is unused for these (they always
 /// take the insert path in `on_slash_command_selected`).
+///
+/// Gated behind the `agent_chat` Cargo feature: compiled in only for agent-chat
+/// builds, and even then activated only via the runtime Settings toggle.
+#[cfg(feature = "agent_chat")]
 const WORKFLOW_SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         command: "/create-issue",
@@ -281,6 +285,16 @@ pub(crate) fn is_management_bot_room(
     resolved_parent_bot_user_id.is_some_and(|resolved_parent_bot_user_id|
         bound_bot_user_id == resolved_parent_bot_user_id
     )
+}
+
+/// True if `name` looks like a workflow **coordinator** agent — bare `coordinator`
+/// or `<team>_coordinator` (e.g. `wf_coordinator`, `alpha_coordinator`). Used to detect
+/// agent-chat workflow rooms for ANY parallel team, regardless of team prefix. Matched
+/// against both display name and MXID localpart (`ac_<team>_coordinator` ends with
+/// `_coordinator`, so the `ac_` prefix is irrelevant).
+#[cfg(feature = "agent_chat")]
+fn name_is_workflow_coordinator(name: &str) -> bool {
+    name == "coordinator" || name.ends_with("_coordinator")
 }
 
 fn bot_command_popup_enabled(
@@ -1817,16 +1831,28 @@ impl MentionableTextInput {
             room_props.resolved_parent_bot_user_id.as_ref(),
             &room_props.known_bot_user_ids,
         );
-        // agent-chat demo: offer the workflow `/` commands when a `wf_coordinator`
-        // agent is in the room (robrix2 has no built-in "agent-chat room" concept).
-        // Match on display name OR localpart so it works regardless of the `ac_` MXID
-        // prefix and whatever friendly display name the agent carries.
-        let workflow_enabled = room_props.room_members.as_ref().is_some_and(|members| {
-            members.iter().any(|member| {
-                member.display_name() == Some("wf_coordinator")
-                    || member.user_id().localpart().contains("wf_coordinator")
-            })
-        });
+        // agent-chat demo: offer the workflow `/` commands when a coordinator agent is
+        // in the room (robrix2 has no built-in "agent-chat room" concept). Match ANY
+        // team's coordinator — `wf_coordinator`, `alpha_coordinator`, … — on display name
+        // OR localpart, so it works for multiple parallel teams and regardless of the
+        // `ac_` MXID prefix / friendly display name.
+        //
+        // Double-gated: the `agent_chat` Cargo feature (compile-time) AND the runtime
+        // Settings toggle (Preferences → "Enable agent-chat support"). Without both, the
+        // workflow commands are never offered (and the code isn't even compiled in).
+        #[cfg(feature = "agent_chat")]
+        let workflow_enabled = cx
+            .global::<crate::settings::app_preferences::AppPreferencesGlobal>()
+            .0
+            .agent_chat_enabled
+            && room_props.room_members.as_ref().is_some_and(|members| {
+                members.iter().any(|member| {
+                    member.display_name().is_some_and(name_is_workflow_coordinator)
+                        || name_is_workflow_coordinator(member.user_id().localpart())
+                })
+            });
+        #[cfg(not(feature = "agent_chat"))]
+        let workflow_enabled = false;
         if !bot_enabled && !workflow_enabled {
             if self.is_slash_command_popup_active() {
                 self.close_mention_popup(cx);
@@ -1851,11 +1877,14 @@ impl MentionableTextInput {
         } else {
             Vec::new()
         };
+        #[cfg(feature = "agent_chat")]
         let workflow_matches = if workflow_enabled {
             matching_slash_commands_in(WORKFLOW_SLASH_COMMANDS, search_text)
         } else {
             Vec::new()
         };
+        #[cfg(not(feature = "agent_chat"))]
+        let workflow_matches: Vec<SlashCommand> = Vec::new();
         if bot_matches.is_empty() && workflow_matches.is_empty() {
             self.close_mention_popup(cx);
             return;
@@ -3193,6 +3222,19 @@ mod tests {
         // A non-mention word before the command must NOT trigger (e.g. a file path).
         let text = "@wf_coordinator see /tmp";
         assert_eq!(find_slash_command_trigger_position(text, text.len()), None);
+    }
+
+    #[cfg(feature = "agent_chat")]
+    #[test]
+    fn workflow_coordinator_name_matches_any_team() {
+        // The `/` workflow popup must enable for ANY team's coordinator, not just wf_.
+        assert!(name_is_workflow_coordinator("coordinator"));
+        assert!(name_is_workflow_coordinator("wf_coordinator"));
+        assert!(name_is_workflow_coordinator("alpha_coordinator"));
+        assert!(name_is_workflow_coordinator("ac_beta_coordinator")); // MXID localpart form
+        assert!(!name_is_workflow_coordinator("wf_implementer"));
+        assert!(!name_is_workflow_coordinator("coordinatorx"));
+        assert!(!name_is_workflow_coordinator("alex"));
     }
 
     #[test]
