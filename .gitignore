@@ -6,3 +6,7 @@
 .vscode
 .DS_Store
 proxychains.conf
+
+## agent-chat demo runtime logs / machine-specific registry
+roadmap/agentchat-demo/.demo-logs/
+roadmap/agentchat-demo/projects.json
