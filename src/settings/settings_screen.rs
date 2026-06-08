@@ -1163,6 +1163,14 @@ impl SettingsScreen {
         // saved from the login modal.
         if show_preferences {
             self.load_saved_proxy_to_preferences_form(cx);
+            // `app_settings` lives in this same lazy-init page. The initial
+            // `SettingsScreen::populate` ran while the preferences page wasn't
+            // instantiated yet, so `app_settings(...).populate(...)` was a silent
+            // no-op (empty ref). Re-populate now that the widget tree is live —
+            // mirroring the proxy re-load above — so saved values are applied and
+            // the (feature-gated) agent-chat section is revealed.
+            let prefs = cx.global::<crate::settings::app_preferences::AppPreferencesGlobal>().0.clone();
+            self.view.app_settings(cx, ids!(app_settings)).populate(cx, &prefs, self.app_language);
         }
 
         let mut category_account_button = self.view.button(cx, ids!(category_account_button));

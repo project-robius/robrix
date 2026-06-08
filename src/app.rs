@@ -804,6 +804,7 @@ impl MatchEvent for App {
                 AppPreferencesAction::ViewModeChanged(_)
                 | AppPreferencesAction::SendOnEnterChanged(_)
                 | AppPreferencesAction::UiZoomChanged(_)
+                | AppPreferencesAction::AgentChatEnabledChanged(_)
             ) = action.downcast_ref() {
                 if let Some(user_id) = current_user_id() {
                     if let Err(e) = persistence::save_app_state(self.app_state.clone(), user_id) {
