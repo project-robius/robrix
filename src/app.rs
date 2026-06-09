@@ -66,9 +66,7 @@ script_mod! {
                             home_screen := HomeScreen {}
                         }
                         join_leave_modal := Modal {
-                            content +: {
-                                join_leave_modal_inner := JoinLeaveRoomModal {}
-                            }
+                            content := JoinLeaveRoomModal {}
                         }
                         login_screen_view := View {
                             visible: true
@@ -76,10 +74,7 @@ script_mod! {
                         }
 
                         image_viewer_modal := Modal {
-                            content +: {
-                                width: Fill, height: Fill,
-                                image_viewer_modal_inner := ImageViewer {}
-                            }
+                            content := ImageViewer {}
                         }
                         
                         // Context menus should be shown in front of other UI elements,
@@ -89,75 +84,51 @@ script_mod! {
 
                         // A modal to confirm sending out an invite to a room.
                         invite_confirmation_modal := Modal {
-                            content +: {
-                                invite_confirmation_modal_inner := PositiveConfirmationModal {
-                                    wrapper +: { buttons_view +: { accept_button +: {
-                                        draw_icon +: { svg: (ICON_INVITE) }
-                                        icon_walk: Walk{width: 28, height: Fit, margin: Inset{left: -10, right: 2} }
-                                    } } }
-                                }
+                            content := PositiveConfirmationModal {
+                                buttons_view +: { accept_button +: {
+                                    draw_icon +: { svg: (ICON_INVITE) }
+                                    icon_walk: Walk{width: 28, height: Fit, margin: Inset{left: -10, right: 2} }
+                                } }
                             }
                         }
 
                         // A modal to invite a user to a room.
                         invite_modal := Modal {
-                            content +: {
-                                invite_modal_inner := InviteModal {}
-                            }
+                            content := InviteModal {}
                         }
 
                         // Show the logout confirmation modal.
                         logout_confirm_modal := Modal {
-                            content +: {
-                                logout_confirm_modal_inner := LogoutConfirmModal {}
-                            }
+                            content := LogoutConfirmModal {}
                         }
 
                         // Show the event source modal (View Source for messages).
                         event_source_modal := Modal {
-                            content +: {
-                                height: Fill,
-                                width: Fill,
-                                align: Align{x: 0.5, y: 0.5},
-                                event_source_modal_inner := EventSourceModal {}
-                            }
+                            content := EventSourceModal {}
                         }
 
                         // Show incoming verification requests in front of the aforementioned UI elements.
                         verification_modal := Modal {
                             can_dismiss: false,
-                            content +: {
-                                verification_modal_inner := VerificationModal {}
-                            }
+                            content := VerificationModal {}
                         }
                         tsp_verification_modal := Modal {
-                            content +: {
-                                tsp_verification_modal_inner := TspVerificationModal {}
-                            }
+                            content := TspVerificationModal {}
                         }
 
                         // A generic modal to confirm any positive action.
                         positive_confirmation_modal := Modal {
-                            content +: {
-                                positive_confirmation_modal_inner := PositiveConfirmationModal { }
-                            }
+                            content := PositiveConfirmationModal {}
                         }
 
                         // A modal to confirm any deletion/removal action.
                         delete_confirmation_modal := Modal {
-                            content +: {
-                                delete_confirmation_modal_inner := NegativeConfirmationModal { }
-                            }
+                            content := NegativeConfirmationModal {}
                         }
 
                         // A modal to preview and confirm file uploads.
                         file_upload_modal := Modal {
-                            content +: {
-                                height: Fill,
-                                width: Fill,
-                                align: Align{x: 0.5, y: 0.5},
-                                file_upload_modal_inner := FileUploadModal {}
-                            }
+                            content := FileUploadModal {}
                         }
 
                         PopupList {}
@@ -255,25 +226,25 @@ impl MatchEvent for App {
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        let invite_confirmation_modal_inner = self.ui.confirmation_modal(cx, ids!(invite_confirmation_modal_inner));
-        if let Some(_accepted) = invite_confirmation_modal_inner.closed(actions) {
+        let invite_confirmation_modal_content = self.ui.confirmation_modal(cx, ids!(invite_confirmation_modal.content));
+        if let Some(_accepted) = invite_confirmation_modal_content.closed(actions) {
             self.ui.modal(cx, ids!(invite_confirmation_modal)).close(cx);
         }
 
-        let delete_confirmation_modal_inner = self.ui.confirmation_modal(cx, ids!(delete_confirmation_modal_inner));
-        if let Some(_accepted) = delete_confirmation_modal_inner.closed(actions) {
+        let delete_confirmation_modal_content = self.ui.confirmation_modal(cx, ids!(delete_confirmation_modal.content));
+        if let Some(_accepted) = delete_confirmation_modal_content.closed(actions) {
             self.ui.modal(cx, ids!(delete_confirmation_modal)).close(cx);
         }
 
-        let positive_confirmation_modal_inner = self.ui.confirmation_modal(cx, ids!(positive_confirmation_modal_inner));
-        if let Some(_accepted) = positive_confirmation_modal_inner.closed(actions) {
+        let positive_confirmation_modal_content = self.ui.confirmation_modal(cx, ids!(positive_confirmation_modal.content));
+        if let Some(_accepted) = positive_confirmation_modal_content.closed(actions) {
             self.ui.modal(cx, ids!(positive_confirmation_modal)).close(cx);
         }
 
         for action in actions {
             match action.downcast_ref() {
                 Some(LogoutConfirmModalAction::Open) => {
-                    self.ui.logout_confirm_modal(cx, ids!(logout_confirm_modal_inner)).reset_state(cx);
+                    self.ui.logout_confirm_modal(cx, ids!(logout_confirm_modal.content)).reset_state(cx);
                     self.ui.modal(cx, ids!(logout_confirm_modal)).open(cx);
                     continue;
                 },
@@ -330,7 +301,7 @@ impl MatchEvent for App {
             // Handle file upload modal actions
             match action.downcast_ref() {
                 Some(FilePreviewerAction::Show { upload }) => {
-                    self.ui.file_upload_modal(cx, ids!(file_upload_modal_inner))
+                    self.ui.file_upload_modal(cx, ids!(file_upload_modal.content))
                         .set_upload(cx, upload.clone());
                     self.ui.modal(cx, ids!(file_upload_modal)).open(cx);
                     continue;
@@ -447,7 +418,7 @@ impl MatchEvent for App {
             match action.downcast_ref() {
                 Some(JoinLeaveRoomModalAction::Open { kind, show_tip }) => {
                     self.ui
-                        .join_leave_room_modal(cx, ids!(join_leave_modal_inner))
+                        .join_leave_room_modal(cx, ids!(join_leave_modal.content))
                         .set_kind(cx, kind.clone(), *show_tip);
                     self.ui.modal(cx, ids!(join_leave_modal)).open(cx);
                     continue;
@@ -466,7 +437,7 @@ impl MatchEvent for App {
             //
             // Note: other verification actions are handled by the verification modal itself.
             if let Some(VerificationAction::RequestReceived(state)) = action.downcast_ref() {
-                self.ui.verification_modal(cx, ids!(verification_modal_inner))
+                self.ui.verification_modal(cx, ids!(verification_modal.content))
                     .initialize_with_data(cx, state.clone());
                 self.ui.modal(cx, ids!(verification_modal)).open(cx);
                 continue;
@@ -492,7 +463,7 @@ impl MatchEvent for App {
                 use crate::tsp::{tsp_verification_modal::{TspVerificationModalAction, TspVerificationModalWidgetRefExt}, TspIdentityAction};
 
                 if let Some(TspIdentityAction::ReceivedDidAssociationRequest { details, wallet_db }) = action.downcast_ref() {
-                    self.ui.tsp_verification_modal(cx, ids!(tsp_verification_modal_inner))
+                    self.ui.tsp_verification_modal(cx, ids!(tsp_verification_modal.content))
                         .initialize_with_details(cx, details.clone(), wallet_db.deref().clone());
                     self.ui.modal(cx, ids!(tsp_verification_modal)).open(cx);
                     continue;
@@ -506,7 +477,7 @@ impl MatchEvent for App {
             // Handle a request to show the invite confirmation modal.
             if let Some(InviteAction::ShowInviteConfirmationModal(content_opt)) = action.downcast_ref() {
                 if let Some(content) = content_opt.borrow_mut().take() {
-                    invite_confirmation_modal_inner.show(cx, content);
+                    invite_confirmation_modal_content.show(cx, content);
                     self.ui.modal(cx, ids!(invite_confirmation_modal)).open(cx);
                 }
                 continue;
@@ -515,7 +486,7 @@ impl MatchEvent for App {
             // Handle a request to show the generic positive confirmation modal.
             if let Some(PositiveConfirmationModalAction::Show(content_opt)) = action.downcast_ref() {
                 if let Some(content) = content_opt.borrow_mut().take() {
-                    positive_confirmation_modal_inner.show(cx, content);
+                    positive_confirmation_modal_content.show(cx, content);
                     self.ui.modal(cx, ids!(positive_confirmation_modal)).open(cx);
                 }
                 continue;
@@ -524,7 +495,7 @@ impl MatchEvent for App {
             // Handle a request to show the delete confirmation modal.
             if let Some(ConfirmDeleteAction::Show(content_opt)) = action.downcast_ref() {
                 if let Some(content) = content_opt.borrow_mut().take() {
-                    self.ui.confirmation_modal(cx, ids!(delete_confirmation_modal_inner)).show(cx, content);
+                    self.ui.confirmation_modal(cx, ids!(delete_confirmation_modal.content)).show(cx, content);
                     self.ui.modal(cx, ids!(delete_confirmation_modal)).open(cx);
                 }
                 continue;
@@ -533,7 +504,7 @@ impl MatchEvent for App {
             // Handle InviteModalAction to open/close the invite modal.
             match action.downcast_ref() {
                 Some(InviteModalAction::Open(room_name_id)) => {
-                    self.ui.invite_modal(cx, ids!(invite_modal_inner)).show(cx, room_name_id.clone());
+                    self.ui.invite_modal(cx, ids!(invite_modal.content)).show(cx, room_name_id.clone());
                     self.ui.modal(cx, ids!(invite_modal)).open(cx); 
                     continue;
                 }
@@ -547,7 +518,7 @@ impl MatchEvent for App {
             // Handle EventSourceModalAction to open/close the event source modal.
             match action.downcast_ref() {
                 Some(EventSourceModalAction::Open { room_id, event_id, latest_json }) => {
-                    self.ui.event_source_modal(cx, ids!(event_source_modal_inner))
+                    self.ui.event_source_modal(cx, ids!(event_source_modal.content))
                         .show(cx, room_id.clone(), event_id.clone(), latest_json.clone());
                     self.ui.modal(cx, ids!(event_source_modal)).open(cx);
                     continue;
@@ -579,7 +550,7 @@ impl MatchEvent for App {
                             user_profile.user_id,
                         ),
                     };
-                    positive_confirmation_modal_inner.show(
+                    positive_confirmation_modal_content.show(
                         cx,
                         ConfirmationModalContent {
                             title_text: "Create New Direct Message".into(),

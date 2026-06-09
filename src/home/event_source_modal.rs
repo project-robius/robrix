@@ -34,10 +34,8 @@ script_mod! {
         ..mod.widgets.RoundedView
 
         width: Fill { max: 1000 }
-        // TODO: i'd like for this height to be Fit with a max of Rel { base: Full, factor: 0.90 },
-        //       but Makepad doesn't allow Fit views with a max to be scrolled.
-        height: Fill // { max: 1400 }
-        margin: 40,
+        height: Fit { max: FitBound.Rel{base: Base.Full, factor: 1.0} }
+        margin: 30,
         align: Align{x: 0.5, y: 0}
         flow: Down
         padding: Inset{top: 20, right: 25, bottom: 20, left: 25}

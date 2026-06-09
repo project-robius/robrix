@@ -12,168 +12,130 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.CreateWalletModal = #(CreateWalletModal::register_widget(vm)) {
-        width: Fit
-        height: Fit
+    mod.widgets.CreateWalletModal = set_type_default() do #(CreateWalletModal::register_widget(vm)) {
+        ..mod.widgets.SmallModal
+        align: Align{x: 0.5}
+
+        title := ModalTitle { text: "Create New TSP Wallet" }
 
         RoundedView {
-            width: 400
-            height: Fit
+            width: Fill { max: 350 },
+            height: Fit,
+            spacing: 15,
+            padding: 15,
             align: Align{x: 0.5}
-            flow: Down
-            padding: Inset{top: 30, right: 25, bottom: 20, left: 25}
+            flow: Down,
 
             show_bg: true
             draw_bg +: {
-                color: (COLOR_PRIMARY)
+                color: (COLOR_SECONDARY)
                 border_radius: 4.0
             }
 
-            title_view := View {
+            wallet_name_input := RobrixTextInput {
                 width: Fill,
                 height: Fit,
-                padding: Inset{top: 0, bottom: 25}
-                align: Align{x: 0.5, y: 0.0}
-
-                title := Label {
-                    flow: Flow.Right{wrap: true},
-                    draw_text +: {
-                        text_style: TITLE_TEXT {font_size: 13},
-                        color: #000
-                    }
-                    text: "Create New TSP Wallet"
+                padding: 10,
+                draw_text +: {
+                    text_style: REGULAR_TEXT {font_size: 12},
+                    color: #000
                 }
+                empty_text: "Wallet Name",
             }
 
-            RoundedView {
-                width: 350,
+            password_input := RobrixTextInput {
+                width: Fill,
                 height: Fit,
-                spacing: 15,
-                padding: 15,
-                align: Align{x: 0.5}
-                flow: Down,
-
-                show_bg: true
-                draw_bg +: {
-                    color: (COLOR_SECONDARY)
-                    border_radius: 4.0
+                padding: 10,
+                draw_text +: {
+                    text_style: REGULAR_TEXT {font_size: 12},
+                    color: #000
                 }
+                is_password: true,
+                empty_text: "Wallet Password",
+            }
 
-                wallet_name_input := RobrixTextInput {
-                    width: Fill,
-                    height: Fit,
-                    padding: 10,
-                    draw_text +: {
-                        text_style: REGULAR_TEXT {font_size: 12},
-                        color: #000
-                    }
-                    empty_text: "Wallet Name",
+            confirm_password_input := RobrixTextInput {
+                width: Fill,
+                height: Fit,
+                padding: 10,
+                draw_text +: {
+                    text_style: REGULAR_TEXT {font_size: 12},
+                    color: #000
                 }
-
-                password_input := RobrixTextInput {
-                    width: Fill,
-                    height: Fit,
-                    padding: 10,
-                    draw_text +: {
-                        text_style: REGULAR_TEXT {font_size: 12},
-                        color: #000
-                    }
-                    is_password: true,
-                    empty_text: "Wallet Password",
-                }
-
-                confirm_password_input := RobrixTextInput {
-                    width: Fill,
-                    height: Fit,
-                    padding: 10,
-                    draw_text +: {
-                        text_style: REGULAR_TEXT {font_size: 12},
-                        color: #000
-                    }
-                    is_password: true,
-                    empty_text: "Confirm Wallet Password",
-                }
-
-                View {
-                    width: Fill, height: Fit
-                    flow: Down
-
-                    wallet_file_name_input := RobrixTextInput {
-                        width: Fill, height: Fit,
-                        flow: Right, // do not wrap
-                        padding: Inset { left: 10, right: 10, top: 5, bottom: 5 }
-                        empty_text: "my_wallet_file",
-                        draw_text +: {
-                            text_style: REGULAR_TEXT {font_size: 10.0}
-                        }
-                    }
-
-                    View {
-                        width: Fill,
-                        height: Fit,
-                        flow: Right,
-                        padding: Inset{top: 5, left: 2, right: 2, bottom: 2}
-                        spacing: 0.0,
-                        align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
-
-                        left_line := LineH {
-                            draw_bg.color: #C8C8C8
-                        }
-
-                        Label {
-                            width: Fit, height: Fit
-                            padding: 0
-                            draw_text +: {
-                                color: #777777
-                                text_style: REGULAR_TEXT {font_size: 9}
-                            }
-                            text: "Wallet File Name (optional)"
-                        }
-
-                        right_line := LineH {
-                            draw_bg.color: #C8C8C8
-                        }
-                    }
-                }
+                is_password: true,
+                empty_text: "Confirm Wallet Password",
             }
 
             View {
                 width: Fill, height: Fit
-                flow: Right,
-                padding: Inset{top: 20, bottom: 20}
-                align: Align{x: 1.0, y: 0.5}
-                spacing: 20
+                flow: Down
 
-                cancel_button := RobrixNegativeIconButton {
-                    width: 100,
-                    align: Align{x: 0.5, y: 0.5}
-                    padding: 15,
-                    draw_icon.svg: (ICON_FORBIDDEN)
-                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                    text: "Cancel"
+                wallet_file_name_input := RobrixTextInput {
+                    width: Fill, height: Fit,
+                    flow: Right, // do not wrap
+                    padding: Inset { left: 10, right: 10, top: 5, bottom: 5 }
+                    empty_text: "my_wallet_file",
+                    draw_text +: {
+                        text_style: REGULAR_TEXT {font_size: 10.0}
+                    }
                 }
 
-                accept_button := RobrixPositiveIconButton {
-                    width: 140
-                    align: Align{x: 0.5, y: 0.5}
-                    padding: 15,
-                    draw_icon.svg: (ICON_CHECKMARK)
-                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                    text: "Create Wallet"
+                View {
+                    width: Fill,
+                    height: Fit,
+                    flow: Right,
+                    padding: Inset{top: 5, left: 2, right: 2, bottom: 2}
+                    spacing: 0.0,
+                    align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
+
+                    left_line := LineH {
+                        draw_bg.color: #C8C8C8
+                    }
+
+                    Label {
+                        width: Fit, height: Fit
+                        padding: 0
+                        draw_text +: {
+                            color: #777777
+                            text_style: REGULAR_TEXT {font_size: 9}
+                        }
+                        text: "Wallet File Name (optional)"
+                    }
+
+                    right_line := LineH {
+                        draw_bg.color: #C8C8C8
+                    }
                 }
             }
+        }
 
-            status_label := Label {
-                width: Fill,
-                height: Fit,
-                flow: Flow.Right{wrap: true},
-                align: Align{x: 0.5, y: 0.0}
-                draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: 11},
-                    color: #000
-                }
-                text: "status label"
+        buttons_view := ModalButtonsRow {
+            cancel_button := RobrixNegativeIconButton {
+                width: 100,
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                draw_icon.svg: (ICON_FORBIDDEN)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Cancel"
             }
+
+            accept_button := RobrixPositiveIconButton {
+                width: 140
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                draw_icon.svg: (ICON_CHECKMARK)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Create Wallet"
+            }
+        }
+
+        status_label := ModalBody {
+            align: Align{x: 0.5, y: 0.0}
+            draw_text +: {
+                text_style: REGULAR_TEXT {font_size: 11}
+            }
+            text: "status label"
         }
     }
 }

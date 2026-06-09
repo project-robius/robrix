@@ -107,13 +107,14 @@ script_mod! {
             width: Fill, height: Fit
             flow: Flow.Right{wrap: true},
             align: Align{y: 0.5},
-            spacing: 10
+            spacing: 10,
+            wrap_spacing: 2
 
             create_did_button := RobrixPositiveIconButton {
                 width: Fit,
                 height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: 10,
-                margin: Inset{left: 5},
+                margin: Inset{left: 5, top: 5, bottom: 5},
                 draw_icon.svg: (ICON_ADD_USER)
                 icon_walk: Walk{width: 19, height: Fit, margin: 0}
                 text: "Create New Identity (DID)"
@@ -123,7 +124,7 @@ script_mod! {
                 width: Fit,
                 height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: 10,
-                margin: Inset{left: 5},
+                margin: Inset{left: 5, top: 5, bottom: 5},
                 draw_icon.svg: (ICON_ADD_WALLET)
                 icon_walk: Walk{width: 21, height: Fit, margin: 0}
                 text: "Create New Wallet"
@@ -133,7 +134,7 @@ script_mod! {
                 width: Fit,
                 height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
-                margin: Inset{left: 5}
+                margin: Inset{left: 5, top: 5, bottom: 5}
                 text: "Import Existing Wallet"
                 draw_icon +: {
                     svg: (ICON_IMPORT)

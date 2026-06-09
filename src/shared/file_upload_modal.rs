@@ -36,7 +36,7 @@ script_mod! {
 
         width: Fill { max: 1000 }
         height: Fill
-        margin: 40,
+        margin: 30,
         align: Align{x: 0.5, y: 0}
         flow: Down
         padding: Inset{top: 20, right: 25, bottom: 20, left: 25}
@@ -69,59 +69,6 @@ script_mod! {
                     color: (COLOR_TEXT)
                 }
                 text: "Upload File"
-            }
-        }
-
-        // Preview area - fills available space with image/icon centered
-        preview_container := View {
-            width: Fill,
-            height: Fill,
-            flow: Overlay,
-            align: Align{x: 0.5, y: 0.5},
-
-            show_bg: true,
-            draw_bg.color: (COLOR_SECONDARY)
-
-            // Image preview container (visible when file is an image)
-            image_preview_container := View {
-                visible: false,
-                width: Fill,
-                height: Fill,
-                image_preview := Image {
-                    width: Fill,
-                    height: Fill,
-                    fit: ImageFit.Smallest,
-                }
-            }
-
-            // File icon (visible when file is not an image)
-            file_icon_container := View {
-                visible: false,
-                width: Fill,
-                height: Fill,
-                align: Align{x: 0.5, y: 0.5},
-                flow: Down,
-                spacing: 10,
-
-                Icon {
-                    width: Fit, height: Fit,
-                    draw_icon +: {
-                        svg: (ICON_FILE)
-                        color: (COLOR_TEXT)
-                    }
-                    icon_walk: Walk{width: 64, height: 64}
-                }
-
-                file_type_label := Label {
-                    width: Fit,
-                    padding: 0,
-                    margin: 0
-                    draw_text +: {
-                        text_style: REGULAR_TEXT { font_size: 10 },
-                        color: (SMALL_STATE_TEXT_COLOR)
-                    }
-                    text: ""
-                }
             }
         }
 
@@ -180,6 +127,59 @@ script_mod! {
                     color: (COLOR_TEXT_WARNING_NOT_FOUND)
                 }
                 text: "This file is empty (0 bytes). Are you sure you want to upload it?"
+            }
+        }
+
+        // Preview area - fills available space with image/icon centered
+        preview_container := View {
+            width: Fill,
+            height: Fill,
+            flow: Overlay,
+            align: Align{x: 0.5, y: 0.5},
+
+            show_bg: true,
+            draw_bg.color: (COLOR_SECONDARY)
+
+            // Image preview container (visible when file is an image)
+            image_preview_container := View {
+                visible: false,
+                width: Fill,
+                height: Fill,
+                image_preview := Image {
+                    width: Fill,
+                    height: Fill,
+                    fit: ImageFit.Smallest,
+                }
+            }
+
+            // File icon (visible when file is not an image)
+            file_icon_container := View {
+                visible: false,
+                width: Fill,
+                height: Fill,
+                align: Align{x: 0.5, y: 0.5},
+                flow: Down,
+                spacing: 10,
+
+                Icon {
+                    width: Fit, height: Fit,
+                    draw_icon +: {
+                        svg: (ICON_FILE)
+                        color: (COLOR_TEXT)
+                    }
+                    icon_walk: Walk{width: 64, height: 64}
+                }
+
+                file_type_label := Label {
+                    width: Fit,
+                    padding: 0,
+                    margin: 0
+                    draw_text +: {
+                        text_style: REGULAR_TEXT { font_size: 10 },
+                        color: (SMALL_STATE_TEXT_COLOR)
+                    }
+                    text: ""
+                }
             }
         }
 

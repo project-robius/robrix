@@ -78,15 +78,11 @@ script_mod! {
 
         // We want all modals to appear in front of the settings screen.
         create_wallet_modal := Modal {
-            content +: {
-                create_wallet_modal_inner := CreateWalletModal {}
-            }
+            content := CreateWalletModal {}
         }
 
         create_did_modal := Modal {
-            content +: {
-                create_did_modal_inner := CreateDidModal {}
-            }
+            content := CreateDidModal {}
         }
     }
 }
@@ -149,7 +145,7 @@ impl Widget for SettingsScreen {
                 match action.downcast_ref() {
                     Some(CreateWalletModalAction::Open) => {
                         use crate::tsp::create_wallet_modal::CreateWalletModalWidgetExt;
-                        self.view.create_wallet_modal(cx, ids!(create_wallet_modal_inner)).show(cx);
+                        self.view.create_wallet_modal(cx, ids!(create_wallet_modal.content)).show(cx);
                         self.view.modal(cx, ids!(create_wallet_modal)).open(cx);
                     }
                     Some(CreateWalletModalAction::Close) => {
@@ -162,7 +158,7 @@ impl Widget for SettingsScreen {
                 match action.downcast_ref() {
                     Some(CreateDidModalAction::Open) => {
                         use crate::tsp::create_did_modal::CreateDidModalWidgetExt;
-                        self.view.create_did_modal(cx, ids!(create_did_modal_inner)).show(cx);
+                        self.view.create_did_modal(cx, ids!(create_did_modal.content)).show(cx);
                         self.view.modal(cx, ids!(create_did_modal)).open(cx);
                     }
                     Some(CreateDidModalAction::Close) => {

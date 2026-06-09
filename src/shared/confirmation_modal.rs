@@ -12,75 +12,27 @@ script_mod! {
 
     // A confirmation modal with no icons in the buttons.
     // The accept button is blue and the cancel button is gray.
-    mod.widgets.ConfirmationModal = #(ConfirmationModal::register_widget(vm)) {
-        width: Fit
-        height: Fit
+    mod.widgets.ConfirmationModal = set_type_default() do #(ConfirmationModal::register_widget(vm)) {
+        ..mod.widgets.SmallModal
 
-        wrapper := RoundedView {
-            width: 400
-            height: Fit
-            align: Align{x: 0.5}
-            flow: Down
-            padding: Inset{top: 30, right: 40, bottom: 20, left: 40}
+        title := ModalTitle {}
+        body := ModalBody {}
 
-            show_bg: true
-            draw_bg +: {
-                color: (COLOR_PRIMARY)
-                border_radius: 4.0
+        buttons_view := ModalButtonsRow {
+            cancel_button := RobrixNeutralIconButton {
+                width: 120,
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                icon_walk: Walk{width: 0, height: 0, margin: 0}
+                text: "Cancel"
             }
 
-            title_view := View {
-                width: Fill,
-                height: Fit,
-                padding: Inset{top: 0, bottom: 25}
-                align: Align{x: 0.5, y: 0.0}
-
-                title := Label {
-                    flow: Flow.Right{wrap: true},
-                    draw_text +: {
-                        text_style: TITLE_TEXT {font_size: 13},
-                        color: #000
-                    }
-                }
-            }
-
-            body_view := View {
-                width: Fill, height: Fit
-                align: Align{x: 0.5, y: 0.0}
-
-                body := Label {
-                    width: Fill, height: Fit
-                    flow: Flow.Right{wrap: true},
-                    draw_text +: {
-                        text_style: REGULAR_TEXT {font_size: 11.5},
-                        color: #000
-                    }
-                }
-            }
-
-            buttons_view := View {
-                width: Fill, height: Fit
-                flow: Right,
-                padding: Inset{top: 20, bottom: 20}
-                margin: Inset{right: -15}
-                align: Align{x: 1.0, y: 0.5}
-                spacing: 20
-
-                cancel_button := RobrixNeutralIconButton {
-                    width: 120,
-                    align: Align{x: 0.5, y: 0.5}
-                    padding: 15,
-                    icon_walk: Walk{width: 0, height: 0, margin: 0}
-                    text: "Cancel"
-                }
-
-                accept_button := RobrixPositiveIconButton {
-                    width: 120
-                    align: Align{x: 0.5, y: 0.5}
-                    padding: 15,
-                    icon_walk: Walk{width: 0, height: 0, margin: 0}
-                    text: "Confirm"
-                }
+            accept_button := RobrixPositiveIconButton {
+                width: 120
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                icon_walk: Walk{width: 0, height: 0, margin: 0}
+                text: "Confirm"
             }
         }
     }
@@ -88,16 +40,14 @@ script_mod! {
     // A confirmation modal for a positive action.
     // The accept button is green with a checkmark icon.
     mod.widgets.PositiveConfirmationModal = mod.widgets.ConfirmationModal {
-        wrapper +: {
-            buttons_view +: {
-                cancel_button +: {
-                    draw_icon +: { svg: (ICON_FORBIDDEN) }
-                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
-                }
-                accept_button +: {
-                    draw_icon +: { svg: (ICON_CHECKMARK) }
-                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
-                }
+        buttons_view +: {
+            cancel_button +: {
+                draw_icon +: { svg: (ICON_FORBIDDEN) }
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
+            }
+            accept_button +: {
+                draw_icon +: { svg: (ICON_CHECKMARK) }
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
             }
         }
     }
@@ -105,22 +55,20 @@ script_mod! {
     // A confirmation modal for a negative action.
     // The accept button is red with a forbidden icon.
     mod.widgets.NegativeConfirmationModal = mod.widgets.ConfirmationModal {
-        wrapper +: {
-            buttons_view +: {
-                cancel_button := RobrixNeutralIconButton {
-                    width: 120,
-                    align: Align{x: 0.5, y: 0.5}
-                    padding: 15,
-                    draw_icon +: { svg: (ICON_FORBIDDEN) }
-                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
-                }
-                accept_button := RobrixNegativeIconButton {
-                    width: 120,
-                    align: Align{x: 0.5, y: 0.5}
-                    padding: 15,
-                    draw_icon +: { svg: (ICON_CLOSE) }
-                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
-                }
+        buttons_view +: {
+            cancel_button := RobrixNeutralIconButton {
+                width: 120,
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                draw_icon +: { svg: (ICON_FORBIDDEN) }
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
+            }
+            accept_button := RobrixNegativeIconButton {
+                width: 120,
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                draw_icon +: { svg: (ICON_CLOSE) }
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
             }
         }
     }
