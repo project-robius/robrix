@@ -12,77 +12,34 @@ script_mod! {
 
 
     // A modal dialog that displays logout confirmation
-    mod.widgets.LogoutConfirmModal = #(LogoutConfirmModal::register_widget(vm)) {
-        width: Fit
-        height: Fit
+    mod.widgets.LogoutConfirmModal = set_type_default() do #(LogoutConfirmModal::register_widget(vm)) {
+        ..mod.widgets.SmallModal
 
-        RoundedView {
-            width: 400
-            height: Fit
-            align: Align{x: 0.5}
-            flow: Down
-            padding: Inset{top: 30, right: 25, bottom: 20, left: 25}
+        title := ModalTitle {
+            text: "Confirm Logout"
+        }
 
-            show_bg: true
-            draw_bg +: {
-                color: (COLOR_PRIMARY)
-                border_radius: 4.0
+        body := ModalBody {
+            text: "Are you sure you want to logout?"
+        }
+
+        buttons_view := ModalButtonsRow {
+            cancel_button := RobrixNeutralIconButton {
+                width: 120,
+                align: Align{x: 0.5, y: 0.5}
+                padding: 12,
+                draw_icon.svg: (ICON_FORBIDDEN)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Cancel"
             }
 
-            title_view := View {
-                width: Fill,
-                height: Fit,
-                padding: Inset{top: 0, bottom: 25}
-                align: Align{x: 0.5, y: 0.0}
-
-                title := Label {
-                    width: Fill
-                    height: Fit
-                    align: Align{x: 0.5}
-                    flow: Flow.Right{wrap: true},
-                    draw_text +: {
-                        text_style: TITLE_TEXT {font_size: 13},
-                        color: #000
-                    }
-                    text: "Confirm Logout"
-                }
-            }
-
-            message := Label {
-                width: Fill
-                height: Fit
-                flow: Flow.Right{wrap: true},
-                draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: 11},
-                    color: #000
-                },
-                text: "Are you sure you want to logout?"
-            }
-
-            View {
-                width: Fill, height: Fit
-                flow: Right,
-                padding: Inset{top: 20, bottom: 10}
-                align: Align{x: 1.0, y: 0.5}
-                spacing: 20
-
-                cancel_button := RobrixNeutralIconButton {
-                    width: 120,
-                    align: Align{x: 0.5, y: 0.5}
-                    padding: 12,
-                    draw_icon.svg: (ICON_FORBIDDEN)
-                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                    text: "Cancel"
-                }
-
-                confirm_button := RobrixNegativeIconButton {
-                    width: 120
-                    align: Align{x: 0.5, y: 0.5}
-                    padding: 12,
-                    draw_icon.svg: (ICON_LOGOUT)
-                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                    text: "Logout Now"
-                }
+            confirm_button := RobrixNegativeIconButton {
+                width: 120
+                align: Align{x: 0.5, y: 0.5}
+                padding: 12,
+                draw_icon.svg: (ICON_LOGOUT)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Logout Now"
             }
         }
     }
@@ -301,7 +258,7 @@ impl WidgetMatchEvent for LogoutConfirmModal {
 impl LogoutConfirmModal {
     /// Sets the message text displayed in the body of the modal.
     pub fn set_message(&mut self, cx: &mut Cx, message: &str) {
-        self.label(cx, ids!(message)).set_text(cx, message);
+        self.label(cx, ids!(body)).set_text(cx, message);
     }
 
     fn reset_state(&mut self, cx: &mut Cx) {

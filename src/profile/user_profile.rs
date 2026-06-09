@@ -662,4 +662,18 @@ impl UserProfileSlidingPaneRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.show(cx);
     }
+
+    /// Hides the pane immediately and clears its state without animating it out.
+    pub fn reset(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.visible = false;
+        inner.animator_cut(cx, ids!(panel.hide));
+        inner.is_animating_out = false;
+        inner.info = None;
+        inner.view(cx, ids!(bg_view)).set_visible(cx, false);
+        if cx.has_key_focus(inner.view.area()) {
+            cx.revert_key_focus();
+        }
+        inner.redraw(cx);
+    }
 }

@@ -15,98 +15,52 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.JoinLeaveRoomModal = #(JoinLeaveRoomModal::register_widget(vm)) {
-        width: Fit
-        height: Fit
+    mod.widgets.JoinLeaveRoomModal = set_type_default() do #(JoinLeaveRoomModal::register_widget(vm)) {
+        ..mod.widgets.SmallModal
 
-        RoundedView {
-            flow: Down
-            width: 400
-            height: Fit
-            padding: Inset{top: 30, right: 40, bottom: 20, left: 40}
+        title := ModalTitle {}
 
-            show_bg: true
-            draw_bg.color: (COLOR_PRIMARY)
-            draw_bg.border_radius: 4.0
+        body := ModalBody {}
 
-            title_view := View {
-                width: Fill,
-                height: Fit,
-                padding: Inset{top: 0, bottom: 25}
-                align: Align{x: 0.5, y: 0.0}
-
-                title := Label {
-                    flow: Flow.Right{wrap: true},
-                    draw_text +: {
-                        text_style: TITLE_TEXT {font_size: 13},
-                        color: #000
-                    }
-                }
+        buttons_view := ModalButtonsRow {
+            cancel_button := RobrixNegativeIconButton {
+                width: 120,
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                draw_icon.svg: (ICON_FORBIDDEN)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Cancel"
             }
 
-            body := View {
+            accept_button := RobrixPositiveIconButton {
+                width: 120,
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                draw_icon.svg: (ICON_CHECKMARK)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Yes"
+            }
+        }
+
+        tip_view := View {
+            width: Fill,
+            height: Fit,
+            align: Align{x: 0.5, y: 0.0}
+
+            tip := Label {
+                padding: 0,
+                margin: 0,
                 width: Fill,
                 height: Fit,
-                flow: Down,
-
-                description := Label {
-                    width: Fill
-                    flow: Flow.Right{wrap: true}
-                    draw_text +: {
-                        text_style: REGULAR_TEXT {
-                            font_size: 11.5,
-                        },
-                        color: #000
-                    }
+                flow: Flow.Right{wrap: true},
+                align: Align{x: 0.5}
+                draw_text +: {
+                    text_style: REGULAR_TEXT {
+                        font_size: 9,
+                    },
+                    color: #A,
                 }
-
-                View {
-                    width: Fill, height: Fit
-                    flow: Right,
-                    padding: Inset{top: 20, bottom: 20}
-                    align: Align{x: 1.0, y: 0.5}
-                    spacing: 20
-
-                    cancel_button := RobrixNegativeIconButton {
-                        width: 120,
-                        align: Align{x: 0.5, y: 0.5}
-                        padding: 15,
-                        draw_icon.svg: (ICON_FORBIDDEN)
-                        icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                        text: "Cancel"
-                    }
-
-                    accept_button := RobrixPositiveIconButton {
-                        width: 120,
-                        align: Align{x: 0.5, y: 0.5}
-                        padding: 15,
-                        draw_icon.svg: (ICON_CHECKMARK)
-                        icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                        text: "Yes"
-                    }
-                }
-
-                tip_view := View {
-                    width: Fill,
-                    height: Fit,
-                    align: Align{x: 0.5, y: 0.0}
-
-                    tip := Label {
-                        padding: 0,
-                        margin: 0,
-                        width: Fill,
-                        height: Fit,
-                        flow: Flow.Right{wrap: true},
-                        align: Align{x: 0.5}
-                        draw_text +: {
-                            text_style: REGULAR_TEXT {
-                                font_size: 9,
-                            },
-                            color: #A,
-                        }
-                        text: "Tip: hold Shift when clicking a button to bypass this prompt."
-                    }
-                }
+                text: "Tip: hold Shift when clicking a button to bypass this prompt."
             }
         }
     }
@@ -312,7 +266,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                 }
 
                 self.view.label(cx, ids!(title)).set_text(cx, &title);
-                self.view.label(cx, ids!(description)).set_text(cx, &description);
+                self.view.label(cx, ids!(body)).set_text(cx, &description);
                 self.view.view(cx, ids!(tip_view)).set_visible(cx, false);
                 accept_button.set_text(cx, accept_button_text);
                 accept_button.set_enabled(cx, false);
@@ -330,7 +284,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         Some(3.0),
                     );
                     self.view.label(cx, ids!(title)).set_text(cx, "Joined room!");
-                    self.view.label(cx, ids!(description)).set_text(cx, &format!(
+                    self.view.label(cx, ids!(body)).set_text(cx, &format!(
                         "Successfully joined \"{}\".",
                         kind.room_name(),
                     ));
@@ -340,7 +294,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     self.view.label(cx, ids!(title)).set_text(cx, "Error joining room!");
                     let was_invite = matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_));
                     let msg = utils::stringify_join_leave_error(error, kind.room_name(), true, was_invite);
-                    self.view.label(cx, ids!(description)).set_text(cx, &msg);
+                    self.view.label(cx, ids!(body)).set_text(cx, &msg);
                     enqueue_popup_notification(
                         msg,
                         PopupKind::Error,
@@ -372,7 +326,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         popup_msg = "Successfully left room.".into();
                     }
                     self.view.label(cx, ids!(title)).set_text(cx, title);
-                    self.view.label(cx, ids!(description)).set_text(cx, &description);
+                    self.view.label(cx, ids!(body)).set_text(cx, &description);
                     enqueue_popup_notification(popup_msg, PopupKind::Success, Some(5.0));
                     new_final_success = Some(true);
                 }
@@ -391,7 +345,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     }
 
                     self.view.label(cx, ids!(title)).set_text(cx, title);
-                    self.view.label(cx, ids!(description)).set_text(cx, &description);
+                    self.view.label(cx, ids!(body)).set_text(cx, &description);
                     enqueue_popup_notification(popup_msg, PopupKind::Error, None);
                     new_final_success = Some(false);
                 }
@@ -415,7 +369,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         }
                     }
                     self.view.label(cx, ids!(title)).set_text(cx, title);
-                    self.view.label(cx, ids!(description)).set_text(cx, &description);
+                    self.view.label(cx, ids!(body)).set_text(cx, &description);
                 }
             }
         }
@@ -509,7 +463,7 @@ impl JoinLeaveRoomModal {
         }
 
         self.view.label(cx, ids!(title)).set_text(cx, title);
-        self.view.label(cx, ids!(description)).set_text(cx, &description);
+        self.view.label(cx, ids!(body)).set_text(cx, &description);
         if show_tip {
             self.view.view(cx, ids!(tip_view)).set_visible(cx, true);
             self.view.label(cx, ids!(tip)).set_text(cx, &format!(

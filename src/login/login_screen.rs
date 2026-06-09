@@ -304,9 +304,7 @@ script_mod! {
                 // such as when the user is logging in or when there is an error.
                 login_status_modal := Modal {
                     can_dismiss: false,
-                    content +: {
-                        login_status_modal_inner := mod.widgets.LoginStatusModal {}
-                    }
+                    content := mod.widgets.LoginStatusModal {}
                 }
             }
         }
@@ -348,7 +346,7 @@ impl MatchEvent for LoginScreen {
         let homeserver_input = self.view.text_input(cx, ids!(homeserver_input));
 
         let login_status_modal = self.view.modal(cx, ids!(login_status_modal));
-        let login_status_modal_inner = self.view.login_status_modal(cx, ids!(login_status_modal_inner));
+        let login_status_modal_content = self.view.login_status_modal(cx, ids!(login_status_modal.content));
 
         // Handle toggling password visibility
         let show_pw_button = self.view.button(cx, ids!(show_password_button));
@@ -376,17 +374,17 @@ impl MatchEvent for LoginScreen {
             let password = password_input.text();
             let homeserver = homeserver_input.text();
             if user_id.is_empty() {
-                login_status_modal_inner.set_title(cx, "Missing User ID");
-                login_status_modal_inner.set_status(cx, "Please enter a valid User ID.");
-                login_status_modal_inner.button_ref(cx).set_text(cx, "Okay");
+                login_status_modal_content.set_title(cx, "Missing User ID");
+                login_status_modal_content.set_status(cx, "Please enter a valid User ID.");
+                login_status_modal_content.button_ref(cx).set_text(cx, "Okay");
             } else if password.is_empty() {
-                login_status_modal_inner.set_title(cx, "Missing Password");
-                login_status_modal_inner.set_status(cx, "Please enter a valid password.");
-                login_status_modal_inner.button_ref(cx).set_text(cx, "Okay");
+                login_status_modal_content.set_title(cx, "Missing Password");
+                login_status_modal_content.set_status(cx, "Please enter a valid password.");
+                login_status_modal_content.button_ref(cx).set_text(cx, "Okay");
             } else {
-                login_status_modal_inner.set_title(cx, "Logging in...");
-                login_status_modal_inner.set_status(cx, "Waiting for a login response...");
-                login_status_modal_inner.button_ref(cx).set_text(cx, "Cancel");
+                login_status_modal_content.set_title(cx, "Logging in...");
+                login_status_modal_content.set_status(cx, "Waiting for a login response...");
+                login_status_modal_content.button_ref(cx).set_text(cx, "Cancel");
                 submit_async_request(MatrixRequest::Login(LoginRequest::LoginByPassword(LoginByPassword {
                     user_id,
                     password,
@@ -417,20 +415,20 @@ impl MatchEvent for LoginScreen {
                     user_id_input.set_text(cx, user_id);
                     password_input.set_text(cx, "");
                     homeserver_input.set_text(cx, homeserver.as_deref().unwrap_or_default());
-                    login_status_modal_inner.set_title(cx, "Logging in via CLI...");
-                    login_status_modal_inner.set_status(
+                    login_status_modal_content.set_title(cx, "Logging in via CLI...");
+                    login_status_modal_content.set_status(
                         cx,
                         &format!("Auto-logging in as user {user_id}...")
                     );
-                    let login_status_modal_button = login_status_modal_inner.button_ref(cx);
+                    let login_status_modal_button = login_status_modal_content.button_ref(cx);
                     login_status_modal_button.set_text(cx, "Cancel");
                     login_status_modal_button.set_enabled(cx, false); // Login cancel not yet supported
                     login_status_modal.open(cx);
                 }
                 Some(LoginAction::Status { title, status }) => {
-                    login_status_modal_inner.set_title(cx, title);
-                    login_status_modal_inner.set_status(cx, status);
-                    let login_status_modal_button = login_status_modal_inner.button_ref(cx);
+                    login_status_modal_content.set_title(cx, title);
+                    login_status_modal_content.set_status(cx, status);
+                    let login_status_modal_button = login_status_modal_content.button_ref(cx);
                     login_status_modal_button.set_text(cx, "Cancel");
                     login_status_modal_button.set_enabled(cx, true);
                     login_status_modal.open(cx);
@@ -446,9 +444,9 @@ impl MatchEvent for LoginScreen {
                     self.redraw(cx);
                 }
                 Some(LoginAction::LoginFailure(error)) => {
-                    login_status_modal_inner.set_title(cx, "Login Failed.");
-                    login_status_modal_inner.set_status(cx, error);
-                    let login_status_modal_button = login_status_modal_inner.button_ref(cx);
+                    login_status_modal_content.set_title(cx, "Login Failed.");
+                    login_status_modal_content.set_status(cx, error);
+                    let login_status_modal_button = login_status_modal_content.button_ref(cx);
                     login_status_modal_button.set_text(cx, "Okay");
                     login_status_modal_button.set_enabled(cx, true);
                     login_status_modal.open(cx);
@@ -477,7 +475,7 @@ impl MatchEvent for LoginScreen {
 
         // If the Login SSO screen's "cancel" button was clicked, send a http request to gracefully shutdown the SSO server
         if let Some(sso_redirect_url) = &self.sso_redirect_url {
-            let login_status_modal_button = login_status_modal_inner.button_ref(cx);
+            let login_status_modal_button = login_status_modal_content.button_ref(cx);
             if login_status_modal_button.clicked(actions) {
                 let request_id = id!(SSO_CANCEL_BUTTON);
                 let request = HttpRequest::new(format!("{}/?login_token=",sso_redirect_url), HttpMethod::GET);
@@ -491,7 +489,7 @@ impl MatchEvent for LoginScreen {
         // SSO failure path, which resets state for the next attempt.
         #[cfg(target_os = "ios")]
         if self.sso_pending {
-            let login_status_modal_button = login_status_modal_inner.button_ref(cx);
+            let login_status_modal_button = login_status_modal_content.button_ref(cx);
             if login_status_modal_button.clicked(actions) {
                 crate::sliding_sync::cancel_active_sso_auth_session();
             }

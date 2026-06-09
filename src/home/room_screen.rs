@@ -2751,6 +2751,9 @@ impl RoomScreen {
         self.hide_timeline();
         // Reset the the state of the inner loading pane.
         self.loading_pane(cx, ids!(loading_pane)).take_state();
+        // Reset the user profile sliding pane so a previous room's open profile
+        // pane doesn't remain shown when this RoomScreen is reused for a new room.
+        self.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane)).reset(cx);
 
         self.room_name_id = Some(room_name_id.clone());
         self.timeline_kind = Some(timeline_kind.clone());

@@ -13,104 +13,66 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.InviteModal = #(InviteModal::register_widget(vm)) {
-        width: Fit
-        height: Fit
+    mod.widgets.InviteModal = set_type_default() do #(InviteModal::register_widget(vm)) {
+        ..mod.widgets.SmallModal
 
-        RoundedView {
-            width: 400
-            height: Fit
-            align: Align{x: 0.5}
-            flow: Down
-            padding: Inset{top: 30, right: 25, bottom: 20, left: 25}
+        title := ModalTitle {}
 
-            show_bg: true
-            draw_bg +: {
-                color: (COLOR_PRIMARY)
-                border_radius: 4.0
+        user_id_input := RobrixTextInput {
+            draw_text +: {
+                text_style: REGULAR_TEXT {font_size: 11},
+                color: #000
+            }
+            empty_text: "@user:example.org",
+        }
+
+        buttons_view := ModalButtonsRow {
+            cancel_button := RobrixNeutralIconButton {
+                width: 120,
+                align: Align{x: 0.5, y: 0.5}
+                padding: 12,
+                draw_icon.svg: (ICON_FORBIDDEN)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Cancel"
             }
 
-            title_view := View {
+            confirm_button := RobrixPositiveIconButton {
+                width: 120
+                align: Align{x: 0.5, y: 0.5}
+                padding: 12,
+                draw_icon.svg: (ICON_ADD_USER)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Invite"
+            }
+
+            okay_button := RobrixIconButton {
+                visible: false
+                width: 120
+                align: Align{x: 0.5, y: 0.5}
+                padding: 12,
+                draw_icon.svg: (ICON_CHECKMARK)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Okay"
+            }
+        }
+
+        status_label_view := View {
+            visible: false
+            width: Fill,
+            height: Fit,
+            align: Align{x: 0.5, y: 0.0}
+
+            status_label := Label {
                 width: Fill,
                 height: Fit,
-                padding: Inset{top: 0, bottom: 25}
+                flow: Flow.Right{wrap: true},
                 align: Align{x: 0.5, y: 0.0}
-
-                title := Label {
-                    width: Fill
-                    height: Fit
-                    align: Align{x: 0.5}
-                    flow: Flow.Right{wrap: true},
-                    draw_text +: {
-                        text_style: TITLE_TEXT {font_size: 13},
-                        color: #000
-                    }
-                    text: "Invite to Room"
-                }
-            }
-
-            user_id_input := RobrixTextInput {
+                margin: Inset{top: 10}
                 draw_text +: {
                     text_style: REGULAR_TEXT {font_size: 11},
                     color: #000
                 }
-                empty_text: "@user:example.org",
-            }
-
-            View {
-                width: Fill, height: Fit
-                flow: Right,
-                padding: Inset{top: 20, bottom: 10}
-                align: Align{x: 1.0, y: 0.5}
-                spacing: 20
-
-                cancel_button := RobrixNeutralIconButton {
-                    width: 120,
-                    align: Align{x: 0.5, y: 0.5}
-                    padding: 12,
-                    draw_icon.svg: (ICON_FORBIDDEN)
-                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                    text: "Cancel"
-                }
-
-                confirm_button := RobrixPositiveIconButton {
-                    width: 120
-                    align: Align{x: 0.5, y: 0.5}
-                    padding: 12,
-                    draw_icon.svg: (ICON_ADD_USER)
-                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                    text: "Invite"
-                }
-
-                okay_button := RobrixIconButton {
-                    visible: false
-                    width: 120
-                    align: Align{x: 0.5, y: 0.5}
-                    padding: 12,
-                    draw_icon.svg: (ICON_CHECKMARK)
-                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                    text: "Okay"
-                }
-            }
-
-            status_label_view := View {
-                visible: false
-                width: Fill,
-                height: Fit,
-                align: Align{x: 0.5, y: 0.0}
-
-                status_label := Label {
-                    width: Fill,
-                    height: Fit,
-                    flow: Flow.Right{wrap: true},
-                    align: Align{x: 0.5, y: 0.0}
-                    margin: Inset{top: 10}
-                    draw_text +: {
-                        text_style: REGULAR_TEXT {font_size: 11},
-                        color: #000
-                    }
-                    text: ""
-                }
+                text: ""
             }
         }
     }

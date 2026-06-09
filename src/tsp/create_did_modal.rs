@@ -12,219 +12,183 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.CreateDidModal = #(CreateDidModal::register_widget(vm)) {
-        width: Fit
-        height: Fit
+    mod.widgets.CreateDidModal = set_type_default() do #(CreateDidModal::register_widget(vm)) {
+        ..mod.widgets.SmallModal
+        align: Align{x: 0.5}
+
+        title := ModalTitle {
+            text: "Create New Identity (DID)"
+        }
 
         RoundedView {
-            width: 400
-            height: Fit
+            width: Fill { max: 350 },
+            height: Fit,
+            spacing: 15,
+            padding: 15,
             align: Align{x: 0.5}
-            flow: Down
-            padding: Inset{top: 30, right: 25, bottom: 20, left: 25}
+            flow: Down,
 
             show_bg: true
             draw_bg +: {
-                color: (COLOR_PRIMARY)
+                color: (COLOR_SECONDARY)
                 border_radius: 4.0
             }
 
-            title_view := View {
+            username_input := RobrixTextInput {
                 width: Fill,
                 height: Fit,
-                padding: Inset{top: 0, bottom: 25}
-                align: Align{x: 0.5, y: 0.0}
+                padding: 10,
+                draw_text +: {
+                    text_style: REGULAR_TEXT {font_size: 12},
+                    color: #000
+                }
+                empty_text: "Identity Username",
+            }
 
-                title := Label {
-                    flow: Flow.Right{wrap: true},
-                    draw_text +: {
-                        text_style: TITLE_TEXT {font_size: 13},
-                        color: #000
-                    }
-                    text: "Create New Identity (DID)"
+            alias_input := RobrixTextInput {
+                width: Fill,
+                height: Fit,
+                padding: 10,
+                draw_text +: {
+                    text_style: REGULAR_TEXT {font_size: 12},
+                    color: #000
+                }
+                empty_text: "Enter an alias (optional)",
+            }
+
+            did_type_radio_buttons := View {
+                spacing: 20,
+                width: Fit, height: Fit,
+                did_web := RadioButtonFlat {
+                    text: "Web"
+                    draw_text +: { color: (COLOR_TEXT) }
+                    animator: { active: { default: on } }
+                }
+                did_webvh := RadioButtonFlat {
+                    text: "WebVH"
+                    draw_text +: { color: (COLOR_TEXT) }
+                    animator: { disabled: { default: on } }
+                }
+                did_peer := RadioButtonFlat {
+                    text: "Peer",
+                    draw_text +: { color: (COLOR_TEXT) }
+                    animator: { disabled: { default: on } }
                 }
             }
 
-            RoundedView {
-                width: 350,
-                height: Fit,
-                spacing: 15,
-                padding: 15,
-                align: Align{x: 0.5}
-                flow: Down,
+            View {
+                width: Fill, height: Fit
+                flow: Down
 
-                show_bg: true
-                draw_bg +: {
-                    color: (COLOR_SECONDARY)
-                    border_radius: 4.0
-                }
-
-                username_input := RobrixTextInput {
-                    width: Fill,
-                    height: Fit,
-                    padding: 10,
+                server_input := RobrixTextInput {
+                    width: Fill, height: Fit,
+                    flow: Right, // do not wrap
+                    padding: Inset { left: 10, right: 10, top: 5, bottom: 5 }
+                    empty_text: "p.teaspoon.world",
                     draw_text +: {
-                        text_style: REGULAR_TEXT {font_size: 12},
-                        color: #000
-                    }
-                    empty_text: "Identity Username",
-                }
-
-                alias_input := RobrixTextInput {
-                    width: Fill,
-                    height: Fit,
-                    padding: 10,
-                    draw_text +: {
-                        text_style: REGULAR_TEXT {font_size: 12},
-                        color: #000
-                    }
-                    empty_text: "Enter an alias (optional)",
-                }
-
-                did_type_radio_buttons := View {
-                    spacing: 20,
-                    width: Fit, height: Fit,
-                    did_web := RadioButtonFlat {
-                        text: "Web"
-                        draw_text +: { color: (COLOR_TEXT) }
-                        animator: { active: { default: on } }
-                    }
-                    did_webvh := RadioButtonFlat {
-                        text: "WebVH"
-                        draw_text +: { color: (COLOR_TEXT) }
-                        animator: { disabled: { default: on } }
-                    }
-                    did_peer := RadioButtonFlat {
-                        text: "Peer",
-                        draw_text +: { color: (COLOR_TEXT) }
-                        animator: { disabled: { default: on } }
+                        text_style: REGULAR_TEXT {font_size: 10.0}
                     }
                 }
 
                 View {
-                    width: Fill, height: Fit
-                    flow: Down
+                    width: Fill,
+                    height: Fit,
+                    flow: Right,
+                    padding: Inset{top: 5, left: 2, right: 2, bottom: 2}
+                    spacing: 0.0,
+                    align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
 
-                    server_input := RobrixTextInput {
-                        width: Fill, height: Fit,
-                        flow: Right, // do not wrap
-                        padding: Inset { left: 10, right: 10, top: 5, bottom: 5 }
-                        empty_text: "p.teaspoon.world",
+                    left_line := LineH {
+                        draw_bg.color: #C8C8C8
+                    }
+
+                    Label {
+                        width: Fit, height: Fit
+                        padding:  0
                         draw_text +: {
-                            text_style: REGULAR_TEXT {font_size: 10.0}
+                            color: #777777
+                            text_style: REGULAR_TEXT {font_size: 9}
                         }
+                        text: "Intermediary server domain"
                     }
 
-                    View {
-                        width: Fill,
-                        height: Fit,
-                        flow: Right,
-                        padding: Inset{top: 5, left: 2, right: 2, bottom: 2}
-                        spacing: 0.0,
-                        align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
-
-                        left_line := LineH {
-                            draw_bg.color: #C8C8C8
-                        }
-
-                        Label {
-                            width: Fit, height: Fit
-                            padding:  0
-                            draw_text +: {
-                                color: #777777
-                                text_style: REGULAR_TEXT {font_size: 9}
-                            }
-                            text: "Intermediary server domain"
-                        }
-
-                        right_line := LineH {
-                            draw_bg.color: #C8C8C8
-                        }
-                    }
-                }
-
-                View {
-                    width: Fill, height: Fit
-                    flow: Down
-
-                    did_server_input := RobrixTextInput {
-                        width: Fill, height: Fit,
-                        flow: Right, // do not wrap
-                        padding: Inset { left: 10, right: 10, top: 5, bottom: 5 }
-                        empty_text: "did.teaspoon.world",
-                        draw_text +: {
-                            text_style: REGULAR_TEXT {font_size: 10.0}
-                        }
-                    }
-
-                    View {
-                        width: Fill,
-                        height: Fit,
-                        flow: Right,
-                        padding: Inset{top: 5, left: 2, right: 2, bottom: 2}
-                        spacing: 0.0,
-                        align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
-
-                        left_line := LineH {
-                            draw_bg.color: #C8C8C8
-                        }
-
-                        Label {
-                            width: Fit, height: Fit
-                            padding: 0
-                            draw_text +: {
-                                color: #777777
-                                text_style: REGULAR_TEXT {font_size: 9}
-                            }
-                            text: "DID server domain"
-                        }
-
-                        right_line := LineH {
-                            draw_bg.color: #C8C8C8
-                        }
+                    right_line := LineH {
+                        draw_bg.color: #C8C8C8
                     }
                 }
             }
 
             View {
                 width: Fill, height: Fit
-                flow: Right,
-                padding: Inset{top: 20, bottom: 20}
-                align: Align{x: 1.0, y: 0.5}
-                spacing: 20
+                flow: Down
 
-                cancel_button := RobrixNegativeIconButton {
-                    width: 100,
-                    align: Align{x: 0.5, y: 0.5}
-                    padding: 15,
-                    draw_icon.svg: (ICON_FORBIDDEN)
-                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                    text: "Cancel"
+                did_server_input := RobrixTextInput {
+                    width: Fill, height: Fit,
+                    flow: Right, // do not wrap
+                    padding: Inset { left: 10, right: 10, top: 5, bottom: 5 }
+                    empty_text: "did.teaspoon.world",
+                    draw_text +: {
+                        text_style: REGULAR_TEXT {font_size: 10.0}
+                    }
                 }
 
-                accept_button := RobrixPositiveIconButton {
-                    width: 140
-                    align: Align{x: 0.5, y: 0.5}
-                    padding: 15,
-                    draw_icon.svg: (ICON_CHECKMARK)
-                    icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                    text: "Create DID"
+                View {
+                    width: Fill,
+                    height: Fit,
+                    flow: Right,
+                    padding: Inset{top: 5, left: 2, right: 2, bottom: 2}
+                    spacing: 0.0,
+                    align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
+
+                    left_line := LineH {
+                        draw_bg.color: #C8C8C8
+                    }
+
+                    Label {
+                        width: Fit, height: Fit
+                        padding: 0
+                        draw_text +: {
+                            color: #777777
+                            text_style: REGULAR_TEXT {font_size: 9}
+                        }
+                        text: "DID server domain"
+                    }
+
+                    right_line := LineH {
+                        draw_bg.color: #C8C8C8
+                    }
                 }
             }
+        }
 
-            status_label := Label {
-                width: Fill,
-                height: Fit,
-                padding: 0,
-                margin: 0,
-                flow: Flow.Right{wrap: true},
-                align: Align{x: 0.5, y: 0.0}
-                draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: 11},
-                    color: #000
-                }
-                text: "status label"
+        buttons_view := ModalButtonsRow {
+            cancel_button := RobrixNegativeIconButton {
+                width: 100,
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                draw_icon.svg: (ICON_FORBIDDEN)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Cancel"
             }
+
+            accept_button := RobrixPositiveIconButton {
+                width: 140
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                draw_icon.svg: (ICON_CHECKMARK)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Create DID"
+            }
+        }
+
+        status_label := ModalBody {
+            padding: 0,
+            margin: 0,
+            align: Align{x: 0.5, y: 0.0}
+            draw_text +: {
+                text_style: REGULAR_TEXT {font_size: 11}
+            }
+            text: "status label"
         }
     }
 }
