@@ -664,9 +664,6 @@ impl UserProfileSlidingPaneRef {
     }
 
     /// Hides the pane immediately and clears its state without animating it out.
-    ///
-    /// Used when a RoomScreen is reused for a different room, so a previous
-    /// room's open profile pane doesn't remain shown in the new room.
     pub fn reset(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.visible = false;
@@ -674,10 +671,6 @@ impl UserProfileSlidingPaneRef {
         inner.is_animating_out = false;
         inner.info = None;
         inner.view(cx, ids!(bg_view)).set_visible(cx, false);
-        // If the pane currently holds key focus, release it so the now-hidden pane
-        // can't swallow keyboard input after the RoomScreen is reused. Guarded so we
-        // never steal focus from another widget (e.g. the message input) when the
-        // pane wasn't focused, matching the animated-hide cleanup path above.
         if cx.has_key_focus(inner.view.area()) {
             cx.revert_key_focus();
         }

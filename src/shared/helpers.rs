@@ -41,21 +41,16 @@ script_mod! {
     mod.widgets.FillerX = View { width: Fill, height: Fit }
     mod.widgets.FillerY = View { width: Fit,  height: Fill }
 
-    // Shared base for all small (non-full-screen) modal dialogs: fills width up to 400
-    // with a 20px left/right gutter so it stays off the edges on narrow screens, caps its
-    // height at 90% of the viewport, and scrolls vertically when content is taller.
-    // Defines the standard padding all modals share; modals add only their content.
+
+    // The base widget definition used for all "small" modals in Robrix.
     mod.widgets.SmallModal = RoundedView {
         width: Fill { max: 400 }
-        height: Fit { max: FitBound.Rel{base: Base.Full, factor: 0.9} }
-        // Only a horizontal gutter; the vertical gap comes from the Modal centering
-        // the (capped) box, so a tall/scrollable modal can't overflow off the bottom.
-        margin: Inset{left: 20, right: 20}
+        height: Fit { max: FitBound.Rel{base: Base.Full, factor: 1.0} }
+        margin: 20
         padding: Inset{top: 30, right: 25, bottom: 20, left: 25}
         flow: Down
 
-        // Scroll the content when it's taller than the max height, so the
-        // buttons stay reachable on short windows.
+        // Make the modal scrollable for cases when it's too tall for the app window.
         scroll_bars: ScrollBars {
             show_scroll_x: false
             show_scroll_y: true
@@ -69,11 +64,6 @@ script_mod! {
         }
     }
 
-    // Shared dialog pieces for SmallModal-based modals. Declared inline in each modal
-    // (Makepad can't inherit child widgets from a plain base), but they centralize the
-    // styling and the wrapping behavior so modals don't repeat it.
-
-    // A modal title: fills the width and wraps, centered.
     mod.widgets.ModalTitle = Label {
         width: Fill, height: Fit
         flow: Flow.Right{wrap: true}
@@ -85,7 +75,7 @@ script_mod! {
         }
     }
 
-    // A modal body/description label: fills the width and wraps.
+    // A modal body or description label, which fills the width and wraps.
     mod.widgets.ModalBody = Label {
         width: Fill, height: Fit
         flow: Flow.Right{wrap: true}
@@ -95,13 +85,13 @@ script_mod! {
         }
     }
 
-    // A modal buttons row: fills the width, right-aligned, and wraps to the next line
-    // on narrow screens. Each modal adds its own buttons inside.
+    // A modal buttons row that fills the width, is right-aligned,
+    // and wraps to the next line.
     mod.widgets.ModalButtonsRow = View {
         width: Fill, height: Fit
         flow: Flow.Right{wrap: true}
         align: Align{x: 1.0, y: 0.5}
-        spacing: 20
+        spacing: 15
         padding: Inset{top: 20, bottom: 20}
     }
 }
