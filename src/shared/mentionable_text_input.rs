@@ -1419,11 +1419,11 @@ impl Widget for MentionableTextInput {
                                 self.show_loading_indicator(cx);
                                 let popup = self.cmd_text_input.view(cx, ids!(popup));
                                 popup.set_visible(cx, true);
-                                // Only restore focus if input currently has focus
-                                let text_input_area = self.cmd_text_input.text_input_ref().area();
-                                if cx.has_key_focus(text_input_area) {
-                                    self.cmd_text_input.text_input_ref().set_key_focus(cx);
-                                }
+                                // If the input already has focus, TextInput's
+                                // draw pass keeps the IME visible. Calling
+                                // set_key_focus() again on Android resets the
+                                // IME-dismissed guard and can turn one hide
+                                // request into a hide/show loop.
                             }
                         }
                     }
@@ -1459,18 +1459,21 @@ impl Widget for MentionableTextInput {
         // finger_up events might steal focus after our initial restoration attempt.
         if self.pending_draw_focus_restore {
             let text_input_ref = self.cmd_text_input.text_input_ref();
-            text_input_ref.set_key_focus(cx);
-            if let Some(mut ti) = text_input_ref.borrow_mut() {
-                ti.reset_blink_timer(cx);
-            }
-            // Check if we successfully got focus
+            // Check focus BEFORE requesting it: calling set_key_focus() while the
+            // input is already focused resets the Android IME-dismissed guard and
+            // can turn one hide request into a hide/show loop (same pattern as the
+            // removed popup-path re-requests above).
             let area = text_input_ref.area();
             if cx.has_key_focus(area) {
                 // Successfully restored focus, clear the flag
                 self.pending_draw_focus_restore = false;
             } else {
                 // Focus restoration failed (likely due to finger_up event stealing focus)
-                // Keep the flag true and request another frame to retry
+                // Request focus and retry on the next frame.
+                text_input_ref.set_key_focus(cx);
+                if let Some(mut ti) = text_input_ref.borrow_mut() {
+                    ti.reset_blink_timer(cx);
+                }
                 cx.new_next_frame();
             }
         }
@@ -1935,11 +1938,6 @@ impl MentionableTextInput {
 
         let popup = self.cmd_text_input.view(cx, ids!(popup));
         popup.set_visible(cx, items_added > 0);
-        let text_input_area = self.cmd_text_input.text_input_ref().area();
-        if cx.has_key_focus(text_input_area) {
-            self.cmd_text_input.text_input_ref().set_key_focus(cx);
-        }
-
         self.redraw(cx);
     }
 
@@ -2001,11 +1999,8 @@ impl MentionableTextInput {
                 // Waiting for room members to be loaded
                 self.show_loading_indicator(cx);
                 popup.set_visible(cx, true);
-                // Only restore focus if input currently has focus
-                let text_input_area = self.cmd_text_input.text_input_ref().area();
-                if cx.has_key_focus(text_input_area) {
-                    self.cmd_text_input.text_input_ref().set_key_focus(cx);
-                }
+                // Preserve existing focus without re-requesting it; see the
+                // Android IME note in the room-member loading branch above.
             }
             MentionSearchState::Searching {
                 accumulated_results,
@@ -2014,11 +2009,7 @@ impl MentionableTextInput {
                 if has_items {
                     // We have search results to display
                     popup.set_visible(cx, true);
-                    // Only restore focus if input currently has focus
-                    let text_input_area = self.cmd_text_input.text_input_ref().area();
-                    if cx.has_key_focus(text_input_area) {
-                        self.cmd_text_input.text_input_ref().set_key_focus(cx);
-                    }
+                    // Preserve existing focus without re-requesting it.
                 } else if accumulated_results.is_empty() {
                     if members_sync_pending || self.search_results_pending {
                         // Still fetching either member list or background search results.
@@ -2031,19 +2022,11 @@ impl MentionableTextInput {
                         self.show_loading_indicator(cx);
                     }
                     popup.set_visible(cx, true);
-                    // Only restore focus if input currently has focus
-                    let text_input_area = self.cmd_text_input.text_input_ref().area();
-                    if cx.has_key_focus(text_input_area) {
-                        self.cmd_text_input.text_input_ref().set_key_focus(cx);
-                    }
+                    // Preserve existing focus without re-requesting it.
                 } else {
                     // Has accumulated results but no items (should not happen)
                     popup.set_visible(cx, true);
-                    // Only restore focus if input currently has focus
-                    let text_input_area = self.cmd_text_input.text_input_ref().area();
-                    if cx.has_key_focus(text_input_area) {
-                        self.cmd_text_input.text_input_ref().set_key_focus(cx);
-                    }
+                    // Preserve existing focus without re-requesting it.
                 }
             }
         }
@@ -2593,12 +2576,6 @@ impl MentionableTextInput {
         let header_view = self.cmd_text_input.view(cx, ids!(popup.header_view));
         header_view.set_visible(cx, true);
         popup.set_visible(cx, true);
-        // Only restore focus if input currently has focus
-        let text_input_area = self.cmd_text_input.text_input_ref().area();
-        if cx.has_key_focus(text_input_area) {
-            self.cmd_text_input.text_input_ref().set_key_focus(cx);
-        }
-
         // Create a new channel for this search
         let (sender, receiver) = std::sync::mpsc::channel();
 
@@ -2751,11 +2728,7 @@ impl MentionableTextInput {
 
         popup.set_visible(cx, true);
 
-        // Maintain text input focus only if it currently has focus
-        let text_input_area = self.cmd_text_input.text_input_ref().area();
-        if self.is_searching() && cx.has_key_focus(text_input_area) {
-            self.cmd_text_input.text_input_ref().set_key_focus(cx);
-        }
+        // The focused TextInput will keep the IME visible from its draw pass.
     }
 
     /// Shows the no matches indicator when no users match the search
@@ -2782,11 +2755,7 @@ impl MentionableTextInput {
         // Set scroll container height to fit the no-matches indicator (48px + 4px padding)
         self.set_list_scroll_height(cx, 52.0);
 
-        // Maintain text input focus so user can continue typing, but only if currently focused
-        let text_input_area = self.cmd_text_input.text_input_ref().area();
-        if self.is_searching() && cx.has_key_focus(text_input_area) {
-            self.cmd_text_input.text_input_ref().set_key_focus(cx);
-        }
+        // The focused TextInput will keep the IME visible from its draw pass.
     }
 
     /// Check if mention search is currently active

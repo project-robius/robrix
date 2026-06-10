@@ -3804,8 +3804,12 @@ script_mod! {
 
             restore_status_view := RestoreStatusView {}
 
-            // Widgets within this view will get shifted upwards when the on-screen keyboard is shown.
-            keyboard_view := KeyboardView {
+            // Keyboard avoidance is already provided by the Window's built-in
+            // KeyboardView (makepad `window.rs`: `body := KeyboardView`). Using a
+            // second KeyboardView here nested inside it double-applies the
+            // keyboard shift (content jumps / a big blank gap on Android), so
+            // this is a plain View.
+            keyboard_view := View {
                 width: Fill, height: Fill,
                 flow: Down,
 

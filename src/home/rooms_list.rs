@@ -1428,11 +1428,10 @@ impl Widget for RoomsList {
                     continue;
                 };
 
-                if self.current_active_room.as_ref().is_some_and(|current| current == &new_selected_room) {
-                    continue;
+                if !self.current_active_room.as_ref().is_some_and(|current| current == &new_selected_room) {
+                    self.set_current_active_room(cx, Some(new_selected_room.clone()));
                 }
 
-                self.set_current_active_room(cx, Some(new_selected_room.clone()));
                 cx.widget_action(
                     self.widget_uid(), 
                     RoomsListAction::Selected(new_selected_room),
@@ -1463,10 +1462,9 @@ impl Widget for RoomsList {
             else if let Some(SpaceLobbyAction::SpaceLobbyEntryClicked) = action.downcast_ref() {
                 let Some(space_name_id) = self.selected_space.clone() else { continue };
                 let new_selected_space = SelectedRoom::Space { space_name_id };
-                if self.current_active_room.as_ref().is_some_and(|current| current == &new_selected_space) {
-                    continue;
+                if !self.current_active_room.as_ref().is_some_and(|current| current == &new_selected_space) {
+                    self.set_current_active_room(cx, Some(new_selected_space.clone()));
                 }
-                self.set_current_active_room(cx, Some(new_selected_space.clone()));
                 cx.widget_action(
                     self.widget_uid(), 
                     RoomsListAction::Selected(new_selected_space),
