@@ -148,8 +148,7 @@ script_mod! {
             // Transparent overlay so the whole tile registers as clickable.
             sticker_click_btn := Button {
                 width: Fill, height: Fill
-                draw_bg: { color: #0000 }
-                draw_text: { text_style: {} }
+                draw_bg +: { color: #0000 }
                 text: ""
             }
         }
@@ -186,7 +185,7 @@ script_mod! {
         ..mod.widgets.RoundedView
 
         width: Fill { max: 560 }
-        height: Fill { max: FitBound.Rel{base: Base.Full, factor: 0.85} }
+        height: Fill // { max: 1400 }
         margin: 40
         flow: Down
         padding: Inset{top: 16, right: 20, bottom: 16, left: 24}
