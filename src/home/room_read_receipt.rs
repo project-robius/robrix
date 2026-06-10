@@ -161,7 +161,14 @@ impl AvatarRow {
         event_id: Option<&EventId>,
         receipts_map: &IndexMap<OwnedUserId, Receipt>,
     ) {
-        if receipts_map.len() != self.buttons.len() {
+        // Rebuild the list of avatars if anything visible changes.
+        let receipts_changed = self.read_receipts.as_ref().is_none_or(|existing| {
+            existing.len() != receipts_map.len() ||
+                !existing.keys().rev().take(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT).eq(
+                    receipts_map.keys().rev().take(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT)
+                )
+        });
+        if receipts_changed {
             self.buttons.clear();
             for _ in 0..cmp::min(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT, receipts_map.len()) {
                 self.buttons.push((
