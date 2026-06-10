@@ -189,7 +189,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `heck` | 0.5.0 | MIT OR Apache-2.0 |
 | `hermit-abi` | 0.5.2 | MIT OR Apache-2.0 |
 | `hexf-parse` | 0.2.1 | CC0-1.0 |
-| `hilog-sys` | 0.1.7 | Apache-2.0 |
+| `hilog-sys` | 0.1.8 | Apache-2.0 |
 | `hkdf` | 0.12.4 | MIT OR Apache-2.0 |
 | `hmac` | 0.12.1 | MIT OR Apache-2.0 |
 | `html5ever` | 0.39.0 | MIT OR Apache-2.0 |
@@ -316,7 +316,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `napi-sys-ohos` | 0.0.1 | MIT |
 | `ndk-context` | 0.1.1 | MIT OR Apache-2.0 |
 | `new_debug_unreachable` | 1.0.6 | MIT |
-| `nix` | 0.31.2 | MIT |
+| `nix` | 0.31.3 | MIT |
 | `nom` | 7.1.3 | MIT |
 | `nu-ansi-term` | 0.50.1 | MIT |
 | `num-conv` | 0.2.0 | MIT OR Apache-2.0 |
