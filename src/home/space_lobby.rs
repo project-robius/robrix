@@ -1182,6 +1182,7 @@ impl Widget for SpaceLobbyScreen {
                 let item = if self.is_loading && item_id == 0 {
                     let item = list.item(cx, item_id, id!(status_label));
                     item.child_by_path(ids!(label)).as_label().set_text(cx, "Loading rooms and spaces...");
+                    item.child_by_path(ids!(loading_spinner)).set_visible(cx, true);
                     item
                 }
                 // No entries found

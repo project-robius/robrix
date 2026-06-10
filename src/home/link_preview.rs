@@ -346,6 +346,21 @@ impl LinkPreviewRef {
         }
     }
 
+    /// Clears any displayed link preview(s), resetting this widget to its empty state.
+    ///
+    /// Needed for messages that never show link previews (e.g. redacted messages).
+    pub fn clear(&mut self, cx: &mut Cx) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.children.clear();
+            inner.last_populated_links.clear();
+            inner.show_collapsible_buttons = false;
+            inner.is_expanded = false;
+            inner.hidden_links_count = 0;
+            inner.update_button_and_visibility(cx);
+            inner.redraw(cx);
+        }
+    }
+
     /// Shows the collapsible button for the link preview.
     /// 
     /// This function is usually called when the link preview is updated.

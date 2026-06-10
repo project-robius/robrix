@@ -3685,6 +3685,7 @@ fn populate_message_view(
                     } else {
                         let html_or_plaintext_ref =
                             item.html_or_plaintext(cx, ids!(content.message));
+                        item.link_preview(cx, ids!(content.link_preview_view)).clear(cx);
                         let is_location_fully_drawn = populate_location_message_content(
                             cx,
                             &html_or_plaintext_ref,
@@ -3713,6 +3714,7 @@ fn populate_message_view(
                     } else {
                         let html_or_plaintext_ref =
                             item.html_or_plaintext(cx, ids!(content.message));
+                        item.link_preview(cx, ids!(content.link_preview_view)).clear(cx);
                         new_drawn_status.content_drawn = populate_file_message_content(
                             cx,
                             &html_or_plaintext_ref,
@@ -3740,6 +3742,7 @@ fn populate_message_view(
                     } else {
                         let html_or_plaintext_ref =
                             item.html_or_plaintext(cx, ids!(content.message));
+                        item.link_preview(cx, ids!(content.link_preview_view)).clear(cx);
                         new_drawn_status.content_drawn = populate_audio_message_content(
                             cx,
                             &html_or_plaintext_ref,
@@ -3767,6 +3770,7 @@ fn populate_message_view(
                     } else {
                         let html_or_plaintext_ref =
                             item.html_or_plaintext(cx, ids!(content.message));
+                        item.link_preview(cx, ids!(content.link_preview_view)).clear(cx);
                         new_drawn_status.content_drawn = populate_video_message_content(
                             cx,
                             &html_or_plaintext_ref,
@@ -3819,6 +3823,7 @@ fn populate_message_view(
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
+                        item.link_preview(cx, ids!(content.link_preview_view)).clear(cx);
                         item.label(cx, ids!(content.message)).set_text(
                             cx,
                             &format!("[Unsupported {:?}]", msg_like_content.kind),
@@ -3883,6 +3888,8 @@ fn populate_message_view(
                 (item, true)
             } else {
                 let html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
+                // Redacted messages have no link preview; clear any stale one from a reused row.
+                item.link_preview(cx, ids!(content.link_preview_view)).clear(cx);
                 // Apply a smaller font size for redacted messages.
                 let mut html_widget = html_or_plaintext_ref.html(cx, ids!(html_view.html));
                 script_apply_eval!(cx, html_widget, {
@@ -3908,6 +3915,7 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
+                item.link_preview(cx, ids!(content.link_preview_view)).clear(cx);
                 item.label(cx, ids!(content.message)).set_text(
                     cx,
                     &format!("[Unsupported {:?}] ", other),
@@ -3923,9 +3931,13 @@ fn populate_message_view(
     // If we didn't use a cached item, we need to draw all other message content:
     // the reactions, the read receipts avatar row, the reply preview.
     if !used_cached_item {
+        // Redacted messages must never show reactions, even if the SDK still reports some.
+        let reactions = (!matches!(msg_like_content.kind, MsgLikeKind::Redacted))
+            .then(|| event_tl_item.content().reactions())
+            .flatten();
         item.reaction_list(cx, ids!(content.reaction_list)).set_list(
             cx,
-            event_tl_item.content().reactions(),
+            reactions,
             timeline_kind.clone(),
             timeline_event_id.clone(),
             item_id,
@@ -4043,12 +4055,13 @@ fn populate_message_view(
         item.timestamp(cx, ids!(profile.timestamp)).set_date_time(cx, dt);
     }
 
-    // Set the "edited" indicator if this message was edited.
+    // Set the "edited" indicator if this message was edited, otherwise hide it
+    // (this widget may be reused for a non-edited message at the same row).
+    let edited_indicator = item.edited_indicator(cx, ids!(profile.edited_indicator));
     if msg_like_content.as_message().is_some_and(|m| m.is_edited()) {
-        item.edited_indicator(cx, ids!(profile.edited_indicator)).set_latest_edit(
-            cx,
-            event_tl_item,
-        );
+        edited_indicator.set_latest_edit(cx, event_tl_item);
+    } else {
+        edited_indicator.hide(cx);
     }
 
     #[cfg(feature = "tsp")] {
@@ -4081,6 +4094,9 @@ fn populate_message_view(
             log!("TSP signature state for event {:?} is {:?}", event_tl_item.event_id(), tsp_sign_state);
             item.tsp_sign_indicator(cx, ids!(profile.tsp_sign_indicator))
                 .show_with_state(cx, tsp_sign_state);
+        } else {
+            // Hide the TSP indicator (in case we reused the message widget at this item index).
+            item.tsp_sign_indicator(cx, ids!(profile.tsp_sign_indicator)).hide(cx);
         }
     }
 
