@@ -527,7 +527,7 @@ script_mod! {
                     // Push it down with a top margin so it doesn't clip
                     // against the slider's top edge.
                     text_input +: {
-                        margin: { top: 56.0 }
+                        margin: Inset { top: 56.0 }
                     }
                 }
 
