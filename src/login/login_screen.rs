@@ -112,6 +112,9 @@ script_mod! {
                         flow: Right, // do not wrap
                         padding: 10,
                         empty_text: "User ID"
+                        autocapitalize: None,
+                        autocorrect: Disabled,
+                        content_type: Username,
                     }
 
                     View {
@@ -125,6 +128,9 @@ script_mod! {
                             padding: Inset{top: 10, bottom: 10, left: 10, right: 38}
                             empty_text: "Password"
                             is_password: true,
+                            autocapitalize: None,
+                            autocorrect: Disabled,
+                            content_type: Password,
                         }
 
                         View {
@@ -177,6 +183,10 @@ script_mod! {
                             flow: Right, // do not wrap
                             padding: Inset{top: 5, bottom: 5, left: 10, right: 10}
                             empty_text: "matrix.org"
+                            autocapitalize: None,
+                            autocorrect: Disabled,
+                            content_type: Url,
+                            input_mode: Url,
                             draw_text +: {
                                 text_style: TITLE_TEXT {font_size: 10.0}
                             }
