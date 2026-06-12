@@ -21,7 +21,7 @@ use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedRoomId, OwnedUserId, UserId};
-use crate::{app::AppState, home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, is_known_or_likely_bot, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, i18n::{AppLanguage, tr_fmt, tr_key}, location::init_location_subscriber, room::translation::{self, TRANSLATION_REQUEST_ID}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{FileData, FileLoadedData, FilePreviewerAction}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, classify_known_slash_command_for_submission, parse_command_with_at_suffix}, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{app::AppState, home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, is_known_or_likely_bot, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, i18n::{AppLanguage, tr_fmt, tr_key}, location::init_location_subscriber, room::translation::{self, TRANSLATION_REQUEST_ID}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{FileData, FileLoadedData, FilePreviewerAction}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, classify_known_slash_command_for_submission, parse_command_with_at_suffix}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 use crate::shared::file_upload_modal::{FilePreviewerMetaData, ThumbnailData};
 
@@ -635,6 +635,178 @@ script_mod! {
     }
 
 
+    // The message text input field. Keep this as a single live widget instance
+    // in RoomInputBar; duplicating it across AdaptiveView variants changes the
+    // focused IME area when the keyboard appears and causes mobile jump loops.
+    let MessageInputField = MentionableTextInput {
+        width: Fill,
+        height: Fit
+        margin: Inset {
+            top: 3, // add some space between the top border of the text input and the top border of this row
+            bottom: 3,
+            left: 3, right: 3 // to give a bit of breathing room between the text input and the buttons on the sides
+        },
+
+        persistent +: {
+            center +: {
+                text_input := RobrixTextInput {
+                    // 10 lines of MESSAGE_TEXT_STYLE (11 * 1.3) plus vertical padding.
+                    // Above this height the multiline TextInput keeps the composer
+                    // stable and scrolls its own content.
+                    height: Fit{max: FitBound.Abs(170.0)}
+                    empty_text: "Write a message (in Markdown) ..."
+                    is_multiline: true,
+                }
+            }
+        }
+    }
+
+    // The action buttons shown to the LEFT of the input on desktop. On mobile
+    // they form the left side of the toolbar row below the input.
+    let LeftActionButtons = View {
+        width: Fit, height: Fit
+        flow: Right
+        align: Align{y: 1.0}
+
+        // A checkbox that enables TSP signing for the outgoing message.
+        // If TSP is not enabled, this will be an empty invisible view.
+        tsp_sign_checkbox := TspSignAnycastCheckbox {
+            margin: Inset{bottom: 9, left: 6, right: 0}
+        }
+
+        // Opens the sticker drawer above the input bar.
+        sticker_drawer_toggle_button := RobrixIconButton {
+            margin: Inset{left: 1, right: 1, top: 4, bottom: 4}
+            spacing: 0,
+            draw_icon +: {
+                svg: (mod.widgets.ICO_MORE_VERT)
+                color: (COLOR_ACTIVE_PRIMARY_DARKER)
+            },
+            draw_bg +: {
+                color: (COLOR_BG_PREVIEW)
+                color_hover: #E0E8F0
+                color_down: #D0D8E8
+            }
+            icon_walk: Walk{width: 19, height: 19}
+            text: "",
+        }
+
+        // Attachment button for uploading files/images
+        send_attachment_button := RobrixIconButton {
+            margin: Inset{left: 3, right: 1, top: 4, bottom: 4}
+            spacing: 0,
+            draw_icon +: {
+                svg: (ICON_ADD_ATTACHMENT)
+                color: (COLOR_ACTIVE_PRIMARY_DARKER)
+            },
+            draw_bg +: {
+                color: (COLOR_BG_PREVIEW)
+                color_hover: #E0E8F0
+                color_down: #D0D8E8
+            }
+            icon_walk: Walk{width: 21, height: 21}
+            text: "",
+        }
+
+        // Opens the modal showing only the user's added stickers.
+        my_stickers_button := RobrixIconButton {
+            margin: Inset{left: 1, right: 1, top: 4, bottom: 4}
+            spacing: 0,
+            draw_icon +: {
+                svg: (ICON_SQUARES)
+                color: (COLOR_ACTIVE_PRIMARY_DARKER)
+            },
+            draw_bg +: {
+                color: (COLOR_BG_PREVIEW)
+                color_hover: #E0E8F0
+                color_down: #D0D8E8
+            }
+            icon_walk: Walk{width: 18, height: 18}
+            text: "",
+        }
+
+        emoji_picker_button := RobrixIconButton {
+            margin: Inset{left: 3, right: 1, top: 4, bottom: 4}
+            spacing: 0,
+            draw_icon +: {
+                svg: (ICON_ADD_REACTION)
+                color: (COLOR_ACTIVE_PRIMARY_DARKER)
+            },
+            draw_bg +: {
+                color: (COLOR_BG_PREVIEW)
+                color_hover: #E0E8F0
+                color_down: #D0D8E8
+            }
+            icon_walk: Walk{width: 19, height: 19}
+            text: "",
+        }
+
+        translate_button := RobrixIconButton {
+            margin: Inset{left: 1, right: 1, top: 4, bottom: 4}
+            spacing: 0,
+            draw_icon +: {
+                svg: (mod.widgets.ICO_TRANSLATE)
+                color: (COLOR_ACTIVE_PRIMARY_DARKER)
+            },
+            draw_bg +: {
+                color: (COLOR_BG_PREVIEW)
+                color_hover: #xE0E8F0
+                color_down: #xD0D8E8
+            }
+            icon_walk: Walk{width: 19, height: 19}
+            text: "",
+        }
+
+        bot_menu_button := RobrixIconButton {
+            visible: false,
+            margin: Inset{left: 1, right: 1, top: 4, bottom: 4}
+            spacing: 0,
+            draw_icon +: {
+                svg: (ICON_LINK)
+                color: (COLOR_ACTIVE_PRIMARY_DARKER)
+            },
+            draw_bg +: {
+                color: (COLOR_BG_PREVIEW)
+                color_hover: #xE0E8F0
+                color_down: #xD0D8E8
+            }
+            icon_walk: Walk{width: 18, height: 18}
+            text: "",
+        }
+    }
+
+    // The send + more-actions buttons shown to the RIGHT of the input on
+    // desktop. On mobile they form the right side of the toolbar row.
+    let RightActionButtons = View {
+        width: Fit, height: Fit
+        flow: Right
+        align: Align{y: 1.0}
+
+        send_message_button := RobrixPositiveIconButton {
+            visible: false,
+            // Disabled by default; enabled when text is inputted
+            enabled: false,
+            spacing: 0,
+            text: "",
+            margin: 4
+            draw_icon +: { svg: (ICON_SEND) }
+            icon_walk: Walk{width: 21, height: 21},
+        }
+
+        more_actions_button := RobrixIconButton {
+            spacing: 0,
+            text: "",
+            margin: 4
+            draw_icon +: { svg: (mod.widgets.ICO_MENU) }
+            draw_bg +: {
+                color: (COLOR_ACTIVE_PRIMARY)
+                color_hover: (COLOR_ACTIVE_PRIMARY_DARKER)
+                color_down: #0C5DAA
+            }
+            icon_walk: Walk{width: 19, height: 19},
+        }
+    }
+
     mod.widgets.RoomInputBar = set_type_default() do #(RoomInputBar::register_widget(vm)) {
         ..mod.widgets.RoundedView
 
@@ -913,159 +1085,31 @@ script_mod! {
 
                 input_row := View {
                     width: Fill,
-                    height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
-                    flow: Right
-                    // Bottom-align everything to ensure that buttons always stick to the bottom
-                    // even when the mentionable_text_input box is very tall.
-                    align: Align{y: 1.0},
+                    height: Fit
+                    flow: Down
+                    spacing: 4
 
-                    // A checkbox that enables TSP signing for the outgoing message.
-                    // If TSP is not enabled, this will be an empty invisible view.
-                    tsp_sign_checkbox := TspSignAnycastCheckbox {
-                        margin: Inset{bottom: 9, left: 6, right: 0}
+                    // Toolbar ABOVE the composer. The composer is the focused
+                    // IME field, and keyboard avoidance only keeps the focused
+                    // field above the on-screen keyboard — anything below it is
+                    // covered. So the composer must be the bottom-most row; the
+                    // toolbar sits above it and stays visible. (Input-at-bottom
+                    // is also the conventional mobile chat layout.)
+                    button_row := View {
+                        width: Fill, height: Fit
+                        flow: Right
+                        align: Align{y: 0.5}
+                        LeftActionButtons {}
+                        Filler { height: Fit }
+                        RightActionButtons {}
                     }
 
-                    // Opens the sticker drawer above the input bar.
-                    sticker_drawer_toggle_button := RobrixIconButton {
-                        margin: Inset{left: 1, right: 1, top: 4, bottom: 4}
-                        spacing: 0,
-                        draw_icon +: {
-                            svg: (mod.widgets.ICO_MORE_VERT)
-                            color: (COLOR_ACTIVE_PRIMARY_DARKER)
-                        },
-                        draw_bg +: {
-                            color: (COLOR_BG_PREVIEW)
-                            color_hover: #E0E8F0
-                            color_down: #D0D8E8
-                        }
-                        icon_walk: Walk{width: 19, height: 19}
-                        text: "",
-                    }
-
-                    // Attachment button for uploading files/images
-                    send_attachment_button := RobrixIconButton {
-                        margin: Inset{left: 3, right: 1, top: 4, bottom: 4}
-                        spacing: 0,
-                        draw_icon +: {
-                            svg: (ICON_ADD_ATTACHMENT)
-                            color: (COLOR_ACTIVE_PRIMARY_DARKER)
-                        },
-                        draw_bg +: {
-                            color: (COLOR_BG_PREVIEW)
-                            color_hover: #E0E8F0
-                            color_down: #D0D8E8
-                        }
-                        icon_walk: Walk{width: 21, height: 21}
-                        text: "",
-                    }
-
-                    // Opens the modal showing only the user's added stickers.
-                    my_stickers_button := RobrixIconButton {
-                        margin: Inset{left: 1, right: 1, top: 4, bottom: 4}
-                        spacing: 0,
-                        draw_icon +: {
-                            svg: (ICON_SQUARES)
-                            color: (COLOR_ACTIVE_PRIMARY_DARKER)
-                        },
-                        draw_bg +: {
-                            color: (COLOR_BG_PREVIEW)
-                            color_hover: #E0E8F0
-                            color_down: #D0D8E8
-                        }
-                        icon_walk: Walk{width: 18, height: 18}
-                        text: "",
-                    }
-
-                    emoji_picker_button := RobrixIconButton {
-                        margin: Inset{left: 3, right: 1, top: 4, bottom: 4}
-                        spacing: 0,
-                        draw_icon +: {
-                            svg: (ICON_ADD_REACTION)
-                            color: (COLOR_ACTIVE_PRIMARY_DARKER)
-                        },
-                        draw_bg +: {
-                            color: (COLOR_BG_PREVIEW)
-                            color_hover: #E0E8F0
-                            color_down: #D0D8E8
-                        }
-                        icon_walk: Walk{width: 19, height: 19}
-                        text: "",
-                    }
-
-                    translate_button := RobrixIconButton {
-                        margin: Inset{left: 1, right: 1, top: 4, bottom: 4}
-                        spacing: 0,
-                        draw_icon +: {
-                            svg: (mod.widgets.ICO_TRANSLATE)
-                            color: (COLOR_ACTIVE_PRIMARY_DARKER)
-                        },
-                        draw_bg +: {
-                            color: (COLOR_BG_PREVIEW)
-                            color_hover: #xE0E8F0
-                            color_down: #xD0D8E8
-                        }
-                        icon_walk: Walk{width: 19, height: 19}
-                        text: "",
-                    }
-
-                    bot_menu_button := RobrixIconButton {
-                        visible: false,
-                        margin: Inset{left: 1, right: 1, top: 4, bottom: 4}
-                        spacing: 0,
-                        draw_icon +: {
-                            svg: (ICON_LINK)
-                            color: (COLOR_ACTIVE_PRIMARY_DARKER)
-                        },
-                        draw_bg +: {
-                            color: (COLOR_BG_PREVIEW)
-                            color_hover: #xE0E8F0
-                            color_down: #xD0D8E8
-                        }
-                        icon_walk: Walk{width: 18, height: 18}
-                        text: "",
-                    }
-
-                    mentionable_text_input := MentionableTextInput {
-                        width: Fill,
-                        height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
-                        margin: Inset {
-                            top: 3, // add some space between the top border of the text input and the top border of this row
-                            bottom: 5.75, // to line up the middle of the text input with the middle of the buttons
-                            left: 3, right: 3 // to give a bit of breathing room between the text input and the buttons on the sides
-                        },
-
-                        persistent +: {
-                            center +: {
-                                text_input := RobrixTextInput {
-                                    empty_text: "Write a message (in Markdown) ..."
-                                    is_multiline: true,
-                                }
-                            }
-                        }
-                    }
-
-                    send_message_button := RobrixPositiveIconButton {
-                        visible: false,
-                        // Disabled by default; enabled when text is inputted
-                        enabled: false,
-                        spacing: 0,
-                        text: "",
-                        margin: 4
-                        draw_icon +: { svg: (ICON_SEND) }
-                        icon_walk: Walk{width: 21, height: 21},
-                    }
-
-                    more_actions_button := RobrixIconButton {
-                        spacing: 0,
-                        text: "",
-                        margin: 4
-                        draw_icon +: { svg: (mod.widgets.ICO_MENU) }
-                        draw_bg +: {
-                            color: (COLOR_ACTIVE_PRIMARY)
-                            color_hover: (COLOR_ACTIVE_PRIMARY_DARKER)
-                            color_down: #0C5DAA
-                        }
-                        icon_walk: Walk{width: 19, height: 19},
+                    // Composer on its own full-width row so the toolbar can't
+                    // squeeze the placeholder into a tall, narrow column.
+                    message_row := View {
+                        width: Fill, height: Fit
+                        flow: Right
+                        mentionable_text_input := MessageInputField {}
                     }
                 }
             }
@@ -1167,6 +1211,13 @@ pub struct RoomInputBar {
     /// The pending file load operation, if any. Contains the receiver channel
     /// for receiving the loaded file data from a background thread.
     #[rust] pending_file_load: Option<crate::shared::file_upload_modal::FileLoadReceiver>,
+    /// The last `enable` state applied to the send button, used to skip the
+    /// expensive `script_apply_eval!` in `enable_send_message_button()` when
+    /// the state hasn't changed. `handle_actions()` calls it on every actions
+    /// batch (i.e., every frame during a scroll), and each `script_apply_eval!`
+    /// re-tokenizes, re-parses, and re-evaluates the script source.
+    /// `None` forces the next call to apply unconditionally.
+    #[rust] send_button_enabled: Option<bool>,
 
     // --- Translation state ---
     /// Whether real-time translation is currently active.
@@ -1375,14 +1426,14 @@ impl Widget for RoomInputBar {
         let remapped = (slide as f64 * 1.25).min(1.0);
         if remapped >= 1.0 {
             // Input_bar has reached its full natural height: switch to Fit
-            // so it can respond to content changes normally.
-            // Update the cached height for future animations.
-            let h = input_bar.area().rect(cx).size.y;
-            if h > 0.0 {
-                self.input_bar_natural_height = h;
-            }
+            // so it can respond to content changes normally. Avoid rewriting
+            // layout every frame while mobile IME is opening; repeated
+            // input-area height changes can feed back into KeyboardView's
+            // visible-rect correction and make the screen jump.
             if let Some(mut inner) = input_bar.borrow_mut() {
-                inner.walk.height = Size::fit();
+                if !inner.walk.height.is_fit() {
+                    inner.walk.height = Size::fit();
+                }
             }
         } else {
             let target = self.input_bar_natural_height;
@@ -1420,7 +1471,7 @@ impl RoomInputBar {
     }
 
     fn sync_app_language(&mut self, cx: &mut Cx) {
-        self.text_input(cx, ids!(input_bar.input_row.mentionable_text_input.text_input))
+        self.text_input(cx, ids!(mentionable_text_input.text_input))
             .set_empty_text(cx, tr_key(self.app_language, "room_input_bar.input.placeholder").to_string());
         self.button(cx, ids!(translation_apply_button))
             .set_text(cx, tr_key(self.app_language, "room_input_bar.translation.preview.apply"));
@@ -1453,7 +1504,7 @@ impl RoomInputBar {
         self.view.view(cx, ids!(translation_preview)).set_visible(cx, true);
 
         // Focus the text input
-        self.text_input(cx, ids!(input_bar.input_row.mentionable_text_input.text_input)).set_key_focus(cx);
+        self.text_input(cx, ids!(mentionable_text_input.text_input)).set_key_focus(cx);
         self.redraw(cx);
     }
 
@@ -1600,7 +1651,7 @@ impl RoomInputBar {
             });
             self.is_emoji_picker_expanded = false;
             self.view.view(cx, ids!(emoji_picker_popup)).set_visible(cx, false);
-            self.text_input(cx, ids!(input_bar.input_row.mentionable_text_input.text_input)).set_key_focus(cx);
+            self.text_input(cx, ids!(mentionable_text_input.text_input)).set_key_focus(cx);
             self.redraw(cx);
         }
 
@@ -1639,7 +1690,7 @@ impl RoomInputBar {
                 self.translation_last_source = outcome.next_last_source;
                 self.view.label(cx, ids!(translation_preview_text)).set_text(cx, &outcome.preserved_preview_text);
                 self.view.view(cx, ids!(translation_preview)).set_visible(cx, outcome.keep_preview_visible);
-                self.text_input(cx, ids!(input_bar.input_row.mentionable_text_input.text_input)).set_key_focus(cx);
+                self.text_input(cx, ids!(mentionable_text_input.text_input)).set_key_focus(cx);
                 self.redraw(cx);
             }
         }
@@ -1942,7 +1993,7 @@ impl RoomInputBar {
         //    so that the user can immediately start typing their reply
         //    without having to manually click on the message input box.
         if grab_key_focus {
-            self.text_input(cx, ids!(input_bar.input_row.mentionable_text_input.text_input)).set_key_focus(cx);
+            self.text_input(cx, ids!(mentionable_text_input.text_input)).set_key_focus(cx);
         }
         self.button(cx, ids!(cancel_reply_button)).reset_hover(cx);
         self.redraw(cx);
@@ -2020,22 +2071,26 @@ impl RoomInputBar {
         }
     }
 
-    /// Sets the send_message_button to be shown/enabled and green, or hidden/disabled and gray.
+    /// Sets the send_message_button to be shown/enabled, or hidden/disabled.
     ///
     /// This should be called to update the button state when the message TextInput content changes.
     fn enable_send_message_button(&mut self, cx: &mut Cx, enable: bool) {
-        let mut send_message_button = self.view.button(cx, ids!(send_message_button));
-        let (fg_color, bg_color) = if enable {
-            (COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN)
-        } else {
-            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
-        };
-        script_apply_eval!(cx, send_message_button, {
-            visible: #(enable),
-            enabled: #(enable),
-            draw_icon.color: #(fg_color),
-            draw_bg.color: #(bg_color),
-        });
+        // Skip the work below if the button is already in the requested state.
+        // This function is called unconditionally from `handle_actions()`, which
+        // runs on every actions batch — including every frame of a scroll — so
+        // it must be cheap when nothing has changed.
+        if self.send_button_enabled == Some(enable) {
+            return;
+        }
+        self.send_button_enabled = Some(enable);
+        // The green enabled-state styling is already baked into the
+        // `RobrixPositiveIconButton` template, and the disabled state is hidden
+        // entirely, so toggling visibility/enabled-ness is all that's needed.
+        // (The previous `script_apply_eval!` here re-compiled script source on
+        // every call, which was the dominant CPU cost during scrolling.)
+        let send_message_button = self.view.button(cx, ids!(send_message_button));
+        send_message_button.set_visible(cx, enable);
+        send_message_button.set_enabled(cx, enable);
     }
 
     fn try_handle_bot_shortcut(
@@ -2311,7 +2366,7 @@ impl RoomInputBarRef {
             was_replying_preview_visible: inner.was_replying_preview_visible,
             replying_to: inner.replying_to.clone(),
             editing_pane_state: inner.child_by_path(ids!(editing_pane)).as_editing_pane().save_state(),
-            text_input_state: inner.child_by_path(ids!(input_bar.input_row.mentionable_text_input.text_input)).as_text_input().save_state(),
+            text_input_state: inner.child_by_path(ids!(mentionable_text_input.text_input)).as_text_input().save_state(),
         }
     }
 
@@ -2340,11 +2395,14 @@ impl RoomInputBarRef {
         inner.update_user_power_levels(cx, user_power_levels);
 
         // 1. Restore the state of the TextInput within the MentionableTextInput.
-        inner.text_input(cx, ids!(input_bar.input_row.mentionable_text_input.text_input))
+        inner.text_input(cx, ids!(mentionable_text_input.text_input))
             .restore_state(cx, text_input_state);
-        let is_text_input_empty = inner.text_input(cx, ids!(input_bar.input_row.mentionable_text_input.text_input))
+        let is_text_input_empty = inner.text_input(cx, ids!(mentionable_text_input.text_input))
             .text()
             .is_empty();
+        // Force a re-apply: this `RoomInputBar` instance is reused across rooms,
+        // so the cached send-button state may not match the newly-restored room.
+        inner.send_button_enabled = None;
         inner.enable_send_message_button(cx, !is_text_input_empty);
         inner.is_location_card_expanded = false;
         inner.view.view(cx, ids!(more_actions_popup)).set_visible(cx, false);

@@ -2464,12 +2464,13 @@ impl App {
     /// screen configuration are effectively no-ops — MainDesktopUI handles
     /// room display via dock tabs instead.
     fn push_selected_room_view(&mut self, cx: &mut Cx, selected_room: SelectedRoom) {
-        if self.app_state.selected_room.as_ref().is_some_and(|current| current == &selected_room) {
-            return;
-        }
-
         // Use the actual StackNavigation depth to pick the next room view slot.
         let new_depth = self.ui.stack_navigation(cx, ids!(view_stack)).depth();
+        let same_selected_room = self.app_state.selected_room.as_ref()
+            .is_some_and(|current| current == &selected_room);
+        if same_selected_room && new_depth > 0 {
+            return;
+        }
 
         // Determine which view to push and configure its content.
         // The `set_displayed_room` / `set_displayed_invite` / `set_displayed_space` calls
@@ -2524,7 +2525,7 @@ impl App {
         }
 
         // Save the current selected_room onto the navigation stack before replacing it.
-        if let Some(prev) = self.app_state.selected_room.take() {
+        if !same_selected_room && let Some(prev) = self.app_state.selected_room.take() {
             self.mobile_room_nav_stack.push(prev);
         }
         // Update app state (used by both Desktop and Mobile paths).
