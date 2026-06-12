@@ -42,6 +42,7 @@ script_mod! {
             padding: 5
             
             empty_text: "Filter rooms & spaces..."
+            autocapitalize: None,
             
             draw_bg.border_size: 0.0
             draw_text +: {

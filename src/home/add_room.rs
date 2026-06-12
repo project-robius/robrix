@@ -65,6 +65,8 @@ script_mod! {
                 width: Fill { max: 400 } // same width as the above `help_info`
                 height: 40
                 empty_text: "Enter alias, ID, or Matrix link..."
+                autocapitalize: None,
+                autocorrect: Disabled,
             }
 
             search_for_room_button := RobrixIconButton {

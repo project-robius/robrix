@@ -88,6 +88,9 @@ script_mod! {
 
                 tsp_did_input := RobrixTextInput {
                     empty_text: "Enter their TSP DID..."
+                    autocapitalize: None,
+                    autocorrect: Disabled,
+                    content_type: Url,
                 }
 
                 verify_user_button := RobrixPositiveIconButton {

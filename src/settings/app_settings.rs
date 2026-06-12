@@ -260,6 +260,8 @@ script_mod! {
                     align: Align {y: 0.5}
                     padding: Inset{left: 8, right: 8, top: 5, bottom: 5}
                     empty_text: "100%"
+                    autocapitalize: None,
+                    autocorrect: Disabled,
                 }
 
                 ui_zoom_plus_button := RobrixNeutralIconButton {
@@ -341,6 +343,8 @@ script_mod! {
                     width: 60, height: Fit
                     padding: Inset{left: 8, right: 8, top: 5, bottom: 5}
                     empty_text: "300"
+                    autocapitalize: None,
+                    autocorrect: Disabled,
                     is_read_only: true
                 }
 
