@@ -390,9 +390,10 @@ impl ScriptHook for AppSettings {
         if !apply.is_script_reapply() {
             return;
         }
-        let cx = vm.cx_mut();
-        let prefs = cx.global::<AppPreferencesGlobal>().0.clone();
-        Self::populate_safe(cx, &self.view, &prefs);
+        vm.with_cx_mut(|cx| {
+            let prefs = cx.global::<AppPreferencesGlobal>().0.clone();
+            Self::populate_safe(cx, &self.view, &prefs);
+        });
     }
 }
 
