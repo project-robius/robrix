@@ -579,6 +579,16 @@ where
 }
 
 
+/// Return type of `RoomsList::generate_displayed_rooms`:
+/// (invited, favorites, direct, regular, low_priority).
+type DisplayedRoomsTuple = (
+    Vec<OwnedRoomId>,
+    Vec<OwnedRoomId>,
+    Vec<OwnedRoomId>,
+    Vec<OwnedRoomId>,
+    Vec<OwnedRoomId>,
+);
+
 impl RoomsList {
     /// Returns whether the homeserver has finished syncing all of the rooms
     /// that should be synced to our client based on the currently-specified room list filter. 
@@ -1218,7 +1228,7 @@ impl RoomsList {
     ///
     /// If `self.sort_fn` is `Some`, the rooms are ordered based on that function.
     /// Otherwise, the rooms are ordered based on `self.all_known_rooms_order` (the default).
-    fn generate_displayed_rooms(&self) -> (Vec<OwnedRoomId>, Vec<OwnedRoomId>, Vec<OwnedRoomId>, Vec<OwnedRoomId>, Vec<OwnedRoomId>) {
+    fn generate_displayed_rooms(&self) -> DisplayedRoomsTuple {
         let mut new_displayed_invited_rooms = Vec::new();
         let mut new_displayed_favorite_rooms = Vec::new();
         let mut new_displayed_direct_rooms = Vec::new();
