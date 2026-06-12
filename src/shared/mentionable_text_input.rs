@@ -1195,7 +1195,7 @@ impl Widget for MentionableTextInput {
             let popup_selecting = self.cmd_text_input.view(cx, ids!(popup)).visible()
                 && self.cmd_text_input.keyboard_focus_index().is_some();
             let force_send = modifiers.logo || modifiers.control;
-            if !(popup_selecting && !force_send) {
+            if !popup_selecting || force_send {
                 let send_on_enter = scope
                     .data
                     .get::<crate::app::AppState>()
