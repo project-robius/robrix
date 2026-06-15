@@ -51,8 +51,10 @@ script_mod! {
                     text_style: REGULAR_TEXT {font_size: 12},
                     color: #000
                 }
-                is_password: true,
                 empty_text: "Wallet Password",
+                autocapitalize: None,
+                autocorrect: Disabled,
+                content_type: NewPassword,
             }
 
             confirm_password_input := RobrixTextInput {
@@ -63,8 +65,10 @@ script_mod! {
                     text_style: REGULAR_TEXT {font_size: 12},
                     color: #000
                 }
-                is_password: true,
                 empty_text: "Confirm Wallet Password",
+                autocapitalize: None,
+                autocorrect: Disabled,
+                content_type: NewPassword,
             }
 
             View {
@@ -76,6 +80,8 @@ script_mod! {
                     flow: Right, // do not wrap
                     padding: Inset { left: 10, right: 10, top: 5, bottom: 5 }
                     empty_text: "my_wallet_file",
+                    autocapitalize: None,
+                    autocorrect: Disabled,
                     draw_text +: {
                         text_style: REGULAR_TEXT {font_size: 10.0}
                     }

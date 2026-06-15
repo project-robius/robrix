@@ -43,6 +43,8 @@ script_mod! {
                     color: #000
                 }
                 empty_text: "Identity Username",
+                autocapitalize: None,
+                autocorrect: Disabled,
             }
 
             alias_input := RobrixTextInput {
@@ -85,6 +87,9 @@ script_mod! {
                     flow: Right, // do not wrap
                     padding: Inset { left: 10, right: 10, top: 5, bottom: 5 }
                     empty_text: "p.teaspoon.world",
+                    autocapitalize: None,
+                    autocorrect: Disabled,
+                    content_type: Url,
                     draw_text +: {
                         text_style: REGULAR_TEXT {font_size: 10.0}
                     }
@@ -127,6 +132,9 @@ script_mod! {
                     flow: Right, // do not wrap
                     padding: Inset { left: 10, right: 10, top: 5, bottom: 5 }
                     empty_text: "did.teaspoon.world",
+                    autocapitalize: None,
+                    autocorrect: Disabled,
+                    content_type: Url,
                     draw_text +: {
                         text_style: REGULAR_TEXT {font_size: 10.0}
                     }

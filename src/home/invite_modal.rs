@@ -24,6 +24,8 @@ script_mod! {
                 color: #000
             }
             empty_text: "@user:example.org",
+            autocapitalize: None,
+            autocorrect: Disabled,
         }
 
         buttons_view := ModalButtonsRow {
