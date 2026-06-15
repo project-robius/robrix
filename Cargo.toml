@@ -114,12 +114,13 @@ robius-web-auth-session = { git = "https://github.com/project-robius/robius" }
 
 
 [features]
-default = ["hide_windows_console"]
+default = []
 ## Enables experimental support for using TSP wallets.
 tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding", "dep:reqwest"]
 
-## Hides the command prompt console on Windows. Enabled by default;
-## disable with `--no-default-features` if you need a console for a detached launch.
+## Hides the command prompt console/log window on Windows.
+## This is enabled automatically for packaged builds via cargo-packager
+## (see `build.rs`), but you can also enable it manually if desired.
 hide_windows_console = []
 
 ## Logs all diffs received by the Matrix RoomListService.
