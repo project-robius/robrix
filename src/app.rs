@@ -1003,8 +1003,8 @@ pub struct SavedDockState {
     pub dock_items: HashMap<LiveId, DockItem>,
     /// The rooms that are currently open, keyed by their room or space ID.
     pub open_rooms: HashMap<LiveId, SelectedRoom>,
-    /// The order in which the rooms were opened, in chronological order
-    /// from first opened (at the beginning) to last opened (at the end).
+    /// The order in which room/thread tabs were last viewed,
+    /// from oldest at the front to most recent at the end.
     pub room_order: Vec<SelectedRoom>,
     /// The selected room tab in this dock when the dock state was saved.
     pub selected_room: Option<SelectedRoom>,
