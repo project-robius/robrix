@@ -79,10 +79,6 @@ pub struct MainDesktopUI {
     #[rust]
     open_rooms: HashMap<LiveId, SelectedRoom>,
 
-    /// The tab that should be closed in the next draw event
-    #[rust]
-    tab_to_close: Option<LiveId>,
-
     /// The order in which room/thread tabs were last viewed,
     /// from oldest at the front to most recent at the end.
     #[rust]
@@ -153,6 +149,23 @@ impl MainDesktopUI {
         self.room_order.push(room.clone());
     }
 
+    /// Selects the tab for the given `room`, or the home tab if `None`.
+    ///
+    /// Updates the room order, current selection, and app state.
+    fn select_room(&mut self, cx: &mut Cx, room: Option<SelectedRoom>) {
+        let dock = self.view.dock(cx, ids!(dock));
+        if let Some(room) = room {
+            dock.select_tab(cx, room.tab_id());
+            self.mark_room_as_recent(&room);
+            cx.action(AppStateAction::RoomFocused(room.clone()));
+            self.most_recently_selected_room = Some(room);
+        } else {
+            dock.select_tab(cx, id!(home_tab));
+            cx.action(AppStateAction::FocusNone);
+            self.most_recently_selected_room = None;
+        }
+    }
+
     /// Focuses on a room if it is already open, otherwise creates a new tab for the room.
     fn focus_or_create_tab(&mut self, cx: &mut Cx, room: SelectedRoom) {
         // Do nothing if the room to select is already created and focused.
@@ -165,11 +178,10 @@ impl MainDesktopUI {
         // If the room is already open, select (jump to) its existing tab
         let room_tab_id = room.tab_id();
         if self.open_rooms.contains_key(&room_tab_id) {
-            dock.select_tab(cx, room_tab_id);
+            self.select_room(cx, Some(room));
             // Lazily initialize the tab's widget if it was deferred during dock restoration.
             self.init_tab_if_needed(cx, room_tab_id);
-            self.mark_room_as_recent(&room);
-            self.most_recently_selected_room = Some(room);
+            cx.action(MainDesktopUiAction::SaveDockIntoAppState);
             return;
         }
 
@@ -192,9 +204,8 @@ impl MainDesktopUI {
             Some(insert_after),
         );
 
-        // if the tab was created, set the room screen and add the room to the room order
+        // if the tab was created, set the room screen
         if let Some(new_widget) = new_tab_widget {
-            self.room_order.push(room.clone());
             match &room {
                 SelectedRoom::JoinedRoom { room_name_id }  => {
                     new_widget.as_room_screen().set_displayed_room(
@@ -224,12 +235,11 @@ impl MainDesktopUI {
                 }
             }
             cx.action(MainDesktopUiAction::SaveDockIntoAppState);
+            self.open_rooms.insert(room_tab_id, room.clone());
+            self.select_room(cx, Some(room));
         } else {
             error!("BUG: failed to create tab for {room:?}");
         }
-
-        self.open_rooms.insert(room_tab_id, room.clone());
-        self.most_recently_selected_room = Some(room);
     }
 
     /// Closes a tab in the dock and selects the next most recently viewed tab.
@@ -238,7 +248,6 @@ impl MainDesktopUI {
 
         let Some(room_being_closed) = self.open_rooms.get(&tab_id).cloned() else {
             dock.close_tab(cx, tab_id);
-            self.tab_to_close = None;
             self.init_all_visible_tabs(cx);
             return;
         };
@@ -252,21 +261,10 @@ impl MainDesktopUI {
         };
 
         dock.close_tab(cx, tab_id);
-        self.tab_to_close = None;
         self.open_rooms.remove(&tab_id);
 
         // Makepad's dock chooses an adjacent tab by itself, so we have to override that.
-        if let Some(rts) = room_to_select {
-            dock.select_tab(cx, rts.tab_id());
-            if is_active_tab {
-                cx.action(AppStateAction::RoomFocused(rts.clone()));
-            }
-            self.most_recently_selected_room = Some(rts);
-        } else {
-            dock.select_tab(cx, id!(home_tab));
-            cx.action(AppStateAction::FocusNone);
-            self.most_recently_selected_room = None;
-        }
+        self.select_room(cx, room_to_select);
 
         self.init_all_visible_tabs(cx);
     }
@@ -278,14 +276,10 @@ impl MainDesktopUI {
             dock.close_tab(cx, *tab_id);
         }
 
-        dock.select_tab(cx, id!(home_tab));
-        cx.action(AppStateAction::FocusNone);
-
         // Clear tab-related dock UI state.
         self.open_rooms.clear();
-        self.tab_to_close = None;
         self.room_order.clear();
-        self.most_recently_selected_room = None;
+        self.select_room(cx, None);
         cx.action(MainDesktopUiAction::SaveDockIntoAppState);
     }
 
@@ -539,20 +533,16 @@ impl WidgetMatchEvent for MainDesktopUI {
                 // Whenever a tab (except for the home_tab) is pressed, notify the app state.
                 DockAction::TabWasPressed(tab_id) => {
                     if tab_id == id!(home_tab) {
-                        cx.action(AppStateAction::FocusNone);
-                        self.most_recently_selected_room = None;
+                        self.select_room(cx, None);
                     }
                     else if let Some(selected_room) = self.open_rooms.get(&tab_id).cloned() {
-                        cx.action(AppStateAction::RoomFocused(selected_room.clone()));
-                        self.mark_room_as_recent(&selected_room);
-                        self.most_recently_selected_room = Some(selected_room);
+                        self.select_room(cx, Some(selected_room));
                     }
                     // Lazily initialize this tab's widget if it was deferred during dock restoration.
                     self.init_tab_if_needed(cx, tab_id);
                     should_save_dock_action = true;
                 }
                 DockAction::TabCloseWasPressed(tab_id) => {
-                    self.tab_to_close = Some(tab_id);
                     self.close_tab(cx, tab_id);
                     self.redraw(cx);
                     should_save_dock_action = true;
