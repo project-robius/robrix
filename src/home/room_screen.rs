@@ -34,7 +34,7 @@ use crate::{
     shared::{
         attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, media_source_mxc, start_attachment_download}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageStatus, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
-    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints}, utils::{self, ImageFormat, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
+    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints}, utils::{self, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -2751,6 +2751,9 @@ impl RoomScreen {
         self.hide_timeline();
         // Reset the the state of the inner loading pane.
         self.loading_pane(cx, ids!(loading_pane)).take_state();
+        // Reset the user profile sliding pane so a previous room's open profile
+        // pane doesn't remain shown when this RoomScreen is reused for a new room.
+        self.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane)).reset(cx);
 
         self.room_name_id = Some(room_name_id.clone());
         self.timeline_kind = Some(timeline_kind.clone());
@@ -3719,6 +3722,7 @@ fn populate_message_view(
                     } else {
                         let html_or_plaintext_ref =
                             item.html_or_plaintext(cx, ids!(content.message));
+                        item.link_preview(cx, ids!(content.link_preview_view)).clear(cx);
                         let is_location_fully_drawn = populate_location_message_content(
                             cx,
                             &html_or_plaintext_ref,
@@ -3747,6 +3751,7 @@ fn populate_message_view(
                     } else {
                         let html_or_plaintext_ref =
                             item.html_or_plaintext(cx, ids!(content.message));
+                        item.link_preview(cx, ids!(content.link_preview_view)).clear(cx);
                         new_drawn_status.content_drawn = populate_file_message_content(
                             cx,
                             &html_or_plaintext_ref,
@@ -3774,6 +3779,7 @@ fn populate_message_view(
                     } else {
                         let html_or_plaintext_ref =
                             item.html_or_plaintext(cx, ids!(content.message));
+                        item.link_preview(cx, ids!(content.link_preview_view)).clear(cx);
                         new_drawn_status.content_drawn = populate_audio_message_content(
                             cx,
                             &html_or_plaintext_ref,
@@ -3801,6 +3807,7 @@ fn populate_message_view(
                     } else {
                         let html_or_plaintext_ref =
                             item.html_or_plaintext(cx, ids!(content.message));
+                        item.link_preview(cx, ids!(content.link_preview_view)).clear(cx);
                         new_drawn_status.content_drawn = populate_video_message_content(
                             cx,
                             &html_or_plaintext_ref,
@@ -3853,6 +3860,7 @@ fn populate_message_view(
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
                     } else {
+                        item.link_preview(cx, ids!(content.link_preview_view)).clear(cx);
                         item.label(cx, ids!(content.message)).set_text(
                             cx,
                             &format!("[Unsupported {:?}]", msg_like_content.kind),
@@ -3917,6 +3925,8 @@ fn populate_message_view(
                 (item, true)
             } else {
                 let html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
+                // Redacted messages have no link preview; clear any stale one from a reused row.
+                item.link_preview(cx, ids!(content.link_preview_view)).clear(cx);
                 // Apply a smaller font size for redacted messages.
                 let mut html_widget = html_or_plaintext_ref.html(cx, ids!(html_view.html));
                 script_apply_eval!(cx, html_widget, {
@@ -3942,6 +3952,7 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
+                item.link_preview(cx, ids!(content.link_preview_view)).clear(cx);
                 item.label(cx, ids!(content.message)).set_text(
                     cx,
                     &format!("[Unsupported {:?}] ", other),
@@ -3957,9 +3968,13 @@ fn populate_message_view(
     // If we didn't use a cached item, we need to draw all other message content:
     // the reactions, the read receipts avatar row, the reply preview.
     if !used_cached_item {
+        // Redacted messages must never show reactions, even if the SDK still reports some.
+        let reactions = (!matches!(msg_like_content.kind, MsgLikeKind::Redacted))
+            .then(|| event_tl_item.content().reactions())
+            .flatten();
         item.reaction_list(cx, ids!(content.reaction_list)).set_list(
             cx,
-            event_tl_item.content().reactions(),
+            reactions,
             timeline_kind.clone(),
             timeline_event_id.clone(),
             item_id,
@@ -4077,12 +4092,13 @@ fn populate_message_view(
         item.timestamp(cx, ids!(profile.timestamp)).set_date_time(cx, dt);
     }
 
-    // Set the "edited" indicator if this message was edited.
+    // Set the "edited" indicator if this message was edited, otherwise hide it
+    // (this widget may be reused for a non-edited message at the same row).
+    let edited_indicator = item.edited_indicator(cx, ids!(profile.edited_indicator));
     if msg_like_content.as_message().is_some_and(|m| m.is_edited()) {
-        item.edited_indicator(cx, ids!(profile.edited_indicator)).set_latest_edit(
-            cx,
-            event_tl_item,
-        );
+        edited_indicator.set_latest_edit(cx, event_tl_item);
+    } else {
+        edited_indicator.hide(cx);
     }
 
     #[cfg(feature = "tsp")] {
@@ -4115,6 +4131,9 @@ fn populate_message_view(
             log!("TSP signature state for event {:?} is {:?}", event_tl_item.event_id(), tsp_sign_state);
             item.tsp_sign_indicator(cx, ids!(profile.tsp_sign_indicator))
                 .show_with_state(cx, tsp_sign_state);
+        } else {
+            // Hide the TSP indicator (in case we reused the message widget at this item index).
+            item.tsp_sign_indicator(cx, ids!(profile.tsp_sign_indicator)).hide(cx);
         }
     }
 
@@ -4236,13 +4255,17 @@ fn populate_image_message_content(
         .map(|info| (info.mimetype.as_deref(), info.width, info.height))
         .unwrap_or_default();
 
-    // If we have a known mimetype and it's not a static image,
-    // then show a message about it being unsupported (e.g., for animated gifs).
+    // If the mimetype is known but isn't an image format makepad can decode,
+    // show a message that it's unsupported.
     if let Some(mime) = mimetype.as_ref() {
-        if ImageFormat::from_mimetype(mime).is_none() {
+        if !utils::is_supported_image_mimetype(mime) {
             text_or_image_ref.show_text(
                 cx,
-                format!("{body}\nUnsupported type {mime:?}"),
+                format!("{}{}Unsupported type {:?}",
+                    body,
+                    if body.trim().is_empty() { "" } else { "\n" },
+                    mime,
+                ),
             );
             return true; // consider this as fully drawn
         }
@@ -4254,7 +4277,7 @@ fn populate_image_message_content(
         match media_cache.try_get_media_or_fetch(&media_source, MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
                 let show_image_result = text_or_image_ref.show_image(cx, Some(media_source), |cx, img| {
-                    utils::load_png_or_jpg(&img, cx, &data)
+                    utils::load_image(&img, cx, &data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
                 if let Err(e) = show_image_result {

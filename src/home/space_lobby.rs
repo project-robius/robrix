@@ -1152,7 +1152,7 @@ impl Widget for SpaceLobbyScreen {
             parent_avatar_ref.show_image(
                 cx,
                 None,
-                |cx, img| utils::load_png_or_jpg(&img, cx, data),
+                |cx, img| utils::load_image(&img, cx, data),
             ).is_err()
         }) {
             let first_char = self.space_name_id.as_ref().and_then(|sni| sni.name_for_avatar())
@@ -1182,6 +1182,7 @@ impl Widget for SpaceLobbyScreen {
                 let item = if self.is_loading && item_id == 0 {
                     let item = list.item(cx, item_id, id!(status_label));
                     item.child_by_path(ids!(label)).as_label().set_text(cx, "Loading rooms and spaces...");
+                    item.child_by_path(ids!(loading_spinner)).set_visible(cx, true);
                     item
                 }
                 // No entries found
@@ -1263,7 +1264,7 @@ impl Widget for SpaceLobbyScreen {
                                     drew_avatar = avatar_ref.show_image(
                                         cx,
                                         None,
-                                        |cx, img| utils::load_png_or_jpg(&img, cx, data),
+                                        |cx, img| utils::load_image(&img, cx, data),
                                     ).is_ok();
                                 }
                                 AvatarState::Known(Some(uri)) => {
@@ -1272,7 +1273,7 @@ impl Widget for SpaceLobbyScreen {
                                             drew_avatar = avatar_ref.show_image(
                                                 cx,
                                                 None,
-                                                |cx, img| utils::load_png_or_jpg(&img, cx, &data),
+                                                |cx, img| utils::load_image(&img, cx, &data),
                                             ).is_ok();
                                             info.avatar = AvatarState::Loaded(data);
                                         }

@@ -11,78 +11,32 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.TspVerificationModal = #(TspVerificationModal::register_widget(vm)) {
-        width: Fit
-        height: Fit
+    mod.widgets.TspVerificationModal = set_type_default() do #(TspVerificationModal::register_widget(vm)) {
+        ..mod.widgets.SmallModal
 
-        RoundedView {
-            flow: Down
-            width: 400
-            height: Fit
-            padding: Inset{top: 25, right: 30 bottom: 30 left: 45}
-            spacing: 10
+        title := ModalTitle {
+            text: "TSP Verification Request"
+        }
 
-            show_bg: true
-            draw_bg +: {
-                color: (COLOR_PRIMARY)
-                border_radius: 3.0
+        body := ModalBody {}
+
+        buttons_view := ModalButtonsRow {
+            margin: Inset{top: 30}
+
+            cancel_button := RobrixNegativeIconButton {
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                draw_icon.svg: (ICON_FORBIDDEN)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Ignore Request"
             }
 
-            title := View {
-                width: Fill,
-                height: Fit,
-                flow: Right
-                padding: Inset{top: 0, bottom: 40}
-                align: Align{x: 0.5, y: 0.0}
-
-                Label {
-                    text: "TSP Verification Request"
-                    draw_text +: {
-                        text_style: TITLE_TEXT {font_size: 13},
-                        color: #000
-                    }
-                }
-            }
-
-            body := View {
-                width: Fill,
-                height: Fit,
-                flow: Down,
-                spacing: 40,
-
-                prompt := Label {
-                    width: Fill
-                    flow: Flow.Right{wrap: true}
-                    draw_text +: {
-                        text_style: REGULAR_TEXT {
-                            font_size: 11.5,
-                        },
-                        color: #000
-                    }
-                }
-
-                View {
-                    width: Fill, height: Fit
-                    flow: Right,
-                    align: Align{x: 1.0, y: 0.5}
-                    spacing: 20
-
-                    cancel_button := RobrixNegativeIconButton {
-                        align: Align{x: 0.5, y: 0.5}
-                        padding: 15,
-                        draw_icon.svg: (ICON_FORBIDDEN)
-                        icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                        text: "Ignore Request"
-                    }
-
-                    accept_button := RobrixPositiveIconButton {
-                        align: Align{x: 0.5, y: 0.5}
-                        padding: 15,
-                        draw_icon.svg: (ICON_CHECKMARK)
-                        icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                        text: "Accept Request"
-                    }
-                }
+            accept_button := RobrixPositiveIconButton {
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                draw_icon.svg: (ICON_CHECKMARK)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Accept Request"
             }
         }
     }
@@ -175,7 +129,7 @@ impl WidgetMatchEvent for TspVerificationModal {
             return;
         }
 
-        let prompt_label = self.view.label(cx, ids!(prompt));
+        let prompt_label = self.view.label(cx, ids!(body));
         if accept_button.clicked(actions) {
             let current_state = std::mem::take(&mut self.state);
             let new_state: TspVerificationModalState;
@@ -268,11 +222,11 @@ impl WidgetMatchEvent for TspVerificationModal {
                 {
                     match result {
                         Ok(()) => {
-                            self.label(cx, ids!(prompt)).set_text(cx, "The TSP verification process has completed successfully.\n\nYou may now close this.");
+                            self.label(cx, ids!(body)).set_text(cx, "The TSP verification process has completed successfully.\n\nYou may now close this.");
                             self.state = TspVerificationModalState::RequestVerified;
                         }
                         Err(e) => {
-                            self.label(cx, ids!(prompt)).set_text(cx, &format!("Error: failed to complete the TSP verification process:\n\n{e}"));
+                            self.label(cx, ids!(body)).set_text(cx, &format!("Error: failed to complete the TSP verification process:\n\n{e}"));
                             self.state = TspVerificationModalState::RequestDeclined;
                         }
                     }
@@ -315,7 +269,7 @@ impl TspVerificationModal {
             details.responding_vid,
             details.responding_user_id,
         );
-        self.label(cx, ids!(prompt)).set_text(cx, &prompt_text);
+        self.label(cx, ids!(body)).set_text(cx, &prompt_text);
 
         let accept_button = self.button(cx, ids!(accept_button));
         let cancel_button = self.button(cx, ids!(cancel_button));

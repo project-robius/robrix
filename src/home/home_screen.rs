@@ -584,12 +584,8 @@ impl Widget for HomeScreen {
                 // Handle room selections. Desktop owns tab creation in MainDesktopUI,
                 // while mobile owns StackNavigation screen pushes here.
                 match action.as_widget_action().cast() {
-                    RoomsListAction::Selected(selected_room) => {
-                        if effective_is_desktop(cx) {
-                            app_state.selected_room = Some(selected_room);
-                        } else {
-                            self.push_selected_screen_view(cx, app_state, selected_room);
-                        }
+                    RoomsListAction::Selected(selected_room) if !effective_is_desktop(cx) => {
+                        self.push_selected_screen_view(cx, app_state, selected_room);
                     }
                     RoomsListAction::InviteAccepted { room_name_id } => {
                         cx.action(AppStateAction::UpgradedInviteToJoinedRoom(

@@ -1903,11 +1903,9 @@ async fn matrix_worker_task(
                         let content_type: Mime = file_data.mime_type.parse()
                             .unwrap_or(mime::APPLICATION_OCTET_STREAM);
 
-                        let image_dimensions = if content_type.type_() == mime::IMAGE {
-                            image::ImageReader::open(file_data.path())
-                                .ok()
-                                .and_then(|reader| reader.with_guessed_format().ok())
-                                .and_then(|reader| reader.into_dimensions().ok())
+                        let image_dimensions: Option<(u32, u32)> = if content_type.type_() == mime::IMAGE {
+                            crate::image_utils::read_image_dimensions(file_data.path())
+                                .map(|(w, h)| (w as u32, h as u32))
                         } else {
                             None
                         };

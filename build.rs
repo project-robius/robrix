@@ -1,4 +1,11 @@
 fn main() {
+    // Detect `cargo packager` builds using the `CARGO_PACKAGER_FORMAT` env var.
+    println!("cargo::rustc-check-cfg=cfg(packaging_build)");
+    println!("cargo:rerun-if-env-changed=CARGO_PACKAGER_FORMAT");
+    if std::env::var_os("CARGO_PACKAGER_FORMAT").is_some() {
+        println!("cargo:rustc-cfg=packaging_build");
+    }
+
     // Note: `#[cfg(windows)]` checks the *host* OS, not the *target*.
     // We must check the target env at runtime to avoid running this
     // when cross-compiling (e.g., building for Android on a Windows CI runner).

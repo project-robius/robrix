@@ -535,7 +535,7 @@ impl Widget for UserProfileSlidingPane {
         let avatar_ref = self.avatar(cx, ids!(avatar));
         info.avatar_state
             .data()
-            .and_then(|data| avatar_ref.show_image(cx, None, |cx, img| utils::load_png_or_jpg(&img, cx, data)).ok())
+            .and_then(|data| avatar_ref.show_image(cx, None, |cx, img| utils::load_image(&img, cx, data)).ok())
             .unwrap_or_else(|| avatar_ref.show_text(cx, None, None, info.displayable_name()));
 
         // Set the membership status and role in the room.
@@ -661,5 +661,19 @@ impl UserProfileSlidingPaneRef {
     pub fn show(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.show(cx);
+    }
+
+    /// Hides the pane immediately and clears its state without animating it out.
+    pub fn reset(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.visible = false;
+        inner.animator_cut(cx, ids!(panel.hide));
+        inner.is_animating_out = false;
+        inner.info = None;
+        inner.view(cx, ids!(bg_view)).set_visible(cx, false);
+        if cx.has_key_focus(inner.view.area()) {
+            cx.revert_key_focus();
+        }
+        inner.redraw(cx);
     }
 }

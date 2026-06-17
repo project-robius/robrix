@@ -141,6 +141,12 @@ impl TspSignIndicator {
         self.visible = true;
         self.redraw(cx);
     }
+
+    /// Hides this indicator, e.g., for a message that has no TSP signature.
+    pub fn hide(&mut self, cx: &mut Cx) {
+        self.visible = false;
+        self.redraw(cx);
+    }
 }
 
 impl TspSignIndicatorRef {
@@ -148,6 +154,13 @@ impl TspSignIndicatorRef {
     pub fn show_with_state(&self, cx: &mut Cx, state: TspSignState) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.show_with_state(cx, state);
+        }
+    }
+
+    /// See [`TspSignIndicator::hide()`].
+    pub fn hide(&self, cx: &mut Cx) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.hide(cx);
         }
     }
 }

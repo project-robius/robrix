@@ -260,6 +260,8 @@ script_mod! {
                     align: Align {y: 0.5}
                     padding: Inset{left: 8, right: 8, top: 5, bottom: 5}
                     empty_text: "100%"
+                    autocapitalize: None,
+                    autocorrect: Disabled,
                 }
 
                 ui_zoom_plus_button := RobrixNeutralIconButton {
@@ -341,6 +343,8 @@ script_mod! {
                     width: 60, height: Fit
                     padding: Inset{left: 8, right: 8, top: 5, bottom: 5}
                     empty_text: "300"
+                    autocapitalize: None,
+                    autocorrect: Disabled,
                     is_read_only: true
                 }
 
@@ -386,9 +390,10 @@ impl ScriptHook for AppSettings {
         if !apply.is_script_reapply() {
             return;
         }
-        let cx = vm.cx_mut();
-        let prefs = cx.global::<AppPreferencesGlobal>().0.clone();
-        Self::populate_safe(cx, &self.view, &prefs);
+        vm.with_cx_mut(|cx| {
+            let prefs = cx.global::<AppPreferencesGlobal>().0.clone();
+            Self::populate_safe(cx, &self.view, &prefs);
+        });
     }
 }
 

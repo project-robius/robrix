@@ -6,67 +6,22 @@ script_mod! {
 
 
     // A modal dialog that displays the status of a login attempt.
-    mod.widgets.LoginStatusModal = #(LoginStatusModal::register_widget(vm)) {
-        width: Fit,
-        height: Fit
-        align: Align{x: 0.5}
+    mod.widgets.LoginStatusModal = set_type_default() do #(LoginStatusModal::register_widget(vm)) {
+        ..mod.widgets.SmallModal
 
-        RoundedView {
-            width: 350
-            height: Fit,
-            flow: Down,
+        title := ModalTitle { text: "Login Status" }
+
+        body := ModalBody {
             align: Align{x: 0.5}
-            padding: 25,
-            spacing: 10,
+            margin: Inset{top: 5, bottom: 5}
+        }
 
-            show_bg: true
-            draw_bg +: {
-                color: #CCC
-                border_radius: 4.0
-            }
-
-            View {
-                width: Fill,
-                height: Fit,
-                flow: Right
-                padding: Inset{top: 0, bottom: 10}
-                align: Align{x: 0.5, y: 0.0}
-
-                title := Label {
-                    text: "Login Status"
-                    draw_text +: {
-                        text_style: TITLE_TEXT {font_size: 13},
-                        color: #000
-                    }
-                }
-            }
-
-            status := Label {
-                width: Fill
-                margin: Inset{top: 5, bottom: 5}
-                align: Align{x: 0.5, y: 0.0}
-                flow: Flow.Right{wrap: true}
-                draw_text +: {
-                    text_style: REGULAR_TEXT {
-                        font_size: 11.5,
-                    },
-                    color: #000
-                }
-            }
-
-            View {
-                width: Fill,
-                height: Fit,
-                flow: Right
-                align: Align{x: 1.0}
-                margin: Inset{top: 10}
-
-                button := RobrixIconButton {
-                    align: Align{x: 0.5, y: 0.5}
-                    width: Fit, height: Fit
-                    padding: 12
-                    text: "Cancel"
-                }
+        buttons_view := ModalButtonsRow {
+            button := RobrixIconButton {
+                align: Align{x: 0.5, y: 0.5}
+                width: Fit, height: Fit
+                padding: 12
+                text: "Cancel"
             }
         }
     }
@@ -127,7 +82,7 @@ impl LoginStatusModal {
 
     /// Sets the status text displayed in the body of the modal.
     fn set_status(&mut self, cx: &mut Cx, status: &str) {
-        self.label(cx, ids!(status)).set_text(cx, status);
+        self.label(cx, ids!(body)).set_text(cx, status);
     }
 
     /// Returns a reference to the modal's button, enabling you to set its properties.

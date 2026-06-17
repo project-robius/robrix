@@ -574,9 +574,9 @@ impl RoomInputBar {
         let (fg_color, bg_color) = if !enable {
             (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
         } else if self.is_encrypted {
-            (COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN)
-        } else {
             (COLOR_PRIMARY, COLOR_ACTIVE_PRIMARY)
+        } else {
+            (COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN)
         };
         script_apply_eval!(cx, send_message_button, {
             enabled: #(enable),
@@ -603,18 +603,18 @@ impl RoomInputBar {
     fn update_encryption_state(&mut self, cx: &mut Cx, is_encrypted: bool) {
         self.is_encrypted = is_encrypted;
 
-        // The send button is a "positive" green with a closed-lock badge when encrypted,
-        // and a standard button with an opened-lock badge when not encrypted.
+        // The send button is a blue "primary" button with a closed-lock badge when encrypted,
+        // and a "positive" green with an opened-lock badge when not encrypted.
         let mut send_message_button = self.view.button(cx, ids!(send_message_button));
         let empty_text: &str;
         if is_encrypted {
-            apply_positive_button_style(cx, &mut send_message_button);
+            apply_primary_button_style(cx, &mut send_message_button);
             script_apply_eval!(cx, send_message_button, {
                 draw_icon.svg: mod.widgets.ICON_SEND_ENCRYPTED,
             });
             empty_text = "Send encrypted message…";
         } else {
-            apply_primary_button_style(cx, &mut send_message_button);
+            apply_positive_button_style(cx, &mut send_message_button);
             script_apply_eval!(cx, send_message_button, {
                 draw_icon.svg: mod.widgets.ICON_SEND_UNENCRYPTED,
             });
