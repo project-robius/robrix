@@ -13,10 +13,10 @@ use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomI
 use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::clear_avatar_cache, room_preview_cache::clear_room_preview_cache, home::{
-        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
+        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states, invalidate_timeline_state}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, settings::app_preferences::{AppPreferences, UiZoom}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, settings::app_preferences::{AppPreferences, UiZoom}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -1086,6 +1086,29 @@ impl SelectedRoom {
             }
             other => LiveId::from_str(other.room_id().as_str()),
         }
+    }
+
+    /// Closes & cleans up the UI-side cached state and stops the backend async task
+    /// for this thread timeline (if it is one).
+    ///
+    /// Does nothing for non-thread room kinds (e.g., main room timelines).
+    ///
+    /// This should be called only when the RoomScreen showing this room thread
+    /// has been hidden (e.g., its tab was closed, or the user navigated back on mobile view mode),
+    /// but not when it's still reachable via the mobile nav stack or a saved desktop dock.
+    pub fn close_thread_timeline(&self, cx: &mut Cx) {
+        let SelectedRoom::Thread { room_name_id, thread_root_event_id } = self else { return };
+        let room_id = room_name_id.room_id().clone();
+        // Drop the stale UI cache so reopening rebuilds a fresh timeline instead of reusing
+        // a cache whose backend is about to be freed.
+        invalidate_timeline_state(cx, &TimelineKind::Thread {
+            room_id: room_id.clone(),
+            thread_root_event_id: thread_root_event_id.clone(),
+        });
+        submit_async_request(MatrixRequest::CloseThreadTimeline {
+            room_id,
+            thread_root_event_id: thread_root_event_id.clone(),
+        });
     }
 
     /// Returns the display name to be shown for this room in the UI.

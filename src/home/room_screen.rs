@@ -2459,7 +2459,7 @@ impl RoomScreen {
         let room_id = kind.room_id().clone();
         let owner = self.widget_uid();
 
-        let (mut tl_state, mut is_first_time_being_loaded) = match timeline_state_store::take(&kind, owner) {
+        let (mut tl_state, mut is_first_time_being_loaded) = match timeline_state_store::take(cx, &kind, owner) {
             timeline_state_store::TakeResult::Taken(existing) => (existing, false),
             timeline_state_store::TakeResult::AlreadyTaken { owner: current_owner } => {
                 error!("RoomScreen::show_timeline(): timeline {kind} is already taken by widget {current_owner:?}");
@@ -2529,7 +2529,7 @@ impl RoomScreen {
                     tombstone_info,
                     pending_downloads: SmallVec::new(),
                 };
-                timeline_state_store::mark_taken(&tl_state.kind, owner);
+                timeline_state_store::mark_taken(cx, &tl_state.kind, owner);
                 (tl_state, true)
             }
         };
@@ -3082,7 +3082,14 @@ mod timeline_state_store {
         /// and can be taken by another `RoomScreen` in the future.
         Stored(TimelineUiState),
         /// A `RoomScreen` is displaying this timeline, so it's not available.
-        Taken { owner: WidgetUid },
+        Taken {
+            /// The widget UID of the RoomScreen that is currently displaying this timeline.
+            owner: WidgetUid,
+            /// A flag indicating that this timeline's backend async task that handles
+            /// timeline sync & updates was closed while the timeline was still being shown.
+            /// See [`put_back()`] for more info. 
+            invalidated: bool,
+        },
     }
 
     /// Result of trying to take ownership of a timeline's UI state.
@@ -3104,15 +3111,15 @@ mod timeline_state_store {
     }
 
     /// Attempts to take ownership of the saved UI state for `kind`.
-    pub(super) fn take(kind: &TimelineKind, owner: WidgetUid) -> TakeResult {
+    pub(super) fn take(_cx: &mut Cx, kind: &TimelineKind, owner: WidgetUid) -> TakeResult {
         TIMELINE_STATES.with_borrow_mut(|states| {
             match states.remove(kind) {
                 Some(StateEntry::Stored(state)) => {
-                    states.insert(kind.clone(), StateEntry::Taken { owner });
+                    states.insert(kind.clone(), StateEntry::Taken { owner, invalidated: false });
                     TakeResult::Taken(state)
                 }
-                Some(StateEntry::Taken { owner: current_owner }) => {
-                    states.insert(kind.clone(), StateEntry::Taken { owner: current_owner });
+                Some(StateEntry::Taken { owner: current_owner, invalidated }) => {
+                    states.insert(kind.clone(), StateEntry::Taken { owner: current_owner, invalidated });
                     TakeResult::AlreadyTaken { owner: current_owner }
                 }
                 None => TakeResult::Missing,
@@ -3124,13 +3131,13 @@ mod timeline_state_store {
     ///
     /// This is only supposed to be used when a new timeline is created by taking
     /// the backend timeline endpoints.
-    pub(super) fn mark_taken(kind: &TimelineKind, owner: WidgetUid) {
+    pub(super) fn mark_taken(_cx: &mut Cx, kind: &TimelineKind, owner: WidgetUid) {
         TIMELINE_STATES.with_borrow_mut(|states| {
-            match states.insert(kind.clone(), StateEntry::Taken { owner }) {
+            match states.insert(kind.clone(), StateEntry::Taken { owner, invalidated: false }) {
                 Some(StateEntry::Stored(_)) => {
                     error!("RoomScreen::show_timeline(): timeline {kind} unexpectedly had a stored state while creating a new state");
                 }
-                Some(StateEntry::Taken { owner: current_owner }) if current_owner != owner => {
+                Some(StateEntry::Taken { owner: current_owner, .. }) if current_owner != owner => {
                     error!("RoomScreen::show_timeline(): timeline {kind} was already taken by widget {current_owner:?}, but widget {owner:?} created a new state");
                 }
                 Some(StateEntry::Taken { .. }) | None => {}
@@ -3140,12 +3147,21 @@ mod timeline_state_store {
 
     /// Puts a timeline's UI state back into the store after a `RoomScreen` hides it,
     /// which allows a future RoomScreen to take it again.
+    ///
+    /// Note: this function gets called from drop handlers so it can't take `&mut Cx`,
+    ///       but those drop handlers are only reachable from the main UI thread anyway.
     pub(super) fn put_back(owner: WidgetUid, state: TimelineUiState) {
         let kind = state.kind.clone();
         TIMELINE_STATES.with_borrow_mut(|states| {
             match states.remove(&kind) {
-                Some(StateEntry::Taken { owner: current_owner }) if current_owner == owner => {}
-                Some(StateEntry::Taken { owner: current_owner }) => {
+                Some(StateEntry::Taken { owner: current_owner, invalidated }) if current_owner == owner => {
+                    // If it was invalidated and we (the `owner`) was the RoomScreen currently showing it,
+                    // just return here to keep it removed from the TIMELINE_STATES.
+                    if invalidated {
+                        return;
+                    }
+                }
+                Some(StateEntry::Taken { owner: current_owner, .. }) => {
                     error!("RoomScreen::save_state(): timeline {kind} was put back by widget {owner:?}, but it was taken by widget {current_owner:?}");
                 }
                 Some(StateEntry::Stored(_)) => {
@@ -3163,9 +3179,28 @@ mod timeline_state_store {
     ///
     /// This is used when all timeline UI state is being reset globally, such as
     /// during logout or session teardown.
-    pub(super) fn clear_all() {
+    pub(super) fn clear_all(_cx: &mut Cx) {
         TIMELINE_STATES.with_borrow_mut(|states| {
             states.clear();
+        });
+    }
+
+    /// Marks the given timeline's cached UI state as invalidated because we closed/stopped
+    /// the corresponding backend async timeline sync loop task for it.
+    ///
+    /// This ensures that a new timeline (and async sync task) will be re-created for it
+    /// the next time that we want to show it.
+    pub(super) fn invalidate(_cx: &mut Cx, kind: &TimelineKind) {
+        TIMELINE_STATES.with_borrow_mut(|states| {
+            if let Some(StateEntry::Taken { invalidated, .. }) = states.get_mut(kind) {
+                // If this timeline is currently being shown (it was `Taken`), just set the flag
+                // so it'll be dropped (see `put_back()`) when it's hidden by the RoomScreen.
+                *invalidated = true;
+                return;
+            }
+
+            // Otherwise, if it's not being shown, just remove it now.
+            states.remove(kind);
         });
     }
 }
@@ -5431,9 +5466,15 @@ impl MessageRef {
 
 /// Clears all UI-related timeline states for all known rooms.
 ///
-/// This function requires passing in a reference to `Cx`,
-/// which isn't used, but acts as a guarantee that this function
-/// must only be called by the main UI thread. 
-pub fn clear_timeline_states(_cx: &mut Cx) {
-    timeline_state_store::clear_all();
+/// Takes `&mut Cx` (unused) to enforce that it's only called from the main UI thread.
+pub fn clear_timeline_states(cx: &mut Cx) {
+    timeline_state_store::clear_all(cx);
+}
+
+/// Invalidates the UI-side cached state for a timeline whose backend was just closed, so the
+/// next show rebuilds it instead of reusing the stale cache.
+///
+/// Takes `&mut Cx` (unused) to enforce that it's only called from the main UI thread.
+pub fn invalidate_timeline_state(cx: &mut Cx, kind: &TimelineKind) {
+    timeline_state_store::invalidate(cx, kind);
 }

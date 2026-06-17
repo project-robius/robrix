@@ -463,6 +463,11 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         thread_root_event_id: OwnedEventId,
     },
+    /// Request to stop a thread timeline's backend sync loop (e.g. for when its tab was closed).
+    CloseThreadTimeline {
+        room_id: OwnedRoomId,
+        thread_root_event_id: OwnedEventId,
+    },
     /// Request to knock on (request an invite to) the given room.
     Knock {
         room_or_alias_id: OwnedRoomOrAliasId,
@@ -982,6 +987,10 @@ async fn matrix_worker_task(
                             let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                                 return;
                             };
+                            if !room_info.pending_thread_timelines.remove(&thread_root_event_id) {
+                                log!("Thread-focused timeline for room {room_id}, thread {thread_root_event_id} was closed during creation; discarding it.");
+                                return;
+                            }
                             log!("Successfully created thread-focused timeline for room {room_id}, thread {thread_root_event_id}.");
                             let thread_timeline = Arc::new(thread_timeline);
                             let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
@@ -995,9 +1004,6 @@ async fn matrix_worker_task(
                                     Some(thread_root_event_id.clone()),
                                 )
                             );
-                            room_info
-                                .pending_thread_timelines
-                                .remove(&thread_root_event_id);
                             room_info.thread_timelines.insert(
                                 thread_root_event_id.clone(),
                                 PerTimelineDetails {
@@ -1028,6 +1034,20 @@ async fn matrix_worker_task(
                         }
                     }
                 });
+            }
+
+            MatrixRequest::CloseThreadTimeline { room_id, thread_root_event_id } => {
+                let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                    continue;
+                };
+                // Remove it from the pending set to handle the rare case where we showed the
+                // thread timeline but then quickly hid it before its backend task could finish being set up.
+                room_info.pending_thread_timelines.remove(&thread_root_event_id);
+                // Remove and drop the entry (see [`PerTimelineDetails::drop()`] to abort its async task.
+                if room_info.thread_timelines.remove(&thread_root_event_id).is_some() {
+                    log!("Closed thread timeline for room {room_id}, thread {thread_root_event_id}.");
+                }
             }
 
             MatrixRequest::Knock { room_or_alias_id, reason, server_names } => {
@@ -2386,6 +2406,11 @@ struct PerTimelineDetails {
     /// The async task that listens for updates for this timeline.
     timeline_subscriber_handler_task: JoinHandle<()>,
 }
+impl Drop for PerTimelineDetails {
+    fn drop(&mut self) {
+        self.timeline_subscriber_handler_task.abort();
+    }
+}
 
 struct JoinedRoomDetails {
     /// The room ID of this joined room.
@@ -2404,10 +2429,8 @@ struct JoinedRoomDetails {
 impl Drop for JoinedRoomDetails {
     fn drop(&mut self) {
         log!("Dropping JoinedRoomDetails for room {}", self.room_id);
-        self.main_timeline.timeline_subscriber_handler_task.abort();
-        for thread_timeline in self.thread_timelines.values() {
-            thread_timeline.timeline_subscriber_handler_task.abort();
-        }
+        // main_timeline and each thread_timelines entry abort their own task via
+        // PerTimelineDetails::Drop, so just tear down the room-level subscriptions here.
         drop(self.typing_notice_subscriber.take());
         drop(self.pinned_events_subscriber.take());
     }

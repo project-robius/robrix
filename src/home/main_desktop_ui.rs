@@ -247,10 +247,14 @@ impl MainDesktopUI {
         let dock = self.view.dock(cx, ids!(dock));
 
         let Some(room_being_closed) = self.open_rooms.get(&tab_id).cloned() else {
+            // This shouldn't happen (the tab should always be in the set of open rooms),
+            // but we still need to handle it gracefully.
             dock.close_tab(cx, tab_id);
             self.init_all_visible_tabs(cx);
             return;
         };
+        // If we're closing a thread timeline, free up its resources & bkgd async tasks.
+        room_being_closed.close_thread_timeline(cx);
         self.room_order.retain(|sr| sr != &room_being_closed);
 
         let is_active_tab = self.most_recently_selected_room.as_ref() == Some(&room_being_closed);
@@ -272,7 +276,8 @@ impl MainDesktopUI {
     /// Closes all tabs
     pub fn close_all_tabs(&mut self, cx: &mut Cx) {
         let dock = self.view.dock(cx, ids!(dock));
-        for tab_id in self.open_rooms.keys() {
+        for (tab_id, room) in self.open_rooms.iter() {
+            room.close_thread_timeline(cx);
             dock.close_tab(cx, *tab_id);
         }
 
