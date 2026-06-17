@@ -219,6 +219,10 @@ impl MainDesktopUI {
     fn close_tab(&mut self, cx: &mut Cx, tab_id: LiveId) {
         let dock = self.view.dock(cx, ids!(dock));
         if let Some(room_being_closed) = self.open_rooms.get(&tab_id) {
+            // Thread tab closing for good: free its timeline (no-op for a normal room). Space
+            // switching goes through save/load_dock_state_from instead, which keeps timelines
+            // around so the dock can be restored.
+            room_being_closed.close_thread_timeline(cx);
             self.room_order.retain(|sr| sr != room_being_closed);
 
             if self.open_rooms.len() > 1 {
@@ -254,7 +258,10 @@ impl MainDesktopUI {
     /// Closes all tabs
     pub fn close_all_tabs(&mut self, cx: &mut Cx) {
         let dock = self.view.dock(cx, ids!(dock));
-        for tab_id in self.open_rooms.keys() {
+        for (tab_id, room) in self.open_rooms.iter() {
+            // Free thread timelines too, like close_tab. Only hit during logout today (which
+            // clears ALL_JOINED_ROOMS anyway), but keeps things consistent if reused elsewhere.
+            room.close_thread_timeline(cx);
             dock.close_tab(cx, *tab_id);
         }
 
