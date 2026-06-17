@@ -277,7 +277,6 @@ impl MainDesktopUI {
     pub fn close_all_tabs(&mut self, cx: &mut Cx) {
         let dock = self.view.dock(cx, ids!(dock));
         for (tab_id, room) in self.open_rooms.iter() {
-            // Free thread timelines here too, like close_tab.
             room.close_thread_timeline(cx);
             dock.close_tab(cx, *tab_id);
         }

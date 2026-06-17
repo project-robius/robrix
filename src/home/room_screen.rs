@@ -3192,16 +3192,14 @@ mod timeline_state_store {
     /// the next time that we want to show it.
     pub(super) fn invalidate(_cx: &mut Cx, kind: &TimelineKind) {
         TIMELINE_STATES.with_borrow_mut(|states| {
-            match states.get_mut(kind) {
-                // If this timeline is currently being shown, just set the flag
+            if let Some(StateEntry::Taken { invalidated, .. }) = states.get_mut(kind) {
+                // If this timeline is currently being shown (it was `Taken`), just set the flag
                 // so it'll be dropped (see `put_back()`) when it's hidden by the RoomScreen.
-                Some(StateEntry::Taken { invalidated, .. }) => {
-                    *invalidated = true;
-                    return;
-                }
-                _ => {}
+                *invalidated = true;
+                return;
             }
-            // Otherwise, if it's not being shown, just remove it now
+
+            // Otherwise, if it's not being shown, just remove it now.
             states.remove(kind);
         });
     }
