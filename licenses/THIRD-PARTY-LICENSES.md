@@ -12,7 +12,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 
 | Crates | License | SPDX |
 |-------:|---------|------|
-| 518 | MIT License | `MIT` |
+| 519 | MIT License | `MIT` |
 | 22 | Apache License 2.0 | `Apache-2.0` |
 | 19 | Unicode License v3 | `Unicode-3.0` |
 | 12 | Mozilla Public License 2.0 | `MPL-2.0` |
@@ -396,6 +396,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `rmp` | 0.8.14 | MIT |
 | `rmp-serde` | 1.3.0 | MIT |
 | `robius-android-env` | 0.2.0 | MIT |
+| `robius-common` | 0.2.0 | MIT |
 | `robius-directories` | 6.0.0 | MIT OR Apache-2.0 |
 | `robius-file-picker` | 0.2.0 | MIT |
 | `robius-location` | 0.2.0 | MIT |
