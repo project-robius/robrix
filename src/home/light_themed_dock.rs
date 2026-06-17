@@ -149,9 +149,14 @@ script_mod! {
         draw_bg +: {
             // Light blue-ish color, de-saturated from COLOR_ACTIVE_PRIMARY
             color: #E1EEFA
+            color_2: #E1EEFA
             // A slightly darker shade of the tab color for hover visibility
             color_hover: #C8DDEF
-            color_active: COLOR_ACTIVE_PRIMARY
+            color_2_hover: #C8DDEF
+            // Active (selected) tabs are a deeper blue, with a vertical gradient
+            // to a slightly lighter blue.
+            color_active: #0660FE
+            color_2_active: #398CFE
             // Remove the border and rounded corners from the default Tab style
             border_size: 0.0
             border_radius: 3.0
