@@ -418,16 +418,23 @@ script_mod! {
     mod.widgets.ImageMessage = mod.widgets.Message {
         body +: {
             content +: {
-                message := TextOrImage {
-                    // Cap the height on the `Image` itself (not the outer view) so
-                    // that `ImageFit.Smallest` scales the texture proportionally
-                    // instead of the outer view just clipping the drawn pixels.
-                    image_view +: { image +: {
-                        height: (mod.widgets.IMG_MSG_FIT)
-                    } }
-                    default_image_view +: { image +: {
-                        height: (mod.widgets.IMG_MSG_FIT)
-                    } }
+                message := View {
+                    width: Fill, height: Fit,
+                    flow: Down,
+                    caption_view := View {
+                        visible: false,
+                        width: Fill, height: Fit,
+                        margin: Inset{ bottom: 5.0 }
+                        caption := HtmlOrPlaintext {}
+                    }
+                    image := TextOrImage {
+                        image_view +: { image +: {
+                            height: (mod.widgets.IMG_MSG_FIT)
+                        } }
+                        default_image_view +: { image +: {
+                            height: (mod.widgets.IMG_MSG_FIT)
+                        } }
+                    }
                 }
                 download_section := mod.widgets.MessageDownloadSection {}
                 View {
@@ -449,13 +456,23 @@ script_mod! {
     mod.widgets.CondensedImageMessage = mod.widgets.CondensedMessage {
         body +: {
             content +: {
-                message := TextOrImage {
-                    image_view +: { image +: {
-                        height: (mod.widgets.IMG_MSG_FIT)
-                    } }
-                    default_image_view +: { image +: {
-                        height: (mod.widgets.IMG_MSG_FIT)
-                    } }
+                message := View {
+                    width: Fill, height: Fit,
+                    flow: Down,
+                    caption_view := View {
+                        visible: false,
+                        width: Fill, height: Fit,
+                        margin: Inset{ bottom: 5.0 }
+                        caption := HtmlOrPlaintext {}
+                    }
+                    image := TextOrImage {
+                        image_view +: { image +: {
+                            height: (mod.widgets.IMG_MSG_FIT)
+                        } }
+                        default_image_view +: { image +: {
+                            height: (mod.widgets.IMG_MSG_FIT)
+                        } }
+                    }
                 }
                 download_section := mod.widgets.MessageDownloadSection {}
                 View {
@@ -851,7 +868,7 @@ impl Widget for RoomScreen {
                 }
 
                 // Handle an image within the message being clicked.
-                let content_message = wr.text_or_image(cx, ids!(content.message));
+                let content_message = wr.text_or_image(cx, ids!(content.message.image));
                 if let TextOrImageAction::Clicked(mxc_uri) = actions.find_widget_action(content_message.widget_uid()).cast() {
                     let texture = content_message.get_texture(cx);
                     self.handle_image_click(
@@ -3679,7 +3696,7 @@ fn populate_message_view(
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     let was_cached = existed && item_drawn_status.content_drawn;
-                    let text_or_image_ref = item.text_or_image(cx, ids!(content.message));
+                    let text_or_image_ref = item.text_or_image(cx, ids!(content.message.image));
                     let fallback = if was_cached {
                         // Cached path re-reads the status the widget already has.
                         matches!(text_or_image_ref.status(), TextOrImageStatus::Text)
@@ -3702,6 +3719,7 @@ fn populate_message_view(
                             DownloadKind::Image,
                         );
                         new_drawn_status.content_drawn = is_image_fully_drawn;
+                        populate_media_caption(cx, &item, image.formatted_caption(), image.caption());
                         fallback
                     };
                     download_info = fallback;
@@ -3881,7 +3899,7 @@ fn populate_message_view(
             let (item, existed) = list.item_with_existed(cx, item_id, template);
             let was_cached = existed && item_drawn_status.content_drawn;
 
-            let text_or_image_ref = item.text_or_image(cx, ids!(content.message));
+            let text_or_image_ref = item.text_or_image(cx, ids!(content.message.image));
             let media_source: MediaSource = source.clone().into();
             let filename = if body.is_empty() { "sticker".to_owned() } else { body.clone() };
             let size = info.size.map(u64::from);
@@ -3906,6 +3924,7 @@ fn populate_message_view(
                     DownloadKind::Image,
                 );
                 new_drawn_status.content_drawn = is_image_fully_drawn;
+                populate_media_caption(cx, &item, None, None);
                 fallback
             };
             (item, was_cached)
@@ -4205,6 +4224,32 @@ fn populate_text_message_content(
     } else {
         true
     }
+}
+
+
+/// Populates the caption (and makes its view visible) for the given message `item`.
+///
+/// Prefers the formatted caption (HTML), with an optional plaintext caption as fallback.
+fn populate_media_caption(
+    cx: &mut Cx,
+    item: &WidgetRef,
+    formatted_caption: Option<&FormattedBody>,
+    backup_caption: Option<&str>,
+) {
+    let caption_view = item.view(cx, ids!(content.message.caption_view));
+    let caption_ref = item.html_or_plaintext(cx, ids!(content.message.caption_view.caption));
+    let should_show = if let Some(fb) = formatted_caption
+        .filter(|fb| fb.format == MessageFormat::Html && !fb.body.trim().is_empty())
+    {
+        caption_ref.show_html(cx, &fb.body);
+        true
+    } else if let Some(text) = backup_caption.filter(|c| !c.trim().is_empty()) {
+        caption_ref.show_plaintext(cx, text);
+        true
+    } else {
+        false
+    };
+    caption_view.set_visible(cx, should_show);
 }
 
 /// Like `populate_image_message_content`, but also returns metadata
