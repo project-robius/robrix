@@ -21,7 +21,7 @@ use crate::{
         VerificationModalWidgetRefExt,
     }
 };
-use crate::shared::file_upload_modal::{FileUploadModalWidgetRefExt, FilePreviewerAction};
+use crate::shared::file_upload_modal::{FileUploadModalWidgetRefExt, FileUploadModalAction};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -298,19 +298,12 @@ impl MatchEvent for App {
                 // which will open the login_status_modal to show the failure message.
             }
 
-            // Handle file upload modal actions
-            match action.downcast_ref() {
-                Some(FilePreviewerAction::Show { upload }) => {
-                    self.ui.file_upload_modal(cx, ids!(file_upload_modal.content))
-                        .set_upload(cx, upload.clone());
-                    self.ui.modal(cx, ids!(file_upload_modal)).open(cx);
-                    continue;
-                }
-                Some(FilePreviewerAction::Hide) => {
-                    self.ui.modal(cx, ids!(file_upload_modal)).close(cx);
-                    continue;
-                }
-                _ => {}
+            // Handle actions for the file upload modal.
+            if let Some(action) = action.downcast_ref::<FileUploadModalAction>() {
+                let outer_modal = self.ui.modal(cx, ids!(file_upload_modal));
+                self.ui.file_upload_modal(cx, ids!(file_upload_modal.content))
+                    .handle_file_previewer_action(cx, outer_modal, action);
+                continue;
             }
 
             // Handle an action requesting to open the new message context menu.

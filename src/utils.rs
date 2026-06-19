@@ -106,6 +106,131 @@ pub fn load_image(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), ImageE
 }
 
 
+/// Returns a human-readable label for a file, e.g. "PNG image".
+pub fn file_type_label(mime_type: &str, is_text_preview: bool) -> &'static str {
+    let has_family = mime_type.starts_with("video/")
+        || mime_type.starts_with("audio/")
+        || mime_type.starts_with("image/")
+        || mime_type.starts_with("font/");
+    if is_text_preview && has_family {
+        "Text file"
+    } else {
+        display_file_type_label(mime_type)
+    }
+}
+
+fn display_file_type_label(mime_type: &str) -> &'static str {
+    let mime_type = mime_type
+        .split(';')
+        .next()
+        .unwrap_or(mime_type)
+        .trim()
+        .to_ascii_lowercase();
+
+    match mime_type.as_str() {
+        "text/plain" => "Plain text file",
+        "text/markdown" | "text/x-markdown" => "Markdown file",
+        "text/csv" => "CSV spreadsheet",
+        "text/html" => "HTML document",
+        "text/css" => "CSS stylesheet",
+        "text/javascript" | "application/javascript" | "application/x-javascript" => "JavaScript file",
+        "text/xml" | "application/xml" => "XML document",
+        "application/json" => "JSON file",
+        "application/pdf" => "PDF document",
+        "application/rtf" | "text/rtf" => "Rich text document",
+        "application/msword" |
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => "Word document",
+        "application/vnd.ms-excel" |
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => "Excel spreadsheet",
+        "application/vnd.ms-powerpoint" |
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation" => "PowerPoint presentation",
+        "application/zip" => "ZIP archive",
+        "application/x-tar" => "TAR archive",
+        "application/gzip" | "application/x-gzip" => "Gzip archive",
+        "application/x-bzip2" => "Bzip2 archive",
+        "application/x-7z-compressed" => "7-Zip archive",
+        "application/vnd.rar" | "application/x-rar-compressed" => "RAR archive",
+        "application/x-sh" => "Shell script",
+        "application/x-sql" => "SQL file",
+        "image/png" => "PNG image",
+        "image/jpeg" | "image/jpg" => "JPEG image",
+        "image/gif" => "GIF image",
+        "image/webp" => "WebP image",
+        "image/bmp" => "BMP image",
+        "image/svg+xml" => "SVG image",
+        "image/tiff" => "TIFF image",
+        "audio/mpeg" => "MP3 audio",
+        "audio/mp4" => "MPEG-4 audio",
+        "audio/wav" | "audio/x-wav" => "WAV audio",
+        "audio/ogg" => "Ogg audio",
+        "audio/flac" => "FLAC audio",
+        "video/mp4" => "MP4 video",
+        "video/webm" => "WebM video",
+        "video/quicktime" => "QuickTime video",
+        "video/x-msvideo" => "AVI video",
+        "font/ttf" | "font/otf" | "font/woff" | "font/woff2" => "Font file",
+        _ if mime_type.starts_with("text/") => "Text file",
+        _ if mime_type.starts_with("image/") => "Image file",
+        _ if mime_type.starts_with("audio/") => "Audio file",
+        _ if mime_type.starts_with("video/") => "Video file",
+        _ if mime_type.starts_with("font/") => "Font file",
+        _ => "File",
+    }
+}
+
+/// Returns true if the file path's extension indicates a code file.
+///
+/// Plain text, logs, CSVs, markdown, etc all return false.
+pub fn is_code_file(path: &std::path::Path) -> bool {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    matches!(
+        ext.as_str(),
+        "rs" | "py" | "pyi" | "js" | "mjs" | "cjs" | "jsx" | "ts" | "tsx" | "mts" | "cts"
+            | "json" | "json5" | "jsonc" | "html" | "htm" | "xhtml" | "xml" | "svg"
+            | "css" | "scss" | "sass" | "less" | "toml" | "yaml" | "yml" | "ini" | "cfg" | "conf"
+            | "c" | "h" | "cpp" | "cc" | "cxx" | "hpp" | "hh" | "hxx" | "java" | "kt" | "kts"
+            | "go" | "rb" | "php" | "pl" | "pm" | "lua" | "sh" | "bash" | "zsh" | "fish"
+            | "sql" | "swift" | "scala" | "groovy" | "clj" | "cljs" | "hs" | "ml" | "mli"
+            | "fs" | "fsx" | "r" | "jl" | "nim" | "zig" | "v" | "sol" | "dart" | "ex" | "exs"
+            | "erl" | "hrl" | "proto" | "graphql" | "gql" | "vue" | "svelte" | "astro"
+            | "gradle" | "cmake" | "mk" | "bat" | "cmd" | "ps1" | "psm1" | "tex" | "bib"
+    )
+}
+
+/// Returns true if `mime_type` could be a text-like format worth attempting a text preview for.
+pub fn mimetype_might_be_text(mime_type: &str, is_mime_guaranteed: bool) -> bool {
+    if !is_mime_guaranteed {
+        return true;
+    }
+    let mt = mime_type.split(';').next().unwrap_or(mime_type).trim().to_ascii_lowercase();
+    if mt.starts_with("text/") {
+        return true;
+    }
+    if mt.starts_with("image/")
+        || mt.starts_with("audio/")
+        || mt.starts_with("video/")
+        || mt.starts_with("font/")
+    {
+        return false;
+    }
+    if mt.ends_with("+json") || mt.ends_with("+xml") {
+        return true;
+    }
+    matches!(
+        mt.as_str(),
+        "application/json" | "application/ld+json" | "application/xml"
+            | "application/javascript" | "application/x-javascript" | "application/ecmascript"
+            | "application/x-sh" | "application/x-shellscript" | "application/x-python"
+            | "application/x-perl" | "application/x-ruby" | "application/x-php"
+            | "application/x-httpd-php" | "application/x-yaml" | "application/yaml"
+            | "application/toml" | "application/x-toml" | "application/sql"
+            | "application/x-sql" | "application/graphql" | "application/x-latex"
+            | "application/x-tex" | "application/manifest+json"
+            | "application/octet-stream" | ""
+    )
+}
+
+
 /// Parses a CSS-style hex color string into a `Vec4` with RGBA components in `[0.0, 1.0]`.
 ///
 /// Supports the following formats (with or without a leading `#`):
