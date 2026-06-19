@@ -17,7 +17,7 @@ pub struct AppPreferences {
     #[serde(default)]
     pub send_on_enter: bool,
     /// Max height of image thumbnails in the room timeline.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_thumbnail_max_height")]
     pub thumbnail_max_height: ThumbnailMaxHeight,
     /// UI-wide zoom level, which scaled the entire UI (not just text).
     #[serde(default)]
@@ -71,28 +71,15 @@ impl AppPreferences {
     /// which walks the widget tree with `Apply::ScriptReapply`. Each Image's
     /// `Size::script_apply` re-reads `max` from the shared `IMG_MSG_FIT`
     /// object and updates the widget's `walk.height`.
-    ///
-    /// For `ThumbnailMaxHeight::Unlimited` we set `max` to `nil`, which
-    /// `Option<FitBound>::script_apply` maps to `None` — i.e. `Fit{max: None}`,
-    /// truly unbounded.
     pub fn on_thumbnail_max_height_changed(&self, cx: &mut Cx) {
         cx.global::<AppPreferencesGlobal>().0.thumbnail_max_height = self.thumbnail_max_height;
-        match self.thumbnail_max_height.to_pixels() {
-            Some(px) => {
-                let px = px as f64;
-                // The `use mod.prelude.widgets.*` is required so `FitBound`
-                // resolves in runtime script scope.
-                script_eval!(cx, {
-                    use mod.prelude.widgets.*
-                    mod.widgets.IMG_MSG_FIT.max = FitBound.Abs(#(px))
-                });
-            }
-            None => {
-                script_eval!(cx, {
-                    mod.widgets.IMG_MSG_FIT.max = nil
-                });
-            }
-        }
+        let px = self.thumbnail_max_height.to_pixels() as f64;
+        // The `use mod.prelude.widgets.*` is required so `FitBound`
+        // resolves in runtime script scope.
+        script_eval!(cx, {
+            use mod.prelude.widgets.*
+            mod.widgets.IMG_MSG_FIT.max = FitBound.Abs(#(px))
+        });
 
         // Now that we've updated the `IMG_MSG_FIT.max` object in place,
         // we need to instruct every widget that uses this object to re-read
@@ -180,26 +167,36 @@ impl ViewModeOverride {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThumbnailMaxHeight {
     /// 200 pixels.
-    #[default]
     Small,
-    /// 400 pixels.
+    /// 300 pixels.
+    #[default]
     Medium,
-    /// No maximum height (not recommended).
-    Unlimited,
+    /// 400 pixels.
+    Large,
     /// A user-specified maximum height in pixels.
     Custom(u32),
 }
 
 impl ThumbnailMaxHeight {
-    /// Returns the max height in pixels, or `None` if unlimited.
-    pub fn to_pixels(&self) -> Option<u32> {
+    /// Returns the max height in pixels.
+    pub fn to_pixels(&self) -> u32 {
         match self {
-            Self::Small => Some(200),
-            Self::Medium => Some(400),
-            Self::Unlimited => None,
-            Self::Custom(v) => Some(*v),
+            Self::Small => 200,
+            Self::Medium => 300,
+            Self::Large => 400,
+            Self::Custom(v) => *v,
         }
     }
+}
+
+/// Tolerant deserializer: any value that doesn't match a current variant
+/// (e.g. the old `Unlimited`) falls back to the default instead of erroring.
+fn deserialize_thumbnail_max_height<'de, D>(deserializer: D) -> Result<ThumbnailMaxHeight, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -292,5 +289,44 @@ pub fn effective_is_desktop(cx: &mut Cx) -> bool {
         ViewModeOverride::Automatic => {
             cx.display_context.is_desktop() || !cx.display_context.is_screen_size_known()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_thumbnail_max_height {
+    use super::*;
+
+    fn parse_thumb(json_value: &str) -> ThumbnailMaxHeight {
+        let json = format!(r#"{{"thumbnail_max_height": {json_value}}}"#);
+        serde_json::from_str::<AppPreferences>(&json)
+            .expect("AppPreferences must never fail to deserialize")
+            .thumbnail_max_height
+    }
+
+    #[test]
+    fn current_variants_round_trip() {
+        assert_eq!(parse_thumb(r#""Small""#), ThumbnailMaxHeight::Small);
+        assert_eq!(parse_thumb(r#""Medium""#), ThumbnailMaxHeight::Medium);
+        assert_eq!(parse_thumb(r#""Large""#), ThumbnailMaxHeight::Large);
+        assert_eq!(parse_thumb(r#"{"Custom": 250}"#), ThumbnailMaxHeight::Custom(250));
+    }
+
+    #[test]
+    fn removed_unlimited_falls_back_to_default() {
+        assert_eq!(parse_thumb(r#""Unlimited""#), ThumbnailMaxHeight::default());
+    }
+
+    #[test]
+    fn malformed_values_fall_back_to_default_without_erroring() {
+        for bad in [r#""Nonsense""#, r#"{"Custom": "abc"}"#, "42", "null", "[]"] {
+            assert_eq!(parse_thumb(bad), ThumbnailMaxHeight::default());
+        }
+    }
+
+    #[test]
+    fn missing_field_uses_default() {
+        let prefs = serde_json::from_str::<AppPreferences>("{}").unwrap();
+        assert_eq!(prefs.thumbnail_max_height, ThumbnailMaxHeight::default());
+        assert_eq!(ThumbnailMaxHeight::default(), ThumbnailMaxHeight::Medium);
     }
 }

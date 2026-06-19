@@ -411,7 +411,7 @@ script_mod! {
     // make the mutation invisible to derived templates (e.g., the
     // `ImageMessage := mod.widgets.ImageMessage {}` local alias inside a
     // PortalList's `list`).
-    mod.widgets.IMG_MSG_FIT = Fit{max: FitBound.Abs(200.0)}
+    mod.widgets.IMG_MSG_FIT = Fit{max: FitBound.Abs(300.0)}
 
     // The view used for each static image-based message event in a room's timeline.
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
