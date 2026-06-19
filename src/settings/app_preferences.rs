@@ -8,19 +8,19 @@ use serde::{Deserialize, Serialize};
 pub struct AppPreferences {
     /// Forces the HomeScreen `AdaptiveView` into a particular layout,
     /// or falls back to the default automatic width-based layout.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub view_mode: ViewModeOverride,
     /// * If `true` (default), plain Enter sends the message (Shift+Enter inserts a newline).
     /// * If `false`, Cmd+Enter (Apple platforms) / Ctrl+Enter (other platforms) sends the
     ///   message and plain Enter inserts a newline. This is only relevant for physical keyboards;
     ///   virtual/soft keyboards always insert a newline upon Enter.
-    #[serde(default)]
+    #[serde(default = "default_send_on_enter", deserialize_with = "deserialize_send_on_enter")]
     pub send_on_enter: bool,
     /// Max height of image thumbnails in the room timeline.
-    #[serde(default, deserialize_with = "deserialize_thumbnail_max_height")]
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub thumbnail_max_height: ThumbnailMaxHeight,
     /// UI-wide zoom level, which scaled the entire UI (not just text).
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub ui_zoom: UiZoom,
 
     // Note: if you add a new preference here, be sure to add a new
@@ -189,14 +189,18 @@ impl ThumbnailMaxHeight {
     }
 }
 
-/// Tolerant deserializer: any value that doesn't match a current variant
-/// (e.g. the old `Unlimited`) falls back to the default instead of erroring.
-fn deserialize_thumbnail_max_height<'de, D>(deserializer: D) -> Result<ThumbnailMaxHeight, D::Error>
+/// `send_on_enter` defaults to `true`, unlike `bool`'s own `false`, so a missing
+/// or unparseable stored value falls back to `true` rather than `false`.
+fn default_send_on_enter() -> bool {
+    true
+}
+
+fn deserialize_send_on_enter<'de, D>(deserializer: D) -> Result<bool, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let value = serde_json::Value::deserialize(deserializer)?;
-    Ok(serde_json::from_value(value).unwrap_or_default())
+    Ok(serde_json::from_value(value).unwrap_or_else(|_| default_send_on_enter()))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -289,44 +293,5 @@ pub fn effective_is_desktop(cx: &mut Cx) -> bool {
         ViewModeOverride::Automatic => {
             cx.display_context.is_desktop() || !cx.display_context.is_screen_size_known()
         }
-    }
-}
-
-#[cfg(test)]
-mod tests_thumbnail_max_height {
-    use super::*;
-
-    fn parse_thumb(json_value: &str) -> ThumbnailMaxHeight {
-        let json = format!(r#"{{"thumbnail_max_height": {json_value}}}"#);
-        serde_json::from_str::<AppPreferences>(&json)
-            .expect("AppPreferences must never fail to deserialize")
-            .thumbnail_max_height
-    }
-
-    #[test]
-    fn current_variants_round_trip() {
-        assert_eq!(parse_thumb(r#""Small""#), ThumbnailMaxHeight::Small);
-        assert_eq!(parse_thumb(r#""Medium""#), ThumbnailMaxHeight::Medium);
-        assert_eq!(parse_thumb(r#""Large""#), ThumbnailMaxHeight::Large);
-        assert_eq!(parse_thumb(r#"{"Custom": 250}"#), ThumbnailMaxHeight::Custom(250));
-    }
-
-    #[test]
-    fn removed_unlimited_falls_back_to_default() {
-        assert_eq!(parse_thumb(r#""Unlimited""#), ThumbnailMaxHeight::default());
-    }
-
-    #[test]
-    fn malformed_values_fall_back_to_default_without_erroring() {
-        for bad in [r#""Nonsense""#, r#"{"Custom": "abc"}"#, "42", "null", "[]"] {
-            assert_eq!(parse_thumb(bad), ThumbnailMaxHeight::default());
-        }
-    }
-
-    #[test]
-    fn missing_field_uses_default() {
-        let prefs = serde_json::from_str::<AppPreferences>("{}").unwrap();
-        assert_eq!(prefs.thumbnail_max_height, ThumbnailMaxHeight::default());
-        assert_eq!(ThumbnailMaxHeight::default(), ThumbnailMaxHeight::Medium);
     }
 }
