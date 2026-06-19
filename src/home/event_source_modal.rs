@@ -179,37 +179,14 @@ script_mod! {
             // align the left side of the border frame with the left side of the room id / event id rows
             padding: 6
 
-            // The code editor content (drawn first, behind the overlay)
-            code_view := mod.widgets.CodeView {
+            // The code editor content (drawn first, behind the overlay).
+            code_view := mod.widgets.LightCodeView {
                 editor +: {
                     margin: 12,
                     width: Fill,
-                    height: Fit,
+                    height: Fit { max: 1500 }
                     word_wrap: true
-                    draw_bg +: { color: (COLOR_TRANSPARENT) }
                     draw_text +: { text_style +: { font_size: 11 } }
-
-                    // Light mode syntax highlighting (inspired by GitHub Light / VS Code Light+)
-                    token_colors +: {
-                        whitespace: #x6a737d,         // Gray for whitespace markers
-                        delimiter: #x24292e,          // Dark gray for punctuation
-                        delimiter_highlight: #x005cc5, // Blue for highlighted delimiters
-                        error_decoration: #xcb2431,   // Red for errors
-                        warning_decoration: #xb08800, // Dark yellow/amber for warnings
-
-                        unknown: #x24292e,            // Default dark text
-                        branch_keyword: #xd73a49,     // Red/pink for keywords (if, else, match)
-                        constant: #x005cc5,           // Blue for constants
-                        identifier: #x24292e,         // Dark gray for variables
-                        loop_keyword: #xd73a49,       // Red/pink for loop keywords
-                        number: #x005cc5,             // Blue for numbers
-                        other_keyword: #xd73a49,      // Red/pink for other keywords
-                        punctuator: #x24292e,         // Dark gray for punctuation
-                        string: #x22863a,             // Green for strings
-                        function: #x6f42c1,           // Purple for functions
-                        typename: #xe36209,           // Orange for types
-                        comment: #x6a737d,            // Gray for comments
-                    }
                 }
                 text: "<Unknown Event Source>"
             }
