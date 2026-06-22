@@ -967,6 +967,7 @@ impl App {
 pub struct AppState {
     /// The currently-selected room, which is highlighted (selected) in the RoomsList
     /// and considered "active" in the main rooms screen.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub selected_room: Option<SelectedRoom>,
     /// The currently-selected navigation tab: defines which top-level view is shown.
     ///
@@ -978,14 +979,17 @@ pub struct AppState {
     #[serde(skip)]
     pub selected_tab: SelectedTab,
     /// The saved "snapshot" of the dock's UI layout/state for the main "all rooms" home view.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub saved_dock_state_home: SavedDockState,
     /// The saved "snapshot" of the dock's UI layout/state for each space,
     /// keyed by the space ID.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub saved_dock_state_per_space: HashMap<OwnedRoomId, SavedDockState>,
     /// Whether a user is currently logged in to Robrix or not.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub logged_in: bool,
     /// App-wide user preferences/settings.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub app_prefs: AppPreferences,
 }
 

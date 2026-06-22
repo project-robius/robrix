@@ -22,6 +22,15 @@ pub fn format_decimal_file_size(bytes: u64) -> String {
     bytesize::ByteSize::b(bytes).display().si().to_string().to_uppercase()
 }
 
+pub fn deserialize_or_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned + Default,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
 
 /// A wrapper type that implements the `Debug` trait for non-`Debug` types.
 pub struct DebugWrapper<T>(T);
