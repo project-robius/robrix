@@ -189,8 +189,7 @@ impl ThumbnailMaxHeight {
     }
 }
 
-/// `send_on_enter` defaults to `true`, unlike `bool`'s own `false`, so a missing
-/// or unparseable stored value falls back to `true` rather than `false`.
+/// `send_on_enter` defaults to `true`, unlike the typical `false` bool value.
 fn default_send_on_enter() -> bool {
     true
 }
