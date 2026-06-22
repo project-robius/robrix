@@ -25,14 +25,6 @@ const SHOW_UI_DURATION: f64 = 3.0;
 /// Duration of one 90° rotation spin, in seconds (matches the DSL const).
 const ROTATION_ANIMATION_DURATION_SECS: f64 = 0.2;
 
-/// Decodes the given image `data` into an `ImageBuffer`, auto-detecting any
-/// image format that makepad supports.
-///
-/// Returns an error if the format is unsupported or decoding fails.
-pub fn get_image_buffer(data: Vec<u8>) -> Result<ImageBuffer, ImageError> {
-    decode_image_from_data(&data)
-}
-
 /// Configuration for zoom and pan settings in the image viewer.
 #[derive(Clone, Debug)]
 pub struct ImageViewerZoomConfig {
@@ -193,8 +185,7 @@ script_mod! {
 
         metadata_view := View {
             width: Fill, height: Fill,
-            // Placeholder. Real values are set in Rust via `script_apply_eval!`
-            // during `draw_walk`, since the slide animation writes here too.
+            // placeholder values: real values are set in Rust code, see `draw_walk`.
             margin: Inset{top: 20, left: 20, right: 20, bottom: 20}
             align: Align{x: 0.0, y: 1.0},
             metadata_rounded_view := RoundedView {
@@ -404,9 +395,12 @@ struct ImageViewer {
     /// Whether the full image file has been loaded
     #[rust] is_loaded: bool,
     /// The size of the image container.
-    ///
-    /// Used to compute the necessary width and height for the full screen image.
     #[rust] image_container_size: DVec2,
+    /// Set when a `WindowAction::WindowGeomChange` arrives (resize/rotation),
+    /// which gets handled on the next `draw_walk`.
+    #[rust] needs_refit: bool,
+    /// Used to trigger a NextFrame event to re-fit the image instead of doing it mid-draw.
+    #[rust] refit_next_frame: NextFrame,
     /// The texture containing the loaded image
     #[rust] texture: Option<Texture>,
     /// The event to trigger displaying with the loaded image after peek_walk_turtle of the widget.
@@ -451,14 +445,6 @@ impl Widget for ImageViewer {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
         self.match_event(cx, event);
-
-        // Handle the app window being resized: re-fit for the new container.
-        // `display_current_image` re-lays out at the current angle and zoom; the
-        // pan margin persists on the widget, so zoom/pan are retained.
-        if matches!(event, Event::WindowGeomChange(_)) {
-            self.image_container_size = self.view.area().rect(cx).size;
-            self.display_current_image(cx);
-        }
 
         // Handle hover events for UI overlay elements.
         // Only hit-test these when the overlay is visible; when hidden, their areas
@@ -642,6 +628,9 @@ impl Widget for ImageViewer {
         if self.next_frame.is_event(event).is_some() {
             self.display_current_image(cx);
         }
+        if self.refit_next_frame.is_event(event).is_some() {
+            self.apply_rotation_frame(cx);
+        }
         if let Some(ne) = self.rotation_next_frame.is_event(event) {
             self.advance_rotation(cx, ne.time);
         }
@@ -659,19 +648,23 @@ impl Widget for ImageViewer {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if self.image_container_size.length() == 0.0 {
-            let rect = cx.peek_walk_turtle(walk);
-            self.image_container_size = rect.size;
-            self.next_frame = cx.new_next_frame();
+        // Handle a changed (or unknown/first) image container size 
+        let is_first = self.image_container_size.length() == 0.0;
+        if is_first || self.needs_refit {
+            self.needs_refit = false;
+            let container = cx.peek_walk_turtle(walk).size;
+            if container.x > 0.0 && container.y > 0.0 {
+                self.image_container_size = container;
+                if is_first {
+                    self.next_frame = cx.new_next_frame();
+                } else {
+                    self.refit_next_frame = cx.new_next_frame();
+                }
+            }
         }
 
-        // Position the overlays from the animated `ui_overlay_slide`.
-        // 0.0 = fully visible, 1.0 = fully off-screen.
-        //
-        // Visible-state margin is `max(20.0, safe_inset)` so the overlays
-        // clear cutouts. Has to be done in Rust cuz Modal bypasses the
-        // window body's padding, and `script_apply_eval!` overrides the
-        // DSL values every draw anyway.
+        // Position the overlays based on the animated `ui_overlay_slide` value,
+        // in which 0.0 means fully visible and 1.0 means fully off-screen.
         let slide = self.ui_overlay_slide as f64;
         let insets = cx.display_context.safe_area_insets;
         let button_top_visible = 20.0_f64.max(insets.top);
@@ -702,6 +695,15 @@ impl Widget for ImageViewer {
 
 impl MatchEvent for ImageViewer {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        for action in actions {
+            // Handle any changes to the window size / rotation orientation.
+            if let WindowAction::WindowGeomChange(_) = action.as_widget_action().cast() {
+                self.needs_refit = true;
+                self.view.redraw(cx);
+                break;
+            }
+        }
+
         if self.view.button(cx, ids!(close_button)).clicked(actions) {
             self.reset(cx);
             cx.action(ImageViewerAction::Hide);
@@ -856,7 +858,7 @@ impl ImageViewer {
     /// Displays an image in the image viewer widget.
     ///
     /// The image is displayed in the center of the widget. If the image is larger than the widget, it is scaled down to fit the widget while retaining its aspect ratio.
-    pub fn show_loaded(&mut self, cx: &mut Cx, image_bytes: &[u8]) {
+    pub fn show_loaded(&mut self, cx: &mut Cx, image_bytes: &Arc<[u8]>) {
         if self.receiver.is_some() {
             return;
         }
@@ -882,9 +884,9 @@ impl ImageViewer {
         }
         let (sender, receiver) = std::sync::mpsc::channel();
         self.receiver = Some((self.background_task_id, receiver));
-        let image_bytes_clone = image_bytes.to_vec();
+        let image_bytes2 = Arc::clone(image_bytes);
         cx.spawn_thread(move || {
-            let _ = sender.send(get_image_buffer(image_bytes_clone));
+            let _ = sender.send(decode_image_from_data(&image_bytes2));
             SignalToUI::set_ui_signal();
         });
         self.show_overlay_ui(cx, true);
@@ -924,10 +926,6 @@ impl ImageViewer {
         self.apply_rotation_frame(cx);
     }
 
-    /// Lays the image out for the current rotation angle: the on-screen frame is
-    /// the rotated bounding box (fit to the viewport and the current zoom), and
-    /// the shader is told the image's own pixel size so it rotates *rigidly* —
-    /// a non-square image keeps its correct aspect ratio at every angle.
     fn apply_rotation_frame(&mut self, cx: &mut Cx) {
         let (w, h) = (self.natural_dimension.x, self.natural_dimension.y);
         if w <= 0.0 || h <= 0.0 || self.image_container_size.length() == 0.0 {
@@ -948,31 +946,34 @@ impl ImageViewer {
         let angle = self.current_angle;
         let mut rotated_image = self.view.image(cx, ids!(rotated_image));
         script_apply_eval!(cx, rotated_image, {
-            width: #(frame_w),
-            height: #(frame_h),
             draw_bg +: {
                 rotation: #(angle),
                 image_dim_w: #(image_w),
                 image_dim_h: #(image_h),
             }
         });
+        if let Some(mut img) = rotated_image.borrow_mut() {
+            img.walk.width = Size::Fixed(frame_w);
+            img.walk.height = Size::Fixed(frame_h);
+        }
+        rotated_image.redraw(cx);
     }
 
-    /// Starts an animated rigid rotation by `delta_deg` (±90°), unless one is
-    /// already running. The spin itself is driven per frame in `handle_event`.
-    fn start_rotation(&mut self, cx: &mut Cx, delta_deg: f64) {
+    /// Starts a rotation animation, with a target of `deg` additional degrees beyond the current rotation.
+    fn start_rotation(&mut self, cx: &mut Cx, deg: f64) {
         if self.is_animating_rotation || self.natural_dimension.x <= 0.0 {
             return;
         }
         self.is_animating_rotation = true;
         self.rotation_anim_from = self.current_angle;
-        self.rotation_target_angle = self.current_angle + delta_deg;
+        self.rotation_target_angle = self.current_angle + deg;
         self.rotation_anim_start_time = None;
         self.rotation_next_frame = cx.new_next_frame();
     }
 
-    /// Advances the rigid rotation animation by one frame. Returns true while the
-    /// animation is still running.
+    /// Advances the rotation animation by one frame.
+    ///
+    /// Returns true while the animation is still running.
     fn advance_rotation(&mut self, cx: &mut Cx, now: f64) {
         let start = *self.rotation_anim_start_time.get_or_insert(now);
         let t = ((now - start) / ROTATION_ANIMATION_DURATION_SECS).clamp(0.0, 1.0);
@@ -989,7 +990,7 @@ impl ImageViewer {
         self.apply_rotation_frame(cx);
     }
 
-    /// Adjust the zoom level of the image viewer based on the provided zoom factor.
+    /// Adjust the zoom level of the image viewer based on the given zoom factor.
     fn adjust_zoom(&mut self, cx: &mut Cx, zoom_factor: f64) {
         let target_zoom = (self.drag_state.zoom_level * zoom_factor).max(self.config.min_zoom);
         self.drag_state.zoom_level = (target_zoom * 1000.0).round() / 1000.0;
@@ -1120,7 +1121,7 @@ impl ImageViewerRef {
     }
 
     /// See [`ImageViewer::show_loaded()`].
-    pub fn show_loaded(&mut self, cx: &mut Cx, image_bytes: &[u8]) {
+    pub fn show_loaded(&mut self, cx: &mut Cx, image_bytes: &Arc<[u8]>) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.show_loaded(cx, image_bytes)
     }

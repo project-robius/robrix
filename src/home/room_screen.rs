@@ -398,19 +398,10 @@ script_mod! {
         }
     }
 
-    // A single, shared `Size::Fit{max: ...}` object on the script heap,
-    // referenced by every `Image` widget inside an `ImageMessage` /
-    // `CondensedImageMessage`. Having one heap object instead of many
-    // lets the "Maximum Image Thumbnail Height" App Setting mutate just
-    // this object's `max` field at runtime (see
-    // `AppPreferences::on_thumbnail_max_height_changed`) — every widget
-    // whose `walk.height` referenced this object observes the change
-    // through the same heap object on the next `Event::ScriptReapply`.
-    //
-    // This sidesteps the override-chain divergence that would otherwise
-    // make the mutation invisible to derived templates (e.g., the
-    // `ImageMessage := mod.widgets.ImageMessage {}` local alias inside a
-    // PortalList's `list`).
+    // A single shared object on the script heap of type `Size::Fit{max: ...}`,
+    // which is used for the max image thumbnail height for every `Image` widget
+    // within a message widget.
+    // Also see: `AppPreferences::on_thumbnail_max_height_changed`).
     mod.widgets.IMG_MSG_FIT = Fit{max: FitBound.Abs(300.0)}
 
     // The view used for each static image-based message event in a room's timeline.
