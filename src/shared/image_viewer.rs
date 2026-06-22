@@ -959,7 +959,7 @@ impl ImageViewer {
         rotated_image.redraw(cx);
     }
 
-    /// Starts a rotation animation, with a final target of `deg` additional degress.
+    /// Starts a rotation animation, with a target of `deg` additional degrees beyond the current rotation.
     fn start_rotation(&mut self, cx: &mut Cx, deg: f64) {
         if self.is_animating_rotation || self.natural_dimension.x <= 0.0 {
             return;
