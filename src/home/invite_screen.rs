@@ -165,7 +165,7 @@ script_mod! {
             accept_button := RobrixPositiveIconButton {
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
-                draw_icon.svg: (ICON_CHECKMARK)
+                draw_icon.svg: (ICON_JOIN_ROOM)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                 text: "Join Room"
             }
@@ -461,6 +461,9 @@ impl Widget for InviteScreen {
                 accept_button.set_enabled(cx, true);
                 cancel_button.set_text(cx, "Reject Invite");
                 accept_button.set_text(cx, "Join Room");
+                script_apply_eval!(cx, accept_button, {
+                    draw_icon.svg: mod.widgets.ICON_JOIN_ROOM,
+                });
             }
             InviteState::WaitingForJoinResult => {
                 cancel_button.set_enabled(cx, false);
@@ -478,7 +481,11 @@ impl Widget for InviteScreen {
                 cancel_button.set_enabled(cx, false);
                 accept_button.set_enabled(cx, false);
                 cancel_button.set_text(cx, "Reject Invite");
-                accept_button.set_text(cx, "Joined!");
+                accept_button.set_text(cx, "✅ Joined!");
+                script_apply_eval!(cx, accept_button, {
+                    draw_icon.svg: mod.widgets.ICON_CHECKMARK,
+                    draw_icon.color: (COLOR_FG_ACCEPT_GREEN),
+                });
             }
             InviteState::RoomLeft => {
                 cancel_button.set_visible(cx, false);
