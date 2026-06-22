@@ -184,7 +184,7 @@ script_mod! {
                 editor +: {
                     margin: 12,
                     width: Fill,
-                    height: Fit { max: 1500 }
+                    height: Fit { max: FitBound.Abs(1500.0) }
                     word_wrap: true
                     draw_text +: { text_style +: { font_size: 11 } }
                 }
