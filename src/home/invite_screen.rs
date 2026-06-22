@@ -454,7 +454,7 @@ impl Widget for InviteScreen {
 
         // Third, set the buttons' text based on the invite state.
         let cancel_button = self.view.button(cx, ids!(cancel_button));
-        let accept_button = self.view.button(cx, ids!(accept_button));
+        let mut accept_button = self.view.button(cx, ids!(accept_button));
         match self.invite_state {
             InviteState::WaitingOnUserInput => {
                 cancel_button.set_enabled(cx, true);
