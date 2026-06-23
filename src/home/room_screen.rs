@@ -618,6 +618,7 @@ script_mod! {
         height: Fill,
         align: Align{x: 0.5, y: 0.0} // center horizontally, align to top vertically
         flow: Overlay,
+        new_batch: true
 
         list := PortalList {
             height: Fill,

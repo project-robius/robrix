@@ -511,8 +511,10 @@ impl From<MediaThumbnailSettingsConst> for MediaThumbnailSettings {
 pub const AVATAR_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
     MediaThumbnailSettingsConst {
         method: Method::Scale,
-        width: 40,
-        height: 40,
+        // while we typically show avatars at around 40x40,
+        // fetching a higher quality one is needed for good downscaling.
+        width: 192,
+        height: 192,
         animated: false,
     }
 );

@@ -35,6 +35,7 @@ script_mod! {
         width: Fill,
         height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
         flow: Down,
+        new_batch: true
 
         // These margins are a hack to make the borders of the RoomInputBar
         // line up with the boundaries of its parent widgets.

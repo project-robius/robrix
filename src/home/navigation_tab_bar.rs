@@ -140,8 +140,8 @@ script_mod! {
             margin: 0,
             icon_walk: Walk {
                 margin: 0,
-                width: 30,
-                height: 30
+                width: 27,
+                height: 27
             }
             draw_icon +: {
                 color: (COLOR_NAVIGATION_TAB_FG)
@@ -173,6 +173,7 @@ script_mod! {
 
     mod.widgets.NavigationTabBar = #(NavigationTabBar::register_widget(vm)) {
         Desktop := RoundedView {
+            new_batch: true,
             flow: Down,
             align: Align{x: 0.5}
             padding: Inset{
@@ -206,6 +207,7 @@ script_mod! {
         }
 
         Mobile := RoundedView {
+            new_batch: true,
             flow: Right
             align: Align{x: 0.5, y: 0.5}
             width: Fill,

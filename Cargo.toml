@@ -181,8 +181,8 @@ winresource = "0.1"
 all-features = true
 
 [profile.release]
-debug = false
-strip = "symbols"
+debug = true
+# strip = "symbols"
 
 ## An optimized profile for development, with full debug info and assertions.
 [profile.debug-opt]
