@@ -20,7 +20,6 @@ metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "gl_sampling_fallback", features = ["serde"] }
 makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "gl_sampling_fallback" }
 
-
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
 robius-use-makepad = "0.1.1"
 robius-directories = { git = "https://github.com/project-robius/robius" }
