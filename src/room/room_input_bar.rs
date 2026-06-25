@@ -1021,6 +1021,7 @@ pub struct RoomInputBarState {
 }
 
 /// Defines what to do when showing the `EditingPane` from the `RoomInputBar`.
+#[allow(clippy::large_enum_variant)]
 enum ShowEditingPaneBehavior {
     /// Show a new edit session, e.g., when first clicking "edit" on a message.
     ShowNew {
