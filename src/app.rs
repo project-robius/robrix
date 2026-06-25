@@ -44,11 +44,10 @@ script_mod! {
                 }
 
                 body +: {
-                    // Only TOP is applied here, since top is shared by every screen
-                    // and no bar owns it. Bottom/left/right are delegated to whatever
-                    // content touches those edges (NavigationTabBar, page content),
-                    // so bar backgrounds fill the inset strip instead of leaving
-                    // a bare clear-color band.
+                    // Only the top part of safe area inset padding is applied here,
+                    // since we don't have any bar or anything on the top.
+                    // The other sides are handled by widgets that might draw in those areas,
+                    // like the NavigationTabBar or room screen content.
                     padding: Inset{
                         top: (mod.widgets.SAFE_INSET_PAD_TOP),
                         bottom: 0,
@@ -77,6 +76,10 @@ script_mod! {
                             content := ImageViewer {}
                         }
                         
+                        // The popup that lets the user select users to mention, rooms to link,
+                        // or a slash command to run (via kbd triggers like '@', '#', '/').
+                        mention_popup := MentionablePopup { }
+
                         // Context menus should be shown in front of other UI elements,
                         // but behind verification modals.
                         new_message_context_menu := NewMessageContextMenu { }
@@ -167,10 +170,11 @@ impl ScriptHook for App {
         });
     }
 
-    /// After initial creation, set the global singleton for the PopupList widget.
+    /// After initial creation, set the global singletons for app-level shared widgets. (the PopupList and the mention autocomplete popup).
     fn on_after_new(&mut self, vm: &mut ScriptVm) {
         vm.with_cx_mut(|cx| {
             crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
+            crate::shared::mention_popup::set_global_mention_popup(cx, &self.ui);
         });
     }
 }

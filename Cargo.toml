@@ -17,8 +17,8 @@ metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 # makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
 # makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "image_orientation", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "image_orientation" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "text_input_expose_caret_cursor_position", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "text_input_expose_caret_cursor_position" }
 
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
@@ -43,7 +43,7 @@ futures = "0.3"
 imbl = { version = "6.1.0", features = ["serde"] } # same as matrix-sdk-ui
 futures-util = "0.3"
 hashbrown = { version = "0.16", features = ["raw-entry"] }
-htmlize = "1.0.5"
+htmlize = { version = "1.0.5", features = ["unescape"] }
 indexmap = "2.6.0"
 libc = "0.2"
 mime = "0.3"
