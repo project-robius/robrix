@@ -634,7 +634,7 @@ async fn space_room_list_loop(
     // The set of subspaces within this `space_id` that are already known to us.
     let mut known_subspaces = HashSet::new();
 
-    let (mut all_rooms_in_space, mut space_room_stream) = space_room_list.subscribe_to_room_updates();
+    let (mut all_rooms_in_space, mut space_room_stream) = space_room_list.subscribe_to_room_updates().await;
     handle_subspaces(&space_id, &parent_chain, &mut known_subspaces, all_rooms_in_space.iter(), &request_sender);
 
     // A tuple of: the latest `(direct child rooms, and direct subspaces)` within this space.

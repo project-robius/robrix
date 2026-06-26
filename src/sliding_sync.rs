@@ -3781,7 +3781,7 @@ fn handle_load_app_state(user_id: OwnedUserId) {
 
 /// Returns `true` if the given sync service error is due to an invalid/expired access token.
 fn is_invalid_token_error(e: &sync_service::Error) -> bool {
-    use matrix_sdk::ruma::api::client::error::ErrorKind;
+    use matrix_sdk::ruma::api::error::ErrorKind;
     let sdk_error = match e {
         sync_service::Error::RoomList(
             matrix_sdk_ui::room_list_service::Error::SlidingSync(err)
