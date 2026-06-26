@@ -22,7 +22,7 @@ use matrix_sdk::{
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, LiveLocationState, MemberProfileChange, MembershipChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
-use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}};
+use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, events::{AnyRedactionEvent, AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}};
 
 use matrix_sdk_ui::sync_service::State;
 use crate::{
@@ -4600,9 +4600,13 @@ fn populate_redacted_message_content(
             )
         )) = redacted_msg.deserialize() {
             if let Ok(redacted_because) = redaction.unsigned.redacted_because.deserialize() {
+                let reason = match &redacted_because {
+                    AnyRedactionEvent::RoomRedaction(e) => e.content.reason.clone(),
+                    _ => None,
+                };
                 redactor_id_and_reason = Some((
-                    redacted_because.sender,
-                    redacted_because.content.reason,
+                    redacted_because.sender().to_owned(),
+                    reason,
                 ));
             }
         }
