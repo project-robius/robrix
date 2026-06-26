@@ -1571,6 +1571,19 @@ impl RoomsListRef {
         self.borrow()?.get_room_state(room_id)
     }
 
+    /// Returns the avatar for the given room, if it is known and fetched.
+    pub fn get_room_avatar(&self, room_id: &OwnedRoomId) -> Option<FetchedRoomAvatar> {
+        let inner = self.borrow()?;
+        inner.all_joined_rooms
+            .get(room_id)
+            .map(|jr| jr.room_avatar.clone())
+            .or_else(||
+                inner.invited_rooms.borrow()
+                    .get(room_id)
+                    .map(|ir| ir.room_avatar.clone())
+            )
+    }
+
     /// Returns the name of the given room, if it is known and loaded.
     pub fn get_room_name(&self, room_id: &OwnedRoomId) -> Option<RoomNameId> {
         let inner = self.borrow()?;

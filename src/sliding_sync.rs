@@ -6,7 +6,7 @@ use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
 use futures_util::{future::{Abortable, join_all}, pin_mut, StreamExt};
 use imbl::Vector;
-use makepad_widgets::{error, log, warning, Cx, SignalToUI};
+use makepad_widgets::{error, log, warning, Cx, SignalToUI, WidgetUid};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
     config::RequestConfig, encryption::{identities::Device, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, RelationsOptions, RoomMember}, ruma::{
@@ -41,8 +41,8 @@ use crate::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, shared::{
-        attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId}, jump_to_bottom_button::UnreadMessageCount, popup_list::{PopupKind, enqueue_popup_notification}
-    }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, RoomNameId, VecDiff, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
+        attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId}, jump_to_bottom_button::UnreadMessageCount, mention_popup::{MentionItem, RoomMentionCandidate}, mentionable_text_input::MentionMatches, popup_list::{PopupKind, enqueue_popup_notification}
+    }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Default)]
@@ -729,6 +729,14 @@ pub enum MatrixRequest {
     },
     /// Request to cancel an in-progress download.
     CancelDownload(OwnedMxcUri),
+    /// Request to find all known rooms and spaces that match the `query` string.
+    /// 
+    /// Returns a list of matching rooms/spaces via [`MentionMatches`]
+    GetMatchingRooms {
+        query: String,
+        request_id: u64,
+        owner: WidgetUid,
+    },
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -782,14 +790,14 @@ async fn matrix_worker_task(
     login_sender: Sender<LoginRequest>,
 ) -> Result<()> {
     log!("Started matrix_worker_task.");
+
     // The async tasks that are spawned to subscribe to changes in our own user's read receipts for each timeline.
     let mut subscribers_own_user_read_receipts: HashMap<TimelineKind, JoinHandle<()>> = HashMap::new();
     // The async tasks that are spawned to subscribe to changes in the pinned events for each room.
     let mut subscribers_pinned_events: HashMap<OwnedRoomId, JoinHandle<()>> = HashMap::new();
     // The async tasks spawned to handle media downloads, keyed by MxcUri.
     // Here we intentionally use a `std` Mutex, not async, since it's cheaper under no contention.
-    let download_tasks: Arc<Mutex<HashMap<OwnedMxcUri, ActiveDownload>>>
-        = Arc::new(Mutex::new(HashMap::new()));
+    let download_tasks: Arc<Mutex<HashMap<OwnedMxcUri, ActiveDownload>>> = Arc::new(Mutex::new(HashMap::new()));
 
     while let Some(request) = request_receiver.recv().await {
         match request {
@@ -1326,6 +1334,14 @@ async fn matrix_worker_task(
                     } else {
                         log!("Failed to get user profile: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");
                     }
+                });
+            }
+
+            MatrixRequest::GetMatchingRooms { query, request_id, owner } => {
+                let Some(client) = get_client() else { continue };
+                let _match_task = Handle::current().spawn(async move {
+                    let items = rank_matching_rooms(&client, &query).await;
+                    Cx::post_action(MentionMatches::new(request_id, owner, items));
                 });
             }
 
@@ -4176,6 +4192,74 @@ async fn update_latest_event(room: &Room) {
         });
     }
 }
+
+
+/// Returns an ordered list of rooms/spaces that the client knows about that match the given `query`.
+///
+/// The order is as follows:
+/// 1. membership state of the room/space: joined rooms first, then invited, then knocked, then left, then banned.
+/// 2. The field that actually matched: room name first, then canonical alias, then alternate aliases.
+///    * For each of these fields, an exact match will be ranked above a partial match
+///
+/// Direct rooms / DMs are excluded from matching.
+async fn rank_matching_rooms(client: &Client, query: &str) -> Vec<MentionItem> {
+    let query = query.to_lowercase();
+    let mut all_matches: Vec<((u8, u8, MatchQuality), String, RoomMentionCandidate)> = Vec::new();
+
+    for room in client.rooms() {
+        if room.is_direct().await.unwrap_or(false) {
+            continue;
+        }
+        let room_state: u8 = match room.state() {
+            RoomState::Joined  => 0,
+            RoomState::Invited => 1,
+            RoomState::Knocked => 2,
+            RoomState::Left    => 3,
+            RoomState::Banned  => 4,
+        };
+
+        let room_name_id = RoomNameId::new(
+            room.cached_display_name()
+                .or_else(|| room.name().map(RoomDisplayName::Named))
+                .unwrap_or(RoomDisplayName::Empty),
+            room.room_id().to_owned(),
+        );
+        let canonical = room.canonical_alias();
+        let alt_aliases = room.alt_aliases();
+
+        // we give room name the highest order (0), then canonical alias (1), then other aliases (2)
+        let Some((matched_field, quality)) = room_name_id.name_for_avatar()
+            .map(|name| (0u8, MatchQuality::of(&name.to_lowercase(), &query)))
+            .filter(|(_, q)| q.is_match())
+            .or_else(|| canonical.as_ref()
+                .map(|c| (1, MatchQuality::of(&alias_localpart(c).to_lowercase(), &query)))
+                .filter(|(_, q)| q.is_match()))
+            .or_else(|| alt_aliases.iter()
+                .map(|a| MatchQuality::of(&alias_localpart(a).to_lowercase(), &query))
+                .filter(|q| q.is_match())
+                .min()
+                .map(|q| (2, q)))
+        else {
+            continue;
+        };
+
+        all_matches.push((
+            (room_state, matched_field, quality),
+            room_name_id.to_string().to_lowercase(),
+            RoomMentionCandidate {
+                room_name_id,
+                alias: canonical,
+                avatar_url: room.avatar_url(),
+                is_space: room.is_space(),
+            },
+        ));
+    }
+
+    all_matches.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    // now that it's sorted, remove the other info that was only used for sorting.
+    all_matches.into_iter().map(|(_, _, c)| MentionItem::Room(c)).collect()
+}
+
 
 /// A request to search backwards for a specific event in a room's timeline.
 pub struct BackwardsPaginateUntilEventRequest {

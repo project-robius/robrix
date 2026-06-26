@@ -326,7 +326,7 @@ pub struct SpacesBar {
     #[rust] all_joined_spaces: HashMap<OwnedRoomId, JoinedSpaceInfo>,
 
     /// The currently-active filter function for the list of spaces.
-///
+    ///
     /// Note: for performance reasons, this does not get automatically applied
     /// when its value changes. Instead, you must manually invoke it on the set of `all_joined_spaces`
     /// in order to update the set of `displayed_spaces` accordingly.

@@ -22,7 +22,7 @@ use matrix_sdk::{
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, LiveLocationState, MemberProfileChange, MembershipChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
-use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}, owned_room_id};
+use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}};
 
 use matrix_sdk_ui::sync_service::State;
 use crate::{
@@ -39,7 +39,6 @@ use crate::{
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
-use crate::shared::mentionable_text_input::MentionableTextInputAction;
 
 use rangemap::RangeSet;
 
@@ -774,6 +773,11 @@ impl ScriptHook for RoomScreen {
 impl Widget for RoomScreen {
     // Handle events and actions for the RoomScreen widget and its inner Timeline view.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // Skip event handling if this RoomScreen is uninitialized (a background dock tab after dock restore).
+        if self.tl_state.is_none() && self.room_name_id.is_none() {
+            return;
+        }
+
         let room_screen_widget_uid = self.widget_uid();
         let portal_list = self.portal_list(cx, ids!(timeline.list));
         let user_profile_sliding_pane = self.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane));
@@ -1075,41 +1079,11 @@ impl Widget for RoomScreen {
         //       so the only thing we'd need here is the conditional below.
 
         if !is_pane_shown || !is_interactive_hit {
-            // Create a Scope with RoomScreenProps.
-            // This scope is needed by child widgets like MentionableTextInput during event handling.
-            let room_props = if let Some(tl) = self.tl_state.as_ref() {
-                RoomScreenProps {
-                    room_screen_widget_uid,
-                    timeline_kind: tl.kind.clone(),
-                }
-            } else if self.room_name_id.is_some() {
-                // Fallback case: we have a room_name but no tl_state yet
-                RoomScreenProps {
-                    room_screen_widget_uid,
-                    timeline_kind: self.timeline_kind.clone()
-                        .expect("BUG: room_name_id was set but timeline_kind was missing"),
-                }
-            } else {
-                // No room selected yet, skip event handling that requires room context
-                if !is_pane_shown || !is_interactive_hit {
-                    return;
-                }
-                log!("RoomScreen handling event with no room_name_id and no tl_state, skipping room-dependent event handling");
-                // Use a dummy room props for non-room-specific events
-                let room_id = owned_room_id!("!dummy:matrix.org");
-                RoomScreenProps {
-                    room_screen_widget_uid,
-                    timeline_kind: TimelineKind::MainRoom { room_id },
-                }
-            };
-            let mut room_scope = Scope::with_props(&room_props);
-
-
             // Forward the event to the inner timeline view, but capture any actions it produces
             // such that we can handle the ones relevant to only THIS RoomScreen widget right here and now,
             // ensuring they are not mistakenly handled by other RoomScreen widget instances.
             let mut actions_generated_within_this_room_screen = cx.capture_actions(|cx|
-                self.view.handle_event(cx, event, &mut room_scope)
+                self.view.handle_event(cx, event, &mut Scope::empty())
             );
             // Here, we handle and remove any general actions that are relevant to only this RoomScreen.
             // Removing the handled actions ensures they are not mistakenly handled by other RoomScreen widget instances.
@@ -1725,6 +1699,8 @@ impl RoomScreen {
                 TimelineUpdate::RoomMembersListFetched { members } => {
                     // Store room members directly in TimelineUiState
                     tl.room_members = Some(Arc::new(members));
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .set_room_context(cx, ui, tl.kind.clone(), tl.room_members.clone());
                 },
                 TimelineUpdate::MediaFetched(request) => {
                     log!("process_timeline_updates(): media fetched for room {}", tl.kind.room_id());
@@ -1780,11 +1756,6 @@ impl RoomScreen {
                     tl.user_power = user_power_levels;
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .update_user_power_levels(cx, user_power_levels);
-                    // Update the @room mention capability based on the user's power level
-                    cx.action(MentionableTextInputAction::PowerLevelsUpdated {
-                        room_id: tl.kind.room_id().clone(),
-                        can_notify_room: user_power_levels.can_notify_room(),
-                    });
                     // We need to redraw all events in order to reflect the new power levels,
                     // e.g., for the message context menu to be correctly populated.
                     tl.content_drawn_since_last_update.clear();
@@ -2766,13 +2737,10 @@ impl RoomScreen {
         self.room_name_id = Some(room_name_id.clone());
         self.timeline_kind = Some(timeline_kind.clone());
 
-        // We initially tell every MentionableTextInput widget that the current user
-        // *does not* have privileges to notify the entire room;
-        // this gets properly updated when room PowerLevels get fetched.
-        cx.action(MentionableTextInputAction::PowerLevelsUpdated {
-            room_id: timeline_kind.room_id().clone(),
-            can_notify_room: false,
-        });
+        // Tell the room input bar which room/thread we're now displaying.
+        // The list of room members is None for now, it'll get updated later.
+        self.view.room_input_bar(cx, ids!(room_input_bar))
+            .set_room_context(cx, self.widget_uid(), timeline_kind.clone(), None);
 
         self.show_timeline(cx);
     }
@@ -2908,13 +2876,6 @@ impl RoomScreenRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.hide_displayed_room(cx);
     }
-}
-
-/// Immutable RoomScreen states passed via Scope props
-/// from a RoomScreen widget to its child widgets for event/draw handlers.
-pub struct RoomScreenProps {
-    pub room_screen_widget_uid: WidgetUid,
-    pub timeline_kind: TimelineKind,
 }
 
 

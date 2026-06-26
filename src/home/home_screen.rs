@@ -14,6 +14,7 @@ use crate::{
         settings_screen::SettingsScreenWidgetRefExt,
     },
     shared::room_filter_input_bar::{MainFilterAction, RoomFilterInputBarWidgetExt},
+    shared::mention_popup::MentionablePopupRef,
 };
 
 script_mod! {
@@ -644,6 +645,7 @@ impl HomeScreen {
         if was_desktop == is_desktop {
             return;
         }
+
         // If we transitioned from mobile --> desktop view mode, the dock will reload the tabs
         // from its previously-saved state, so we need to free the current selected room now
         // (if it was a thread timeline), and then also clear any thread timelines in the mobile nav stack.
@@ -652,6 +654,12 @@ impl HomeScreen {
                 room.close_thread_timeline(cx);
             }
         }
+
+        // If the mentionable popup was shown, close it because the whole UI has changed/moved.
+        if cx.has_global::<MentionablePopupRef>() {
+            cx.get_global::<MentionablePopupRef>().clone().cancel(cx);
+        }
+
         self.clear_mobile_navigation_state(cx);
     }
 

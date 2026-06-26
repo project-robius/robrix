@@ -17,12 +17,14 @@
 //!
 
 
+use std::sync::Arc;
 use makepad_widgets::*;
+use matrix_sdk::room::RoomMember;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, RoomScreenProps, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FileUploadModalAction, FileUploadAttemptId, PreviewPayload, load_file_metadata}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::MentionableTextInputWidgetExt, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FileUploadModalAction, FileUploadAttemptId, PreviewPayload, load_file_metadata}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -111,13 +113,9 @@ script_mod! {
                         left: 3, right: 3 // to give a bit of breathing room between the text input and the buttons on the sides
                     },
 
-                    persistent +: {
-                        center +: {
-                            text_input := RobrixTextInput {
-                                empty_text: "Write a message (in Markdown) ..."
-                                is_multiline: true,
-                            }
-                        }
+                    text_input := RobrixTextInput {
+                        empty_text: "Write a message (in Markdown) ..."
+                        is_multiline: true,
                     }
                 }
 
@@ -178,6 +176,10 @@ pub struct RoomInputBar {
     #[rust] is_encrypted: bool,
     /// Whether the send button is currently enabled (the message input is non-empty).
     #[rust] is_send_enabled: bool,
+    /// The room or thread that this RoomInputBar is currently within.
+    #[rust] timeline_kind: Option<TimelineKind>,
+    /// The widget UID of the RoomScreen containing this RoomInputBar.
+    #[rust] room_screen_widget_uid: Option<WidgetUid>,
 }
 
 impl ScriptHook for RoomInputBar {
@@ -193,21 +195,18 @@ impl ScriptHook for RoomInputBar {
 
 impl Widget for RoomInputBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let room_screen_props = scope
-            .props
-            .get::<RoomScreenProps>()
-            .expect("BUG: RoomScreenProps should be available in Scope::props for RoomInputBar");
-
         match event.hits(cx, self.view.view(cx, ids!(replying_preview.reply_preview_content)).area()) {
             // If the hit occurred on the replying message preview, jump to it.
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
                 if let Some(event_id) = self.replying_to.as_ref()
                     .and_then(|(event_tl_item, _)| event_tl_item.event_id().map(ToOwned::to_owned))
                 {
-                    cx.widget_action(
-                        room_screen_props.room_screen_widget_uid,
-                        MessageAction::JumpToEvent(event_id),
-                    );
+                    if let Some(room_screen_widget_uid) = self.room_screen_widget_uid {
+                        cx.widget_action(
+                            room_screen_widget_uid,
+                            MessageAction::JumpToEvent(event_id),
+                        );
+                    }
                 } else {
                     enqueue_popup_notification(
                         "BUG: couldn't find the message you're replying to.",
@@ -220,7 +219,7 @@ impl Widget for RoomInputBar {
         }
 
         if let Event::Actions(actions) = event {
-            self.handle_actions(cx, actions, room_screen_props);
+            self.handle_actions(cx, actions);
         }
 
         self.view.handle_event(cx, event, scope);
@@ -264,7 +263,6 @@ impl RoomInputBar {
         &mut self,
         cx: &mut Cx,
         actions: &Actions,
-        room_screen_props: &RoomScreenProps,
     ) {
         let mentionable_text_input = self.mentionable_text_input(cx, ids!(mentionable_text_input));
         let text_input = mentionable_text_input.text_input_ref();
@@ -286,11 +284,18 @@ impl RoomInputBar {
             self.redraw(cx);
         }
 
+        // Everything below here requires the current room/thread kind.
+        let (Some(timeline_kind), Some(room_screen_widget_uid)) =
+            (self.timeline_kind.clone(), self.room_screen_widget_uid)
+        else {
+            return;
+        };
+
         let open_popup_menu_button = self.button(cx, ids!(open_popup_menu_button));
         if open_popup_menu_button.clicked(actions) {
             let button_rect = open_popup_menu_button.area().rect(cx);
             cx.widget_action(
-                room_screen_props.room_screen_widget_uid,
+                room_screen_widget_uid,
                 RoomInputPopupMenuAction::Show { button_rect },
             );
         }
@@ -307,7 +312,7 @@ impl RoomInputBar {
                 );
                 let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
                     event_tl_item.event_id().map(|event_id| {
-                        let enforce_thread = if room_screen_props.timeline_kind.thread_root_event_id().is_some() {
+                        let enforce_thread = if timeline_kind.thread_root_event_id().is_some() {
                             EnforceThread::Threaded(ReplyWithinThread::Yes)
                         } else {
                             EnforceThread::MaybeThreaded
@@ -319,7 +324,7 @@ impl RoomInputBar {
                         }
                     })
                 ).or_else(||
-                    room_screen_props.timeline_kind.thread_root_event_id().map(|thread_root_event_id|
+                    timeline_kind.thread_root_event_id().map(|thread_root_event_id|
                         Reply {
                             event_id: thread_root_event_id.clone(),
                             enforce_thread: EnforceThread::Threaded(ReplyWithinThread::No),
@@ -328,7 +333,7 @@ impl RoomInputBar {
                     )
                 );
                 submit_async_request(MatrixRequest::SendMessage {
-                    timeline_kind: room_screen_props.timeline_kind.clone(),
+                    timeline_kind: timeline_kind.clone(),
                     message,
                     replied_to,
                     #[cfg(feature = "tsp")]
@@ -351,7 +356,7 @@ impl RoomInputBar {
                 let message = mentionable_text_input.create_message_with_mentions(&entered_text);
                 let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
                     event_tl_item.event_id().map(|event_id| {
-                        let enforce_thread = if room_screen_props.timeline_kind.thread_root_event_id().is_some() {
+                        let enforce_thread = if timeline_kind.thread_root_event_id().is_some() {
                             EnforceThread::Threaded(ReplyWithinThread::Yes)
                         } else {
                             EnforceThread::MaybeThreaded
@@ -363,7 +368,7 @@ impl RoomInputBar {
                         }
                     })
                 ).or_else(||
-                    room_screen_props.timeline_kind.thread_root_event_id().map(|thread_root_event_id|
+                    timeline_kind.thread_root_event_id().map(|thread_root_event_id|
                         Reply {
                             event_id: thread_root_event_id.clone(),
                             enforce_thread: EnforceThread::Threaded(ReplyWithinThread::No),
@@ -372,7 +377,7 @@ impl RoomInputBar {
                     )
                 );
                 submit_async_request(MatrixRequest::SendMessage {
-                    timeline_kind: room_screen_props.timeline_kind.clone(),
+                    timeline_kind: timeline_kind.clone(),
                     message,
                     replied_to,
                     #[cfg(feature = "tsp")]
@@ -390,7 +395,7 @@ impl RoomInputBar {
         let is_text_input_empty = if let Some(new_text) = text_input.changed(actions) {
             let is_empty = new_text.is_empty();
             submit_async_request(MatrixRequest::SendTypingNotice {
-                room_id: room_screen_props.timeline_kind.room_id().clone(),
+                room_id: timeline_kind.room_id().clone(),
                 typing: !is_empty,
             });
             is_empty
@@ -413,7 +418,7 @@ impl RoomInputBar {
                 ..
             }) = text_input.key_down_unhandled(actions) {
                 cx.widget_action(
-                    room_screen_props.room_screen_widget_uid, 
+                    room_screen_widget_uid, 
                     MessageAction::EditLatest,
                 );
             }
@@ -596,6 +601,13 @@ impl RoomInputBar {
         let can_send = user_power_levels.can_send_message();
         self.view.view(cx, ids!(input_bar)).set_visible(cx, can_send);
         self.view.view(cx, ids!(can_not_send_message_notice)).set_visible(cx, !can_send);
+
+        // Forward the updated power levels to the two mentionable text inputs within this widget.
+        let can_notify = user_power_levels.can_notify_room();
+        self.mentionable_text_input(cx, ids!(mentionable_text_input))
+            .set_can_notify_room(cx, can_notify);
+        self.mentionable_text_input(cx, ids!(editing_pane.editing_content.edit_text_input))
+            .set_can_notify_room(cx, can_notify);
     }
 
     /// Updates the send button (icon + color style) and empty message text
@@ -849,6 +861,24 @@ impl RoomInputBarRef {
             .handle_edit_result(cx, timeline_event_item_id, edit_result);
     }
 
+    /// Tells this RoomInputBar which room or thread it is being shown beneath.
+    pub fn set_room_context(
+        &self,
+        cx: &mut Cx,
+        room_screen_widget_uid: WidgetUid,
+        timeline_kind: TimelineKind,
+        room_members: Option<Arc<Vec<RoomMember>>>,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        let room_id = timeline_kind.room_id().to_owned();
+        inner.room_screen_widget_uid = Some(room_screen_widget_uid);
+        inner.timeline_kind = Some(timeline_kind);
+        inner.mentionable_text_input(cx, ids!(mentionable_text_input))
+            .set_room_context(cx, room_id.clone(), room_members.clone());
+        inner.mentionable_text_input(cx, ids!(editing_pane.editing_content.edit_text_input))
+            .set_room_context(cx, room_id, room_members);
+    }
+
     /// Save a snapshot of the UI state of this `RoomInputBar`.
     pub fn save_state(&self) -> RoomInputBarState {
         let Some(inner) = self.borrow() else { return Default::default() };
@@ -859,7 +889,7 @@ impl RoomInputBarRef {
             was_replying_preview_visible: inner.was_replying_preview_visible,
             replying_to: inner.replying_to.clone(),
             editing_pane_state: inner.child_by_path(ids!(editing_pane)).as_editing_pane().save_state(),
-            text_input_state: inner.child_by_path(ids!(input_bar.mentionable_text_input.text_input)).as_text_input().save_state(),
+            mentionable_input_state: inner.child_by_path(ids!(input_bar.mentionable_text_input)).as_mentionable_text_input().save_state(),
         }
     }
 
@@ -876,7 +906,7 @@ impl RoomInputBarRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         let RoomInputBarState {
             was_replying_preview_visible,
-            text_input_state,
+            mentionable_input_state,
             replying_to,
             editing_pane_state,
         } = saved_state;
@@ -889,9 +919,9 @@ impl RoomInputBarRef {
         inner.update_user_power_levels(cx, user_power_levels);
         inner.update_encryption_state(cx, is_encrypted);
 
-        // 1. Restore the state of the TextInput within the MentionableTextInput.
-        inner.text_input(cx, ids!(input_bar.mentionable_text_input.text_input))
-            .restore_state(cx, text_input_state);
+        // 1. Restore the state of the MentionableTextInput.
+        inner.mentionable_text_input(cx, ids!(input_bar.mentionable_text_input))
+            .restore_state(cx, mentionable_input_state);
 
         // 2. Restore the state of the replying-to preview.
         if let Some(replying_to) = replying_to {
@@ -982,8 +1012,8 @@ impl RoomInputBarRef {
 pub struct RoomInputBarState {
     /// Whether or not the `replying_preview` widget was shown.
     was_replying_preview_visible: bool,
-    /// The state of the `TextInput` within the `mentionable_text_input`.
-    text_input_state: TextInputState,
+    /// The state of the MentionableTextInput within this input bar.
+    mentionable_input_state: MentionableTextInputState,
     /// The event that the user is currently replying to, if any.
     replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
     /// The state of the `EditingPane`, if any message was being edited.
@@ -991,6 +1021,7 @@ pub struct RoomInputBarState {
 }
 
 /// Defines what to do when showing the `EditingPane` from the `RoomInputBar`.
+#[allow(clippy::large_enum_variant)]
 enum ShowEditingPaneBehavior {
     /// Show a new edit session, e.g., when first clicking "edit" on a message.
     ShowNew {
