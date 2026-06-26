@@ -256,6 +256,13 @@ impl Widget for RoomInputBar {
 
         self.view.draw_walk(cx, scope, walk)
     }
+
+    /// Gives key focus to the inner message text input.
+    fn set_key_focus(&self, cx: &mut Cx) {
+        self.child_by_path(ids!(input_bar.mentionable_text_input))
+            .as_mentionable_text_input()
+            .set_key_focus(cx);
+    }
 }
 
 impl RoomInputBar {

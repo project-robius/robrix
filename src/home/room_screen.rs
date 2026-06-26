@@ -744,6 +744,8 @@ pub struct RoomScreen {
     #[rust] is_loaded: bool,
     /// Whether or not all rooms have been loaded (received from the homeserver).
     #[rust] all_rooms_loaded: bool,
+    /// A flag to set key focus for the text input after it has been drawn.
+    #[rust] focus_input_bar_on_show: bool,
 }
 
 impl Drop for RoomScreen {
@@ -1372,6 +1374,14 @@ impl Widget for RoomScreen {
                 });
             }
         }
+
+        // If this RoomScreen was just drawn for the first time after being opened for
+        // a "Reply In Thread", then then focus on the text input in the RoomInputBar.
+        if self.focus_input_bar_on_show {
+            self.focus_input_bar_on_show = false;
+            self.view.room_input_bar(cx, ids!(room_input_bar)).set_key_focus(cx);
+        }
+
         DrawStep::done()
     }
 }
@@ -2060,6 +2070,44 @@ impl RoomScreen {
                         );
                     }
                 }
+                MessageAction::ReplyInThread(details) => {
+                    let Some(room_name_id) = self.room_name_id.clone() else {
+                        error!("BUG: MessageAction::ReplyInThread: room_name_id was None in room {:?}", self.room_id());
+                        continue;
+                    };
+                    // If this message was already part of a thread, use that thread root.
+                    // If not, use the message's event ID as the root for a new thread.
+                    let Some(thread_root_event_id) = details.thread_root_event_id.clone()
+                        .or_else(|| details.event_id().cloned())
+                    else {
+                        enqueue_popup_notification(
+                            "Cannot reply in thread to an unsent message.",
+                            PopupKind::Error,
+                            Some(5.0),
+                        );
+                        continue;
+                    };
+                    let thread_kind = TimelineKind::Thread {
+                        room_id: room_name_id.room_id().clone(),
+                        thread_root_event_id: thread_root_event_id.clone(),
+                    };
+                    if self.timeline_kind.as_ref() == Some(&thread_kind) {
+                        // We're already viewing this thread, so just focus the input bar.
+                        self.focus_input_bar_on_show = true;
+                        self.redraw(cx);
+                    } else {
+                        // Emit an action to open the thread's RoomScreen
+                        // and tell it to grab key focus once it's drawn.
+                        input_bar_focus::request(cx, thread_kind);
+                        cx.widget_action(
+                            room_screen_widget_uid,
+                            RoomsListAction::Selected(SelectedRoom::Thread {
+                                room_name_id,
+                                thread_root_event_id,
+                            }),
+                        );
+                    }
+                }
                 MessageAction::Edit(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
                     if let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details) {
@@ -2719,6 +2767,11 @@ impl RoomScreen {
                 room_id: room_name_id.room_id().clone(),
             }
         };
+
+        // If we opened this timelien to reply in thread, give the text input key focus.
+        if input_bar_focus::take_if_matches(cx, &timeline_kind) {
+            self.focus_input_bar_on_show = true;
+        }
 
         // If this timeline is already displayed, we don't need to do anything major,
         // but we do need update the `room_name_id` in case it has changed, or it has been cleared.
@@ -3992,6 +4045,7 @@ fn populate_message_view(
             msg_like_content,
             pinned_events,
             has_html_body,
+            timeline_kind.thread_root_event_id().is_some(),
         ),
         should_be_highlighted: event_tl_item.is_highlighted() || has_room_mention,
     };
@@ -5134,6 +5188,9 @@ pub enum MessageAction {
     },
     /// The user clicked the "reply" button on a message.
     Reply(MessageDetails),
+    /// The user clicked the "reply in thread" button on a message, indicating
+    /// they want to open (or start) that message's thread and reply within it.
+    ReplyInThread(MessageDetails),
     /// The user clicked the "edit" button on a message.
     Edit(MessageDetails),
     /// The user requested to edit their latest message in this room.
@@ -5474,4 +5531,30 @@ pub fn clear_timeline_states(cx: &mut Cx) {
 /// Takes `&mut Cx` (unused) to enforce that it's only called from the main UI thread.
 pub fn invalidate_timeline_state(cx: &mut Cx, kind: &TimelineKind) {
     timeline_state_store::invalidate(cx, kind);
+}
+
+/// A pending "Reply In Thread" request to focus a thread's input bar once its RoomScreen is
+/// shown, stored as a `Cx` global so whichever screen ends up showing it can pick it up.
+mod input_bar_focus {
+    use super::*;
+
+    /// The timeline whose RoomScreen should focus its input bar when next shown.
+    #[derive(Default)]
+    struct PendingInputBarFocus(Option<TimelineKind>);
+
+    /// Requests that the RoomScreen showing `kind` focus its input bar once it's shown.
+    pub(super) fn request(cx: &mut Cx, kind: TimelineKind) {
+        cx.global::<PendingInputBarFocus>().0 = Some(kind);
+    }
+
+    /// If a focus request is pending for `kind`, consumes it and returns `true`.
+    pub(super) fn take_if_matches(cx: &mut Cx, kind: &TimelineKind) -> bool {
+        let pending = cx.global::<PendingInputBarFocus>();
+        if pending.0.as_ref() == Some(kind) {
+            pending.0 = None;
+            true
+        } else {
+            false
+        }
+    }
 }
