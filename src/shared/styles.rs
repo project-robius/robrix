@@ -34,6 +34,7 @@ script_mod! {
     mod.widgets.ICON_LINK             = crate_resource("self://resources/icons/link.svg")
     mod.widgets.ICON_PIN              = crate_resource("self://resources/icons/pin.svg")
     mod.widgets.ICON_REPLY            = crate_resource("self://resources/icons/reply.svg")
+    mod.widgets.ICON_REPLY_IN_THREAD  = crate_resource("self://resources/icons/double_chat.svg")
     mod.widgets.ICON_SEARCH           = crate_resource("self://resources/icons/search.svg")
     mod.widgets.ICON_SEND             = crate_resource("self://resources/icons/send.svg")
     mod.widgets.ICON_SEND_ENCRYPTED   = crate_resource("self://resources/icons/send_encrypted.svg")
