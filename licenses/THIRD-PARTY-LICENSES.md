@@ -12,7 +12,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 
 | Crates | License | SPDX |
 |-------:|---------|------|
-| 519 | MIT License | `MIT` |
+| 523 | MIT License | `MIT` |
 | 22 | Apache License 2.0 | `Apache-2.0` |
 | 19 | Unicode License v3 | `Unicode-3.0` |
 | 12 | Mozilla Public License 2.0 | `MPL-2.0` |
@@ -347,9 +347,13 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `pastey` | 0.1.1 | MIT OR Apache-2.0 |
 | `pbkdf2` | 0.12.2 | MIT OR Apache-2.0 |
 | `percent-encoding` | 2.3.2 | MIT OR Apache-2.0 |
+| `phf` | 0.11.3 | MIT |
 | `phf` | 0.13.1 | MIT |
+| `phf_codegen` | 0.11.3 | MIT |
 | `phf_codegen` | 0.13.1 | MIT |
+| `phf_generator` | 0.11.3 | MIT |
 | `phf_generator` | 0.13.1 | MIT |
+| `phf_shared` | 0.11.3 | MIT |
 | `phf_shared` | 0.13.1 | MIT |
 | `pin-project-lite` | 0.2.16 | Apache-2.0 OR MIT |
 | `pin-utils` | 0.1.0 | MIT OR Apache-2.0 |
