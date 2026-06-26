@@ -168,7 +168,7 @@ askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
 ## Note: matrix-sdk currently uses a git dependency for ruma,
 ## so we patch the git source, not crates-io.
 [patch."https://github.com/ruma/ruma"]
-ruma = { git = "file:///Users/kevinboos/robius/ruma", branch = "tsp" }
+ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
 
 [build-dependencies]
 toml = "1"
