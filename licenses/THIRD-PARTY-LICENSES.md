@@ -12,18 +12,18 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 
 | Crates | License | SPDX |
 |-------:|---------|------|
-| 523 | MIT License | `MIT` |
+| 522 | MIT License | `MIT` |
 | 22 | Apache License 2.0 | `Apache-2.0` |
 | 19 | Unicode License v3 | `Unicode-3.0` |
 | 12 | Mozilla Public License 2.0 | `MPL-2.0` |
 | 6 | BSD 3-Clause "New" or "Revised" License | `BSD-3-Clause` |
 | 5 | ISC License | `ISC` |
 | 5 | zlib License | `Zlib` |
-| 2 | Community Data License Agreement Permissive 2.0 | `CDLA-Permissive-2.0` |
 | 2 | MIT No Attribution | `MIT-0` |
 | 1 | BSD 2-Clause "Simplified" License | `BSD-2-Clause` |
 | 1 | Boost Software License 1.0 | `BSL-1.0` |
 | 1 | Creative Commons Zero v1.0 Universal | `CC0-1.0` |
+| 1 | Community Data License Agreement Permissive 2.0 | `CDLA-Permissive-2.0` |
 | 1 | OpenSSL License | `OpenSSL` |
 
 ## All dependencies
@@ -54,8 +54,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `assign` | 1.1.1 | MIT |
 | `async-channel` | 2.5.0 | Apache-2.0 OR MIT |
 | `async-compression` | 0.4.31 | MIT OR Apache-2.0 |
-| `async-once-cell` | 0.5.4 | MIT OR Apache-2.0 |
-| `async-rx` | 0.1.3 | MPL-2.0 |
+| `async-rx` | 0.2.1 | MPL-2.0 |
 | `async-stream` | 0.3.6 | MIT |
 | `async-stream-impl` | 0.3.6 | MIT |
 | `async-trait` | 0.1.89 | MIT OR Apache-2.0 |
@@ -68,7 +67,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `axum-core` | 0.5.2 | MIT |
 | `backon` | 1.6.0 | Apache-2.0 |
 | `base64` | 0.22.1 | MIT OR Apache-2.0 |
-| `base64ct` | 1.8.0 | Apache-2.0 OR MIT |
+| `base64ct` | 1.8.3 | Apache-2.0 OR MIT |
 | `bindgen` | 0.72.1 | BSD-3-Clause |
 | `bit-set` | 0.8.0 | Apache-2.0 OR MIT |
 | `bit-vec` | 0.8.0 | Apache-2.0 OR MIT |
@@ -294,13 +293,13 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `matchit` | 0.8.4 | MIT AND BSD-3-Clause |
 | `matrix-pickle` | 0.2.1 | MIT |
 | `matrix-pickle-derive` | 0.2.1 | MIT |
-| `matrix-sdk` | 0.16.0 | Apache-2.0 |
-| `matrix-sdk-base` | 0.16.0 | Apache-2.0 |
-| `matrix-sdk-common` | 0.16.0 | Apache-2.0 |
-| `matrix-sdk-crypto` | 0.16.0 | Apache-2.0 |
-| `matrix-sdk-sqlite` | 0.16.0 | Apache-2.0 |
-| `matrix-sdk-store-encryption` | 0.16.0 | Apache-2.0 |
-| `matrix-sdk-ui` | 0.16.0 | Apache-2.0 |
+| `matrix-sdk` | 0.18.0 | Apache-2.0 |
+| `matrix-sdk-base` | 0.18.0 | Apache-2.0 |
+| `matrix-sdk-common` | 0.18.0 | Apache-2.0 |
+| `matrix-sdk-crypto` | 0.18.0 | Apache-2.0 |
+| `matrix-sdk-sqlite` | 0.18.0 | Apache-2.0 |
+| `matrix-sdk-store-encryption` | 0.18.0 | Apache-2.0 |
+| `matrix-sdk-ui` | 0.18.0 | Apache-2.0 |
 | `memchr` | 2.7.6 | Unlicense OR MIT |
 | `memchr` | 2.7.6 | Unlicense OR MIT |
 | `mime` | 0.3.17 | MIT OR Apache-2.0 |
@@ -369,8 +368,8 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `proc-macro-error-attr2` | 2.0.0 | MIT OR Apache-2.0 |
 | `proc-macro-error2` | 2.0.1 | MIT OR Apache-2.0 |
 | `proc-macro2` | 1.0.101 | MIT OR Apache-2.0 |
-| `prost` | 0.13.5 | Apache-2.0 |
-| `prost-derive` | 0.13.5 | Apache-2.0 |
+| `prost` | 0.14.4 | Apache-2.0 |
+| `prost-derive` | 0.14.4 | Apache-2.0 |
 | `pulldown-cmark` | 0.12.2 | MIT |
 | `pulldown-cmark` | 0.13.0 | MIT |
 | `pulldown-cmark-escape` | 0.11.0 | MIT |
@@ -379,7 +378,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `r-efi` | 6.0.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
 | `rand` | 0.8.5 | MIT OR Apache-2.0 |
 | `rand` | 0.9.2 | MIT OR Apache-2.0 |
-| `rand` | 0.10.0 | MIT OR Apache-2.0 |
+| `rand` | 0.10.1 | MIT OR Apache-2.0 |
 | `rand_chacha` | 0.3.1 | MIT OR Apache-2.0 |
 | `rand_chacha` | 0.9.0 | MIT OR Apache-2.0 |
 | `rand_core` | 0.6.4 | MIT OR Apache-2.0 |
@@ -408,13 +407,13 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `robius-use-makepad` | 0.1.1 | MIT |
 | `robius-web-auth-session` | 0.2.0 | MIT |
 | `robrix` | 1.0.0-alpha.1 | MIT |
-| `ruma` | 0.14.1 | MIT |
-| `ruma-client-api` | 0.22.1 | MIT |
-| `ruma-common` | 0.17.1 | MIT |
-| `ruma-events` | 0.32.1 | MIT |
-| `ruma-html` | 0.6.0 | MIT |
-| `ruma-identifiers-validation` | 0.12.0 | MIT |
-| `ruma-macros` | 0.17.1 | MIT |
+| `ruma` | 0.16.0 | MIT |
+| `ruma-client-api` | 0.24.0 | MIT |
+| `ruma-common` | 0.19.0 | MIT |
+| `ruma-events` | 0.34.0 | MIT |
+| `ruma-html` | 0.8.0 | MIT |
+| `ruma-identifiers-validation` | 0.12.1 | MIT |
+| `ruma-macros` | 0.19.0 | MIT |
 | `rusqlite` | 0.37.0 | MIT |
 | `rustc-hash` | 1.1.0 | Apache-2.0 OR MIT |
 | `rustc-hash` | 2.1.1 | Apache-2.0 OR MIT |
@@ -442,7 +441,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `serde_bytes` | 0.11.17 | MIT OR Apache-2.0 |
 | `serde_core` | 1.0.228 | MIT OR Apache-2.0 |
 | `serde_derive` | 1.0.228 | MIT OR Apache-2.0 |
-| `serde_html_form` | 0.2.8 | MIT |
+| `serde_html_form` | 0.4.0 | MIT |
 | `serde_json` | 1.0.149 | MIT OR Apache-2.0 |
 | `serde_path_to_error` | 0.1.20 | MIT OR Apache-2.0 |
 | `serde_spanned` | 1.1.1 | MIT OR Apache-2.0 |
@@ -469,9 +468,9 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `tempfile` | 3.23.0 | MIT OR Apache-2.0 |
 | `tendril` | 0.5.0 | MIT OR Apache-2.0 |
 | `thiserror` | 1.0.69 | MIT OR Apache-2.0 |
-| `thiserror` | 2.0.17 | MIT OR Apache-2.0 |
+| `thiserror` | 2.0.18 | MIT OR Apache-2.0 |
 | `thiserror-impl` | 1.0.69 | MIT OR Apache-2.0 |
-| `thiserror-impl` | 2.0.17 | MIT OR Apache-2.0 |
+| `thiserror-impl` | 2.0.18 | MIT OR Apache-2.0 |
 | `thread_local` | 1.1.9 | MIT OR Apache-2.0 |
 | `time` | 0.3.47 | MIT OR Apache-2.0 |
 | `time-core` | 0.1.8 | MIT OR Apache-2.0 |
@@ -526,7 +525,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `uuid` | 1.18.1 | Apache-2.0 OR MIT |
 | `vcpkg` | 0.2.15 | MIT OR Apache-2.0 |
 | `version_check` | 0.9.5 | MIT OR Apache-2.0 |
-| `vodozemac` | 0.9.0 | Apache-2.0 |
+| `vodozemac` | 0.10.0 | Apache-2.0 |
 | `walkdir` | 2.5.0 | Unlicense OR MIT |
 | `want` | 0.3.1 | MIT |
 | `wasi` | 0.11.1+wasi-snapshot-preview1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
@@ -548,7 +547,6 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `web-time` | 1.1.0 | MIT OR Apache-2.0 |
 | `web_atoms` | 0.2.3 | MIT OR Apache-2.0 |
 | `webpki-root-certs` | 1.0.6 | CDLA-Permissive-2.0 |
-| `webpki-roots` | 1.0.6 | CDLA-Permissive-2.0 |
 | `weezl` | 0.1.12 | MIT OR Apache-2.0 |
 | `wildmatch` | 2.6.1 | MIT |
 | `winapi-util` | 0.1.11 | Unlicense OR MIT |
