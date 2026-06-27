@@ -10,6 +10,32 @@ script_mod! {
     use mod.widgets.*
 
 
+    mod.widgets.VerificationEmojiCell = View {
+        width: Fit, height: Fit
+        flow: Down
+        align: Align{x: 0.5}
+        padding: Inset{top: 6, right: 6, bottom: 6, left: 6}
+        spacing: 4
+
+        symbol := Label {
+            width: Fit, height: Fit
+            align: Align{x: 0.5}
+            draw_text +: {
+                text_style: REGULAR_TEXT {font_size: 30},
+                color: #000
+            }
+        }
+        description := Label {
+            width: Fit{max: FitBound.Abs(72.0)}, height: Fit
+            flow: Flow.Right{wrap: true}
+            align: Align{x: 0.5}
+            draw_text +: {
+                text_style: REGULAR_TEXT {font_size: 9},
+                color: #000
+            }
+        }
+    }
+
     mod.widgets.VerificationModal = set_type_default() do #(VerificationModal::register_widget(vm)) {
         ..mod.widgets.SmallModal
 
@@ -19,16 +45,31 @@ script_mod! {
 
         body := ModalBody {}
 
+        // SAS V1 always produces exactly 7 emojis, so 7 cells are declared up front.
+        emojis_view := View {
+            width: Fill, height: Fit
+            flow: Flow.Right{wrap: true}
+            align: Align{x: 0.5}
+            spacing: 10
+            margin: Inset{top: 15, bottom: 5}
+            visible: false
+
+            emoji0 := mod.widgets.VerificationEmojiCell {}
+            emoji1 := mod.widgets.VerificationEmojiCell {}
+            emoji2 := mod.widgets.VerificationEmojiCell {}
+            emoji3 := mod.widgets.VerificationEmojiCell {}
+            emoji4 := mod.widgets.VerificationEmojiCell {}
+            emoji5 := mod.widgets.VerificationEmojiCell {}
+            emoji6 := mod.widgets.VerificationEmojiCell {}
+        }
+
+        question := ModalBody {
+            margin: Inset{top: 10}
+            visible: false
+        }
+
         buttons_view := ModalButtonsRow {
             margin: Inset{top: 30}
-
-            cancel_button := RobrixNegativeIconButton {
-                align: Align{x: 0.5, y: 0.5}
-                padding: 15,
-                draw_icon.svg: (ICON_FORBIDDEN)
-                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                text: "Cancel"
-            }
 
             accept_button := RobrixPositiveIconButton {
                 align: Align{x: 0.5, y: 0.5}
@@ -36,6 +77,14 @@ script_mod! {
                 draw_icon.svg: (ICON_CHECKMARK)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                 text: "Yes"
+            }
+
+            cancel_button := RobrixNegativeIconButton {
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                draw_icon.svg: (ICON_FORBIDDEN)
+                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+                text: "Cancel"
             }
         }
     }
@@ -111,6 +160,11 @@ impl WidgetMatchEvent for VerificationModal {
                 // Outgoing verification requests start with the accept button hidden
                 // since we're still in the waiting state then, so show it now
                 accept_button.set_visible(cx, true);
+                // The emoji grid and its question prompt are only relevant during
+                // the `KeysExchanged` emoji step; hide them by default and let that
+                // branch re-show them, so they never leak into other states.
+                self.view.view(cx, ids!(emojis_view)).set_visible(cx, false);
+                self.label(cx, ids!(question)).set_visible(cx, false);
                 match verification_action {
                     VerificationAction::RequestCancelled(cancel_info) => {
                         self.label(cx, ids!(body)).set_text(
@@ -193,29 +247,33 @@ impl WidgetMatchEvent for VerificationModal {
                     }
 
                     VerificationAction::KeysExchanged { emojis, decimals } => {
-                        let text = if let Some(emoji_list) = emojis {
-                            format!(
-                                "Keys have been exchanged. Please verify the following emoji:\
-                                \n   {}\n\n\
-                                Do these emoji keys match?",
-                                emoji_list.emojis
-                                    .iter()
-                                    .map(|em| format!("{}  ({})", em.symbol, em.description))
-                                    .collect::<Vec<_>>()
-                                    .join("\n   ")
-                            )
+                        if let Some(emoji_list) = emojis {
+                            self.label(cx, ids!(body)).set_text(
+                                cx,
+                                "Keys have been exchanged. Please verify the following emoji:",
+                            );
+                            // SAS V1 always yields 7 emojis.
+                            for index in 0 .. 7 {
+                                let content = emoji_list.emojis
+                                    .get(index)
+                                    .map(|em| (em.symbol, em.description));
+                                self.populate_emoji_cell(cx, index, content);
+                            }
+                            self.view.view(cx, ids!(emojis_view)).set_visible(cx, true);
+                            self.label(cx, ids!(question)).set_text(cx, "Do these emoji keys match?");
+                            self.label(cx, ids!(question)).set_visible(cx, true);
                         } else {
-                            format!(
+                            let text = format!(
                                 "Keys have been exchanged. Please verify the following numbers:\n\
                                 \n   {}\n   {}\n   {}\n\n\
                                 Do these number keys match?",
                                 decimals.0, decimals.1, decimals.2,
-                            )
-                        };
-                        self.label(cx, ids!(body)).set_text(cx, &text);
+                            );
+                            self.label(cx, ids!(body)).set_text(cx, &text);
+                        }
                         accept_button.set_enabled(cx, true);
-                        accept_button.set_text(cx, "Yes");
-                        cancel_button.set_text(cx, "No");
+                        accept_button.set_text(cx, "They match");
+                        cancel_button.set_text(cx, "They don't match");
                         cancel_button.set_enabled(cx, true);
                         cancel_button.set_visible(cx, true);
                     }
@@ -245,7 +303,12 @@ impl WidgetMatchEvent for VerificationModal {
                     }
 
                     VerificationAction::RequestCompleted => {
-                        self.label(cx, ids!(body)).set_text(cx, "Verification completed successfully!");
+                        self.label(cx, ids!(body)).set_text(
+                            cx,
+                            "Verification completed successfully! \
+                            Now you can read or send messages securely, and anyone you chat \
+                            with can also trust this device.",
+                        );
                         accept_button.set_text(cx, "Ok");
                         accept_button.set_enabled(cx, true);
                         cancel_button.set_visible(cx, false);
@@ -268,6 +331,26 @@ impl VerificationModal {
     fn reset_state(&mut self) {
         self.state = None;
         self.is_final = false;
+    }
+
+    fn populate_emoji_cell(&mut self, cx: &mut Cx, index: usize, content: Option<(&str, &str)>) {
+        let (symbol_text, description_text, visible) = match content {
+            Some((symbol, description)) => (symbol, description, true),
+            None => ("", "", false),
+        };
+        let cell = match index {
+            0 => self.view.view(cx, ids!(emoji0)),
+            1 => self.view.view(cx, ids!(emoji1)),
+            2 => self.view.view(cx, ids!(emoji2)),
+            3 => self.view.view(cx, ids!(emoji3)),
+            4 => self.view.view(cx, ids!(emoji4)),
+            5 => self.view.view(cx, ids!(emoji5)),
+            6 => self.view.view(cx, ids!(emoji6)),
+            _ => return,
+        };
+        cell.label(cx, ids!(symbol)).set_text(cx, symbol_text);
+        cell.label(cx, ids!(description)).set_text(cx, description_text);
+        cell.set_visible(cx, visible);
     }
 
     fn initialize_with_data(
@@ -296,6 +379,10 @@ impl VerificationModal {
             ).into()
         };
         self.label(cx, ids!(body)).set_text(cx, &prompt_text);
+        // Ensure the emoji grid from any prior verification is not shown
+        // on the initial prompt screen.
+        self.view.view(cx, ids!(emojis_view)).set_visible(cx, false);
+        self.label(cx, ids!(question)).set_visible(cx, false);
 
         let accept_button = self.button(cx, ids!(accept_button));
         let cancel_button = self.button(cx, ids!(cancel_button));
