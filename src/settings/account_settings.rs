@@ -71,6 +71,17 @@ script_mod! {
                 }
                 text: "This device is not verified and can't view encrypted messages."
             }
+
+            verify_device_button := RobrixIconButton {
+                width: Fit,
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
+                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                margin: Inset{top: 10, left: 5, bottom: 4}
+                draw_icon.svg: (VERIFICATION_YES)
+                icon_walk: Walk{width: 16, height: 16}
+                text: "Verify this Device"
+            }
+
             Label {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true}
@@ -79,8 +90,9 @@ script_mod! {
                     color: (MESSAGE_TEXT_COLOR),
                     text_style: theme.font_regular { font_size: 11.5 },
                 }
-                text: "Verify it from another client using this info:"
+                text: "Or verify it from another client using this info:"
             }
+
             // Filled in from Rust with the session name + device ID.
             unverified_device_info_label := Label {
                 width: Fill, height: Fit
@@ -577,6 +589,10 @@ impl MatchEvent for AccountSettings {
             );
         }
 
+        if self.view.button(cx, ids!(verify_device_button)).clicked(actions) {
+            submit_async_request(MatrixRequest::RequestSelfVerification);
+        }
+
         if self.view.button(cx, ids!(manage_account_button)).clicked(actions) {
             // TODO: support opening the user's account management page in a browser,
             //       or perhaps in an in-app pane if that's what is needed for regular UN+PW login.
@@ -702,6 +718,7 @@ impl AccountSettings {
         self.view.button(cx, ids!(accept_display_name_button)).reset_hover(cx);
         self.view.button(cx, ids!(cancel_display_name_button)).reset_hover(cx);
         self.view.button(cx, ids!(copy_user_id_button)).reset_hover(cx);
+        self.view.button(cx, ids!(verify_device_button)).reset_hover(cx);
         self.view.button(cx, ids!(manage_account_button)).reset_hover(cx);
         self.view.button(cx, ids!(logout_button)).reset_hover(cx);
         self.view.redraw(cx);
