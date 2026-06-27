@@ -598,6 +598,9 @@ pub enum MatrixRequest {
     /// Request to fetch our own [`Device`].
     /// The response is delivered via [`AccountDataAction::OwnDeviceFetched`].
     GetOwnDevice,
+    /// Request to verify this device by sending an outgoing verification request
+    /// to the user's other logged-in devices, which'll open the verification modal.
+    RequestSelfVerification,
     /// Request to fetch an Avatar image from the server.
     /// Upon completion of the async media request, the `on_fetched` function
     /// will be invoked with the content of an `AvatarUpdate`.
@@ -1464,6 +1467,13 @@ async fn matrix_worker_task(
                     };
                     Cx::post_action(AccountDataAction::OwnDeviceFetched(device.map(Box::new)));
                 });
+            }
+
+            MatrixRequest::RequestSelfVerification => {
+                let Some(client) = get_client() else { continue };
+                let _verify_task = Handle::current().spawn(
+                    crate::verification::request_self_verification_handler(client)
+                );
             }
 
             MatrixRequest::GenerateMatrixLink { room_id, event_id, use_matrix_scheme, join_on_click } => {
