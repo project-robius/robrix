@@ -598,8 +598,8 @@ pub enum MatrixRequest {
     /// Request to fetch our own [`Device`].
     /// The response is delivered via [`AccountDataAction::OwnDeviceFetched`].
     GetOwnDevice,
-    /// Request to verify this device by sending a verification request to the
-    /// user's other logged-in sessions, driven through the verification modal.
+    /// Request to verify this device by sending an outgoing verification request
+    /// to the user's other logged-in devices, which'll open the verification modal.
     RequestSelfVerification,
     /// Request to fetch an Avatar image from the server.
     /// Upon completion of the async media request, the `on_fetched` function

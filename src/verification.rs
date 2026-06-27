@@ -259,8 +259,6 @@ async fn request_verification_handler(client: Client, request: VerificationReque
 
 
 /// Sends a self-verification request to the user's other logged-in sessions,
-/// then drives the resulting SAS to completion. This is the outgoing
-/// counterpart to [`request_verification_handler`].
 pub async fn request_self_verification_handler(client: Client) {
     let Some(user_id) = client.user_id() else {
         enqueue_popup_notification("Can't verify this device: you are not logged in.", PopupKind::Error, Some(5.0));
@@ -295,8 +293,7 @@ pub async fn request_self_verification_handler(client: Client) {
     };
     log!("Sent self-verification request, flow ID: {}", request.flow_id());
 
-    // Reuse the same modal as incoming requests; it shows a "waiting" state
-    // since `request.we_started()` is true.
+    // we use the same verification modal as we do for incoming requests.
     let (sender, mut response_receiver) = tokio::sync::mpsc::unbounded_channel::<VerificationUserResponse>();
     Cx::post_action(VerificationAction::RequestReceived(
         VerificationRequestActionState {
@@ -305,12 +302,12 @@ pub async fn request_self_verification_handler(client: Client) {
         }
     ));
 
-    // Wait for another session to respond, then drive SAS. We also select on the
-    // response channel so a modal cancel can abort the request before SAS begins.
+    // Wait for another session to respond, then start SAS verification.
     let mut stream = request.changes();
     let sas = loop {
+        // Use `select` so we can receive a cancel request from the modal
         tokio::select! {
-            // The user cancelled from the modal while we were waiting on another session.
+            // The user canceled from the modal while we were waiting on another session.
             response = response_receiver.recv() => {
                 if !matches!(response, Some(VerificationUserResponse::Accept)) {
                     let _ = request.cancel().await;
@@ -322,10 +319,10 @@ pub async fn request_self_verification_handler(client: Client) {
                 match state {
                     VerificationRequestState::Created { .. }
                     | VerificationRequestState::Requested { .. } => { }
-                    // Another session accepted, so we (the initiator) start SAS.
+                    // Another session accepted, so we can now start SAS
                     VerificationRequestState::Ready { .. } => match request.start_sas().await {
                         Ok(Some(sas)) => break sas,
-                        // The other side already started SAS; pick it up via the Transitioned state.
+                        // If the other side already started SAS, handle it in the `Transitioned` state below.
                         Ok(None) => { }
                         Err(e) => {
                             Cx::post_action(VerificationAction::RequestAcceptError(Arc::new(e)));
