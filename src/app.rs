@@ -13,7 +13,7 @@ use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomI
 use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::clear_avatar_cache, room_preview_cache::clear_room_preview_cache, home::{
-        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states, invalidate_timeline_state}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
+        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, invite_screen::LeaveRoomResultAction, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states, invalidate_timeline_state}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
     }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, settings::app_preferences::{AppPreferences, UiZoom}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
@@ -527,6 +527,13 @@ impl MatchEvent for App {
                 _ => {}
             }
 
+            // When a room has been successfully left (e.g. an invite was rejected),
+            // close its open tab, if any, and hide it from the rooms list.
+            if let Some(LeaveRoomResultAction::Left { room_id }) = action.downcast_ref() {
+                self.close_room(cx, room_id);
+                continue;
+            }
+
             // Handle DirectMessageRoomActions
             match action.downcast_ref() {
                 Some(DirectMessageRoomAction::FoundExisting { room_name_id, .. }) => {
@@ -889,6 +896,19 @@ impl App {
         }
         self.ui.view(cx, ids!(login_screen_view)).set_visible(cx, show_login);
         self.ui.view(cx, ids!(home_screen_view)).set_visible(cx, !show_login);
+    }
+
+    /// Closes the open tab for the given `room_id` (if any) and hides it from the rooms list.
+    ///
+    /// Used when a room has been successfully left (e.g. an invite was rejected),
+    /// so the now-defunct room doesn't linger in an open tab or the rooms list.
+    fn close_room(&mut self, cx: &mut Cx, room_id: &OwnedRoomId) {
+        let tab_id = LiveId::from_str(room_id.as_str());
+        cx.widget_action(
+            self.ui.widget_uid(),
+            DockAction::TabCloseWasPressed(tab_id),
+        );
+        enqueue_rooms_list_update(RoomsListUpdate::HideRoom { room_id: room_id.clone() });
     }
 
     /// Navigates to the given `destination_room`, optionally closing the `room_to_close`.
