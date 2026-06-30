@@ -301,15 +301,16 @@ impl Avatar {
             .or_else(try_get_cached_username_avatar)
             .unwrap_or((None, AvatarState::Unknown));
 
-        let (avatar_img_data_opt, profile_drawn) = match avatar_state {
-            AvatarState::Loaded(data) => (Some(data), true),
+        let (avatar_img_data_opt, profile_drawn, avatar_key) = match avatar_state {
+            AvatarState::Loaded(data) => (Some(data), true, None),
             AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, &uri) {
-                AvatarCacheEntry::Loaded(data) => (Some(data), true),
-                AvatarCacheEntry::Failed => (None, true),
-                AvatarCacheEntry::Requested => (None, false),
+                // Use the avatar's MxcUri as a key for makepad's async image cache
+                AvatarCacheEntry::Loaded(data) => (Some(data), true, Some(uri.to_string())),
+                AvatarCacheEntry::Failed => (None, true, None),
+                AvatarCacheEntry::Requested => (None, false, None),
             },
-            AvatarState::Known(None) | AvatarState::Failed => (None, true),
-            AvatarState::Unknown => (None, false),
+            AvatarState::Known(None) | AvatarState::Failed => (None, true, None),
+            AvatarState::Unknown => (None, false, None),
         };
 
         // Set sender to the display name if available, otherwise the user id.
@@ -328,7 +329,19 @@ impl Avatar {
                         timeline_kind.room_id().to_owned(),
                         data.clone()
                     ))),
-                    |cx, img| utils::load_image(&img, cx, &data),
+                    |cx, img| {
+                        if let Some(key) = avatar_key.as_deref() {
+                            // Try to decode the image data asynchronously, which we can only do
+                            // if we have a key for the image cache (the avatar's MxcUri).
+                            img.load_image_from_data_async(
+                                cx,
+                                std::path::Path::new(key),
+                                Arc::clone(&data),
+                            )
+                        } else {
+                            utils::load_image(&img, cx, &data)
+                        }
+                    }
                 )
                 .ok()
             })
