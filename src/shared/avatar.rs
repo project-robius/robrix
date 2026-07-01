@@ -339,7 +339,7 @@ impl Avatar {
                                 Arc::clone(&data),
                             )
                         } else {
-                            utils::load_image(&img, cx, &data)
+                            utils::load_image_cached(&img, cx, Arc::clone(&data))
                         }
                     }
                 )

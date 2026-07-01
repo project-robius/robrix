@@ -102,7 +102,37 @@ pub fn is_supported_image_mimetype(mimetype: &str) -> bool {
 ///
 /// Returns an error if the format is unsupported or decoding fails.
 pub fn load_image(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), ImageError> {
-    img.load_image_from_data(cx, data)
+    load_image_cached(img, cx, std::sync::Arc::<[u8]>::from(data))
+}
+
+/// Returns a cache key for the given encoded image `data`.
+pub fn image_cache_key(data: &[u8]) -> std::path::PathBuf {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let len = data.len();
+    // Hash only the length plus a small sample of the bytes.
+    const SAMPLE: usize = 256;
+    len.hash(&mut hasher);
+    if len <= 2 * SAMPLE {
+        data.hash(&mut hasher);
+    } else {
+        data[..SAMPLE].hash(&mut hasher);
+        data[len - SAMPLE..].hash(&mut hasher);
+    }
+    std::path::PathBuf::from(format!("robrix-img-cache://{:016x}-{}", hasher.finish(), len))
+}
+
+/// Loads the encoded image `data` into the given ImageRef widget using makepad's async image cache.
+pub fn load_image_cached<D>(
+    img: &ImageRef,
+    cx: &mut Cx,
+    data: std::sync::Arc<D>,
+) -> Result<(), ImageError>
+where
+    D: AsRef<[u8]> + Send + Sync + ?Sized + 'static,
+{
+    let key = image_cache_key(data.as_ref().as_ref());
+    img.load_image_from_data_async(cx, &key, data)
 }
 
 

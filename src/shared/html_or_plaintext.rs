@@ -503,7 +503,7 @@ impl MatrixLinkPill {
             let res = avatar_ref.show_image(
                 cx,
                 None, // Don't make this avatar clickable
-                |cx, img_ref| utils::load_image(&img_ref, cx, &data),
+                |cx, img_ref| utils::load_image_cached(&img_ref, cx, Arc::clone(&data)),
             );
             if res.is_ok() {
                 return;

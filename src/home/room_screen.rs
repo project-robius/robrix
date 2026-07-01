@@ -4240,8 +4240,9 @@ fn populate_image_message_content(
     let mut fetch_and_show_media_source = |cx: &mut Cx, media_source: MediaSource, image_info: Box<ImageInfo>| {
         match media_cache.try_get_media_or_fetch(&media_source, MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
+                let cache_key = media_source_mxc(&media_source).to_string();
                 let show_image_result = text_or_image_ref.show_image(cx, Some(media_source), |cx, img| {
-                    utils::load_image(&img, cx, &data)
+                    img.load_image_from_data_async(cx, std::path::Path::new(&cache_key), Arc::clone(&data))
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
                 if let Err(e) = show_image_result {
