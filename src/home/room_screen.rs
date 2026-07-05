@@ -30,7 +30,7 @@ use crate::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
-    room::{BasicRoomDetails, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
+    room::{BasicRoomDetails, reply_preview::CollapsiblePreviewWidgetRefExt, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
         attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, media_source_mxc, start_attachment_download}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageStatus, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
@@ -280,9 +280,9 @@ script_mod! {
 
         // A preview of the earlier message that this message was in reply to.
         replied_to_message := mod.widgets.RepliedToMessage {
-            flow: Right
+            flow: Down
             margin: Inset{ bottom: 3, top: 10 }
-            replied_to_message_content +: {
+            preview_content +: {
                 margin +: { left: 29 }
                 padding +: { bottom: 10 }
             }
@@ -356,7 +356,7 @@ script_mod! {
     mod.widgets.CondensedMessage = mod.widgets.Message {
         padding: Inset{ top: 2.0, bottom: 2.0 }
         replied_to_message +: {
-            replied_to_message_content +: {
+            preview_content +: {
                 margin: Inset{ left: 74, bottom: 5.0 }
             }
         }
@@ -746,6 +746,10 @@ pub struct RoomScreen {
     #[rust] all_rooms_loaded: bool,
     /// A flag to set key focus for the text input after it has been drawn.
     #[rust] focus_input_bar_on_show: bool,
+    /// After a reply preview collapses, redraw until the list is fills the viewport.
+    #[rust] relayout_redraws_left: u8,
+    #[rust] relayout_last_first_id: usize,
+    #[rust] relayout_last_scroll: f64,
 }
 
 impl Drop for RoomScreen {
@@ -1255,6 +1259,7 @@ impl Widget for RoomScreen {
                                                 &tl_state.user_power,
                                                 &self.pinned_events,
                                                 &tl_state.pending_downloads,
+                                                &tl_state.expanded_reply_previews,
                                                 item_drawn_status,
                                                 room_screen_widget_uid,
                                             )
@@ -1380,6 +1385,25 @@ impl Widget for RoomScreen {
         if self.focus_input_bar_on_show {
             self.focus_input_bar_on_show = false;
             self.view.room_input_bar(cx, ids!(room_input_bar)).set_key_focus(cx);
+        }
+
+        // After a reply preview is collapsed, the timeline portallist will have empty space at the top.
+        // We need to keep drawing it until it's filled.
+        if self.relayout_redraws_left > 0 {
+            self.relayout_redraws_left -= 1;
+            let (first_id, scroll) = {
+                let list = self.view.portal_list(cx, ids!(timeline.list));
+                (list.first_id(), list.scroll_position())
+            };
+            if first_id != self.relayout_last_first_id
+                || (scroll - self.relayout_last_scroll).abs() > 0.5
+            {
+                self.relayout_last_first_id = first_id;
+                self.relayout_last_scroll = scroll;
+                self.redraw(cx);
+            } else {
+                self.relayout_redraws_left = 0;
+            }
         }
 
         DrawStep::done()
@@ -2301,6 +2325,17 @@ impl RoomScreen {
                         loading_pane
                     );
                 }
+                MessageAction::ToggleReplyPreviewExpanded(message_id) => {
+                    if let Some(tl) = self.tl_state.as_mut() {
+                        if !tl.expanded_reply_previews.remove(message_id) {
+                            tl.expanded_reply_previews.insert(message_id.clone());
+                        }
+                    }
+                    // If we collapsed the preview, redraw until the list fills the viewport again.
+                    self.relayout_redraws_left = 12; // but not more than 12 times
+                    self.relayout_last_first_id = usize::MAX;
+                    self.redraw(cx);
+                }
                 MessageAction::JumpToEvent(event_id) => {
                     self.jump_to_event(
                         cx,
@@ -2555,6 +2590,7 @@ impl RoomScreen {
                     latest_own_user_receipt: None,
                     tombstone_info,
                     pending_downloads: SmallVec::new(),
+                    expanded_reply_previews: HashSet::new(),
                 };
                 timeline_state_store::mark_taken(cx, &tl_state.kind, owner);
                 (tl_state, true)
@@ -3342,6 +3378,10 @@ struct TimelineUiState {
     /// Media/file attachments in this timeline currently being downloaded.
     /// the inline button's spinner state.
     pending_downloads: SmallVec<[PendingDownload; 1]>,
+
+    /// Reply previews the user has eaxpanded that should be shown in full.
+    /// Collapsed reply previews (their default state) are absent from this set.
+    expanded_reply_previews: HashSet<TimelineEventItemId>,
 }
 
 #[derive(Default, Debug)]
@@ -3473,6 +3513,7 @@ fn populate_message_view(
     user_power_levels: &UserPowerLevels,
     pinned_events: &[OwnedEventId],
     pending_downloads: &[PendingDownload],
+    expanded_reply_previews: &HashSet<TimelineEventItemId>,
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
 ) -> (WidgetRef, ItemDrawnStatus) {
@@ -4004,7 +4045,7 @@ fn populate_message_view(
         populate_read_receipts(&item, cx, timeline_kind, event_tl_item);
         let is_reply_fully_drawn = draw_replied_to_message(
             cx,
-            &item.view(cx, ids!(replied_to_message)),
+            &item.widget(cx, ids!(replied_to_message)),
             timeline_kind,
             msg_like_content.in_reply_to.as_ref(),
             event_tl_item.event_id(),
@@ -4057,7 +4098,8 @@ fn populate_message_view(
                 .map(|p| p.state.display())
         })
         .unwrap_or_default();
-    item.as_message().set_data(cx, message_details, download_info, download_state);
+    let is_reply_expanded = expanded_reply_previews.contains(&message_details.timeline_event_id);
+    item.as_message().set_data(cx, message_details, download_info, download_state, is_reply_expanded);
 
 
     // If `used_cached_item` is false, we should always redraw the profile, even if profile_drawn is true.
@@ -4660,7 +4702,7 @@ fn populate_redacted_message_content(
 /// i.e., whether it can be considered cached and not needing to be redrawn later.
 fn draw_replied_to_message(
     cx: &mut Cx2d,
-    replied_to_message_view: &ViewRef,
+    replied_to_message_view: &WidgetRef,
     timeline_kind: &TimelineKind,
     in_reply_to: Option<&InReplyToDetails>,
     message_event_id: Option<&EventId>,
@@ -4674,7 +4716,7 @@ fn draw_replied_to_message(
             TimelineDetails::Ready(replied_to_event) => {
                 let (in_reply_to_username, is_avatar_fully_drawn) =
                     replied_to_message_view
-                        .avatar(cx, ids!(replied_to_message_content.reply_preview_avatar))
+                        .avatar(cx, ids!(preview_content.reply_preview_avatar))
                         .set_avatar_and_get_username(
                             cx,
                             timeline_kind,
@@ -4687,7 +4729,7 @@ fn draw_replied_to_message(
                 fully_drawn = is_avatar_fully_drawn;
 
                 replied_to_message_view
-                    .label(cx, ids!(replied_to_message_content.reply_preview_username))
+                    .label(cx, ids!(preview_content.reply_preview_username))
                     .set_text(cx, in_reply_to_username.as_str());
                 let msg_body = replied_to_message_view.html_or_plaintext(cx, ids!(reply_preview_body));
                 populate_preview_of_timeline_item(
@@ -4701,26 +4743,26 @@ fn draw_replied_to_message(
             TimelineDetails::Error(_e) => {
                 fully_drawn = true;
                 replied_to_message_view
-                    .label(cx, ids!(replied_to_message_content.reply_preview_username))
+                    .label(cx, ids!(preview_content.reply_preview_username))
                     .set_text(cx, "[Error fetching username]");
                 replied_to_message_view
-                    .avatar(cx, ids!(replied_to_message_content.reply_preview_avatar))
+                    .avatar(cx, ids!(preview_content.reply_preview_avatar))
                     .show_text(cx, None, None, "?");
                 replied_to_message_view
-                    .html_or_plaintext(cx, ids!(replied_to_message_content.reply_preview_body))
+                    .html_or_plaintext(cx, ids!(preview_content.reply_preview_body))
                     .show_plaintext(cx, "[Error fetching replied-to event]");
             }
             td @ TimelineDetails::Pending | td @ TimelineDetails::Unavailable => {
                 // We don't have the replied-to message yet, so we can't fully draw the preview.
                 fully_drawn = false;
                 replied_to_message_view
-                    .label(cx, ids!(replied_to_message_content.reply_preview_username))
+                    .label(cx, ids!(preview_content.reply_preview_username))
                     .set_text(cx, "[Loading username...]");
                 replied_to_message_view
-                    .avatar(cx, ids!(replied_to_message_content.reply_preview_avatar))
+                    .avatar(cx, ids!(preview_content.reply_preview_avatar))
                     .show_text(cx, None, None, "?");
                 replied_to_message_view
-                    .html_or_plaintext(cx, ids!(replied_to_message_content.reply_preview_body))
+                    .html_or_plaintext(cx, ids!(preview_content.reply_preview_body))
                     .show_plaintext(cx, "[Loading replied-to message...]");
 
                 // Confusingly, we need to fetch the details of the `message` (the event that is the reply),
@@ -4742,6 +4784,9 @@ fn draw_replied_to_message(
     }
 
     replied_to_message_view.set_visible(cx, show_reply);
+    // After we changed a reply preview's content, we need to clear its cached view and measured height.
+    replied_to_message_view.view(cx, ids!(preview_content)).redraw_texture_cache();
+    replied_to_message_view.as_collapsible_preview().reset_measured_height();
     fully_drawn
 }
 
@@ -5215,6 +5260,8 @@ pub enum MessageAction {
     /// indicating that they want to auto-scroll back to the related message,
     /// e.g., a replied-to message.
     JumpToRelated(MessageDetails),
+    /// The user clicked the "Show more" or "Show less" button on a tall reply preview.
+    ToggleReplyPreviewExpanded(TimelineEventItemId),
     /// The user clicked the thread summary on a thread-root message.
     OpenThread(OwnedEventId),
     /// The user requested to jump to a specific event in this room.
@@ -5294,10 +5341,15 @@ impl Widget for Message {
 
         let Some(details) = self.details.clone() else { return };
 
-        // We first handle a click on the replied-to message preview, if present,
-        // because we don't want any widgets within the replied-to message to be
-        // clickable or otherwise interactive.
-        match event.hits(cx, self.view(cx, ids!(replied_to_message)).area()) {
+        let reply = self.view.widget(cx, ids!(replied_to_message)).as_collapsible_preview();
+        let reply_content_area = reply.content_area(cx);
+        match event.hits(cx, reply_content_area) {
+            Hit::FingerHoverIn(..) => {
+                self.animator_play(cx, ids!(hover.on));
+            }
+            Hit::FingerHoverOut(_fho) => {
+                self.animator_play(cx, ids!(hover.off));
+            }
             Hit::FingerDown(fe) if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) => {
                 cx.widget_action(
                     details.room_screen_widget_uid,
@@ -5309,19 +5361,22 @@ impl Widget for Message {
             }
             Hit::FingerLongPress(lp) => {
                 cx.widget_action(
-                    details.room_screen_widget_uid, 
+                    details.room_screen_widget_uid,
                     MessageAction::OpenMessageContextMenu {
                         details: details.clone(),
                         abs_pos: lp.abs,
                     }
                 );
             }
-            // If the hit occurred on the replied-to message preview, jump to it.
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                cx.widget_action(
-                    details.room_screen_widget_uid, 
-                    MessageAction::JumpToRelated(details.clone()),
-                );
+                // Tapping on a collapsed reply preview expands it.
+                // Tapping on an expanded reply preview jumps to the replied-to message.
+                let action = if reply.is_collapsed() {
+                    MessageAction::ToggleReplyPreviewExpanded(details.timeline_event_id.clone())
+                } else {
+                    MessageAction::JumpToRelated(details.clone())
+                };
+                cx.widget_action(details.room_screen_widget_uid, action);
             }
             _ => { }
         }
@@ -5430,6 +5485,17 @@ impl Widget for Message {
                 }
             }
 
+            // Handle clicks on the reply preview's "show more" or "show less" buttons.
+            let reply = self.view.widget(cx, ids!(replied_to_message));
+            if reply.button(cx, ids!(reply_expand_button)).clicked(actions)
+                || reply.button(cx, ids!(reply_collapse_button)).clicked(actions)
+            {
+                cx.widget_action(
+                    details.room_screen_widget_uid,
+                    MessageAction::ToggleReplyPreviewExpanded(details.timeline_event_id.clone()),
+                );
+            }
+
             // Handle clicks on the "Download" button shown beneath media messages.
             if let Some(info) = self.download_info.as_ref()
                 && self.view.button(cx, ids!(content.download_section.download_button)).clicked(actions)
@@ -5474,12 +5540,16 @@ impl Message {
         details: MessageDetails,
         download_info: Option<DownloadableAttachment>,
         download_state: DownloadDisplayState,
+        is_reply_expanded: bool,
     ) {
         let prev_section_visible = self.download_info.is_some();
         let prev_state = self.download_state;
 
         self.details = Some(details);
         self.download_info = download_info;
+
+        // Re-apply this every time to ensure a re-used portallist item is still correctly expanded.
+        self.view.widget(cx, ids!(replied_to_message)).as_collapsible_preview().set_expanded(is_reply_expanded);
 
         let section_visible = self.download_info.is_some();
         self.view.view(cx, ids!(content.download_section)).set_visible(cx, section_visible);
@@ -5516,9 +5586,10 @@ impl MessageRef {
         details: MessageDetails,
         download_info: Option<DownloadableAttachment>,
         download_state: DownloadDisplayState,
+        is_reply_expanded: bool,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_data(cx, details, download_info, download_state);
+        inner.set_data(cx, details, download_info, download_state, is_reply_expanded);
     }
 }
 

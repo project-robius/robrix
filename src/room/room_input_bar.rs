@@ -25,6 +25,7 @@ use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId};
 use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FileUploadModalAction, FileUploadAttemptId, PreviewPayload, load_file_metadata}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::room::reply_preview::CollapsiblePreviewWidgetRefExt;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -195,7 +196,7 @@ impl ScriptHook for RoomInputBar {
 
 impl Widget for RoomInputBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        match event.hits(cx, self.view.view(cx, ids!(replying_preview.reply_preview_content)).area()) {
+        match event.hits(cx, self.view.widget(cx, ids!(replying_preview.reply_preview_content)).area()) {
             // If the hit occurred on the replying message preview, jump to it.
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
                 if let Some(event_id) = self.replying_to.as_ref()
@@ -253,6 +254,10 @@ impl Widget for RoomInputBar {
                 inner.walk.height = Size::Fixed((target * remapped).max(0.0));
             }
         }
+
+        self.view.view(cx, ids!(replying_preview))
+            .widget(cx, ids!(reply_preview_content))
+            .set_visible(cx, true);
 
         self.view.draw_walk(cx, scope, walk)
     }
@@ -466,7 +471,7 @@ impl RoomInputBar {
         // 1. Populate and show the ReplyingPreview, of course.
         let replying_preview = self.view(cx, ids!(replying_preview));
         let (replying_preview_username, _) = replying_preview
-            .avatar(cx, ids!(reply_preview_content.reply_preview_avatar))
+            .avatar(cx, ids!(reply_preview_content.preview_content.reply_preview_avatar))
             .set_avatar_and_get_username(
                 cx,
                 timeline_kind,
@@ -477,18 +482,22 @@ impl RoomInputBar {
             );
 
         replying_preview
-            .label(cx, ids!(reply_preview_content.reply_preview_username))
+            .label(cx, ids!(reply_preview_content.preview_content.reply_preview_username))
             .set_text(cx, replying_preview_username.as_str());
 
         populate_preview_of_timeline_item(
             cx,
-            &replying_preview.html_or_plaintext(cx, ids!(reply_preview_content.reply_preview_body)),
+            &replying_preview.html_or_plaintext(cx, ids!(reply_preview_content.preview_content.reply_preview_body)),
             replying_to.0.content(),
             replying_to.0.sender(),
             &replying_preview_username,
         );
 
         replying_preview.set_visible(cx, true);
+        let reply_preview_content = replying_preview.widget(cx, ids!(reply_preview_content));
+        reply_preview_content.set_visible(cx, true);
+        reply_preview_content.as_collapsible_preview().reset_measured_height();
+        reply_preview_content.view(cx, ids!(preview_content)).redraw_texture_cache();
         self.replying_to = Some(replying_to);
 
         // 2. Hide other views that are irrelevant to a reply, e.g.,
@@ -548,9 +557,10 @@ impl RoomInputBar {
 
     /// This should be invoked after the EditingPane has been fully hidden.
     fn on_editing_pane_hidden(&mut self, cx: &mut Cx) {
-        // Restore the replying_preview.
+        // Restore the replying_preview (which would've been hidden when the editing pane was shown).
         if self.was_replying_preview_visible && self.replying_to.is_some() {
             self.view.view(cx, ids!(replying_preview)).set_visible(cx, true);
+            self.view.widget(cx, ids!(replying_preview.reply_preview_content)).set_visible(cx, true);
         }
         self.redraw(cx);
         // We don't need to do anything with the editing pane itself here,
