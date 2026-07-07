@@ -72,6 +72,7 @@ ruma = { git = "https://github.com/ruma/ruma", rev = "8beb557b466a43b057c9c15527
     "compat-unset-avatar",
     "unstable-compat-lax-syncv5-deser",
 ] }
+num_cpus = "1.17.0"
 rand = "0.8.5"
 rangemap = "1.5.0"
 sanitize-filename = "0.6"
