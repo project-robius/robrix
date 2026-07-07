@@ -2331,6 +2331,7 @@ impl RoomScreen {
                             tl.expanded_reply_previews.insert(message_id.clone());
                         }
                     }
+
                     // If we collapsed the preview, redraw until the list fills the viewport again.
                     self.relayout_redraws_left = 12; // but not more than 12 times
                     self.relayout_last_first_id = usize::MAX;
@@ -5486,14 +5487,15 @@ impl Widget for Message {
             }
 
             // Handle clicks on the reply preview's "show more" or "show less" buttons.
-            let reply = self.view.widget(cx, ids!(replied_to_message));
-            if reply.button(cx, ids!(reply_expand_button)).clicked(actions)
-                || reply.button(cx, ids!(reply_collapse_button)).clicked(actions)
-            {
+            let reply_expand_button = self.button(cx, ids!(replied_to_message.reply_expand_button));
+            let reply_collapse_button = self.button(cx, ids!(replied_to_message.reply_collapse_button));
+            if reply_expand_button.clicked(actions) || reply_collapse_button.clicked(actions)             {
                 cx.widget_action(
                     details.room_screen_widget_uid,
                     MessageAction::ToggleReplyPreviewExpanded(details.timeline_event_id.clone()),
                 );
+                reply_expand_button.reset_hover(cx);
+                reply_collapse_button.reset_hover(cx);
             }
 
             // Handle clicks on the "Download" button shown beneath media messages.

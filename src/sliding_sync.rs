@@ -4,7 +4,7 @@ use mime::Mime;
 use clap::Parser;
 use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
-use futures_util::{future::{Abortable, join_all}, pin_mut, StreamExt};
+use futures_util::{future::{Abortable, join_all}, pin_mut, stream, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI, WidgetUid};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
@@ -28,7 +28,7 @@ use robius_open::Uri;
 use ruma::{OwnedRoomOrAliasId, RoomId, events::tag::Tags};
 use tokio::{
     runtime::Handle,
-    sync::{broadcast, mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::error::Elapsed,
+    sync::{broadcast, mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify, Semaphore}, task::JoinHandle, time::error::Elapsed,
 };
 use url::Url;
 use std::{borrow::Cow, cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, DerefMut, Not}, path::{Path, PathBuf}, sync::{Arc, LazyLock, Mutex, atomic::{AtomicBool, Ordering}}, time::Duration};
@@ -2515,6 +2515,22 @@ pub fn current_user_id() -> Option<OwnedUserId> {
     )
 }
 
+/// The display name of the currently-logged-in user, if any.
+static OWN_DISPLAY_NAME: Mutex<Option<String>> = Mutex::new(None);
+
+/// Returns the display name of the currently logged-in user, if any.
+/// Fetches and caches it if not yet known.
+async fn own_display_name(client: &Client) -> Option<String> {
+    if let Some(name) = OWN_DISPLAY_NAME.lock().unwrap().clone() {
+        return Some(name);
+    }
+    let fetched = client.account().get_display_name().await.ok().flatten();
+    if fetched.is_some() {
+        *OWN_DISPLAY_NAME.lock().unwrap() = fetched.clone();
+    }
+    fetched
+}
+
 /// The singleton sync service.
 static SYNC_SERVICE: Mutex<Option<Arc<SyncService>>> = Mutex::new(None);
 static SYNC_SERVICE_DESIRED_RUNNING: AtomicBool = AtomicBool::new(true);
@@ -2683,14 +2699,18 @@ struct RoomListServiceRoomInfo {
     room: matrix_sdk::Room,
 }
 impl RoomListServiceRoomInfo {
-    async fn from_room(room: matrix_sdk::Room, current_user_id: &Option<OwnedUserId>) -> Self {
+    async fn from_room(
+        room: matrix_sdk::Room,
+        current_user_id: &Option<OwnedUserId>,
+        fetch_power_levels: bool,
+    ) -> Self {
         // Parallelize fetching of independent room data.
         let (is_direct, tags, display_name, user_power_levels) = tokio::join!(
             room.is_direct(),
             room.tags(),
             room.display_name(),
             async {
-                if let Some(user_id) = current_user_id {
+                if fetch_power_levels && let Some(user_id) = current_user_id {
                     UserPowerLevels::from_room(&room, user_id.deref()).await
                 } else {
                     None
@@ -2715,8 +2735,13 @@ impl RoomListServiceRoomInfo {
             room,
         }
     }
-    async fn from_room_ref(room: &matrix_sdk::Room, current_user_id: &Option<OwnedUserId>) -> Self {
-        Self::from_room(room.clone(), current_user_id).await
+
+    async fn from_room_ref(
+        room: &matrix_sdk::Room,
+        current_user_id: &Option<OwnedUserId>,
+        fetch_power_levels: bool,
+    ) -> Self {
+        Self::from_room(room.clone(), current_user_id, fetch_power_levels).await
     }
 }
 
@@ -3097,6 +3122,16 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
 }
 
 
+/// A max limit on concurrent tasks so that we don't tie up all the CPUs
+/// (potentially starving the main thread).
+static MAX_CONCURRENCY: LazyLock<usize> = LazyLock::new(||
+    std::thread::available_parallelism() // SMT/hyperthreads
+        .map_or(4, |n| n.get())
+        .min(num_cpus::get_physical()) // real CPU count
+        .saturating_sub(2) // leave a core or two for the main UI thread, etc
+        .clamp(2, 16)
+);
+
 /// The main async task that listens for changes to all rooms.
 async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Result<()> {
     let all_rooms_list = room_list_service.all_rooms().await?;
@@ -3148,15 +3183,16 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
 
                     // Parallelize creating each room's RoomListServiceRoomInfo and adding that new room.
                     // We combine `from_room` and `add_new_room` into a single async task per room.
-                    let new_room_infos: Vec<RoomListServiceRoomInfo> = join_all(
+                    // We limit concurrency to ensure that the CPUs don't get flooded by a huge initial sync.
+                    let new_room_infos: Vec<RoomListServiceRoomInfo> = stream::iter(
                         new_rooms.into_iter().map(|room| async {
-                            let room_info = RoomListServiceRoomInfo::from_room(room.into_inner(), &current_user_id).await;
+                            let room_info = RoomListServiceRoomInfo::from_room(room.into_inner(), &current_user_id, false).await;
                             if let Err(e) = add_new_room(&room_info, &room_list_service, false).await {
                                 error!("Failed to add new room: {:?} ({}); error: {:?}", room_info.display_name, room_info.room_id, e);
                             }
                             room_info
                         })
-                    ).await;
+                    ).buffered(*MAX_CONCURRENCY).collect().await;
 
                     // Send room order update with the new room IDs
                     let (room_id_refs, room_ids) = {
@@ -3185,7 +3221,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                 }
                 VectorDiff::PushFront { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushFront"); }
-                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), &current_user_id).await;
+                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), &current_user_id, true).await;
                     let room_id = new_room.room_id.clone();
                     add_new_room(&new_room, &room_list_service, true).await?;
                     enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
@@ -3195,7 +3231,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                 }
                 VectorDiff::PushBack { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushBack"); }
-                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), &current_user_id).await;
+                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), &current_user_id, true).await;
                     let room_id = new_room.room_id.clone();
                     add_new_room(&new_room, &room_list_service, true).await?;
                     enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
@@ -3233,7 +3269,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                 }
                 VectorDiff::Insert { index, value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Insert at {index}"); }
-                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), &current_user_id).await;
+                    let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), &current_user_id, true).await;
                     let room_id = new_room.room_id.clone();
                     add_new_room(&new_room, &room_list_service, true).await?;
                     enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
@@ -3243,7 +3279,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                 }
                 VectorDiff::Set { index, value: changed_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Set at {index}"); }
-                    let changed_room = RoomListServiceRoomInfo::from_room(changed_room.into_inner(), &current_user_id).await;
+                    let changed_room = RoomListServiceRoomInfo::from_room(changed_room.into_inner(), &current_user_id, true).await;
                     if let Some(old_room) = all_known_rooms.get(index) {
                         update_room(old_room, &changed_room, &room_list_service).await?;
                     } else {
@@ -3318,7 +3354,7 @@ async fn optimize_remove_then_add_into_update(
             if LOG_ROOM_LIST_DIFFS {
                 log!("Optimizing {remove_diff:?} + Insert({insert_index}) into Update for room {}", room.room_id);
             }
-            let new_room = RoomListServiceRoomInfo::from_room_ref(new_room.deref(), current_user_id).await;
+            let new_room = RoomListServiceRoomInfo::from_room_ref(new_room.deref(), current_user_id, true).await;
             update_room(room, &new_room, room_list_service).await?;
             // Send order update for the insert
             enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
@@ -3333,7 +3369,7 @@ async fn optimize_remove_then_add_into_update(
             if LOG_ROOM_LIST_DIFFS {
                 log!("Optimizing {remove_diff:?} + PushFront into Update for room {}", room.room_id);
             }
-            let new_room = RoomListServiceRoomInfo::from_room_ref(new_room.deref(), current_user_id).await;
+            let new_room = RoomListServiceRoomInfo::from_room_ref(new_room.deref(), current_user_id, true).await;
             update_room(room, &new_room, room_list_service).await?;
             // Send order update for the push front
             enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
@@ -3348,7 +3384,7 @@ async fn optimize_remove_then_add_into_update(
             if LOG_ROOM_LIST_DIFFS {
                 log!("Optimizing {remove_diff:?} + PushBack into Update for room {}", room.room_id);
             }
-            let new_room = RoomListServiceRoomInfo::from_room_ref(new_room.deref(), current_user_id).await;
+            let new_room = RoomListServiceRoomInfo::from_room_ref(new_room.deref(), current_user_id, true).await;
             update_room(room, &new_room, room_list_service).await?;
             // Send order update for the push back
             enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
@@ -4148,7 +4184,7 @@ async fn get_latest_event_details(
             let sender_username_opt = if let TimelineDetails::Ready(profile) = $profile {
                 profile.display_name.clone()
             } else if $is_own {
-                client.account().get_display_name().await.ok().flatten()
+                own_display_name(client).await
             } else {
                 None
             };
@@ -4599,12 +4635,19 @@ async fn timeline_subscriber_handler(
     error!("Error: unexpectedly ended timeline subscriber for room {room_id}, thread {thread_root_event_id:?}.");
 }
 
+
 /// Spawn a new async task to fetch the room's new avatar.
 fn spawn_fetch_room_avatar(room: &RoomListServiceRoomInfo) {
     let room_id = room.room_id.clone();
     let room_name_id = RoomNameId::from((room.display_name.clone(), room.room_id.clone()));
     let inner_room = room.room.clone();
+
+    // Limit the number of concurrent room avatar fetches, as they can be expensive
+    // and max out the CPUs.
+    static ROOM_AVATAR_FETCH_LIMIT: Semaphore = Semaphore::const_new(8);
+
     Handle::current().spawn(async move {
+        let Ok(_permit) = ROOM_AVATAR_FETCH_LIMIT.acquire().await else { return };
         let room_avatar = room_avatar(&inner_room, &room_name_id).await;
         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomAvatar {
             room_id,
@@ -5050,6 +5093,7 @@ pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
     SYNC_SERVICE_ASSUMED_RUNNING.store(false, Ordering::Release);
     IGNORED_USERS.lock().unwrap().clear();
     ALL_JOINED_ROOMS.lock().unwrap().clear();
+    OWN_DISPLAY_NAME.lock().unwrap().take();
     LOGOUT_NOTIFY.notify_one();
 
     let on_clear_appstate = Arc::new(Notify::new());
