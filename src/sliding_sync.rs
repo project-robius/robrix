@@ -608,6 +608,11 @@ pub enum MatrixRequest {
         mxc_uri: OwnedMxcUri,
         on_fetched: fn(AvatarUpdate),
     },
+    /// Request to fetch or compute a room's avatar.
+    /// Returns the result via [`RoomsListUpdate::UpdateRoomAvatar`].
+    FetchRoomAvatar {
+        room_name_id: RoomNameId,
+    },
     /// Request to fetch media from the server.
     /// Upon completion of the async media request, the `on_fetched` function
     /// will be invoked with four arguments: the `destination`, the `media_request`,
@@ -1008,7 +1013,6 @@ async fn matrix_worker_task(
                             let (request_sender, request_receiver) = watch::channel(Vec::new());
                             let timeline_subscriber_handler_task = Handle::current().spawn(
                                 timeline_subscriber_handler(
-                                    main_room_timeline.room().clone(),
                                     thread_timeline.clone(),
                                     timeline_update_sender.clone(),
                                     request_receiver,
@@ -1024,7 +1028,9 @@ async fn matrix_worker_task(
                                         timeline_update_receiver,
                                         request_sender,
                                     )),
-                                    timeline_subscriber_handler_task,
+                                    timeline_subscriber: TimelineSubscriber::Running(
+                                        timeline_subscriber_handler_task,
+                                    ),
                                 },
                             );
                             SignalToUI::set_ui_signal();
@@ -1721,6 +1727,15 @@ async fn matrix_worker_task(
                 });
             }
 
+            MatrixRequest::FetchRoomAvatar { room_name_id } => {
+                let Some(client) = get_client() else { continue };
+                let Some(room) = client.get_room(room_name_id.room_id()) else {
+                    log!("Skipping avatar fetch for unknown room {}", room_name_id.room_id());
+                    continue;
+                };
+                spawn_fetch_room_avatar_inner(room, room_name_id);
+            }
+
             MatrixRequest::FetchMedia { media_request, on_fetched, destination, update_sender } => {
                 let Some(client) = get_client() else { continue };
                 
@@ -2410,6 +2425,18 @@ pub struct TimelineEndpoints {
     pub is_encrypted: bool,
 }
 
+/// The state of a timeline's background subscriber task.
+///
+/// For efficiency's sake, tasks aren't spawned until the timeline is opened.
+enum TimelineSubscriber {
+    /// The timeline (room or thread) hasn't been opened yet, so its background subscriber task isn't running.
+    NotStarted {
+        request_receiver: watch::Receiver<Vec<BackwardsPaginateUntilEventRequest>>,
+    },
+    /// The timeline's background subscriber task is running, meaning the room has been opened at least once.
+    Running(JoinHandle<()>),
+}
+
 /// Info about a timeline for a joined room or a thread in a joined room.
 struct PerTimelineDetails {
     /// A shared reference to a room's main timeline or thread's timeline of events.
@@ -2429,12 +2456,33 @@ struct PerTimelineDetails {
         crossbeam_channel::Receiver<TimelineUpdate>,
         TimelineRequestSender,
     )>,
-    /// The async task that listens for updates for this timeline.
-    timeline_subscriber_handler_task: JoinHandle<()>,
+    /// The backend subscriber task that handles updates to this timeline and sends them to the UI.
+    timeline_subscriber: TimelineSubscriber,
+}
+impl PerTimelineDetails {
+    /// Starts the background subscriber task for this timeline, if one wasn't already running.
+    fn ensure_subscriber_started(&mut self) {
+        let request_receiver = match &self.timeline_subscriber {
+            TimelineSubscriber::NotStarted { request_receiver } => request_receiver.clone(),
+            TimelineSubscriber::Running(_) => return,
+        };
+        // this fn might be called from a regular OS thread with no async context, so don't use `Handle::spawn()`
+        let task = get_or_create_tokio_runtime().spawn(timeline_subscriber_handler(
+            self.timeline.clone(),
+            self.timeline_update_sender.clone(),
+            request_receiver,
+            // a thread timeline will already have spawned its subscriber task at creation,
+            // so we can only reach this point for a main room timeline.
+            None,
+        ));
+        self.timeline_subscriber = TimelineSubscriber::Running(task);
+    }
 }
 impl Drop for PerTimelineDetails {
     fn drop(&mut self) {
-        self.timeline_subscriber_handler_task.abort();
+        if let TimelineSubscriber::Running(task) = &self.timeline_subscriber {
+            task.abort();
+        }
     }
 }
 
@@ -2633,6 +2681,8 @@ pub fn is_user_ignored(user_id: &UserId) -> bool {
 /// 2. The timeline update receiver, which is a singleton, and can only be taken once.
 /// 3. A `tokio::watch` sender that can be used to send requests to the timeline subscriber handler.
 ///
+/// Spawns the background timeline subscriber async task if it didn't already exist.
+///
 /// This will only succeed once per room (or once per room thread),
 /// as only a single channel receiver can exist.
 pub fn take_timeline_endpoints(kind: &TimelineKind) -> Option<TimelineEndpoints> {
@@ -2643,6 +2693,7 @@ pub fn take_timeline_endpoints(kind: &TimelineKind) -> Option<TimelineEndpoints>
         TimelineKind::Thread { thread_root_event_id, .. } => jrd.thread_timelines.get_mut(thread_root_event_id)?,
     };
     let (update_receiver, request_sender) = details.timeline_singleton_endpoints.take()?;
+    details.ensure_subscriber_started();
     Some(TimelineEndpoints {
         update_sender: details.timeline_update_sender.clone(),
         update_receiver,
@@ -3681,14 +3732,9 @@ async fn add_new_room(
     );
     let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
 
+    // The `timeline_subscriber_handler` async task is spawned lazily when the room/thread is first opened.
+    // All we do here is set up a channel between the UI and backend, for future use.
     let (request_sender, request_receiver) = watch::channel(Vec::new());
-    let timeline_subscriber_handler_task = Handle::current().spawn(timeline_subscriber_handler(
-        new_room.room.clone(),
-        timeline.clone(),
-        timeline_update_sender.clone(),
-        request_receiver,
-        None,
-    ));
 
     // We need to add the room to the `ALL_JOINED_ROOMS` list before we can send
     // an `AddJoinedRoom` update to the RoomsList widget, because that widget might
@@ -3702,7 +3748,7 @@ async fn add_new_room(
                 timeline,
                 timeline_singleton_endpoints: Some((timeline_update_receiver, request_sender)),
                 timeline_update_sender,
-                timeline_subscriber_handler_task,
+                timeline_subscriber: TimelineSubscriber::NotStarted { request_receiver },
             },
             thread_timelines: HashMap::new(),
             pending_thread_timelines: HashSet::new(),
@@ -3728,7 +3774,7 @@ async fn add_new_room(
         room_name_id: room_name_id.clone(),
         canonical_alias: new_room.room.canonical_alias(),
         alt_aliases: new_room.room.alt_aliases(),
-        has_been_paginated: false,
+        has_been_shown: false,
         is_selected: false,
         is_direct: new_room.is_direct,
         is_tombstoned: new_room.is_tombstoned,
@@ -3738,7 +3784,6 @@ async fn add_new_room(
         room_name_id,
         is_invite: false,
     });
-    spawn_fetch_room_avatar(new_room);
     Ok(())
 }
 
@@ -4326,16 +4371,13 @@ const LOG_ROOM_LIST_DIFFS: bool = cfg!(feature = "log_room_list_diffs");
 
 /// A per-timeline async task that listens for timeline updates and sends them to the UI thread.
 ///
-/// One instance of this async task is spawned for each room the client knows about,
-/// and also one for each thread that the user opens in a thread view.
+/// One instance of this async task is spawned for each room or thread that is opened by the user.
 async fn timeline_subscriber_handler(
-    room: Room,
     timeline: Arc<Timeline>,
     timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
     mut request_receiver: watch::Receiver<Vec<BackwardsPaginateUntilEventRequest>>,
     thread_root_event_id: Option<OwnedEventId>,
 ) {
-
     /// An inner function that searches the given new timeline items for a target event.
     ///
     /// If the target event is found, it is removed from the `target_event_id_opt` and returned,
@@ -4361,7 +4403,7 @@ async fn timeline_subscriber_handler(
     }
 
 
-    let room_id = room.room_id().to_owned();
+    let room_id = timeline.room().room_id().to_owned();
     log!("Starting timeline subscriber for room {room_id}, thread {thread_root_event_id:?}...");
     let (mut timeline_items, mut subscriber) = timeline.subscribe().await;
     log!("Received initial timeline update of {} items for room {room_id}, thread {thread_root_event_id:?}.", timeline_items.len());
@@ -4638,17 +4680,20 @@ async fn timeline_subscriber_handler(
 
 /// Spawn a new async task to fetch the room's new avatar.
 fn spawn_fetch_room_avatar(room: &RoomListServiceRoomInfo) {
-    let room_id = room.room_id.clone();
     let room_name_id = RoomNameId::from((room.display_name.clone(), room.room_id.clone()));
-    let inner_room = room.room.clone();
+    spawn_fetch_room_avatar_inner(room.room.clone(), room_name_id);
+}
 
-    // Limit the number of concurrent room avatar fetches, as they can be expensive
-    // and max out the CPUs.
+/// Spawns an async task to fetch or compute the room's avatar and send it to the rooms list.
+fn spawn_fetch_room_avatar_inner(room: Room, room_name_id: RoomNameId) {
+    // Limit the number of concurrent room avatar fetches,
+    // as they can be expensive and max out the CPUs.
     static ROOM_AVATAR_FETCH_LIMIT: Semaphore = Semaphore::const_new(8);
 
     Handle::current().spawn(async move {
         let Ok(_permit) = ROOM_AVATAR_FETCH_LIMIT.acquire().await else { return };
-        let room_avatar = room_avatar(&inner_room, &room_name_id).await;
+        let room_id = room_name_id.room_id().clone();
+        let room_avatar = room_avatar(&room, &room_name_id).await;
         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomAvatar {
             room_id,
             room_avatar,
@@ -4659,21 +4704,22 @@ fn spawn_fetch_room_avatar(room: &RoomListServiceRoomInfo) {
 /// Fetches and returns the avatar image for the given room (if one exists),
 /// otherwise returns a text avatar string of the first character of the room name.
 async fn room_avatar(room: &Room, room_name_id: &RoomNameId) -> FetchedRoomAvatar {
-    match room.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
-        Ok(Some(avatar)) => FetchedRoomAvatar::Image(avatar.into()),
-        _ => {
-            if let Ok(room_members) = room.members(RoomMemberships::ACTIVE).await {
-                if room_members.len() == 2 {
-                    if let Some(non_account_member) = room_members.iter().find(|m| !m.is_account_user()) {
-                        if let Ok(Some(avatar)) = non_account_member.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
-                            return FetchedRoomAvatar::Image(avatar.into());
-                        }
-                    }
-                }
+    if let Ok(Some(avatar)) = room.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
+        return FetchedRoomAvatar::Image(avatar.into());
+    }
+    // For rooms without an avatar that have only one hero (i.e., a 2-member DM), use their avatar.
+    if let Ok([one_hero]) = <[_; 1]>::try_from(room.heroes()) {
+        if let Some(avatar_url) = one_hero.avatar_url {
+            let request = MediaRequestParameters {
+                source: MediaSource::Plain(avatar_url),
+                format: AVATAR_THUMBNAIL_FORMAT.into(),
+            };
+            if let Ok(avatar) = room.client().media().get_media_content(&request, true).await {
+                return FetchedRoomAvatar::Image(avatar.into());
             }
-            utils::avatar_from_room_name(room_name_id.name_for_avatar())
         }
     }
+    utils::avatar_from_room_name(room_name_id.name_for_avatar())
 }
 
 /// Spawn an async task to login to the given Matrix homeserver using the given SSO identity provider ID.
