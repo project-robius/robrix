@@ -2466,7 +2466,7 @@ impl PerTimelineDetails {
             TimelineSubscriber::NotStarted { request_receiver } => request_receiver.clone(),
             TimelineSubscriber::Running(_) => return,
         };
-        // this fn might be called from a regular OS thread with no async contenxt, so don't use `Handle::spawn()`
+        // this fn might be called from a regular OS thread with no async context, so don't use `Handle::spawn()`
         let task = get_or_create_tokio_runtime().spawn(timeline_subscriber_handler(
             self.timeline.clone(),
             self.timeline_update_sender.clone(),
