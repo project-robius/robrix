@@ -608,6 +608,11 @@ pub enum MatrixRequest {
         mxc_uri: OwnedMxcUri,
         on_fetched: fn(AvatarUpdate),
     },
+    /// Request to fetch or compute a room's avatar.
+    /// Returns the result via [`RoomsListUpdate::UpdateRoomAvatar`].
+    FetchRoomAvatar {
+        room_name_id: RoomNameId,
+    },
     /// Request to fetch media from the server.
     /// Upon completion of the async media request, the `on_fetched` function
     /// will be invoked with four arguments: the `destination`, the `media_request`,
@@ -1008,7 +1013,6 @@ async fn matrix_worker_task(
                             let (request_sender, request_receiver) = watch::channel(Vec::new());
                             let timeline_subscriber_handler_task = Handle::current().spawn(
                                 timeline_subscriber_handler(
-                                    main_room_timeline.room().clone(),
                                     thread_timeline.clone(),
                                     timeline_update_sender.clone(),
                                     request_receiver,
@@ -1721,6 +1725,15 @@ async fn matrix_worker_task(
                     // log!("Fetched avatar for {mxc_uri:?}, succeeded? {}", res.is_ok());
                     on_fetched(AvatarUpdate { mxc_uri, avatar_data: res.map(|v| v.into()) });
                 });
+            }
+
+            MatrixRequest::FetchRoomAvatar { room_name_id } => {
+                let Some(client) = get_client() else { continue };
+                let Some(room) = client.get_room(room_name_id.room_id()) else {
+                    log!("Skipping avatar fetch for unknown room {}", room_name_id.room_id());
+                    continue;
+                };
+                spawn_fetch_room_avatar_inner(room, room_name_id);
             }
 
             MatrixRequest::FetchMedia { media_request, on_fetched, destination, update_sender } => {
@@ -2455,7 +2468,6 @@ impl PerTimelineDetails {
         };
         // this fn might be called from a regular OS thread with no async contenxt, so don't use `Handle::spawn()`
         let task = get_or_create_tokio_runtime().spawn(timeline_subscriber_handler(
-            self.timeline.room().clone(),
             self.timeline.clone(),
             self.timeline_update_sender.clone(),
             request_receiver,
@@ -3762,7 +3774,7 @@ async fn add_new_room(
         room_name_id: room_name_id.clone(),
         canonical_alias: new_room.room.canonical_alias(),
         alt_aliases: new_room.room.alt_aliases(),
-        has_been_paginated: false,
+        has_been_shown: false,
         is_selected: false,
         is_direct: new_room.is_direct,
         is_tombstoned: new_room.is_tombstoned,
@@ -3772,7 +3784,6 @@ async fn add_new_room(
         room_name_id,
         is_invite: false,
     });
-    spawn_fetch_room_avatar(new_room);
     Ok(())
 }
 
@@ -4362,7 +4373,6 @@ const LOG_ROOM_LIST_DIFFS: bool = cfg!(feature = "log_room_list_diffs");
 ///
 /// One instance of this async task is spawned for each room or thread that is opened by the user.
 async fn timeline_subscriber_handler(
-    room: Room,
     timeline: Arc<Timeline>,
     timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
     mut request_receiver: watch::Receiver<Vec<BackwardsPaginateUntilEventRequest>>,
@@ -4393,7 +4403,7 @@ async fn timeline_subscriber_handler(
     }
 
 
-    let room_id = room.room_id().to_owned();
+    let room_id = timeline.room().room_id().to_owned();
     log!("Starting timeline subscriber for room {room_id}, thread {thread_root_event_id:?}...");
     let (mut timeline_items, mut subscriber) = timeline.subscribe().await;
     log!("Received initial timeline update of {} items for room {room_id}, thread {thread_root_event_id:?}.", timeline_items.len());
@@ -4670,17 +4680,20 @@ async fn timeline_subscriber_handler(
 
 /// Spawn a new async task to fetch the room's new avatar.
 fn spawn_fetch_room_avatar(room: &RoomListServiceRoomInfo) {
-    let room_id = room.room_id.clone();
     let room_name_id = RoomNameId::from((room.display_name.clone(), room.room_id.clone()));
-    let inner_room = room.room.clone();
+    spawn_fetch_room_avatar_inner(room.room.clone(), room_name_id);
+}
 
-    // Limit the number of concurrent room avatar fetches, as they can be expensive
-    // and max out the CPUs.
+/// Spawns an async task to fetch or compute the room's avatar and send it to the rooms list.
+fn spawn_fetch_room_avatar_inner(room: Room, room_name_id: RoomNameId) {
+    // Limit the number of concurrent room avatar fetches,
+    // as they can be expensive and max out the CPUs.
     static ROOM_AVATAR_FETCH_LIMIT: Semaphore = Semaphore::const_new(8);
 
     Handle::current().spawn(async move {
         let Ok(_permit) = ROOM_AVATAR_FETCH_LIMIT.acquire().await else { return };
-        let room_avatar = room_avatar(&inner_room, &room_name_id).await;
+        let room_id = room_name_id.room_id().clone();
+        let room_avatar = room_avatar(&room, &room_name_id).await;
         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomAvatar {
             room_id,
             room_avatar,
@@ -4691,21 +4704,22 @@ fn spawn_fetch_room_avatar(room: &RoomListServiceRoomInfo) {
 /// Fetches and returns the avatar image for the given room (if one exists),
 /// otherwise returns a text avatar string of the first character of the room name.
 async fn room_avatar(room: &Room, room_name_id: &RoomNameId) -> FetchedRoomAvatar {
-    match room.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
-        Ok(Some(avatar)) => FetchedRoomAvatar::Image(avatar.into()),
-        _ => {
-            if let Ok(room_members) = room.members(RoomMemberships::ACTIVE).await {
-                if room_members.len() == 2 {
-                    if let Some(non_account_member) = room_members.iter().find(|m| !m.is_account_user()) {
-                        if let Ok(Some(avatar)) = non_account_member.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
-                            return FetchedRoomAvatar::Image(avatar.into());
-                        }
-                    }
-                }
+    if let Ok(Some(avatar)) = room.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
+        return FetchedRoomAvatar::Image(avatar.into());
+    }
+    // For rooms without an avatar that have only one hero (i.e., a 2-member DM), use their avatar.
+    if let Ok([one_hero]) = <[_; 1]>::try_from(room.heroes()) {
+        if let Some(avatar_url) = one_hero.avatar_url {
+            let request = MediaRequestParameters {
+                source: MediaSource::Plain(avatar_url),
+                format: AVATAR_THUMBNAIL_FORMAT.into(),
+            };
+            if let Ok(avatar) = room.client().media().get_media_content(&request, true).await {
+                return FetchedRoomAvatar::Image(avatar.into());
             }
-            utils::avatar_from_room_name(room_name_id.name_for_avatar())
         }
     }
+    utils::avatar_from_room_name(room_name_id.name_for_avatar())
 }
 
 /// Spawn an async task to login to the given Matrix homeserver using the given SSO identity provider ID.

@@ -175,7 +175,7 @@ pub enum RoomsListUpdate {
     UpdateRoomName {
         new_room_name: RoomNameId,
     },
-    /// Update the avatar (image) for the given room.
+    /// Update the avatar for the given room.
     UpdateRoomAvatar {
         room_id: OwnedRoomId,
         room_avatar: FetchedRoomAvatar,
@@ -288,11 +288,9 @@ pub struct JoinedRoomInfo {
     /// The avatar for this room: either an array of bytes holding the avatar image
     /// or a string holding the first Unicode character of the room name.
     pub room_avatar: FetchedRoomAvatar,
-    /// Whether this room has been paginated at least once.
-    /// We pre-paginate visible rooms at least once in order to
-    /// be able to display the latest message in the RoomsListEntry
-    /// and to have something to immediately show when a user first opens a room.
-    pub has_been_paginated: bool,
+    /// Whether this room has been shown in the rooms list yet.
+    /// Determines whether we do first-time actions like pagination and fetching its avatar.
+    pub has_been_shown: bool,
     /// Whether this room is currently selected in the UI.
     pub is_selected: bool,
     /// Whether this a direct room.
@@ -1481,15 +1479,19 @@ impl Widget for RoomsList {
                         direct_room.is_selected = self.current_active_room.as_ref()
                             .is_some_and(|sel_room| sel_room.room_id() == direct_room_id);
 
-                        // Paginate the room if it hasn't been paginated yet.
-                        if PREPAGINATE_VISIBLE_ROOMS && !direct_room.has_been_paginated {
-                            direct_room.has_been_paginated = true;
-                            submit_async_request(MatrixRequest::PaginateTimeline {
-                                timeline_kind: TimelineKind::MainRoom {
-                                    room_id: direct_room.room_name_id.room_id().clone(),
-                                },
-                                num_events: 50,
-                                direction: PaginationDirection::Backwards,
+                        if !direct_room.has_been_shown {
+                            direct_room.has_been_shown = true;
+                            if PREPAGINATE_VISIBLE_ROOMS {
+                                submit_async_request(MatrixRequest::PaginateTimeline {
+                                    timeline_kind: TimelineKind::MainRoom {
+                                        room_id: direct_room.room_name_id.room_id().clone(),
+                                    },
+                                    num_events: 50,
+                                    direction: PaginationDirection::Backwards,
+                                });
+                            }
+                            submit_async_request(MatrixRequest::FetchRoomAvatar {
+                                room_name_id: direct_room.room_name_id.clone(),
                             });
                         }
                         // Pass the room info down to the RoomsListEntry widget via Scope.
@@ -1518,15 +1520,19 @@ impl Widget for RoomsList {
                         regular_room.is_selected = self.current_active_room.as_ref()
                             .is_some_and(|sel_room| sel_room.room_id() == regular_room_id);
 
-                        // Paginate the room if it hasn't been paginated yet.
-                        if PREPAGINATE_VISIBLE_ROOMS && !regular_room.has_been_paginated {
-                            regular_room.has_been_paginated = true;
-                            submit_async_request(MatrixRequest::PaginateTimeline {
-                                timeline_kind: TimelineKind::MainRoom {
-                                    room_id: regular_room.room_name_id.room_id().clone(),
-                                },
-                                num_events: 50,
-                                direction: PaginationDirection::Backwards,
+                        if !regular_room.has_been_shown {
+                            regular_room.has_been_shown = true;
+                            if PREPAGINATE_VISIBLE_ROOMS {
+                                submit_async_request(MatrixRequest::PaginateTimeline {
+                                    timeline_kind: TimelineKind::MainRoom {
+                                        room_id: regular_room.room_name_id.room_id().clone(),
+                                    },
+                                    num_events: 50,
+                                    direction: PaginationDirection::Backwards,
+                                });
+                            }
+                            submit_async_request(MatrixRequest::FetchRoomAvatar {
+                                room_name_id: regular_room.room_name_id.clone(),
                             });
                         }
                         // Pass the room info down to the RoomsListEntry widget via Scope.
