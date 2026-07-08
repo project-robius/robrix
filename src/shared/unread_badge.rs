@@ -56,9 +56,11 @@ script_mod! {
                     let rad = max(1.0, self.border_radius)
                     sdf.box(bx, by, bw, bh, rad)
                     let dist = sdf.shape
-                    let half = bh * 0.5
+                    // Note: this must NOT be named `half`, as that is a reserved
+                    // type keyword in MSL and HLSL (shader compilation fails).
+                    let half_bh = bh * 0.5
                     let aa = clamp(0.5 - dist, 0.0, 1.0)
-                    let band_start = -half * 0.45
+                    let band_start = -half_bh * 0.45
                     let t = clamp((dist - band_start) / (m - band_start), 0.0, 1.0)
                     let s = t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
                     let warm = mix(self.badge_color.rgb, self.fade_color.rgb, s)
