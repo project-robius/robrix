@@ -1024,7 +1024,9 @@ async fn matrix_worker_task(
                                         timeline_update_receiver,
                                         request_sender,
                                     )),
-                                    timeline_subscriber_handler_task,
+                                    timeline_subscriber: TimelineSubscriber::Running(
+                                        timeline_subscriber_handler_task,
+                                    ),
                                 },
                             );
                             SignalToUI::set_ui_signal();
@@ -2410,6 +2412,18 @@ pub struct TimelineEndpoints {
     pub is_encrypted: bool,
 }
 
+/// The state of a timeline's background subscriber task.
+///
+/// For efficiency's sake, tasks aren't spawned until the timeline is opened.
+enum TimelineSubscriber {
+    /// The timeline (room or thread) hasn't been opened yet, so its background subscriber task isn't running.
+    NotStarted {
+        request_receiver: watch::Receiver<Vec<BackwardsPaginateUntilEventRequest>>,
+    },
+    /// The timeline's background subscriber task is running, meaning the room has been opened at least once.
+    Running(JoinHandle<()>),
+}
+
 /// Info about a timeline for a joined room or a thread in a joined room.
 struct PerTimelineDetails {
     /// A shared reference to a room's main timeline or thread's timeline of events.
@@ -2429,12 +2443,34 @@ struct PerTimelineDetails {
         crossbeam_channel::Receiver<TimelineUpdate>,
         TimelineRequestSender,
     )>,
-    /// The async task that listens for updates for this timeline.
-    timeline_subscriber_handler_task: JoinHandle<()>,
+    /// The backend subscriber task that handles updates to this timeline and sends them to the UI.
+    timeline_subscriber: TimelineSubscriber,
+}
+impl PerTimelineDetails {
+    /// Starts the background subscriber task for this timeline, if one wasn't already running.
+    fn ensure_subscriber_started(&mut self) {
+        let request_receiver = match &self.timeline_subscriber {
+            TimelineSubscriber::NotStarted { request_receiver } => request_receiver.clone(),
+            TimelineSubscriber::Running(_) => return,
+        };
+        // this fn might be called from a regular OS thread with no async contenxt, so don't use `Handle::spawn()`
+        let task = get_or_create_tokio_runtime().spawn(timeline_subscriber_handler(
+            self.timeline.room().clone(),
+            self.timeline.clone(),
+            self.timeline_update_sender.clone(),
+            request_receiver,
+            // a thread timeline will already have spawned its subscriber task at creation,
+            // so we can only reach this point for a main room timeline.
+            None,
+        ));
+        self.timeline_subscriber = TimelineSubscriber::Running(task);
+    }
 }
 impl Drop for PerTimelineDetails {
     fn drop(&mut self) {
-        self.timeline_subscriber_handler_task.abort();
+        if let TimelineSubscriber::Running(task) = &self.timeline_subscriber {
+            task.abort();
+        }
     }
 }
 
@@ -2633,6 +2669,8 @@ pub fn is_user_ignored(user_id: &UserId) -> bool {
 /// 2. The timeline update receiver, which is a singleton, and can only be taken once.
 /// 3. A `tokio::watch` sender that can be used to send requests to the timeline subscriber handler.
 ///
+/// Spawns the background timeline subscriber async task if it didn't already exist.
+///
 /// This will only succeed once per room (or once per room thread),
 /// as only a single channel receiver can exist.
 pub fn take_timeline_endpoints(kind: &TimelineKind) -> Option<TimelineEndpoints> {
@@ -2643,6 +2681,7 @@ pub fn take_timeline_endpoints(kind: &TimelineKind) -> Option<TimelineEndpoints>
         TimelineKind::Thread { thread_root_event_id, .. } => jrd.thread_timelines.get_mut(thread_root_event_id)?,
     };
     let (update_receiver, request_sender) = details.timeline_singleton_endpoints.take()?;
+    details.ensure_subscriber_started();
     Some(TimelineEndpoints {
         update_sender: details.timeline_update_sender.clone(),
         update_receiver,
@@ -3681,14 +3720,9 @@ async fn add_new_room(
     );
     let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
 
+    // The `timeline_subscriber_handler` async task is spawned lazily when the room/thread is first opened.
+    // All we do here is set up a channel between the UI and backend, for future use.
     let (request_sender, request_receiver) = watch::channel(Vec::new());
-    let timeline_subscriber_handler_task = Handle::current().spawn(timeline_subscriber_handler(
-        new_room.room.clone(),
-        timeline.clone(),
-        timeline_update_sender.clone(),
-        request_receiver,
-        None,
-    ));
 
     // We need to add the room to the `ALL_JOINED_ROOMS` list before we can send
     // an `AddJoinedRoom` update to the RoomsList widget, because that widget might
@@ -3702,7 +3736,7 @@ async fn add_new_room(
                 timeline,
                 timeline_singleton_endpoints: Some((timeline_update_receiver, request_sender)),
                 timeline_update_sender,
-                timeline_subscriber_handler_task,
+                timeline_subscriber: TimelineSubscriber::NotStarted { request_receiver },
             },
             thread_timelines: HashMap::new(),
             pending_thread_timelines: HashSet::new(),
@@ -4326,8 +4360,7 @@ const LOG_ROOM_LIST_DIFFS: bool = cfg!(feature = "log_room_list_diffs");
 
 /// A per-timeline async task that listens for timeline updates and sends them to the UI thread.
 ///
-/// One instance of this async task is spawned for each room the client knows about,
-/// and also one for each thread that the user opens in a thread view.
+/// One instance of this async task is spawned for each room or thread that is opened by the user.
 async fn timeline_subscriber_handler(
     room: Room,
     timeline: Arc<Timeline>,
@@ -4335,7 +4368,6 @@ async fn timeline_subscriber_handler(
     mut request_receiver: watch::Receiver<Vec<BackwardsPaginateUntilEventRequest>>,
     thread_root_event_id: Option<OwnedEventId>,
 ) {
-
     /// An inner function that searches the given new timeline items for a target event.
     ///
     /// If the target event is found, it is removed from the `target_event_id_opt` and returned,
