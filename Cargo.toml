@@ -114,6 +114,11 @@ reqwest = { version = "0.12", default-features = false, optional = true, feature
 [target.'cfg(target_os = "ios")'.dependencies]
 robius-web-auth-session = { git = "https://github.com/project-robius/robius" }
 
+## On Android, the matrix-sdk no longer sets up TLS roots for rustls by default,
+## so we have to do it manually.
+[target.'cfg(target_os = "android")'.dependencies]
+webpki-root-certs = "1"
+
 
 [features]
 default = []

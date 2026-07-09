@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     app_data_dir,
+    cache_dir,
     login::login_screen::LoginAction,
 };
 
@@ -142,17 +143,22 @@ fn resolve_db_path(stored: PathBuf) -> PathBuf {
     app_data_dir().join(name)
 }
 
-/// Returns the set of `db` paths referenced by any saved session file.
+/// Returns the set of `db` paths referenced by any saved session file, or `None` if the
+/// data dir can't be read (so callers don't mistake "couldn't scan" for "no sessions").
 ///
 /// This basically scans every saved user session dir, not just the most recent one,
 /// to help ensure that db dirs don't get orphaned on the filesystem forever.
-async fn collect_referenced_db_paths() -> std::collections::HashSet<PathBuf> {
+async fn collect_referenced_db_paths() -> Option<std::collections::HashSet<PathBuf>> {
     use std::collections::HashSet;
     let mut paths = HashSet::new();
     let data_dir = app_data_dir();
 
-    let Ok(mut entries) = tokio::fs::read_dir(data_dir).await else {
-        return paths;
+    let mut entries = match tokio::fs::read_dir(data_dir).await {
+        Ok(entries) => entries,
+        Err(e) => {
+            log!("collect_referenced_db_paths: could not read data dir {}: {e}", data_dir.display());
+            return None;
+        }
     };
 
     while let Ok(Some(entry)) = entries.next_entry().await {
@@ -179,39 +185,39 @@ async fn collect_referenced_db_paths() -> std::collections::HashSet<PathBuf> {
         paths.insert(resolve_db_path(session.client_session.db_path));
     }
 
-    paths
+    Some(paths)
 }
 
-/// Deletes `db_*` subdirs not referenced by any saved session. Only touches
-/// entries that match the `db_*` prefix and that came from
-/// `read_dir(app_data_dir())`, so it can't escape the data dir even with a
-/// malicious session file.
-pub async fn cleanup_orphan_db_dirs() {
-    let data_dir = app_data_dir();
-    let active = collect_referenced_db_paths().await;
-
-    let mut entries = match tokio::fs::read_dir(data_dir).await {
+/// Deletes old database files that start with `"db_"` within the given `dir` and its subdirectories.
+///
+/// Only deletes database files that are inactive, i.e., where `is_active` returns false.
+async fn prune_orphan_db_dirs(dir: &std::path::Path, is_active: impl Fn(&std::ffi::OsStr) -> bool) {
+    let mut entries = match tokio::fs::read_dir(dir).await {
         Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
         Err(e) => {
-            log!("cleanup_orphan_db_dirs: could not read data dir {}: {e}", data_dir.display());
+            log!("prune_orphan_db_dirs: could not read {}: {e}", dir.display());
             return;
         }
     };
 
-    let mut deleted = 0usize;
-    let mut bytes_freed = 0u64;
-    let mut kept = 0usize;
+    let mut deleted: usize = 0;
+    let mut bytes_freed: u64 = 0;
+    let mut kept: usize = 0;
+
     while let Ok(Some(entry)) = entries.next_entry().await {
         let path = entry.path();
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        let Some(name) = path.file_name() else {
             continue;
         };
-        if !name.starts_with("db_") {
+        let Some(name_str) = name.to_str() else {
+            continue;
+        };
+        if !name_str.starts_with("db_") {
             continue;
         }
-        if active.contains(&path) {
+        if is_active(name) {
             kept += 1;
-            // log!("cleanup_orphan_db_dirs: preserving referenced db dir: {}", path.display());
             continue;
         }
         let size = dir_size_bytes(&path).await.unwrap_or(0);
@@ -219,26 +225,39 @@ pub async fn cleanup_orphan_db_dirs() {
             Ok(()) => {
                 deleted += 1;
                 bytes_freed += size;
-                log!(
-                    "cleanup_orphan_db_dirs: deleted orphaned db dir ({} bytes): {}",
-                    size,
-                    path.display(),
-                );
+                // log!(
+                //     "prune_orphan_db_dirs: deleted orphaned dir ({size} bytes): {}",
+                //     path.display(),
+                // );
             }
             Err(e) => {
-                log!(
-                    "cleanup_orphan_db_dirs: failed to delete {}: {e}",
-                    path.display(),
-                );
+                log!("prune_orphan_db_dirs: failed to delete {}: {e}", path.display());
             }
         }
     }
 
     if deleted > 0 || kept > 0 {
-        log!(
-            "cleanup_orphan_db_dirs: deleted {deleted} orphan(s), freed {bytes_freed} bytes; kept {kept} active referenced",
-        );
+        log!("prune_orphan_db_dirs ({}): deleted {deleted} orphan(s), freed {bytes_freed} bytes; kept {kept} active", dir.display());
     }
+}
+
+/// Deletes orphaned (no longer used) database and cache directories.
+pub async fn cleanup_orphan_db_dirs() {
+    use std::collections::HashSet;
+    use std::ffi::OsString;
+
+    // If we couldn't read the data directory, we can't know which ones are active, so skip pruning.
+    let Some(active) = collect_referenced_db_paths().await else {
+        return;
+    };
+    let active_names: HashSet<OsString> = active
+        .iter()
+        .filter_map(|p| p.file_name().map(ToOwned::to_owned))
+        .collect();
+
+    let data_dir = app_data_dir();
+    prune_orphan_db_dirs(data_dir, |name| active.contains(&data_dir.join(name))).await;
+    prune_orphan_db_dirs(cache_dir(), |name| active_names.contains(name)).await;
 }
 
 /// Recursive size sum, best-effort. Just for the cleanup log line.
@@ -328,19 +347,11 @@ pub async fn restore_session(
         db_path.display(),
         original_stored.display(),
     );
-    let store_config = crate::sliding_sync::build_sqlite_store_config(&db_path, &client_session.passphrase);
-    // Build the client with the previous settings from the session.
-    let client = Client::builder()
+    let client = crate::sliding_sync::base_client_builder(&db_path, &client_session.passphrase)
         .homeserver_url(client_session.homeserver)
-        .sqlite_store_with_config_and_cache_path(store_config, None::<&std::path::Path>)
-        .with_threading_support(matrix_sdk::ThreadingSupport::Enabled {
-            with_subscriptions: true,
-        })
-        .handle_refresh_tokens()
         .build()
         .await?;
-    let sliding_sync_version = sliding_sync_version.into();
-    client.set_sliding_sync_version(sliding_sync_version);
+    client.set_sliding_sync_version(sliding_sync_version.into());
     let status_str = format!("Authenticating previous login session for {}...", user_session.meta.user_id);
     log!("{status_str}");
     Cx::post_action(LoginAction::Status {
