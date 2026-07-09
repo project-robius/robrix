@@ -1010,7 +1010,10 @@ async fn matrix_worker_task(
                             log!("Successfully created thread-focused timeline for room {room_id}, thread {thread_root_event_id}.");
                             let thread_timeline = Arc::new(thread_timeline);
                             let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
-                            let (request_sender, request_receiver) = watch::channel(Vec::new());
+                            let (request_sender, request_receiver) = watch::channel(TimelineRequest {
+                                backwards_paginate: Vec::new(),
+                                is_timeline_open: true,
+                            });
                             let timeline_subscriber_handler_task = Handle::current().spawn(
                                 timeline_subscriber_handler(
                                     thread_timeline.clone(),
@@ -2410,7 +2413,18 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
 
 /// A tokio::watch channel sender for sending requests from the RoomScreen UI widget
 /// to the corresponding background async task for that room (its `timeline_subscriber_handler`).
-pub type TimelineRequestSender = watch::Sender<Vec<BackwardsPaginateUntilEventRequest>>;
+pub type TimelineRequestSender = watch::Sender<TimelineRequest>;
+
+/// Details of current requests that the RoomScreen UI has made of the background timeline subscriber task.
+pub struct TimelineRequest {
+    /// Pending backwards-pagination-until-event requests (jump to a specific event).
+    pub backwards_paginate: Vec<BackwardsPaginateUntilEventRequest>,
+    /// Whether this timeline is currently open in the UI.
+    ///
+    /// The timeline subscriber stops sending updates while it's closed,
+    /// and when it gets re-opened, it sends one catch-up update.
+    pub is_timeline_open: bool,
+}
 
 /// The return type for [`take_timeline_endpoints()`].
 ///
@@ -2431,7 +2445,7 @@ pub struct TimelineEndpoints {
 enum TimelineSubscriber {
     /// The timeline (room or thread) hasn't been opened yet, so its background subscriber task isn't running.
     NotStarted {
-        request_receiver: watch::Receiver<Vec<BackwardsPaginateUntilEventRequest>>,
+        request_receiver: watch::Receiver<TimelineRequest>,
     },
     /// The timeline's background subscriber task is running, meaning the room has been opened at least once.
     Running(JoinHandle<()>),
@@ -3734,7 +3748,10 @@ async fn add_new_room(
 
     // The `timeline_subscriber_handler` async task is spawned lazily when the room/thread is first opened.
     // All we do here is set up a channel between the UI and backend, for future use.
-    let (request_sender, request_receiver) = watch::channel(Vec::new());
+    let (request_sender, request_receiver) = watch::channel(TimelineRequest {
+        backwards_paginate: Vec::new(),
+        is_timeline_open: true,
+    });
 
     // We need to add the room to the `ALL_JOINED_ROOMS` list before we can send
     // an `AddJoinedRoom` update to the RoomsList widget, because that widget might
@@ -4375,7 +4392,7 @@ const LOG_ROOM_LIST_DIFFS: bool = cfg!(feature = "log_room_list_diffs");
 async fn timeline_subscriber_handler(
     timeline: Arc<Timeline>,
     timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
-    mut request_receiver: watch::Receiver<Vec<BackwardsPaginateUntilEventRequest>>,
+    mut request_receiver: watch::Receiver<TimelineRequest>,
     thread_root_event_id: Option<OwnedEventId>,
 ) {
     /// An inner function that searches the given new timeline items for a target event.
@@ -4419,6 +4436,13 @@ async fn timeline_subscriber_handler(
     // the timeline index and event ID of the target event, if it has been found.
     let mut found_target_event_id: Option<(usize, OwnedEventId)> = None;
 
+    // Whether this timeline is currently open in the UI.
+    // This starts as true because we only spawn this subscriber task lazily upon open.
+    let mut is_timeline_open = true;
+    // Whether any update changes have arrived since this timeline was last closed,
+    // meaning that we need to send an cumulative update when the timeline gets re-opened.
+    let mut has_unsent_changes = false;
+
     loop { tokio::select! {
         // we should check for new requests before handling new timeline updates,
         // because the request might influence how we handle a timeline update.
@@ -4427,13 +4451,31 @@ async fn timeline_subscriber_handler(
         // Handle updates to the current backwards pagination requests.
         Ok(()) = request_receiver.changed() => {
             let prev_target_event_id = target_event_id.clone();
-            let new_request_details = request_receiver
-                .borrow_and_update()
-                .iter()
-                .find_map(|req| req.room_id
-                    .eq(&room_id)
-                    .then(|| (req.target_event_id.clone(), req.starting_index, req.current_tl_len))
-                );
+            let (now_open, new_request_details) = {
+                let req = request_receiver.borrow_and_update();
+                let details = req.backwards_paginate.iter()
+                    .find_map(|r| r.room_id
+                        .eq(&room_id)
+                        .then(|| (r.target_event_id.clone(), r.starting_index, r.current_tl_len))
+                    );
+                (req.is_timeline_open, details)
+            };
+
+            // On reopen, send one catch-up snapshot, but only if something actually
+            // changed while closed (otherwise the UI already has the current items).
+            if now_open && !is_timeline_open && has_unsent_changes {
+                let len = timeline_items.len();
+                if timeline_update_sender.send(TimelineUpdate::NewItems {
+                    new_items: timeline_items.clone(),
+                    changed_indices: 0..len,
+                    clear_cache: true,
+                    is_append: false,
+                }).is_ok() {
+                    SignalToUI::set_ui_signal();
+                }
+                has_unsent_changes = false;
+            }
+            is_timeline_open = now_open;
 
             target_event_id = new_request_details.as_ref().map(|(ev, ..)| ev.clone());
 
@@ -4643,29 +4685,36 @@ async fn timeline_subscriber_handler(
                 if LOG_TIMELINE_DIFFS {
                     log!("timeline_subscriber: applied {num_updates} updates for room {room_id}, thread {thread_root_event_id:?}, timeline now has {} items. is_append? {is_append}, clear_cache? {clear_cache}. Changes: {changed_indices:?}.", timeline_items.len());
                 }
-                timeline_update_sender.send(TimelineUpdate::NewItems {
-                    new_items: timeline_items.clone(),
-                    changed_indices,
-                    clear_cache,
-                    is_append,
-                }).expect("Error: timeline update sender couldn't send update with new items!");
+                // Only send updates to the UI while this timeline is open.
+                // While it's closed, we process the updates locally until it is re-opened again.
+                if is_timeline_open {
+                    timeline_update_sender.send(TimelineUpdate::NewItems {
+                        new_items: timeline_items.clone(),
+                        changed_indices,
+                        clear_cache,
+                        is_append,
+                    }).expect("Error: timeline update sender couldn't send update with new items!");
 
-                // We must send this update *after* the actual NewItems update,
-                // otherwise the UI thread (RoomScreen) won't be able to correctly locate the target event.
-                if let Some((index, found_event_id)) = found_target_event_id.take() {
-                    target_event_id = None;
-                    timeline_update_sender.send(
-                        TimelineUpdate::TargetEventFound {
-                            target_event_id: found_event_id.clone(),
-                            index,
-                        }
-                    ).unwrap_or_else(
-                        |_e| panic!("Error: timeline update sender couldn't send TargetEventFound({found_event_id}, {index}) to room {room_id}, thread {thread_root_event_id:?}!")
-                    );
+                    // We must send this update *after* the actual NewItems update,
+                    // otherwise the UI thread (RoomScreen) won't be able to correctly locate the target event.
+                    if let Some((index, found_event_id)) = found_target_event_id.take() {
+                        target_event_id = None;
+                        timeline_update_sender.send(
+                            TimelineUpdate::TargetEventFound {
+                                target_event_id: found_event_id.clone(),
+                                index,
+                            }
+                        ).unwrap_or_else(
+                            |_e| panic!("Error: timeline update sender couldn't send TargetEventFound({found_event_id}, {index}) to room {room_id}, thread {thread_root_event_id:?}!")
+                        );
+                    }
+
+                    // Send a Makepad-level signal to update this room's timeline UI view.
+                    SignalToUI::set_ui_signal();
+                } else {
+                    // Closed: our local items are updated above; remember to catch the UI up on reopen.
+                    has_unsent_changes = true;
                 }
-
-                // Send a Makepad-level signal to update this room's timeline UI view.
-                SignalToUI::set_ui_signal();
             }
         }
 
