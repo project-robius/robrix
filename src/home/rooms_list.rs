@@ -26,7 +26,7 @@ use matrix_sdk::{RoomState, ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch
 use crate::{
     app::{AppState, AppStateAction, SelectedRoom},
     home::{
-        navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, rooms_list_entry::RoomsListEntryAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}
+        navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, room_screen::invalidate_timeline_state, rooms_list_entry::RoomsListEntryAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}
     },
     logout::logout_confirm_modal::LogoutAction,
     room::{
@@ -704,6 +704,13 @@ impl RoomsList {
                     }
 
                     self.hidden_rooms.remove(&room_id);
+
+                    // If the removed room is no longer joined (left/kicked/banned),
+                    // drop all of its saved UI state.
+                    if matches!(new_state, RoomState::Left | RoomState::Banned) {
+                        invalidate_timeline_state(cx, &TimelineKind::MainRoom { room_id });
+                    }
+
                     self.update_status();
                 }
                 RoomsListUpdate::ClearRooms => {
