@@ -3718,11 +3718,11 @@ fn populate_message_view(
                                 Cow::from(&fb.body),
                                 Some(FormattedBody {
                                     format: fb.format.clone(),
-                                    body: format!("* {} {}", &username, &fb.body),
+                                    body: format!("* {} {}", username, fb.body),
                                 })
                             )
                         } else {
-                            (Cow::from(format!("* {} {}", &username, body)), None)
+                            (Cow::from(format!("* {} {}", username, body)), None)
                         };
                         let html_or_plaintext_ref =
                             item.html_or_plaintext(cx, ids!(content.message));

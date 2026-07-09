@@ -4935,7 +4935,7 @@ async fn spawn_sso_server(
                     enqueue_rooms_list_update(RoomsListUpdate::Status {
                         status: format!(
                             "Logged in as {:?}.\n → Loading rooms...",
-                            &identity_provider_res.user_id
+                            identity_provider_res.user_id
                         ),
                     });
                 }
