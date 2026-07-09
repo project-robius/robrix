@@ -4686,7 +4686,7 @@ async fn timeline_subscriber_handler(
                     log!("timeline_subscriber: applied {num_updates} updates for room {room_id}, thread {thread_root_event_id:?}, timeline now has {} items. is_append? {is_append}, clear_cache? {clear_cache}. Changes: {changed_indices:?}.", timeline_items.len());
                 }
                 // Only send updates to the UI while this timeline is open.
-                // While it's closed, we process the updates locally until it is re-opened agian.
+                // While it's closed, we process the updates locally until it is re-opened again.
                 if is_timeline_open {
                     timeline_update_sender.send(TimelineUpdate::NewItems {
                         new_items: timeline_items.clone(),
