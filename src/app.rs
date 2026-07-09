@@ -211,6 +211,10 @@ impl MatchEvent for App {
         let _app_data_dir = crate::app_data_dir();
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
 
+        // Clean up scratch files (e.g. attachments staged for sharing) left over from
+        // a previous run. Deferred so it doesn't compete with sync and startup work.
+        crate::temp_storage::schedule_temp_dir_cleanup();
+
         if let Err(e) = persistence::load_window_state(self.ui.window(cx, ids!(main_window)), cx) {
             error!("Failed to load window state: {}", e);
         }

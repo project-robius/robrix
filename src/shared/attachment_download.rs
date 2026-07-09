@@ -1,15 +1,17 @@
 //! Download a Matrix media attachment and save it to storage.
 
-use std::{sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 use makepad_widgets::SignalToUI;
 use matrix_sdk::ruma::{OwnedMxcUri, events::room::MediaSource};
+use robius_share::ShareSheet;
 use crate::{
     home::room_screen::TimelineUpdate,
     shared::popup_list::{PopupKind, enqueue_popup_notification},
     sliding_sync::{MatrixRequest, submit_async_request},
+    temp_storage::get_temp_dir_path,
 };
 
-type TimelineUpdateSenderOption = Option<crossbeam_channel::Sender<TimelineUpdate>>;
+pub type TimelineUpdateSenderOption = Option<crossbeam_channel::Sender<TimelineUpdate>>;
 
 /// The result of a download request.
 pub enum MediaDownloadResult {
@@ -90,12 +92,14 @@ pub enum DownloadKind {
     Image,
 }
 impl DownloadKind {
-    pub fn button_text(&self) -> &'static str {
+    /// A coarse MIME type for the native share sheet. Mainly used by Android's
+    /// share chooser to filter targets; desktop and iOS infer from the extension.
+    fn share_mime_hint(&self) -> Option<&'static str> {
         match self {
-            Self::File => "Download File",
-            Self::Audio => "Download Audio",
-            Self::Video => "Download Video",
-            Self::Image => "Download Image",
+            Self::Image => Some("image/*"),
+            Self::Audio => Some("audio/*"),
+            Self::Video => Some("video/*"),
+            Self::File => None,
         }
     }
 }
@@ -140,6 +144,89 @@ pub fn start_attachment_download(
 /// Saves an attachment already in memory directly to storage, without showing any dialog.
 pub fn save_loaded_attachment(info: DownloadableAttachment, bytes: Arc<[u8]>) {
     show_save_dialog(info.filename, bytes, None, None);
+}
+
+/// Downloads the attachment (via the media cache), writes it to a temp file,
+/// then opens the native share sheet, since sharing needs a real file path.
+pub fn start_attachment_share(
+    info: DownloadableAttachment,
+    update_sender: TimelineUpdateSenderOption,
+) {
+    let mxc = media_source_mxc(&info.media_source).clone();
+    let filename = info.filename.clone();
+    let mime = info.kind.share_mime_hint();
+    submit_async_request(MatrixRequest::DownloadMedia {
+        media_source: info.media_source,
+        filename: info.filename,
+        on_download_result: Box::new(move |result| {
+            reset_download_indicator(&update_sender, &mxc);
+            match result {
+                MediaDownloadResult::Downloaded(bytes) => share_bytes(&filename, &mxc, &bytes, mime),
+                MediaDownloadResult::Failed(e) => enqueue_popup_notification(
+                    format!("Failed to download \"{filename}\" to share: {e}"),
+                    PopupKind::Error,
+                    None,
+                ),
+                MediaDownloadResult::Cancelled => {}
+            }
+        }),
+    });
+}
+
+/// Opens the native share sheet for an attachment already in memory.
+pub fn share_loaded_attachment(info: DownloadableAttachment, bytes: Arc<[u8]>) {
+    let mxc = media_source_mxc(&info.media_source).clone();
+    let mime = info.kind.share_mime_hint();
+    let filename = info.filename;
+    // Off the UI thread, since writing a large attachment to disk would block rendering.
+    std::thread::spawn(move || share_bytes(&filename, &mxc, &bytes, mime));
+}
+
+/// Writes `bytes` to a temp file and opens the native share sheet for it.
+fn share_bytes(filename: &str, mxc: &OwnedMxcUri, bytes: &[u8], mime: Option<&str>) {
+    let path = match write_shareable_temp_file(mxc, filename, bytes) {
+        Ok(path) => path,
+        Err(e) => {
+            enqueue_popup_notification(
+                format!("Failed to prepare \"{filename}\" for sharing: {e}"),
+                PopupKind::Error,
+                None,
+            );
+            return;
+        }
+    };
+    // Every platform's `share()` finds the active window/activity itself (and
+    // hops to the main thread where needed), so calling it off-thread is fine.
+    let sheet = ShareSheet::new().set_title(format!("Share {filename}"));
+    let sheet = match mime {
+        Some(mime) => sheet.add_file_with_mime_type(&path, mime),
+        None => sheet.add_file(&path),
+    };
+    if let Err(e) = sheet.share() {
+        enqueue_popup_notification(
+            format!("Couldn't open the share sheet for \"{filename}\": {e}"),
+            PopupKind::Error,
+            None,
+        );
+    }
+}
+
+/// Writes `bytes` to a per-media temp file so the share sheet can read a real path.
+/// Isolated by the mxc so different files with the same name don't collide.
+fn write_shareable_temp_file(
+    mxc: &OwnedMxcUri,
+    filename: &str,
+    bytes: &[u8],
+) -> std::io::Result<PathBuf> {
+    let mut safe_name = sanitize_filename::sanitize(filename);
+    if safe_name.is_empty() {
+        safe_name = "shared_file".to_owned();
+    }
+    let dir = get_temp_dir_path().join(sanitize_filename::sanitize(mxc.as_str()));
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(safe_name);
+    std::fs::write(&path, bytes)?;
+    Ok(path)
 }
 
 enum DownloadOutcome {
@@ -201,20 +288,24 @@ fn show_save_dialog<D: AsRef<[u8]> + Send + 'static>(
     }
 }
 
+/// Removes the in-progress indicator for `mxc`, returning the button to idle.
+fn reset_download_indicator(update_sender: &TimelineUpdateSenderOption, mxc: &OwnedMxcUri) {
+    let Some(sender) = update_sender.as_ref() else { return };
+    let _ = sender.send(TimelineUpdate::AttachmentDownloadReset(mxc.clone()));
+    SignalToUI::set_ui_signal();
+}
+
 /// Handles the completion of a download, whether success, failure, or cancelled.
 fn finish_download_indicator(
     update_sender: &TimelineUpdateSenderOption,
     mxc: Option<&OwnedMxcUri>,
     outcome: DownloadOutcome,
 ) {
-    let Some(sender) = update_sender.as_ref() else { return };
     let Some(mxc) = mxc else { return };
     match outcome {
-        DownloadOutcome::Cancelled => {
-            let _ = sender.send(TimelineUpdate::AttachmentDownloadReset(mxc.clone()));
-            SignalToUI::set_ui_signal();
-        }
+        DownloadOutcome::Cancelled => reset_download_indicator(update_sender, mxc),
         DownloadOutcome::Succeeded | DownloadOutcome::Failed => {
+            let Some(sender) = update_sender.as_ref() else { return };
             let result = match outcome {
                 DownloadOutcome::Succeeded => Ok(()),
                 _ => Err(String::new()),
