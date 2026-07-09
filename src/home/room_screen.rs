@@ -1382,8 +1382,12 @@ impl Widget for RoomScreen {
 
             // If the list is not filling the viewport, we need to back paginate the timeline
             // until we have enough events items to fill the viewport.
-            if !tl_state.fully_paginated && !list.is_filling_viewport() {
+            if !tl_state.fully_paginated
+                && !tl_state.is_paginating
+                && !list.is_filling_viewport()
+            {
                 log!("Automatically paginating timeline to fill viewport for room {:?}", self.room_name_id);
+                tl_state.is_paginating = true;
                 submit_async_request(MatrixRequest::PaginateTimeline {
                     timeline_kind: tl_state.kind.clone(),
                     num_events: 50,
@@ -1465,7 +1469,9 @@ impl RoomScreen {
                 TimelineUpdate::FirstUpdate { initial_items } => {
                     tl.content_drawn_since_last_update.clear();
                     tl.profile_drawn_since_last_update.clear();
+                    // Upon first showing a timeline, assume it's not fully paginated nor currently paginating.
                     tl.fully_paginated = false;
+                    tl.is_paginating = false;
                     // Set the portal list to the very bottom of the timeline.
                     portal_list.set_first_id_and_scroll(initial_items.len().saturating_sub(1), 0.0);
                     portal_list.set_tail_range(true);
@@ -1584,6 +1590,7 @@ impl RoomScreen {
                         tl.content_drawn_since_last_update.clear();
                         tl.profile_drawn_since_last_update.clear();
                         tl.fully_paginated = false;
+                        tl.is_paginating = false;
                     } else {
                         tl.content_drawn_since_last_update.remove(changed_indices.clone());
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
@@ -1649,6 +1656,7 @@ impl RoomScreen {
                 }
                 TimelineUpdate::PaginationRunning(direction) => {
                     if direction == PaginationDirection::Backwards {
+                        tl.is_paginating = true;
                         top_space.set_visible(cx, true);
                         done_loading = false;
                     } else {
@@ -1663,6 +1671,7 @@ impl RoomScreen {
                         PopupKind::Error,
                         Some(10.0),
                     );
+                    tl.is_paginating = false;
                     done_loading = true;
                 }
                 TimelineUpdate::PaginationIdle { fully_paginated, direction } => {
@@ -1670,6 +1679,7 @@ impl RoomScreen {
                         // Don't set `done_loading` to `true` here, because we want to keep the top space visible
                         // (with the "loading" message) until the corresponding `NewItems` update is received.
                         tl.fully_paginated = fully_paginated;
+                        tl.is_paginating = false;
                         if fully_paginated {
                             done_loading = true;
                         }
@@ -1830,6 +1840,7 @@ impl RoomScreen {
         }
 
         if should_continue_backwards_pagination {
+            tl.is_paginating = true;
             submit_async_request(MatrixRequest::PaginateTimeline {
                 timeline_kind: tl.kind.clone(),
                 num_events: 50,
@@ -2512,6 +2523,7 @@ impl RoomScreen {
                     room_members: None,
                     // We assume timelines being viewed for the first time haven't been fully paginated.
                     fully_paginated: false,
+                    is_paginating: false,
                     items: Vector::new(),
                     content_drawn_since_last_update: RangeSet::new(),
                     profile_drawn_since_last_update: RangeSet::new(),
@@ -2561,8 +2573,9 @@ impl RoomScreen {
         // because we want to show the user some messages as soon as possible
         // when they first open the room, and there might not be any messages yet.
         if is_first_time_being_loaded {
-            if !tl_state.fully_paginated {
+            if !tl_state.fully_paginated && !tl_state.is_paginating {
                 log!("Sending a first-time backwards pagination request for {}", tl_state.kind);
+                tl_state.is_paginating = true;
                 submit_async_request(MatrixRequest::PaginateTimeline {
                     timeline_kind: tl_state.kind.clone(),
                     num_events: 50,
@@ -2871,10 +2884,11 @@ impl RoomScreen {
         if !portal_list.scrolled(actions) { return };
 
         let first_index = portal_list.first_id();
-        if first_index == 0 && tl.last_scrolled_index > 0 {
+        if first_index == 0 && tl.last_scrolled_index > 0 && !tl.is_paginating {
             log!("Scrolled up from item {} --> 0, sending back pagination request for room {}",
                 tl.last_scrolled_index, tl.kind,
             );
+            tl.is_paginating = true;
             submit_async_request(MatrixRequest::PaginateTimeline {
                 timeline_kind: tl.kind.clone(),
                 num_events: 50,
@@ -3196,6 +3210,9 @@ struct TimelineUiState {
     ///
     /// This must be reset to `false` whenever the timeline is fully cleared.
     fully_paginated: bool,
+
+    /// Whether a pagination request is currently in flight.
+    is_paginating: bool,
 
     /// The list of items (events) in this room's timeline that our client currently knows about.
     items: Vector<Arc<TimelineItem>>,
@@ -4239,8 +4256,10 @@ fn populate_image_message_content(
 
     let mut fetch_and_show_media_source = |cx: &mut Cx, media_source: MediaSource, image_info: Box<ImageInfo>| {
         match media_cache.try_get_media_or_fetch(&media_source, MEDIA_THUMBNAIL_FORMAT.into()) {
-            (MediaCacheEntry::Loaded(data), _media_format) => {
-                let cache_key = media_source_mxc(&media_source).to_string();
+            (MediaCacheEntry::Loaded(data), media_format) => {
+                // Include the file type (full or thumbnail) in the cache key so they don't clash.
+                let variant = if matches!(media_format, MediaFormat::File) { "full" } else { "thumb" };
+                let cache_key = format!("{}#{variant}", media_source_mxc(&media_source));
                 let show_image_result = text_or_image_ref.show_image(cx, Some(media_source), |cx, img| {
                     utils::load_image_with_cache_key(&img, cx, std::path::Path::new(&cache_key), Arc::clone(&data))
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())

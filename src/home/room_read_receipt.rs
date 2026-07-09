@@ -85,7 +85,15 @@ pub struct AvatarRow {
 }
 
 impl Widget for AvatarRow {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // The avatars aren't children of this widget (they're created from a template),
+        // so we have to manually forward events to them (mostly async image loads).
+        if let Event::Actions(_) = event {
+            for (avatar_ref, _) in self.buttons.iter() {
+                avatar_ref.handle_event(cx, event, scope);
+            }
+        }
+
         let Some(read_receipts) = &self.read_receipts else {
             return;
         };

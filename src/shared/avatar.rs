@@ -90,11 +90,28 @@ pub struct Avatar {
     /// Information about the user profile being shown in this Avatar.
     /// If `Some`, this Avatar will respond to clicks/taps.
     #[rust] info: Option<UserProfileAndRoomId>,
+
+    /// Whether this avatar's image is still beind fetched or decoded.
+    #[rust] is_image_pending: bool,
 }
 
 impl Widget for Avatar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+
+        // Check to see if this image has been loaded/decoded.
+        if self.is_image_pending {
+            if let Event::Actions(actions) = event {
+                if actions.iter().any(|a| a.downcast_ref::<AsyncImageLoad>().is_some())
+                    && self.image(cx, ids!(img_view.img)).has_content()
+                {
+                    self.is_image_pending = false;
+                    self.view(cx, ids!(img_view)).set_visible(cx, true);
+                    self.view(cx, ids!(text_view)).set_visible(cx, false);
+                    self.view.redraw(cx);
+                }
+            }
+        }
 
         let Some(info) = self.info.clone() else { return };
         let area = self.view.area();
@@ -144,6 +161,7 @@ impl Avatar {
         info: Option<AvatarTextInfo>,
         username: T,
     ) {
+        self.is_image_pending = false;
         if let Some(AvatarTextInfo { user_id, username, room_id }) = info {
             self.info = Some(UserProfileAndRoomId {
                 user_profile: UserProfile {
@@ -172,6 +190,9 @@ impl Avatar {
     /// Sets the image content of this avatar, making the image visible
     /// and the user name text invisible.
     ///
+    /// If the image is still being loaded/decoded asynchronously and isn't ready yet,
+    /// the text label will still be shown until the image is ready.
+    ///
     /// ## Arguments
     /// * `info`: information about the user represented by this avatar:
     ///   the user name, user ID, room ID, and avatar image data.
@@ -190,10 +211,13 @@ impl Avatar {
         where F: FnOnce(&mut Cx, ImageRef) -> Result<(), E>
     {
         let img_ref = self.image(cx, ids!(img_view.img));
-        let res = image_set_function(cx, img_ref);
+        let res = image_set_function(cx, img_ref.clone());
         if res.is_ok() {
-            self.view(cx, ids!(img_view)).set_visible(cx, true);
-            self.view(cx, ids!(text_view)).set_visible(cx, false);
+            // Don't show the avatar image until it's been decoded in full (which is async).
+            let has_content = img_ref.has_content();
+            self.is_image_pending = !has_content;
+            self.view(cx, ids!(img_view)).set_visible(cx, has_content);
+            self.view(cx, ids!(text_view)).set_visible(cx, !has_content);
 
             if let Some(AvatarImageInfo { user_id, username, room_id, img_data }) = info {
                 self.info = Some(UserProfileAndRoomId {
@@ -319,45 +343,47 @@ impl Avatar {
             .unwrap_or_else(|| avatar_user_id.to_string());
 
         // Set the sender's avatar image, or use the username if no image is available.
-        avatar_img_data_opt
-            .and_then(|data| {
-                self.show_image(
-                    cx,
-                    is_clickable.then(|| AvatarImageInfo::from((
-                        avatar_user_id.to_owned(),
-                        username_opt.clone(),
-                        timeline_kind.room_id().to_owned(),
-                        data.clone()
-                    ))),
-                    |cx, img| {
-                        if let Some(key) = avatar_key.as_deref() {
-                            // Try to decode the image data asynchronously, which we can only do
-                            // if we have a key for the image cache (the avatar's MxcUri).
-                            utils::load_image_with_cache_key(
-                                &img,
-                                cx,
-                                std::path::Path::new(key),
-                                Arc::clone(&data),
-                            )
-                        } else {
-                            utils::load_image_cached(&img, cx, Arc::clone(&data))
-                        }
+        avatar_img_data_opt.and_then(|data| {
+            self.show_image(
+                cx,
+                is_clickable.then(|| AvatarImageInfo::from((
+                    avatar_user_id.to_owned(),
+                    username_opt.clone(),
+                    timeline_kind.room_id().to_owned(),
+                    data.clone()
+                ))),
+                |cx, img| {
+                    if let Some(key) = avatar_key.as_deref() {
+                        // Try to decode the image data asynchronously, which we can only do
+                        // if we have a key for the image cache (the avatar's MxcUri).
+                        utils::load_image_with_cache_key(
+                            &img,
+                            cx,
+                            std::path::Path::new(key),
+                            Arc::clone(&data),
+                        )
+                    } else {
+                        utils::load_image_cached(&img, cx, Arc::clone(&data))
                     }
-                )
-                .ok()
-            })
-            .unwrap_or_else(|| {
-                self.show_text(
-                    cx,
-                    None,
-                    is_clickable.then(|| AvatarTextInfo::from((
-                        avatar_user_id.to_owned(),
-                        username_opt,
-                        timeline_kind.room_id().to_owned(),
-                    ))),
-                    &username,
-                )
-            });
+                }
+            )
+            .ok()
+        }).map(|_| {
+            if self.is_image_pending {
+                self.set_text(cx, &username);
+            }
+        }).unwrap_or_else(|| {
+            self.show_text(
+                cx,
+                None,
+                is_clickable.then(|| AvatarTextInfo::from((
+                    avatar_user_id.to_owned(),
+                    username_opt,
+                    timeline_kind.room_id().to_owned(),
+                ))),
+                &username,
+            )
+        });
         (username, profile_drawn)
     }
 }
