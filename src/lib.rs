@@ -99,3 +99,7 @@ pub fn project_dir() -> &'static ProjectDirs {
 pub fn app_data_dir() -> &'static Path {
     project_dir().data_dir()
 }
+
+pub fn cache_dir() -> &'static Path {
+    project_dir().cache_dir()
+}

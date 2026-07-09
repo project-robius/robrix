@@ -35,7 +35,7 @@ use std::{borrow::Cow, cmp::{max, min}, future::Future, hash::{BuildHasherDefaul
 use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
-    app::AppStateAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
+    app::AppStateAction, app_data_dir, cache_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
         add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
@@ -109,6 +109,51 @@ pub fn build_sqlite_store_config(
         .passphrase(Some(passphrase))
 }
 
+/// Fix the SDK to use standard webpki TLS root certificates, only relevant on Android.
+///
+/// This is necessary because of: <https://github.com/matrix-org/matrix-rust-sdk/pull/6645>.
+fn use_android_tls_roots(builder: matrix_sdk::ClientBuilder) -> matrix_sdk::ClientBuilder {
+    #[cfg(target_os = "android")]
+    let builder = {
+        let roots = webpki_root_certs::TLS_SERVER_ROOT_CERTS
+            .iter()
+            .filter_map(|der| matrix_sdk::reqwest::Certificate::from_der(der.as_ref()).ok())
+            .collect();
+        builder
+            .disable_built_in_root_certificates()
+            .add_root_certificates(roots)
+    };
+    builder
+}
+
+/// Creates and returns a `ClientBuilder` configured with every setting Robrix needs.
+pub(crate) fn base_client_builder(db_path: &Path, passphrase: &str) -> matrix_sdk::ClientBuilder {
+    let store_config = build_sqlite_store_config(db_path, passphrase);
+    // Store event and media cache content in the platform's intended cache dir.
+    let cache_path = db_path.file_name().map(|name| cache_dir().join(name));
+
+    let builder = Client::builder()
+        .sqlite_store_with_config_and_cache_path(store_config, cache_path)
+        .with_threading_support(matrix_sdk::ThreadingSupport::Enabled {
+            with_subscriptions: true,
+        })
+        .with_decryption_settings(DecryptionSettings {
+            sender_device_trust_requirement: TrustRequirement::Untrusted,
+        })
+        .with_encryption_settings(EncryptionSettings {
+            auto_enable_cross_signing: true,
+            backup_download_strategy: matrix_sdk::encryption::BackupDownloadStrategy::OneShot,
+            auto_enable_backups: true,
+        })
+        .with_enable_share_history_on_invite(true)
+        .handle_refresh_tokens()
+        // Use a 60 second timeout for all requests to the homeserver.
+        // Yes, this is a long timeout, but the standard matrix homeserver is often very slow.
+        .request_config(RequestConfig::new().timeout(std::time::Duration::from_secs(60)));
+
+    use_android_tls_roots(builder)
+}
+
 /// Build a new client.
 async fn build_client(
     cli: &Cli,
@@ -144,38 +189,15 @@ async fn build_client(
         .unwrap_or("https://matrix-client.matrix.org/");
         // .unwrap_or("https://matrix.org/");
 
-    let store_config = build_sqlite_store_config(&db_path, &passphrase);
-
-    let mut builder = Client::builder()
+    let mut builder = base_client_builder(&db_path, &passphrase)
         .server_name_or_homeserver_url(homeserver_url)
-        // Use a sqlite database to persist the client's encryption setup.
-        .sqlite_store_with_config_and_cache_path(store_config, None::<&std::path::Path>)
-        .with_threading_support(matrix_sdk::ThreadingSupport::Enabled {
-            with_subscriptions: true,
-        })
         // The sliding sync proxy has now been deprecated in favor of native sliding sync.
-        .sliding_sync_version_builder(VersionBuilder::DiscoverNative)
-        .with_decryption_settings(DecryptionSettings {
-            sender_device_trust_requirement: TrustRequirement::Untrusted,
-        })
-        .with_encryption_settings(EncryptionSettings {
-            auto_enable_cross_signing: true,
-            backup_download_strategy: matrix_sdk::encryption::BackupDownloadStrategy::OneShot,
-            auto_enable_backups: true,
-        })
-        .with_enable_share_history_on_invite(true)
-        .handle_refresh_tokens();
+        .sliding_sync_version_builder(VersionBuilder::DiscoverNative);
 
     if let Some(proxy) = cli.proxy.as_ref() {
         builder = builder.proxy(proxy.clone());
     }
 
-    // Use a 60 second timeout for all requests to the homeserver.
-    // Yes, this is a long timeout, but the standard matrix homeserver is often very slow.
-    builder = builder.request_config(
-        RequestConfig::new()
-            .timeout(std::time::Duration::from_secs(60))
-    );
     let client = builder.build().await?;
     let homeserver_url =  client.homeserver().to_string();
     Ok((
@@ -4913,7 +4935,7 @@ async fn spawn_sso_server(
                     enqueue_rooms_list_update(RoomsListUpdate::Status {
                         status: format!(
                             "Logged in as {:?}.\n → Loading rooms...",
-                            &identity_provider_res.user_id
+                            identity_provider_res.user_id
                         ),
                     });
                 }
