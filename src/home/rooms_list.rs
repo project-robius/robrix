@@ -1498,8 +1498,7 @@ impl Widget for RoomsList {
                         scope = Scope::with_props(&*direct_room);
                         item.draw_all(cx, &mut scope);
                     } else {
-                        list.item(cx, portal_list_index, id!(empty))
-                            .draw_all(cx, &mut scope);
+                        list.item(cx, portal_list_index, id!(empty)).draw_all(cx, &mut scope);
                     }
                 }
                 else if self.regular_rooms_indexes.header_index == Some(portal_list_index) {

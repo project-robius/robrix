@@ -1616,8 +1616,8 @@ impl RoomScreen {
                 }
                 TimelineUpdate::TargetEventFound { target_event_id, index } => {
                     // log!("Target event found in room {}: {target_event_id}, index: {index}", tl.kind.room_id());
-                    tl.request_sender.send_if_modified(|requests| {
-                        requests.retain(|r| &r.room_id != tl.kind.room_id());
+                    tl.request_sender.send_if_modified(|req| {
+                        req.backwards_paginate.retain(|r| &r.room_id != tl.kind.room_id());
                         // no need to notify/wake-up all receivers for a completed request
                         false
                     });
@@ -2478,13 +2478,13 @@ impl RoomScreen {
             );
             loading_pane.show(cx);
 
-            tl.request_sender.send_if_modified(|requests| {
-                if let Some(existing) = requests.iter_mut().find(|r| &r.room_id == tl.kind.room_id()) {
+            tl.request_sender.send_if_modified(|req| {
+                if let Some(existing) = req.backwards_paginate.iter_mut().find(|r| &r.room_id == tl.kind.room_id()) {
                     warning!("Unexpected: room {} already had an existing timeline request in progress, event: {:?}", tl.kind.room_id(), existing.target_event_id);
                     // We might as well re-use this existing request...
                     existing.target_event_id = target_event_id.clone();
                 } else {
-                    requests.push(BackwardsPaginateUntilEventRequest {
+                    req.backwards_paginate.push(BackwardsPaginateUntilEventRequest {
                         room_id: tl.kind.room_id().clone(),
                         target_event_id: target_event_id.clone(),
                         // avoid re-searching through items we already searched through.
@@ -2685,6 +2685,11 @@ impl RoomScreen {
         // such that it can be accessed in future functions like event/draw handlers.
         self.tl_state = Some(tl_state);
 
+        // Tell the background subscriber that this timeline is now open (if it was previously closed).
+        if let Some(tl) = self.tl_state.as_ref() {
+            tl.request_sender.send_if_modified(|req| !std::mem::replace(&mut req.is_timeline_open, true));
+        }
+
         // Now that we have restored the TimelineUiState into this RoomScreen widget,
         // we can proceed to processing pending background updates.
         self.process_timeline_updates(cx, &self.portal_list(cx, ids!(list)));
@@ -2697,6 +2702,11 @@ impl RoomScreen {
         let Some(timeline_kind) = self.timeline_kind.clone() else { return };
         if self.tl_state.is_none() {
             return;
+        }
+
+        // Tell the background subscriber that this timeline is now closed.
+        if let Some(tl) = self.tl_state.as_ref() {
+            tl.request_sender.send_if_modified(|req| std::mem::replace(&mut req.is_timeline_open, false));
         }
 
         self.save_state();
