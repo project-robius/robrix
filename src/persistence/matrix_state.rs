@@ -143,11 +143,13 @@ fn resolve_db_path(stored: PathBuf) -> PathBuf {
     app_data_dir().join(name)
 }
 
-/// Returns the set of `db` paths referenced by any saved session file, or `None` if the
-/// data dir can't be read (so callers don't mistake "couldn't scan" for "no sessions").
+/// Returns the set of `db` paths referenced by any saved session file.
 ///
 /// This basically scans every saved user session dir, not just the most recent one,
 /// to help ensure that db dirs don't get orphaned on the filesystem forever.
+///
+/// Returns `None` if the app data directory can't be accessed,
+/// which means that nothing should be considered as eligible for deletion.
 async fn collect_referenced_db_paths() -> Option<std::collections::HashSet<PathBuf>> {
     use std::collections::HashSet;
     let mut paths = HashSet::new();
