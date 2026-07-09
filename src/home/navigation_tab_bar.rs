@@ -31,6 +31,7 @@
 //!      SpacesBar content
 //!
 
+use std::sync::Arc;
 use makepad_widgets::*;
 use serde::{Deserialize, Serialize};
 use crate::{
@@ -423,7 +424,7 @@ impl Widget for ProfileIcon {
             drew_avatar = our_own_avatar.show_image(
                 cx,
                 None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
-                |cx, img| utils::load_image(&img, cx, avatar_img_data),
+                |cx, img| utils::load_image(&img, cx, Arc::clone(avatar_img_data)),
             ).is_ok();
         }
         if !drew_avatar {

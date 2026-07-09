@@ -1,6 +1,7 @@
 //! A top-level view for adding (joining) or exploring new rooms and spaces.
 
 
+use std::sync::Arc;
 use makepad_widgets::*;
 use matrix_sdk::RoomState;
 use ruma::{IdParseError, MatrixToUri, MatrixUri, OwnedRoomOrAliasId, OwnedServerName, matrix_uri::MatrixId, room::{JoinRuleSummary, RoomType}};
@@ -589,7 +590,7 @@ impl Widget for AddRoomScreen {
                         let res = room_avatar.show_image(
                             cx,
                             None,
-                            |cx, img_ref| utils::load_image(&img_ref, cx, image_data),
+                            |cx, img_ref| utils::load_image(&img_ref, cx, Arc::clone(image_data)),
                         );
                         if res.is_err() {
                             room_avatar.show_text(

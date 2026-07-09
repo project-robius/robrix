@@ -4242,7 +4242,7 @@ fn populate_image_message_content(
             (MediaCacheEntry::Loaded(data), _media_format) => {
                 let cache_key = media_source_mxc(&media_source).to_string();
                 let show_image_result = text_or_image_ref.show_image(cx, Some(media_source), |cx, img| {
-                    img.load_image_from_data_async(cx, std::path::Path::new(&cache_key), Arc::clone(&data))
+                    utils::load_image_with_cache_key(&img, cx, std::path::Path::new(&cache_key), Arc::clone(&data))
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
                 if let Err(e) = show_image_result {

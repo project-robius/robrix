@@ -4,7 +4,7 @@
 //! but it only shows a simple summary of a room the current user has been invited to,
 //! with buttons to accept or decline the invitation.
 
-use std::ops::Deref;
+use std::{ops::Deref, sync::Arc};
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
@@ -396,7 +396,7 @@ impl Widget for InviteScreen {
                 drew_avatar = inviter_avatar.show_image(
                     cx,
                     None, // don't make this avatar clickable.
-                    |cx, img| utils::load_image(&img, cx, avatar_bytes),
+                    |cx, img| utils::load_image(&img, cx, Arc::clone(avatar_bytes)),
                 ).is_ok();
             }
             if !drew_avatar {
@@ -445,7 +445,7 @@ impl Widget for InviteScreen {
                 let _ = room_avatar.show_image(
                     cx,
                     None, // don't make this avatar clickable.
-                    |cx, img| utils::load_image(&img, cx, avatar_bytes),
+                    |cx, img| utils::load_image(&img, cx, Arc::clone(avatar_bytes)),
                 );
             }
         }

@@ -333,7 +333,8 @@ impl Avatar {
                         if let Some(key) = avatar_key.as_deref() {
                             // Try to decode the image data asynchronously, which we can only do
                             // if we have a key for the image cache (the avatar's MxcUri).
-                            img.load_image_from_data_async(
+                            utils::load_image_with_cache_key(
+                                &img,
                                 cx,
                                 std::path::Path::new(key),
                                 Arc::clone(&data),

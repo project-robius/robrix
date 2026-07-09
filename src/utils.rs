@@ -4,7 +4,7 @@ use url::Url;
 
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
-use makepad_widgets::{Cx, Event, ImageRef, image_cache::ImageError};
+use makepad_widgets::{Cx, Event, ImageRef, image_cache::{looks_like_svg, ImageError}};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}, RoomDisplayName};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
@@ -98,11 +98,18 @@ pub fn is_supported_image_mimetype(mimetype: &str) -> bool {
 }
 
 /// Loads the given image `data` into the given `ImageRef`, auto-detecting any
-/// image format that makepad supports (PNG, JPEG, GIF, WebP, BMP, ICO, QOI).
+/// image format that makepad supports (PNG, JPEG, GIF, WebP, BMP, ICO, QOI, SVG).
+///
+/// Callers that already hold an `Arc<[u8]>` should pass a clone of it so the
+/// bytes are shared rather than re-copied on every call.
 ///
 /// Returns an error if the format is unsupported or decoding fails.
-pub fn load_image(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), ImageError> {
-    load_image_cached(img, cx, std::sync::Arc::<[u8]>::from(data))
+pub fn load_image(
+    img: &ImageRef,
+    cx: &mut Cx,
+    data: impl Into<std::sync::Arc<[u8]>>,
+) -> Result<(), ImageError> {
+    load_image_cached(img, cx, data.into())
 }
 
 /// Returns a cache key for the given encoded image `data`.
@@ -123,6 +130,9 @@ pub fn image_cache_key(data: &[u8]) -> std::path::PathBuf {
 }
 
 /// Loads the encoded image `data` into the given ImageRef widget using makepad's async image cache.
+///
+/// SVG data is detected up front and rendered synchronously via makepad's
+/// vector engine, as the async decode cache only handles raster formats.
 pub fn load_image_cached<D>(
     img: &ImageRef,
     cx: &mut Cx,
@@ -131,8 +141,29 @@ pub fn load_image_cached<D>(
 where
     D: AsRef<[u8]> + Send + Sync + ?Sized + 'static,
 {
-    let key = image_cache_key(data.as_ref().as_ref());
+    let bytes: &[u8] = (*data).as_ref();
+    if looks_like_svg(bytes) {
+        return img.load_svg_from_data(cx, bytes);
+    }
+    let key = image_cache_key(bytes);
     img.load_image_from_data_async(cx, &key, data)
+}
+
+/// Like [`load_image_cached`], but with a caller-provided async-decode cache key
+/// (e.g. an MXC URI) instead of one derived from the bytes.
+///
+/// SVG data is detected up front and rendered synchronously via makepad's
+/// vector engine, as the async decode cache only handles raster formats.
+pub fn load_image_with_cache_key(
+    img: &ImageRef,
+    cx: &mut Cx,
+    cache_key: &std::path::Path,
+    data: std::sync::Arc<[u8]>,
+) -> Result<(), ImageError> {
+    if looks_like_svg(&data) {
+        return img.load_svg_from_data(cx, &data);
+    }
+    img.load_image_from_data_async(cx, cache_key, data)
 }
 
 

@@ -8,6 +8,7 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
 use imbl::Vector;
 use makepad_widgets::*;
 use makepad_widgets::animator::Animate;
@@ -1152,7 +1153,7 @@ impl Widget for SpaceLobbyScreen {
             parent_avatar_ref.show_image(
                 cx,
                 None,
-                |cx, img| utils::load_image(&img, cx, data),
+                |cx, img| utils::load_image(&img, cx, Arc::clone(data)),
             ).is_err()
         }) {
             let first_char = self.space_name_id.as_ref().and_then(|sni| sni.name_for_avatar())
@@ -1264,7 +1265,7 @@ impl Widget for SpaceLobbyScreen {
                                     drew_avatar = avatar_ref.show_image(
                                         cx,
                                         None,
-                                        |cx, img| utils::load_image(&img, cx, data),
+                                        |cx, img| utils::load_image(&img, cx, Arc::clone(data)),
                                     ).is_ok();
                                 }
                                 AvatarState::Known(Some(uri)) => {
@@ -1273,7 +1274,7 @@ impl Widget for SpaceLobbyScreen {
                                             drew_avatar = avatar_ref.show_image(
                                                 cx,
                                                 None,
-                                                |cx, img| utils::load_image(&img, cx, &data),
+                                                |cx, img| utils::load_image(&img, cx, Arc::clone(&data)),
                                             ).is_ok();
                                             info.avatar = AvatarState::Loaded(data);
                                         }

@@ -4,6 +4,7 @@
 //! tombstoned (shut down and replaced with a successor room), offering them
 //! the option to join the successor room or stay in the current tombstoned room.
 
+use std::sync::Arc;
 use makepad_widgets::*;
 use matrix_sdk::{
     ruma::OwnedRoomId, RoomState, SuccessorRoom
@@ -182,7 +183,7 @@ impl TombstoneFooter {
                         let res = successor_room_avatar.show_image(
                             cx,
                             None,
-                            |cx, img_ref| utils::load_image(&img_ref, cx, image_data),
+                            |cx, img_ref| utils::load_image(&img_ref, cx, Arc::clone(image_data)),
                         );
                         if res.is_err() {
                             successor_room_avatar.show_text(

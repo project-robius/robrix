@@ -5,7 +5,7 @@
 //! 1. a narrow vertical strip, when in Desktop (widescreen) mode,
 //! 2. a wide, short horizontal strip, when in Mobile (narrowscreen) mode.
 
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
@@ -479,7 +479,7 @@ impl Widget for SpacesBar {
                                 let res = avatar_ref.show_image(
                                     cx,
                                     None,
-                                    |cx, img_ref| utils::load_image(&img_ref, cx, image_data),
+                                    |cx, img_ref| utils::load_image(&img_ref, cx, Arc::clone(image_data)),
                                 );
                                 if res.is_err() {
                                     avatar_ref.show_text(
