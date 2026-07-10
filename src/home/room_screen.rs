@@ -626,7 +626,10 @@ script_mod! {
             flow: Down
 
             auto_tail: true, // set to `true` to lock the view to the last item.
-            max_pull_down: 0.0, // set to `0.0` to disable the pulldown bounce animation.
+            // The timeline bounces only at its end (the newest messages); the start
+            // stays clipped because reaching it triggers backwards pagination.
+            bounce_at_start: false,
+            bounce_at_end: true,
             // TODO: enable `reuse_items: true` once Makepad's Html/TextFlow widget
             //   properly resets all internal state during `script_apply(Reload)`.
             //   Currently, stale TextFlow layout state (particularly related to

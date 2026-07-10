@@ -577,7 +577,8 @@ script_mod! {
         // The hierarchical tree list
         tree_list := PortalList {
             keep_invisible: false,
-            max_pull_down: 0.0,
+            bounce_at_start: false,
+        bounce_at_end: false,
             auto_tail: false,
             width: Fill, height: Fill
             flow: Down,
@@ -622,11 +623,22 @@ pub struct SpaceLobbyEntry {
 
 impl Widget for SpaceLobbyEntry {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+        // An invisible entry must not hit-test: its draw area can linger from
+        // when it was last shown and would silently swallow presses meant for
+        // whatever is displayed there now.
+        if !self.visible {
+            return;
+        }
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
         }
 
         let area = self.draw_bg.area();
+        if std::env::var("MAKEPAD_SCROLL_DEBUG").is_ok() {
+            if let Event::MouseDown(e) = event {
+                log!("[lobby_entry] MouseDown: abs={:?} rect={:?}", e.abs, area.clipped_rect(cx));
+            }
+        }
         match event.hits(cx, area) {
             Hit::FingerHoverIn(_) => {
                 self.animator_play(cx, ids!(hover.on));

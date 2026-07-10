@@ -3,13 +3,15 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    room::FetchedRoomAvatar, settings::app_preferences::effective_is_desktop, shared::{
-        avatar::AvatarWidgetExt,
+    room::FetchedRoomAvatar,
+    shared::{
+    avatar::AvatarWidgetExt,
         html_or_plaintext::HtmlOrPlaintextWidgetExt, unread_badge::UnreadBadgeWidgetExt as _,
-    }, utils::{self, relative_format}
+    },
+    utils::{self, relative_format}
 };
 
-use super::rooms_list::{InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListScopeProps};
+use super::rooms_list::{InvitedRoomInfo, InviterInfo, JoinedRoomInfo};
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
@@ -277,15 +279,24 @@ impl RoomsListEntry {
 impl Widget for RoomsListEntry {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let uid = self.widget_uid();
-        let rooms_list_props = scope.props.get::<RoomsListScopeProps>().unwrap();
-
         // We handle hits on this widget first to ensure that any clicks on it
         // will just select the room, rather than resulting in a click on any child view
         // within the RoomsListEntry content itself, such as links or avatars.
         if let Some(room_id) = &self.room_id {
             let area = self.view.area();
+            if std::env::var("MAKEPAD_SCROLL_DEBUG").is_ok() {
+                if let Event::MouseDown(e) = event {
+                    log!(
+                        "[entry {}] MouseDown: abs={:?} rect={:?} valid={}",
+                        room_id, e.abs, area.clipped_rect(cx), area.is_valid(cx)
+                    );
+                }
+            }
             match event.hits(cx, area) {
                 Hit::FingerDown(fe) => {
+                    if std::env::var("MAKEPAD_SCROLL_DEBUG").is_ok() {
+                        log!("[entry] got FingerDown");
+                    }
                     cx.set_key_focus(area);
                     if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                         cx.widget_action(
@@ -300,8 +311,19 @@ impl Widget for RoomsListEntry {
                         RoomsListEntryAction::SecondaryClicked(room_id.clone(), fe.abs),
                     );
                 }
-                Hit::FingerUp(fe) if !rooms_list_props.was_scrolling && fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                    if std::env::var("MAKEPAD_SCROLL_DEBUG").is_ok() {
+                        log!("[entry] PrimaryClicked accepted");
+                    }
                     cx.widget_action(uid,  RoomsListEntryAction::PrimaryClicked(room_id.clone()));
+                }
+                Hit::FingerUp(fe) => {
+                    if std::env::var("MAKEPAD_SCROLL_DEBUG").is_ok() {
+                        log!(
+                            "[entry] FingerUp REJECTED: is_over={} primary={} was_tap={}",
+                            fe.is_over, fe.is_primary_hit(), fe.was_tap()
+                        );
+                    }
                 }
                 _ => { }
             }
@@ -327,6 +349,15 @@ pub struct RoomsListEntryContent {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
     #[apply_default] animator: Animator,
+
+    /// The preview colors that were last drawn for this entry.
+    /// * Some(true): this entry was last drawn as selected.
+    /// * Some(false): this entry was last drawn as not selected.
+    /// * None: this entry hasn't been drawn yet.
+    #[rust] last_selection_drawn: Option<bool>,
+
+    /// The avatar content that was last drawn for this room.
+    #[rust] last_avatar: Option<FetchedRoomAvatar>,
 }
 
 impl Widget for RoomsListEntryContent {
@@ -394,19 +425,6 @@ impl RoomsListEntryContent {
         };
         self.view.html_or_plaintext(cx, ids!(latest_message)).show_html(cx, &inviter_string);
 
-        match room_info.room_avatar {
-            FetchedRoomAvatar::Text(ref text) => {
-                self.view.avatar(cx, ids!(avatar)).show_text(cx, None, None, text);
-            }
-            FetchedRoomAvatar::Image(ref img_bytes) => {
-                let _ = self.view.avatar(cx, ids!(avatar)).show_image(
-                    cx,
-                    None, // Avatars in a RoomsListEntry shouldn't be clickable.
-                    |cx, img| utils::load_image(&img, cx, Arc::clone(img_bytes)),
-                );
-            }
-        }
-
         self.view
             .unread_badge(cx, ids!(unread_badge))
             .update_counts(false, 1, 0);
@@ -421,31 +439,48 @@ impl RoomsListEntryContent {
         room_avatar: &FetchedRoomAvatar,
         is_selected: bool,
     ) {
-        match room_avatar {
-            FetchedRoomAvatar::Text(text) => {
-                self.view.avatar(cx, ids!(avatar)).show_text(cx, None, None, text);
+        // Only redraw the avatar if it changed
+        if self.last_avatar.as_ref() != Some(room_avatar) {
+            match room_avatar {
+                FetchedRoomAvatar::Text(text) => {
+                    self.view.avatar(cx, ids!(avatar)).show_text(cx, None, None, text);
+                }
+                FetchedRoomAvatar::Image(img_bytes) => {
+                    let _ = self.view.avatar(cx, ids!(avatar)).show_image(
+                        cx,
+                        None, // Avatars in a RoomsListEntry shouldn't be clickable.
+                        |cx, img| utils::load_image(&img, cx, Arc::clone(img_bytes)),
+                    );
+                }
             }
-            FetchedRoomAvatar::Image(img_bytes) => {
-                let _ = self.view.avatar(cx, ids!(avatar)).show_image(
-                    cx,
-                    None, // Avatars in a RoomsListEntry shouldn't be clickable.
-                    |cx, img| utils::load_image(&img, cx, Arc::clone(img_bytes)),
-                );
-            }
+            self.last_avatar = Some(room_avatar.clone());
         }
 
-        if effective_is_desktop(cx) {
-            self.update_preview_colors(cx, is_selected);
-        } else {
-            // Mobile doesn't have a selected state. Always use the default colors.
-            // We call the update in case the app was resized from desktop to mobile while the room was selected.
-            // This can be optimized by only calling this when the app is resized.
-            self.update_preview_colors(cx, false);
-        }
+        self.update_preview_colors(cx, is_selected);
     }
 
     /// Updates the styling of the preview based on whether the room is selected or not.
     pub fn update_preview_colors(&mut self, cx: &mut Cx, is_selected: bool) {
+        // Link colors must be re-applied on every draw because the HTML's link widgets
+        // get created dynamically during the draw walk.
+        //
+        // * If selected, set link color to None so links inherit the font_color (white)
+        //   for better contrast against the selected background（blue).
+        // * If not selected, restore the default blue link color.
+        self.view.html_or_plaintext(cx, ids!(latest_message)).set_link_color(
+            cx,
+            if is_selected {
+                None
+            } else {
+                Some(HTML_LINK_COLOR)
+            });
+
+        // Skip redrawing if nothing changed.
+        if self.last_selection_drawn == Some(is_selected) {
+            return;
+        }
+        self.last_selection_drawn = Some(is_selected);
+
         let message_text_color;
         let room_name_color;
         let timestamp_color;
@@ -467,49 +502,17 @@ impl RoomsListEntryContent {
         // Toggle the background color via the animator (handles selected/deselected bg).
         self.animator_toggle(cx, is_selected, Animate::No, ids!(selected.on), ids!(selected.off));
 
-        // Update text colors for room name.
-        let mut room_name_label = self.view.label(cx, ids!(room_name));
-        script_apply_eval!(cx, room_name_label, {
-            draw_text +: {
-                color: #(room_name_color)
-            }
-        });
-
-        // Update text colors for timestamp.
-        let mut timestamp_label = self.view.label(cx, ids!(timestamp));
-        script_apply_eval!(cx, timestamp_label, {
-            draw_text +: {
-                color: #(timestamp_color)
-            }
-        });
+        // Update the text colors for the room name and timestamp.
+        self.view.label(cx, ids!(room_name)).set_text_color(cx, room_name_color);
+        self.view.label(cx, ids!(timestamp)).set_text_color(cx, timestamp_color);
 
         // Update text colors for the latest message preview (both HTML and plaintext variants).
-        let mut html_widget = self.view.html(cx, ids!(latest_message.html_view.html));
-        script_apply_eval!(cx, html_widget, {
-            font_color: #(message_text_color),
-            draw_text +: { color: #(message_text_color) },
-            draw_block +: {
-                quote_bg_color: #(code_bg_color),
-                code_color: #(code_bg_color),
-            }
-        });
-
-        // When selected, set link color to None so links inherit font_color (white)
-        // for better contrast against the blue selected background.
-        // When not selected, restore the default blue link color.
-        self.view
-            .html_or_plaintext(cx, ids!(latest_message))
-            .set_link_color(cx, if is_selected {
-                None
-            } else {
-                Some(vec4(0., 0., 0.933, 1.0)) // #0000EE, default HtmlLink color
-            });
-
-        let mut pt_label = self.view.label(cx, ids!(latest_message.plaintext_view.pt_label));
-        script_apply_eval!(cx, pt_label, {
-            draw_text +: {
-                color: #(message_text_color)
-            }
-        });
+        if let Some(mut html) = self.view.html(cx, ids!(latest_message.html_view.html)).borrow_mut() {
+            html.set_font_color(cx, message_text_color);
+            html.set_code_color(cx, code_bg_color);
+            html.set_quote_bg_color(cx, code_bg_color);
+        }
+        self.view.label(cx, ids!(latest_message.plaintext_view.pt_label))
+            .set_text_color(cx, message_text_color);
     }
 }

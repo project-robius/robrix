@@ -643,6 +643,11 @@ impl HomeScreen {
         };
         if previous_is_desktop != is_desktop {
             self.clear_mobile_navigation_state(cx);
+            if !is_desktop {
+                // Mobile mode starts on the rooms list with no room open, so no
+                // room should be drawn as selected until one is actually clicked.
+                cx.action(AppStateAction::FocusNone);
+            }
         }
     }
 

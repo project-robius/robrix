@@ -174,3 +174,13 @@ impl std::fmt::Debug for FetchedRoomAvatar {
         }
     }
 }
+impl PartialEq for FetchedRoomAvatar {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (FetchedRoomAvatar::Text(t1), FetchedRoomAvatar::Text(t2)) => t1 == t2,
+            (FetchedRoomAvatar::Image(i1), FetchedRoomAvatar::Image(i2)) => Arc::ptr_eq(i1, i2),
+            _ => false,
+        }
+    }
+}
+impl Eq for FetchedRoomAvatar { }

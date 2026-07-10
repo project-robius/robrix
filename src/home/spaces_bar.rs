@@ -102,7 +102,8 @@ script_mod! {
         align: Align{x: 0.5, y: 0.5}
 
         auto_tail: false,
-        max_pull_down: 0.0,
+        bounce_at_start: false,
+        bounce_at_end: false,
         scroll_bar: ScrollBar {  // hide the scroll bar
             bar_size: 0.0,
             min_handle_size: 0.0
