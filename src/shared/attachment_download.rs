@@ -33,26 +33,33 @@ pub fn media_source_mxc(source: &MediaSource) -> &OwnedMxcUri {
     }
 }
 
-/// Info about a download that has begun or recently completed.
+/// Whether a pending transfer is a plain download or a share.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum TransferKind {
+    Download,
+    Share,
+}
+
+/// Info about a download or share that has begun or recently completed.
 pub struct PendingDownload {
     pub mxc: OwnedMxcUri,
     pub state: PendingDownloadState,
+    pub kind: TransferKind,
 }
 
 pub enum PendingDownloadState {
-    /// The download request has been submitted to and is being handled by
-    /// the backend worker task.
+    /// The request has been submitted to and is being handled by the backend worker task.
     InProgress,
-    /// The download was successful, and will show a success indicator for a few seconds.
+    /// It succeeded, and will show a success indicator for a few seconds.
     JustSucceeded,
-    /// The download failed, and will show an error indicator for a few seconds.
+    /// It failed, and will show an error indicator for a few seconds.
     JustFailed,
 }
 impl PendingDownloadState {
-    pub fn display(&self) -> DownloadDisplayState {
+    pub fn display(&self, kind: TransferKind) -> DownloadDisplayState {
         match self {
             Self::InProgress => DownloadDisplayState::InProgress,
-            Self::JustSucceeded => DownloadDisplayState::Succeeded,
+            Self::JustSucceeded => DownloadDisplayState::Succeeded(kind),
             Self::JustFailed => DownloadDisplayState::Failed,
         }
     }
@@ -61,13 +68,13 @@ impl PendingDownloadState {
 /// What the download section below a message should show.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum DownloadDisplayState {
-    /// Default: show the download button.
+    /// Default: show the download and share buttons.
     #[default]
     Idle,
     /// Show a loading spinner and cancel button.
     InProgress,
-    /// Briefly show a green success button.
-    Succeeded,
+    /// Briefly show a green success button ("Downloaded" or "Shared").
+    Succeeded(TransferKind),
     /// Briefly show a red failed button.
     Failed,
 }
@@ -92,9 +99,8 @@ pub enum DownloadKind {
     Image,
 }
 impl DownloadKind {
-    /// A coarse MIME type for the native share sheet. Mainly used by Android's
-    /// share chooser to filter targets; desktop and iOS infer from the extension.
-    fn share_mime_hint(&self) -> Option<&'static str> {
+    /// Returns the top-level MIME type for this kind of download.
+    fn basic_mime_type(&self) -> Option<&'static str> {
         match self {
             Self::Image => Some("image/*"),
             Self::Audio => Some("audio/*"),
@@ -104,18 +110,13 @@ impl DownloadKind {
     }
 }
 
-/// Fetches the attachment bytes via the matrix worker, then shows the native
-/// save picker dialog with those bytes.
-///
-/// This *does* use the matrix SDK's media cache, so there's a good chance
-/// that an attachment, especially small ones, will be instantly served from the cache.
-///
-/// The download indicator stays in the "in-progress" state until everything is done.
-/// We transition to "success" only if the file is saved, "idle" if the user cancels,
-/// and "failure" if the download fails or write to storage fails.
-pub fn start_attachment_download(
+/// Fetches the attachment bytes via the media cache, then hands them to `on_downloaded`,
+/// which owns the indicator on success. On failure it pops an error and shows the failed
+/// state (a share downloads first, so a failed share is a failed download); cancel resets.
+fn download_media(
     info: DownloadableAttachment,
     update_sender: TimelineUpdateSenderOption,
+    on_downloaded: impl FnOnce(String, OwnedMxcUri, Vec<u8>, TimelineUpdateSenderOption) + Send + 'static,
 ) {
     let mxc = media_source_mxc(&info.media_source).clone();
     let filename = info.filename.clone();
@@ -123,9 +124,7 @@ pub fn start_attachment_download(
         media_source: info.media_source,
         filename: info.filename,
         on_download_result: Box::new(move |result| match result {
-            MediaDownloadResult::Downloaded(bytes) => {
-                show_save_dialog(filename, bytes, Some(mxc), update_sender)
-            }
+            MediaDownloadResult::Downloaded(bytes) => on_downloaded(filename, mxc, bytes, update_sender),
             MediaDownloadResult::Failed(e) => {
                 enqueue_popup_notification(
                     format!("Failed to download \"{filename}\": {e}"),
@@ -135,9 +134,20 @@ pub fn start_attachment_download(
                 finish_download_indicator(&update_sender, Some(&mxc), DownloadOutcome::Failed);
             }
             MediaDownloadResult::Cancelled => {
-                finish_download_indicator(&update_sender, Some(&mxc), DownloadOutcome::Cancelled);
+                finish_download_indicator(&update_sender, Some(&mxc), DownloadOutcome::Cancelled)
             }
         }),
+    });
+}
+
+/// Downloads the attachment and shows the native save dialog for it. The indicator
+/// tracks the save: success once saved, idle if cancelled, failure if the fetch or write fails.
+pub fn start_attachment_download(
+    info: DownloadableAttachment,
+    update_sender: TimelineUpdateSenderOption,
+) {
+    download_media(info, update_sender, |filename, mxc, bytes, sender| {
+        show_save_dialog(filename, bytes, Some(mxc), sender);
     });
 }
 
@@ -146,44 +156,37 @@ pub fn save_loaded_attachment(info: DownloadableAttachment, bytes: Arc<[u8]>) {
     show_save_dialog(info.filename, bytes, None, None);
 }
 
-/// Downloads the attachment (via the media cache), writes it to a temp file,
-/// then opens the native share sheet, since sharing needs a real file path.
+/// Downloads the attachment and opens the native share sheet for it (via a temp file,
+/// since sharing needs a real path).
 pub fn start_attachment_share(
     info: DownloadableAttachment,
     update_sender: TimelineUpdateSenderOption,
 ) {
-    let mxc = media_source_mxc(&info.media_source).clone();
-    let filename = info.filename.clone();
-    let mime = info.kind.share_mime_hint();
-    submit_async_request(MatrixRequest::DownloadMedia {
-        media_source: info.media_source,
-        filename: info.filename,
-        on_download_result: Box::new(move |result| {
-            reset_download_indicator(&update_sender, &mxc);
-            match result {
-                MediaDownloadResult::Downloaded(bytes) => share_bytes(&filename, &mxc, &bytes, mime),
-                MediaDownloadResult::Failed(e) => enqueue_popup_notification(
-                    format!("Failed to download \"{filename}\" to share: {e}"),
-                    PopupKind::Error,
-                    None,
-                ),
-                MediaDownloadResult::Cancelled => {}
-            }
-        }),
+    let mime = info.kind.basic_mime_type();
+    download_media(info, update_sender, move |filename, mxc, bytes, sender| {
+        // Success shows a "Shared" indicator; a share-step failure (already shown as
+        // a popup) just resets, since the download itself did succeed.
+        let outcome = if share_bytes(&filename, &mxc, &bytes, mime) {
+            DownloadOutcome::Succeeded
+        } else {
+            DownloadOutcome::Cancelled
+        };
+        finish_download_indicator(&sender, Some(&mxc), outcome);
     });
 }
 
 /// Opens the native share sheet for an attachment already in memory.
 pub fn share_loaded_attachment(info: DownloadableAttachment, bytes: Arc<[u8]>) {
     let mxc = media_source_mxc(&info.media_source).clone();
-    let mime = info.kind.share_mime_hint();
+    let mime = info.kind.basic_mime_type();
     let filename = info.filename;
     // Off the UI thread, since writing a large attachment to disk would block rendering.
     std::thread::spawn(move || share_bytes(&filename, &mxc, &bytes, mime));
 }
 
-/// Writes `bytes` to a temp file and opens the native share sheet for it.
-fn share_bytes(filename: &str, mxc: &OwnedMxcUri, bytes: &[u8], mime: Option<&str>) {
+/// Writes `bytes` to a temp file and opens the native share sheet for it,
+/// returning whether the sheet was presented. Pops an error on any failure.
+fn share_bytes(filename: &str, mxc: &OwnedMxcUri, bytes: &[u8], mime: Option<&str>) -> bool {
     let path = match write_shareable_temp_file(mxc, filename, bytes) {
         Ok(path) => path,
         Err(e) => {
@@ -192,7 +195,7 @@ fn share_bytes(filename: &str, mxc: &OwnedMxcUri, bytes: &[u8], mime: Option<&st
                 PopupKind::Error,
                 None,
             );
-            return;
+            return false;
         }
     };
     // Every platform's `share()` finds the active window/activity itself (and
@@ -208,7 +211,9 @@ fn share_bytes(filename: &str, mxc: &OwnedMxcUri, bytes: &[u8], mime: Option<&st
             PopupKind::Error,
             None,
         );
+        return false;
     }
+    true
 }
 
 /// Writes `bytes` to a per-media temp file so the share sheet can read a real path.
