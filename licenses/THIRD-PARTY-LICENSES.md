@@ -12,7 +12,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 
 | Crates | License | SPDX |
 |-------:|---------|------|
-| 522 | MIT License | `MIT` |
+| 523 | MIT License | `MIT` |
 | 22 | Apache License 2.0 | `Apache-2.0` |
 | 19 | Unicode License v3 | `Unicode-3.0` |
 | 12 | Mozilla Public License 2.0 | `MPL-2.0` |
@@ -135,7 +135,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `deranged` | 0.5.3 | MIT OR Apache-2.0 |
 | `digest` | 0.10.7 | MIT OR Apache-2.0 |
 | `dirs-sys` | 0.5.0 | MIT OR Apache-2.0 |
-| `dispatch2` | 0.3.0 | Zlib OR Apache-2.0 OR MIT |
+| `dispatch2` | 0.3.1 | Zlib OR Apache-2.0 OR MIT |
 | `displaydoc` | 0.2.5 | MIT OR Apache-2.0 |
 | `downcast-rs` | 1.2.1 | MIT OR Apache-2.0 |
 | `dunce` | 1.0.5 | CC0-1.0 OR MIT-0 OR Apache-2.0 |
@@ -323,16 +323,16 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `num_cpus` | 1.17.0 | MIT OR Apache-2.0 |
 | `oauth2` | 5.0.0 | MIT OR Apache-2.0 |
 | `oauth2-reqwest` | 0.1.0-alpha.3 | MIT |
-| `objc2` | 0.6.2 | MIT |
-| `objc2-app-kit` | 0.3.1 | Zlib OR Apache-2.0 OR MIT |
-| `objc2-authentication-services` | 0.3.1 | Zlib OR Apache-2.0 OR MIT |
-| `objc2-core-foundation` | 0.3.1 | Zlib OR Apache-2.0 OR MIT |
-| `objc2-core-location` | 0.3.1 | Zlib OR Apache-2.0 OR MIT |
+| `objc2` | 0.6.4 | MIT |
+| `objc2-app-kit` | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
+| `objc2-authentication-services` | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
+| `objc2-core-foundation` | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
+| `objc2-core-location` | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | `objc2-encode` | 4.1.0 | MIT |
-| `objc2-foundation` | 0.3.1 | MIT |
-| `objc2-photos-ui` | 0.3.1 | Zlib OR Apache-2.0 OR MIT |
-| `objc2-ui-kit` | 0.3.1 | Zlib OR Apache-2.0 OR MIT |
-| `objc2-uniform-type-identifiers` | 0.3.1 | Zlib OR Apache-2.0 OR MIT |
+| `objc2-foundation` | 0.3.2 | MIT |
+| `objc2-photos-ui` | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
+| `objc2-ui-kit` | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
+| `objc2-uniform-type-identifiers` | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | `ohos-sys` | 0.2.2 | Apache-2.0 |
 | `once_cell` | 1.21.3 | MIT OR Apache-2.0 |
 | `once_cell_polyfill` | 1.70.1 | MIT OR Apache-2.0 |
@@ -399,13 +399,14 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `rmp` | 0.8.14 | MIT |
 | `rmp-serde` | 1.3.0 | MIT |
 | `robius-android-env` | 0.2.0 | MIT |
-| `robius-common` | 0.2.0 | MIT |
+| `robius-common` | 0.3.0 | MIT |
 | `robius-directories` | 6.0.0 | MIT OR Apache-2.0 |
-| `robius-file-picker` | 0.2.0 | MIT |
-| `robius-location` | 0.2.0 | MIT |
-| `robius-open` | 0.2.0 | MIT |
+| `robius-file-picker` | 0.3.0 | MIT |
+| `robius-location` | 0.3.0 | MIT |
+| `robius-open` | 0.3.0 | MIT |
+| `robius-share` | 0.3.0 | MIT |
 | `robius-use-makepad` | 0.1.1 | MIT |
-| `robius-web-auth-session` | 0.2.0 | MIT |
+| `robius-web-auth-session` | 0.3.0 | MIT |
 | `robrix` | 1.0.0-alpha.1 | MIT |
 | `ruma` | 0.16.0 | MIT |
 | `ruma-client-api` | 0.24.0 | MIT |
