@@ -739,25 +739,22 @@ impl MatchEvent for ImageViewer {
             self.start_rotation(cx, -90.0);
         }
 
-        if self.view.button(cx, ids!(download_button)).clicked(actions)
-            && let Some(info) = self.downloadable.clone()
-        {
-            was_overlay_button_clicked = true;
-            if let Some(bytes) = self.loaded_bytes.clone() {
-                save_loaded_attachment(info, bytes);
-            } else {
-                start_attachment_download(info, None);
+        if let Some(info) = self.downloadable.as_ref() {
+            if self.view.button(cx, ids!(download_button)).clicked(actions) {
+                was_overlay_button_clicked = true;
+                if let Some(bytes) = self.loaded_bytes.clone() {
+                    save_loaded_attachment(info.filename.clone(), bytes);
+                } else {
+                    start_attachment_download(info.clone(), None);
+                }
             }
-        }
-
-        if self.view.button(cx, ids!(share_button)).clicked(actions)
-            && let Some(info) = self.downloadable.clone()
-        {
-            was_overlay_button_clicked = true;
-            if let Some(bytes) = self.loaded_bytes.clone() {
-                share_loaded_attachment(info, bytes);
-            } else {
-                start_attachment_share(info, None);
+            if self.view.button(cx, ids!(share_button)).clicked(actions) {
+                was_overlay_button_clicked = true;
+                if let Some(bytes) = self.loaded_bytes.clone() {
+                    share_loaded_attachment(info, bytes);
+                } else {
+                    start_attachment_share(info.clone(), None);
+                }
             }
         }
 

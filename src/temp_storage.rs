@@ -5,12 +5,11 @@ use crate::cache_dir;
 /// Subdirectory of the app cache dir used for short-lived scratch files.
 const TEMP_SUBDIR: &str = "temp";
 
-/// How long to wait after startup before clearing the temp dir, so cleanup
-/// doesn't compete with sync and other startup work.
+/// How long to wait after startup before running the temp dir cleanup task.
 const CLEANUP_DELAY: Duration = Duration::from_secs(60);
 
-/// Creates and returns the path to an app-scoped temp directory for scratch files,
-/// which is currently a subdirectory within the platform-designated cache dir for this app.
+/// Creates and returns the path to an app-local temp directory,
+/// a subdirectory within the platform-designated cache dir for this app.
 ///
 /// This is cheap to repeatedly call, it only does the directory work once.
 pub fn get_temp_dir_path() -> &'static PathBuf {

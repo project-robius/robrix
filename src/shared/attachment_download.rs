@@ -1,6 +1,6 @@
 //! Download a Matrix media attachment and save it to storage.
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 use makepad_widgets::SignalToUI;
 use matrix_sdk::ruma::{OwnedMxcUri, events::room::MediaSource};
 use robius_share::ShareSheet;
@@ -110,9 +110,7 @@ impl DownloadKind {
     }
 }
 
-/// Fetches the attachment bytes via the media cache, then hands them to `on_downloaded`,
-/// which owns the indicator on success. On failure it pops an error and shows the failed
-/// state (a share downloads first, so a failed share is a failed download); cancel resets.
+/// Fetches the attachment via the media cache and then calls `on_downloaded`.
 fn download_media(
     info: DownloadableAttachment,
     update_sender: TimelineUpdateSenderOption,
@@ -140,8 +138,7 @@ fn download_media(
     });
 }
 
-/// Downloads the attachment and shows the native save dialog for it. The indicator
-/// tracks the save: success once saved, idle if cancelled, failure if the fetch or write fails.
+/// Downloads the attachment and shows the native save dialog for it.
 pub fn start_attachment_download(
     info: DownloadableAttachment,
     update_sender: TimelineUpdateSenderOption,
@@ -152,8 +149,8 @@ pub fn start_attachment_download(
 }
 
 /// Saves an attachment already in memory directly to storage, without showing any dialog.
-pub fn save_loaded_attachment(info: DownloadableAttachment, bytes: Arc<[u8]>) {
-    show_save_dialog(info.filename, bytes, None, None);
+pub fn save_loaded_attachment(filename: String, bytes: Arc<[u8]>) {
+    show_save_dialog(filename, bytes, None, None);
 }
 
 /// Downloads the attachment and opens the native share sheet for it (via a temp file,
@@ -176,30 +173,34 @@ pub fn start_attachment_share(
 }
 
 /// Opens the native share sheet for an attachment already in memory.
-pub fn share_loaded_attachment(info: DownloadableAttachment, bytes: Arc<[u8]>) {
+pub fn share_loaded_attachment(info: &DownloadableAttachment, bytes: Arc<[u8]>) {
     let mxc = media_source_mxc(&info.media_source).clone();
     let mime = info.kind.basic_mime_type();
-    let filename = info.filename;
-    // Off the UI thread, since writing a large attachment to disk would block rendering.
+    let filename = info.filename.clone();
+    // Don't write a large attachment file to disk on the main UI thread.
     std::thread::spawn(move || share_bytes(&filename, &mxc, &bytes, mime));
 }
 
-/// Writes `bytes` to a temp file and opens the native share sheet for it,
-/// returning whether the sheet was presented. Pops an error on any failure.
+/// Writes the given `bytes` to a temp file (based on `filename`) and presents the native share sheet for it.
+///
+/// This is required because sharing a file requires a real path.
+///
+/// Returns true if the share sheet was shown. Enqueues a popup error upon any failure.
 fn share_bytes(filename: &str, mxc: &OwnedMxcUri, bytes: &[u8], mime: Option<&str>) -> bool {
-    let path = match write_shareable_temp_file(mxc, filename, bytes) {
-        Ok(path) => path,
-        Err(e) => {
-            enqueue_popup_notification(
-                format!("Failed to prepare \"{filename}\" for sharing: {e}"),
-                PopupKind::Error,
-                None,
-            );
-            return false;
-        }
-    };
-    // Every platform's `share()` finds the active window/activity itself (and
-    // hops to the main thread where needed), so calling it off-thread is fine.
+    let mut safe_name = sanitize_filename::sanitize(filename);
+    if safe_name.is_empty() {
+        safe_name = "shared_file".to_owned();
+    }
+    let dir = get_temp_dir_path().join(sanitize_filename::sanitize(mxc.as_str()));
+    let path = dir.join(safe_name);
+    if let Err(e) = std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(&path, bytes)) {
+        enqueue_popup_notification(
+            format!("Failed to prepare \"{filename}\" for sharing: {e}"),
+            PopupKind::Error,
+            None,
+        );
+        return false;
+    }
     let sheet = ShareSheet::new().set_title(format!("Share {filename}"));
     let sheet = match mime {
         Some(mime) => sheet.add_file_with_mime_type(&path, mime),
@@ -214,24 +215,6 @@ fn share_bytes(filename: &str, mxc: &OwnedMxcUri, bytes: &[u8], mime: Option<&st
         return false;
     }
     true
-}
-
-/// Writes `bytes` to a per-media temp file so the share sheet can read a real path.
-/// Isolated by the mxc so different files with the same name don't collide.
-fn write_shareable_temp_file(
-    mxc: &OwnedMxcUri,
-    filename: &str,
-    bytes: &[u8],
-) -> std::io::Result<PathBuf> {
-    let mut safe_name = sanitize_filename::sanitize(filename);
-    if safe_name.is_empty() {
-        safe_name = "shared_file".to_owned();
-    }
-    let dir = get_temp_dir_path().join(sanitize_filename::sanitize(mxc.as_str()));
-    std::fs::create_dir_all(&dir)?;
-    let path = dir.join(safe_name);
-    std::fs::write(&path, bytes)?;
-    Ok(path)
 }
 
 enum DownloadOutcome {
@@ -293,13 +276,6 @@ fn show_save_dialog<D: AsRef<[u8]> + Send + 'static>(
     }
 }
 
-/// Removes the in-progress indicator for `mxc`, returning the button to idle.
-fn reset_download_indicator(update_sender: &TimelineUpdateSenderOption, mxc: &OwnedMxcUri) {
-    let Some(sender) = update_sender.as_ref() else { return };
-    let _ = sender.send(TimelineUpdate::AttachmentDownloadReset(mxc.clone()));
-    SignalToUI::set_ui_signal();
-}
-
 /// Handles the completion of a download, whether success, failure, or cancelled.
 fn finish_download_indicator(
     update_sender: &TimelineUpdateSenderOption,
@@ -307,10 +283,13 @@ fn finish_download_indicator(
     outcome: DownloadOutcome,
 ) {
     let Some(mxc) = mxc else { return };
+    let Some(sender) = update_sender.as_ref() else { return };
     match outcome {
-        DownloadOutcome::Cancelled => reset_download_indicator(update_sender, mxc),
+        DownloadOutcome::Cancelled => {
+            let _ = sender.send(TimelineUpdate::AttachmentDownloadReset(mxc.clone()));
+            SignalToUI::set_ui_signal();
+        }
         DownloadOutcome::Succeeded | DownloadOutcome::Failed => {
-            let Some(sender) = update_sender.as_ref() else { return };
             let result = match outcome {
                 DownloadOutcome::Succeeded => Ok(()),
                 _ => Err(String::new()),
