@@ -32,7 +32,7 @@ use crate::{
     },
     room::{BasicRoomDetails, reply_preview::CollapsiblePreviewWidgetRefExt, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, media_source_mxc, start_attachment_download}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageStatus, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageStatus, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints}, utils::{self, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -100,6 +100,15 @@ script_mod! {
             draw_icon.svg: (ICON_DOWNLOAD)
             icon_walk: Walk{width: 16, height: 16}
             text: "Download"
+        }
+
+        share_button := RobrixIconButton {
+            height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
+            padding: Inset{left: 12, right: 12}
+            margin: Inset{left: 8}
+            draw_icon.svg: (ICON_SHARE)
+            icon_walk: Walk{width: 16, height: 16}
+            text: "Share"
         }
 
         downloading_view := View {
@@ -2055,6 +2064,34 @@ impl RoomScreen {
             .find(|ev| ev.event_id().is_some_and(|id| id == target_event_id))
     }
 
+    /// Registers a pending download for a media transfer (e.g., download, share)
+    /// and shows the loading spinner, then calls `start` to kick off the transfer.
+    ///
+    /// Does nothing if the transfer was already in progress.
+    fn begin_media_transfer(
+        &mut self,
+        cx: &mut Cx,
+        portal_list: &PortalListRef,
+        info: &DownloadableAttachment,
+        kind: TransferKind,
+        start: fn(DownloadableAttachment, TimelineUpdateSenderOption),
+    ) {
+        let Some(tl) = self.tl_state.as_mut() else { return };
+        let mxc = media_source_mxc(&info.media_source);
+        if tl.pending_downloads.iter().any(|p| &p.mxc == mxc) {
+            enqueue_already_downloading_notification();
+            return;
+        }
+        tl.pending_downloads.push(PendingDownload {
+            mxc: mxc.clone(),
+            state: PendingDownloadState::InProgress,
+            kind,
+        });
+        portal_list.redraw(cx);
+        let update_sender = tl.media_cache.timeline_update_sender().cloned();
+        start(info.clone(), update_sender);
+    }
+
     /// Handles any [`MessageAction`]s received by this RoomScreen.
     fn handle_message_actions(
         &mut self,
@@ -2384,20 +2421,10 @@ impl RoomScreen {
                 // }
 
                 MessageAction::DownloadAttachment(info) => {
-                    let Some(tl) = self.tl_state.as_mut() else { continue };
-                    let mxc = media_source_mxc(&info.media_source);
-                    // Prevent the same attachment from being downloaded more than once at a time.
-                    if tl.pending_downloads.iter().any(|p| &p.mxc == mxc) {
-                        enqueue_already_downloading_notification();
-                        continue;
-                    }
-                    tl.pending_downloads.push(PendingDownload {
-                        mxc: mxc.clone(),
-                        state: PendingDownloadState::InProgress,
-                    });
-                    portal_list.redraw(cx);
-                    let update_sender = tl.media_cache.timeline_update_sender().cloned();
-                    start_attachment_download(info.clone(), update_sender);
+                    self.begin_media_transfer(cx, portal_list, info, TransferKind::Download, start_attachment_download);
+                }
+                MessageAction::ShareAttachment(info) => {
+                    self.begin_media_transfer(cx, portal_list, info, TransferKind::Share, start_attachment_share);
                 }
                 MessageAction::CancelDownload(mxc) => {
                     submit_async_request(MatrixRequest::CancelDownload(mxc.clone()));
@@ -3386,8 +3413,7 @@ struct TimelineUiState {
     /// are contained within. If `None`, the room has not been tombstoned.
     tombstone_info: Option<SuccessorRoomDetails>,
 
-    /// Media/file attachments in this timeline currently being downloaded.
-    /// the inline button's spinner state.
+    /// Media/file attachments in this timeline that are currently being downloaded.
     pending_downloads: SmallVec<[PendingDownload; 1]>,
 
     /// Reply previews the user has eaxpanded that should be shown in full.
@@ -4106,7 +4132,7 @@ fn populate_message_view(
             let mxc = media_source_mxc(&info.media_source);
             pending_downloads.iter()
                 .find(|p| &p.mxc == mxc)
-                .map(|p| p.state.display())
+                .map(|p| p.state.display(p.kind))
         })
         .unwrap_or_default();
     let is_reply_expanded = expanded_reply_previews.contains(&message_details.timeline_event_id);
@@ -5289,6 +5315,8 @@ pub enum MessageAction {
 
     /// The user clicked the "Download" button on a media/file message.
     DownloadAttachment(DownloadableAttachment),
+    /// The user clicked the "Share" button on a media/file message.
+    ShareAttachment(DownloadableAttachment),
     /// User clicked the cancel × next to the in-progress spinner.
     CancelDownload(OwnedMxcUri),
     /// The message at the given item index in the timeline should be highlighted.
@@ -5508,23 +5536,26 @@ impl Widget for Message {
                 reply_collapse_button.reset_hover(cx);
             }
 
-            // Handle clicks on the "Download" button shown beneath media messages.
-            if let Some(info) = self.download_info.as_ref()
-                && self.view.button(cx, ids!(content.download_section.download_button)).clicked(actions)
-            {
-                cx.widget_action(
-                    details.room_screen_widget_uid,
-                    MessageAction::DownloadAttachment(info.clone()),
-                );
-            }
-            // Cancel × shown next to the in-progress spinner.
-            if let Some(info) = self.download_info.as_ref()
-                && self.view.button(cx, ids!(content.download_section.downloading_view.cancel_button)).clicked(actions)
-            {
-                cx.widget_action(
-                    details.room_screen_widget_uid,
-                    MessageAction::CancelDownload(media_source_mxc(&info.media_source).clone()),
-                );
+            // Handle clicks on the media-related buttons (download, share, cancel) beneath media messages.
+            if let Some(info) = self.download_info.as_ref() {
+                if self.view.button(cx, ids!(content.download_section.download_button)).clicked(actions) {
+                    cx.widget_action(
+                        details.room_screen_widget_uid,
+                        MessageAction::DownloadAttachment(info.clone()),
+                    );
+                }
+                if self.view.button(cx, ids!(content.download_section.share_button)).clicked(actions) {
+                    cx.widget_action(
+                        details.room_screen_widget_uid,
+                        MessageAction::ShareAttachment(info.clone()),
+                    );
+                }
+                if self.view.button(cx, ids!(content.download_section.downloading_view.cancel_button)).clicked(actions) {
+                    cx.widget_action(
+                        details.room_screen_widget_uid,
+                        MessageAction::CancelDownload(media_source_mxc(&info.media_source).clone()),
+                    );
+                }
             }
         }
     }
@@ -5565,24 +5596,35 @@ impl Message {
 
         let section_visible = self.download_info.is_some();
         self.view.view(cx, ids!(content.download_section)).set_visible(cx, section_visible);
-        if let Some(info) = self.download_info.as_ref() {
-            let download_button = self.view.button(cx, ids!(content.download_section.download_button));
+        if section_visible {
+            let download_button  = self.view.button(cx, ids!(content.download_section.download_button));
+            let share_button     = self.view.button(cx, ids!(content.download_section.share_button));
             let downloading_view = self.view.view(cx, ids!(content.download_section.downloading_view));
-            let cancel_button = self.view.button(cx, ids!(content.download_section.downloading_view.cancel_button));
-            let success_button = self.view.button(cx, ids!(content.download_section.success_button));
-            let failure_button = self.view.button(cx, ids!(content.download_section.failure_button));
-            download_button.set_text(cx, info.kind.button_text());
-            download_button.set_visible(cx, matches!(download_state, DownloadDisplayState::Idle));
+            let cancel_button    = self.view.button(cx, ids!(content.download_section.downloading_view.cancel_button));
+            let success_button   = self.view.button(cx, ids!(content.download_section.success_button));
+            let failure_button   = self.view.button(cx, ids!(content.download_section.failure_button));
+            let is_idle = matches!(download_state, DownloadDisplayState::Idle);
+            download_button.set_visible(cx, is_idle);
+            share_button.set_visible(cx, is_idle);
             downloading_view.set_visible(cx, matches!(download_state, DownloadDisplayState::InProgress));
-            success_button.set_visible(cx, matches!(download_state, DownloadDisplayState::Succeeded));
+            success_button.set_visible(cx, matches!(download_state, DownloadDisplayState::Succeeded(_)));
             failure_button.set_visible(cx, matches!(download_state, DownloadDisplayState::Failed));
-            // Only reset hover for the button that is just now becoming visible.
+            if let DownloadDisplayState::Succeeded(kind) = download_state {
+                success_button.set_text(cx, match kind {
+                    TransferKind::Download => "Downloaded",
+                    TransferKind::Share => "Shared",
+                });
+            }
+            // Only reset hover for the button(s) just now becoming visible.
             let newly_visible = !prev_section_visible || prev_state != download_state;
             if newly_visible {
                 match download_state {
-                    DownloadDisplayState::Idle => download_button.reset_hover(cx),
+                    DownloadDisplayState::Idle => {
+                        download_button.reset_hover(cx);
+                        share_button.reset_hover(cx);
+                    }
                     DownloadDisplayState::InProgress => cancel_button.reset_hover(cx),
-                    DownloadDisplayState::Succeeded => success_button.reset_hover(cx),
+                    DownloadDisplayState::Succeeded(_) => success_button.reset_hover(cx),
                     DownloadDisplayState::Failed => failure_button.reset_hover(cx),
                 }
             }

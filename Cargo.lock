@@ -1484,9 +1484,9 @@ dependencies = [
 
 [[package]]
 name = "dispatch2"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89a09f22a6c6069a18470eb92d2298acf25463f14256d24778e1230d789a2aec"
+checksum = "1e0e367e4e7da84520dedcac1901e4da967309406d1e51017ae1abfb97adbd38"
 dependencies = [
  "bitflags 2.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "block2",
@@ -3983,30 +3983,31 @@ dependencies = [
 
 [[package]]
 name = "objc2"
-version = "0.6.2"
+version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "561f357ba7f3a2a61563a186a163d0a3a5247e1089524a3981d49adb775078bc"
+checksum = "3a12a8ed07aefc768292f076dc3ac8c48f3781c8f2d5851dd3d98950e8c5a89f"
 dependencies = [
  "objc2-encode",
 ]
 
 [[package]]
 name = "objc2-app-kit"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6f29f568bec459b0ddff777cec4fe3fd8666d82d5a40ebd0ff7e66134f89bcc"
+checksum = "d49e936b501e5c5bf01fda3a9452ff86dc3ea98ad5f283e1455153142d97518c"
 dependencies = [
  "bitflags 2.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "block2",
  "objc2",
+ "objc2-core-foundation",
  "objc2-foundation",
 ]
 
 [[package]]
 name = "objc2-authentication-services"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f920a0a975e281f298fab2312374a288e742f7375e8797397fd5c274b486b58"
+checksum = "ee6d6f7dab884a28adaec1012eb3889257a49cc145724e35f93ece2d209f8b25"
 dependencies = [
  "block2",
  "objc2",
@@ -4016,9 +4017,9 @@ dependencies = [
 
 [[package]]
 name = "objc2-core-foundation"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c10c2894a6fed806ade6027bcd50662746363a9589d3ec9d9bef30a4e4bc166"
+checksum = "2a180dd8642fa45cdb7dd721cd4c11b1cadd4929ce112ebd8b9f5803cc79d536"
 dependencies = [
  "bitflags 2.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "dispatch2",
@@ -4027,9 +4028,9 @@ dependencies = [
 
 [[package]]
 name = "objc2-core-location"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac0f75792558aa9d618443bbb5db7426a7a0b6fddf96903f86ef9ad02e135740"
+checksum = "ca347214e24bc973fc025fd0d36ebb179ff30536ed1f80252706db19ee452009"
 dependencies = [
  "objc2",
  "objc2-foundation",
@@ -4043,9 +4044,9 @@ checksum = "ef25abbcd74fb2609453eb695bd2f860d389e457f67dc17cafc8b8cbc89d0c33"
 
 [[package]]
 name = "objc2-foundation"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "900831247d2fe1a09a683278e5384cfb8c80c79fe6b166f9d14bfdde0ea1b03c"
+checksum = "e3e0adef53c21f888deb4fa59fc59f7eb17404926ee8a6f59f5df0fd7f9f3272"
 dependencies = [
  "bitflags 2.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "block2",
@@ -4055,9 +4056,9 @@ dependencies = [
 
 [[package]]
 name = "objc2-photos-ui"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69e9b818a2fae66994d23ad6bf845e9204d5503434f4c2711dc35701dac8e296"
+checksum = "fdddde9dfb986546746e3115021a85c4a83e1c5e9037b3c865a688fe9bf94ebb"
 dependencies = [
  "bitflags 2.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "objc2",
@@ -4066,22 +4067,23 @@ dependencies = [
 
 [[package]]
 name = "objc2-ui-kit"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25b1312ad7bc8a0e92adae17aa10f90aae1fb618832f9b993b022b591027daed"
+checksum = "d87d638e33c06f577498cbcc50491496a3ed4246998a7fbba7ccb98b1e7eab22"
 dependencies = [
  "bitflags 2.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "block2",
  "objc2",
+ "objc2-core-foundation",
  "objc2-foundation",
  "objc2-uniform-type-identifiers",
 ]
 
 [[package]]
 name = "objc2-uniform-type-identifiers"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d964a85778b5899a7963c5d4a5c62cec6792cf41dfdfc5dadae2d427f2681c85"
+checksum = "7902ac02859fc1f7045f8b598c63f1ae0cc7efeaa06a9bc9f3d9a3c955974fa4"
 dependencies = [
  "objc2",
  "objc2-foundation",
@@ -4978,13 +4980,13 @@ dependencies = [
 
 [[package]]
 name = "robius-common"
-version = "0.2.0"
-source = "git+https://github.com/project-robius/robius#6cf7d57917c7d325de4f28d42ee5ae1510a255b0"
+version = "0.3.0"
+source = "git+https://github.com/project-robius/robius#f697e566310a201528afbac665359d53914ffc0c"
 
 [[package]]
 name = "robius-directories"
 version = "6.0.0"
-source = "git+https://github.com/project-robius/robius#6cf7d57917c7d325de4f28d42ee5ae1510a255b0"
+source = "git+https://github.com/project-robius/robius#f697e566310a201528afbac665359d53914ffc0c"
 dependencies = [
  "dirs-sys",
  "jni",
@@ -4993,8 +4995,8 @@ dependencies = [
 
 [[package]]
 name = "robius-file-picker"
-version = "0.2.0"
-source = "git+https://github.com/project-robius/robius#6cf7d57917c7d325de4f28d42ee5ae1510a255b0"
+version = "0.3.0"
+source = "git+https://github.com/project-robius/robius#f697e566310a201528afbac665359d53914ffc0c"
 dependencies = [
  "android-build",
  "block2",
@@ -5015,8 +5017,8 @@ dependencies = [
 
 [[package]]
 name = "robius-location"
-version = "0.2.0"
-source = "git+https://github.com/project-robius/robius#6cf7d57917c7d325de4f28d42ee5ae1510a255b0"
+version = "0.3.0"
+source = "git+https://github.com/project-robius/robius#f697e566310a201528afbac665359d53914ffc0c"
 dependencies = [
  "android-build",
  "cfg-if",
@@ -5030,8 +5032,8 @@ dependencies = [
 
 [[package]]
 name = "robius-open"
-version = "0.2.0"
-source = "git+https://github.com/project-robius/robius#6cf7d57917c7d325de4f28d42ee5ae1510a255b0"
+version = "0.3.0"
+source = "git+https://github.com/project-robius/robius#f697e566310a201528afbac665359d53914ffc0c"
 dependencies = [
  "block2",
  "cfg-if",
@@ -5046,6 +5048,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "robius-share"
+version = "0.3.0"
+source = "git+https://github.com/project-robius/robius#f697e566310a201528afbac665359d53914ffc0c"
+dependencies = [
+ "android-build",
+ "cfg-if",
+ "dispatch2",
+ "jni",
+ "libc",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "objc2-ui-kit",
+ "robius-android-env",
+ "robius-common",
+ "windows 0.56.0",
+]
+
+[[package]]
 name = "robius-use-makepad"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5056,8 +5077,8 @@ dependencies = [
 
 [[package]]
 name = "robius-web-auth-session"
-version = "0.2.0"
-source = "git+https://github.com/project-robius/robius#6cf7d57917c7d325de4f28d42ee5ae1510a255b0"
+version = "0.3.0"
+source = "git+https://github.com/project-robius/robius#f697e566310a201528afbac665359d53914ffc0c"
 dependencies = [
  "block2",
  "cfg-if",
@@ -5108,6 +5129,7 @@ dependencies = [
  "robius-file-picker",
  "robius-location",
  "robius-open",
+ "robius-share",
  "robius-use-makepad",
  "robius-web-auth-session",
  "ruma",

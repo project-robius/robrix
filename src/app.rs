@@ -227,6 +227,8 @@ impl MatchEvent for App {
             log!("App::Startup: initializing TSP (Trust Spanning Protocol) module.");
             crate::tsp::tsp_init(_tokio_rt_handle).unwrap();
         }
+
+        crate::temp_storage::schedule_temp_dir_cleanup();
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {

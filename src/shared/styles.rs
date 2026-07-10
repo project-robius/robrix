@@ -40,6 +40,7 @@ script_mod! {
     mod.widgets.ICON_SEND_ENCRYPTED   = crate_resource("self://resources/icons/send_encrypted.svg")
     mod.widgets.ICON_SEND_UNENCRYPTED = crate_resource("self://resources/icons/send_unencrypted.svg")
     mod.widgets.ICON_SETTINGS         = crate_resource("self://resources/icons/settings.svg")
+    mod.widgets.ICON_SHARE            = crate_resource("self://resources/icons/share.svg")
     mod.widgets.ICON_SQUARES          = crate_resource("self://resources/icons/squares_filled.svg")
     mod.widgets.ICON_TOMBSTONE        = crate_resource("self://resources/icons/tombstone.svg")
     mod.widgets.ICON_TRASH            = crate_resource("self://resources/icons/trash.svg")

@@ -15,7 +15,7 @@ use matrix_sdk_ui::timeline::EventTimelineItem;
 use crate::utils::format_decimal_file_size;
 use thiserror::Error;
 use crate::{
-    shared::{attachment_download::{DownloadableAttachment, save_loaded_attachment, start_attachment_download}, avatar::AvatarWidgetExt, timestamp::TimestampWidgetRefExt},
+    shared::{attachment_download::{DownloadableAttachment, save_loaded_attachment, share_loaded_attachment, start_attachment_download, start_attachment_share}, avatar::AvatarWidgetExt, timestamp::TimestampWidgetRefExt},
     sliding_sync::TimelineKind,
 };
 
@@ -318,6 +318,11 @@ script_mod! {
                 download_button := mod.widgets.ImageViewerButton {
                     draw_icon +: { svg: (ICON_DOWNLOAD) }
                     icon_walk: Walk{width: 24, height: 24}
+                }
+
+                share_button := mod.widgets.ImageViewerButton {
+                    draw_icon +: { svg: (ICON_SHARE) }
+                    icon_walk: Walk{width: 22, height: 22}
                 }
 
                 close_button := mod.widgets.ImageViewerButton {
@@ -734,14 +739,22 @@ impl MatchEvent for ImageViewer {
             self.start_rotation(cx, -90.0);
         }
 
-        if self.view.button(cx, ids!(download_button)).clicked(actions)
-            && let Some(info) = self.downloadable.clone()
-        {
-            was_overlay_button_clicked = true;
-            if let Some(bytes) = self.loaded_bytes.clone() {
-                save_loaded_attachment(info, bytes);
-            } else {
-                start_attachment_download(info, None);
+        if let Some(info) = self.downloadable.as_ref() {
+            if self.view.button(cx, ids!(download_button)).clicked(actions) {
+                was_overlay_button_clicked = true;
+                if let Some(bytes) = self.loaded_bytes.clone() {
+                    save_loaded_attachment(info.filename.clone(), bytes);
+                } else {
+                    start_attachment_download(info.clone(), None);
+                }
+            }
+            if self.view.button(cx, ids!(share_button)).clicked(actions) {
+                was_overlay_button_clicked = true;
+                if let Some(bytes) = self.loaded_bytes.clone() {
+                    share_loaded_attachment(info, bytes);
+                } else {
+                    start_attachment_share(info.clone(), None);
+                }
             }
         }
 
