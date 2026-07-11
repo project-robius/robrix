@@ -284,19 +284,8 @@ impl Widget for RoomsListEntry {
         // within the RoomsListEntry content itself, such as links or avatars.
         if let Some(room_id) = &self.room_id {
             let area = self.view.area();
-            if std::env::var("MAKEPAD_SCROLL_DEBUG").is_ok() {
-                if let Event::MouseDown(e) = event {
-                    log!(
-                        "[entry {}] MouseDown: abs={:?} rect={:?} valid={}",
-                        room_id, e.abs, area.clipped_rect(cx), area.is_valid(cx)
-                    );
-                }
-            }
             match event.hits(cx, area) {
                 Hit::FingerDown(fe) => {
-                    if std::env::var("MAKEPAD_SCROLL_DEBUG").is_ok() {
-                        log!("[entry] got FingerDown");
-                    }
                     cx.set_key_focus(area);
                     if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                         cx.widget_action(
@@ -312,18 +301,7 @@ impl Widget for RoomsListEntry {
                     );
                 }
                 Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                    if std::env::var("MAKEPAD_SCROLL_DEBUG").is_ok() {
-                        log!("[entry] PrimaryClicked accepted");
-                    }
                     cx.widget_action(uid,  RoomsListEntryAction::PrimaryClicked(room_id.clone()));
-                }
-                Hit::FingerUp(fe) => {
-                    if std::env::var("MAKEPAD_SCROLL_DEBUG").is_ok() {
-                        log!(
-                            "[entry] FingerUp REJECTED: is_over={} primary={} was_tap={}",
-                            fe.is_over, fe.is_primary_hit(), fe.was_tap()
-                        );
-                    }
                 }
                 _ => { }
             }

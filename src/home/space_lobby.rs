@@ -578,7 +578,9 @@ script_mod! {
         tree_list := PortalList {
             keep_invisible: false,
             bounce_at_start: false,
-        bounce_at_end: false,
+            bounce_at_end: false,
+            // Nothing here listens for scroll position changes.
+            emit_scroll_actions: false,
             auto_tail: false,
             width: Fill, height: Fill
             flow: Down,
@@ -634,11 +636,6 @@ impl Widget for SpaceLobbyEntry {
         }
 
         let area = self.draw_bg.area();
-        if std::env::var("MAKEPAD_SCROLL_DEBUG").is_ok() {
-            if let Event::MouseDown(e) = event {
-                log!("[lobby_entry] MouseDown: abs={:?} rect={:?}", e.abs, area.clipped_rect(cx));
-            }
-        }
         match event.hits(cx, area) {
             Hit::FingerHoverIn(_) => {
                 self.animator_play(cx, ids!(hover.on));

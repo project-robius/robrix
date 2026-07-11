@@ -639,13 +639,17 @@ impl HomeScreen {
     fn sync_effective_view_mode(&mut self, cx: &mut Cx) {
         let is_desktop = effective_is_desktop(cx);
         let Some(previous_is_desktop) = self.last_effective_is_desktop.replace(is_desktop) else {
+            // Mobile mode starts on the rooms list with no room open, so no
+            // room should be drawn as selected until one is actually clicked.
+            if !is_desktop {
+                cx.action(AppStateAction::FocusNone);
+            }
             return;
         };
         if previous_is_desktop != is_desktop {
             self.clear_mobile_navigation_state(cx);
             if !is_desktop {
-                // Mobile mode starts on the rooms list with no room open, so no
-                // room should be drawn as selected until one is actually clicked.
+                // same as above
                 cx.action(AppStateAction::FocusNone);
             }
         }

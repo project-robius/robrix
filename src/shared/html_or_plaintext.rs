@@ -357,13 +357,15 @@ struct MatrixLinkPill {
     #[rust] matrix_id: Option<MatrixId>,
     #[rust] via: Vec<OwnedServerName>,
     #[rust] url: String,
+    /// Whether this pill is still waiting for its name or avatar to arrive.
+    #[rust] is_waiting_for_data: bool,
 }
 
 impl Widget for MatrixLinkPill {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
         if matches!(event, Event::Signal) {
             room_preview_cache::process_room_preview_updates(cx);
-            if self.matrix_id.is_some() {
+            if self.matrix_id.is_some() && self.is_waiting_for_data {
                 self.redraw(cx);
             }
         }
@@ -426,18 +428,19 @@ impl MatrixLinkPill {
 
         // Handle a user ID link by querying the user profile cache.
         if let MatrixId::User(user_id) = matrix_id {
-            let (name, avatar_state) = match user_profile_cache::with_user_profile(
+            let profile_pair = user_profile_cache::with_user_profile(
                 cx,
                 user_id.clone(),
                 None,
                 true,
                 |profile, _| { (profile.displayable_name().to_owned(), profile.avatar_state.clone()) }
-            ) {
-                Some(pair) => pair,
-                None => (user_id.to_string(), AvatarState::Unknown),
-            };
+            );
+            let profile_found = profile_pair.is_some();
+            let (name, avatar_state) = profile_pair
+                .unwrap_or_else(|| (user_id.to_string(), AvatarState::Unknown));
             self.set_text(cx, &name);
-            self.populate_avatar(cx, &avatar_state, &name);
+            let avatar_final = self.populate_avatar(cx, &avatar_state, &name);
+            self.is_waiting_for_data = !(profile_found && avatar_final);
             return;
         }
 
@@ -463,7 +466,8 @@ impl MatrixLinkPill {
                 // For @room mentions, show "@room" as the title, not the room name.
                 let display_name = if is_room_mention { "@room" } else { resolved_name.as_str() };
                 self.label(cx, ids!(title)).set_text(cx, display_name);
-                self.populate_avatar(cx, &room_avatar, display_name);
+                let avatar_final = self.populate_avatar(cx, &room_avatar, display_name);
+                self.is_waiting_for_data = !avatar_final;
                 return;
             }
         }
@@ -480,6 +484,7 @@ impl MatrixLinkPill {
         };
         self.set_text(cx, &fallback_name);
         self.populate_avatar(cx, &AvatarState::Unknown, &fallback_name);
+        self.is_waiting_for_data = true;
     }
 
     /// Renders the pill avatar from the given [`AvatarState`], falling back to
@@ -489,15 +494,21 @@ impl MatrixLinkPill {
     /// * `Loaded(bytes)` — paint bytes directly (room link cache).
     /// * `Known(Some(uri))` — fetch bytes via [`avatar_cache`] (user link).
     /// * `Known(None)` / `Unknown` / `Failed` — text fallback.
-    fn populate_avatar(&self, cx: &mut Cx, avatar: &AvatarState, display_name: &str) {
+    ///
+    /// Returns whether the avatar is "finished":
+    /// * `true` if the image was fully drawn or there is no image to draw.
+    /// * `false` if there is an image to draw but it hasn't arrived yet.
+    fn populate_avatar(&self, cx: &mut Cx, avatar: &AvatarState, display_name: &str) -> bool {
         let avatar_ref = self.avatar(cx, ids!(avatar));
-        let bytes: Option<Arc<[u8]>> = match avatar {
-            AvatarState::Loaded(data) => Some(data.clone()),
+        let (bytes, can_improve): (Option<Arc<[u8]>>, bool) = match avatar {
+            AvatarState::Loaded(data) => (Some(data.clone()), false),
             AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, uri) {
-                AvatarCacheEntry::Loaded(data) => Some(data),
-                _ => None,
+                AvatarCacheEntry::Loaded(data) => (Some(data), false),
+                AvatarCacheEntry::Failed => (None, false),
+                _ => (None, true),
             },
-            _ => None,
+            AvatarState::Known(None) | AvatarState::Failed => (None, false),
+            AvatarState::Unknown => (None, true),
         };
         if let Some(data) = bytes {
             let res = avatar_ref.show_image(
@@ -506,10 +517,11 @@ impl MatrixLinkPill {
                 |cx, img_ref| utils::load_image_cached(&img_ref, cx, Arc::clone(&data)),
             );
             if res.is_ok() {
-                return;
+                return true;
             }
         }
         avatar_ref.show_text(cx, None, None, display_name);
+        !can_improve
     }
 }
 

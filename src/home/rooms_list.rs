@@ -120,6 +120,8 @@ script_mod! {
 
         list := PortalList {
             keep_invisible: false,
+            // Nothing here listens for scroll position changes.
+            emit_scroll_actions: false,
             auto_tail: false,
             width: Fill, height: Fill
             flow: Down,

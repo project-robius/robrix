@@ -104,6 +104,8 @@ script_mod! {
         auto_tail: false,
         bounce_at_start: false,
         bounce_at_end: false,
+        // Nothing here listens for scroll position changes.
+        emit_scroll_actions: false,
         scroll_bar: ScrollBar {  // hide the scroll bar
             bar_size: 0.0,
             min_handle_size: 0.0
