@@ -815,6 +815,8 @@ impl HomeScreen {
             return;
         }
         let Some(current_screen) = app_state.selected_room.take() else {
+            // If we didn't have a current screen, something's buggy,
+            // so the safest option is to clear the mobile stack and start over. nbd.
             self.mobile_screen_history.clear();
             return;
         };
