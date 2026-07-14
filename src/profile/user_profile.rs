@@ -1,6 +1,6 @@
 //! Widgets and types related to displaying info about a user profile.
 
-use std::{borrow::Cow, ops::{Deref, DerefMut}, sync::Arc};
+use std::{borrow::Cow, ops::{Deref, DerefMut}};
 use makepad_widgets::*;
 use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId}};
 use crate::{
@@ -534,8 +534,8 @@ impl Widget for UserProfileSlidingPane {
         // Set the avatar image, using the user name as a fallback.
         let avatar_ref = self.avatar(cx, ids!(avatar));
         info.avatar_state
-            .data()
-            .and_then(|data| avatar_ref.show_image(cx, None, |cx, img| utils::load_image(&img, cx, Arc::clone(data))).ok())
+            .image()
+            .and_then(|image| avatar_ref.show_image(cx, None, |cx, img| utils::load_avatar_image(&img, cx, image)).ok())
             .unwrap_or_else(|| avatar_ref.show_text(cx, None, None, info.displayable_name()));
 
         // Set the membership status and role in the room.

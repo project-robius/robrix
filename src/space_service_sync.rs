@@ -10,7 +10,7 @@ use matrix_sdk::{Client, RoomState, media::MediaRequestParameters};
 use matrix_sdk_ui::spaces::{SpaceRoom, SpaceRoomList, SpaceService, room_list::SpaceRoomListPaginationState};
 use ruma::{OwnedMxcUri, OwnedRoomId, events::room::MediaSource, room::RoomType};
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}, task::JoinHandle};
-use crate::{home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}}, room::FetchedRoomAvatar, utils::{self, RoomNameId}};
+use crate::{home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}}, room::FetchedRoomAvatar, shared::avatar::AvatarImage, utils::{self, RoomNameId}};
 
 /// Whether to enable verbose logging of all spaces service diff updates.
 const LOG_SPACE_SERVICE_DIFFS: bool = cfg!(feature = "log_space_service_diffs");
@@ -581,13 +581,16 @@ fn remove_space(space: &SpaceRoom) {
 /// Returns `Some` if the avatar image was successfully fetched.
 async fn fetch_space_avatar(url: OwnedMxcUri, client: &Client) -> matrix_sdk::Result<FetchedRoomAvatar> {
     let request = MediaRequestParameters {
-        source: MediaSource::Plain(url),
+        source: MediaSource::Plain(url.clone()),
         format: utils::AVATAR_THUMBNAIL_FORMAT.into(),
     };
     client.media()
         .get_media_content(&request, true)
         .await
-        .map(|img_data| FetchedRoomAvatar::Image(img_data.into()))
+        .map(|img_data| FetchedRoomAvatar::Image(AvatarImage {
+            uri: url,
+            data: img_data.into(),
+        }))
 }
 
 
@@ -634,7 +637,7 @@ async fn space_room_list_loop(
     // The set of subspaces within this `space_id` that are already known to us.
     let mut known_subspaces = HashSet::new();
 
-    let (mut all_rooms_in_space, mut space_room_stream) = space_room_list.subscribe_to_room_updates();
+    let (mut all_rooms_in_space, mut space_room_stream) = space_room_list.subscribe_to_room_updates().await;
     handle_subspaces(&space_id, &parent_chain, &mut known_subspaces, all_rooms_in_space.iter(), &request_sender);
 
     // A tuple of: the latest `(direct child rooms, and direct subspaces)` within this space.

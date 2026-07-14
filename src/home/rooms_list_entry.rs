@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
@@ -423,11 +422,11 @@ impl RoomsListEntryContent {
                 FetchedRoomAvatar::Text(text) => {
                     self.view.avatar(cx, ids!(avatar)).show_text(cx, None, None, text);
                 }
-                FetchedRoomAvatar::Image(img_bytes) => {
+                FetchedRoomAvatar::Image(avatar_image) => {
                     let _ = self.view.avatar(cx, ids!(avatar)).show_image(
                         cx,
                         None, // Avatars in a RoomsListEntry shouldn't be clickable.
-                        |cx, img| utils::load_image(&img, cx, Arc::clone(img_bytes)),
+                        |cx, img| utils::load_avatar_image(&img, cx, avatar_image),
                     );
                 }
             }

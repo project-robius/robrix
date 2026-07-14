@@ -34,11 +34,13 @@ script_mod! {
     mod.widgets.ICON_LINK             = crate_resource("self://resources/icons/link.svg")
     mod.widgets.ICON_PIN              = crate_resource("self://resources/icons/pin.svg")
     mod.widgets.ICON_REPLY            = crate_resource("self://resources/icons/reply.svg")
+    mod.widgets.ICON_REPLY_IN_THREAD  = crate_resource("self://resources/icons/double_chat.svg")
     mod.widgets.ICON_SEARCH           = crate_resource("self://resources/icons/search.svg")
     mod.widgets.ICON_SEND             = crate_resource("self://resources/icons/send.svg")
     mod.widgets.ICON_SEND_ENCRYPTED   = crate_resource("self://resources/icons/send_encrypted.svg")
     mod.widgets.ICON_SEND_UNENCRYPTED = crate_resource("self://resources/icons/send_unencrypted.svg")
     mod.widgets.ICON_SETTINGS         = crate_resource("self://resources/icons/settings.svg")
+    mod.widgets.ICON_SHARE            = crate_resource("self://resources/icons/share.svg")
     mod.widgets.ICON_SQUARES          = crate_resource("self://resources/icons/squares_filled.svg")
     mod.widgets.ICON_TOMBSTONE        = crate_resource("self://resources/icons/tombstone.svg")
     mod.widgets.ICON_TRASH            = crate_resource("self://resources/icons/trash.svg")
@@ -271,6 +273,61 @@ script_mod! {
             color_empty_focus: #9,
 
             text_style: mod.widgets.MESSAGE_TEXT_STYLE {},
+        }
+    }
+
+    // A read-only CodeView with our light-theme syntax highlighting colors.
+    mod.widgets.LightCodeView = mod.widgets.CodeView {
+        editor +: {
+            word_wrap: true
+            scroll_bars +: {
+                show_scroll_x: false
+                scroll_bar_y.drag_scrolling: true
+            }
+            draw_bg +: { color: (mod.widgets.COLOR_TRANSPARENT) }
+
+            // Light mode syntax highlighting (inspired by GitHub Light / VS Code Light+)
+            token_colors +: {
+                whitespace: #x6a737d,          // Gray for whitespace markers
+                delimiter: #x24292e,           // Dark gray for punctuation
+                delimiter_highlight: #x005cc5, // Blue for highlighted delimiters
+                error_decoration: #xcb2431,    // Red for errors
+                warning_decoration: #xb08800,  // Dark yellow/amber for warnings
+
+                unknown: #x24292e,             // Default dark text
+                branch_keyword: #xd73a49,      // Red/pink for keywords (if, else, match)
+                constant: #x005cc5,            // Blue for constants
+                identifier: #x24292e,          // Dark gray for variables
+                loop_keyword: #xd73a49,        // Red/pink for loop keywords
+                number: #x005cc5,              // Blue for numbers
+                other_keyword: #xd73a49,       // Red/pink for other keywords
+                punctuator: #x24292e,          // Dark gray for punctuation
+                string: #x22863a,              // Green for strings
+                function: #x6f42c1,            // Purple for functions
+                typename: #xe36209,            // Orange for types
+                comment: #x6a737d,             // Gray for comments
+            }
+        }
+    }
+
+    // A read-only CodeView with light-theme color without any syntax highlighting.
+    mod.widgets.PlainCodeView = mod.widgets.LightCodeView {
+        editor +: {
+            token_colors +: {
+                whitespace: #x24292e,
+                delimiter_highlight: #x24292e,
+                error_decoration: #x24292e,
+                warning_decoration: #x24292e,
+                branch_keyword: #x24292e,
+                constant: #x24292e,
+                loop_keyword: #x24292e,
+                number: #x24292e,
+                other_keyword: #x24292e,
+                string: #x24292e,
+                function: #x24292e,
+                typename: #x24292e,
+                comment: #x24292e,
+            }
         }
     }
 }

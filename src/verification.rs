@@ -1,7 +1,7 @@
 use std::fmt::Write;
 use std::sync::Arc;
 use futures_util::StreamExt;
-use makepad_widgets::{log, Cx};
+use makepad_widgets::{error, log, Cx};
 use matrix_sdk_base::crypto::{AcceptedProtocols, CancelInfo, EmojiShortAuthString};
 use matrix_sdk::{
     encryption::{
@@ -14,6 +14,8 @@ use matrix_sdk::{
     }, Client
 };
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}};
+
+use crate::shared::popup_list::{enqueue_popup_notification, PopupKind};
 
 #[derive(Clone, Debug, Default)]
 pub enum VerificationStateAction {
@@ -253,6 +255,101 @@ async fn request_verification_handler(client: Client, request: VerificationReque
             }
         }
     }
+}
+
+
+/// Sends a self-verification request to the user's other logged-in sessions,
+pub async fn request_self_verification_handler(client: Client) {
+    let Some(user_id) = client.user_id() else {
+        enqueue_popup_notification("Can't verify this device: you are not logged in.", PopupKind::Error, Some(5.0));
+        return;
+    };
+
+    let identity = match client.encryption().get_user_identity(user_id).await {
+        Ok(Some(identity)) => identity,
+        Ok(None) => {
+            enqueue_popup_notification(
+                "Can't verify this device yet: no cross-signing identity exists. \
+                Verify from another client first, or reset your identity.",
+                PopupKind::Error,
+                Some(8.0),
+            );
+            return;
+        }
+        Err(e) => {
+            error!("Failed to get own user identity for self-verification: {e:?}");
+            enqueue_popup_notification(format!("Couldn't start verification: {e}"), PopupKind::Error, Some(6.0));
+            return;
+        }
+    };
+
+    let request = match identity.request_verification_with_methods(vec![VerificationMethod::SasV1]).await {
+        Ok(request) => request,
+        Err(e) => {
+            error!("Failed to send self-verification request: {e:?}");
+            enqueue_popup_notification(format!("Couldn't send verification request: {e}"), PopupKind::Error, Some(6.0));
+            return;
+        }
+    };
+    log!("Sent self-verification request, flow ID: {}", request.flow_id());
+
+    // we use the same verification modal as we do for incoming requests.
+    let (sender, mut response_receiver) = tokio::sync::mpsc::unbounded_channel::<VerificationUserResponse>();
+    Cx::post_action(VerificationAction::RequestReceived(
+        VerificationRequestActionState {
+            request: request.clone(),
+            response_sender: sender,
+        }
+    ));
+
+    // Wait for another session to respond, then start SAS verification.
+    let mut stream = request.changes();
+    let sas = loop {
+        // Use `select` so we can receive a cancel request from the modal
+        tokio::select! {
+            // The user canceled from the modal while we were waiting on another session.
+            response = response_receiver.recv() => {
+                if !matches!(response, Some(VerificationUserResponse::Accept)) {
+                    let _ = request.cancel().await;
+                    return;
+                }
+            }
+            state = stream.next() => {
+                let Some(state) = state else { return };
+                match state {
+                    VerificationRequestState::Created { .. }
+                    | VerificationRequestState::Requested { .. } => { }
+                    // Another session accepted, so we can now start SAS
+                    VerificationRequestState::Ready { .. } => match request.start_sas().await {
+                        Ok(Some(sas)) => break sas,
+                        // If the other side already started SAS, handle it in the `Transitioned` state below.
+                        Ok(None) => { }
+                        Err(e) => {
+                            Cx::post_action(VerificationAction::RequestAcceptError(Arc::new(e)));
+                            return;
+                        }
+                    }
+                    VerificationRequestState::Transitioned { verification } => match verification {
+                        Verification::SasV1(sas) => break sas,
+                        unsupported => {
+                            Cx::post_action(VerificationAction::RequestTransitionedToUnsupportedMethod(unsupported));
+                            return;
+                        }
+                    }
+                    VerificationRequestState::Cancelled(info) => {
+                        Cx::post_action(VerificationAction::RequestCancelled(info));
+                        return;
+                    }
+                    VerificationRequestState::Done => {
+                        Cx::post_action(VerificationAction::RequestCompleted);
+                        return;
+                    }
+                }
+            }
+        }
+    };
+
+    sas_verification_handler(client, sas, response_receiver).await;
 }
 
 

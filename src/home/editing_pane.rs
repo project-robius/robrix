@@ -10,7 +10,7 @@ use matrix_sdk::{
 };
 use matrix_sdk_ui::timeline::{EventTimelineItem, MsgLikeKind, TimelineEventItemId, TimelineItemContent};
 
-use crate::shared::mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt};
+use crate::shared::mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState};
 use crate::{
     settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction},
     shared::popup_list::{enqueue_popup_notification, PopupKind},
@@ -127,8 +127,6 @@ script_mod! {
 /// Action emitted by the EditingPane widget.
 #[derive(Clone, Default, Debug)]
 pub enum EditingPaneAction {
-    /// The editing pane's hide animation has started.
-    HideAnimationStarted,
     /// The editing pane has been fully closed/hidden.
     Hidden,
     #[default]
@@ -229,9 +227,8 @@ impl Widget for EditingPane {
         }
 
         if let Event::Actions(actions) = event {
-            let edit_text_input = self
-                .mentionable_text_input(cx, ids!(editing_content.edit_text_input))
-                .text_input_ref();
+            let mentionable_input = self.mentionable_text_input(cx, ids!(editing_content.edit_text_input));
+            let edit_text_input = mentionable_input.text_input_ref();
 
             // Hide the editing pane if the cancel button was clicked
             // or if the `Escape` key was pressed within the edit text input.
@@ -239,7 +236,6 @@ impl Widget for EditingPane {
                 || edit_text_input.escaped(actions)
             {
                 self.animator_play(cx, ids!(panel.hide));
-                cx.widget_action(self.widget_uid(), EditingPaneAction::HideAnimationStarted);
                 self.redraw(cx);
                 return;
             }
@@ -328,24 +324,25 @@ impl Widget for EditingPane {
                                             None,
                                         );
                                         self.animator_play(cx, ids!(panel.hide));
-                                        cx.widget_action(self.widget_uid(), EditingPaneAction::HideAnimationStarted);
                                         self.redraw(cx);
                                         return;
                                     },
                                 };
 
-                                // TODO: extract mentions out of the new edited text and use them here.
-                                if let Some(existing_mentions) = message.mentions() {
-                                    if let EditedContent::RoomMessage(new_message_content) =
-                                        &mut edited_content
-                                    {
-                                        new_message_content.mentions = Some(existing_mentions.clone());
+                                // Re-add the original message's mentions, but only if they're still present in the edited text.
+                                if let EditedContent::RoomMessage(new_message_content) = &mut edited_content {
+                                    let mut mentions = mentionable_input.get_mentions_in(&edited_text);
+                                    if let Some(existing) = message.mentions() {
+                                        for user_id in &existing.user_ids {
+                                            if edited_text.contains(&format!("]({})", user_id.matrix_to_uri())) {
+                                                mentions.user_ids.insert(user_id.clone());
+                                            }
+                                        }
                                     }
-                                    // TODO: once we update the matrix-sdk dependency, uncomment this.
-                                    // EditedContent::MediaCaption { mentions, .. }) => {
-                                    //     mentions = Some(existing_mentions);
-                                    // }
+                                    new_message_content.mentions = Some(mentions);
                                 }
+                                // TODO: once we update the matrix-sdk dependency, also set the
+                                //       mentions on the EditedContent::MediaCaption variant.
 
                                 edited_content
                             }
@@ -407,6 +404,7 @@ impl Widget for EditingPane {
                     timeline_event_item_id: info.event_tl_item.identifier(),
                     edited_content,
                 });
+                mentionable_input.clear_mentions();
 
                 // TODO: show a loading spinner within the accept button.
             }
@@ -490,7 +488,6 @@ impl EditingPane {
         match edit_result {
             Ok(()) => {
                 self.animator_play(cx, ids!(panel.hide));
-                cx.widget_action(self.widget_uid(), EditingPaneAction::HideAnimationStarted);
             },
             Err(e) => {
                 enqueue_popup_notification(
@@ -556,17 +553,16 @@ impl EditingPane {
         // TODO: this doesn't work, likely because of Makepad's bug in which you cannot
         // give key focus to a widget that hasn't been drawn yet (as it has no Area).
         inner_text_input.set_key_focus(cx);
-        self.redraw(cx);
+        self.redraw(cx); 
     }
 
     /// Returns the state of this `EditingPane`, if any.
     pub fn save_state(&self) -> Option<EditingPaneState> {
-        self.info.as_ref().map(|info| EditingPaneState {
+        let info = self.info.as_ref()?;
+        let mentionable_input = self.child_by_path(ids!(editing_content.edit_text_input)).as_mentionable_text_input();
+        Some(EditingPaneState {
             event_tl_item: info.event_tl_item.clone(),
-            text_input_state: self.child_by_path(ids!(editing_content.edit_text_input))
-                .as_mentionable_text_input()
-                .text_input_ref()
-                .save_state(),
+            mentionable_input_state: mentionable_input.save_state(),
         })
     }
 
@@ -577,10 +573,9 @@ impl EditingPane {
         editing_pane_state: EditingPaneState,
         timeline_kind: TimelineKind,
     ) {
-        let EditingPaneState { event_tl_item, text_input_state } = editing_pane_state;
+        let EditingPaneState { event_tl_item, mentionable_input_state } = editing_pane_state;
         self.mentionable_text_input(cx, ids!(editing_content.edit_text_input))
-            .text_input_ref()
-            .restore_state(cx, text_input_state);
+            .restore_state(cx, mentionable_input_state);
         self.info = Some(EditingPaneInfo {
             event_tl_item,
             timeline_kind,
@@ -630,14 +625,6 @@ impl EditingPaneRef {
         matches!(
             actions.find_widget_action(self.widget_uid()).cast_ref(),
             EditingPaneAction::Hidden,
-        )
-    }
-
-    /// Returns whether this `EditingPane`'s hide animation started in the given actions.
-    pub fn was_hide_animation_started(&self, actions: &Actions) -> bool {
-        matches!(
-            actions.find_widget_action(self.widget_uid()).cast_ref(),
-            EditingPaneAction::HideAnimationStarted,
         )
     }
 
@@ -693,5 +680,5 @@ impl EditingPaneRef {
 /// The state of the EditingPane, used for saving/restoring its state.
 pub struct EditingPaneState {
     event_tl_item: EventTimelineItem,
-    text_input_state: TextInputState,
+    mentionable_input_state: MentionableTextInputState,
 }

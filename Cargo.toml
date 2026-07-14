@@ -27,6 +27,7 @@ robius-directories = { git = "https://github.com/project-robius/robius" }
 robius-file-picker = { git = "https://github.com/project-robius/robius" }
 robius-location = { git = "https://github.com/project-robius/robius" }
 robius-open = { git = "https://github.com/project-robius/robius" }
+robius-share = { git = "https://github.com/project-robius/robius" }
 
 
 anyhow = "1.0"
@@ -43,34 +44,36 @@ futures = "0.3"
 imbl = { version = "6.1.0", features = ["serde"] } # same as matrix-sdk-ui
 futures-util = "0.3"
 hashbrown = { version = "0.16", features = ["raw-entry"] }
-htmlize = "1.0.5"
+htmlize = { version = "1.0.5", features = ["unescape"] }
 indexmap = "2.6.0"
 libc = "0.2"
 mime = "0.3"
 mime_guess = "2.0"
 linkify = "0.10.0"
-matrix-sdk-base = { git = "https://github.com/project-robius/matrix-rust-sdk", branch = "space_room_suggested" }
-matrix-sdk = { git = "https://github.com/project-robius/matrix-rust-sdk", branch = "space_room_suggested", default-features = false, features = [
+matrix-sdk-base = { git = "https://github.com/matrix-org/matrix-rust-sdk" }
+matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [
     "e2e-encryption",
     "automatic-room-key-forwarding",
     "markdown",
     "sqlite",
-    "rustls-tls",
     "bundled-sqlite",
     "sso-login",
 ] }
-matrix-sdk-ui = { git = "https://github.com/project-robius/matrix-rust-sdk", branch = "space_room_suggested", default-features = false, features = [
-    "rustls-tls",
-] }
+matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false }
 ## Use the same ruma version as what's specified in matrix-sdk's Cargo.toml.
 ## Enable a few extra features:
 ## * "compat-optional" feature to allow missing body field in m.room.tombstone event.
 ## * "compat-unset-avatar" feature to allow deleting the user's avatar to work properly.
+## * "unstable-compat-lax-syncv5-deser" feature to tolerate deserialization failures, which we added.
 ## * Note: we need a feature like "compat-unset-display-name" to unset display names, but that doesn't exist yet.
-ruma = { git = "https://github.com/ruma/ruma", rev = "a0acf4187a7c7557d145db54bcb23b01f6295ce7", features = [
+##
+## Note: we actually patch this below to use our `tsp` branch instead.
+ruma = { git = "https://github.com/ruma/ruma", rev = "8beb557b466a43b057c9c155277c77fe8766fadf", features = [
     "compat-optional",
     "compat-unset-avatar",
+    "unstable-compat-lax-syncv5-deser",
 ] }
+num_cpus = "1.17.0"
 rand = "0.8.5"
 rangemap = "1.5.0"
 sanitize-filename = "0.6"
@@ -111,6 +114,11 @@ reqwest = { version = "0.12", default-features = false, optional = true, feature
 ## For OAuth/SSO login on iOS, via `ASWebAuthenticationSession`. Ugh....
 [target.'cfg(target_os = "ios")'.dependencies]
 robius-web-auth-session = { git = "https://github.com/project-robius/robius" }
+
+## On Android, the matrix-sdk no longer sets up TLS roots for rustls by default,
+## so we have to do it manually.
+[target.'cfg(target_os = "android")'.dependencies]
+webpki-root-certs = "1"
 
 
 [features]

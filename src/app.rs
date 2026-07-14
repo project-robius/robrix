@@ -13,15 +13,15 @@ use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomI
 use serde::{Deserialize, Serialize};
 use crate::{
     avatar_cache::clear_avatar_cache, room_preview_cache::clear_room_preview_cache, home::{
-        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
+        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states, invalidate_timeline_state}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, settings::app_preferences::{AppPreferences, UiZoom}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, settings::app_preferences::{AppPreferences, UiZoom}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
 };
-use crate::shared::file_upload_modal::{FileUploadModalWidgetRefExt, FilePreviewerAction};
+use crate::shared::file_upload_modal::{FileUploadModalWidgetRefExt, FileUploadModalAction};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -44,11 +44,10 @@ script_mod! {
                 }
 
                 body +: {
-                    // Only TOP is applied here, since top is shared by every screen
-                    // and no bar owns it. Bottom/left/right are delegated to whatever
-                    // content touches those edges (NavigationTabBar, page content),
-                    // so bar backgrounds fill the inset strip instead of leaving
-                    // a bare clear-color band.
+                    // Only the top part of safe area inset padding is applied here,
+                    // since we don't have any bar or anything on the top.
+                    // The other sides are handled by widgets that might draw in those areas,
+                    // like the NavigationTabBar or room screen content.
                     padding: Inset{
                         top: (mod.widgets.SAFE_INSET_PAD_TOP),
                         bottom: 0,
@@ -77,6 +76,10 @@ script_mod! {
                             content := ImageViewer {}
                         }
                         
+                        // The popup that lets the user select users to mention, rooms to link,
+                        // or a slash command to run (via kbd triggers like '@', '#', '/').
+                        mention_popup := MentionablePopup { }
+
                         // Context menus should be shown in front of other UI elements,
                         // but behind verification modals.
                         new_message_context_menu := NewMessageContextMenu { }
@@ -167,10 +170,11 @@ impl ScriptHook for App {
         });
     }
 
-    /// After initial creation, set the global singleton for the PopupList widget.
+    /// After initial creation, set the global singletons for app-level shared widgets. (the PopupList and the mention autocomplete popup).
     fn on_after_new(&mut self, vm: &mut ScriptVm) {
         vm.with_cx_mut(|cx| {
             crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
+            crate::shared::mention_popup::set_global_mention_popup(cx, &self.ui);
         });
     }
 }
@@ -223,6 +227,8 @@ impl MatchEvent for App {
             log!("App::Startup: initializing TSP (Trust Spanning Protocol) module.");
             crate::tsp::tsp_init(_tokio_rt_handle).unwrap();
         }
+
+        crate::temp_storage::schedule_temp_dir_cleanup();
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
@@ -298,19 +304,12 @@ impl MatchEvent for App {
                 // which will open the login_status_modal to show the failure message.
             }
 
-            // Handle file upload modal actions
-            match action.downcast_ref() {
-                Some(FilePreviewerAction::Show { upload }) => {
-                    self.ui.file_upload_modal(cx, ids!(file_upload_modal.content))
-                        .set_upload(cx, upload.clone());
-                    self.ui.modal(cx, ids!(file_upload_modal)).open(cx);
-                    continue;
-                }
-                Some(FilePreviewerAction::Hide) => {
-                    self.ui.modal(cx, ids!(file_upload_modal)).close(cx);
-                    continue;
-                }
-                _ => {}
+            // Handle actions for the file upload modal.
+            if let Some(action) = action.downcast_ref::<FileUploadModalAction>() {
+                let outer_modal = self.ui.modal(cx, ids!(file_upload_modal));
+                self.ui.file_upload_modal(cx, ids!(file_upload_modal.content))
+                    .handle_file_previewer_action(cx, outer_modal, action);
+                continue;
             }
 
             // Handle an action requesting to open the new message context menu.
@@ -974,6 +973,7 @@ impl App {
 pub struct AppState {
     /// The currently-selected room, which is highlighted (selected) in the RoomsList
     /// and considered "active" in the main rooms screen.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub selected_room: Option<SelectedRoom>,
     /// The currently-selected navigation tab: defines which top-level view is shown.
     ///
@@ -985,14 +985,17 @@ pub struct AppState {
     #[serde(skip)]
     pub selected_tab: SelectedTab,
     /// The saved "snapshot" of the dock's UI layout/state for the main "all rooms" home view.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub saved_dock_state_home: SavedDockState,
     /// The saved "snapshot" of the dock's UI layout/state for each space,
     /// keyed by the space ID.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub saved_dock_state_per_space: HashMap<OwnedRoomId, SavedDockState>,
     /// Whether a user is currently logged in to Robrix or not.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub logged_in: bool,
     /// App-wide user preferences/settings.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub app_prefs: AppPreferences,
 }
 
@@ -1086,6 +1089,29 @@ impl SelectedRoom {
             }
             other => LiveId::from_str(other.room_id().as_str()),
         }
+    }
+
+    /// Closes & cleans up the UI-side cached state and stops the backend async task
+    /// for this thread timeline (if it is one).
+    ///
+    /// Does nothing for non-thread room kinds (e.g., main room timelines).
+    ///
+    /// This should be called only when the RoomScreen showing this room thread
+    /// has been hidden (e.g., its tab was closed, or the user navigated back on mobile view mode),
+    /// but not when it's still reachable via the mobile nav stack or a saved desktop dock.
+    pub fn close_thread_timeline(&self, cx: &mut Cx) {
+        let SelectedRoom::Thread { room_name_id, thread_root_event_id } = self else { return };
+        let room_id = room_name_id.room_id().clone();
+        // Drop the stale UI cache so reopening rebuilds a fresh timeline instead of reusing
+        // a cache whose backend is about to be freed.
+        invalidate_timeline_state(cx, &TimelineKind::Thread {
+            room_id: room_id.clone(),
+            thread_root_event_id: thread_root_event_id.clone(),
+        });
+        submit_async_request(MatrixRequest::CloseThreadTimeline {
+            room_id,
+            thread_root_event_id: thread_root_event_id.clone(),
+        });
     }
 
     /// Returns the display name to be shown for this room in the UI.

@@ -7,7 +7,7 @@
 
 use std::borrow::Cow;
 
-use matrix_sdk::{ruma::{OwnedUserId, events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType}}, AnySyncMessageLikeEvent, AnySyncTimelineEvent, StateEventContentChange, SyncMessageLikeEvent}, serde::Raw, UserId}};
+use matrix_sdk::{ruma::{OwnedUserId, events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType}}, AnyRedactionEvent, AnySyncMessageLikeEvent, AnySyncTimelineEvent, StateEventContentChange, SyncMessageLikeEvent}, serde::Raw, UserId}};
 use matrix_sdk_base::crypto::types::events::UtdCause;
 use matrix_sdk_ui::timeline::{self, AnyOtherStateEventContentChange, EncryptedMessage, EventTimelineItem, MemberProfileChange, MembershipChange, MsgLikeKind, OtherMessageLike, RoomMembershipChange, TimelineItemContent};
 
@@ -130,7 +130,7 @@ pub fn text_preview_of_timeline_item(
             String::from("[Call Invitation]"),
             BeforeText::UsernameWithColon,
         )),
-        TimelineItemContent::RtcNotification => TextPreview::from((
+        TimelineItemContent::RtcNotification { .. } => TextPreview::from((
             String::from("[RTC Call Notification]"),
             BeforeText::UsernameWithColon,
         )),
@@ -207,7 +207,7 @@ pub fn plaintext_body_of_timeline_item(
             format!("Failed to parse {} state; key: {}. Error: {}", event_type, state_key, error)
         }
         TimelineItemContent::CallInvite => String::from("[Call Invitation]"),
-        TimelineItemContent::RtcNotification => String::from("[RTC Call Notification]"),
+        TimelineItemContent::RtcNotification { .. } => String::from("[RTC Call Notification]"),
     }
 }
 
@@ -358,9 +358,13 @@ pub fn text_preview_of_redacted_message(
             )
         )) = redacted_msg.deserialize() {
             if let Ok(redacted_because) = redaction.unsigned.redacted_because.deserialize() {
+                let reason = match &redacted_because {
+                    AnyRedactionEvent::RoomRedaction(e) => e.content.reason.clone(),
+                    _ => None,
+                };
                 redactor_and_reason = Some((
-                    redacted_because.sender,
-                    redacted_because.content.reason,
+                    redacted_because.sender().to_owned(),
+                    reason,
                 ));
             }
         }
@@ -449,18 +453,6 @@ pub fn text_preview_of_other_state(
     format_as_html: bool,
 ) -> Option<TextPreview> {
     let text = match other_state.content() {
-        AnyOtherStateEventContentChange::RoomAliases(StateEventContentChange::Original { content, .. }) => {
-            let mut s = String::from("set this room's aliases to ");
-            let last_alias = content.aliases.len() - 1;
-            for (i, alias) in content.aliases.iter().enumerate() {
-                s.push_str(alias.as_str());
-                if i != last_alias {
-                    s.push_str(", ");
-                }
-            }
-            s.push('.');
-            Some(s)
-        }
         AnyOtherStateEventContentChange::RoomAvatar(_) => {
             Some(String::from("set this room's avatar picture."))
         }

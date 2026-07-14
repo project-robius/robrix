@@ -108,6 +108,9 @@ impl WidgetMatchEvent for VerificationModal {
             // `VerificationAction`s come from a background thread, so they are NOT widget actions.
             // Therefore, we cannot use `as_widget_action().cast()` to match them.
             if let Some(verification_action) = action.downcast_ref::<VerificationAction>() {
+                // Outgoing verification requests start with the accept button hidden
+                // since we're still in the waiting state then, so show it now
+                accept_button.set_visible(cx, true);
                 match verification_action {
                     VerificationAction::RequestCancelled(cancel_info) => {
                         self.label(cx, ids!(body)).set_text(
@@ -274,27 +277,31 @@ impl VerificationModal {
     ) {
         log!("Initializing verification modal with state: {:?}", state);
         let request = &state.request;
-        let prompt_text = if request.is_self_verification() {
+        // `we_started` means this is an outgoing request we just sent, so we don't need
+        // to accept it, but rather just wait for another device to accept & respond.
+        let we_started = request.we_started();
+        let prompt_text = if we_started {
+            Cow::from("Send a verification request to your other logged-in devices.\n\n\
+                Accept it on one of those devices to continue verifying this device.")
+        } else if request.is_self_verification() {
             Cow::from("Do you wish to verify your own device?")
+        } else if let Some(room_id) = request.room_id() {
+            format!("Do you wish to verify user {} in room {}?",
+                request.other_user_id(),
+                room_id,
+            ).into()
         } else {
-            if let Some(room_id) = request.room_id() {
-                format!("Do you wish to verify user {} in room {}?",
-                    request.other_user_id(),
-                    room_id,
-                ).into()
-            } else {
-                format!("Do you wish to verify user {}?",
-                    request.other_user_id()
-                ).into()
-            }
+            format!("Do you wish to verify user {}?",
+                request.other_user_id()
+            ).into()
         };
         self.label(cx, ids!(body)).set_text(cx, &prompt_text);
 
         let accept_button = self.button(cx, ids!(accept_button));
         let cancel_button = self.button(cx, ids!(cancel_button));
         accept_button.set_text(cx, "Yes");
-        accept_button.set_enabled(cx, true);
-        accept_button.set_visible(cx, true);
+        accept_button.set_enabled(cx, !we_started);
+        accept_button.set_visible(cx, !we_started);
         cancel_button.set_text(cx, "Cancel");
         cancel_button.set_enabled(cx, true);
         cancel_button.set_visible(cx, true);

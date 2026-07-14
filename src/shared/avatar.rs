@@ -325,16 +325,15 @@ impl Avatar {
             .or_else(try_get_cached_username_avatar)
             .unwrap_or((None, AvatarState::Unknown));
 
-        let (avatar_img_data_opt, profile_drawn, avatar_key) = match avatar_state {
-            AvatarState::Loaded(data) => (Some(data), true, None),
+        let (avatar_img_opt, profile_drawn) = match avatar_state {
+            AvatarState::Loaded(image) => (Some(image), true),
             AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, &uri) {
-                // Use the avatar's MxcUri as a key for makepad's async image cache
-                AvatarCacheEntry::Loaded(data) => (Some(data), true, Some(uri.to_string())),
-                AvatarCacheEntry::Failed => (None, true, None),
-                AvatarCacheEntry::Requested => (None, false, None),
+                AvatarCacheEntry::Loaded(data) => (Some(AvatarImage { uri, data }), true),
+                AvatarCacheEntry::Failed => (None, true),
+                AvatarCacheEntry::Requested => (None, false),
             },
-            AvatarState::Known(None) | AvatarState::Failed => (None, true, None),
-            AvatarState::Unknown => (None, false, None),
+            AvatarState::Known(None) | AvatarState::Failed => (None, true),
+            AvatarState::Unknown => (None, false),
         };
 
         // Set sender to the display name if available, otherwise the user id.
@@ -343,29 +342,16 @@ impl Avatar {
             .unwrap_or_else(|| avatar_user_id.to_string());
 
         // Set the sender's avatar image, or use the username if no image is available.
-        avatar_img_data_opt.and_then(|data| {
+        avatar_img_opt.and_then(|image| {
             self.show_image(
                 cx,
                 is_clickable.then(|| AvatarImageInfo::from((
                     avatar_user_id.to_owned(),
                     username_opt.clone(),
                     timeline_kind.room_id().to_owned(),
-                    data.clone()
+                    image.clone()
                 ))),
-                |cx, img| {
-                    if let Some(key) = avatar_key.as_deref() {
-                        // Try to decode the image data asynchronously, which we can only do
-                        // if we have a key for the image cache (the avatar's MxcUri).
-                        utils::load_image_with_cache_key(
-                            &img,
-                            cx,
-                            std::path::Path::new(key),
-                            Arc::clone(&data),
-                        )
-                    } else {
-                        utils::load_image_cached(&img, cx, Arc::clone(&data))
-                    }
-                }
+                |cx, img| utils::load_avatar_image(&img, cx, &image),
             )
             .ok()
         }).map(|_| {
@@ -477,16 +463,28 @@ pub struct AvatarImageInfo {
     pub user_id: OwnedUserId,
     pub username: Option<String>,
     pub room_id: OwnedRoomId,
-    pub img_data: Arc<[u8]>,
+    pub img_data: AvatarImage,
 }
-impl From<(OwnedUserId, Option<String>, OwnedRoomId, Arc<[u8]>)> for AvatarImageInfo {
-    fn from((user_id, username, room_id, img_data): (OwnedUserId, Option<String>, OwnedRoomId, Arc<[u8]>)) -> Self {
+impl From<(OwnedUserId, Option<String>, OwnedRoomId, AvatarImage)> for AvatarImageInfo {
+    fn from((user_id, username, room_id, img_data): (OwnedUserId, Option<String>, OwnedRoomId, AvatarImage)) -> Self {
         Self { user_id, username, room_id, img_data }
     }
 }
 
 
 /// The currently-known state of an avatar for a user, room, or space.
+/// A fetched avatar: its image data, together with the MXC URI it came from.
+///
+/// The two travel together because displaying the image needs both: the bytes to
+/// decode, and the URI as the key under which the decoded image is cached. The URI
+/// names the content, so it stays correct when a user or room changes its avatar,
+/// unlike an identity (a user or room ID) that outlives the image it points at.
+#[derive(Clone)]
+pub struct AvatarImage {
+    pub uri: OwnedMxcUri,
+    pub data: Arc<[u8]>,
+}
+
 #[derive(Clone, Default)]
 pub enum AvatarState {
     /// It isn't yet known if this user/room/space has an avatar.
@@ -494,7 +492,7 @@ pub enum AvatarState {
     /// It is known that this user/room/space does or does not have an avatar.
     Known(Option<OwnedMxcUri>),
     /// The avatar is known to exist and has been fetched successfully.
-    Loaded(Arc<[u8]>),
+    Loaded(AvatarImage),
     /// The avatar is known to exist but could not be fetched.
     Failed,
 }
@@ -504,7 +502,7 @@ impl std::fmt::Debug for AvatarState {
             AvatarState::Unknown        => write!(f, "Unknown"),
             AvatarState::Known(Some(_)) => write!(f, "Known(Some)"),
             AvatarState::Known(None)    => write!(f, "Known(None)"),
-            AvatarState::Loaded(data)   => write!(f, "Loaded({} bytes)", data.len()),
+            AvatarState::Loaded(image)  => write!(f, "Loaded({} bytes)", image.data.len()),
             AvatarState::Failed         => write!(f, "Failed"),
         }
     }
@@ -513,20 +511,20 @@ impl AvatarState {
     /// Tries to update this `AvatarState` if it has a known avatar URI
     /// by loading the avatar from the cache.
     ///
-    /// Returns the image data if this `AvatarState` is in the `Loaded` state.
-    pub fn update_from_cache(&mut self, cx: &mut Cx) -> Option<&Arc<[u8]>> {
+    /// Returns the fetched avatar if this `AvatarState` is in the `Loaded` state.
+    pub fn update_from_cache(&mut self, cx: &mut Cx) -> Option<&AvatarImage> {
         if let Self::Known(Some(uri)) = self {
             if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, uri) {
-                *self = Self::Loaded(data.clone());
+                *self = Self::Loaded(AvatarImage { uri: uri.clone(), data });
             }
         }
-        self.data()
+        self.image()
     }
 
-    /// Returns the avatar data, if in the `Loaded` state.
-    pub fn data(&self) -> Option<&Arc<[u8]>> {
-        if let Self::Loaded(data) = self {
-            Some(data)
+    /// Returns the fetched avatar, if in the `Loaded` state.
+    pub fn image(&self) -> Option<&AvatarImage> {
+        if let Self::Loaded(image) = self {
+            Some(image)
         } else {
             None
         }

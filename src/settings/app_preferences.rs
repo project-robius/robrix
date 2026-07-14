@@ -8,19 +8,19 @@ use serde::{Deserialize, Serialize};
 pub struct AppPreferences {
     /// Forces the HomeScreen `AdaptiveView` into a particular layout,
     /// or falls back to the default automatic width-based layout.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub view_mode: ViewModeOverride,
     /// * If `true` (default), plain Enter sends the message (Shift+Enter inserts a newline).
     /// * If `false`, Cmd+Enter (Apple platforms) / Ctrl+Enter (other platforms) sends the
     ///   message and plain Enter inserts a newline. This is only relevant for physical keyboards;
     ///   virtual/soft keyboards always insert a newline upon Enter.
-    #[serde(default)]
+    #[serde(default = "default_send_on_enter", deserialize_with = "deserialize_send_on_enter")]
     pub send_on_enter: bool,
     /// Max height of image thumbnails in the room timeline.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub thumbnail_max_height: ThumbnailMaxHeight,
     /// UI-wide zoom level, which scaled the entire UI (not just text).
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub ui_zoom: UiZoom,
 
     // Note: if you add a new preference here, be sure to add a new
@@ -71,28 +71,15 @@ impl AppPreferences {
     /// which walks the widget tree with `Apply::ScriptReapply`. Each Image's
     /// `Size::script_apply` re-reads `max` from the shared `IMG_MSG_FIT`
     /// object and updates the widget's `walk.height`.
-    ///
-    /// For `ThumbnailMaxHeight::Unlimited` we set `max` to `nil`, which
-    /// `Option<FitBound>::script_apply` maps to `None` — i.e. `Fit{max: None}`,
-    /// truly unbounded.
     pub fn on_thumbnail_max_height_changed(&self, cx: &mut Cx) {
         cx.global::<AppPreferencesGlobal>().0.thumbnail_max_height = self.thumbnail_max_height;
-        match self.thumbnail_max_height.to_pixels() {
-            Some(px) => {
-                let px = px as f64;
-                // The `use mod.prelude.widgets.*` is required so `FitBound`
-                // resolves in runtime script scope.
-                script_eval!(cx, {
-                    use mod.prelude.widgets.*
-                    mod.widgets.IMG_MSG_FIT.max = FitBound.Abs(#(px))
-                });
-            }
-            None => {
-                script_eval!(cx, {
-                    mod.widgets.IMG_MSG_FIT.max = nil
-                });
-            }
-        }
+        let px = self.thumbnail_max_height.to_pixels() as f64;
+        // The `use mod.prelude.widgets.*` is required so `FitBound`
+        // resolves in runtime script scope.
+        script_eval!(cx, {
+            use mod.prelude.widgets.*
+            mod.widgets.IMG_MSG_FIT.max = FitBound.Abs(#(px))
+        });
 
         // Now that we've updated the `IMG_MSG_FIT.max` object in place,
         // we need to instruct every widget that uses this object to re-read
@@ -180,26 +167,39 @@ impl ViewModeOverride {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThumbnailMaxHeight {
     /// 200 pixels.
-    #[default]
     Small,
-    /// 400 pixels.
+    /// 300 pixels.
+    #[default]
     Medium,
-    /// No maximum height (not recommended).
-    Unlimited,
+    /// 400 pixels.
+    Large,
     /// A user-specified maximum height in pixels.
     Custom(u32),
 }
 
 impl ThumbnailMaxHeight {
-    /// Returns the max height in pixels, or `None` if unlimited.
-    pub fn to_pixels(&self) -> Option<u32> {
+    /// Returns the max height in pixels.
+    pub fn to_pixels(&self) -> u32 {
         match self {
-            Self::Small => Some(200),
-            Self::Medium => Some(400),
-            Self::Unlimited => None,
-            Self::Custom(v) => Some(*v),
+            Self::Small => 200,
+            Self::Medium => 300,
+            Self::Large => 400,
+            Self::Custom(v) => *v,
         }
     }
+}
+
+/// `send_on_enter` defaults to `true`, unlike the typical `false` bool value.
+fn default_send_on_enter() -> bool {
+    true
+}
+
+fn deserialize_send_on_enter<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_else(|_| default_send_on_enter()))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

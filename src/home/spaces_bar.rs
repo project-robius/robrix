@@ -5,7 +5,7 @@
 //! 1. a narrow vertical strip, when in Desktop (widescreen) mode,
 //! 2. a wide, short horizontal strip, when in Mobile (narrowscreen) mode.
 
-use std::{borrow::Cow, collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap};
 
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
@@ -329,7 +329,7 @@ pub struct SpacesBar {
     #[rust] all_joined_spaces: HashMap<OwnedRoomId, JoinedSpaceInfo>,
 
     /// The currently-active filter function for the list of spaces.
-///
+    ///
     /// Note: for performance reasons, this does not get automatically applied
     /// when its value changes. Instead, you must manually invoke it on the set of `all_joined_spaces`
     /// in order to update the set of `displayed_spaces` accordingly.
@@ -478,11 +478,11 @@ impl Widget for SpacesBar {
                             FetchedRoomAvatar::Text(text) => {
                                 avatar_ref.show_text(cx, None, None, text);
                             }
-                            FetchedRoomAvatar::Image(image_data) => {
+                            FetchedRoomAvatar::Image(avatar_image) => {
                                 let res = avatar_ref.show_image(
                                     cx,
                                     None,
-                                    |cx, img_ref| utils::load_image(&img_ref, cx, Arc::clone(image_data)),
+                                    |cx, img_ref| utils::load_avatar_image(&img_ref, cx, avatar_image),
                                 );
                                 if res.is_err() {
                                     avatar_ref.show_text(

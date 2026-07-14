@@ -317,15 +317,15 @@ script_mod! {
             spacing: 4,
 
             thumb_small_radio := mod.widgets.RobrixSettingsRadioButton {
-                text: "Small (200 pixels, default)"
+                text: "Small (200 pixels)"
             }
 
             thumb_medium_radio := mod.widgets.RobrixSettingsRadioButton {
-                text: "Medium (400 pixels)"
+                text: "Medium (300 pixels, default)"
             }
 
-            thumb_unlimited_radio := mod.widgets.RobrixSettingsRadioButton {
-                text: "Unlimited (not recommended)"
+            thumb_large_radio := mod.widgets.RobrixSettingsRadioButton {
+                text: "Large (400 pixels)"
             }
 
             View {
@@ -501,7 +501,7 @@ impl AppSettings {
         let radios = self.view.radio_button_set(cx, ids_array!(
             thumb_small_radio,
             thumb_medium_radio,
-            thumb_unlimited_radio,
+            thumb_large_radio,
             thumb_custom_radio,
         ));
         let custom_input = self.view.text_input(cx, ids!(thumb_custom_input));
@@ -513,7 +513,7 @@ impl AppSettings {
             let new_thumb = match selected {
                 0 => ThumbnailMaxHeight::Small,
                 1 => ThumbnailMaxHeight::Medium,
-                2 => ThumbnailMaxHeight::Unlimited,
+                2 => ThumbnailMaxHeight::Large,
                 3 => ThumbnailMaxHeight::Custom(existing_custom.unwrap_or(DEFAULT_CUSTOM_THUMB_HEIGHT)),
                 _ => ThumbnailMaxHeight::default(),
             };
@@ -585,15 +585,15 @@ impl AppSettings {
         let send_toggle = self.view.check_box(cx, ids!(send_on_cmd_enter_toggle));
         send_toggle.set_active(cx, !prefs.send_on_enter, Animate::No);
 
-        let (small, medium, unlimited, custom, custom_text) = match prefs.thumbnail_max_height {
+        let (small, medium, large, custom, custom_text) = match prefs.thumbnail_max_height {
             ThumbnailMaxHeight::Small => (true, false, false, false, String::new()),
             ThumbnailMaxHeight::Medium => (false, true, false, false, String::new()),
-            ThumbnailMaxHeight::Unlimited => (false, false, true, false, String::new()),
+            ThumbnailMaxHeight::Large => (false, false, true, false, String::new()),
             ThumbnailMaxHeight::Custom(v) => (false, false, false, true, v.to_string()),
         };
         self.view.radio_button(cx, ids!(thumb_small_radio)).set_active(cx, small, Animate::No);
         self.view.radio_button(cx, ids!(thumb_medium_radio)).set_active(cx, medium, Animate::No);
-        self.view.radio_button(cx, ids!(thumb_unlimited_radio)).set_active(cx, unlimited, Animate::No);
+        self.view.radio_button(cx, ids!(thumb_large_radio)).set_active(cx, large, Animate::No);
         self.view.radio_button(cx, ids!(thumb_custom_radio)).set_active(cx, custom, Animate::No);
         // `populate_safe` set `is_read_only`; pair it with the animator's
         // disabled state here so the input lands in the right state on

@@ -5,11 +5,12 @@ use url::Url;
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{Cx, Event, ImageRef, image_cache::{looks_like_svg, ImageError}};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}, RoomDisplayName};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, RoomId}, RoomDisplayName};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
 use crate::{
     room::FetchedRoomAvatar,
+    shared::avatar::AvatarImage,
     sliding_sync::{submit_async_request, MatrixRequest, TimelineKind},
 };
 
@@ -20,6 +21,15 @@ pub const GEO_URI_SCHEME: &str = "geo:";
 /// Formats a byte count using decimal units with user-facing byte suffixes, e.g. KB/MB/GB.
 pub fn format_decimal_file_size(bytes: u64) -> String {
     bytesize::ByteSize::b(bytes).display().si().to_string().to_uppercase()
+}
+
+pub fn deserialize_or_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned + Default,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
 
@@ -97,63 +107,33 @@ pub fn is_supported_image_mimetype(mimetype: &str) -> bool {
     )
 }
 
-/// Loads the given image `data` into the given `ImageRef`, auto-detecting any
+/// Loads a fetched avatar into the given `ImageRef`, keyed by its MXC URI.
+pub fn load_avatar_image(
+    img: &ImageRef,
+    cx: &mut Cx,
+    avatar: &AvatarImage,
+) -> Result<(), ImageError> {
+    load_image_with_cache_key(
+        img,
+        cx,
+        std::path::Path::new(avatar.uri.as_str()),
+        std::sync::Arc::clone(&avatar.data),
+    )
+}
+
+/// Loads the encoded image `data` into the given `ImageRef`, auto-detecting any
 /// image format that makepad supports (PNG, JPEG, GIF, WebP, BMP, ICO, QOI, SVG).
 ///
-/// Callers that already hold an `Arc<[u8]>` should pass a clone of it so the
-/// bytes are shared rather than re-copied on every call.
+/// The decoded image is cached under `cache_key`, which must name the image's
+/// *content*: an MXC URI (plus which variant of it, where a source has several).
+/// Deriving a key from the bytes instead would mean either hashing every image on
+/// every draw, or hashing a sample of it and displaying the wrong image whenever two
+/// images collide.
 ///
-/// Returns an error if the format is unsupported or decoding fails.
-pub fn load_image(
-    img: &ImageRef,
-    cx: &mut Cx,
-    data: impl Into<std::sync::Arc<[u8]>>,
-) -> Result<(), ImageError> {
-    load_image_cached(img, cx, data.into())
-}
-
-/// Returns a cache key for the given encoded image `data`.
-pub fn image_cache_key(data: &[u8]) -> std::path::PathBuf {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    let len = data.len();
-    // Hash only the length plus a small sample of the bytes.
-    const SAMPLE: usize = 256;
-    len.hash(&mut hasher);
-    if len <= 2 * SAMPLE {
-        data.hash(&mut hasher);
-    } else {
-        data[..SAMPLE].hash(&mut hasher);
-        data[len - SAMPLE..].hash(&mut hasher);
-    }
-    std::path::PathBuf::from(format!("robrix-img-cache://{:016x}-{}", hasher.finish(), len))
-}
-
-/// Loads the encoded image `data` into the given ImageRef widget using makepad's async image cache.
-///
-/// SVG data is detected up front and rendered synchronously via makepad's
-/// vector engine, as the async decode cache only handles raster formats.
-pub fn load_image_cached<D>(
-    img: &ImageRef,
-    cx: &mut Cx,
-    data: std::sync::Arc<D>,
-) -> Result<(), ImageError>
-where
-    D: AsRef<[u8]> + Send + Sync + ?Sized + 'static,
-{
-    let bytes: &[u8] = (*data).as_ref();
-    if looks_like_svg(bytes) {
-        return img.load_svg_from_data(cx, bytes);
-    }
-    let key = image_cache_key(bytes);
-    img.load_image_from_data_async(cx, &key, data)
-}
-
-/// Like [`load_image_cached`], but with a caller-provided async-decode cache key
-/// (e.g. an MXC URI) instead of one derived from the bytes.
-///
-/// SVG data is detected up front and rendered synchronously via makepad's
-/// vector engine, as the async decode cache only handles raster formats.
+/// SVG data is detected up front and rendered synchronously via makepad's vector
+/// engine, as the async decode cache only handles raster formats. It is handed over
+/// as shared bytes, so re-issuing the same load (as widgets redrawing a list item do
+/// every frame) doesn't re-parse the SVG.
 pub fn load_image_with_cache_key(
     img: &ImageRef,
     cx: &mut Cx,
@@ -161,9 +141,134 @@ pub fn load_image_with_cache_key(
     data: std::sync::Arc<[u8]>,
 ) -> Result<(), ImageError> {
     if looks_like_svg(&data) {
-        return img.load_svg_from_data(cx, &data);
+        return img.load_svg_from_shared_data(cx, data);
     }
     img.load_image_from_data_async(cx, cache_key, data)
+}
+
+
+/// Returns a human-readable label for a file, e.g. "PNG image".
+pub fn file_type_label(mime_type: &str, is_text_preview: bool) -> &'static str {
+    let has_family = mime_type.starts_with("video/")
+        || mime_type.starts_with("audio/")
+        || mime_type.starts_with("image/")
+        || mime_type.starts_with("font/");
+    if is_text_preview && has_family {
+        "Text file"
+    } else {
+        display_file_type_label(mime_type)
+    }
+}
+
+fn display_file_type_label(mime_type: &str) -> &'static str {
+    let mime_type = mime_type
+        .split(';')
+        .next()
+        .unwrap_or(mime_type)
+        .trim()
+        .to_ascii_lowercase();
+
+    match mime_type.as_str() {
+        "text/plain" => "Plain text file",
+        "text/markdown" | "text/x-markdown" => "Markdown file",
+        "text/csv" => "CSV spreadsheet",
+        "text/html" => "HTML document",
+        "text/css" => "CSS stylesheet",
+        "text/javascript" | "application/javascript" | "application/x-javascript" => "JavaScript file",
+        "text/xml" | "application/xml" => "XML document",
+        "application/json" => "JSON file",
+        "application/pdf" => "PDF document",
+        "application/rtf" | "text/rtf" => "Rich text document",
+        "application/msword" |
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => "Word document",
+        "application/vnd.ms-excel" |
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => "Excel spreadsheet",
+        "application/vnd.ms-powerpoint" |
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation" => "PowerPoint presentation",
+        "application/zip" => "ZIP archive",
+        "application/x-tar" => "TAR archive",
+        "application/gzip" | "application/x-gzip" => "Gzip archive",
+        "application/x-bzip2" => "Bzip2 archive",
+        "application/x-7z-compressed" => "7-Zip archive",
+        "application/vnd.rar" | "application/x-rar-compressed" => "RAR archive",
+        "application/x-sh" => "Shell script",
+        "application/x-sql" => "SQL file",
+        "image/png" => "PNG image",
+        "image/jpeg" | "image/jpg" => "JPEG image",
+        "image/gif" => "GIF image",
+        "image/webp" => "WebP image",
+        "image/bmp" => "BMP image",
+        "image/svg+xml" => "SVG image",
+        "image/tiff" => "TIFF image",
+        "audio/mpeg" => "MP3 audio",
+        "audio/mp4" => "MPEG-4 audio",
+        "audio/wav" | "audio/x-wav" => "WAV audio",
+        "audio/ogg" => "Ogg audio",
+        "audio/flac" => "FLAC audio",
+        "video/mp4" => "MP4 video",
+        "video/webm" => "WebM video",
+        "video/quicktime" => "QuickTime video",
+        "video/x-msvideo" => "AVI video",
+        "font/ttf" | "font/otf" | "font/woff" | "font/woff2" => "Font file",
+        _ if mime_type.starts_with("text/") => "Text file",
+        _ if mime_type.starts_with("image/") => "Image file",
+        _ if mime_type.starts_with("audio/") => "Audio file",
+        _ if mime_type.starts_with("video/") => "Video file",
+        _ if mime_type.starts_with("font/") => "Font file",
+        _ => "File",
+    }
+}
+
+/// Returns true if the file path's extension indicates a code file.
+///
+/// Plain text, logs, CSVs, markdown, etc all return false.
+pub fn is_code_file(path: &std::path::Path) -> bool {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    matches!(
+        ext.as_str(),
+        "rs" | "py" | "pyi" | "js" | "mjs" | "cjs" | "jsx" | "ts" | "tsx" | "mts" | "cts"
+            | "json" | "json5" | "jsonc" | "html" | "htm" | "xhtml" | "xml" | "svg"
+            | "css" | "scss" | "sass" | "less" | "toml" | "yaml" | "yml" | "ini" | "cfg" | "conf"
+            | "c" | "h" | "cpp" | "cc" | "cxx" | "hpp" | "hh" | "hxx" | "java" | "kt" | "kts"
+            | "go" | "rb" | "php" | "pl" | "pm" | "lua" | "sh" | "bash" | "zsh" | "fish"
+            | "sql" | "swift" | "scala" | "groovy" | "clj" | "cljs" | "hs" | "ml" | "mli"
+            | "fs" | "fsx" | "r" | "jl" | "nim" | "zig" | "v" | "sol" | "dart" | "ex" | "exs"
+            | "erl" | "hrl" | "proto" | "graphql" | "gql" | "vue" | "svelte" | "astro"
+            | "gradle" | "cmake" | "mk" | "bat" | "cmd" | "ps1" | "psm1" | "tex" | "bib"
+    )
+}
+
+/// Returns true if `mime_type` could be a text-like format worth attempting a text preview for.
+pub fn mimetype_might_be_text(mime_type: &str, is_mime_guaranteed: bool) -> bool {
+    if !is_mime_guaranteed {
+        return true;
+    }
+    let mt = mime_type.split(';').next().unwrap_or(mime_type).trim().to_ascii_lowercase();
+    if mt.starts_with("text/") {
+        return true;
+    }
+    if mt.starts_with("image/")
+        || mt.starts_with("audio/")
+        || mt.starts_with("video/")
+        || mt.starts_with("font/")
+    {
+        return false;
+    }
+    if mt.ends_with("+json") || mt.ends_with("+xml") {
+        return true;
+    }
+    matches!(
+        mt.as_str(),
+        "application/json" | "application/ld+json" | "application/xml"
+            | "application/javascript" | "application/x-javascript" | "application/ecmascript"
+            | "application/x-sh" | "application/x-shellscript" | "application/x-python"
+            | "application/x-perl" | "application/x-ruby" | "application/x-php"
+            | "application/x-httpd-php" | "application/x-yaml" | "application/yaml"
+            | "application/toml" | "application/x-toml" | "application/sql"
+            | "application/x-sql" | "application/graphql" | "application/x-latex"
+            | "application/x-tex" | "application/manifest+json"
+            | "application/octet-stream" | ""
+    )
 }
 
 
@@ -820,6 +925,42 @@ pub fn get_or_fetch_event_sender(
     sender_username.to_owned()
 }
 
+/// How well a string matches a given query, ordered from best to worst.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum MatchQuality {
+    Exact,
+    Prefix,
+    Substring,
+    None,
+}
+impl MatchQuality {
+    /// Both args to [`MatchQuality::of`] must be lowercase.
+    pub fn of(haystack: &str, needle: &str) -> MatchQuality {
+        if haystack == needle {
+            MatchQuality::Exact
+        } else if haystack.starts_with(needle) {
+            MatchQuality::Prefix
+        } else if haystack.contains(needle) {
+            MatchQuality::Substring
+        } else {
+            MatchQuality::None
+        }
+    }
+
+    /// True for any match, i.e. anything but `None`.
+    pub fn is_match(self) -> bool {
+        !matches!(self, MatchQuality::None)
+    }
+}
+
+/// Returns the "localpart" of an alias, like "robrix" for alias "#robrix:matrix.org".
+pub fn alias_localpart(alias: &OwnedRoomAliasId) -> &str {
+    alias.as_str()
+        .strip_prefix('#')
+        .and_then(|ss| ss.split(':').next())
+        .unwrap_or_else(|| alias.as_str())
+}
+
 /// Converts a byte index in a string to the corresponding grapheme index
 pub fn byte_index_to_grapheme_index(text: &str, byte_idx: usize) -> usize {
     let mut current_byte_pos = 0;
@@ -831,23 +972,6 @@ pub fn byte_index_to_grapheme_index(text: &str, byte_idx: usize) -> usize {
     }
     // If byte_idx is at end of string or past it, return grapheme count
     text.graphemes(true).count()
-}
-
-/// Safely extracts a substring between two byte indices, ensuring proper
-/// grapheme boundaries are respected
-pub fn safe_substring_by_byte_indices(text: &str, start_byte: usize, end_byte: usize) -> String {
-    if start_byte >= end_byte || start_byte >= text.len() {
-        return String::new();
-    }
-
-    let start_grapheme_idx = byte_index_to_grapheme_index(text, start_byte);
-    let end_grapheme_idx = byte_index_to_grapheme_index(text, end_byte);
-
-    text.graphemes(true)
-        .enumerate()
-        .filter(|(i, _)| *i >= start_grapheme_idx && *i < end_grapheme_idx)
-        .map(|(_, g)| g)
-        .collect()
 }
 
 /// Safely replaces text between byte indices with a new string,
@@ -862,21 +986,6 @@ pub fn safe_replace_by_byte_indices(text: &str, start_byte: usize, end_byte: usi
     let after = text_graphemes[end_grapheme_idx..].join("");
 
     format!("{before}{replacement}{after}")
-}
-
-/// Builds a mapping array from graphemes to byte positions in the string
-pub fn build_grapheme_byte_positions(text: &str) -> Vec<usize> {
-    let mut positions = Vec::with_capacity(text.graphemes(true).count() + 1);
-    let mut byte_pos = 0;
-
-    positions.push(0);
-
-    for g in text.graphemes(true) {
-        byte_pos += g.len();
-        positions.push(byte_pos);
-    }
-
-    positions
 }
 
 /// The name and ID of a room or space.

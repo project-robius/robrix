@@ -22,7 +22,7 @@ use matrix_sdk::{
 use matrix_sdk_ui::timeline::{
     self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, LiveLocationState, MemberProfileChange, MembershipChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
-use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}, owned_room_id};
+use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, events::{AnyRedactionEvent, AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}};
 
 use matrix_sdk_ui::sync_service::State;
 use crate::{
@@ -30,16 +30,15 @@ use crate::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
-    room::{BasicRoomDetails, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
+    room::{BasicRoomDetails, reply_preview::{CollapsiblePreviewRef, CollapsiblePreviewWidgetRefExt}, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, media_source_mxc, start_attachment_download}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuWidgetExt}, room_input_popup_menu::RoomInputPopupMenuRef, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageStatus, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageStatus, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints}, utils::{self, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
-use crate::shared::mentionable_text_input::MentionableTextInputAction;
 
 use rangemap::RangeSet;
 
@@ -101,6 +100,15 @@ script_mod! {
             draw_icon.svg: (ICON_DOWNLOAD)
             icon_walk: Walk{width: 16, height: 16}
             text: "Download"
+        }
+
+        share_button := RobrixIconButton {
+            height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
+            padding: Inset{left: 12, right: 12}
+            margin: Inset{left: 8}
+            draw_icon.svg: (ICON_SHARE)
+            icon_walk: Walk{width: 16, height: 16}
+            text: "Share"
         }
 
         downloading_view := View {
@@ -281,9 +289,9 @@ script_mod! {
 
         // A preview of the earlier message that this message was in reply to.
         replied_to_message := mod.widgets.RepliedToMessage {
-            flow: Right
+            flow: Down
             margin: Inset{ bottom: 3, top: 10 }
-            replied_to_message_content +: {
+            preview_content +: {
                 margin +: { left: 29 }
                 padding +: { bottom: 10 }
             }
@@ -357,7 +365,7 @@ script_mod! {
     mod.widgets.CondensedMessage = mod.widgets.Message {
         padding: Inset{ top: 2.0, bottom: 2.0 }
         replied_to_message +: {
-            replied_to_message_content +: {
+            preview_content +: {
                 margin: Inset{ left: 74, bottom: 5.0 }
             }
         }
@@ -398,36 +406,34 @@ script_mod! {
         }
     }
 
-    // A single, shared `Size::Fit{max: ...}` object on the script heap,
-    // referenced by every `Image` widget inside an `ImageMessage` /
-    // `CondensedImageMessage`. Having one heap object instead of many
-    // lets the "Maximum Image Thumbnail Height" App Setting mutate just
-    // this object's `max` field at runtime (see
-    // `AppPreferences::on_thumbnail_max_height_changed`) — every widget
-    // whose `walk.height` referenced this object observes the change
-    // through the same heap object on the next `Event::ScriptReapply`.
-    //
-    // This sidesteps the override-chain divergence that would otherwise
-    // make the mutation invisible to derived templates (e.g., the
-    // `ImageMessage := mod.widgets.ImageMessage {}` local alias inside a
-    // PortalList's `list`).
-    mod.widgets.IMG_MSG_FIT = Fit{max: FitBound.Abs(200.0)}
+    // A single shared object on the script heap of type `Size::Fit{max: ...}`,
+    // which is used for the max image thumbnail height for every `Image` widget
+    // within a message widget.
+    // Also see: `AppPreferences::on_thumbnail_max_height_changed`).
+    mod.widgets.IMG_MSG_FIT = Fit{max: FitBound.Abs(300.0)}
 
     // The view used for each static image-based message event in a room's timeline.
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
     mod.widgets.ImageMessage = mod.widgets.Message {
         body +: {
             content +: {
-                message := TextOrImage {
-                    // Cap the height on the `Image` itself (not the outer view) so
-                    // that `ImageFit.Smallest` scales the texture proportionally
-                    // instead of the outer view just clipping the drawn pixels.
-                    image_view +: { image +: {
-                        height: (mod.widgets.IMG_MSG_FIT)
-                    } }
-                    default_image_view +: { image +: {
-                        height: (mod.widgets.IMG_MSG_FIT)
-                    } }
+                message := View {
+                    width: Fill, height: Fit,
+                    flow: Down,
+                    caption_view := View {
+                        visible: false,
+                        width: Fill, height: Fit,
+                        margin: Inset{ bottom: 5.0 }
+                        caption := HtmlOrPlaintext {}
+                    }
+                    image := TextOrImage {
+                        image_view +: { image +: {
+                            height: (mod.widgets.IMG_MSG_FIT)
+                        } }
+                        default_image_view +: { image +: {
+                            height: (mod.widgets.IMG_MSG_FIT)
+                        } }
+                    }
                 }
                 download_section := mod.widgets.MessageDownloadSection {}
                 View {
@@ -449,13 +455,23 @@ script_mod! {
     mod.widgets.CondensedImageMessage = mod.widgets.CondensedMessage {
         body +: {
             content +: {
-                message := TextOrImage {
-                    image_view +: { image +: {
-                        height: (mod.widgets.IMG_MSG_FIT)
-                    } }
-                    default_image_view +: { image +: {
-                        height: (mod.widgets.IMG_MSG_FIT)
-                    } }
+                message := View {
+                    width: Fill, height: Fit,
+                    flow: Down,
+                    caption_view := View {
+                        visible: false,
+                        width: Fill, height: Fit,
+                        margin: Inset{ bottom: 5.0 }
+                        caption := HtmlOrPlaintext {}
+                    }
+                    image := TextOrImage {
+                        image_view +: { image +: {
+                            height: (mod.widgets.IMG_MSG_FIT)
+                        } }
+                        default_image_view +: { image +: {
+                            height: (mod.widgets.IMG_MSG_FIT)
+                        } }
+                    }
                 }
                 download_section := mod.widgets.MessageDownloadSection {}
                 View {
@@ -745,6 +761,12 @@ pub struct RoomScreen {
     #[rust] is_loaded: bool,
     /// Whether or not all rooms have been loaded (received from the homeserver).
     #[rust] all_rooms_loaded: bool,
+    /// A flag to set key focus for the text input after it has been drawn.
+    #[rust] focus_input_bar_on_show: bool,
+    /// After a reply preview collapses, redraw until the list is fills the viewport.
+    #[rust] relayout_redraws_left: u8,
+    #[rust] relayout_last_first_id: usize,
+    #[rust] relayout_last_scroll: f64,
     /// Widget refs used on every event, resolved once and cached here.
     /// Resolving them per event walks this widget's whole subtree whenever the
     /// widget tree's path cache is cold, which is far too expensive at
@@ -790,6 +812,11 @@ impl ScriptHook for RoomScreen {
 impl Widget for RoomScreen {
     // Handle events and actions for the RoomScreen widget and its inner Timeline view.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // Skip event handling if this RoomScreen is uninitialized (a background dock tab after dock restore).
+        if self.tl_state.is_none() && self.room_name_id.is_none() {
+            return;
+        }
+
         let room_screen_widget_uid = self.widget_uid();
         let RoomScreenEventRefs {
             portal_list,
@@ -877,7 +904,7 @@ impl Widget for RoomScreen {
                 }
 
                 // Handle an image within the message being clicked.
-                let content_message = wr.text_or_image(cx, ids!(content.message));
+                let content_message = wr.text_or_image(cx, ids!(content.message.image));
                 if let TextOrImageAction::Clicked(mxc_uri) = actions.find_widget_action(content_message.widget_uid()).cast() {
                     let texture = content_message.get_texture(cx);
                     self.handle_image_click(
@@ -1093,41 +1120,11 @@ impl Widget for RoomScreen {
         //       so the only thing we'd need here is the conditional below.
 
         if !is_pane_shown || !is_interactive_hit {
-            // Create a Scope with RoomScreenProps.
-            // This scope is needed by child widgets like MentionableTextInput during event handling.
-            let room_props = if let Some(tl) = self.tl_state.as_ref() {
-                RoomScreenProps {
-                    room_screen_widget_uid,
-                    timeline_kind: tl.kind.clone(),
-                }
-            } else if self.room_name_id.is_some() {
-                // Fallback case: we have a room_name but no tl_state yet
-                RoomScreenProps {
-                    room_screen_widget_uid,
-                    timeline_kind: self.timeline_kind.clone()
-                        .expect("BUG: room_name_id was set but timeline_kind was missing"),
-                }
-            } else {
-                // No room selected yet, skip event handling that requires room context
-                if !is_pane_shown || !is_interactive_hit {
-                    return;
-                }
-                log!("RoomScreen handling event with no room_name_id and no tl_state, skipping room-dependent event handling");
-                // Use a dummy room props for non-room-specific events
-                let room_id = owned_room_id!("!dummy:matrix.org");
-                RoomScreenProps {
-                    room_screen_widget_uid,
-                    timeline_kind: TimelineKind::MainRoom { room_id },
-                }
-            };
-            let mut room_scope = Scope::with_props(&room_props);
-
-
             // Forward the event to the inner timeline view, but capture any actions it produces
             // such that we can handle the ones relevant to only THIS RoomScreen widget right here and now,
             // ensuring they are not mistakenly handled by other RoomScreen widget instances.
             let mut actions_generated_within_this_room_screen = cx.capture_actions(|cx|
-                self.view.handle_event(cx, event, &mut room_scope)
+                self.view.handle_event(cx, event, &mut Scope::empty())
             );
             // Here, we handle and remove any general actions that are relevant to only this RoomScreen.
             // Removing the handled actions ensures they are not mistakenly handled by other RoomScreen widget instances.
@@ -1297,6 +1294,7 @@ impl Widget for RoomScreen {
                                                 &tl_state.user_power,
                                                 &self.pinned_events,
                                                 &tl_state.pending_downloads,
+                                                &tl_state.expanded_reply_previews,
                                                 item_drawn_status,
                                                 room_screen_widget_uid,
                                             )
@@ -1420,6 +1418,33 @@ impl Widget for RoomScreen {
                 });
             }
         }
+
+        // If this RoomScreen was just drawn for the first time after being opened for
+        // a "Reply In Thread", then then focus on the text input in the RoomInputBar.
+        if self.focus_input_bar_on_show {
+            self.focus_input_bar_on_show = false;
+            self.view.room_input_bar(cx, ids!(room_input_bar)).set_key_focus(cx);
+        }
+
+        // After a reply preview is collapsed, the timeline portallist will have empty space at the top.
+        // We need to keep drawing it until it's filled.
+        if self.relayout_redraws_left > 0 {
+            self.relayout_redraws_left -= 1;
+            let (first_id, scroll) = {
+                let list = self.view.portal_list(cx, ids!(timeline.list));
+                (list.first_id(), list.scroll_position())
+            };
+            if first_id != self.relayout_last_first_id
+                || (scroll - self.relayout_last_scroll).abs() > 0.5
+            {
+                self.relayout_last_first_id = first_id;
+                self.relayout_last_scroll = scroll;
+                self.redraw(cx);
+            } else {
+                self.relayout_redraws_left = 0;
+            }
+        }
+
         DrawStep::done()
     }
 }
@@ -1640,8 +1665,8 @@ impl RoomScreen {
                 }
                 TimelineUpdate::TargetEventFound { target_event_id, index } => {
                     // log!("Target event found in room {}: {target_event_id}, index: {index}", tl.kind.room_id());
-                    tl.request_sender.send_if_modified(|requests| {
-                        requests.retain(|r| &r.room_id != tl.kind.room_id());
+                    tl.request_sender.send_if_modified(|req| {
+                        req.backwards_paginate.retain(|r| &r.room_id != tl.kind.room_id());
                         // no need to notify/wake-up all receivers for a completed request
                         false
                     });
@@ -1767,6 +1792,8 @@ impl RoomScreen {
                 TimelineUpdate::RoomMembersListFetched { members } => {
                     // Store room members directly in TimelineUiState
                     tl.room_members = Some(Arc::new(members));
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .set_room_context(cx, ui, tl.kind.clone(), tl.room_members.clone());
                 },
                 TimelineUpdate::MediaFetched(request) => {
                     log!("process_timeline_updates(): media fetched for room {}", tl.kind.room_id());
@@ -1822,11 +1849,6 @@ impl RoomScreen {
                     tl.user_power = user_power_levels;
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .update_user_power_levels(cx, user_power_levels);
-                    // Update the @room mention capability based on the user's power level
-                    cx.action(MentionableTextInputAction::PowerLevelsUpdated {
-                        room_id: tl.kind.room_id().clone(),
-                        can_notify_room: user_power_levels.can_notify_room(),
-                    });
                     // We need to redraw all events in order to reflect the new power levels,
                     // e.g., for the message context menu to be correctly populated.
                     tl.content_drawn_since_last_update.clear();
@@ -2093,6 +2115,34 @@ impl RoomScreen {
             .find(|ev| ev.event_id().is_some_and(|id| id == target_event_id))
     }
 
+    /// Registers a pending download for a media transfer (e.g., download, share)
+    /// and shows the loading spinner, then calls `start` to kick off the transfer.
+    ///
+    /// Does nothing if the transfer was already in progress.
+    fn begin_media_transfer(
+        &mut self,
+        cx: &mut Cx,
+        portal_list: &PortalListRef,
+        info: &DownloadableAttachment,
+        kind: TransferKind,
+        start: fn(DownloadableAttachment, TimelineUpdateSenderOption),
+    ) {
+        let Some(tl) = self.tl_state.as_mut() else { return };
+        let mxc = media_source_mxc(&info.media_source);
+        if tl.pending_downloads.iter().any(|p| &p.mxc == mxc) {
+            enqueue_already_downloading_notification();
+            return;
+        }
+        tl.pending_downloads.push(PendingDownload {
+            mxc: mxc.clone(),
+            state: PendingDownloadState::InProgress,
+            kind,
+        });
+        portal_list.redraw(cx);
+        let update_sender = tl.media_cache.timeline_update_sender().cloned();
+        start(info.clone(), update_sender);
+    }
+
     /// Handles any [`MessageAction`]s received by this RoomScreen.
     fn handle_message_actions(
         &mut self,
@@ -2129,6 +2179,44 @@ impl RoomScreen {
                             details.item_id,
                             details.timeline_event_id,
                             self.room_id(),
+                        );
+                    }
+                }
+                MessageAction::ReplyInThread(details) => {
+                    let Some(room_name_id) = self.room_name_id.clone() else {
+                        error!("BUG: MessageAction::ReplyInThread: room_name_id was None in room {:?}", self.room_id());
+                        continue;
+                    };
+                    // If this message was already part of a thread, use that thread root.
+                    // If not, use the message's event ID as the root for a new thread.
+                    let Some(thread_root_event_id) = details.thread_root_event_id.clone()
+                        .or_else(|| details.event_id().cloned())
+                    else {
+                        enqueue_popup_notification(
+                            "Cannot reply in thread to an unsent message.",
+                            PopupKind::Error,
+                            Some(5.0),
+                        );
+                        continue;
+                    };
+                    let thread_kind = TimelineKind::Thread {
+                        room_id: room_name_id.room_id().clone(),
+                        thread_root_event_id: thread_root_event_id.clone(),
+                    };
+                    if self.timeline_kind.as_ref() == Some(&thread_kind) {
+                        // We're already viewing this thread, so just focus the input bar.
+                        self.focus_input_bar_on_show = true;
+                        self.redraw(cx);
+                    } else {
+                        // Emit an action to open the thread's RoomScreen
+                        // and tell it to grab key focus once it's drawn.
+                        input_bar_focus::request(cx, thread_kind);
+                        cx.widget_action(
+                            room_screen_widget_uid,
+                            RoomsListAction::Selected(SelectedRoom::Thread {
+                                room_name_id,
+                                thread_root_event_id,
+                            }),
                         );
                     }
                 }
@@ -2325,6 +2413,18 @@ impl RoomScreen {
                         loading_pane
                     );
                 }
+                MessageAction::ToggleReplyPreviewExpanded(message_id) => {
+                    if let Some(tl) = self.tl_state.as_mut() {
+                        if !tl.expanded_reply_previews.remove(message_id) {
+                            tl.expanded_reply_previews.insert(message_id.clone());
+                        }
+                    }
+
+                    // If we collapsed the preview, redraw until the list fills the viewport again.
+                    self.relayout_redraws_left = 12; // but not more than 12 times
+                    self.relayout_last_first_id = usize::MAX;
+                    self.redraw(cx);
+                }
                 MessageAction::JumpToEvent(event_id) => {
                     self.jump_to_event(
                         cx,
@@ -2372,20 +2472,10 @@ impl RoomScreen {
                 // }
 
                 MessageAction::DownloadAttachment(info) => {
-                    let Some(tl) = self.tl_state.as_mut() else { continue };
-                    let mxc = media_source_mxc(&info.media_source);
-                    // Prevent the same attachment from being downloaded more than once at a time.
-                    if tl.pending_downloads.iter().any(|p| &p.mxc == mxc) {
-                        enqueue_already_downloading_notification();
-                        continue;
-                    }
-                    tl.pending_downloads.push(PendingDownload {
-                        mxc: mxc.clone(),
-                        state: PendingDownloadState::InProgress,
-                    });
-                    portal_list.redraw(cx);
-                    let update_sender = tl.media_cache.timeline_update_sender().cloned();
-                    start_attachment_download(info.clone(), update_sender);
+                    self.begin_media_transfer(cx, portal_list, info, TransferKind::Download, start_attachment_download);
+                }
+                MessageAction::ShareAttachment(info) => {
+                    self.begin_media_transfer(cx, portal_list, info, TransferKind::Share, start_attachment_share);
                 }
                 MessageAction::CancelDownload(mxc) => {
                     submit_async_request(MatrixRequest::CancelDownload(mxc.clone()));
@@ -2466,13 +2556,13 @@ impl RoomScreen {
             );
             loading_pane.show(cx);
 
-            tl.request_sender.send_if_modified(|requests| {
-                if let Some(existing) = requests.iter_mut().find(|r| &r.room_id == tl.kind.room_id()) {
+            tl.request_sender.send_if_modified(|req| {
+                if let Some(existing) = req.backwards_paginate.iter_mut().find(|r| &r.room_id == tl.kind.room_id()) {
                     warning!("Unexpected: room {} already had an existing timeline request in progress, event: {:?}", tl.kind.room_id(), existing.target_event_id);
                     // We might as well re-use this existing request...
                     existing.target_event_id = target_event_id.clone();
                 } else {
-                    requests.push(BackwardsPaginateUntilEventRequest {
+                    req.backwards_paginate.push(BackwardsPaginateUntilEventRequest {
                         room_id: tl.kind.room_id().clone(),
                         target_event_id: target_event_id.clone(),
                         // avoid re-searching through items we already searched through.
@@ -2510,7 +2600,7 @@ impl RoomScreen {
         let room_id = kind.room_id().clone();
         let owner = self.widget_uid();
 
-        let (mut tl_state, mut is_first_time_being_loaded) = match timeline_state_store::take(&kind, owner) {
+        let (mut tl_state, mut is_first_time_being_loaded) = match timeline_state_store::take(cx, &kind, owner) {
             timeline_state_store::TakeResult::Taken(existing) => (existing, false),
             timeline_state_store::TakeResult::AlreadyTaken { owner: current_owner } => {
                 error!("RoomScreen::show_timeline(): timeline {kind} is already taken by widget {current_owner:?}");
@@ -2580,8 +2670,9 @@ impl RoomScreen {
                     latest_own_user_receipt: None,
                     tombstone_info,
                     pending_downloads: SmallVec::new(),
+                    expanded_reply_previews: HashSet::new(),
                 };
-                timeline_state_store::mark_taken(&tl_state.kind, owner);
+                timeline_state_store::mark_taken(cx, &tl_state.kind, owner);
                 (tl_state, true)
             }
         };
@@ -2674,6 +2765,11 @@ impl RoomScreen {
         // such that it can be accessed in future functions like event/draw handlers.
         self.tl_state = Some(tl_state);
 
+        // Tell the background subscriber that this timeline is now open (if it was previously closed).
+        if let Some(tl) = self.tl_state.as_ref() {
+            tl.request_sender.send_if_modified(|req| !std::mem::replace(&mut req.is_timeline_open, true));
+        }
+
         // Now that we have restored the TimelineUiState into this RoomScreen widget,
         // we can proceed to processing pending background updates.
         self.process_timeline_updates(cx, &self.portal_list(cx, ids!(list)));
@@ -2686,6 +2782,11 @@ impl RoomScreen {
         let Some(timeline_kind) = self.timeline_kind.clone() else { return };
         if self.tl_state.is_none() {
             return;
+        }
+
+        // Tell the background subscriber that this timeline is now closed.
+        if let Some(tl) = self.tl_state.as_ref() {
+            tl.request_sender.send_if_modified(|req| std::mem::replace(&mut req.is_timeline_open, false));
         }
 
         self.save_state();
@@ -2794,6 +2895,11 @@ impl RoomScreen {
             }
         };
 
+        // If we opened this timelien to reply in thread, give the text input key focus.
+        if input_bar_focus::take_if_matches(cx, &timeline_kind) {
+            self.focus_input_bar_on_show = true;
+        }
+
         // If this timeline is already displayed, we don't need to do anything major,
         // but we do need update the `room_name_id` in case it has changed, or it has been cleared.
         // The timeline state must actually be present, though: if a previous
@@ -2815,13 +2921,10 @@ impl RoomScreen {
         self.room_name_id = Some(room_name_id.clone());
         self.timeline_kind = Some(timeline_kind.clone());
 
-        // We initially tell every MentionableTextInput widget that the current user
-        // *does not* have privileges to notify the entire room;
-        // this gets properly updated when room PowerLevels get fetched.
-        cx.action(MentionableTextInputAction::PowerLevelsUpdated {
-            room_id: timeline_kind.room_id().clone(),
-            can_notify_room: false,
-        });
+        // Tell the room input bar which room/thread we're now displaying.
+        // The list of room members is None for now, it'll get updated later.
+        self.view.room_input_bar(cx, ids!(room_input_bar))
+            .set_room_context(cx, self.widget_uid(), timeline_kind.clone(), None);
 
         self.show_timeline(cx);
     }
@@ -2973,13 +3076,6 @@ impl RoomScreenRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.hide_displayed_room(cx);
     }
-}
-
-/// Immutable RoomScreen states passed via Scope props
-/// from a RoomScreen widget to its child widgets for event/draw handlers.
-pub struct RoomScreenProps {
-    pub room_screen_widget_uid: WidgetUid,
-    pub timeline_kind: TimelineKind,
 }
 
 
@@ -3155,7 +3251,14 @@ mod timeline_state_store {
         /// and can be taken by another `RoomScreen` in the future.
         Stored(TimelineUiState),
         /// A `RoomScreen` is displaying this timeline, so it's not available.
-        Taken { owner: WidgetUid },
+        Taken {
+            /// The widget UID of the RoomScreen that is currently displaying this timeline.
+            owner: WidgetUid,
+            /// A flag indicating that this timeline's backend async task that handles
+            /// timeline sync & updates was closed while the timeline was still being shown.
+            /// See [`put_back()`] for more info. 
+            invalidated: bool,
+        },
     }
 
     /// Result of trying to take ownership of a timeline's UI state.
@@ -3177,15 +3280,15 @@ mod timeline_state_store {
     }
 
     /// Attempts to take ownership of the saved UI state for `kind`.
-    pub(super) fn take(kind: &TimelineKind, owner: WidgetUid) -> TakeResult {
+    pub(super) fn take(_cx: &mut Cx, kind: &TimelineKind, owner: WidgetUid) -> TakeResult {
         TIMELINE_STATES.with_borrow_mut(|states| {
             match states.remove(kind) {
                 Some(StateEntry::Stored(state)) => {
-                    states.insert(kind.clone(), StateEntry::Taken { owner });
+                    states.insert(kind.clone(), StateEntry::Taken { owner, invalidated: false });
                     TakeResult::Taken(state)
                 }
-                Some(StateEntry::Taken { owner: current_owner }) => {
-                    states.insert(kind.clone(), StateEntry::Taken { owner: current_owner });
+                Some(StateEntry::Taken { owner: current_owner, invalidated }) => {
+                    states.insert(kind.clone(), StateEntry::Taken { owner: current_owner, invalidated });
                     TakeResult::AlreadyTaken { owner: current_owner }
                 }
                 None => TakeResult::Missing,
@@ -3197,13 +3300,13 @@ mod timeline_state_store {
     ///
     /// This is only supposed to be used when a new timeline is created by taking
     /// the backend timeline endpoints.
-    pub(super) fn mark_taken(kind: &TimelineKind, owner: WidgetUid) {
+    pub(super) fn mark_taken(_cx: &mut Cx, kind: &TimelineKind, owner: WidgetUid) {
         TIMELINE_STATES.with_borrow_mut(|states| {
-            match states.insert(kind.clone(), StateEntry::Taken { owner }) {
+            match states.insert(kind.clone(), StateEntry::Taken { owner, invalidated: false }) {
                 Some(StateEntry::Stored(_)) => {
                     error!("RoomScreen::show_timeline(): timeline {kind} unexpectedly had a stored state while creating a new state");
                 }
-                Some(StateEntry::Taken { owner: current_owner }) if current_owner != owner => {
+                Some(StateEntry::Taken { owner: current_owner, .. }) if current_owner != owner => {
                     error!("RoomScreen::show_timeline(): timeline {kind} was already taken by widget {current_owner:?}, but widget {owner:?} created a new state");
                 }
                 Some(StateEntry::Taken { .. }) | None => {}
@@ -3213,12 +3316,21 @@ mod timeline_state_store {
 
     /// Puts a timeline's UI state back into the store after a `RoomScreen` hides it,
     /// which allows a future RoomScreen to take it again.
+    ///
+    /// Note: this function gets called from drop handlers so it can't take `&mut Cx`,
+    ///       but those drop handlers are only reachable from the main UI thread anyway.
     pub(super) fn put_back(owner: WidgetUid, state: TimelineUiState) {
         let kind = state.kind.clone();
         TIMELINE_STATES.with_borrow_mut(|states| {
             match states.remove(&kind) {
-                Some(StateEntry::Taken { owner: current_owner }) if current_owner == owner => {}
-                Some(StateEntry::Taken { owner: current_owner }) => {
+                Some(StateEntry::Taken { owner: current_owner, invalidated }) if current_owner == owner => {
+                    // If it was invalidated and we (the `owner`) was the RoomScreen currently showing it,
+                    // just return here to keep it removed from the TIMELINE_STATES.
+                    if invalidated {
+                        return;
+                    }
+                }
+                Some(StateEntry::Taken { owner: current_owner, .. }) => {
                     error!("RoomScreen::save_state(): timeline {kind} was put back by widget {owner:?}, but it was taken by widget {current_owner:?}");
                 }
                 Some(StateEntry::Stored(_)) => {
@@ -3236,9 +3348,28 @@ mod timeline_state_store {
     ///
     /// This is used when all timeline UI state is being reset globally, such as
     /// during logout or session teardown.
-    pub(super) fn clear_all() {
+    pub(super) fn clear_all(_cx: &mut Cx) {
         TIMELINE_STATES.with_borrow_mut(|states| {
             states.clear();
+        });
+    }
+
+    /// Marks the given timeline's cached UI state as invalidated because we closed/stopped
+    /// the corresponding backend async timeline sync loop task for it.
+    ///
+    /// This ensures that a new timeline (and async sync task) will be re-created for it
+    /// the next time that we want to show it.
+    pub(super) fn invalidate(_cx: &mut Cx, kind: &TimelineKind) {
+        TIMELINE_STATES.with_borrow_mut(|states| {
+            if let Some(StateEntry::Taken { invalidated, .. }) = states.get_mut(kind) {
+                // If this timeline is currently being shown (it was `Taken`), just set the flag
+                // so it'll be dropped (see `put_back()`) when it's hidden by the RoomScreen.
+                *invalidated = true;
+                return;
+            }
+
+            // Otherwise, if it's not being shown, just remove it now.
+            states.remove(kind);
         });
     }
 }
@@ -3356,9 +3487,12 @@ struct TimelineUiState {
     /// are contained within. If `None`, the room has not been tombstoned.
     tombstone_info: Option<SuccessorRoomDetails>,
 
-    /// Media/file attachments in this timeline currently being downloaded.
-    /// the inline button's spinner state.
+    /// Media/file attachments in this timeline that are currently being downloaded.
     pending_downloads: SmallVec<[PendingDownload; 1]>,
+
+    /// Reply previews the user has eaxpanded that should be shown in full.
+    /// Collapsed reply previews (their default state) are absent from this set.
+    expanded_reply_previews: HashSet<TimelineEventItemId>,
 }
 
 #[derive(Default, Debug)]
@@ -3490,6 +3624,7 @@ fn populate_message_view(
     user_power_levels: &UserPowerLevels,
     pinned_events: &[OwnedEventId],
     pending_downloads: &[PendingDownload],
+    expanded_reply_previews: &HashSet<TimelineEventItemId>,
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
 ) -> (WidgetRef, ItemDrawnStatus) {
@@ -3683,11 +3818,11 @@ fn populate_message_view(
                                 Cow::from(&fb.body),
                                 Some(FormattedBody {
                                     format: fb.format.clone(),
-                                    body: format!("* {} {}", &username, &fb.body),
+                                    body: format!("* {} {}", username, fb.body),
                                 })
                             )
                         } else {
-                            (Cow::from(format!("* {} {}", &username, body)), None)
+                            (Cow::from(format!("* {} {}", username, body)), None)
                         };
                         let html_or_plaintext_ref =
                             item.html_or_plaintext(cx, ids!(content.message));
@@ -3718,7 +3853,7 @@ fn populate_message_view(
                     };
                     let (item, existed) = list.item_with_existed(cx, item_id, template);
                     let was_cached = existed && item_drawn_status.content_drawn;
-                    let text_or_image_ref = item.text_or_image(cx, ids!(content.message));
+                    let text_or_image_ref = item.text_or_image(cx, ids!(content.message.image));
                     let fallback = if was_cached {
                         // Cached path re-reads the status the widget already has.
                         matches!(text_or_image_ref.status(), TextOrImageStatus::Text)
@@ -3741,6 +3876,7 @@ fn populate_message_view(
                             DownloadKind::Image,
                         );
                         new_drawn_status.content_drawn = is_image_fully_drawn;
+                        populate_media_caption(cx, &item, image.formatted_caption(), image.caption());
                         fallback
                     };
                     download_info = fallback;
@@ -3920,7 +4056,7 @@ fn populate_message_view(
             let (item, existed) = list.item_with_existed(cx, item_id, template);
             let was_cached = existed && item_drawn_status.content_drawn;
 
-            let text_or_image_ref = item.text_or_image(cx, ids!(content.message));
+            let text_or_image_ref = item.text_or_image(cx, ids!(content.message.image));
             let media_source: MediaSource = source.clone().into();
             let filename = if body.is_empty() { "sticker".to_owned() } else { body.clone() };
             let size = info.size.map(u64::from);
@@ -3945,6 +4081,7 @@ fn populate_message_view(
                     DownloadKind::Image,
                 );
                 new_drawn_status.content_drawn = is_image_fully_drawn;
+                populate_media_caption(cx, &item, None, None);
                 fallback
             };
             (item, was_cached)
@@ -4019,7 +4156,7 @@ fn populate_message_view(
         populate_read_receipts(&item, cx, timeline_kind, event_tl_item);
         let is_reply_fully_drawn = draw_replied_to_message(
             cx,
-            &item.view(cx, ids!(replied_to_message)),
+            &item.widget(cx, ids!(replied_to_message)),
             timeline_kind,
             msg_like_content.in_reply_to.as_ref(),
             event_tl_item.event_id(),
@@ -4060,6 +4197,7 @@ fn populate_message_view(
             msg_like_content,
             pinned_events,
             has_html_body,
+            timeline_kind.thread_root_event_id().is_some(),
         ),
         should_be_highlighted: event_tl_item.is_highlighted() || has_room_mention,
     };
@@ -4068,10 +4206,11 @@ fn populate_message_view(
             let mxc = media_source_mxc(&info.media_source);
             pending_downloads.iter()
                 .find(|p| &p.mxc == mxc)
-                .map(|p| p.state.display())
+                .map(|p| p.state.display(p.kind))
         })
         .unwrap_or_default();
-    item.as_message().set_data(cx, message_details, download_info, download_state);
+    let is_reply_expanded = expanded_reply_previews.contains(&message_details.timeline_event_id);
+    item.as_message().set_data(cx, message_details, download_info, download_state, is_reply_expanded);
 
 
     // If `used_cached_item` is false, we should always redraw the profile, even if profile_drawn is true.
@@ -4244,6 +4383,32 @@ fn populate_text_message_content(
     } else {
         true
     }
+}
+
+
+/// Populates the caption (and makes its view visible) for the given message `item`.
+///
+/// Prefers the formatted caption (HTML), with an optional plaintext caption as fallback.
+fn populate_media_caption(
+    cx: &mut Cx,
+    item: &WidgetRef,
+    formatted_caption: Option<&FormattedBody>,
+    backup_caption: Option<&str>,
+) {
+    let caption_view = item.view(cx, ids!(content.message.caption_view));
+    let caption_ref = item.html_or_plaintext(cx, ids!(content.message.caption_view.caption));
+    let should_show = if let Some(fb) = formatted_caption
+        .filter(|fb| fb.format == MessageFormat::Html && !fb.body.trim().is_empty())
+    {
+        caption_ref.show_html(cx, &fb.body);
+        true
+    } else if let Some(text) = backup_caption.filter(|c| !c.trim().is_empty()) {
+        caption_ref.show_plaintext(cx, text);
+        true
+    } else {
+        false
+    };
+    caption_view.set_visible(cx, should_show);
 }
 
 /// Like `populate_image_message_content`, but also returns metadata
@@ -4591,9 +4756,13 @@ fn populate_redacted_message_content(
             )
         )) = redacted_msg.deserialize() {
             if let Ok(redacted_because) = redaction.unsigned.redacted_because.deserialize() {
+                let reason = match &redacted_because {
+                    AnyRedactionEvent::RoomRedaction(e) => e.content.reason.clone(),
+                    _ => None,
+                };
                 redactor_id_and_reason = Some((
-                    redacted_because.sender,
-                    redacted_because.content.reason,
+                    redacted_because.sender().to_owned(),
+                    reason,
                 ));
             }
         }
@@ -4647,7 +4816,7 @@ fn populate_redacted_message_content(
 /// i.e., whether it can be considered cached and not needing to be redrawn later.
 fn draw_replied_to_message(
     cx: &mut Cx2d,
-    replied_to_message_view: &ViewRef,
+    replied_to_message_view: &WidgetRef,
     timeline_kind: &TimelineKind,
     in_reply_to: Option<&InReplyToDetails>,
     message_event_id: Option<&EventId>,
@@ -4661,7 +4830,7 @@ fn draw_replied_to_message(
             TimelineDetails::Ready(replied_to_event) => {
                 let (in_reply_to_username, is_avatar_fully_drawn) =
                     replied_to_message_view
-                        .avatar(cx, ids!(replied_to_message_content.reply_preview_avatar))
+                        .avatar(cx, ids!(preview_content.reply_preview_avatar))
                         .set_avatar_and_get_username(
                             cx,
                             timeline_kind,
@@ -4674,7 +4843,7 @@ fn draw_replied_to_message(
                 fully_drawn = is_avatar_fully_drawn;
 
                 replied_to_message_view
-                    .label(cx, ids!(replied_to_message_content.reply_preview_username))
+                    .label(cx, ids!(preview_content.reply_preview_username))
                     .set_text(cx, in_reply_to_username.as_str());
                 let msg_body = replied_to_message_view.html_or_plaintext(cx, ids!(reply_preview_body));
                 populate_preview_of_timeline_item(
@@ -4688,26 +4857,26 @@ fn draw_replied_to_message(
             TimelineDetails::Error(_e) => {
                 fully_drawn = true;
                 replied_to_message_view
-                    .label(cx, ids!(replied_to_message_content.reply_preview_username))
+                    .label(cx, ids!(preview_content.reply_preview_username))
                     .set_text(cx, "[Error fetching username]");
                 replied_to_message_view
-                    .avatar(cx, ids!(replied_to_message_content.reply_preview_avatar))
+                    .avatar(cx, ids!(preview_content.reply_preview_avatar))
                     .show_text(cx, None, None, "?");
                 replied_to_message_view
-                    .html_or_plaintext(cx, ids!(replied_to_message_content.reply_preview_body))
+                    .html_or_plaintext(cx, ids!(preview_content.reply_preview_body))
                     .show_plaintext(cx, "[Error fetching replied-to event]");
             }
             td @ TimelineDetails::Pending | td @ TimelineDetails::Unavailable => {
                 // We don't have the replied-to message yet, so we can't fully draw the preview.
                 fully_drawn = false;
                 replied_to_message_view
-                    .label(cx, ids!(replied_to_message_content.reply_preview_username))
+                    .label(cx, ids!(preview_content.reply_preview_username))
                     .set_text(cx, "[Loading username...]");
                 replied_to_message_view
-                    .avatar(cx, ids!(replied_to_message_content.reply_preview_avatar))
+                    .avatar(cx, ids!(preview_content.reply_preview_avatar))
                     .show_text(cx, None, None, "?");
                 replied_to_message_view
-                    .html_or_plaintext(cx, ids!(replied_to_message_content.reply_preview_body))
+                    .html_or_plaintext(cx, ids!(preview_content.reply_preview_body))
                     .show_plaintext(cx, "[Loading replied-to message...]");
 
                 // Confusingly, we need to fetch the details of the `message` (the event that is the reply),
@@ -4729,6 +4898,9 @@ fn draw_replied_to_message(
     }
 
     replied_to_message_view.set_visible(cx, show_reply);
+    // After we changed a reply preview's content, we need to clear its cached view and measured height.
+    replied_to_message_view.view(cx, ids!(preview_content)).redraw_texture_cache();
+    replied_to_message_view.as_collapsible_preview().reset_measured_height();
     fully_drawn
 }
 
@@ -5179,6 +5351,9 @@ pub enum MessageAction {
     },
     /// The user clicked the "reply" button on a message.
     Reply(MessageDetails),
+    /// The user clicked the "reply in thread" button on a message, indicating
+    /// they want to open (or start) that message's thread and reply within it.
+    ReplyInThread(MessageDetails),
     /// The user clicked the "edit" button on a message.
     Edit(MessageDetails),
     /// The user requested to edit their latest message in this room.
@@ -5199,6 +5374,8 @@ pub enum MessageAction {
     /// indicating that they want to auto-scroll back to the related message,
     /// e.g., a replied-to message.
     JumpToRelated(MessageDetails),
+    /// The user clicked the "Show more" or "Show less" button on a tall reply preview.
+    ToggleReplyPreviewExpanded(TimelineEventItemId),
     /// The user clicked the thread summary on a thread-root message.
     OpenThread(OwnedEventId),
     /// The user requested to jump to a specific event in this room.
@@ -5215,6 +5392,8 @@ pub enum MessageAction {
 
     /// The user clicked the "Download" button on a media/file message.
     DownloadAttachment(DownloadableAttachment),
+    /// The user clicked the "Share" button on a media/file message.
+    ShareAttachment(DownloadableAttachment),
     /// User clicked the cancel × next to the in-progress spinner.
     CancelDownload(OwnedMxcUri),
     /// The message at the given item index in the timeline should be highlighted.
@@ -5265,7 +5444,7 @@ pub struct Message {
     /// Fixed template children hit-tested in every event pass, resolved once.
     /// Per-event resolution walks this message's whole subtree whenever the
     /// widget tree's path cache is cold.
-    #[rust] replied_to_message_view: Option<ViewRef>,
+    #[rust] replied_to_message_view: Option<CollapsiblePreviewRef>,
     #[rust] thread_root_summary_view: Option<ViewRef>,
 }
 
@@ -5295,8 +5474,15 @@ impl Widget for Message {
         // We first handle a click on the replied-to message preview, if present,
         // because we don't want any widgets within the replied-to message to be
         // clickable or otherwise interactive.
-        let replied_to_message_area = self.replied_to_message_view(cx).area();
-        match event.hits(cx, replied_to_message_area) {
+        let reply = self.replied_to_message_view(cx);
+        let reply_content_area = reply.content_area(cx);
+        match event.hits(cx, reply_content_area) {
+            Hit::FingerHoverIn(..) => {
+                self.animator_play(cx, ids!(hover.on));
+            }
+            Hit::FingerHoverOut(_fho) => {
+                self.animator_play(cx, ids!(hover.off));
+            }
             Hit::FingerDown(fe) if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) => {
                 cx.widget_action(
                     details.room_screen_widget_uid,
@@ -5308,19 +5494,22 @@ impl Widget for Message {
             }
             Hit::FingerLongPress(lp) => {
                 cx.widget_action(
-                    details.room_screen_widget_uid, 
+                    details.room_screen_widget_uid,
                     MessageAction::OpenMessageContextMenu {
                         details: details.clone(),
                         abs_pos: lp.abs,
                     }
                 );
             }
-            // If the hit occurred on the replied-to message preview, jump to it.
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                cx.widget_action(
-                    details.room_screen_widget_uid, 
-                    MessageAction::JumpToRelated(details.clone()),
-                );
+                // Tapping on a collapsed reply preview expands it.
+                // Tapping on an expanded reply preview jumps to the replied-to message.
+                let action = if reply.is_collapsed() {
+                    MessageAction::ToggleReplyPreviewExpanded(details.timeline_event_id.clone())
+                } else {
+                    MessageAction::JumpToRelated(details.clone())
+                };
+                cx.widget_action(details.room_screen_widget_uid, action);
             }
             _ => { }
         }
@@ -5429,23 +5618,38 @@ impl Widget for Message {
                 }
             }
 
-            // Handle clicks on the "Download" button shown beneath media messages.
-            if let Some(info) = self.download_info.as_ref()
-                && self.view.button(cx, ids!(content.download_section.download_button)).clicked(actions)
-            {
+            // Handle clicks on the reply preview's "show more" or "show less" buttons.
+            let reply_expand_button = self.button(cx, ids!(replied_to_message.reply_expand_button));
+            let reply_collapse_button = self.button(cx, ids!(replied_to_message.reply_collapse_button));
+            if reply_expand_button.clicked(actions) || reply_collapse_button.clicked(actions)             {
                 cx.widget_action(
                     details.room_screen_widget_uid,
-                    MessageAction::DownloadAttachment(info.clone()),
+                    MessageAction::ToggleReplyPreviewExpanded(details.timeline_event_id.clone()),
                 );
+                reply_expand_button.reset_hover(cx);
+                reply_collapse_button.reset_hover(cx);
             }
-            // Cancel × shown next to the in-progress spinner.
-            if let Some(info) = self.download_info.as_ref()
-                && self.view.button(cx, ids!(content.download_section.downloading_view.cancel_button)).clicked(actions)
-            {
-                cx.widget_action(
-                    details.room_screen_widget_uid,
-                    MessageAction::CancelDownload(media_source_mxc(&info.media_source).clone()),
-                );
+
+            // Handle clicks on the media-related buttons (download, share, cancel) beneath media messages.
+            if let Some(info) = self.download_info.as_ref() {
+                if self.view.button(cx, ids!(content.download_section.download_button)).clicked(actions) {
+                    cx.widget_action(
+                        details.room_screen_widget_uid,
+                        MessageAction::DownloadAttachment(info.clone()),
+                    );
+                }
+                if self.view.button(cx, ids!(content.download_section.share_button)).clicked(actions) {
+                    cx.widget_action(
+                        details.room_screen_widget_uid,
+                        MessageAction::ShareAttachment(info.clone()),
+                    );
+                }
+                if self.view.button(cx, ids!(content.download_section.downloading_view.cancel_button)).clicked(actions) {
+                    cx.widget_action(
+                        details.room_screen_widget_uid,
+                        MessageAction::CancelDownload(media_source_mxc(&info.media_source).clone()),
+                    );
+                }
             }
         }
     }
@@ -5465,15 +5669,15 @@ impl Widget for Message {
 }
 
 impl Message {
-    /// Returns the replied-to preview view, resolving and caching it on first
+    /// Returns the replied-to preview, resolving and caching it on first
     /// use (see the `replied_to_message_view` field).
-    fn replied_to_message_view(&mut self, cx: &mut Cx) -> ViewRef {
-        if let Some(view) = &self.replied_to_message_view {
-            return view.clone();
+    fn replied_to_message_view(&mut self, cx: &mut Cx) -> CollapsiblePreviewRef {
+        if let Some(reply) = &self.replied_to_message_view {
+            return reply.clone();
         }
-        let view = self.view(cx, ids!(replied_to_message));
-        self.replied_to_message_view = Some(view.clone());
-        view
+        let reply = self.view.widget(cx, ids!(replied_to_message)).as_collapsible_preview();
+        self.replied_to_message_view = Some(reply.clone());
+        reply
     }
 
     /// Returns the thread-summary view, resolving and caching it on first use
@@ -5495,6 +5699,7 @@ impl Message {
         details: MessageDetails,
         download_info: Option<DownloadableAttachment>,
         download_state: DownloadDisplayState,
+        is_reply_expanded: bool,
     ) {
         let prev_section_visible = self.download_info.is_some();
         let prev_state = self.download_state;
@@ -5502,26 +5707,40 @@ impl Message {
         self.details = Some(details);
         self.download_info = download_info;
 
+        // Re-apply this every time to ensure a re-used portallist item is still correctly expanded.
+        self.view.widget(cx, ids!(replied_to_message)).as_collapsible_preview().set_expanded(is_reply_expanded);
+
         let section_visible = self.download_info.is_some();
         self.view.view(cx, ids!(content.download_section)).set_visible(cx, section_visible);
-        if let Some(info) = self.download_info.as_ref() {
-            let download_button = self.view.button(cx, ids!(content.download_section.download_button));
+        if section_visible {
+            let download_button  = self.view.button(cx, ids!(content.download_section.download_button));
+            let share_button     = self.view.button(cx, ids!(content.download_section.share_button));
             let downloading_view = self.view.view(cx, ids!(content.download_section.downloading_view));
-            let cancel_button = self.view.button(cx, ids!(content.download_section.downloading_view.cancel_button));
-            let success_button = self.view.button(cx, ids!(content.download_section.success_button));
-            let failure_button = self.view.button(cx, ids!(content.download_section.failure_button));
-            download_button.set_text(cx, info.kind.button_text());
-            download_button.set_visible(cx, matches!(download_state, DownloadDisplayState::Idle));
+            let cancel_button    = self.view.button(cx, ids!(content.download_section.downloading_view.cancel_button));
+            let success_button   = self.view.button(cx, ids!(content.download_section.success_button));
+            let failure_button   = self.view.button(cx, ids!(content.download_section.failure_button));
+            let is_idle = matches!(download_state, DownloadDisplayState::Idle);
+            download_button.set_visible(cx, is_idle);
+            share_button.set_visible(cx, is_idle);
             downloading_view.set_visible(cx, matches!(download_state, DownloadDisplayState::InProgress));
-            success_button.set_visible(cx, matches!(download_state, DownloadDisplayState::Succeeded));
+            success_button.set_visible(cx, matches!(download_state, DownloadDisplayState::Succeeded(_)));
             failure_button.set_visible(cx, matches!(download_state, DownloadDisplayState::Failed));
-            // Only reset hover for the button that is just now becoming visible.
+            if let DownloadDisplayState::Succeeded(kind) = download_state {
+                success_button.set_text(cx, match kind {
+                    TransferKind::Download => "Downloaded",
+                    TransferKind::Share => "Shared",
+                });
+            }
+            // Only reset hover for the button(s) just now becoming visible.
             let newly_visible = !prev_section_visible || prev_state != download_state;
             if newly_visible {
                 match download_state {
-                    DownloadDisplayState::Idle => download_button.reset_hover(cx),
+                    DownloadDisplayState::Idle => {
+                        download_button.reset_hover(cx);
+                        share_button.reset_hover(cx);
+                    }
                     DownloadDisplayState::InProgress => cancel_button.reset_hover(cx),
-                    DownloadDisplayState::Succeeded => success_button.reset_hover(cx),
+                    DownloadDisplayState::Succeeded(_) => success_button.reset_hover(cx),
                     DownloadDisplayState::Failed => failure_button.reset_hover(cx),
                 }
             }
@@ -5537,17 +5756,50 @@ impl MessageRef {
         details: MessageDetails,
         download_info: Option<DownloadableAttachment>,
         download_state: DownloadDisplayState,
+        is_reply_expanded: bool,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_data(cx, details, download_info, download_state);
+        inner.set_data(cx, details, download_info, download_state, is_reply_expanded);
     }
 }
 
 /// Clears all UI-related timeline states for all known rooms.
 ///
-/// This function requires passing in a reference to `Cx`,
-/// which isn't used, but acts as a guarantee that this function
-/// must only be called by the main UI thread. 
-pub fn clear_timeline_states(_cx: &mut Cx) {
-    timeline_state_store::clear_all();
+/// Takes `&mut Cx` (unused) to enforce that it's only called from the main UI thread.
+pub fn clear_timeline_states(cx: &mut Cx) {
+    timeline_state_store::clear_all(cx);
+}
+
+/// Invalidates the UI-side cached state for a timeline whose backend was just closed, so the
+/// next show rebuilds it instead of reusing the stale cache.
+///
+/// Takes `&mut Cx` (unused) to enforce that it's only called from the main UI thread.
+pub fn invalidate_timeline_state(cx: &mut Cx, kind: &TimelineKind) {
+    timeline_state_store::invalidate(cx, kind);
+}
+
+/// A pending "Reply In Thread" request to focus a thread's input bar once its RoomScreen is
+/// shown, stored as a `Cx` global so whichever screen ends up showing it can pick it up.
+mod input_bar_focus {
+    use super::*;
+
+    /// The timeline whose RoomScreen should focus its input bar when next shown.
+    #[derive(Default)]
+    struct PendingInputBarFocus(Option<TimelineKind>);
+
+    /// Requests that the RoomScreen showing `kind` focus its input bar once it's shown.
+    pub(super) fn request(cx: &mut Cx, kind: TimelineKind) {
+        cx.global::<PendingInputBarFocus>().0 = Some(kind);
+    }
+
+    /// If a focus request is pending for `kind`, consumes it and returns `true`.
+    pub(super) fn take_if_matches(cx: &mut Cx, kind: &TimelineKind) -> bool {
+        let pending = cx.global::<PendingInputBarFocus>();
+        if pending.0.as_ref() == Some(kind) {
+            pending.0 = None;
+            true
+        } else {
+            false
+        }
+    }
 }

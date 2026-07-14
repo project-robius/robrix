@@ -1,13 +1,12 @@
 //! A `HtmlOrPlaintext` view can display either plaintext or rich HTML content.
 
-use std::sync::Arc;
 
 use makepad_widgets::*;
 use matrix_sdk::{ruma::{matrix_uri::MatrixId, MatrixToUri, MatrixUri, RoomOrAliasId}, OwnedServerName};
 
 use crate::{avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, room_preview_cache::{self, CachedRoomPreview}, sliding_sync::current_user_id, utils};
 
-use super::avatar::{AvatarState, AvatarWidgetExt};
+use super::avatar::{AvatarImage, AvatarState, AvatarWidgetExt};
 
 /// The color of the text used to print the spoiler reason before the hidden text.
 const COLOR_SPOILER_REASON: Vec4 = vec4(0.6, 0.6, 0.6, 1.0);
@@ -500,21 +499,23 @@ impl MatrixLinkPill {
     /// * `false` if there is an image to draw but it hasn't arrived yet.
     fn populate_avatar(&self, cx: &mut Cx, avatar: &AvatarState, display_name: &str) -> bool {
         let avatar_ref = self.avatar(cx, ids!(avatar));
-        let (bytes, can_improve): (Option<Arc<[u8]>>, bool) = match avatar {
-            AvatarState::Loaded(data) => (Some(data.clone()), false),
+        let (image, can_improve): (Option<AvatarImage>, bool) = match avatar {
+            AvatarState::Loaded(image) => (Some(image.clone()), false),
             AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, uri) {
-                AvatarCacheEntry::Loaded(data) => (Some(data), false),
+                AvatarCacheEntry::Loaded(data) => {
+                    (Some(AvatarImage { uri: uri.clone(), data }), false)
+                }
                 AvatarCacheEntry::Failed => (None, false),
                 _ => (None, true),
             },
             AvatarState::Known(None) | AvatarState::Failed => (None, false),
             AvatarState::Unknown => (None, true),
         };
-        if let Some(data) = bytes {
+        if let Some(image) = image {
             let res = avatar_ref.show_image(
                 cx,
                 None, // Don't make this avatar clickable
-                |cx, img_ref| utils::load_image_cached(&img_ref, cx, Arc::clone(&data)),
+                |cx, img_ref| utils::load_avatar_image(&img_ref, cx, &image),
             );
             if res.is_ok() {
                 return true;

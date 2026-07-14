@@ -31,7 +31,6 @@
 //!      SpacesBar content
 //!
 
-use std::sync::Arc;
 use makepad_widgets::*;
 use serde::{Deserialize, Serialize};
 use crate::{
@@ -44,7 +43,7 @@ use crate::{
     },
     settings::app_preferences::{effective_is_desktop, AppPreferencesAction, ViewModeOverride},
     shared::{
-        avatar::{AvatarState, AvatarWidgetExt},
+        avatar::{AvatarImage, AvatarState, AvatarWidgetExt},
         navigation_bar_button::{NavigationBarButton, NavigationBarButtonWidgetExt},
         styles::*,
         verification_badge::VerificationBadgeWidgetExt
@@ -420,11 +419,11 @@ impl Widget for ProfileIcon {
         };
 
         let mut drew_avatar = false;
-        if let Some(avatar_img_data) = own_profile.avatar_state.data() {
+        if let Some(avatar_image) = own_profile.avatar_state.image() {
             drew_avatar = our_own_avatar.show_image(
                 cx,
                 None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
-                |cx, img| utils::load_image(&img, cx, Arc::clone(avatar_img_data)),
+                |cx, img| utils::load_avatar_image(&img, cx, avatar_image),
             ).is_ok();
         }
         if !drew_avatar {
@@ -676,7 +675,7 @@ pub fn get_own_profile(cx: &mut Cx) -> Option<UserProfile> {
         if let Some(Some(avatar_uri)) = avatar_uri_to_fetch {
             if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, &avatar_uri) {
                 if let Some(p) = own_profile.as_mut() {
-                    p.avatar_state = AvatarState::Loaded(data);
+                    p.avatar_state = AvatarState::Loaded(AvatarImage { uri: avatar_uri.clone(), data });
                     // Update the user profile cache with the new avatar data.
                     user_profile_cache::enqueue_user_profile_update(
                         UserProfileUpdate::UserProfileOnly(p.clone())

@@ -14,6 +14,7 @@ use crate::{
         settings_screen::SettingsScreenWidgetRefExt,
     },
     shared::room_filter_input_bar::{MainFilterAction, RoomFilterInputBarWidgetExt},
+    shared::mention_popup::MentionablePopupRef,
 };
 
 script_mod! {
@@ -574,11 +575,11 @@ impl Widget for HomeScreen {
                         self.apply_view_mode(cx, *new_mode);
                         self.view.redraw(cx);
                     }
-                    self.sync_effective_view_mode(cx);
+                    self.sync_effective_view_mode(cx, app_state);
                 }
 
                 if let WindowAction::WindowGeomChange(_) = action.as_widget_action().cast() {
-                    self.sync_effective_view_mode(cx);
+                    self.sync_effective_view_mode(cx, app_state);
                 }
 
                 // Handle room selections. Desktop owns tab creation in MainDesktopUI,
@@ -636,9 +637,9 @@ impl HomeScreen {
         self.applied_view_mode = mode;
     }
 
-    fn sync_effective_view_mode(&mut self, cx: &mut Cx) {
+    fn sync_effective_view_mode(&mut self, cx: &mut Cx, app_state: &mut AppState) {
         let is_desktop = effective_is_desktop(cx);
-        let Some(previous_is_desktop) = self.last_effective_is_desktop.replace(is_desktop) else {
+        let Some(was_desktop) = self.last_effective_is_desktop.replace(is_desktop) else {
             // Mobile mode starts on the rooms list with no room open, so no
             // room should be drawn as selected until one is actually clicked.
             if !is_desktop {
@@ -646,12 +647,30 @@ impl HomeScreen {
             }
             return;
         };
-        if previous_is_desktop != is_desktop {
-            self.clear_mobile_navigation_state(cx);
-            if !is_desktop {
-                // same as above
-                cx.action(AppStateAction::FocusNone);
+        if was_desktop == is_desktop {
+            return;
+        }
+
+        // If we transitioned from mobile --> desktop view mode, the dock will reload the tabs
+        // from its previously-saved state, so we need to free the current selected room now
+        // (if it was a thread timeline), and then also clear any thread timelines in the mobile nav stack.
+        if !was_desktop && is_desktop {
+            if let Some(room) = app_state.selected_room.as_ref() {
+                room.close_thread_timeline(cx);
             }
+        }
+
+        // If the mentionable popup was shown, close it because the whole UI has changed/moved.
+        if cx.has_global::<MentionablePopupRef>() {
+            cx.get_global::<MentionablePopupRef>().clone().cancel(cx);
+        }
+
+        self.clear_mobile_navigation_state(cx);
+
+        // Switching into mobile mode lands on the rooms list, so no room should
+        // be drawn as selected until one is actually clicked.
+        if !is_desktop {
+            cx.action(AppStateAction::FocusNone);
         }
     }
 
@@ -750,6 +769,12 @@ impl HomeScreen {
     }
 
     fn clear_mobile_navigation_state(&mut self, cx: &mut Cx) {
+        // When switching from mobile --> desktop view mode, we discard the nav stack,
+        // and thus we need to free & destroy any thread timelines in it.
+        // Note that freeing the current room is handled in `sync_effective_view_mode`.
+        for room in &self.mobile_screen_history {
+            room.close_thread_timeline(cx);
+        }
         self.mobile_screen_history.clear();
 
         let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
@@ -823,14 +848,18 @@ impl HomeScreen {
         match self.mobile_screen_history.pop() {
             Some(previous) => {
                 let Some(view_id) = self.populate_mobile_stack_view(cx, &stack_nav, &previous) else {
+                    // Nav failed; current_screen is restored, so don't free it.
                     app_state.selected_room = Some(current_screen);
                     self.mobile_screen_history.push(previous);
                     return;
                 };
+                // current_screen is gone for good — free its thread timeline if it is one.
+                current_screen.close_thread_timeline(cx);
                 app_state.selected_room = Some(previous);
                 stack_nav.pop_to_view(cx, view_id);
             }
             None => {
+                current_screen.close_thread_timeline(cx);
                 app_state.selected_room = None;
                 stack_nav.pop_to_root(cx);
             }

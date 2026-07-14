@@ -8,7 +8,6 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::sync::Arc;
 use imbl::Vector;
 use makepad_widgets::*;
 use makepad_widgets::animator::Animate;
@@ -16,7 +15,7 @@ use matrix_sdk::{RoomDisplayName, RoomState, ruma::OwnedRoomId};
 use matrix_sdk_ui::spaces::SpaceRoom;
 use ruma::{OwnedRoomAliasId, room::JoinRuleSummary};
 use tokio::sync::mpsc::UnboundedSender;
-use crate::shared::avatar::AvatarState;
+use crate::shared::avatar::{AvatarImage, AvatarState};
 use crate::shared::expand_arrow::ExpandArrow;
 use crate::utils::replace_linebreaks_separators;
 /// The horizontal indent width (in pixels) per tree level.
@@ -1158,11 +1157,11 @@ impl Widget for SpaceLobbyScreen {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // Draw parent avatar from the SpaceRoom's avatar URL, or show initials.
         let parent_avatar_ref = self.view.avatar(cx, ids!(parent_avatar));
-        if self.space_avatar_state.update_from_cache(cx).is_none_or(|data| {
+        if self.space_avatar_state.update_from_cache(cx).is_none_or(|image| {
             parent_avatar_ref.show_image(
                 cx,
                 None,
-                |cx, img| utils::load_image(&img, cx, Arc::clone(data)),
+                |cx, img| utils::load_avatar_image(&img, cx, image),
             ).is_err()
         }) {
             let first_char = self.space_name_id.as_ref().and_then(|sni| sni.name_for_avatar())
@@ -1270,22 +1269,23 @@ impl Widget for SpaceLobbyScreen {
                             let mut drew_avatar = false;
 
                             match &info.avatar {
-                                AvatarState::Loaded(data) => {
+                                AvatarState::Loaded(image) => {
                                     drew_avatar = avatar_ref.show_image(
                                         cx,
                                         None,
-                                        |cx, img| utils::load_image(&img, cx, Arc::clone(data)),
+                                        |cx, img| utils::load_avatar_image(&img, cx, image),
                                     ).is_ok();
                                 }
                                 AvatarState::Known(Some(uri)) => {
                                     match avatar_cache::get_or_fetch_avatar(cx, uri) {
                                         AvatarCacheEntry::Loaded(data) => {
+                                            let image = AvatarImage { uri: uri.clone(), data };
                                             drew_avatar = avatar_ref.show_image(
                                                 cx,
                                                 None,
-                                                |cx, img| utils::load_image(&img, cx, Arc::clone(&data)),
+                                                |cx, img| utils::load_avatar_image(&img, cx, &image),
                                             ).is_ok();
-                                            info.avatar = AvatarState::Loaded(data);
+                                            info.avatar = AvatarState::Loaded(image);
                                         }
                                         AvatarCacheEntry::Failed => {
                                             info.avatar = AvatarState::Failed;

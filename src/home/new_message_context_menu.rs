@@ -116,6 +116,12 @@ script_mod! {
                 text: "Reply"
             }
 
+            reply_in_thread_button := mod.widgets.NewMessageContextMenuButton {
+                draw_icon +: { svg: (ICON_REPLY_IN_THREAD) }
+                icon_walk +: { margin: Inset{top: 1, right: 3}}
+                text: "Reply In Thread"
+            }
+
             divider_after_react_reply := LineH {
                 margin: Inset{top: 3, bottom: 3}
                 width: Fill,
@@ -226,6 +232,9 @@ bitflags! {
         const CanDelete = 1 << 5;
         /// Whether this message contains HTML content that the user can copy.
         const HasHtml = 1 << 6;
+        /// Whether the user can reply to this message in a separate thread.
+        /// This is false when already viewing a thread timeline.
+        const CanReplyInThread = 1 << 7;
     }
 }
 impl MessageAbilities {
@@ -235,6 +244,7 @@ impl MessageAbilities {
         _message: &MsgLikeContent,
         pinned_events: &[OwnedEventId],
         has_html: bool,
+        is_thread_timeline: bool,
     ) -> Self {
         let mut abilities = Self::empty();
         abilities.set(Self::CanEdit, event_tl_item.is_editable());
@@ -242,7 +252,10 @@ impl MessageAbilities {
         if event_tl_item.is_own() {
             abilities.set(Self::CanDelete, user_power_levels.can_redact_own());
         }
-        abilities.set(Self::CanReplyTo, event_tl_item.can_be_replied_to());
+        let can_reply_to = event_tl_item.can_be_replied_to();
+        abilities.set(Self::CanReplyTo, can_reply_to);
+        // No point offering "reply in thread" from within a thread, since the message is already in one.
+        abilities.set(Self::CanReplyInThread, can_reply_to && !is_thread_timeline);
         if let Some(event_id) = event_tl_item.event_id() && user_power_levels.can_pin() {
             if pinned_events.iter().any(|ev| ev == event_id) {
                 abilities.set(Self::CanUnpin, true);
@@ -385,6 +398,13 @@ impl WidgetMatchEvent for NewMessageContextMenu {
             );
             close_menu = true;
         }
+        else if self.button(cx, ids!(reply_in_thread_button)).clicked(actions) {
+            cx.widget_action(
+                details.room_screen_widget_uid,
+                MessageAction::ReplyInThread(details.clone()),
+            );
+            close_menu = true;
+        }
         else if self.button(cx, ids!(edit_message_button)).clicked(actions) {
             cx.widget_action(
                 details.room_screen_widget_uid, 
@@ -500,6 +520,7 @@ impl NewMessageContextMenu {
 
         let react_button = self.view.button(cx, ids!(react_button));
         let reply_button = self.view.button(cx, ids!(reply_button));
+        let reply_in_thread_button = self.view.button(cx, ids!(reply_in_thread_button));
         let edit_button = self.view.button(cx, ids!(edit_message_button));
         let pin_button = self.view.button(cx, ids!(pin_button));
         let copy_text_button = self.view.button(cx, ids!(copy_text_button));
@@ -515,6 +536,7 @@ impl NewMessageContextMenu {
         // `copy_text_button`, `copy_link_to_message_button`, and `view_source_button`
         let show_react = details.abilities.contains(MessageAbilities::CanReact);
         let show_reply_to = details.abilities.contains(MessageAbilities::CanReplyTo);
+        let show_reply_in_thread = details.abilities.contains(MessageAbilities::CanReplyInThread);
         let show_divider_after_react_reply = show_react || show_reply_to;
         let show_edit = details.abilities.contains(MessageAbilities::CanEdit);
         let show_pin: bool;
@@ -531,6 +553,7 @@ impl NewMessageContextMenu {
         self.view.view(cx, ids!(react_view)).set_visible(cx, show_react);
         react_button.set_visible(cx, show_react);
         reply_button.set_visible(cx, show_reply_to);
+        reply_in_thread_button.set_visible(cx, show_reply_in_thread);
         self.view.view(cx, ids!(divider_after_react_reply)).set_visible(cx, show_divider_after_react_reply);
         edit_button.set_visible(cx, show_edit);
         if details.abilities.contains(MessageAbilities::CanPin) {
@@ -552,6 +575,7 @@ impl NewMessageContextMenu {
         // Reset the hover state of each button.
         react_button.reset_hover(cx);
         reply_button.reset_hover(cx);
+        reply_in_thread_button.reset_hover(cx);
         edit_button.reset_hover(cx);
         pin_button.reset_hover(cx);
         copy_text_button.reset_hover(cx);
@@ -571,6 +595,7 @@ impl NewMessageContextMenu {
         let num_visible_buttons =
             show_react as u8
             + show_reply_to as u8
+            + show_reply_in_thread as u8
             + show_edit as u8
             + show_pin as u8
             + show_copy_text as u8

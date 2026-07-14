@@ -94,7 +94,7 @@ impl TypingNotice {
             [user1, user2] => format!("{user1} and {user2} are typing "),
             [user1, user2, others @ ..] => {
                 if others.len() > 1 {
-                    format!("{user1}, {user2}, and {} are typing ", &others[0])
+                    format!("{user1}, {user2}, and {} are typing ", others[0])
                 } else {
                     format!(
                         "{user1}, {user2}, and {} others are typing ",
