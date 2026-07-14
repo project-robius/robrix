@@ -577,8 +577,8 @@ script_mod! {
         // The hierarchical tree list
         tree_list := PortalList {
             keep_invisible: false,
-            bounce_at_start: false,
-            bounce_at_end: false,
+            bounce_at_start: true,
+            bounce_at_end: true,
             // Nothing here listens for scroll position changes.
             emit_scroll_actions: false,
             auto_tail: false,

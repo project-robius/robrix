@@ -1614,8 +1614,15 @@ impl RoomScreen {
                     if clear_cache {
                         tl.content_drawn_since_last_update.clear();
                         tl.profile_drawn_since_last_update.clear();
+                        let has_more_history = !tl.fully_paginated;
                         tl.fully_paginated = false;
                         tl.is_paginating = false;
+                        // If the top of the timeline is still visible after getting new items,
+                        // go ahead and proactively fetch more items proactively so that
+                        // the user doesn't have to do some kind of annoying scroll-up gesture again.
+                        if has_more_history && portal_list.first_id() <= 2 {
+                            should_continue_backwards_pagination = true;
+                        }
                     } else {
                         tl.content_drawn_since_last_update.remove(changed_indices.clone());
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
@@ -1697,6 +1704,9 @@ impl RoomScreen {
                         Some(10.0),
                     );
                     tl.is_paginating = false;
+                    // We could automatically retry here after a failure, but it's not
+                    // really that valuable when the user can just try to scroll again.
+                    tl.pending_reached_start = false;
                     done_loading = true;
                 }
                 TimelineUpdate::PaginationIdle { fully_paginated, direction } => {
@@ -1706,17 +1716,11 @@ impl RoomScreen {
                         tl.fully_paginated = fully_paginated;
                         tl.is_paginating = false;
                         if fully_paginated {
+                            tl.pending_reached_start = false;
                             done_loading = true;
-                        } else if portal_list.first_id() <= 2 {
-                            // There's more history to load and the top of the timeline
-                            // is still on screen (2 matches `reached_start_margin` in
-                            // the DSL above), so request the next page right away.
-                            tl.is_paginating = true;
-                            submit_async_request(MatrixRequest::PaginateTimeline {
-                                timeline_kind: tl.kind.clone(),
-                                num_events: 50,
-                                direction: PaginationDirection::Backwards,
-                            });
+                        } else if tl.pending_reached_start || portal_list.first_id() <= 2 {
+                            tl.pending_reached_start = false;
+                            should_continue_backwards_pagination = true;
                         }
                     } else {
                         error!("Unexpected PaginationIdle update in the Forwards direction");
@@ -2570,6 +2574,7 @@ impl RoomScreen {
                     pending_thread_summary_fetches: HashSet::new(),
                     saved_state: SavedState::default(),
                     message_highlight_animation_state: MessageHighlightAnimationState::default(),
+                    pending_reached_start: false,
                     prev_first_index: None,
                     scrolled_past_read_marker: false,
                     latest_own_user_receipt: None,
@@ -2791,7 +2796,11 @@ impl RoomScreen {
 
         // If this timeline is already displayed, we don't need to do anything major,
         // but we do need update the `room_name_id` in case it has changed, or it has been cleared.
-        if self.timeline_kind.as_ref().is_some_and(|kind| kind == &timeline_kind) {
+        // The timeline state must actually be present, though: if a previous
+        // `show_timeline` failed (e.g. the state was still owned by another screen),
+        // `timeline_kind` is set but `tl_state` is None and this screen draws nothing,
+        // so re-selecting the room must fall through and retry rather than no-op.
+        if self.tl_state.is_some() && self.timeline_kind.as_ref().is_some_and(|k| k == &timeline_kind) {
             self.room_name_id = Some(room_name_id.clone());
             return;
         }
@@ -2923,8 +2932,7 @@ impl RoomScreen {
         refs
     }
 
-    /// Sends a backwards pagination request when the start of the timeline
-    /// comes into view (within the list's `reached_start_margin` items).
+    /// Sends a backwards pagination request if the first item(s) in the timeline are visible.
     fn send_pagination_request_on_reached_start(
         &mut self,
         _cx: &mut Cx,
@@ -2932,12 +2940,14 @@ impl RoomScreen {
         portal_list: &PortalListRef,
     ) {
         let Some(tl) = self.tl_state.as_mut() else { return };
-        if tl.fully_paginated || tl.is_paginating { return };
         if !portal_list.reached_start(actions) { return };
+        if tl.fully_paginated { return };
+        if tl.is_paginating {
+            tl.pending_reached_start = true;
+            return;
+        }
 
-        log!("Timeline start came into view, sending back pagination request for room {}",
-            tl.kind,
-        );
+        log!("Timeline hit first item, sending back pagination request for room {}", tl.kind);
         tl.is_paginating = true;
         submit_async_request(MatrixRequest::PaginateTimeline {
             timeline_kind: tl.kind.clone(),
@@ -3318,6 +3328,10 @@ struct TimelineUiState {
     /// Once the scrolling is started, the state becomes Pending.
     /// If the animation was triggered, the state goes back to Off.
     message_highlight_animation_state: MessageHighlightAnimationState,
+
+    /// Whether the first item(s) in the timeline became visible while an existing
+    /// pagination request was already in flight.
+    pending_reached_start: bool,
 
     /// The index of the first item shown in the timeline's PortalList from *before* the last "jump".
     ///

@@ -1,7 +1,7 @@
 
 use makepad_widgets::*;
 
-use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, profile::user_profile::UserProfile, settings::{PopulateMode, account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt}};
+use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, SelectedTab, get_own_profile}, profile::user_profile::UserProfile, settings::{PopulateMode, account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -112,14 +112,17 @@ impl Widget for SettingsScreen {
         // 1. The close button is clicked,
         // 2. The back navigational gesture/action occurs (e.g., Back on Android),
         // 3. The escape key is pressed if this pane has key focus,
-        // 4. The back mouse button is clicked within this view.
+        // 4. The back mouse button is clicked while this settings view is actively shown.
         let area = self.view.area();
         let close_pane = {
             matches!(
                 event,
                 Event::Actions(actions) if self.button(cx, ids!(close_button)).clicked(actions)
             )
-            || event.back_pressed()
+            || (
+                scope.data.get::<AppState>().is_some_and(|a| a.selected_tab == SelectedTab::Settings)
+                && event.back_pressed()
+            )
             || match event.hits(cx, area) {
                 Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
                 Hit::FingerDown(_fde) => {

@@ -757,6 +757,8 @@ impl HomeScreen {
             let stack_navigation_view = stack_navigation.view_by_id(cx, view_id);
             Self::hide_displayed_stack_screen(cx, &stack_navigation_view);
         }
+        // Also go back to the root stack view to ensure no old roomscreens persist.
+        stack_navigation.pop_to_root(cx);
     }
 
     fn hide_displayed_stack_screen(cx: &mut Cx, stack_navigation_view: &WidgetRef) {
@@ -813,6 +815,7 @@ impl HomeScreen {
             return;
         }
         let Some(current_screen) = app_state.selected_room.take() else {
+            self.mobile_screen_history.clear();
             return;
         };
         match self.mobile_screen_history.pop() {
