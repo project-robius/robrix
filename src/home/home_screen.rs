@@ -640,6 +640,11 @@ impl HomeScreen {
     fn sync_effective_view_mode(&mut self, cx: &mut Cx, app_state: &mut AppState) {
         let is_desktop = effective_is_desktop(cx);
         let Some(was_desktop) = self.last_effective_is_desktop.replace(is_desktop) else {
+            // Mobile mode starts on the rooms list with no room open, so no
+            // room should be drawn as selected until one is actually clicked.
+            if !is_desktop {
+                cx.action(AppStateAction::FocusNone);
+            }
             return;
         };
         if was_desktop == is_desktop {
@@ -661,6 +666,12 @@ impl HomeScreen {
         }
 
         self.clear_mobile_navigation_state(cx);
+
+        // Switching into mobile mode lands on the rooms list, so no room should
+        // be drawn as selected until one is actually clicked.
+        if !is_desktop {
+            cx.action(AppStateAction::FocusNone);
+        }
     }
 
     fn update_active_page_from_selection(
@@ -771,6 +782,8 @@ impl HomeScreen {
             let stack_navigation_view = stack_navigation.view_by_id(cx, view_id);
             Self::hide_displayed_stack_screen(cx, &stack_navigation_view);
         }
+        // Also go back to the root stack view to ensure no old roomscreens persist.
+        stack_navigation.pop_to_root(cx);
     }
 
     fn hide_displayed_stack_screen(cx: &mut Cx, stack_navigation_view: &WidgetRef) {
@@ -827,6 +840,9 @@ impl HomeScreen {
             return;
         }
         let Some(current_screen) = app_state.selected_room.take() else {
+            // If we didn't have a current screen, something's buggy,
+            // so the safest option is to clear the mobile stack and start over. nbd.
+            self.mobile_screen_history.clear();
             return;
         };
         match self.mobile_screen_history.pop() {

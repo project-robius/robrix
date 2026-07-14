@@ -34,6 +34,7 @@ use crate::{
         room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn},
     },
     shared::{
+        avatar::AvatarImage,
         collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory},
         jump_to_bottom_button::UnreadMessageCount,
         popup_list::{PopupKind, enqueue_popup_notification},
@@ -120,6 +121,8 @@ script_mod! {
 
         list := PortalList {
             keep_invisible: false,
+            // Nothing here listens for scroll position changes.
+            emit_scroll_actions: false,
             auto_tail: false,
             width: Fill, height: Fill
             flow: Down,
@@ -337,7 +340,7 @@ pub struct InvitedRoomInfo {
 pub struct InviterInfo {
     pub user_id: OwnedUserId,
     pub display_name: Option<String>,
-    pub avatar: Option<Arc<[u8]>>,
+    pub avatar: Option<AvatarImage>,
 }
 impl std::fmt::Debug for InviterInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1184,12 +1187,8 @@ impl Widget for RoomsList {
 
         // First, we handle any actions that came from widgets within the room list,
         // e.g., the user clicking on a RoomsListEntry to select a room.
-        // We use Scope `props` to pass down the current scrolling state of the PortalList.
-        let props = RoomsListScopeProps {
-            was_scrolling: self.view.portal_list(cx, ids!(list)).was_scrolling(),
-        };
         let rooms_list_actions = cx.capture_actions(
-            |cx| self.view.handle_event(cx, event, &mut Scope::with_props(&props))
+            |cx| self.view.handle_event(cx, event, &mut Scope::empty())
         );
         for action in rooms_list_actions {
             // Handle a regular room (joined or invited) being clicked.
@@ -1636,11 +1635,6 @@ impl RoomsListRef {
     }
 }
 
-pub struct RoomsListScopeProps {
-    /// Whether the RoomsList's inner PortalList was scrolling
-    /// when the latest finger down event occurred.
-    pub was_scrolling: bool,
-}
 
 /// The set of indexes for each room category in the the RoomsList's PortalList.
 ///

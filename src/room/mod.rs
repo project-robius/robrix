@@ -5,6 +5,7 @@ use makepad_widgets::ScriptVm;
 use matrix_sdk::{RoomDisplayName, RoomHero, RoomState, SuccessorRoom, room_preview::RoomPreview};
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::{JoinRuleSummary, RoomType}};
 
+use crate::shared::avatar::AvatarImage;
 use crate::utils::RoomNameId;
 
 pub mod reply_preview;
@@ -159,11 +160,16 @@ static EMPTY_AVATAR: FetchedRoomAvatar = FetchedRoomAvatar::Text(String::new());
 #[derive(Clone)]
 pub enum FetchedRoomAvatar {
     Text(String),
-    Image(Arc<[u8]>),
+    Image(AvatarImage),
 }
 impl Default for FetchedRoomAvatar {
     fn default() -> Self {
         FetchedRoomAvatar::Text(String::from("?"))
+    }
+}
+impl From<AvatarImage> for FetchedRoomAvatar {
+    fn from(image: AvatarImage) -> Self {
+        FetchedRoomAvatar::Image(image)
     }
 }
 impl std::fmt::Debug for FetchedRoomAvatar {
@@ -174,3 +180,15 @@ impl std::fmt::Debug for FetchedRoomAvatar {
         }
     }
 }
+impl PartialEq for FetchedRoomAvatar {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (FetchedRoomAvatar::Text(t1), FetchedRoomAvatar::Text(t2)) => t1 == t2,
+            (FetchedRoomAvatar::Image(i1), FetchedRoomAvatar::Image(i2)) => {
+                Arc::ptr_eq(&i1.data, &i2.data)
+            }
+            _ => false,
+        }
+    }
+}
+impl Eq for FetchedRoomAvatar { }

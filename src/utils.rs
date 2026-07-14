@@ -4,12 +4,13 @@ use url::Url;
 
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
-use makepad_widgets::{Cx, Event, ImageRef, image_cache::ImageError};
+use makepad_widgets::{Cx, Event, ImageRef, image_cache::{looks_like_svg, ImageError}};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, RoomId}, RoomDisplayName};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
 use crate::{
     room::FetchedRoomAvatar,
+    shared::avatar::AvatarImage,
     sliding_sync::{submit_async_request, MatrixRequest, TimelineKind},
 };
 
@@ -106,12 +107,32 @@ pub fn is_supported_image_mimetype(mimetype: &str) -> bool {
     )
 }
 
-/// Loads the given image `data` into the given `ImageRef`, auto-detecting any
-/// image format that makepad supports (PNG, JPEG, GIF, WebP, BMP, ICO, QOI).
-///
-/// Returns an error if the format is unsupported or decoding fails.
-pub fn load_image(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), ImageError> {
-    img.load_image_from_data(cx, data)
+/// Loads the given fetched avatar into the given `ImageRef`.
+pub fn load_avatar_image(
+    img: &ImageRef,
+    cx: &mut Cx,
+    avatar: &AvatarImage,
+) -> Result<(), ImageError> {
+    load_image_with_cache_key(
+        img,
+        cx,
+        std::path::Path::new(avatar.uri.as_str()),
+        std::sync::Arc::clone(&avatar.data),
+    )
+}
+
+/// Loads the encoded image `data` into the given `ImageRef`,
+/// auto-detecting and handling any image format that makepad supports.
+pub fn load_image_with_cache_key(
+    img: &ImageRef,
+    cx: &mut Cx,
+    cache_key: &std::path::Path,
+    data: std::sync::Arc<[u8]>,
+) -> Result<(), ImageError> {
+    if looks_like_svg(&data) {
+        return img.load_svg_from_shared_data(cx, data);
+    }
+    img.load_image_from_data_async(cx, cache_key, data)
 }
 
 
@@ -645,8 +666,10 @@ impl From<MediaThumbnailSettingsConst> for MediaThumbnailSettings {
 pub const AVATAR_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
     MediaThumbnailSettingsConst {
         method: Method::Scale,
-        width: 40,
-        height: 40,
+        // while we typically show avatars at around 40x40,
+        // fetching a higher quality one is needed for good downscaling.
+        width: 192,
+        height: 192,
         animated: false,
     }
 );

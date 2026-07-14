@@ -30,9 +30,9 @@ use crate::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
-    room::{BasicRoomDetails, reply_preview::CollapsiblePreviewWidgetRefExt, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
+    room::{BasicRoomDetails, reply_preview::{CollapsiblePreviewRef, CollapsiblePreviewWidgetRefExt}, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageStatus, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageStatus, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints}, utils::{self, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -634,6 +634,7 @@ script_mod! {
         height: Fill,
         align: Align{x: 0.5, y: 0.0} // center horizontally, align to top vertically
         flow: Overlay,
+        new_batch: true
 
         list := PortalList {
             height: Fill,
@@ -641,7 +642,13 @@ script_mod! {
             flow: Down
 
             auto_tail: true, // set to `true` to lock the view to the last item.
-            max_pull_down: 0.0, // set to `0.0` to disable the pulldown bounce animation.
+            // only bounce at the end, not the start because that triggers back pagination.
+            bounce_at_start: false,
+            bounce_at_end: true,
+            // Read-receipt logic listens for scroll position changes.
+            emit_scroll_actions: true,
+            // Prefetch older history shortly before the user actually hits the top.
+            reached_start_margin: 2,
             // TODO: enable `reuse_items: true` once Makepad's Html/TextFlow widget
             //   properly resets all internal state during `script_apply(Reload)`.
             //   Currently, stale TextFlow layout state (particularly related to
@@ -759,6 +766,16 @@ pub struct RoomScreen {
     #[rust] relayout_redraws_left: u8,
     #[rust] relayout_last_first_id: usize,
     #[rust] relayout_last_scroll: f64,
+    #[rust] cached_refs: Option<RoomScreenWidgetRefs>,
+}
+
+/// Cached references to RoomScreen child widgets used in every event handler.
+#[derive(Clone)]
+struct RoomScreenWidgetRefs {
+    portal_list: PortalListRef,
+    user_profile_sliding_pane: UserProfileSlidingPaneRef,
+    loading_pane: LoadingPaneRef,
+    room_input_popup_menu: RoomInputPopupMenuRef,
 }
 
 impl Drop for RoomScreen {
@@ -774,6 +791,8 @@ impl Drop for RoomScreen {
 
 impl ScriptHook for RoomScreen {
     fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        // A script reload changes the RoomScreen's children; invalidate the ones we cached.
+        self.cached_refs = None;
         vm.with_cx_mut(|cx| {
             if let Some(tl_state) = &mut self.tl_state.as_mut() {
                 // Clear the timeline's drawn items caches and redraw it.
@@ -794,10 +813,12 @@ impl Widget for RoomScreen {
         }
 
         let room_screen_widget_uid = self.widget_uid();
-        let portal_list = self.portal_list(cx, ids!(timeline.list));
-        let user_profile_sliding_pane = self.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane));
-        let loading_pane = self.loading_pane(cx, ids!(loading_pane));
-        let room_input_popup_menu = self.room_input_popup_menu(cx, ids!(room_input_popup_menu));
+        let RoomScreenWidgetRefs {
+            portal_list,
+            user_profile_sliding_pane,
+            loading_pane,
+            room_input_popup_menu,
+        } = self.cached_widget_refs(cx);
 
         // Handle actions here before processing timeline updates.
         // Normally (in most other widgets), the order of event handling doesn't matter much.
@@ -994,8 +1015,8 @@ impl Widget for RoomScreen {
             }
             */
 
-            // Set visibility of loading message banner based of pagination logic
-            self.send_pagination_request_based_on_scroll_pos(cx, actions, &portal_list);
+            // Back paginate the timeline when the start of the timeline comes into view.
+            self.send_pagination_request_on_reached_start(cx, actions, &portal_list);
             // Handle sending any read receipts for the current logged-in user.
             self.send_user_read_receipts_based_on_scroll_pos(cx, actions, &portal_list);
 
@@ -1379,8 +1400,12 @@ impl Widget for RoomScreen {
 
             // If the list is not filling the viewport, we need to back paginate the timeline
             // until we have enough events items to fill the viewport.
-            if !tl_state.fully_paginated && !list.is_filling_viewport() {
+            if !tl_state.fully_paginated
+                && !tl_state.is_paginating
+                && !list.is_filling_viewport()
+            {
                 log!("Automatically paginating timeline to fill viewport for room {:?}", self.room_name_id);
+                tl_state.is_paginating = true;
                 submit_async_request(MatrixRequest::PaginateTimeline {
                     timeline_kind: tl_state.kind.clone(),
                     num_events: 50,
@@ -1489,7 +1514,9 @@ impl RoomScreen {
                 TimelineUpdate::FirstUpdate { initial_items } => {
                     tl.content_drawn_since_last_update.clear();
                     tl.profile_drawn_since_last_update.clear();
+                    // Upon first showing a timeline, assume it's not fully paginated nor currently paginating.
                     tl.fully_paginated = false;
+                    tl.is_paginating = false;
                     // Set the portal list to the very bottom of the timeline.
                     portal_list.set_first_id_and_scroll(initial_items.len().saturating_sub(1), 0.0);
                     portal_list.set_tail_range(true);
@@ -1607,7 +1634,15 @@ impl RoomScreen {
                     if clear_cache {
                         tl.content_drawn_since_last_update.clear();
                         tl.profile_drawn_since_last_update.clear();
+                        let has_more_history = !tl.fully_paginated;
                         tl.fully_paginated = false;
+                        tl.is_paginating = false;
+                        // If the top of the timeline is still visible after getting new items,
+                        // go ahead and fetch more items proactively so that the user
+                        // doesn't have to do some kind of annoying scroll-up gesture again.
+                        if has_more_history && portal_list.first_id() <= 2 {
+                            should_continue_backwards_pagination = true;
+                        }
                     } else {
                         tl.content_drawn_since_last_update.remove(changed_indices.clone());
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
@@ -1673,6 +1708,7 @@ impl RoomScreen {
                 }
                 TimelineUpdate::PaginationRunning(direction) => {
                     if direction == PaginationDirection::Backwards {
+                        tl.is_paginating = true;
                         top_space.set_visible(cx, true);
                         done_loading = false;
                     } else {
@@ -1687,6 +1723,10 @@ impl RoomScreen {
                         PopupKind::Error,
                         Some(10.0),
                     );
+                    tl.is_paginating = false;
+                    // We could automatically retry here after a failure, but it's not
+                    // really that valuable when the user can just try to scroll again.
+                    tl.pending_reached_start = false;
                     done_loading = true;
                 }
                 TimelineUpdate::PaginationIdle { fully_paginated, direction } => {
@@ -1694,8 +1734,13 @@ impl RoomScreen {
                         // Don't set `done_loading` to `true` here, because we want to keep the top space visible
                         // (with the "loading" message) until the corresponding `NewItems` update is received.
                         tl.fully_paginated = fully_paginated;
+                        tl.is_paginating = false;
                         if fully_paginated {
+                            tl.pending_reached_start = false;
                             done_loading = true;
+                        } else if tl.pending_reached_start || portal_list.first_id() <= 2 {
+                            tl.pending_reached_start = false;
+                            should_continue_backwards_pagination = true;
                         }
                     } else {
                         error!("Unexpected PaginationIdle update in the Forwards direction");
@@ -1851,6 +1896,7 @@ impl RoomScreen {
         }
 
         if should_continue_backwards_pagination {
+            tl.is_paginating = true;
             submit_async_request(MatrixRequest::PaginateTimeline {
                 timeline_kind: tl.kind.clone(),
                 num_events: 50,
@@ -2601,6 +2647,7 @@ impl RoomScreen {
                     room_members: None,
                     // We assume timelines being viewed for the first time haven't been fully paginated.
                     fully_paginated: false,
+                    is_paginating: false,
                     items: Vector::new(),
                     content_drawn_since_last_update: RangeSet::new(),
                     profile_drawn_since_last_update: RangeSet::new(),
@@ -2612,7 +2659,7 @@ impl RoomScreen {
                     pending_thread_summary_fetches: HashSet::new(),
                     saved_state: SavedState::default(),
                     message_highlight_animation_state: MessageHighlightAnimationState::default(),
-                    last_scrolled_index: usize::MAX,
+                    pending_reached_start: false,
                     prev_first_index: None,
                     scrolled_past_read_marker: false,
                     latest_own_user_receipt: None,
@@ -2651,8 +2698,9 @@ impl RoomScreen {
         // because we want to show the user some messages as soon as possible
         // when they first open the room, and there might not be any messages yet.
         if is_first_time_being_loaded {
-            if !tl_state.fully_paginated {
+            if !tl_state.fully_paginated && !tl_state.is_paginating {
                 log!("Sending a first-time backwards pagination request for {}", tl_state.kind);
+                tl_state.is_paginating = true;
                 submit_async_request(MatrixRequest::PaginateTimeline {
                     timeline_kind: tl_state.kind.clone(),
                     num_events: 50,
@@ -2848,8 +2896,8 @@ impl RoomScreen {
         }
 
         // If this timeline is already displayed, we don't need to do anything major,
-        // but we do need update the `room_name_id` in case it has changed, or it has been cleared.
-        if self.timeline_kind.as_ref().is_some_and(|kind| kind == &timeline_kind) {
+        // but we do need update the `room_name_id` in case it has changed/cleared.
+        if self.tl_state.is_some() && self.timeline_kind.as_ref().is_some_and(|k| k == &timeline_kind) {
             self.room_name_id = Some(room_name_id.clone());
             return;
         }
@@ -2960,30 +3008,43 @@ impl RoomScreen {
         }
     }
 
-    /// Sends a backwards pagination request if the user is scrolling up
-    /// and is approaching the top of the timeline.
-    fn send_pagination_request_based_on_scroll_pos(
+    /// Returns the widget refs used on every event, caching them if None.
+    fn cached_widget_refs(&mut self, cx: &mut Cx) -> RoomScreenWidgetRefs {
+        if let Some(refs) = &self.cached_refs {
+            return refs.clone();
+        }
+        let refs = RoomScreenWidgetRefs {
+            portal_list: self.portal_list(cx, ids!(timeline.list)),
+            user_profile_sliding_pane: self.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane)),
+            loading_pane: self.loading_pane(cx, ids!(loading_pane)),
+            room_input_popup_menu: self.room_input_popup_menu(cx, ids!(room_input_popup_menu)),
+        };
+        self.cached_refs = Some(refs.clone());
+        refs
+    }
+
+    /// Sends a backwards pagination request if the first item(s) in the timeline are visible.
+    fn send_pagination_request_on_reached_start(
         &mut self,
         _cx: &mut Cx,
         actions: &ActionsBuf,
         portal_list: &PortalListRef,
     ) {
         let Some(tl) = self.tl_state.as_mut() else { return };
+        if !portal_list.reached_start(actions) { return };
         if tl.fully_paginated { return };
-        if !portal_list.scrolled(actions) { return };
-
-        let first_index = portal_list.first_id();
-        if first_index == 0 && tl.last_scrolled_index > 0 {
-            log!("Scrolled up from item {} --> 0, sending back pagination request for room {}",
-                tl.last_scrolled_index, tl.kind,
-            );
-            submit_async_request(MatrixRequest::PaginateTimeline {
-                timeline_kind: tl.kind.clone(),
-                num_events: 50,
-                direction: PaginationDirection::Backwards,
-            });
+        if tl.is_paginating {
+            tl.pending_reached_start = true;
+            return;
         }
-        tl.last_scrolled_index = first_index;
+
+        log!("Timeline hit first item, sending back pagination request for room {}", tl.kind);
+        tl.is_paginating = true;
+        submit_async_request(MatrixRequest::PaginateTimeline {
+            timeline_kind: tl.kind.clone(),
+            num_events: 50,
+            direction: PaginationDirection::Backwards,
+        });
     }
 }
 
@@ -3327,6 +3388,9 @@ struct TimelineUiState {
     /// This must be reset to `false` whenever the timeline is fully cleared.
     fully_paginated: bool,
 
+    /// Whether a pagination request is currently in flight.
+    is_paginating: bool,
+
     /// The list of items (events) in this room's timeline that our client currently knows about.
     items: Vector<Arc<TimelineItem>>,
 
@@ -3384,11 +3448,9 @@ struct TimelineUiState {
     /// If the animation was triggered, the state goes back to Off.
     message_highlight_animation_state: MessageHighlightAnimationState,
 
-    /// The index of the timeline item that was most recently scrolled up past it.
-    /// This is used to detect when the user has scrolled up past the second visible item (index 1)
-    /// upwards to the first visible item (index 0), which is the top of the timeline,
-    /// at which point we submit a backwards pagination request to fetch more events.
-    last_scrolled_index: usize,
+    /// Whether the first item(s) in the timeline became visible while an existing
+    /// pagination request was already in flight.
+    pending_reached_start: bool,
 
     /// The index of the first item shown in the timeline's PortalList from *before* the last "jump".
     ///
@@ -4403,9 +4465,12 @@ fn populate_image_message_content(
 
     let mut fetch_and_show_media_source = |cx: &mut Cx, media_source: MediaSource, image_info: Box<ImageInfo>| {
         match media_cache.try_get_media_or_fetch(&media_source, MEDIA_THUMBNAIL_FORMAT.into()) {
-            (MediaCacheEntry::Loaded(data), _media_format) => {
+            (MediaCacheEntry::Loaded(data), media_format) => {
+                // Include the file type (full or thumbnail) in the cache key to disambiguate.
+                let variant = if matches!(media_format, MediaFormat::File) { "full" } else { "thumb" };
+                let cache_key = format!("{}#{variant}", media_source_mxc(&media_source));
                 let show_image_result = text_or_image_ref.show_image(cx, Some(media_source), |cx, img| {
-                    utils::load_image(&img, cx, &data)
+                    utils::load_image_with_cache_key(&img, cx, std::path::Path::new(&cache_key), Arc::clone(&data))
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
                 if let Err(e) = show_image_result {
@@ -5350,7 +5415,7 @@ impl ActionDefaultRef for MessageAction {
 }
 
 /// A widget representing a single message of any kind within a room timeline.
-#[derive(Script, ScriptHook, Widget, Animator)]
+#[derive(Script, Widget, Animator)]
 pub struct Message {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
@@ -5364,6 +5429,18 @@ pub struct Message {
     /// Cached so `set_data` can reset_hover only on the button that just
     /// transitioned into visibility, not on every redraw.
     #[rust] download_state: DownloadDisplayState,
+
+    // Belowhere: cached references to child widgets, for efficiency.
+    #[rust] replied_to_message_view: Option<CollapsiblePreviewRef>,
+    #[rust] thread_root_summary_view: Option<ViewRef>,
+}
+
+impl ScriptHook for Message {
+    fn on_after_reload(&mut self, _vm: &mut ScriptVm) {
+        // A script reload changes the Message's children; invalidate the ones we cached.
+        self.replied_to_message_view = None;
+        self.thread_root_summary_view = None;
+    }
 }
 
 impl Widget for Message {
@@ -5380,7 +5457,10 @@ impl Widget for Message {
 
         let Some(details) = self.details.clone() else { return };
 
-        let reply = self.view.widget(cx, ids!(replied_to_message)).as_collapsible_preview();
+        // We first handle a click on the replied-to message preview, if present,
+        // because we don't want any widgets within the replied-to message to be
+        // clickable or otherwise interactive.
+        let reply = self.replied_to_message_view(cx);
         let reply_content_area = reply.content_area(cx);
         match event.hits(cx, reply_content_area) {
             Hit::FingerHoverIn(..) => {
@@ -5422,7 +5502,7 @@ impl Widget for Message {
 
         // Handle clicks on the thread summary shown beneath a thread-root message.
         if let Some(thread_root_event_id) = details.thread_root_event_id.as_ref() {
-            let thread_root_summary = self.view(cx, ids!(thread_root_summary));
+            let thread_root_summary = self.thread_root_summary_view(cx);
             let apply_hover = |cx: &mut Cx, bg_color: Vec4| {
                 let mut thread_root_summary_ref = thread_root_summary.clone();
                 script_apply_eval!(cx, thread_root_summary_ref, {
@@ -5575,8 +5655,26 @@ impl Widget for Message {
 }
 
 impl Message {
+    fn replied_to_message_view(&mut self, cx: &mut Cx) -> CollapsiblePreviewRef {
+        if let Some(reply) = &self.replied_to_message_view {
+            return reply.clone();
+        }
+        let reply = self.view.widget(cx, ids!(replied_to_message)).as_collapsible_preview();
+        self.replied_to_message_view = Some(reply.clone());
+        reply
+    }
+
+    fn thread_root_summary_view(&mut self, cx: &mut Cx) -> ViewRef {
+        if let Some(view) = &self.thread_root_summary_view {
+            return view.clone();
+        }
+        let view = self.view(cx, ids!(thread_root_summary));
+        self.thread_root_summary_view = Some(view.clone());
+        view
+    }
+
     /// Called every time `populate_message_view` runs, including on cached
-    /// items, so all state must be re-set unconditionally.
+    /// items, so all states must be re-set unconditionally.
     fn set_data(
         &mut self,
         cx: &mut Cx,
