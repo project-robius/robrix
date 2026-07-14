@@ -642,8 +642,7 @@ script_mod! {
             flow: Down
 
             auto_tail: true, // set to `true` to lock the view to the last item.
-            // The timeline bounces only at its end (the newest messages); the start
-            // stays clipped because reaching it triggers backwards pagination.
+            // only bounce at the end, not the start because that triggers back pagination.
             bounce_at_start: false,
             bounce_at_end: true,
             // Read-receipt logic listens for scroll position changes.
@@ -767,16 +766,12 @@ pub struct RoomScreen {
     #[rust] relayout_redraws_left: u8,
     #[rust] relayout_last_first_id: usize,
     #[rust] relayout_last_scroll: f64,
-    /// Widget refs used on every event, resolved once and cached here.
-    /// Resolving them per event walks this widget's whole subtree whenever the
-    /// widget tree's path cache is cold, which is far too expensive at
-    /// mouse-move event rates.
-    #[rust] event_widget_refs: Option<RoomScreenEventRefs>,
+    #[rust] cached_refs: Option<RoomScreenWidgetRefs>,
 }
 
-/// See [`RoomScreen::event_widget_refs`].
+/// Cached references to RoomScreen child widgets used in every event handler.
 #[derive(Clone)]
-struct RoomScreenEventRefs {
+struct RoomScreenWidgetRefs {
     portal_list: PortalListRef,
     user_profile_sliding_pane: UserProfileSlidingPaneRef,
     loading_pane: LoadingPaneRef,
@@ -796,8 +791,8 @@ impl Drop for RoomScreen {
 
 impl ScriptHook for RoomScreen {
     fn on_after_reload(&mut self, vm: &mut ScriptVm) {
-        // A reload can rebuild the template's children; re-resolve the refs.
-        self.event_widget_refs = None;
+        // A script reload changes the RoomScreen's children; invalidate the ones we cached.
+        self.cached_refs = None;
         vm.with_cx_mut(|cx| {
             if let Some(tl_state) = &mut self.tl_state.as_mut() {
                 // Clear the timeline's drawn items caches and redraw it.
@@ -818,12 +813,12 @@ impl Widget for RoomScreen {
         }
 
         let room_screen_widget_uid = self.widget_uid();
-        let RoomScreenEventRefs {
+        let RoomScreenWidgetRefs {
             portal_list,
             user_profile_sliding_pane,
             loading_pane,
             room_input_popup_menu,
-        } = self.event_widget_refs(cx);
+        } = self.cached_widget_refs(cx);
 
         // Handle actions here before processing timeline updates.
         // Normally (in most other widgets), the order of event handling doesn't matter much.
@@ -1020,7 +1015,7 @@ impl Widget for RoomScreen {
             }
             */
 
-            // Request more timeline items when the start of the timeline comes into view.
+            // Back paginate the timeline when the start of the timeline comes into view.
             self.send_pagination_request_on_reached_start(cx, actions, &portal_list);
             // Handle sending any read receipts for the current logged-in user.
             self.send_user_read_receipts_based_on_scroll_pos(cx, actions, &portal_list);
@@ -1643,8 +1638,8 @@ impl RoomScreen {
                         tl.fully_paginated = false;
                         tl.is_paginating = false;
                         // If the top of the timeline is still visible after getting new items,
-                        // go ahead and proactively fetch more items proactively so that
-                        // the user doesn't have to do some kind of annoying scroll-up gesture again.
+                        // go ahead and fetch more items proactively so that the user
+                        // doesn't have to do some kind of annoying scroll-up gesture again.
                         if has_more_history && portal_list.first_id() <= 2 {
                             should_continue_backwards_pagination = true;
                         }
@@ -2901,11 +2896,7 @@ impl RoomScreen {
         }
 
         // If this timeline is already displayed, we don't need to do anything major,
-        // but we do need update the `room_name_id` in case it has changed, or it has been cleared.
-        // The timeline state must actually be present, though: if a previous
-        // `show_timeline` failed (e.g. the state was still owned by another screen),
-        // `timeline_kind` is set but `tl_state` is None and this screen draws nothing,
-        // so re-selecting the room must fall through and retry rather than no-op.
+        // but we do need update the `room_name_id` in case it has changed/cleared.
         if self.tl_state.is_some() && self.timeline_kind.as_ref().is_some_and(|k| k == &timeline_kind) {
             self.room_name_id = Some(room_name_id.clone());
             return;
@@ -3017,21 +3008,18 @@ impl RoomScreen {
         }
     }
 
-    /// Sends a backwards pagination request if the user is scrolling up
-    /// and is approaching the top of the timeline.
-    /// Returns the widget refs used on every event, resolving and caching them
-    /// on first use (see the `event_widget_refs` field).
-    fn event_widget_refs(&mut self, cx: &mut Cx) -> RoomScreenEventRefs {
-        if let Some(refs) = &self.event_widget_refs {
+    /// Returns the widget refs used on every event, caching them if None.
+    fn cached_widget_refs(&mut self, cx: &mut Cx) -> RoomScreenWidgetRefs {
+        if let Some(refs) = &self.cached_refs {
             return refs.clone();
         }
-        let refs = RoomScreenEventRefs {
+        let refs = RoomScreenWidgetRefs {
             portal_list: self.portal_list(cx, ids!(timeline.list)),
             user_profile_sliding_pane: self.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane)),
             loading_pane: self.loading_pane(cx, ids!(loading_pane)),
             room_input_popup_menu: self.room_input_popup_menu(cx, ids!(room_input_popup_menu)),
         };
-        self.event_widget_refs = Some(refs.clone());
+        self.cached_refs = Some(refs.clone());
         refs
     }
 
@@ -4478,7 +4466,7 @@ fn populate_image_message_content(
     let mut fetch_and_show_media_source = |cx: &mut Cx, media_source: MediaSource, image_info: Box<ImageInfo>| {
         match media_cache.try_get_media_or_fetch(&media_source, MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), media_format) => {
-                // Include the file type (full or thumbnail) in the cache key so they don't clash.
+                // Include the file type (full or thumbnail) in the cache key to disambiguate.
                 let variant = if matches!(media_format, MediaFormat::File) { "full" } else { "thumb" };
                 let cache_key = format!("{}#{variant}", media_source_mxc(&media_source));
                 let show_image_result = text_or_image_ref.show_image(cx, Some(media_source), |cx, img| {
@@ -5441,17 +5429,15 @@ pub struct Message {
     /// Cached so `set_data` can reset_hover only on the button that just
     /// transitioned into visibility, not on every redraw.
     #[rust] download_state: DownloadDisplayState,
-    /// Fixed template children hit-tested in every event pass, resolved once.
-    /// Per-event resolution walks this message's whole subtree whenever the
-    /// widget tree's path cache is cold.
+
+    // Belowhere: cached references to child widgets, for efficiency.
     #[rust] replied_to_message_view: Option<CollapsiblePreviewRef>,
     #[rust] thread_root_summary_view: Option<ViewRef>,
 }
 
 impl ScriptHook for Message {
     fn on_after_reload(&mut self, _vm: &mut ScriptVm) {
-        // A live reload can replace this widget's template children;
-        // re-resolve the cached refs on next use.
+        // A script reload changes the Message's children; invalidate the ones we cached.
         self.replied_to_message_view = None;
         self.thread_root_summary_view = None;
     }
@@ -5669,8 +5655,6 @@ impl Widget for Message {
 }
 
 impl Message {
-    /// Returns the replied-to preview, resolving and caching it on first
-    /// use (see the `replied_to_message_view` field).
     fn replied_to_message_view(&mut self, cx: &mut Cx) -> CollapsiblePreviewRef {
         if let Some(reply) = &self.replied_to_message_view {
             return reply.clone();
@@ -5680,8 +5664,6 @@ impl Message {
         reply
     }
 
-    /// Returns the thread-summary view, resolving and caching it on first use
-    /// (see the `thread_root_summary_view` field).
     fn thread_root_summary_view(&mut self, cx: &mut Cx) -> ViewRef {
         if let Some(view) = &self.thread_root_summary_view {
             return view.clone();
@@ -5692,7 +5674,7 @@ impl Message {
     }
 
     /// Called every time `populate_message_view` runs, including on cached
-    /// items, so all state must be re-set unconditionally.
+    /// items, so all states must be re-set unconditionally.
     fn set_data(
         &mut self,
         cx: &mut Cx,

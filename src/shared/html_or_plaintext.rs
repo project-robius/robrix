@@ -503,7 +503,7 @@ impl MatrixLinkPill {
             AvatarState::Loaded(image) => (Some(image.clone()), false),
             AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, uri) {
                 AvatarCacheEntry::Loaded(data) => {
-                    (Some(AvatarImage { uri: uri.clone(), data }), false)
+                    (Some((uri.clone(), data).into()), false)
                 }
                 AvatarCacheEntry::Failed => (None, false),
                 _ => (None, true),

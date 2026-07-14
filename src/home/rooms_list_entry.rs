@@ -182,7 +182,7 @@ script_mod! {
                     height: Fit
                     flow: Overlay
                     align: Align{ x: 1.0 }
-                    // Don't clip the unread badge's glow to this container's bounds.
+                    // Don't clip (cut-off) the unread badge's glow
                     clip_x: false, clip_y: false
                     avatar := Avatar {}
                     unread_badge := UnreadBadge {}
@@ -204,7 +204,7 @@ script_mod! {
                     flow: Down
                     width: Fill, height: 56
                     align: Align{ x: 0.0, y: 0.0 }
-                    // Fixed-height view: don't clip the unread badge's glow off the top/bottom.
+                    // Don't clip (cut-off) the unread badge's glow
                     clip_x: false, clip_y: false
                     top := View {
                         width: Fill, height: Fit,
@@ -217,7 +217,7 @@ script_mod! {
                         width: Fill, height: Fill,
                         spacing: 2,
                         flow: Right,
-                        // Don't clip the unread badge's glow off the top/bottom.
+                        // Don't clip (cut-off) the unread badge's glow
                         clip_x: false, clip_y: false
                         preview := mod.widgets.MessagePreview {
                             margin: Inset{ top: 2.5 }
@@ -225,7 +225,7 @@ script_mod! {
                         View {
                             width: Fit, height: Fit
                             align: Align{ x: 1.0 }
-                            // Don't clip the unread badge's glow to this container's bounds.
+                            // Don't clip the unread badge's glow off the top/bottom.
                             clip_x: false, clip_y: false
                             unread_badge := UnreadBadge {}
                             tombstone_icon := mod.widgets.TombstoneIcon {}
@@ -433,11 +433,11 @@ impl RoomsListEntryContent {
             self.last_avatar = Some(room_avatar.clone());
         }
 
-        self.update_preview_colors(cx, is_selected);
+        self.update_latest_event_colors(cx, is_selected);
     }
 
-    /// Updates the styling of the preview based on whether the room is selected or not.
-    pub fn update_preview_colors(&mut self, cx: &mut Cx, is_selected: bool) {
+    /// Updates styling of the latest event preview based on whether the room is selected or not.
+    pub fn update_latest_event_colors(&mut self, cx: &mut Cx, is_selected: bool) {
         // Link colors must be re-applied on every draw because the HTML's link widgets
         // get created dynamically during the draw walk.
         //

@@ -10,7 +10,7 @@ use matrix_sdk::{Client, RoomState, media::MediaRequestParameters};
 use matrix_sdk_ui::spaces::{SpaceRoom, SpaceRoomList, SpaceService, room_list::SpaceRoomListPaginationState};
 use ruma::{OwnedMxcUri, OwnedRoomId, events::room::MediaSource, room::RoomType};
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}, task::JoinHandle};
-use crate::{home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}}, room::FetchedRoomAvatar, shared::avatar::AvatarImage, utils::{self, RoomNameId}};
+use crate::{home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}}, room::FetchedRoomAvatar, utils::{self, RoomNameId}};
 
 /// Whether to enable verbose logging of all spaces service diff updates.
 const LOG_SPACE_SERVICE_DIFFS: bool = cfg!(feature = "log_space_service_diffs");
@@ -587,10 +587,7 @@ async fn fetch_space_avatar(url: OwnedMxcUri, client: &Client) -> matrix_sdk::Re
     client.media()
         .get_media_content(&request, true)
         .await
-        .map(|img_data| FetchedRoomAvatar::Image(AvatarImage {
-            uri: url,
-            data: img_data.into(),
-        }))
+        .map(|img_data| FetchedRoomAvatar::Image((url, img_data).into()))
 }
 
 

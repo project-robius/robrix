@@ -41,7 +41,7 @@ use crate::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, shared::{
-        attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::{AvatarImage, AvatarState}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId}, jump_to_bottom_button::UnreadMessageCount, mention_popup::{MentionItem, RoomMentionCandidate}, mentionable_text_input::MentionMatches, popup_list::{PopupKind, enqueue_popup_notification}
+        attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId}, jump_to_bottom_button::UnreadMessageCount, mention_popup::{MentionItem, RoomMentionCandidate}, mentionable_text_input::MentionMatches, popup_list::{PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -3714,15 +3714,13 @@ async fn add_new_room(
             // Start with a basic text avatar; the avatar image will be fetched asynchronously below.
             let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar());
             let inviter_info = if let Some(inviter) = invite_details.and_then(|d| d.inviter) {
-                // The avatar image and the URI it came from travel together: the URI
-                // is the key its decoded image is cached under.
                 let avatar = match inviter.avatar_url() {
                     Some(uri) => inviter
                         .avatar(AVATAR_THUMBNAIL_FORMAT.into())
                         .await
                         .ok()
                         .flatten()
-                        .map(|data| AvatarImage { uri: uri.to_owned(), data: data.into() }),
+                        .map(|data| (uri, data).into()),
                     None => None,
                 };
                 Some(InviterInfo {
@@ -4119,10 +4117,7 @@ async fn fetch_room_preview_with_avatar(
         match client.media().get_media_content(&media_request, true).await {
             Ok(avatar_content) => {
                 log!("Fetched avatar for room preview {:?} ({})", room_preview.name, room_preview.room_id);
-                FetchedRoomAvatar::Image(AvatarImage {
-                    uri: avatar_url,
-                    data: avatar_content.into(),
-                })
+                FetchedRoomAvatar::Image((avatar_url, avatar_content).into())
             }
             Err(e) => {
                 log!("Failed to fetch avatar for room preview {:?} ({}), error: {e:?}",
@@ -4786,10 +4781,7 @@ fn spawn_fetch_room_avatar_inner(room: Room, room_name_id: RoomNameId) {
 async fn room_avatar(room: &Room, room_name_id: &RoomNameId) -> FetchedRoomAvatar {
     if let Some(avatar_url) = room.avatar_url() {
         if let Ok(Some(avatar)) = room.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
-            return FetchedRoomAvatar::Image(AvatarImage {
-                uri: avatar_url,
-                data: avatar.into(),
-            });
+            return FetchedRoomAvatar::Image((avatar_url, avatar).into());
         }
     }
     // For rooms without an avatar that have only one hero (i.e., a 2-member DM), use their avatar.
@@ -4800,10 +4792,7 @@ async fn room_avatar(room: &Room, room_name_id: &RoomNameId) -> FetchedRoomAvata
                 format: AVATAR_THUMBNAIL_FORMAT.into(),
             };
             if let Ok(avatar) = room.client().media().get_media_content(&request, true).await {
-                return FetchedRoomAvatar::Image(AvatarImage {
-                    uri: avatar_url,
-                    data: avatar.into(),
-                });
+                return FetchedRoomAvatar::Image((avatar_url, avatar).into());
             }
         }
     }

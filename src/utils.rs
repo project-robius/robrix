@@ -107,7 +107,7 @@ pub fn is_supported_image_mimetype(mimetype: &str) -> bool {
     )
 }
 
-/// Loads a fetched avatar into the given `ImageRef`, keyed by its MXC URI.
+/// Loads the given fetched avatar into the given `ImageRef`.
 pub fn load_avatar_image(
     img: &ImageRef,
     cx: &mut Cx,
@@ -121,19 +121,8 @@ pub fn load_avatar_image(
     )
 }
 
-/// Loads the encoded image `data` into the given `ImageRef`, auto-detecting any
-/// image format that makepad supports (PNG, JPEG, GIF, WebP, BMP, ICO, QOI, SVG).
-///
-/// The decoded image is cached under `cache_key`, which must name the image's
-/// *content*: an MXC URI (plus which variant of it, where a source has several).
-/// Deriving a key from the bytes instead would mean either hashing every image on
-/// every draw, or hashing a sample of it and displaying the wrong image whenever two
-/// images collide.
-///
-/// SVG data is detected up front and rendered synchronously via makepad's vector
-/// engine, as the async decode cache only handles raster formats. It is handed over
-/// as shared bytes, so re-issuing the same load (as widgets redrawing a list item do
-/// every frame) doesn't re-parse the SVG.
+/// Loads the encoded image `data` into the given `ImageRef`,
+/// auto-detecting and handling any image format that makepad supports.
 pub fn load_image_with_cache_key(
     img: &ImageRef,
     cx: &mut Cx,

@@ -160,13 +160,16 @@ static EMPTY_AVATAR: FetchedRoomAvatar = FetchedRoomAvatar::Text(String::new());
 #[derive(Clone)]
 pub enum FetchedRoomAvatar {
     Text(String),
-    /// The fetched image, carrying the MXC URI it came from: displaying it needs
-    /// both (see [`AvatarImage`]).
     Image(AvatarImage),
 }
 impl Default for FetchedRoomAvatar {
     fn default() -> Self {
         FetchedRoomAvatar::Text(String::from("?"))
+    }
+}
+impl From<AvatarImage> for FetchedRoomAvatar {
+    fn from(image: AvatarImage) -> Self {
+        FetchedRoomAvatar::Image(image)
     }
 }
 impl std::fmt::Debug for FetchedRoomAvatar {

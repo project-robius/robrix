@@ -43,7 +43,7 @@ use crate::{
     },
     settings::app_preferences::{effective_is_desktop, AppPreferencesAction, ViewModeOverride},
     shared::{
-        avatar::{AvatarImage, AvatarState, AvatarWidgetExt},
+        avatar::{AvatarState, AvatarWidgetExt},
         navigation_bar_button::{NavigationBarButton, NavigationBarButtonWidgetExt},
         styles::*,
         verification_badge::VerificationBadgeWidgetExt
@@ -675,7 +675,7 @@ pub fn get_own_profile(cx: &mut Cx) -> Option<UserProfile> {
         if let Some(Some(avatar_uri)) = avatar_uri_to_fetch {
             if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, &avatar_uri) {
                 if let Some(p) = own_profile.as_mut() {
-                    p.avatar_state = AvatarState::Loaded(AvatarImage { uri: avatar_uri.clone(), data });
+                    p.avatar_state = AvatarState::Loaded((avatar_uri.clone(), data).into());
                     // Update the user profile cache with the new avatar data.
                     user_profile_cache::enqueue_user_profile_update(
                         UserProfileUpdate::UserProfileOnly(p.clone())

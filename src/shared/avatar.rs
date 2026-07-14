@@ -91,7 +91,7 @@ pub struct Avatar {
     /// If `Some`, this Avatar will respond to clicks/taps.
     #[rust] info: Option<UserProfileAndRoomId>,
 
-    /// Whether this avatar's image is still beind fetched or decoded.
+    /// Whether this avatar's image is still being fetched or decoded.
     #[rust] is_image_pending: bool,
 }
 
@@ -328,7 +328,7 @@ impl Avatar {
         let (avatar_img_opt, profile_drawn) = match avatar_state {
             AvatarState::Loaded(image) => (Some(image), true),
             AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, &uri) {
-                AvatarCacheEntry::Loaded(data) => (Some(AvatarImage { uri, data }), true),
+                AvatarCacheEntry::Loaded(data) => (Some((uri, data).into()), true),
                 AvatarCacheEntry::Failed => (None, true),
                 AvatarCacheEntry::Requested => (None, false),
             },
@@ -472,19 +472,28 @@ impl From<(OwnedUserId, Option<String>, OwnedRoomId, AvatarImage)> for AvatarIma
 }
 
 
-/// The currently-known state of an avatar for a user, room, or space.
-/// A fetched avatar: its image data, together with the MXC URI it came from.
-///
-/// The two travel together because displaying the image needs both: the bytes to
-/// decode, and the URI as the key under which the decoded image is cached. The URI
-/// names the content, so it stays correct when a user or room changes its avatar,
-/// unlike an identity (a user or room ID) that outlives the image it points at.
+/// A fetched avatar: its image data and its MxcUri.
 #[derive(Clone)]
 pub struct AvatarImage {
     pub uri: OwnedMxcUri,
     pub data: Arc<[u8]>,
 }
+impl<U, D> From<(U, D)> for AvatarImage
+where
+    U: Into<OwnedMxcUri>,
+    D: Into<Arc<[u8]>>,
+{
+    fn from((uri, data): (U, D)) -> Self {
+        Self { uri: uri.into(), data: data.into() }
+    }
+}
+impl From<AvatarImage> for AvatarState {
+    fn from(image: AvatarImage) -> Self {
+        Self::Loaded(image)
+    }
+}
 
+/// The currently-known state of an avatar for a user, room, or space.
 #[derive(Clone, Default)]
 pub enum AvatarState {
     /// It isn't yet known if this user/room/space has an avatar.
@@ -515,7 +524,7 @@ impl AvatarState {
     pub fn update_from_cache(&mut self, cx: &mut Cx) -> Option<&AvatarImage> {
         if let Self::Known(Some(uri)) = self {
             if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, uri) {
-                *self = Self::Loaded(AvatarImage { uri: uri.clone(), data });
+                *self = Self::Loaded((uri.clone(), data).into());
             }
         }
         self.image()

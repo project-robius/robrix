@@ -606,7 +606,7 @@ fn set_user_avatar(cx: &mut Cx, row: &WidgetRef, avatar_url: Option<&OwnedMxcUri
     match avatar_url {
         Some(mxc) => match get_or_fetch_avatar(cx, mxc) {
             AvatarCacheEntry::Loaded(data) => {
-                let image = AvatarImage { uri: mxc.to_owned(), data };
+                let image = AvatarImage::from((mxc.clone(), data));
                 let _ = avatar.show_image(cx, None, |cx, img| utils::load_avatar_image(&img, cx, &image));
                 true
             }
@@ -639,7 +639,7 @@ fn set_room_avatar(cx: &mut Cx, row: &WidgetRef, room_id: &OwnedRoomId, avatar_u
     if let Some(mxc) = avatar_url {
         match get_or_fetch_avatar(cx, mxc) {
             AvatarCacheEntry::Loaded(data) => {
-                let image = AvatarImage { uri: mxc.to_owned(), data };
+                let image = AvatarImage::from((mxc.clone(), data));
                 let _ = avatar.show_image(cx, None, |cx, img| utils::load_avatar_image(&img, cx, &image));
                 return true;
             }

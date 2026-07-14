@@ -13,7 +13,7 @@ script_mod! {
         width: 27, height: 18,
         align: Align{ x: 0.5, y: 0.5 }
         flow: Overlay,
-        // Let the badge's fade-out/glow effect render beyond the badge's rect.
+        // Let the badge's fade-out/glow effect render beyond its bounding rect
         clip_x: false,
         clip_y: false,
 

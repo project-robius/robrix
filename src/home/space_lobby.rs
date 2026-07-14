@@ -624,9 +624,6 @@ pub struct SpaceLobbyEntry {
 
 impl Widget for SpaceLobbyEntry {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
-        // An invisible entry must not hit-test: its draw area can linger from
-        // when it was last shown and would silently swallow presses meant for
-        // whatever is displayed there now.
         if !self.visible {
             return;
         }
@@ -1279,7 +1276,7 @@ impl Widget for SpaceLobbyScreen {
                                 AvatarState::Known(Some(uri)) => {
                                     match avatar_cache::get_or_fetch_avatar(cx, uri) {
                                         AvatarCacheEntry::Loaded(data) => {
-                                            let image = AvatarImage { uri: uri.clone(), data };
+                                            let image = AvatarImage::from((uri.clone(), data));
                                             drew_avatar = avatar_ref.show_image(
                                                 cx,
                                                 None,
