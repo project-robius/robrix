@@ -13,7 +13,7 @@ use matrix_sdk::{RoomDisplayName, RoomState};
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 
 use crate::{
-    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, logout::logout_confirm_modal::LogoutAction, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, settings::app_preferences::{effective_is_desktop, AppPreferencesAction, ViewModeOverride}, shared::{avatar::AvatarWidgetRefExt, navigation_bar_button::NavigationBarButton, room_filter_input_bar::MainFilterAction}, utils::{self, RoomNameId}
+    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, logout::logout_confirm_modal::LogoutAction, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, settings::app_preferences::{effective_is_desktop, AppPreferencesAction, ViewModeOverride}, shared::{avatar::AvatarWidgetExt, navigation_bar_button::NavigationBarButton, room_filter_input_bar::MainFilterAction}, utils::{self, RoomNameId}
 };
 
 script_mod! {
@@ -168,6 +168,7 @@ pub struct SpacesBarEntry {
     #[deref] inner: NavigationBarButton,
 
     #[rust] space_name_id: Option<RoomNameId>,
+    #[rust] last_avatar: Option<FetchedRoomAvatar>,
 }
 
 impl Widget for SpacesBarEntry {
@@ -205,16 +206,52 @@ impl Widget for SpacesBarEntry {
 }
 
 impl SpacesBarEntry {
-    fn set_metadata(&mut self, cx: &mut Cx, space_name_id: RoomNameId, is_selected: bool) {
-        self.inner.set_tooltip_text(space_name_id.to_string());
+    fn set_metadata(
+        &mut self,
+        cx: &mut Cx,
+        space_name_id: RoomNameId,
+        avatar: &FetchedRoomAvatar,
+        is_selected: bool,
+    ) {
+        let space_name = space_name_id.to_string();
+        // The name label isn't visible by default, but we populate it anyway.
+        self.inner.view.label(cx, ids!(space_name)).set_text(cx, &space_name);
+
+        // Only populate the avatar if it has actually changed.
+        if self.last_avatar.as_ref() != Some(avatar) {
+            let avatar_ref = self.inner.view.avatar(cx, ids!(avatar));
+            match avatar {
+                FetchedRoomAvatar::Text(text) => avatar_ref.show_text(cx, None, None, text),
+                FetchedRoomAvatar::Image(image) => {
+                    let res = avatar_ref.show_image(
+                        cx,
+                        None,
+                        |cx, img_ref| utils::load_avatar_image(&img_ref, cx, image),
+                    );
+                    if res.is_err() {
+                        avatar_ref.show_text(cx, None, None, &space_name);
+                    }
+                }
+            }
+            self.last_avatar = Some(avatar.clone());
+        }
+
         self.space_name_id = Some(space_name_id);
+        self.inner.set_tooltip_text(space_name);
         self.inner.set_selected(cx, is_selected);
     }
 }
+
 impl SpacesBarEntryRef {
-    pub fn set_metadata(&self, cx: &mut Cx, space_name_id: RoomNameId, is_selected: bool) {
+    pub fn set_metadata(
+        &self,
+        cx: &mut Cx,
+        space_name_id: RoomNameId,
+        avatar: &FetchedRoomAvatar,
+        is_selected: bool,
+    ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_metadata(cx, space_name_id, is_selected);
+        inner.set_metadata(cx, space_name_id, avatar, is_selected);
     }
 }
 
@@ -470,33 +507,10 @@ impl Widget for SpacesBar {
                         .and_then(|space_id| self.all_joined_spaces.get(space_id))
                     {
                         let item = list.item(cx, portal_list_index, id!(spaces_bar_entry));
-                        // Populate the space name and avatar (although this isn't visible by default).
-                        let space_name = space.space_name_id.to_string();
-                        item.label(cx, ids!(space_name)).set_text(cx, &space_name);
-                        let avatar_ref = item.avatar(cx, ids!(avatar));
-                        match &space.space_avatar {
-                            FetchedRoomAvatar::Text(text) => {
-                                avatar_ref.show_text(cx, None, None, text);
-                            }
-                            FetchedRoomAvatar::Image(avatar_image) => {
-                                let res = avatar_ref.show_image(
-                                    cx,
-                                    None,
-                                    |cx, img_ref| utils::load_avatar_image(&img_ref, cx, avatar_image),
-                                );
-                                if res.is_err() {
-                                    avatar_ref.show_text(
-                                        cx,
-                                        None,
-                                        None,
-                                        &space_name,
-                                    );
-                                }
-                            }
-                        }
                         item.as_spaces_bar_entry().set_metadata(
                             cx,
                             space.space_name_id.clone(),
+                            &space.space_avatar,
                             self.selected_space.as_ref().is_some_and(|id| id == space.space_name_id.room_id()),
                         );
                         item

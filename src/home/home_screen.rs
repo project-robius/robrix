@@ -443,12 +443,6 @@ impl Widget for SpacesBarWrapper {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // TODO: i want to uncomment this, but adding it back in will break
-        //       the animation of showing the SpacesBarWrapper.
-        //       I'm not sure why the SpacesBar is getting redrawn constantly though.
-        // if walk.height.to_fixed().is_some_and(|h| h < 0.01) {
-        //     return DrawStep::done();
-        // }
         self.view.draw_walk(cx, scope, walk)
     }
 }
