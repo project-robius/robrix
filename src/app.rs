@@ -973,7 +973,10 @@ impl App {
 pub struct AppState {
     /// The currently-selected room, which is highlighted (selected) in the RoomsList
     /// and considered "active" in the main rooms screen.
-    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    ///
+    /// This isn't persisted because in mobile view mode, the rooms list shows no selection,
+    /// and in desktop view mode, the selected room is obtained from the saved dock state
+    #[serde(skip)]
     pub selected_room: Option<SelectedRoom>,
     /// The currently-selected navigation tab: defines which top-level view is shown.
     ///
