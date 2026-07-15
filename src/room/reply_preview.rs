@@ -26,7 +26,7 @@ script_mod! {
             fade_end: uniform(1.0)
             fade_enabled: uniform(0.0)
             pixel: fn() {
-                let c = self.image.sample(self.pos * self.scale + self.shift)
+                let c = self.image.sample_rt(self.pos * self.scale + self.shift)
                 let t = clamp((self.pos.y - self.fade_start) / max(self.fade_end - self.fade_start, 0.0001), 0.0, 1.0)
                 let f = 1.0 - t * t * (3.0 - 2.0 * t)
                 return c * mix(1.0, f, self.fade_enabled)
@@ -263,10 +263,15 @@ pub struct CollapsiblePreview {
     #[rust] collapsible: bool,
     #[rust] last_drawn_height: f64,
     #[rust] toggle_button_rect: Rect,
+    #[rust] next_frame: NextFrame,
 }
 
 impl Widget for CollapsiblePreview {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // Redraw after a first-draw collapse mispredict (see draw_walk).
+        if self.next_frame.is_event(event).is_some() {
+            self.redraw(cx);
+        }
         self.view.handle_event(cx, event, scope);
     }
 
@@ -326,8 +331,10 @@ impl Widget for CollapsiblePreview {
             cx.turtle_mut().set_used(used.x, REPLY_PREVIEW_COLLAPSED_HEIGHT);
         }
         let inner_rect = cx.end_turtle();
+        // We only know the true height after it's first drawn, so use next frame
+        // to cause another draw which will ensure a proper collapsed or expanded display.
         if collapsed != predict_collapsed {
-            self.redraw(cx);
+            self.next_frame = cx.new_next_frame();
         }
 
         // The "Show more"/"Show less" button is drawn below the content,
