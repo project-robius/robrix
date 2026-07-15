@@ -2826,7 +2826,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "windows-targets 0.48.5",
+ "windows-targets 0.53.4",
 ]
 
 [[package]]
@@ -5050,12 +5050,12 @@ dependencies = [
 [[package]]
 name = "robius-common"
 version = "0.3.0"
-source = "git+https://github.com/project-robius/robius#f697e566310a201528afbac665359d53914ffc0c"
+source = "git+https://github.com/project-robius/robius#b766e62b0600f5d2ee21cc6995648346fc277bd8"
 
 [[package]]
 name = "robius-directories"
 version = "6.0.0"
-source = "git+https://github.com/project-robius/robius#f697e566310a201528afbac665359d53914ffc0c"
+source = "git+https://github.com/project-robius/robius#b766e62b0600f5d2ee21cc6995648346fc277bd8"
 dependencies = [
  "dirs-sys",
  "jni",
@@ -5065,7 +5065,7 @@ dependencies = [
 [[package]]
 name = "robius-file-picker"
 version = "0.3.0"
-source = "git+https://github.com/project-robius/robius#f697e566310a201528afbac665359d53914ffc0c"
+source = "git+https://github.com/project-robius/robius#b766e62b0600f5d2ee21cc6995648346fc277bd8"
 dependencies = [
  "android-build",
  "block2",
@@ -5087,7 +5087,7 @@ dependencies = [
 [[package]]
 name = "robius-location"
 version = "0.3.0"
-source = "git+https://github.com/project-robius/robius#f697e566310a201528afbac665359d53914ffc0c"
+source = "git+https://github.com/project-robius/robius#b766e62b0600f5d2ee21cc6995648346fc277bd8"
 dependencies = [
  "android-build",
  "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -5102,7 +5102,7 @@ dependencies = [
 [[package]]
 name = "robius-open"
 version = "0.3.0"
-source = "git+https://github.com/project-robius/robius#f697e566310a201528afbac665359d53914ffc0c"
+source = "git+https://github.com/project-robius/robius#b766e62b0600f5d2ee21cc6995648346fc277bd8"
 dependencies = [
  "block2",
  "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -5119,7 +5119,7 @@ dependencies = [
 [[package]]
 name = "robius-share"
 version = "0.3.0"
-source = "git+https://github.com/project-robius/robius#f697e566310a201528afbac665359d53914ffc0c"
+source = "git+https://github.com/project-robius/robius#b766e62b0600f5d2ee21cc6995648346fc277bd8"
 dependencies = [
  "android-build",
  "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -5147,7 +5147,7 @@ dependencies = [
 [[package]]
 name = "robius-web-auth-session"
 version = "0.3.0"
-source = "git+https://github.com/project-robius/robius#f697e566310a201528afbac665359d53914ffc0c"
+source = "git+https://github.com/project-robius/robius#b766e62b0600f5d2ee21cc6995648346fc277bd8"
 dependencies = [
  "block2",
  "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
