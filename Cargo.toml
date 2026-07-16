@@ -21,13 +21,12 @@ makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "gl_
 makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "gl_sampling_fallback" }
 
 
-## Including this crate automatically configures all `robius-*` crates to work with Makepad.
-robius-use-makepad = "0.1.1"
 robius-directories = { git = "https://github.com/project-robius/robius" }
 robius-file-picker = { git = "https://github.com/project-robius/robius" }
-robius-location = { git = "https://github.com/project-robius/robius" }
-robius-open = { git = "https://github.com/project-robius/robius" }
-robius-share = { git = "https://github.com/project-robius/robius" }
+robius-location    = { git = "https://github.com/project-robius/robius" }
+robius-open        = { git = "https://github.com/project-robius/robius" }
+robius-share       = { git = "https://github.com/project-robius/robius" }
+robius-use-makepad = "0.1.1" ## auto-configures all `robius-*` crates to work with Makepad.
 
 
 anyhow = "1.0"

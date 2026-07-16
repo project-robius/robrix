@@ -8,9 +8,13 @@
 use std::time::SystemTime;
 
 use makepad_widgets::*;
+use matrix_sdk::ruma::MilliSecondsSinceUnixEpoch;
 use robius_location::Coordinates;
 
-use crate::location::{get_latest_location, request_location_update, LocationAction, LocationRequest, LocationUpdate};
+use crate::{
+    location::{request_location_update, LocationAction, LocationRequest, LocationUpdate},
+    utils::time_ago,
+};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -97,6 +101,22 @@ struct LocationPreview {
     #[rust] timestamp: Option<SystemTime>,
 }
 
+fn location_error_message(error: robius_location::Error) -> &'static str {
+    use robius_location::Error;
+    match error {
+        Error::AuthorizationDenied =>
+            "Permission denied. Give Robrix location access in your device's settings, then try again.",
+        Error::TemporarilyUnavailable =>
+            "Your location isn't available right now. Please try again in a moment.",
+        Error::Network =>
+            "A network problem prevented getting your location. Check your connection and try again.",
+        Error::PermanentlyUnavailable =>
+            "Location services aren't available on this device.",
+        Error::AndroidEnvironment | Error::NotMainThread | Error::Unknown =>
+            "Couldn't get your location. Please try again.",
+    }
+}
+
 impl Widget for LocationPreview {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let mut needs_redraw = false;
@@ -139,10 +159,16 @@ impl Widget for LocationPreview {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let text = match self.coords {
             Some(Ok(c)) => {
-                format!("➡ Current location: {:.6}, {:.6}", c.latitude, c.longitude)
+                match self.timestamp
+                    .and_then(MilliSecondsSinceUnixEpoch::from_system_time)
+                    .and_then(time_ago)
+                {
+                    Some(age) => format!("📍 Your location (from {}): {:.6}, {:.6}", age.to_ascii_lowercase(), c.latitude, c.longitude),
+                    None => format!("📍 Your location: {:.6}, {:.6}", c.latitude, c.longitude),
+                }
             }
-            Some(Err(e)) => format!("➡ Error getting location: {e:?}"),
-            None => String::from("➡ Current location is not yet available."),
+            Some(Err(e)) => format!("⚠️ {}", location_error_message(e)),
+            None => String::from("📍 Getting your location…"),
         };
         self.label(cx, ids!(location_label)).set_text(cx, &text);
         self.view.draw_walk(cx, scope, walk)
@@ -151,12 +177,11 @@ impl Widget for LocationPreview {
 
 
 impl LocationPreview {
-    fn show(&mut self) {
-        request_location_update(LocationRequest::UpdateOnce);
-        if let Some(loc) = get_latest_location() {
-            self.coords = Some(Ok(loc.coordinates));
-            self.timestamp = loc.time;
-        }
+    fn show(&mut self, cx: &mut Cx) {
+        request_location_update(cx, LocationRequest::UpdateOnce);
+        self.coords = None;
+        self.timestamp = None;
+        self.button(cx, ids!(send_location_button)).set_enabled(cx, false);
         self.visible = true;
     }
 
@@ -175,9 +200,9 @@ impl LocationPreview {
 }
 
 impl LocationPreviewRef {
-    pub fn show(&self) {
+    pub fn show(&self, cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show();
+            inner.show(cx);
         }
     }
 

@@ -447,12 +447,12 @@ impl RoomInputBar {
         if let Err(_e) = init_location_subscriber(cx) {
             error!("Failed to initialize location subscriber");
             enqueue_popup_notification(
-                "Failed to initialize location services.",
+                "Couldn't start location services. Please try again.",
                 PopupKind::Error,
                 None,
             );
         }
-        self.view.location_preview(cx, ids!(location_preview)).show();
+        self.view.location_preview(cx, ids!(location_preview)).show(cx);
         self.redraw(cx);
     }
 

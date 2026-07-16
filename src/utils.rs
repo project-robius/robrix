@@ -564,14 +564,11 @@ pub fn stringify_pagination_error(
 ///
 /// # Cases:
 /// - **Less than 60 seconds ago**: Returns `"Just now"`.
-/// - **Less than 60 minutes ago**: Returns `"X minutes ago"`, where X is the number of minutes.
+/// - **Less than 60 minutes ago**: Returns `"X min(s) ago"`, where X is the number of minutes.
 /// - **Same day**: Returns `"HH:MM"` (current time format for today).
 /// - **Yesterday**: Returns `"Yesterday at HH:MM"` for messages from the previous day.
 /// - **Within the past week**: Returns the name of the day (e.g., "Tuesday").
 /// - **Older than a week**: Returns `"DD/MM/YY"` as the absolute date.
-///
-/// # Arguments:
-/// - `millis`: The Unix timestamp in milliseconds to format.
 ///
 /// # Returns:
 /// - `Option<String>` representing the human-readable time or `None` if formatting fails.
@@ -584,7 +581,7 @@ pub fn relative_format(millis: MilliSecondsSinceUnixEpoch) -> Option<String> {
 
     // Handle different time ranges and format accordingly
     if duration < Duration::seconds(60) {
-        Some("Now".to_string())
+        Some("Just now".to_string())
     } else if duration < Duration::minutes(60) {
         let minutes_text = if duration.num_minutes() == 1 { "min" } else { "mins" };
         Some(format!("{} {} ago", duration.num_minutes(), minutes_text))
@@ -601,6 +598,32 @@ pub fn relative_format(millis: MilliSecondsSinceUnixEpoch) -> Option<String> {
         Some(format!("{}", datetime.format("%A"))) // Day of the week (e.g., "Tuesday")
     } else {
         Some(format!("{}", datetime.format("%F"))) // "YYYY-MM-DD" format for older messages
+    }
+}
+
+/// Formats the given Unix timestamp in milliseconds into a fully-relative "time ago" label,
+///
+/// # Cases:
+/// - **Less than 1 hour ago**: Delegates to [`relative_format`] (`"Just now"` or `"X mins ago"`).
+/// - **Less than 24 hours ago**: Returns `"X hours ago"`, where X is the number of hours.
+/// - **Yesterday** (24 to 48 hours ago): Returns `"yesterday"`.
+/// - **Older than that**: Returns `"X days ago"`, where X is the number of days.
+///
+/// # Returns:
+/// - `Option<String>` representing the human-readable time or `None` if formatting fails.
+pub fn time_ago(millis: MilliSecondsSinceUnixEpoch) -> Option<String> {
+    let datetime = unix_time_millis_to_datetime(millis)?;
+    let duration = Local::now() - datetime;
+    if duration < Duration::hours(1) {
+        // Same as the rooms-list format for recent times ("Now", "X mins ago").
+        relative_format(millis)
+    } else if duration < Duration::hours(24) {
+        let hours = duration.num_hours();
+        Some(format!("{hours} {} ago", if hours == 1 { "hour" } else { "hours" }))
+    } else if duration < Duration::hours(48) {
+        Some("yesterday".to_string())
+    } else {
+        Some(format!("{} days ago", duration.num_days()))
     }
 }
 
