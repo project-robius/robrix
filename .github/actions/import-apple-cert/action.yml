@@ -1,0 +1,32 @@
+name: Import Apple signing certificate
+description: Decode a base64 .p12 and import it into a fresh keychain for codesign.
+inputs:
+  certificate:
+    description: base64-encoded .p12 (Developer ID Application and/or Apple Distribution)
+    required: true
+  password:
+    description: password used when the .p12 was exported
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        APPLE_CERTIFICATE: ${{ inputs.certificate }}
+        APPLE_CERTIFICATE_PASSWORD: ${{ inputs.password }}
+      run: |
+        CERT_FILE=$(mktemp /tmp/certificate.XXXXXX.p12)
+        KEYCHAIN_FILE=$(mktemp /tmp/keychain.XXXXXX.keychain-db)
+        KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+        echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_FILE"
+        security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
+        security set-keychain-settings -lut 21600 "$KEYCHAIN_FILE"
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
+        security import "$CERT_FILE" -k "$KEYCHAIN_FILE" \
+          -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+        security set-key-partition-list -S apple-tool:,apple: \
+          -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
+        security list-keychains -d user -s "$KEYCHAIN_FILE" login.keychain
+
+        rm -f "$CERT_FILE"

@@ -297,57 +297,21 @@ jobs:
           cargo install robius-packaging-commands --locked
 
       - name: Import Apple certificate
+        uses: ./.github/actions/import-apple-cert
+        with:
+          certificate: ${{ secrets.APPLE_CERTIFICATE }}
+          password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      # The script signs, notarizes, and staples the DMG itself, so there's
+      # no separate notarize step. Mirrors running it locally.
+      - name: Build, sign, notarize, and staple the DMG
         env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          CERT_FILE=$(mktemp /tmp/certificate.XXXXXX.p12)
-          KEYCHAIN_FILE=$(mktemp /tmp/keychain.XXXXXX.keychain-db)
-          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
-
-          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_FILE"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_FILE"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
-          security import "$CERT_FILE" -k "$KEYCHAIN_FILE" \
-            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: \
-            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
-          security list-keychains -d user -s "$KEYCHAIN_FILE" login.keychain
-
-          rm -f "$CERT_FILE"
-
-      - name: Build DMG with Applications icon fix
-        env:
-          CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
-          CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           chmod +x ./packaging/build-macos-dmg.sh ./packaging/fix-dmg-applications-icon.sh
           ./packaging/build-macos-dmg.sh
-
-      - name: Notarize DMG
-        env:
-          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
-          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-        run: |
-          API_KEY_FILE=$(mktemp /tmp/api_key.XXXXXX.p8)
-          echo "$APP_STORE_CONNECT_API_KEY_CONTENT" > "$API_KEY_FILE"
-
-          DMG_FILE=$(find ./dist -name '*.dmg' -print -quit)
-          if [[ -z "$DMG_FILE" ]]; then
-            echo "Error: No DMG file found in dist/"
-            exit 1
-          fi
-
-          xcrun notarytool submit "$DMG_FILE" \
-            --key "$API_KEY_FILE" \
-            --key-id "$APP_STORE_CONNECT_KEY_ID" \
-            --issuer "$APP_STORE_CONNECT_ISSUER_ID" \
-            --wait
-
-          xcrun stapler staple "$DMG_FILE"
-          rm -f "$API_KEY_FILE"
 
       - name: Upload DMG to Release
         env:
@@ -423,29 +387,71 @@ jobs:
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Package (iOS)
-        uses: project-robius/makepad-packaging-action@v1
+      - name: Install Rust nightly
+        run: rustup toolchain install nightly
+
+      - name: Setup cargo-makepad
+        uses: ./.github/actions/setup-cargo-makepad
+
+      - name: Install iOS toolchain
+        run: cargo makepad apple ios install-toolchain
+
+      - name: Install bindgen-cli for aws-lc-sys cross-compilation
+        run: cargo install --force --locked bindgen-cli
+
+      - name: Import Apple certificate
+        uses: ./.github/actions/import-apple-cert
+        with:
+          certificate: ${{ secrets.APPLE_CERTIFICATE }}
+          password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      - name: Install provisioning profile
         env:
-          AWS_LC_SYS_CMAKE_BUILDER: 1
-          MAKEPAD_MOBILE_CARGO_EXTRA_ARGS: >-
-            --config profile.dev.opt-level=0
-            --config profile.dev.debug=false
-            --config profile.dev.lto=false
-            --config profile.dev.strip=true
-            --config profile.dev.debug-assertions=false
-          MAKEPAD_IOS_ORG: org.robius.robrix
-          MAKEPAD_IOS_APP: Robrix
-          MAKEPAD_IOS_CREATE_IPA: 'true'
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
-          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: Apple Development
+        run: |
+          PROFILE_FILE=$(mktemp /tmp/profile.XXXXXX.mobileprovision)
+          echo "$APPLE_PROVISIONING_PROFILE" | base64 --decode > "$PROFILE_FILE"
+          security cms -D -i "$PROFILE_FILE" > /tmp/profile.plist
+          UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /tmp/profile.plist)
+          DEST="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$DEST"
+          cp "$PROFILE_FILE" "$DEST/${UUID}.mobileprovision"
+          echo "IOS_PROVISIONING_PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
+          rm -f "$PROFILE_FILE"
+
+      - name: Write App Store Connect API key
+        env:
           APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-        with:
-          github_token: ${{ secrets.ROBRIX_RELEASE }}
-          upload_to_testflight: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.upload_testflight == 'true' }}
-          args: --target aarch64-apple-ios
-          releaseId: ${{ needs.create_release.outputs.release_id }}
+        run: |
+          DEST="$HOME/.appstoreconnect/private_keys"
+          mkdir -p "$DEST"
+          printf '%s' "$APP_STORE_CONNECT_API_KEY_CONTENT" > "$DEST/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+          chmod 600 "$DEST/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+
+      - name: Build, sign, package, and upload to TestFlight
+        env:
+          AWS_LC_SYS_CMAKE_BUILDER: 1
+          IOS_SIGNING_IDENTITY: Apple Distribution
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          IOS_UPLOAD_TESTFLIGHT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.upload_testflight == 'true' }}
+        run: |
+          chmod +x ./packaging/build-ios-testflight.sh
+          ./packaging/build-ios-testflight.sh
+
+      - name: Upload IPA to Release
+        if: ${{ needs.create_release.outputs.release_id != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.ROBRIX_RELEASE }}
+        run: |
+          IPA_FILE=$(find target/apple/makepad-apple-app/aarch64-apple-ios/release -name '*.ipa' -print -quit)
+          if [[ -z "$IPA_FILE" ]]; then
+            echo "Error: no .ipa found to upload"
+            exit 1
+          fi
+          gh api "repos/${{ github.repository }}/releases/${{ needs.create_release.outputs.release_id }}/assets" \
+            --method POST \
+            -H "Content-Type: application/octet-stream" \
+            --input "$IPA_FILE" \
+            -f "name=$(basename "$IPA_FILE")"
