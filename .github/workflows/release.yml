@@ -409,7 +409,7 @@ jobs:
         env:
           APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
         run: |
-          PROFILE_FILE=$(mktemp /tmp/profile.XXXXXX.mobileprovision)
+          PROFILE_FILE="$RUNNER_TEMP/robrix-profile.mobileprovision"
           echo "$APPLE_PROVISIONING_PROFILE" | base64 --decode > "$PROFILE_FILE"
           security cms -D -i "$PROFILE_FILE" > /tmp/profile.plist
           UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /tmp/profile.plist)
