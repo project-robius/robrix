@@ -8,3 +8,6 @@
 CLAUDE.md
 proxychains.conf
 testflight.sh
+
+## Filled-in release secrets for upload-release-secrets.sh (never commit)
+/packaging/release-secrets.env
