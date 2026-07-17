@@ -15,11 +15,14 @@ runs:
         APPLE_CERTIFICATE: ${{ inputs.certificate }}
         APPLE_CERTIFICATE_PASSWORD: ${{ inputs.password }}
       run: |
-        CERT_FILE=$(mktemp /tmp/certificate.XXXXXX.p12)
-        KEYCHAIN_FILE=$(mktemp /tmp/keychain.XXXXXX.keychain-db)
+        # RUNNER_TEMP fixed names: macOS mktemp won't expand a mid-name XXXXXX,
+        # and create-keychain fails on an existing file, so delete any prior one.
+        CERT_FILE="$RUNNER_TEMP/robrix-certificate.p12"
+        KEYCHAIN_FILE="$RUNNER_TEMP/robrix-signing.keychain-db"
         KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
 
         echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_FILE"
+        security delete-keychain "$KEYCHAIN_FILE" 2>/dev/null || true
         security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
         security set-keychain-settings -lut 21600 "$KEYCHAIN_FILE"
         security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
