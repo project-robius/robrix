@@ -185,6 +185,7 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       release_id: ${{ steps.create_release.outputs.id }}
+      tag: ${{ steps.resolve.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -217,6 +218,24 @@ jobs:
 
           echo "tag=${resolved_tag}" >> "$GITHUB_OUTPUT"
           echo "name=Robrix ${resolved_tag}" >> "$GITHUB_OUTPUT"
+
+      # Safety: this workflow only ever creates a NEW release. If one already
+      # exists for the tag, bail so we never adopt, overwrite, or unpublish it.
+      - name: Refuse to reuse an existing release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.ROBRIX_RELEASE }}
+        run: |
+          TAG="${{ steps.resolve.outputs.tag }}"
+          existing=$(gh api "repos/${{ github.repository }}/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"$TAG\") | \"id=\(.id) draft=\(.draft)\"")
+          if [[ -n "$existing" ]]; then
+            echo "::error::A release already exists for tag '$TAG' ($existing)."
+            echo "::error::This workflow only creates new releases; it will not touch an existing one."
+            echo "::error::For testing, dispatch a throwaway release_tag. For a real re-release, delete the old one first, deliberately."
+            exit 1
+          fi
+          echo "No existing release for '$TAG'; safe to create a fresh one."
 
       - name: Create Release
         id: create_release
@@ -314,16 +333,13 @@ jobs:
           ./packaging/build-macos-dmg.sh
 
       - name: Upload DMG to Release
+        if: ${{ needs.create_release.outputs.release_id != '' }}
         env:
           GH_TOKEN: ${{ secrets.ROBRIX_RELEASE }}
         run: |
           DMG_FILE=$(find ./dist -name '*.dmg' -print -quit)
-          RELEASE_ID="${{ needs.create_release.outputs.release_id }}"
-          gh api "repos/${{ github.repository }}/releases/${RELEASE_ID}/assets" \
-            --method POST \
-            -H "Content-Type: application/octet-stream" \
-            --input "$DMG_FILE" \
-            -f "name=$(basename "$DMG_FILE")"
+          gh release upload "${{ needs.create_release.outputs.tag }}" "$DMG_FILE" \
+            --repo ${{ github.repository }}
 
   for_windows:
     name: Release Robrix for Windows (${{ matrix.os }}, ${{ matrix.arch }})
@@ -450,8 +466,5 @@ jobs:
             echo "Error: no .ipa found to upload"
             exit 1
           fi
-          gh api "repos/${{ github.repository }}/releases/${{ needs.create_release.outputs.release_id }}/assets" \
-            --method POST \
-            -H "Content-Type: application/octet-stream" \
-            --input "$IPA_FILE" \
-            -f "name=$(basename "$IPA_FILE")"
+          gh release upload "${{ needs.create_release.outputs.tag }}" "$IPA_FILE" \
+            --repo ${{ github.repository }}
