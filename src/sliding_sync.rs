@@ -10,7 +10,7 @@ use makepad_widgets::{error, log, warning, Cx, SignalToUI, WidgetUid};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
     config::RequestConfig, encryption::{identities::Device, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, RelationsOptions, RoomMember}, ruma::{
-        api::{Direction, client::{profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}}, events::{
+        api::{Direction, client::{authenticated_media::get_media_preview, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}}, events::{
             relation::RelationType,
             room::{
                 message::{RoomMessageEventContent, TextMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
@@ -36,7 +36,7 @@ use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
     app::AppStateAction, app_data_dir, cache_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
-        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::{LinkPreviewData, LinkPreviewDataNonNumeric, LinkPreviewRateLimitResponse}, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
+        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
@@ -304,29 +304,20 @@ pub type OnMediaFetchedFn = fn(
 /// Error types for URL preview operations.
 #[derive(Debug)]
 pub enum UrlPreviewError {
-    /// HTTP request failed.
-    Request(matrix_sdk::reqwest::Error),
-    /// JSON parsing failed.
-    Json(serde_json::Error),
-    /// Client not available.
+    /// The Matrix client was not available.
     ClientNotAvailable,
-    /// Access token not available.
-    AccessTokenNotAvailable,
-    /// HTTP error status.
-    HttpStatus(u16),
-    /// URL parsing error.
-    UrlParse(url::ParseError),
+    /// The request to the homeserver failed.
+    Request(matrix_sdk::HttpError),
+    /// Parsing the preview JSON failed.
+    Json(serde_json::Error),
 }
 
 impl std::fmt::Display for UrlPreviewError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UrlPreviewError::Request(e) => write!(f, "HTTP request failed: {}", e),
-            UrlPreviewError::Json(e) => write!(f, "JSON parsing failed: {}", e),
             UrlPreviewError::ClientNotAvailable => write!(f, "Matrix client not available"),
-            UrlPreviewError::AccessTokenNotAvailable => write!(f, "Access token not available"),
-            UrlPreviewError::HttpStatus(status) => write!(f, "HTTP {} error", status),
-            UrlPreviewError::UrlParse(e) => write!(f, "URL parsing failed: {}", e),
+            UrlPreviewError::Request(e) => write!(f, "HTTP request failed: {e}"),
+            UrlPreviewError::Json(e) => write!(f, "JSON parsing failed: {e}"),
         }
     }
 }
@@ -335,7 +326,6 @@ impl std::error::Error for UrlPreviewError {}
 
 /// The function signature for the callback that gets invoked when link preview data is fetched.
 pub type OnLinkPreviewFetchedFn = fn(
-    String,
     Arc<Mutex<crate::home::link_preview::TimestampedCacheEntry>>,
     Result<LinkPreviewData, UrlPreviewError>,
     Option<crossbeam_channel::Sender<TimelineUpdate>>,
@@ -2176,108 +2166,19 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::GetUrlPreview { url, on_fetched, destination, update_sender } => {
-                // const MAX_LOG_RESPONSE_BODY_LENGTH: usize = 1000;
-                // log!("Starting URL preview fetch for: {}", url);
                 let _fetch_url_preview_task = Handle::current().spawn(async move {
                     let result: Result<LinkPreviewData, UrlPreviewError> = async {
-                        // log!("Getting Matrix client for URL preview: {}", url);
-                        let client = get_client().ok_or_else(|| {
-                            // error!("Matrix client not available for URL preview: {}", url);
-                            UrlPreviewError::ClientNotAvailable
-                        })?;
-                        
-                        let token = client.access_token().ok_or_else(|| {
-                            // error!("Access token not available for URL preview: {}", url);
-                            UrlPreviewError::AccessTokenNotAvailable
-                        })?;
-                        // Official Doc: https://spec.matrix.org/v1.11/client-server-api/#get_matrixclientv1mediapreview_url
-                        // Element desktop is using /_matrix/media/v3/preview_url
-                        let mut endpoint_url = client.homeserver().join("/_matrix/client/v1/media/preview_url")
-                            .map_err(UrlPreviewError::UrlParse)?;
-                        endpoint_url.query_pairs_mut().append_pair("url", url.as_str());
-                        // log!("Fetching URL preview from endpoint: {} for URL: {}", endpoint_url, url);
-
-                        let response = client
-                            .http_client()
-                            .get(endpoint_url.clone())
-                            .bearer_auth(token)
-                            .header("Content-Type", "application/json")
-                            .send()
-                            .await
-                            .map_err(|e| {
-                                // error!("HTTP request failed for URL preview {}: {}", url, e);
-                                UrlPreviewError::Request(e)
-                            })?;
-                        
-                        let status = response.status();
-                        // log!("URL preview response status for {}: {}", url, status);
-                        
-                        if !status.is_success() && status.as_u16() != 429 {
-                            // error!("URL preview request failed with status {} for URL: {}", status, url);
-                            return Err(UrlPreviewError::HttpStatus(status.as_u16()));
+                        let client = get_client().ok_or(UrlPreviewError::ClientNotAvailable)?;
+                        let request = get_media_preview::v1::Request::new(url);
+                        let response = client.send(request).await.map_err(UrlPreviewError::Request)?;
+                        match response.data {
+                            Some(raw) => serde_json::from_str::<LinkPreviewData>(raw.get())
+                                .map_err(UrlPreviewError::Json),
+                            None => Ok(LinkPreviewData::default()),
                         }
-                        
-                        let text = response.text().await.map_err(|e| {
-                            // error!("Failed to read response text for URL preview {}: {}", url, e);
-                            UrlPreviewError::Request(e)
-                        })?;
-                        
-                        // log!("URL preview response body length for {}: {} bytes", url, text.len());
-                        // if text.len() > MAX_LOG_RESPONSE_BODY_LENGTH {
-                        //     log!("URL preview response body preview for {}: {}...", url, &text[..MAX_LOG_RESPONSE_BODY_LENGTH]);
-                        // } else {
-                        //     log!("URL preview response body for {}: {}", url, text);
-                        // }
-                        // This request is rate limited, retry after a duration we get from the server.
-                        if status.as_u16() == 429 {
-                            let link_preview_429_res = serde_json::from_str::<LinkPreviewRateLimitResponse>(&text)
-                                .map_err(|e| {
-                                    // error!("Failed to parse as LinkPreviewRateLimitResponse for URL preview {}: {}", url, e);
-                                    UrlPreviewError::Json(e)
-                            });
-                            match link_preview_429_res {
-                                Ok(link_preview_429_res) => {
-                                    if let Some(retry_after) = link_preview_429_res.retry_after_ms {
-                                        tokio::time::sleep(Duration::from_millis(retry_after.into())).await;
-                                        submit_async_request(MatrixRequest::GetUrlPreview{
-                                            url: url.clone(),
-                                            on_fetched,
-                                            destination: destination.clone(),
-                                            update_sender: update_sender.clone(),
-                                        });
-                                        
-                                    }
-                                }
-                                Err(_e) => {
-                                    // error!("Failed to parse as LinkPreviewRateLimitResponse for URL preview {}: {}", url, _e);
-                                }
-                            }
-                            return Err(UrlPreviewError::HttpStatus(429));
-                        }
-                        serde_json::from_str::<LinkPreviewData>(&text)
-                            .or_else(|_first_error| {
-                                // log!("Failed to parse as LinkPreviewData, trying LinkPreviewDataNonNumeric for URL: {}", url);
-                                serde_json::from_str::<LinkPreviewDataNonNumeric>(&text)
-                                    .map(|non_numeric| non_numeric.into())
-                            })
-                            .map_err(|e| {
-                                // error!("Failed to parse JSON response for URL preview {}: {}", url, e);
-                                // error!("Response body that failed to parse: {}", text);
-                                UrlPreviewError::Json(e)
-                            })
                     }.await;
 
-                    // match &result {
-                    //     Ok(preview_data) => {
-                    //         log!("Successfully fetched URL preview for {}: title: {:?}, site_name: {:?}", 
-                    //              url, preview_data.title, preview_data.site_name);
-                    //     }
-                    //     Err(e) => {
-                    //         error!("URL preview fetch failed for {}: {}", url, e);
-                    //     }
-                    // }
-
-                    on_fetched(url, destination, result, update_sender);
+                    on_fetched(destination, result, update_sender);
                     SignalToUI::set_ui_signal();
                 });
             }

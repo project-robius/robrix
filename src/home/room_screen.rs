@@ -32,7 +32,7 @@ use crate::{
     },
     room::{BasicRoomDetails, reply_preview::{CollapsiblePreviewRef, CollapsiblePreviewWidgetRefExt}, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageStatus, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints}, utils::{self, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -430,9 +430,6 @@ script_mod! {
                         image_view +: { image +: {
                             height: (mod.widgets.IMG_MSG_FIT)
                         } }
-                        default_image_view +: { image +: {
-                            height: (mod.widgets.IMG_MSG_FIT)
-                        } }
                     }
                 }
                 download_section := mod.widgets.MessageDownloadSection {}
@@ -466,9 +463,6 @@ script_mod! {
                     }
                     image := TextOrImage {
                         image_view +: { image +: {
-                            height: (mod.widgets.IMG_MSG_FIT)
-                        } }
-                        default_image_view +: { image +: {
                             height: (mod.widgets.IMG_MSG_FIT)
                         } }
                     }
@@ -988,6 +982,8 @@ impl Widget for RoomScreen {
                     } else if let Some(tl) = self.tl_state.as_mut() {
                         tl.media_cache.clear_all_pending_and_failed_requests();
                         tl.link_preview_cache.clear_all_pending_and_failed_requests();
+                        tl.content_drawn_since_last_update.clear();
+                        self.view.portal_list(cx, ids!(timeline.list)).redraw(cx);
                     }
                     continue;
                 }
@@ -1862,7 +1858,9 @@ impl RoomScreen {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .update_encryption_state(cx, true);
                 }
-                TimelineUpdate::LinkPreviewFetched => {}
+                TimelineUpdate::LinkPreviewFetched => {
+                    // fall through to this item being redrawn
+                }
                 TimelineUpdate::FileUploadStarted { upload_id, file_name, in_reply_to, abort_handle } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .handle_file_upload_started(cx, upload_id, &file_name, in_reply_to.as_ref(), abort_handle);
@@ -3844,18 +3842,17 @@ fn populate_message_view(
                     let text_or_image_ref = item.text_or_image(cx, ids!(content.message.image));
                     let fallback = if was_cached {
                         // Cached path re-reads the status the widget already has.
-                        matches!(text_or_image_ref.status(), TextOrImageStatus::Text)
-                            .then(|| DownloadableAttachment {
-                                media_source: image.source.clone(),
-                                filename: image.filename().to_owned(),
-                                size: image.info.as_ref().and_then(|i| i.size).map(u64::from),
-                                kind: DownloadKind::Image,
-                            })
+                        text_or_image_ref.status().is_text().then(|| DownloadableAttachment {
+                            media_source: image.source.clone(),
+                            filename: image.filename().to_owned(),
+                            size: image.info.as_ref().and_then(|i| i.size).map(u64::from),
+                            kind: DownloadKind::Image,
+                        })
                     } else {
                         let (is_image_fully_drawn, fallback) = populate_image_message_content_with_fallback(
                             cx,
                             &text_or_image_ref,
-                            image.info.clone(),
+                            image.info.as_deref(),
                             image.source.clone(),
                             msg.body(),
                             media_cache,
@@ -4049,18 +4046,17 @@ fn populate_message_view(
             let filename = if body.is_empty() { "sticker".to_owned() } else { body.clone() };
             let size = info.size.map(u64::from);
             download_info = if was_cached {
-                matches!(text_or_image_ref.status(), TextOrImageStatus::Text)
-                    .then(|| DownloadableAttachment {
-                        media_source,
-                        filename,
-                        size,
-                        kind: DownloadKind::Image,
-                    })
+                text_or_image_ref.status().is_text().then(|| DownloadableAttachment {
+                    media_source,
+                    filename,
+                    size,
+                    kind: DownloadKind::Image,
+                })
             } else {
                 let (is_image_fully_drawn, fallback) = populate_image_message_content_with_fallback(
                     cx,
                     &text_or_image_ref,
-                    Some(Box::new(info.clone())),
+                    Some(info),
                     media_source,
                     body,
                     media_cache,
@@ -4404,7 +4400,7 @@ fn populate_media_caption(
 fn populate_image_message_content_with_fallback(
     cx: &mut Cx,
     text_or_image_ref: &TextOrImageRef,
-    image_info_source: Option<Box<ImageInfo>>,
+    image_info_source: Option<&ImageInfo>,
     original_source: MediaSource,
     body: &str,
     media_cache: &mut MediaCache,
@@ -4420,13 +4416,12 @@ fn populate_image_message_content_with_fallback(
         body,
         media_cache,
     );
-    let fallback = matches!(text_or_image_ref.status(), TextOrImageStatus::Text)
-        .then(|| DownloadableAttachment {
-            media_source: original_source,
-            filename,
-            size,
-            kind,
-        });
+    let fallback = text_or_image_ref.status().is_text().then(|| DownloadableAttachment {
+        media_source: original_source,
+        filename,
+        size,
+        kind,
+    });
     (fully_drawn, fallback)
 }
 
@@ -4436,12 +4431,12 @@ fn populate_image_message_content_with_fallback(
 fn populate_image_message_content(
     cx: &mut Cx,
     text_or_image_ref: &TextOrImageRef,
-    image_info_source: Option<Box<ImageInfo>>,
+    image_info_source: Option<&ImageInfo>,
     original_source: MediaSource,
     body: &str,
     media_cache: &mut MediaCache,
 ) -> bool {
-    let (mimetype, _width, _height) = image_info_source.as_ref()
+    let (mimetype, _width, _height) = image_info_source
         .map(|info| (info.mimetype.as_deref(), info.width, info.height))
         .unwrap_or_default();
 
@@ -4463,7 +4458,7 @@ fn populate_image_message_content(
 
     let mut fully_drawn = false;
 
-    let mut fetch_and_show_media_source = |cx: &mut Cx, media_source: MediaSource, image_info: Box<ImageInfo>| {
+    let mut fetch_and_show_media_source = |cx: &mut Cx, media_source: MediaSource, image_info: &ImageInfo| {
         match media_cache.try_get_media_or_fetch(&media_source, MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), media_format) => {
                 // Include the file type (full or thumbnail) in the cache key to disambiguate.
@@ -4484,7 +4479,7 @@ fn populate_image_message_content(
             }
             (MediaCacheEntry::Requested, _media_format) => {
                 // If the image is being fetched, we try to show its blurhash.
-                if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
+                if let (Some(blurhash), Some(width), Some(height)) = (image_info.blurhash.as_deref(), image_info.width, image_info.height) {
                     let show_image_result = text_or_image_ref.show_image(cx, Some(media_source), |cx, img| {
                         let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else {
                             return Err(image_cache::ImageError::EmptyData)
@@ -4530,10 +4525,6 @@ fn populate_image_message_content(
                 fully_drawn = false;
             }
             (MediaCacheEntry::Failed(_status_code), _media_format) => {
-                if text_or_image_ref.view(cx, ids!(default_image_view)).visible() {
-                    fully_drawn = true;
-                    return;
-                }
                 text_or_image_ref.show_text(
                     cx,
                     format!("{body}\n\nFailed to fetch image from {:?}", media_source_mxc(&media_source)),
@@ -4553,7 +4544,7 @@ fn populate_image_message_content(
             fetch_and_show_media_source(cx, media_source, image_info);
         }
         None => {
-            text_or_image_ref.show_text(cx, "{body}\n\nImage message had no source URL.");
+            text_or_image_ref.show_text(cx, format!("{body}\n\nImage message had no source URL."));
             fully_drawn = true;
         }
     }
