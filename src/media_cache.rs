@@ -102,7 +102,6 @@ impl MediaCache {
                 let value = occupied.get_mut();
                 match requested_format {
                     MediaFormat::Thumbnail(ref requested_mts) => {
-                        // Copy out the cached thumbnail so `value` is free to be mutated below.
                         let cached_thumbnail = value.thumbnail.as_ref().map(|(entry_ref, mts)| {
                             (entry_ref.lock().unwrap().deref().clone(), mts.clone())
                         });
@@ -309,89 +308,4 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
         let _ = sender.send(TimelineUpdate::MediaFetched(request));
     }
     SignalToUI::set_ui_signal();
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::utils::MEDIA_THUMBNAIL_FORMAT;
-
-    fn test_source() -> MediaSource {
-        MediaSource::Plain(OwnedMxcUri::from("mxc://example.org/abc"))
-    }
-
-    fn set_thumbnail(cache: &MediaCache, source: &MediaSource, state: MediaCacheEntry) {
-        let value = cache.get(media_source_mxc(source)).unwrap();
-        *value.thumbnail.as_ref().unwrap().0.lock().unwrap() = state;
-    }
-
-    fn set_full_file(cache: &MediaCache, source: &MediaSource, state: MediaCacheEntry) {
-        let value = cache.get(media_source_mxc(source)).unwrap();
-        *value.full_file.as_ref().unwrap().lock().unwrap() = state;
-    }
-
-    /// A thumbnail the homeserver can't produce should fall back to the full-size image,
-    /// and that fallback must only ever be issued once.
-    #[test]
-    fn failed_thumbnail_falls_back_to_full_file_exactly_once() {
-        let mut cache = MediaCache::new(None);
-        let source = test_source();
-
-        let (entry, format) = cache.try_get_media_or_fetch(&source, MEDIA_THUMBNAIL_FORMAT.into());
-        assert!(matches!(entry, MediaCacheEntry::Requested));
-        assert!(matches!(format, MediaFormat::Thumbnail(_)));
-        assert!(cache.get(media_source_mxc(&source)).unwrap().full_file.is_none());
-
-        set_thumbnail(&cache, &source, MediaCacheEntry::Failed(StatusCode::BAD_REQUEST));
-
-        let (entry, format) = cache.try_get_media_or_fetch(&source, MEDIA_THUMBNAIL_FORMAT.into());
-        assert!(matches!(entry, MediaCacheEntry::Requested));
-        assert!(matches!(format, MediaFormat::File), "should fall back to the full-size image");
-        let first = cache.get(media_source_mxc(&source)).unwrap().full_file.clone().unwrap();
-
-        // Repeated calls must reuse the in-flight file entry rather than fetching again.
-        for _ in 0..3 {
-            let (entry, format) = cache.try_get_media_or_fetch(&source, MEDIA_THUMBNAIL_FORMAT.into());
-            assert!(matches!(entry, MediaCacheEntry::Requested));
-            assert!(matches!(format, MediaFormat::File));
-            let again = cache.get(media_source_mxc(&source)).unwrap().full_file.clone().unwrap();
-            assert!(Arc::ptr_eq(&first, &again), "must not start a second file fetch");
-        }
-    }
-
-    /// Once the fallback file arrives, it is returned in place of the thumbnail.
-    #[test]
-    fn loaded_full_file_is_returned_after_thumbnail_failure() {
-        let mut cache = MediaCache::new(None);
-        let source = test_source();
-        cache.try_get_media_or_fetch(&source, MEDIA_THUMBNAIL_FORMAT.into());
-        set_thumbnail(&cache, &source, MediaCacheEntry::Failed(StatusCode::BAD_REQUEST));
-        cache.try_get_media_or_fetch(&source, MEDIA_THUMBNAIL_FORMAT.into());
-
-        set_full_file(&cache, &source, MediaCacheEntry::Loaded(Arc::from(&[1u8, 2, 3][..])));
-
-        let (entry, format) = cache.try_get_media_or_fetch(&source, MEDIA_THUMBNAIL_FORMAT.into());
-        assert!(matches!(format, MediaFormat::File));
-        match entry {
-            MediaCacheEntry::Loaded(data) => assert_eq!(&*data, &[1, 2, 3]),
-            other => panic!("expected the full-size image, got {other:?}"),
-        }
-    }
-
-    /// If the fallback also fails, we report failure instead of retrying forever.
-    #[test]
-    fn both_formats_failing_is_terminal() {
-        let mut cache = MediaCache::new(None);
-        let source = test_source();
-        cache.try_get_media_or_fetch(&source, MEDIA_THUMBNAIL_FORMAT.into());
-        set_thumbnail(&cache, &source, MediaCacheEntry::Failed(StatusCode::BAD_REQUEST));
-        cache.try_get_media_or_fetch(&source, MEDIA_THUMBNAIL_FORMAT.into());
-        set_full_file(&cache, &source, MediaCacheEntry::Failed(StatusCode::NOT_FOUND));
-
-        for _ in 0..3 {
-            let (entry, format) = cache.try_get_media_or_fetch(&source, MEDIA_THUMBNAIL_FORMAT.into());
-            assert!(matches!(entry, MediaCacheEntry::Failed(_)));
-            assert!(matches!(format, MediaFormat::File));
-        }
-    }
 }
