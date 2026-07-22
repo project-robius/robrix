@@ -148,6 +148,12 @@ script_mod! {
                 image := TextOrImage {
                     width: 120, height: Fill,
                     align: Align{ y: 0.5 }
+                    image_view +: {
+                        height: Fill,
+                        flow: Down,
+                        align: Align{ x: 0.5, y: 0.5 }
+                        image +: { height: Fill }
+                    }
                 }
             }
 

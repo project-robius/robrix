@@ -1,45 +1,30 @@
+use std::sync::{Arc, Mutex};
+
 use makepad_widgets::*;
 use matrix_sdk_ui::timeline::EventTimelineItem;
 use matrix_sdk::{
-    media::MediaFormat,
+    media::{MediaFormat, MediaRequestParameters},
     ruma::events::room::{message::MessageType, MediaSource},
 };
 use matrix_sdk::reqwest::StatusCode;
 
-use crate::{media_cache::{MediaCache, MediaCacheEntry}, shared::{attachment_download::media_source_mxc, image_viewer::{ImageViewerAction, ImageViewerError, LoadState}}};
+use crate::{home::room_screen::TimelineUpdate, media_cache::{error_to_media_cache_entry, MediaCacheEntry}, shared::image_viewer::ImageViewerError, sliding_sync::{submit_async_request, MatrixRequest}};
 
-/// Populates the image viewer modal with the given media content.
+/// Fetches the full-size image for the image viewer.
 ///
-/// * If the media is already cached, it will be immediately displayed.
-/// * If the media is not cached, it will be fetched from the server.
-/// * If the media fetch fails, an error message will be displayed.
-pub fn populate_matrix_image_modal(
-    cx: &mut Cx,
-    media_source: MediaSource,
-    media_cache: &mut MediaCache,
-) {
-    // Try to get media from cache or trigger fetch
-    let media_entry = media_cache.try_get_media_or_fetch(&media_source, MediaFormat::File);
-
-    // Handle the different media states
-    match media_entry {
-        (MediaCacheEntry::Loaded(data), MediaFormat::File) => {
-            cx.action(ImageViewerAction::Show(LoadState::Loaded(data)));
-        }
-        (MediaCacheEntry::Failed(status_code), MediaFormat::File) => {
-            let error = match status_code {
-                StatusCode::NOT_FOUND => ImageViewerError::NotFound,
-                StatusCode::INTERNAL_SERVER_ERROR => ImageViewerError::ConnectionFailed,
-                StatusCode::PARTIAL_CONTENT => ImageViewerError::BadData,
-                StatusCode::UNAUTHORIZED => ImageViewerError::Unauthorized,
-                _ => ImageViewerError::Unknown,
-            };
-            cx.action(ImageViewerAction::Show(LoadState::Error(error)));
-            // Remove failed media entry from cache for MediaFormat::File so as to start all over again from loading Thumbnail.
-            media_cache.remove_cache_entry(media_source_mxc(&media_source), Some(MediaFormat::File));
-        }
-        _ => {}
-    }
+/// The image viewer is already showing a thumbnail, so this returns nothing.
+/// [`show_fetched_image_in_viewer`] will be called when the full image arrives.
+pub fn fetch_full_image_for_viewer(media_source: MediaSource) {
+    submit_async_request(MatrixRequest::FetchMedia {
+        media_request: MediaRequestParameters {
+            source: media_source,
+            format: MediaFormat::File,
+        },
+        on_fetched: show_fetched_image_in_viewer,
+        // this isn't used
+        destination: Arc::new(Mutex::new(MediaCacheEntry::Requested)),
+        update_sender: None,
+    });
 }
 
 /// Gets the image's file name and size in bytes from an event timeline item.
@@ -54,4 +39,32 @@ pub fn get_image_name_and_filesize(event_tl_item: &EventTimelineItem) -> (String
         }
     }
     ("Unknown Image".to_string(), 0)
+}
+
+/// The result of the image viewer's request to fetch a full-size image.
+#[derive(Clone, Debug)]
+pub enum ImageViewerFetchAction {
+    Loaded(Arc<[u8]>),
+    Failed(ImageViewerError),
+}
+
+fn show_fetched_image_in_viewer(
+    _destination: &Mutex<MediaCacheEntry>,
+    request: MediaRequestParameters,
+    data: matrix_sdk::Result<Vec<u8>>,
+    _update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+) {
+    let action = match data {
+        Ok(data) => ImageViewerFetchAction::Loaded(data.into()),
+        Err(e) => ImageViewerFetchAction::Failed(
+            match error_to_media_cache_entry(e, &request) {
+                MediaCacheEntry::Failed(StatusCode::NOT_FOUND) => ImageViewerError::NotFound,
+                MediaCacheEntry::Failed(StatusCode::INTERNAL_SERVER_ERROR) => ImageViewerError::ConnectionFailed,
+                MediaCacheEntry::Failed(StatusCode::PARTIAL_CONTENT) => ImageViewerError::BadData,
+                MediaCacheEntry::Failed(StatusCode::UNAUTHORIZED) => ImageViewerError::Unauthorized,
+                _ => ImageViewerError::Unknown,
+            }
+        ),
+    };
+    Cx::post_action(action);
 }
