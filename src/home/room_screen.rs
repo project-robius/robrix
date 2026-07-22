@@ -6,6 +6,7 @@ use std::{borrow::Cow, cell::RefCell, ops::{DerefMut, Range}, sync::Arc};
 use hashbrown::{HashMap, HashSet};
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
+use matrix_sdk::reqwest::StatusCode;
 use matrix_sdk::{
     OwnedServerName, media::{MediaFormat, MediaRequestParameters}, room::RoomMember, ruma::{
         EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId, events::{
@@ -26,7 +27,7 @@ use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, e
 
 use matrix_sdk_ui::sync_service::State;
 use crate::{
-    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::{RoomsListAction, RoomsListRef}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{fetch_full_image_for_viewer, get_image_name_and_filesize}, rooms_list::{RoomsListAction, RoomsListRef}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
@@ -1788,12 +1789,8 @@ impl RoomScreen {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .set_room_context(cx, ui, tl.kind.clone(), tl.room_members.clone());
                 },
-                TimelineUpdate::MediaFetched(request) => {
+                TimelineUpdate::MediaFetched(_request) => {
                     log!("process_timeline_updates(): media fetched for room {}", tl.kind.room_id());
-                    // Set Image to image viewer modal if the media is not a thumbnail.
-                    if let (MediaFormat::File, media_source) = (request.format, request.source) {
-                        populate_matrix_image_modal(cx, media_source, &mut tl.media_cache);
-                    }
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
@@ -2055,7 +2052,7 @@ impl RoomScreen {
         let Some(media_source) = mxc_uri else {
             return;
         };
-        let Some(tl_state) = self.tl_state.as_mut() else { return };
+        let Some(tl_state) = self.tl_state.as_ref() else { return };
         let Some(event_tl_item) = tl_state.items.get(item_id).and_then(|item| item.as_event()) else { return };
 
         let timestamp_millis = event_tl_item.timestamp();
@@ -2080,7 +2077,7 @@ impl RoomScreen {
             }),
         )));
 
-        populate_matrix_image_modal(cx, media_source, &mut tl_state.media_cache);
+        fetch_full_image_for_viewer(media_source);
     }
 
     /// Looks up the event specified by the given message details in the given timeline.
@@ -4461,6 +4458,12 @@ fn populate_image_message_content(
 
     let mut fully_drawn = false;
 
+    // Fall back to fetching the full-size image instead of a failed thumbnail if it's not too big.
+    const MAX_FULL_IMAGE_SIZE: u64 = 1024 * 1024; // 1MiB
+    let should_fetch_full_size = image_info_source
+        .and_then(|info| info.size)
+        .is_none_or(|size| u64::from(size) <= MAX_FULL_IMAGE_SIZE);
+
     let mut fetch_and_show_media_source = |cx: &mut Cx, media_source: MediaSource, image_info: &ImageInfo| {
         match media_cache.try_get_media_or_fetch(&media_source, MEDIA_THUMBNAIL_FORMAT.into()) {
             (MediaCacheEntry::Loaded(data), media_format) => {
@@ -4526,6 +4529,25 @@ fn populate_image_message_content(
                     }
                 }
                 fully_drawn = false;
+            }
+            (MediaCacheEntry::Failed(status_code), MediaFormat::Thumbnail(_))
+                if should_fetch_full_size && status_code != StatusCode::NOT_FOUND =>
+            {
+                match media_cache.try_get_media_or_fetch(&media_source, MediaFormat::File) {
+                    (MediaCacheEntry::Loaded(data), _) => {
+                        let cache_key = format!("{}#full", media_source_mxc(&media_source));
+                        let res = text_or_image_ref.show_image(cx, Some(media_source.clone()), |cx, img| {
+                            utils::load_image_with_cache_key(&img, cx, std::path::Path::new(&cache_key), Arc::clone(&data))
+                                .map(|()| img.size_in_pixels(cx).unwrap_or_default())
+                        });
+                        if let Err(e) = res {
+                            error!("Failed to display full-size image: {e:?}");
+                        }
+                        fully_drawn = true;
+                    }
+                    (MediaCacheEntry::Requested, _) => fully_drawn = false,
+                    (MediaCacheEntry::Failed(_), _) => fully_drawn = true,
+                }
             }
             (MediaCacheEntry::Failed(_status_code), _media_format) => {
                 text_or_image_ref.show_text(

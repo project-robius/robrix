@@ -196,54 +196,14 @@ impl MediaCache {
         });
     }
 
-    /// Removes a specific media format from the cache for the given MXC URI.
-    /// If `format` is None, removes the entire cache entry for the URI.
-    /// Returns the removed cache entry if found, None otherwise.
-    pub fn remove_cache_entry(&mut self, mxc_uri: &OwnedMxcUri, format: Option<MediaFormat>) -> Option<MediaCacheEntryRef> {
-        match format {
-            Some(MediaFormat::Thumbnail(_)) => {
-                if let Some(cache_value) = self.cache.get_mut(mxc_uri) {
-                    if let Some((removed_entry, _)) = cache_value.thumbnail.take() {
-                        // If both thumbnail and full_file are None, remove the entire entry
-                        if cache_value.full_file.is_none() {
-                            self.cache.remove(mxc_uri);
-                        }
-                        return Some(removed_entry);
-                    }
-                }
-                None
-            }
-            Some(MediaFormat::File) => {
-                if let Some(cache_value) = self.cache.get_mut(mxc_uri) {
-                    if let Some(removed_entry) = cache_value.full_file.take() {
-                        // If both thumbnail and full_file are None, remove the entire entry
-                        if cache_value.thumbnail.is_none() {
-                            self.cache.remove(mxc_uri);
-                        }
-                        return Some(removed_entry);
-                    }
-                }
-                None
-            }
-            None => {
-                // Remove the entire entry for this MXC URI
-                self.cache.remove(mxc_uri).map(|cache_value| {
-                    // Return the full_file entry if it exists, otherwise the thumbnail entry
-                    cache_value.full_file
-                        .or_else(|| cache_value.thumbnail.map(|(entry, _)| entry))
-                        .unwrap_or_else(|| Arc::new(Mutex::new(MediaCacheEntry::Requested)))
-                })
-            }
-        }
-    }
 }
 
 /// Converts a Matrix SDK error to a MediaCacheEntry::Failed with appropriate status codes.
-fn error_to_media_cache_entry(error: Error, request: &MediaRequestParameters) -> MediaCacheEntry {
+pub(crate) fn error_to_media_cache_entry(error: Error, request: &MediaRequestParameters) -> MediaCacheEntry {
     match error {
         Error::Http(http_error) => {
             if let Some(client_error) = http_error.as_client_api_error() {
-                error!("Client error for media cache: {client_error} for request: {:?}", request);
+                error!("Erro {client_error} for request: {:?}", request);
                 MediaCacheEntry::Failed(client_error.status_code)
             } else {
                 match *http_error {

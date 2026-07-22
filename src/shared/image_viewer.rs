@@ -12,6 +12,8 @@ use makepad_widgets::{
 };
 use matrix_sdk_ui::timeline::EventTimelineItem;
 
+use crate::home::room_image_viewer::ImageViewerFetchAction;
+
 use crate::utils::format_decimal_file_size;
 use thiserror::Error;
 use crate::{
@@ -765,6 +767,15 @@ impl MatchEvent for ImageViewer {
         }
 
         for action in actions.iter() {
+            match action.downcast_ref() {
+                Some(ImageViewerFetchAction::Loaded(bytes)) => {
+                    cx.action(ImageViewerAction::Show(LoadState::Loaded(bytes.clone())));
+                }
+                Some(ImageViewerFetchAction::Failed(error)) => {
+                    cx.action(ImageViewerAction::Show(LoadState::Error(error.clone())));
+                }
+                None => {}
+            }
             if let Some(ImageViewerAction::Show(state)) = action.downcast_ref() {
                 match state {
                     LoadState::Loading(texture, metadata) => {
