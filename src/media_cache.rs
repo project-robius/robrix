@@ -80,8 +80,6 @@ impl MediaCache {
     ///   this function will fetch the thumbnail, and return the full-size image (if it exists).
     /// * If the `media_format` is requesting a full-size image that is not yet in the cache,
     ///   this function will fetch the full-size image, and return a thumbnail (if it exists).
-    /// * If a previously-requested thumbnail failed, this function falls back to fetching
-    ///   the full-size image, since some homeservers only serve pre-generated thumbnails.
     ///
     /// Returns a tuple of the media cache entry and the media format of that cached entry.
     pub fn try_get_media_or_fetch(
@@ -92,8 +90,6 @@ impl MediaCache {
         let mxc_uri = media_source_mxc(source);
         let mut post_request_retval = (MediaCacheEntry::Requested, requested_format.clone());
         let entry_ref_to_fetch: MediaCacheEntryRef;
-        // Differs from `requested_format` when we fall back to the full-size image.
-        let mut format_to_fetch = requested_format.clone();
 
         let entry = self.cache.raw_entry_mut().from_key(mxc_uri);
 
@@ -102,25 +98,11 @@ impl MediaCache {
                 let value = occupied.get_mut();
                 match requested_format {
                     MediaFormat::Thumbnail(ref requested_mts) => {
-                        let cached_thumbnail = value.thumbnail.as_ref().map(|(entry_ref, mts)| {
-                            (entry_ref.lock().unwrap().deref().clone(), mts.clone())
-                        });
-                        if let Some((thumbnail, existing_mts)) = cached_thumbnail {
-                            let MediaCacheEntry::Failed(_) = thumbnail else {
-                                return (thumbnail, MediaFormat::Thumbnail(existing_mts));
-                            };
-                            // The thumbnail failed, so use the full-size image instead.
-                            if let Some(existing_file) = value.full_file.as_ref() {
-                                return (
-                                    existing_file.lock().unwrap().deref().clone(),
-                                    MediaFormat::File,
-                                );
-                            }
-                            let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
-                            value.full_file = Some(Arc::clone(&entry_ref));
-                            entry_ref_to_fetch = entry_ref;
-                            format_to_fetch = MediaFormat::File;
-                            post_request_retval = (MediaCacheEntry::Requested, MediaFormat::File);
+                        if let Some((entry_ref, existing_mts)) = value.thumbnail.as_ref() {
+                            return (
+                                entry_ref.lock().unwrap().deref().clone(),
+                                MediaFormat::Thumbnail(existing_mts.clone()),
+                            );
                         } else {
                             // Here, a thumbnail was requested but not found, so fetch it.
                             let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
@@ -181,7 +163,7 @@ impl MediaCache {
         sliding_sync::submit_async_request(MatrixRequest::FetchMedia {
             media_request: MediaRequestParameters {
                 source: source.clone(),
-                format: format_to_fetch,
+                format: requested_format,
             },
             on_fetched: insert_into_cache,
             destination: entry_ref_to_fetch,

@@ -1395,7 +1395,9 @@ impl Widget for RoomsList {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let app_state = scope.data.get_mut::<AppState>().unwrap();
         // Update the currently-selected room from the AppState data.
-        self.current_active_room = app_state.selected_room.clone();
+        if self.current_active_room != app_state.selected_room {
+            self.current_active_room = app_state.selected_room.clone();
+        }
 
         // Based on the various displayed room lists and is_expanded state of each room header,
         // calculate the indexes in the PortalList where the headers and rooms should be drawn.

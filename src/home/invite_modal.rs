@@ -175,9 +175,9 @@ impl WidgetMatchEvent for InviteModal {
                     if let Some(room_name_id) = &self.room_name_id {
                         submit_async_request(MatrixRequest::InviteUser {
                             room_id: room_name_id.room_id().clone(),
-                            user_id: user_id.to_owned(),
+                            user_id: user_id.clone(),
                         });
-                        self.state = InviteModalState::WaitingForInvite(user_id.to_owned());
+                        self.state = InviteModalState::WaitingForInvite(user_id);
                         script_apply_eval!(cx, status_label, {
                             text: "Sending invite...",
                             draw_text +: {

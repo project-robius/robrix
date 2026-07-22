@@ -317,9 +317,9 @@ impl EventSourceModal {
         event_id: Option<OwnedEventId>,
         latest_json: Option<String>,
     ) {
-        self.room_id = Some(room_id.clone());
-        self.event_id = event_id.clone();
-        self.latest_json = latest_json.clone();
+        self.room_id = Some(room_id);
+        self.event_id = event_id;
+        self.latest_json = latest_json;
 
         self.view.button(cx, ids!(close_button)).reset_hover(cx);
         self.view.button(cx, ids!(room_id_copy_button)).reset_hover(cx);

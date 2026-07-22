@@ -365,7 +365,7 @@ impl RoomsListEntryContent {
     ) {
         // Note: in general, we must always set all fields in case a rooms list entry widget
         // was re-used by the portal list, to avoid showing any old content for a different entry.
-        self.view.label(cx, ids!(room_name)).set_text(cx, &room_info.room_name_id.to_string());
+        self.view.label(cx, ids!(room_name)).set_text(cx, &room_info.room_name_id.display());
         let timestamp = self.view.label(cx, ids!(timestamp));
         let latest_message = self.view.html_or_plaintext(cx, ids!(latest_message));
         if let Some((ts, msg)) = room_info.latest.as_ref() {
@@ -392,7 +392,7 @@ impl RoomsListEntryContent {
         cx: &mut Cx,
         room_info: &InvitedRoomInfo,
     ) {
-        self.view.label(cx, ids!(room_name)).set_text(cx, &room_info.room_name_id.to_string());
+        self.view.label(cx, ids!(room_name)).set_text(cx, &room_info.room_name_id.display());
         // Hide the timestamp field, and use the latest message field to show the inviter.
         self.view.label(cx, ids!(timestamp)).set_text(cx, "");
         let inviter_string = match &room_info.inviter_info {

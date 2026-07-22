@@ -2693,16 +2693,17 @@ impl RoomListServiceRoomInfo {
         fetch_power_levels: bool,
     ) -> Self {
         // Parallelize fetching of independent room data.
+        // Only joined rooms actually use tags and power levels.
         let (is_direct, tags, display_name, user_power_levels) = tokio::join!(
             room.is_direct(),
-            room.tags(),
+            async {
+                if room.state() == RoomState::Joined { room.tags().await } else { Ok(None) }
+            },
             room.display_name(),
             async {
-                if fetch_power_levels && let Some(user_id) = current_user_id {
-                    UserPowerLevels::from_room(&room, user_id.deref()).await
-                } else {
-                    None
-                }
+                if !fetch_power_levels || room.state() != RoomState::Joined { return None; }
+                let Some(user_id) = current_user_id else { return None; };
+                UserPowerLevels::from_room(&room, user_id.deref()).await
             }
         );
 
@@ -4170,14 +4171,16 @@ async fn get_latest_event_details(
 ) -> Option<(MilliSecondsSinceUnixEpoch, String)> {
     macro_rules! get_sender_username {
         ($profile:expr, $sender:expr, $is_own:expr) => {{
-            let sender_username_opt = if let TimelineDetails::Ready(profile) = $profile {
-                profile.display_name.clone()
-            } else if $is_own {
-                own_display_name(client).await
-            } else {
-                None
-            };
-            sender_username_opt.unwrap_or_else(|| $sender.to_string())
+            match $profile {
+                TimelineDetails::Ready(profile) => match profile.display_name.as_deref() {
+                    Some(name) => Cow::Borrowed(name),
+                    None => Cow::Borrowed($sender.as_str()),
+                },
+                _ => match if $is_own { own_display_name(client).await } else { None } {
+                    Some(name) => Cow::Owned(name),
+                    None => Cow::Borrowed($sender.as_str()),
+                },
+            }
         }};
     }
 
