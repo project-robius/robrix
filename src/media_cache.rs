@@ -203,7 +203,7 @@ pub(crate) fn error_to_media_cache_entry(error: Error, request: &MediaRequestPar
     match error {
         Error::Http(http_error) => {
             if let Some(client_error) = http_error.as_client_api_error() {
-                error!("Erro {client_error} for request: {:?}", request);
+                error!("Error {client_error} for request: {:?}", request);
                 MediaCacheEntry::Failed(client_error.status_code)
             } else {
                 match *http_error {
