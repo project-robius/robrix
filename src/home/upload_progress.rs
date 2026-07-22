@@ -133,8 +133,9 @@ impl Widget for UploadProgressView {
 
             // Handle retry button
             if self.button(cx, ids!(retry_button)).clicked(actions) {
-                if let UploadViewState::Error { upload: Some(upload) } = &self.state {
-                    let upload = upload.clone();
+                if let UploadViewState::Error { upload } = &mut self.state
+                    && let Some(upload) = upload.take()
+                {
                     self.hide_current(cx);
                     submit_attachment_upload(upload);
                 }

@@ -213,7 +213,7 @@ impl SpacesBarEntry {
         avatar: &FetchedRoomAvatar,
         is_selected: bool,
     ) {
-        let space_name = space_name_id.to_string();
+        let space_name = space_name_id.display();
         // The name label isn't visible by default, but we populate it anyway.
         self.inner.view.label(cx, ids!(space_name)).set_text(cx, &space_name);
 
@@ -236,8 +236,8 @@ impl SpacesBarEntry {
             self.last_avatar = Some(avatar.clone());
         }
 
-        self.space_name_id = Some(space_name_id);
         self.inner.set_tooltip_text(space_name);
+        self.space_name_id = Some(space_name_id);
         self.inner.set_selected(cx, is_selected);
     }
 }

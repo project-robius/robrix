@@ -20,7 +20,10 @@ pub const GEO_URI_SCHEME: &str = "geo:";
 
 /// Formats a byte count using decimal units with user-facing byte suffixes, e.g. KB/MB/GB.
 pub fn format_decimal_file_size(bytes: u64) -> String {
-    bytesize::ByteSize::b(bytes).display().si().to_string().to_uppercase()
+    let mut size = bytesize::ByteSize::b(bytes).display().si().to_string();
+    // SI suffixes are always ASCII
+    size.make_ascii_uppercase();
+    size
 }
 
 pub fn deserialize_or_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
@@ -737,6 +740,7 @@ pub fn linkify_get_urls<'t>(
     const MAILTO: &str = "mailto:";
 
     use linkify::{Link, LinkFinder, LinkKind};
+    use std::fmt::Write as _;
     let mut links = LinkFinder::new()
         .links(text)
         .peekable();
@@ -753,8 +757,9 @@ pub fn linkify_get_urls<'t>(
         }
     };
 
-    let mut linkified_text = String::new();
+    let mut linkified_text = String::with_capacity(text.len() + 64);
     let mut last_end_index = 0;
+    let mut did_linkify = false;
     for link in links {
         let link_txt = link.as_str();
 
@@ -779,10 +784,7 @@ pub fn linkify_get_urls<'t>(
             || is_link_within_html_tag(&link)
             || is_mailto_link_within_href_attr(&link)
         {
-            linkified_text = format!(
-                "{linkified_text}{}",
-                text.get(last_end_index..link.end()).unwrap_or_default(),
-            );
+            linkified_text.push_str(text.get(last_end_index..link.end()).unwrap_or_default());
             if let Some(links_found) = links_found.as_mut() {
                 if let Ok(url) = Url::parse(link_txt) {
                     links_found.push(url);
@@ -791,12 +793,14 @@ pub fn linkify_get_urls<'t>(
         } else {
             match link.kind() {
                 LinkKind::Url => {
-                    linkified_text = format!(
-                        "{linkified_text}{}<a href=\"{}\">{}</a>",
+                    let _ = write!(
+                        linkified_text,
+                        "{}<a href=\"{}\">{}</a>",
                         escaped(text.get(last_end_index..link.start()).unwrap_or_default()),
                         htmlize::escape_attribute(link_txt),
                         htmlize::escape_text(link_txt),
                     );
+                    did_linkify = true;
                     if let Some(links_found) = links_found.as_mut() {
                         if let Ok(url) = Url::parse(link_txt) {
                             links_found.push(url);
@@ -804,17 +808,22 @@ pub fn linkify_get_urls<'t>(
                     }
                 }
                 LinkKind::Email => {
-                    linkified_text = format!(
-                        "{linkified_text}{}<a href=\"mailto:{}\">{}</a>",
+                    let _ = write!(
+                        linkified_text,
+                        "{}<a href=\"mailto:{}\">{}</a>",
                         escaped(text.get(last_end_index..link.start()).unwrap_or_default()),
                         htmlize::escape_attribute(link_txt),
                         htmlize::escape_text(link_txt),
                     );
+                    did_linkify = true;
                 }
                 _ => return Cow::Borrowed(text), // unreachable
             }
         }
         last_end_index = link.end();
+    }
+    if !did_linkify && is_html {
+        return Cow::Borrowed(text);
     }
     linkified_text.push_str(
         &escaped(text.get(last_end_index..).unwrap_or_default())
@@ -1032,6 +1041,17 @@ impl RoomNameId {
             room.display_name().await.unwrap_or(RoomDisplayName::Empty),
             room.room_id().to_owned(),
         )
+    }
+
+    /// Returns an efficient displayable/string representation.
+    pub fn display(&self) -> Cow<'_, str> {
+        match &self.display_name {
+            RoomDisplayName::Named(n)
+            | RoomDisplayName::Aliased(n)
+            | RoomDisplayName::Calculated(n) => Cow::Borrowed(n),
+            RoomDisplayName::Empty => Cow::Owned(format!("Room ID {}", self.room_id)),
+            RoomDisplayName::EmptyWas(name) => Cow::Owned(format!("Empty Room (was \"{name}\")")),
+        }
     }
 
     /// Get a reference to the underlying display name.

@@ -503,8 +503,7 @@ impl Widget for HomeScreen {
                 match action.downcast_ref() {
                     Some(NavigationBarAction::GoToHome) => {
                         if !matches!(app_state.selected_tab, SelectedTab::Home) {
-                            self.previous_selection = app_state.selected_tab.clone();
-                            app_state.selected_tab = SelectedTab::Home;
+                            self.previous_selection = std::mem::replace(&mut app_state.selected_tab, SelectedTab::Home);
                             cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
                             self.update_active_page_from_selection(cx, app_state);
                             self.view.redraw(cx);
@@ -512,8 +511,7 @@ impl Widget for HomeScreen {
                     }
                     Some(NavigationBarAction::GoToAddRoom) => {
                         if !matches!(app_state.selected_tab, SelectedTab::AddRoom) {
-                            self.previous_selection = app_state.selected_tab.clone();
-                            app_state.selected_tab = SelectedTab::AddRoom;
+                            self.previous_selection = std::mem::replace(&mut app_state.selected_tab, SelectedTab::AddRoom);
                             cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
                             self.update_active_page_from_selection(cx, app_state);
                             self.view.redraw(cx);
@@ -522,8 +520,7 @@ impl Widget for HomeScreen {
                     Some(NavigationBarAction::GoToSpace { space_name_id }) => {
                         let new_space_selection = SelectedTab::Space { space_name_id: space_name_id.clone() };
                         if app_state.selected_tab != new_space_selection {
-                            self.previous_selection = app_state.selected_tab.clone();
-                            app_state.selected_tab = new_space_selection;
+                            self.previous_selection = std::mem::replace(&mut app_state.selected_tab, new_space_selection);
                             cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
                             self.update_active_page_from_selection(cx, app_state);
                             self.view.redraw(cx);
@@ -532,8 +529,7 @@ impl Widget for HomeScreen {
                     // Only open the settings screen if it is not currently open.
                     Some(NavigationBarAction::OpenSettings) => {
                         if !matches!(app_state.selected_tab, SelectedTab::Settings) {
-                            self.previous_selection = app_state.selected_tab.clone();
-                            app_state.selected_tab = SelectedTab::Settings;
+                            self.previous_selection = std::mem::replace(&mut app_state.selected_tab, SelectedTab::Settings);
                             cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
                             if let Some(settings_page) = self.update_active_page_from_selection(cx, app_state) {
                                 settings_page

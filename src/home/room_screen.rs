@@ -1364,12 +1364,14 @@ impl Widget for RoomScreen {
                             }
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::DateDivider(millis)) => {
-                            let item = list.item(cx, item_id, id!(DateDivider));
-                            let text = unix_time_millis_to_datetime(*millis)
-                                // format the time as a shortened date (Sat, Sept 5, 2021)
-                                .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
-                                .unwrap_or_else(|| format!("{:?}", millis));
-                            item.label(cx, ids!(date)).set_text(cx, &text);
+                            let (item, existed) = list.item_with_existed(cx, item_id, id!(DateDivider));
+                            if !(existed && item_drawn_status.content_drawn) {
+                                let text = unix_time_millis_to_datetime(*millis)
+                                    // format the time as a shortened date (Sat, Sept 5, 2021)
+                                    .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
+                                    .unwrap_or_else(|| format!("{:?}", millis));
+                                item.label(cx, ids!(date)).set_text(cx, &text);
+                            }
                             (item, ItemDrawnStatus::both_drawn())
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
@@ -2974,8 +2976,9 @@ impl RoomScreen {
                             receipt_type: ReceiptType::FullyRead,
                         });
                     } else {
-                        if let Some(own_user_receipt_timestamp) = &tl_state.latest_own_user_receipt.clone()
-                        .and_then(|receipt| receipt.ts) {
+                        if let Some(own_user_receipt_timestamp) = tl_state.latest_own_user_receipt
+                            .as_ref().and_then(|receipt| receipt.ts)
+                        {
                             let Some((_first_event_id, first_timestamp)) = tl_state
                                 .items
                                 .get(first_index)
@@ -2985,8 +2988,8 @@ impl RoomScreen {
                                     *index = first_index;
                                     return;
                                 };
-                            if own_user_receipt_timestamp >= &first_timestamp
-                                && own_user_receipt_timestamp <= &last_timestamp
+                            if own_user_receipt_timestamp >= first_timestamp
+                                && own_user_receipt_timestamp <= last_timestamp
                             {
                                 tl_state.scrolled_past_read_marker = true;
                                 submit_async_request(MatrixRequest::ReadReceipt {
@@ -3856,7 +3859,7 @@ fn populate_message_view(
                             image.source.clone(),
                             msg.body(),
                             media_cache,
-                            image.filename().to_owned(),
+                            image.filename(),
                             image.info.as_ref().and_then(|i| i.size).map(u64::from),
                             DownloadKind::Image,
                         );
@@ -4043,12 +4046,12 @@ fn populate_message_view(
 
             let text_or_image_ref = item.text_or_image(cx, ids!(content.message.image));
             let media_source: MediaSource = source.clone().into();
-            let filename = if body.is_empty() { "sticker".to_owned() } else { body.clone() };
+            let filename = if body.is_empty() { "sticker" } else { body.as_str() };
             let size = info.size.map(u64::from);
             download_info = if was_cached {
                 text_or_image_ref.status().is_text().then(|| DownloadableAttachment {
                     media_source,
-                    filename,
+                    filename: filename.to_owned(),
                     size,
                     kind: DownloadKind::Image,
                 })
@@ -4404,7 +4407,7 @@ fn populate_image_message_content_with_fallback(
     original_source: MediaSource,
     body: &str,
     media_cache: &mut MediaCache,
-    filename: String,
+    filename: &str,
     size: Option<u64>,
     kind: DownloadKind,
 ) -> (bool, Option<DownloadableAttachment>) {
@@ -4418,7 +4421,7 @@ fn populate_image_message_content_with_fallback(
     );
     let fallback = text_or_image_ref.status().is_text().then(|| DownloadableAttachment {
         media_source: original_source,
-        filename,
+        filename: filename.to_owned(),
         size,
         kind,
     });

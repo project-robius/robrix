@@ -356,13 +356,15 @@ impl LinkPreviewRef {
                 let num_links = accepted_links.len();
                 // Reuse as many old link preview child instances as we can.
                 inner.children.truncate(num_links);
-                // A reused preview keeps the bg color it had, so clear any old hover coloring.
-                for item in inner.children.iter() {
-                    reset_hover(cx, item);
-                }
                 while inner.children.len() < num_links {
                     let child = widget_ref_from_live_ptr(cx, inner.preview_template).as_view();
                     inner.children.push(child);
+                }
+                // Reset each preview's per-link visual state: a reused one keeps its old
+                // hover color and image, and a new one shows TextOrImage's default view.
+                for item in inner.children.iter() {
+                    reset_hover(cx, item);
+                    item.text_or_image(cx, ids!(image)).clear(cx);
                 }
                 inner.last_populated_links = accepted_links;
                 inner.is_expanded = false;
@@ -440,17 +442,14 @@ where
         image_view.set_visible(cx, false);
         return true;
     };
-    image_view.set_visible(cx, true);
-    text_or_image.clear(cx);
     let mut image_info = ImageInfo::default();
     image_info.mimetype = data.image_type.clone();
     image_info.size = data.image_size;
     let source = MediaSource::Plain(OwnedMxcUri::from(image.clone()));
     let fully_drawn = populate_image_fn(cx, &text_or_image, Some(&image_info), source, "", media_cache);
-    // If there's no image, or it failed to drawn, hide the image area.
-    if fully_drawn && text_or_image.status().is_text() {
-        image_view.set_visible(cx, false);
-    }
+    // Only show the image area once there's an actual image in it. Anything else means
+    // it's still loading or couldn't be fetched, and an error message doesn't belong here.
+    image_view.set_visible(cx, text_or_image.status().is_image());
     fully_drawn
 }
 

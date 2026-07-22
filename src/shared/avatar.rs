@@ -113,17 +113,16 @@ impl Widget for Avatar {
             }
         }
 
-        let Some(info) = self.info.clone() else { return };
+        let Some(info) = self.info.as_ref() else { return };
         let area = self.view.area();
-        let widget_uid = self.widget_uid();
         match event.hits(cx, area) {
             Hit::FingerDown(_fde) => {
                 cx.set_key_focus(area);
             }
             Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() && fue.was_tap() => {
                 cx.widget_action(
-                    widget_uid,
-                    ShowUserProfileAction::ShowUserProfile(info),
+                    self.widget_uid(),
+                    ShowUserProfileAction::ShowUserProfile(info.clone()),
                 );
             }
             _ =>()
