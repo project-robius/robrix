@@ -57,6 +57,19 @@ if [[ ! -d "$APP_BUNDLE" ]]; then
     exit 1
 fi
 
+# Fail fast if the binary wasn't linked against the iOS 26+ SDK, so a wrong
+# Xcode is caught here instead of after the ~20-min package + upload.
+SDK_VER=$(xcrun vtool -show-build "$APP_BUNDLE/$APP" 2>/dev/null | awk '$1=="sdk"{print $2; exit}')
+if [[ -n "$SDK_VER" ]]; then
+    echo "==> Linked iOS SDK: $SDK_VER"
+    if [[ "${SDK_VER%%.*}" -lt 26 ]]; then
+        echo "Error: built against iOS SDK $SDK_VER; Apple requires 26+. Active Xcode: $(xcode-select -p)" >&2
+        exit 1
+    fi
+else
+    echo "==> Warning: could not read the linked iOS SDK version; skipping the SDK check." >&2
+fi
+
 # ---- 2. Compile asset catalog ----
 xcrun actool ./packaging/ios/icons/Assets.xcassets \
   --compile "$APP_BUNDLE" \
