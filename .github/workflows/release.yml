@@ -396,9 +396,24 @@ jobs:
     name: Release Robrix for iOS
     needs: [check_tag_version, create_release]
     if: ${{ always() && ((github.event_name == 'push' && needs.check_tag_version.result == 'success') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_ios == 'true')) }}
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+
+      # Apple requires uploads built with the iOS 26 SDK (Xcode 26+). macos-15
+      # ships several Xcode 26.x but defaults to 16.4, so pick the newest 26.
+      - name: Select Xcode 26 (iOS 26 SDK)
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -viE 'beta' | sort -V | tail -1)
+          if [[ -z "$XCODE" ]]; then
+            echo "::error::No GA Xcode 26.x found on this runner (need the iOS 26 SDK for TestFlight uploads)."
+            ls -d /Applications/Xcode_*.app || true
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE"
+          echo "DEVELOPER_DIR=$XCODE/Contents/Developer" >> "$GITHUB_ENV"
+          xcodebuild -version
+          echo "iphoneos SDK: $(xcrun --sdk iphoneos --show-sdk-version)"
 
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
