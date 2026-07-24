@@ -214,7 +214,7 @@ script_mod! {
 }
 
 #[derive(Debug, Clone, Default)]
-pub enum RobrixHtmlLinkAction{
+pub enum RobrixHtmlLinkAction {
     ClickedMatrixLink {
         /// The URL of the link, which is only temporarily needed here
         /// because we don't fully handle MatrixId links directly in-app yet.
@@ -241,6 +241,10 @@ struct RobrixHtmlLink {
     /// The URL of the link.
     /// This is set by the `on_after_new_scoped()` hook below.
     #[live] pub url: String,
+
+    // Matrix link details parsed from `url` one time (in `on_after_new_scoped`).
+    #[rust] matrix_id: Option<MatrixId>,
+    #[rust] via: Vec<OwnedServerName>,
 }
 
 impl ScriptHook for RobrixHtmlLink {
@@ -257,6 +261,14 @@ impl ScriptHook for RobrixHtmlLink {
                 }
             }
         }
+
+        (self.matrix_id, self.via) = if let Ok(uri) = MatrixToUri::parse(&self.url) {
+            (Some(uri.id().to_owned()), uri.via().to_vec())
+        } else if let Ok(uri) = MatrixUri::parse(&self.url) {
+            (Some(uri.id().to_owned()), uri.via().to_vec())
+        } else {
+            (None, Vec::new())
+        };
     }
 }
 
@@ -266,14 +278,12 @@ impl Widget for RobrixHtmlLink {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // If the URL is a Matrix user/room/event link, render it as a pill.
-        // Otherwise fall back to an inline-wrapping HTML link.
-        if let Ok(matrix_to_uri) = MatrixToUri::parse(&self.url) {
-            return self.draw_matrix_pill(cx, scope, walk, matrix_to_uri.id(), matrix_to_uri.via());
-        } else if let Ok(matrix_uri) = MatrixUri::parse(&self.url) {
-            return self.draw_matrix_pill(cx, scope, walk, matrix_uri.id(), matrix_uri.via());
+        // A Matrix link renders as a pill; anything else as regular inline Html link.
+        if self.matrix_id.is_some() {
+            self.draw_matrix_pill(cx, scope, walk)
+        } else {
+            self.draw_html_link(cx, scope, walk)
         }
-        self.draw_html_link(cx, scope, walk)
     }
 
     fn text(&self) -> String {
@@ -300,11 +310,11 @@ impl RobrixHtmlLink {
         cx: &mut Cx2d,
         scope: &mut Scope,
         walk: Walk,
-        matrix_id: &MatrixId,
-        via: &[OwnedServerName],
     ) -> DrawStep {
-        if let Some(mut pill) = self.matrix_link_pill(cx, ids!(matrix_link)).borrow_mut() {
-            pill.populate_pill(cx, self.url.clone(), matrix_id, via, self.text.as_ref());
+        if let Some(matrix_id) = self.matrix_id.as_ref() {
+            if let Some(mut pill) = self.matrix_link_pill(cx, ids!(matrix_link)).borrow_mut() {
+                pill.populate_pill(cx, self.url.clone(), matrix_id, &self.via, self.text.as_ref());
+            }
         }
         let matrix_link_view_ref = self.view(cx, ids!(matrix_link_view));
         matrix_link_view_ref.set_visible(cx, true);
