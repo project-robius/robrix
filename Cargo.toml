@@ -283,8 +283,7 @@ before-each-package-command = """
 robius-packaging-commands before-each-package \
     --force-makepad \
     --binary-name robrix \
-    --path-to-binary ./target/release/robrix \
-    --deb-depends xdg-utils
+    --path-to-binary ./target/release/robrix
 """
 
 deep_link_protocols = [
