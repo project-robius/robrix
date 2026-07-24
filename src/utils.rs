@@ -575,7 +575,7 @@ pub fn stringify_pagination_error(
 ///
 /// # Returns:
 /// - `Option<String>` representing the human-readable time or `None` if formatting fails.
-pub fn relative_format(millis: MilliSecondsSinceUnixEpoch) -> Option<String> {
+pub fn relative_format(millis: MilliSecondsSinceUnixEpoch) -> Option<Cow<'static, str>> {
     let datetime = unix_time_millis_to_datetime(millis)?;
 
     // Calculate the time difference between now and the given timestamp
@@ -584,23 +584,27 @@ pub fn relative_format(millis: MilliSecondsSinceUnixEpoch) -> Option<String> {
 
     // Handle different time ranges and format accordingly
     if duration < Duration::seconds(60) {
-        Some("Just now".to_string())
+        Some("Just now".into())
     } else if duration < Duration::minutes(60) {
-        let minutes_text = if duration.num_minutes() == 1 { "min" } else { "mins" };
-        Some(format!("{} {} ago", duration.num_minutes(), minutes_text))
+        let mins = duration.num_minutes();
+        if mins == 1 {
+            Some("1 min ago".into())
+        } else {
+            Some(format!("{mins} mins ago").into())
+        }
     } else if duration < Duration::hours(24) && now.date_naive() == datetime.date_naive() {
-        Some(format!("{}", datetime.format("%H:%M"))) // "HH:MM" format for today
+        Some(datetime.format("%H:%M").to_string().into()) // "HH:MM" format for today
     } else if duration < Duration::hours(48) {
         if let Some(yesterday) = now.date_naive().succ_opt() {
             if yesterday == datetime.date_naive() {
-                return Some(format!("Yesterday at {}", datetime.format("%H:%M")));
+                return Some(format!("Yesterday at {}", datetime.format("%H:%M")).into());
             }
         }
-        Some(format!("{}", datetime.format("%A"))) // Fallback to day of the week if not yesterday
+        Some(datetime.format("%A").to_string().into()) // Fallback to day of the week if not yesterday
     } else if duration < Duration::weeks(1) {
-        Some(format!("{}", datetime.format("%A"))) // Day of the week (e.g., "Tuesday")
+        Some(datetime.format("%A").to_string().into()) // Day of the week (e.g., "Tuesday")
     } else {
-        Some(format!("{}", datetime.format("%F"))) // "YYYY-MM-DD" format for older messages
+        Some(datetime.format("%F").to_string().into()) // "YYYY-MM-DD" format for older messages
     }
 }
 
@@ -614,7 +618,7 @@ pub fn relative_format(millis: MilliSecondsSinceUnixEpoch) -> Option<String> {
 ///
 /// # Returns:
 /// - `Option<String>` representing the human-readable time or `None` if formatting fails.
-pub fn time_ago(millis: MilliSecondsSinceUnixEpoch) -> Option<String> {
+pub fn time_ago(millis: MilliSecondsSinceUnixEpoch) -> Option<Cow<'static, str>> {
     let datetime = unix_time_millis_to_datetime(millis)?;
     let duration = Local::now() - datetime;
     if duration < Duration::hours(1) {
@@ -622,11 +626,15 @@ pub fn time_ago(millis: MilliSecondsSinceUnixEpoch) -> Option<String> {
         relative_format(millis)
     } else if duration < Duration::hours(24) {
         let hours = duration.num_hours();
-        Some(format!("{hours} {} ago", if hours == 1 { "hour" } else { "hours" }))
+        if hours == 1 {
+            Some("1 hour ago".into())
+        } else {
+            Some(format!("{hours} hours ago").into())
+        }
     } else if duration < Duration::hours(48) {
-        Some("yesterday".to_string())
+        Some("yesterday".into())
     } else {
-        Some(format!("{} days ago", duration.num_days()))
+        Some(format!("{} days ago", duration.num_days()).into())
     }
 }
 

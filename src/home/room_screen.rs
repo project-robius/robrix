@@ -4133,8 +4133,8 @@ fn populate_message_view(
         item.reaction_list(cx, ids!(content.reaction_list)).set_list(
             cx,
             reactions,
-            timeline_kind.clone(),
-            timeline_event_id.clone(),
+            timeline_kind,
+            &timeline_event_id,
             item_id,
         );
         populate_read_receipts(&item, cx, timeline_kind, event_tl_item);
@@ -5471,7 +5471,9 @@ impl Widget for Message {
             self.animator_play(cx, ids!(highlight.off));
         }
 
-        let Some(details) = self.details.clone() else { return };
+        let Some(d) = self.details.as_ref() else { return };
+        let room_screen_widget_uid = d.room_screen_widget_uid;
+        let thread_root_event_id = d.thread_root_event_id.clone();
 
         // We first handle a click on the replied-to message preview, if present,
         // because we don't want any widgets within the replied-to message to be
@@ -5487,18 +5489,18 @@ impl Widget for Message {
             }
             Hit::FingerDown(fe) if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) => {
                 cx.widget_action(
-                    details.room_screen_widget_uid,
+                    room_screen_widget_uid,
                     MessageAction::OpenMessageContextMenu {
-                        details: details.clone(),
+                        details: self.details.clone().unwrap(), // guaranteed to be Some()
                         abs_pos: fe.abs,
                     }
                 );
             }
             Hit::FingerLongPress(lp) => {
                 cx.widget_action(
-                    details.room_screen_widget_uid,
+                    room_screen_widget_uid,
                     MessageAction::OpenMessageContextMenu {
-                        details: details.clone(),
+                        details: self.details.clone().unwrap(), // guaranteed to be Some()
                         abs_pos: lp.abs,
                     }
                 );
@@ -5507,17 +5509,19 @@ impl Widget for Message {
                 // Tapping on a collapsed reply preview expands it.
                 // Tapping on an expanded reply preview jumps to the replied-to message.
                 let action = if reply.is_collapsed() {
-                    MessageAction::ToggleReplyPreviewExpanded(details.timeline_event_id.clone())
+                    MessageAction::ToggleReplyPreviewExpanded(
+                        self.details.as_ref().unwrap().timeline_event_id.clone(), // guaranteed to be Some()
+                    )
                 } else {
-                    MessageAction::JumpToRelated(details.clone())
+                    MessageAction::JumpToRelated(self.details.clone().unwrap()) // guaranteed to be Some()
                 };
-                cx.widget_action(details.room_screen_widget_uid, action);
+                cx.widget_action(room_screen_widget_uid, action);
             }
             _ => { }
         }
 
         // Handle clicks on the thread summary shown beneath a thread-root message.
-        if let Some(thread_root_event_id) = details.thread_root_event_id.as_ref() {
+        if let Some(thread_root_event_id) = thread_root_event_id.as_ref() {
             let thread_root_summary = self.thread_root_summary_view(cx);
             let apply_hover = |cx: &mut Cx, bg_color: Vec4| {
                 let mut thread_root_summary_ref = thread_root_summary.clone();
@@ -5530,9 +5534,9 @@ impl Widget for Message {
                     apply_hover(cx, COLOR_THREAD_SUMMARY_BG_HOVER);
                     if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                         cx.widget_action(
-                            details.room_screen_widget_uid, 
+                            room_screen_widget_uid, 
                             MessageAction::OpenMessageContextMenu {
-                                details: details.clone(),
+                                details: self.details.clone().unwrap(), // guaranteed to be Some()
                                 abs_pos: fe.abs,
                             }
                         );
@@ -5546,9 +5550,9 @@ impl Widget for Message {
                 }
                 Hit::FingerLongPress(lp) => {
                     cx.widget_action(
-                        details.room_screen_widget_uid, 
+                        room_screen_widget_uid, 
                         MessageAction::OpenMessageContextMenu {
-                            details: details.clone(),
+                            details: self.details.clone().unwrap(), // guaranteed to be Some()
                             abs_pos: lp.abs,
                         }
                     );
@@ -5557,7 +5561,7 @@ impl Widget for Message {
                     apply_hover(cx, COLOR_THREAD_SUMMARY_BG);
                     if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
                         cx.widget_action(
-                            details.room_screen_widget_uid, 
+                            room_screen_widget_uid, 
                             MessageAction::OpenThread(thread_root_event_id.clone()),
                         );
                     }
@@ -5581,9 +5585,9 @@ impl Widget for Message {
                 // A right click means we should display the context menu.
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                     cx.widget_action(
-                        details.room_screen_widget_uid, 
+                        room_screen_widget_uid, 
                         MessageAction::OpenMessageContextMenu {
-                            details: details.clone(),
+                            details: self.details.clone().unwrap(), // guaranteed to be Some()
                             abs_pos: fe.abs,
                         }
                     );
@@ -5591,9 +5595,9 @@ impl Widget for Message {
             }
             Hit::FingerLongPress(lp) => {
                 cx.widget_action(
-                    details.room_screen_widget_uid, 
+                    room_screen_widget_uid, 
                     MessageAction::OpenMessageContextMenu {
-                        details: details.clone(),
+                        details: self.details.clone().unwrap(), // guaranteed to be Some()
                         abs_pos: lp.abs,
                     }
                 );
@@ -5611,8 +5615,8 @@ impl Widget for Message {
 
         if let Event::Actions(actions) = event {
             for action in actions {
-                match action.as_widget_action().widget_uid_eq(details.room_screen_widget_uid).cast_ref() {
-                    MessageAction::HighlightMessage(id) if id == &details.item_id => {
+                match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast_ref() {
+                    MessageAction::HighlightMessage(id) if id == &self.details.as_ref().unwrap().item_id => { // guaranteed to be Some()
                         self.animator_play(cx, ids!(highlight.on));
                         self.redraw(cx);
                     }
@@ -5625,8 +5629,10 @@ impl Widget for Message {
             let reply_collapse_button = self.button(cx, ids!(replied_to_message.reply_collapse_button));
             if reply_expand_button.clicked(actions) || reply_collapse_button.clicked(actions)             {
                 cx.widget_action(
-                    details.room_screen_widget_uid,
-                    MessageAction::ToggleReplyPreviewExpanded(details.timeline_event_id.clone()),
+                    room_screen_widget_uid,
+                    MessageAction::ToggleReplyPreviewExpanded(
+                        self.details.as_ref().unwrap().timeline_event_id.clone(), // guaranteed to be Some()
+                    ),
                 );
                 reply_expand_button.reset_hover(cx);
                 reply_collapse_button.reset_hover(cx);
@@ -5636,19 +5642,19 @@ impl Widget for Message {
             if let Some(info) = self.download_info.as_ref() {
                 if self.view.button(cx, ids!(content.download_section.download_button)).clicked(actions) {
                     cx.widget_action(
-                        details.room_screen_widget_uid,
+                        room_screen_widget_uid,
                         MessageAction::DownloadAttachment(info.clone()),
                     );
                 }
                 if self.view.button(cx, ids!(content.download_section.share_button)).clicked(actions) {
                     cx.widget_action(
-                        details.room_screen_widget_uid,
+                        room_screen_widget_uid,
                         MessageAction::ShareAttachment(info.clone()),
                     );
                 }
                 if self.view.button(cx, ids!(content.download_section.downloading_view.cancel_button)).clicked(actions) {
                     cx.widget_action(
-                        details.room_screen_widget_uid,
+                        room_screen_widget_uid,
                         MessageAction::CancelDownload(media_source_mxc(&info.media_source).clone()),
                     );
                 }

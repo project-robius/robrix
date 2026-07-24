@@ -253,8 +253,8 @@ impl ReactionListRef {
         &mut self,
         cx: &mut Cx,
         event_tl_item_reactions: Option<&ReactionsByKeyBySender>,
-        timeline_kind: TimelineKind,
-        timeline_event_item_id: TimelineEventItemId,
+        timeline_kind: &TimelineKind,
+        timeline_event_item_id: &TimelineEventItemId,
         _id: usize,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
@@ -274,7 +274,7 @@ impl ReactionListRef {
         }
         let new_counts = (event_tl_item_reactions.len(), total_senders, num_sent_by_me);
         if inner.last_reaction_counts == Some(new_counts)
-            && inner.timeline_event_id.as_ref() == Some(&timeline_event_item_id)
+            && inner.timeline_event_id.as_ref() == Some(timeline_event_item_id)
         {
             return;
         }
@@ -324,8 +324,8 @@ impl ReactionListRef {
             });
             inner.children.push((button, reaction_data));
         }
-        inner.timeline_kind = Some(timeline_kind);
-        inner.timeline_event_id = Some(timeline_event_item_id);
+        inner.timeline_kind = Some(timeline_kind.clone());
+        inner.timeline_event_id = Some(timeline_event_item_id.clone());
     }
 
     /// Returns any `RoomScreenTooltipActions` that occurred in the given list of `actions`.

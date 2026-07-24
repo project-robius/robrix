@@ -139,13 +139,6 @@ impl Widget for AvatarRow {
         }
         if read_receipts.len() > MAX_VISIBLE_AVATARS_IN_READ_RECEIPT {
             if let Some(label) = &mut self.label {
-                label.set_text(
-                    cx,
-                    &format!(
-                        " + {}",
-                        read_receipts.len() - MAX_VISIBLE_AVATARS_IN_READ_RECEIPT
-                    ),
-                );
                 let _ = label.draw(cx, scope);
             }
         }
@@ -184,7 +177,14 @@ impl AvatarRow {
                     false,
                 ));
             }
-            self.label = Some(widget_ref_from_live_ptr(cx, self.plus_template).as_label());
+            let label = widget_ref_from_live_ptr(cx, self.plus_template).as_label();
+            if receipts_map.len() > MAX_VISIBLE_AVATARS_IN_READ_RECEIPT {
+                label.set_text(cx, &format!(
+                    " + {}",
+                    receipts_map.len() - MAX_VISIBLE_AVATARS_IN_READ_RECEIPT,
+                ));
+            }
+            self.label = Some(label);
             self.read_receipts = Some(receipts_map.clone());
         }
         for ((avatar_ref, drawn), (user_id, _)) in
