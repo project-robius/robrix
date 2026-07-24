@@ -88,13 +88,23 @@ script_mod! {
 }
 
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct UnreadBadge {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
     #[live] is_marked_unread: bool,
     #[live] unread_mentions: u64,
     #[live] unread_messages: u64,
+    /// The above 3 value that were last drawn (to avoid re-applying their styling).
+    #[rust] last_drawn: Option<(bool, u64, u64)>,
+}
+
+impl ScriptHook for UnreadBadge {
+    fn on_after_apply(&mut self, _vm: &mut ScriptVm, apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
+        if apply.is_script_reapply() {
+            self.last_drawn = None;
+        }
+    }
 }
 
 impl Widget for UnreadBadge {
@@ -118,6 +128,14 @@ impl Widget for UnreadBadge {
             };
             (border_size, plus_sign)
         }
+
+        // Styling and label depend only on these counts; re-running the draw_bg
+        // eval every draw is costly, so skip it when they haven't changed.
+        let now = (self.is_marked_unread, self.unread_mentions, self.unread_messages);
+        if self.last_drawn == Some(now) {
+            return self.view.draw_walk(cx, scope, walk);
+        }
+        self.last_drawn = Some(now);
 
         // If there are unread mentions, show red badge and the number of unread mentions
         if self.unread_mentions > 0 {
