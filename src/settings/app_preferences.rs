@@ -147,11 +147,15 @@ impl ViewModeOverride {
     /// Returns a closure for use in `AdaptiveView::set_variant_selector`
     /// that selects this view mode override.
     pub fn variant_selector(self) -> impl FnMut(&mut Cx, &Vec2d) -> LiveId + 'static {
-        move |cx: &mut Cx, _parent_size: &Vec2d| match self {
+        move |cx: &mut Cx, parent_size: &Vec2d| match self {
             Self::Automatic => {
-                if cx.display_context.is_desktop()
-                    || !cx.display_context.is_screen_size_known()
-                {
+                let is_desktop = if cx.display_context.is_screen_size_known() {
+                    cx.display_context.is_desktop()
+                } else {
+                    // Fall back to the parent's layout size when the screen size isn't known yet.
+                    cx.display_context.is_desktop_width(parent_size.x)
+                };
+                if is_desktop {
                     live_id!(Desktop)
                 } else {
                     live_id!(Mobile)

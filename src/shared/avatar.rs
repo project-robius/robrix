@@ -82,7 +82,19 @@ script_mod! {
 }
 
 
-#[derive(ScriptHook, Script, Widget)]
+/// What an [`Avatar`] is currently set to display.
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+enum AvatarDisplayState {
+    /// No image was set, so the one-grapheme text label is visible.
+    #[default]
+    Text,
+    /// An image was set but is still being fetched/decoded, so we show text until it's ready.
+    ImageLoading,
+    /// Showing the fully-decoded avatar image.
+    Image,
+}
+
+#[derive(Script, Widget)]
 pub struct Avatar {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
@@ -90,9 +102,21 @@ pub struct Avatar {
     /// Information about the user profile being shown in this Avatar.
     /// If `Some`, this Avatar will respond to clicks/taps.
     #[rust] info: Option<UserProfileAndRoomId>,
+    #[rust] display_state: AvatarDisplayState,
+}
 
-    /// Whether this avatar's image is still being fetched or decoded.
-    #[rust] is_image_pending: bool,
+impl ScriptHook for Avatar {
+    fn on_after_apply(&mut self, vm: &mut ScriptVm, apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
+        // A reapply (like rotation on mobile) resets the default visibility, so we need to set it again.
+        if !apply.is_script_reapply() {
+            return;
+        }
+        let cx = vm.cx_mut();
+        let show_img = self.display_state != AvatarDisplayState::Text
+            && self.image(cx, ids!(img_view.img)).has_content();
+        self.view(cx, ids!(img_view)).set_visible(cx, show_img);
+        self.view(cx, ids!(text_view)).set_visible(cx, !show_img);
+    }
 }
 
 impl Widget for Avatar {
@@ -100,12 +124,12 @@ impl Widget for Avatar {
         self.view.handle_event(cx, event, scope);
 
         // Check to see if this image has been loaded/decoded.
-        if self.is_image_pending {
+        if self.display_state == AvatarDisplayState::ImageLoading {
             if let Event::Actions(actions) = event {
                 if actions.iter().any(|a| a.downcast_ref::<AsyncImageLoad>().is_some())
                     && self.image(cx, ids!(img_view.img)).has_content()
                 {
-                    self.is_image_pending = false;
+                    self.display_state = AvatarDisplayState::Image;
                     self.view(cx, ids!(img_view)).set_visible(cx, true);
                     self.view(cx, ids!(text_view)).set_visible(cx, false);
                     self.view.redraw(cx);
@@ -134,15 +158,23 @@ impl Widget for Avatar {
     }
 
     fn set_text(&mut self, cx: &mut Cx, v: &str) {
-        let f = utils::user_name_first_letter(v)
-            .unwrap_or("?").to_uppercase();
-        self.label(cx, ids!(text_view.text)).set_text(cx, &f);
+        self.display_state = AvatarDisplayState::Text;
+        self.set_text_label(cx, v);
         self.view(cx, ids!(img_view)).set_visible(cx, false);
         self.view(cx, ids!(text_view)).set_visible(cx, true);
     }
 }
 
 impl Avatar {
+    /// Internal function to sets the text label to the first grapheme of `v`.
+    ///
+    /// Specifically does NOT change the avatar's display state or image/text view visibility.
+    fn set_text_label(&mut self, cx: &mut Cx, v: &str) {
+        let f = utils::user_name_first_letter(v)
+            .unwrap_or("?").to_uppercase();
+        self.label(cx, ids!(text_view.text)).set_text(cx, &f);
+    }
+
     /// Sets the text content of this avatar, making the user name visible
     /// and the image invisible.
     ///
@@ -160,7 +192,6 @@ impl Avatar {
         info: Option<AvatarTextInfo>,
         username: T,
     ) {
-        self.is_image_pending = false;
         if let Some(AvatarTextInfo { user_id, username, room_id }) = info {
             self.info = Some(UserProfileAndRoomId {
                 user_profile: UserProfile {
@@ -214,7 +245,7 @@ impl Avatar {
         if res.is_ok() {
             // Don't show the avatar image until it's been decoded in full (which is async).
             let has_content = img_ref.has_content();
-            self.is_image_pending = !has_content;
+            self.display_state = if has_content { AvatarDisplayState::Image } else { AvatarDisplayState::ImageLoading };
             self.view(cx, ids!(img_view)).set_visible(cx, has_content);
             self.view(cx, ids!(text_view)).set_visible(cx, !has_content);
 
@@ -234,15 +265,6 @@ impl Avatar {
             }
         }
         res
-    }
-
-    /// Returns whether this avatar is currently displaying an image or text.
-    pub fn status(&mut self, cx: &mut Cx) -> AvatarDisplayStatus {
-        if self.view(cx, ids!(img_view)).visible() {
-            AvatarDisplayStatus::Image
-        } else {
-            AvatarDisplayStatus::Text
-        }
     }
 
     /// Sets the given avatar and returns a displayable username based on the
@@ -353,9 +375,10 @@ impl Avatar {
                 |cx, img| utils::load_avatar_image(&img, cx, &image),
             )
             .ok()
-        }).map(|_| {
-            if self.is_image_pending {
-                self.set_text(cx, &username);
+        }).inspect(|_| {
+            // While the image is being decoded, show the text avatar as the placeholder.
+            if self.display_state == AvatarDisplayState::ImageLoading {
+                self.set_text_label(cx, &username);
             }
         }).unwrap_or_else(|| {
             self.show_text(
@@ -403,15 +426,6 @@ impl AvatarRef {
         }
     }
 
-    /// See [`Avatar::status()`].
-    pub fn status(&self, cx: &mut Cx) -> AvatarDisplayStatus {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.status(cx)
-        } else {
-            AvatarDisplayStatus::Text
-        }
-    }
-
     /// See [`Avatar::set_avatar_and_get_username()`].
     pub fn set_avatar_and_get_username(
         &self,
@@ -435,14 +449,6 @@ impl AvatarRef {
             (avatar_user_id.to_string(), false)
         }
     }
-}
-
-/// What an Avatar instance is currently displaying.
-pub enum AvatarDisplayStatus {
-    /// The avatar is displaying a text label.
-    Text,
-    /// The avatar is displaying an image.
-    Image,
 }
 
 /// Information about a text-based Avatar.
