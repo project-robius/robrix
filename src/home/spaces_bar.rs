@@ -13,7 +13,7 @@ use matrix_sdk::{RoomDisplayName, RoomState};
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 
 use crate::{
-    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, logout::logout_confirm_modal::LogoutAction, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, settings::app_preferences::{effective_is_desktop, AppPreferencesAction, ViewModeOverride}, shared::{avatar::AvatarWidgetExt, navigation_bar_button::NavigationBarButton, room_filter_input_bar::MainFilterAction}, utils::{self, RoomNameId}
+    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, logout::logout_confirm_modal::LogoutAction, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, settings::app_preferences::{AppPreferencesAction, ViewModeOverride}, shared::{avatar::AvatarWidgetExt, navigation_bar_button::NavigationBarButton, room_filter_input_bar::MainFilterAction}, utils::{self, RoomNameId}
 };
 
 script_mod! {
@@ -438,6 +438,7 @@ impl Widget for SpacesBar {
                     continue;
                 }
 
+                // Handle a change to the view mode preference.
                 if let Some(AppPreferencesAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
                     if *new_mode != self.applied_view_mode {
                         self.apply_view_mode(*new_mode);
@@ -467,16 +468,9 @@ impl Widget for SpacesBar {
             let Some(mut list) = portal_list_ref.borrow_mut() else { continue };
 
             // AdaptiveView + CachedWidget does not properly handle DSL-level style overrides,
-            // so we must manually apply the different style choices here when drawing it.
-            if effective_is_desktop(cx) {
-                script_apply_eval!(cx, list, {
-                    flow: #(Flow::Down),
-                });
-            } else {
-                script_apply_eval!(cx, list, {
-                    flow: #(Flow::right()),
-                });
-            }
+            // so we must manually apply the correct portallist Flow when drawing it.
+            let is_desktop = self.view.active_variant() == Some(live_id!(Desktop));
+            list.set_flow(cx, if is_desktop { Flow::Down } else { Flow::right() });
 
             let len = self.displayed_spaces.len();
             if len == 0 {

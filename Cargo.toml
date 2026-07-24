@@ -17,8 +17,8 @@ metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 # makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
 # makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "button_text_dont_redraw", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "button_text_dont_redraw" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "portallist_flow_adaptive_view", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "portallist_flow_adaptive_view" }
 
 
 robius-directories = { git = "https://github.com/project-robius/robius" }
@@ -283,7 +283,8 @@ before-each-package-command = """
 robius-packaging-commands before-each-package \
     --force-makepad \
     --binary-name robrix \
-    --path-to-binary ./target/release/robrix
+    --path-to-binary ./target/release/robrix \
+    --deb-depends xdg-utils
 """
 
 deep_link_protocols = [
