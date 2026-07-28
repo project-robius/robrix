@@ -269,6 +269,8 @@ jobs:
         if: matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm' || matrix.os == 'ubuntu-24.04' || matrix.os == 'ubuntu-24.04-arm'
         run: |
           sudo apt-get update
+          # libegl1: Makepad dlopen's libEGL, so it has to be present here for the
+          # packaging tool to work out which package provides it. Runners have no GPU stack.
           sudo apt-get install -y \
             libssl-dev \
             libsqlite3-dev \
@@ -281,7 +283,8 @@ jobs:
             libx11-dev \
             libasound2-dev \
             libpulse-dev \
-            libwayland-dev libxkbcommon-dev
+            libwayland-dev libxkbcommon-dev \
+            libegl1
 
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
