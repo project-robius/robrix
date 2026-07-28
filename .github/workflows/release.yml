@@ -287,7 +287,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (desktop)
-        uses: project-robius/makepad-packaging-action@v1
+        uses: project-robius/makepad-packaging-action@v1.6.1
         env:
           CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
           CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
@@ -295,6 +295,17 @@ jobs:
           github_token: ${{ secrets.ROBRIX_RELEASE }}
           packager_formats: deb
           releaseId: ${{ needs.create_release.outputs.release_id }}
+          ## Include the distro in asset names: the 22.04 and 24.04 legs produce
+          ## debs with different Depends, and identical names would overwrite
+          ## each other in the release.
+          asset_name_template: __APP__-__VERSION__-${{ matrix.os }}-__ARCH__-__MODE__.__EXT__
+          ## Boot the packaged app in a clean container with only its declared
+          ## Depends, to catch runtime deps that static analysis can't see
+          ## (dlopen'd libs like libEGL, spawned tools like xdg-open).
+          verify_deb: true
+          ## TODO: flip to true once this has passed on all four Linux legs.
+          ## Until then it reports problems without blocking releases.
+          verify_strict: false
 
   for_macos:
     name: Release Robrix for macOS (${{ matrix.os }}, ${{ matrix.arch }})
@@ -356,7 +367,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (windows)
-        uses: project-robius/makepad-packaging-action@v1
+        uses: project-robius/makepad-packaging-action@v1.6.1
         env:
           CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
           CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
@@ -377,7 +388,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (android)
-        uses: project-robius/makepad-packaging-action@v1
+        uses: project-robius/makepad-packaging-action@v1.6.1
         env:
           AWS_LC_SYS_CMAKE_BUILDER: 1
           MAKEPAD_ANDROID_FULL_NDK: true
