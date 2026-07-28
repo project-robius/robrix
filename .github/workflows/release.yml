@@ -269,6 +269,8 @@ jobs:
         if: matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm' || matrix.os == 'ubuntu-24.04' || matrix.os == 'ubuntu-24.04-arm'
         run: |
           sudo apt-get update
+          # libegl1: Makepad dlopen's libEGL, so it has to be present here for the
+          # packaging tool to work out which package provides it. Runners have no GPU stack.
           sudo apt-get install -y \
             libssl-dev \
             libsqlite3-dev \
@@ -281,13 +283,14 @@ jobs:
             libx11-dev \
             libasound2-dev \
             libpulse-dev \
-            libwayland-dev libxkbcommon-dev
+            libwayland-dev libxkbcommon-dev \
+            libegl1
 
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (desktop)
-        uses: project-robius/makepad-packaging-action@v1.6.1
+        uses: project-robius/makepad-packaging-action@v1.6.2
         env:
           CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
           CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
@@ -367,7 +370,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (windows)
-        uses: project-robius/makepad-packaging-action@v1.6.1
+        uses: project-robius/makepad-packaging-action@v1.6.2
         env:
           CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
           CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
@@ -388,7 +391,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (android)
-        uses: project-robius/makepad-packaging-action@v1.6.1
+        uses: project-robius/makepad-packaging-action@v1.6.2
         env:
           AWS_LC_SYS_CMAKE_BUILDER: 1
           MAKEPAD_ANDROID_FULL_NDK: true
