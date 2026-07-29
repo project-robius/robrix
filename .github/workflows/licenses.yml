@@ -62,7 +62,7 @@ jobs:
 
       # ref: main so a workflow_dispatch from another branch still generates
       # main's notices. The token is what the push below authenticates with.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: main
           token: ${{ secrets.LICENSES_PUSH_TOKEN }}
@@ -78,7 +78,7 @@ jobs:
       # pin, regenerate and commit both files in the same change.
       - name: Cache cargo-about
         id: cache-cargo-about
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cargo/bin/cargo-about
           key: cargo-about-0.9.0-${{ runner.os }}
