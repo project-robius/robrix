@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>rs.robius.robrix</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>Robrix</name>
+  <summary>Powerful Matrix chat with dockable tabs for many rooms at once</summary>
+
+  <description>
+    <p>
+      Robrix is a new, powerful Matrix client that offers the full experience of a desktop
+      chat app, and beyond, without sacrificing performance or functionality.
+    </p>
+    <p>
+      We even bring some cool new features to the world of Matrix, like our customizable
+      dockable tabs layout that lets you view and interact with multiple rooms or threads
+      simultaneously. This looks just like your favorite multi-tab web browser or programming
+      IDE. Now you can keep tabs on as many conversations as you want, all at once, and
+      Robrix won't jump or jerk the view around while you scroll through your rooms.
+    </p>
+    <p>
+      Robrix adapts to any screen size, but doesn't limit what you can do. We wrote it from
+      scratch in Rust to provide the same functionality and quality on all platforms, thanks
+      to the Makepad UI toolkit and the Robius framework, which we also wrote from scratch.
+      So you can look forward to the same sleek design, fast startup, and fluid experience on
+      any device, even when scrolling through dozens of rooms with thousands of messages, and
+      move between Linux, macOS, Windows, Android, and iOS without giving up any features or
+      learning a new app UI.
+    </p>
+    <p>
+      Matrix is an open protocol for secure, decentralized chat and other communication,
+      built with privacy at its core. Instead of trusting one company with all of your
+      messages, you create an account on a homeserver of your choice, run by a community,
+      an employer, a government, or even yourself, and talk to anyone on any other homeserver
+      across the world. Basically, it's like email, but fully encrypted and real-time.
+      No ads, no analytics, no data brokers.
+    </p>
+    <p>Robrix supports nearly all the main Matrix client features you'd expect:</p>
+    <ul>
+      <li>End-to-end encryption and verification for encrypted chat across public, private, and DM rooms</li>
+      <li>Fast login and room updates via native sliding sync</li>
+      <li>Room timelines with richly-formatted text content, images, and link previews</li>
+      <li>Threads and reactions</li>
+      <li>Spaces: explore and join rooms and sub-spaces</li>
+      <li>Editing messages, without losing your draft</li>
+      <li>Replies: inline previews, and sending replies</li>
+      <li>Rooms: joining and leaving, sending and receiving invites, knocking</li>
+      <li>Location sharing</li>
+      <li>Offline mode with a persistent local event cache</li>
+      <li>Login to supported homeservers via SSO or username and password</li>
+    </ul>
+    <p>
+      Robrix is free and open source. Contributions and issues are welcome.
+    </p>
+    <p>
+      Robrix is just getting started and is under active development. Not all features are
+      complete yet, such as admin tools for kicking and banning users, message search, and
+      media upload and playback.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">robrix.desktop</launchable>
+  <pkgname>robrix</pkgname>
+
+  <developer id="rs.robius">
+    <name translate="no">Project Robius</name>
+  </developer>
+  <developer_name translate="no">Project Robius</developer_name>
+
+  <url type="homepage">https://robius.rs/</url>
+  <url type="bugtracker">https://github.com/project-robius/robrix/issues</url>
+  <url type="vcs-browser">https://github.com/project-robius/robrix</url>
+  <url type="contribute">https://github.com/orgs/project-robius/projects/4/</url>
+  <url type="contact">https://matrix.to/#/#robius-robrix:matrix.org</url>
+
+  <categories>
+    <category>Network</category>
+    <category>InstantMessaging</category>
+  </categories>
+
+  <keywords>
+    <keyword translate="no">Matrix</keyword>
+    <keyword>chat</keyword>
+    <keyword>messaging</keyword>
+    <keyword>messenger</keyword>
+    <keyword>encrypted</keyword>
+    <keyword>decentralized</keyword>
+    <keyword>federated</keyword>
+    <keyword>self-hosted</keyword>
+    <keyword>homeserver</keyword>
+    <keyword translate="no">Rust</keyword>
+    <keyword translate="no">Makepad</keyword>
+    <keyword translate="no">Robius</keyword>
+  </keywords>
+
+  <provides>
+    <binary>robrix</binary>
+  </provides>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>touch</control>
+  </supports>
+
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">intense</content_attribute>
+    <content_attribute id="social-location">intense</content_attribute>
+  </content_rating>
+</component>
