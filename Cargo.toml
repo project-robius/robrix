@@ -240,8 +240,7 @@ publisher = "GOSIM Foundation"
 license_file = "LICENSE-MIT"
 copyright = "Copyright 2023-2026, Project Robius"
 homepage = "https://github.com/project-robius/robrix"
-### Shorter than the `[package]` description, which is over lintian's 80-char
-### limit for the one-line synopsis in a `.deb` control file.
+### Note: there is an 80-character max for the one-line summary.
 description = "A powerful multi-platform Matrix chat client written from scratch in Rust"
 ### Note: there is an 80-character max for each line of the `long_description`.
 long_description = """
