@@ -1,7 +1,7 @@
 [package]
 name = "robrix"
 authors = ["Kevin Boos <kevinaboos@gmail.com>", "Robius Project Maintainers"]
-description = "A Matrix chat client written using Makepad + Robius app dev framework in Rust."
+description = "A powerful multi-platform Matrix chat client written in Rust using Makepad + Robius app dev framework."
 documentation = "https://docs.rs/robrix"
 edition = "2024" ## mostly just to allow let-chains
 homepage = "https://robius.rs/"
@@ -17,8 +17,8 @@ metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 # makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
 # makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "portallist_flow_adaptive_view", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "portallist_flow_adaptive_view" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "app_id_linux", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "app_id_linux" }
 
 
 robius-directories = { git = "https://github.com/project-robius/robius" }
@@ -239,10 +239,13 @@ authors = [
 publisher = "GOSIM Foundation"
 license_file = "LICENSE-MIT"
 copyright = "Copyright 2023-2026, Project Robius"
-homepage = "https://github.com/project-robius"
+homepage = "https://github.com/project-robius/robrix"
+### Shorter than the `[package]` description, which is over lintian's 80-char
+### limit for the one-line synopsis in a `.deb` control file.
+description = "A powerful multi-platform Matrix chat client written from scratch in Rust"
 ### Note: there is an 80-character max for each line of the `long_description`.
 long_description = """
-Robrix is a multi-platform Matrix chat client written in pure Rust
+Robrix is a powerful open-source Matrix chat client written in pure Rust
 using the Makepad UI framework (https://github.com/makepad/makepad)
 and the Project Robius app dev framework and platform abstractions
 (https://github.com/project-robius).
@@ -297,6 +300,22 @@ deep_link_protocols = [
 depends = "./dist/depends_deb.txt"
 desktop_template = "./packaging/robrix.desktop"
 section = "utils"
+
+## These metainfo and licensing files are needed for package manager compliance.
+[package.metadata.packager.deb.files]
+"./packaging/rs.robius.robrix.metainfo.xml" = "/usr/share/metainfo/rs.robius.robrix.metainfo.xml"
+"./packaging/debian-copyright" = "/usr/share/doc/robrix/copyright"
+"./licenses/THIRD-PARTY-NOTICES.html" = "/usr/share/doc/robrix/THIRD-PARTY-NOTICES.html"
+
+[package.metadata.packager.appimage.files]
+"./packaging/rs.robius.robrix.metainfo.xml" = "/usr/share/metainfo/rs.robius.robrix.metainfo.xml"
+"./packaging/debian-copyright" = "/usr/share/doc/robrix/copyright"
+"./licenses/THIRD-PARTY-NOTICES.html" = "/usr/share/doc/robrix/THIRD-PARTY-NOTICES.html"
+
+[package.metadata.packager.pacman.files]
+"./packaging/rs.robius.robrix.metainfo.xml" = "/usr/share/metainfo/rs.robius.robrix.metainfo.xml"
+"./packaging/debian-copyright" = "/usr/share/licenses/robrix/copyright"
+"./licenses/THIRD-PARTY-NOTICES.html" = "/usr/share/licenses/robrix/THIRD-PARTY-NOTICES.html"
 
 [package.metadata.packager.macos]
 minimum_system_version = "11.0"
