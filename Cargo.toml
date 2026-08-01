@@ -17,8 +17,8 @@ metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 # makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
 # makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "app_id_linux", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "app_id_linux" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "inline_code_fix_cfg", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "inline_code_fix_cfg" }
 
 
 robius-directories = { git = "https://github.com/project-robius/robius" }

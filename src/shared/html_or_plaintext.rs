@@ -143,7 +143,6 @@ script_mod! {
         text_style_fixed: theme.font_code {
             font_size: (MESSAGE_FONT_SIZE)
             line_spacing: (MESSAGE_TEXT_LINE_SPACING)
-            top_drop: 0.11
         }
         draw_block +: {
             line_color: (MESSAGE_TEXT_COLOR)
@@ -167,8 +166,9 @@ script_mod! {
         heading_margin: Inset{ top: 1.0, bottom: 0.1 }
         paragraph_margin: Inset{ top: 0.33, bottom: 0.33 }
 
-        inline_code_padding: Inset{top: 3, bottom: 3, left: 5, right: 5 }
+        inline_code_padding: Inset{top: 2.5, bottom: 1.5, left: 5, right: 5 }
         inline_code_margin: Inset{ left: 0, right: 0, bottom: 2, top: 2 }
+        fixed_font_size_scale: 0.9 // 90% of the normal font size (slightly smaller)
 
         font := mod.widgets.MatrixHtmlSpan { }
         span := mod.widgets.MatrixHtmlSpan { }
