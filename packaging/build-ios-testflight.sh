@@ -93,10 +93,12 @@ set_or_add UILaunchScreen:UIImageName string AppIcon60x60
 set_or_add UILaunchScreen:UIColorName string LaunchScreenBackground
 set_or_add ITSAppUsesNonExemptEncryption bool false
 
-VERSION=$(cargo metadata --no-deps --format-version 1 \
-  | jq -r '.packages[] | select(.name=="robrix") | .version' \
-  | sed 's/-.*$//')
-echo "Version $VERSION (build $BUILD_NUMBER)"
+FULL_VERSION=$(cargo metadata --no-deps --format-version 1 \
+  | jq -r '.packages[] | select(.name=="robrix") | .version')
+# App Store Connect rejects semver pre-release suffixes, so the bundle carries the
+# numeric part only. The asset name keeps the full version to match the other builds.
+VERSION="${FULL_VERSION%%-*}"
+echo "Version $VERSION (from $FULL_VERSION, build $BUILD_NUMBER)"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$PLIST"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$PLIST"
 
@@ -118,7 +120,7 @@ codesign -d --entitlements - "$APP_BUNDLE"
 # ---- 7. Package .ipa ----
 BUILD_DIR="$REPO_ROOT/target/apple/makepad-apple-app/aarch64-apple-ios/release"
 cd "$BUILD_DIR"
-IPA_NAME="Robrix-${VERSION}-ios.ipa"
+IPA_NAME="robrix-${FULL_VERSION}-ios-aarch64-release.ipa"
 rm -rf Payload "$IPA_NAME"
 ditto "${APP}.app" "Payload/${APP}.app"
 ditto -c -k --sequesterRsrc --keepParent Payload "$IPA_NAME"

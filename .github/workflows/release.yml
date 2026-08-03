@@ -309,6 +309,9 @@ jobs:
           ## TODO: flip to true once this has passed on all four Linux legs.
           ## Until then it reports problems without blocking releases.
           verify_strict: false
+          ## Nothing in Robrix consumes updater metadata, and .deb has no updater
+          ## format mapping anyway, so latest.json would ship empty and misleading.
+          uploadUpdaterJson: false
 
   for_macos:
     name: Release Robrix for macOS (${{ matrix.os }}, ${{ matrix.arch }})
@@ -378,6 +381,7 @@ jobs:
           github_token: ${{ secrets.ROBRIX_RELEASE }}
           packager_formats: nsis
           releaseId: ${{ needs.create_release.outputs.release_id }}
+          uploadUpdaterJson: false
 
   for_android:
     name: Release Robrix for Android (aarch64)
@@ -404,7 +408,9 @@ jobs:
         with:
           github_token: ${{ secrets.ROBRIX_RELEASE }}
           args: --target aarch64-linux-android
+          app_name: Robrix
           releaseId: ${{ needs.create_release.outputs.release_id }}
+          uploadUpdaterJson: false
 
   for_ios:
     name: Release Robrix for iOS
