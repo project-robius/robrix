@@ -10,15 +10,12 @@ license = "MIT"
 readme = "README.md"
 categories = ["gui"]
 repository = "https://github.com/project-robius/robrix"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
-# makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
-
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "inline_code_fix_cfg", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "inline_code_fix_cfg" }
+makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
 
 robius-directories = { git = "https://github.com/project-robius/robius" }
