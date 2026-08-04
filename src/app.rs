@@ -673,6 +673,11 @@ impl AppMain for App {
             self.app_state.app_prefs.broadcast_all(cx);
         }
 
+        // Sync up our UI zoom override with the OS's DPI factor when it changes.
+        if let Event::WindowGeomChange(_) = event {
+            self.app_state.app_prefs.refresh_ui_zoom_override(cx);
+        }
+
         self.handle_ui_zoom_shortcuts(cx, event);
         if let Event::MacosMenuCommand(command) = event {
             self.handle_ui_zoom_menu_command(cx, *command);

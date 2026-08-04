@@ -102,6 +102,27 @@ impl AppPreferences {
         cx.action(AppPreferencesAction::UiZoomChanged(self.ui_zoom));
     }
 
+    /// Re-applies the `ui_zoom` dpi override if the window's native dpi factor changed.
+    pub fn refresh_ui_zoom_override(&self, cx: &mut Cx) {
+        if self.ui_zoom.is_default() {
+            return;
+        }
+        let window = &cx.windows[CxWindowPool::id_zero()];
+        let baseline = match (window.os_dpi_factor, window.dpi_override) {
+            // The OS-reported dpi factor is treated as ground truth.
+            (Some(os_dpi), _) => os_dpi,
+            (None, None) => window.window_geom.dpi_factor,
+            (None, Some(_)) => return,
+        };
+        let new = baseline * self.ui_zoom.multiplier();
+        let needs_update = window
+            .dpi_override
+            .is_none_or(|current| (current - new).abs() > 1e-6);
+        if needs_update {
+            self.on_ui_zoom_changed(cx);
+        }
+    }
+
     /// Broadcasts every preference to listening widgets.
     ///
     /// Used upon app-state restore so every listener picks up the loaded
