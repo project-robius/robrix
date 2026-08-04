@@ -14,8 +14,11 @@ version = "1.0.0-alpha.2"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
+# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
+# makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
+
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "windows_dpi_factor_fixes", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "windows_dpi_factor_fixes" }
 
 
 robius-directories = { git = "https://github.com/project-robius/robius" }
@@ -331,6 +334,7 @@ application_folder_position = { x = 760, y = 250 }
 
 ## Configuration for `cargo packager`'s generation of a Windows `.exe` setup installer.
 [package.metadata.packager.nsis]
+installer_icon = "./resources/icon.ico"
 ## See this: <https://nsis.sourceforge.io/Docs/Chapter4.html#varconstant>
 appdata_paths = [
     "$APPDATA/$PUBLISHER/$PRODUCTNAME",
