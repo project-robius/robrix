@@ -9,54 +9,54 @@
 
   <description>
     <p>
-      Robrix is a new, powerful Matrix client that offers the full experience of a desktop
-      chat app, and beyond, without sacrificing performance or functionality.
+      Robrix is a powerful, sleek Matrix chat client written from scratch in Rust.
+      It brings some cool new features to the world of Matrix, like our signature
+      "dockable tabs" layout that lets you view and interact with multiple rooms or threads
+      simultaneously. This works just like your favorite multi-tab IDE or web browser,
+      letting you keep tabs on as many conversations as you want.
     </p>
     <p>
-      We even bring some cool new features to the world of Matrix, like our customizable
-      dockable tabs layout that lets you view and interact with multiple rooms or threads
-      simultaneously. This looks just like your favorite multi-tab web browser or programming
-      IDE. Now you can keep tabs on as many conversations as you want, all at once, and
-      Robrix won't jump or jerk the view around while you scroll through your rooms.
+      Robrix stays sleek and smooth even under heavy usage. We designed it to be fast and light
+      (but also feature-rich), thanks to the Makepad UI toolkit and the Robius app dev framework,
+      which we've also written from scratch
+      It's fully native on every platform: no Electron, no underlying web engine,
+      no JavaScript, and no cruft.
+      Scrolling through many rooms at once with millions of messages each is no problem.
+      Native sliding sync logs you in quickly, and your rooms list fully syncs without a long wait.
+      We also went to great lengths to ensure that Robrix's room timeline view is
+      consistent and predictable; it won't unexpectedly jump around while loading messages,
+      images, or other room content. We've always found this to be annoying in other chat apps.
     </p>
     <p>
-      Robrix adapts to any screen size, but doesn't limit what you can do. We wrote it from
-      scratch in Rust to provide the same functionality and quality on all platforms, thanks
-      to the Makepad UI toolkit and the Robius framework, which we also wrote from scratch.
-      So you can look forward to the same sleek design, fast startup, and fluid experience on
-      any device, even when scrolling through dozens of rooms with thousands of messages, and
-      move between Linux, macOS, Windows, Android, and iOS without giving up any features or
-      learning a new app UI.
+      Robrix runs on all other major platforms too: Android, iOS, macOS, and Windows,
+      where you can get the same flexible UI and powerful featureset, even on mobile.
     </p>
     <p>
       Matrix is an open protocol for secure, decentralized chat and other communication,
       built with privacy at its core. Instead of trusting one company with all of your
       messages, you create an account on a homeserver of your choice, run by a community,
       an employer, a government, or even yourself, and talk to anyone on any other homeserver
-      across the world. Basically, it's like email, but fully encrypted and real-time.
+      across the world. It's basically like email, but fully encrypted and real-time.
       No ads, no analytics, no data brokers.
     </p>
     <p>Robrix supports nearly all the main Matrix client features you'd expect:</p>
     <ul>
-      <li>End-to-end encryption and verification for encrypted chat across public, private, and DM rooms</li>
+      <li>End-to-end encryption (E2EE) + verification for secure chat across public, private, and DM rooms</li>
       <li>Fast login and room updates via native sliding sync</li>
-      <li>Room timelines with richly-formatted text content, images, and link previews</li>
-      <li>Threads and reactions</li>
-      <li>Spaces: explore and join rooms and sub-spaces</li>
-      <li>Editing messages, without losing your draft</li>
-      <li>Replies: inline previews, and sending replies</li>
-      <li>Rooms: joining and leaving, sending and receiving invites, knocking</li>
-      <li>Location sharing</li>
+      <li>Room timelines with rich text, images, files, location sharing, and link previews</li>
+      <li>Standard rich text, plus extras like formatted tables and details/summary blocks</li>
+      <li>Full support for inline replies, threads/threaded replies, and reactions</li>
+      <li>Robust Spaces support: a dedicated multi-room dock view for each space! (and you can explore and join rooms and sub-spaces, as usual)</li>
+      <li>Upload, download, and share files and media (images/videos)</li>
+      <li>Edit any message you sent without losing your current draft</li>
+      <li>Instantly mention (and filter through) users and rooms</li>
+      <li>Join or leave rooms by link, alias, or room ID</li>
+      <li>Send and respond to invites, including full support for knocking on rooms</li>
+      <li>Login via SSO or username and password</li>
       <li>Offline mode with a persistent local event cache</li>
-      <li>Login to supported homeservers via SSO or username and password</li>
     </ul>
     <p>
-      Robrix is free and open source. Contributions and issues are welcome.
-    </p>
-    <p>
-      Robrix is just getting started and is under active development. Not all features are
-      complete yet, such as admin tools for kicking and banning users, message search, and
-      media upload and playback.
+      Robrix is free and open source. Contributions, bug reports, and feature requests are more than welcome.
     </p>
   </description>
 
@@ -68,15 +68,16 @@
   </developer>
   <developer_name translate="no">Project Robius</developer_name>
 
-  <url type="homepage">https://robius.rs/</url>
+  <url type="homepage">https://github.com/project-robius/robrix</url>
   <url type="bugtracker">https://github.com/project-robius/robrix/issues</url>
   <url type="vcs-browser">https://github.com/project-robius/robrix</url>
-  <url type="contribute">https://github.com/orgs/project-robius/projects/4/</url>
-  <url type="contact">https://matrix.to/#/#robius-robrix:matrix.org</url>
+  <url type="contribute">https://github.com/project-robius/robrix</url>
+  <url type="contact">https://github.com/project-robius/robrix/issues</url>
 
   <categories>
     <category>Network</category>
     <category>InstantMessaging</category>
+    <category>Chat</category>
   </categories>
 
   <keywords>
