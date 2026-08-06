@@ -38,7 +38,7 @@ script_mod! {
             }
 
             wallet_path := Label {
-                width: Fit{max: FitBound.Rel{base: Base.Full, factor: 1.0}},
+                width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}},
                 height: Fit
                 flow: Flow.Right { wrap: false },
                 text_overflow: Ellipsis,
