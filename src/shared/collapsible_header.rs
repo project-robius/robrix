@@ -49,7 +49,10 @@ script_mod! {
             padding: 0,
             width: Fill,
             height: Fit,
+            flow: Flow.Right { wrap: false }
             text: "",
+            text_overflow: TextOverflow.Ellipsis,
+            max_lines: 1
             draw_text +: {
                 text_style: mod.widgets.REGULAR_TEXT {font_size: 11},
                 color: (mod.widgets.COLOR_HEADER_FG),

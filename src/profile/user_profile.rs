@@ -240,14 +240,14 @@ script_mod! {
             width: 300,
             height: Fill
             flow: Overlay,
-            align: Align{x: 1.0}
+            align: Align{x: 0}
 
             show_bg: true,
             draw_bg.color: (COLOR_PRIMARY)
 
             user_profile_view := UserProfileView { }
 
-            // The "X" close button on the top right
+            // The "X" close button on the top left
             close_button := RobrixNeutralIconButton {
                 width: Fit,
                 height: Fit,
