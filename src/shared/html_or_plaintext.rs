@@ -58,9 +58,7 @@ script_mod! {
 
             title := Label {
                 flow: Flow.Right { wrap: false },
-                // a hack to get it to start truncating with an ellipsis
-                // if it's somewhat close to overflowing the line width
-                width: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.6}},
+                width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}},
                 max_lines: 1,
                 text_overflow: Ellipsis,
                 draw_text +: {
