@@ -77,7 +77,7 @@ script_mod! {
             padding: 0,
             width: Fit,
             height: Fit,
-            flow: Right, // do not wrap
+            flow: Flow.Right { wrap: false },
             text: "",
             draw_text +: {
                 color: #ffffff,

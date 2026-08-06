@@ -24,7 +24,7 @@ script_mod! {
 
         tsp_html := Html {
             width: Fit, height: Fit
-            flow: Right, // do not wrap
+            flow: Flow.Right { wrap: false },
             padding: 0,
             margin: 0,
 

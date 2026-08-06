@@ -57,11 +57,14 @@ script_mod! {
             }
 
             title := Label {
-                flow: Right, // do not wrap
+                flow: Flow.Right { wrap: false },
+                // a hack to get it to start truncating with an ellipsis
+                // if it's somewhat close to overflowing the line width
+                width: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.6}},
+                max_lines: 1,
+                text_overflow: Ellipsis,
                 draw_text +: {
                     color: #f,
-                    // line_spacing 1.0 prevents the label's row height from
-                    // inflating the pill vertically (pill is single-line).
                     text_style: MESSAGE_TEXT_STYLE { font_size: (MESSAGE_FONT_SIZE), line_spacing: 1.0 },
                 }
                 text: "Unknown",
@@ -71,19 +74,6 @@ script_mod! {
 
     // A RobrixHtmlLink is either a regular Html link (default) or a Matrix link.
     // The Matrix link is a pill-shaped widget with an avatar and a title.
-    //
-    // Drawing notes (see `RobrixHtmlLink::draw_walk` for the full story):
-    // * `html_link` is a direct child, NOT wrapped in an intermediate View.
-    //   `HtmlLink::draw_walk` draws inline text into the parent `TextFlow`'s
-    //   turtle; any surrounding View would open its own turtle and break the
-    //   inline wrap math. So `draw_walk` calls `html_link.draw_walk` directly
-    //   (bypassing `self.view.draw_walk`) for the inline-text path.
-    // * `matrix_link_view` IS a View (a pill is an atomic inline block with its
-    //   own turtle). `draw_walk` calls `matrix_link_view.draw_walk` directly
-    //   (also bypassing `self.view.draw_walk`) for the pill path.
-    // * Neither path goes through `self.view.draw_walk`, which would iterate
-    //   ALL children — and since `HtmlLink` has no `visible` field (so its
-    //   `visible()` is always `true`), it would double-draw alongside the pill.
     mod.widgets.RobrixHtmlLink = #(RobrixHtmlLink::register_widget(vm)) {
         width: Fit, height: Fit,
         align: Align{ y: 0.5 },

@@ -38,7 +38,7 @@ script_mod! {
         input := RobrixTextInput {
             width: Fill,
             height: Fit,
-            flow: Right, // do not wrap
+            flow: Flow.Right { wrap: false },
             padding: 5
             
             empty_text: "Filter rooms & spaces..."

@@ -28,7 +28,7 @@ script_mod! {
 
             wallet_name := Label {
                 width: Fit, height: Fit
-                flow: Right,
+                flow: Flow.Right { wrap: false },
                 margin: Inset{top: 2.4, left: 0}
                 draw_text +: {
                     color: (MESSAGE_TEXT_COLOR),
@@ -38,8 +38,10 @@ script_mod! {
             }
 
             wallet_path := Label {
-                width: Fit, height: Fit
-                flow: Right,
+                width: Fit{max: FitBound.Rel{base: Base.Full, factor: 1.0}},
+                height: Fit
+                flow: Flow.Right { wrap: false },
+                text_overflow: Ellipsis,
                 margin: Inset{top: 2.9, left: 8, bottom: 2}
                 draw_text +: {
                     color: (MESSAGE_TEXT_COLOR),
@@ -57,7 +59,7 @@ script_mod! {
                     width: Fit, height: Fit
                     margin: Inset{top: 3}
                     align: Align { y: 0.5 }
-                    flow: Right,
+                    flow: Flow.Right { wrap: false },
                     draw_text +: {
                         color: (COLOR_FG_ACCEPT_GREEN),
                         text_style: theme.font_bold { font_size: 11 },
@@ -74,7 +76,7 @@ script_mod! {
                 Label {
                     margin: Inset{top: 2.9}
                     width: Fit, height: Fit
-                    flow: Right,
+                    flow: Flow.Right { wrap: false },
                     align: Align { y: 0.5 }
                     draw_text +: {
                         color: (COLOR_FG_DANGER_RED),
