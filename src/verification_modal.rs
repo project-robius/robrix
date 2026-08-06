@@ -18,7 +18,7 @@ script_mod! {
         spacing: 4
 
         symbol := Label {
-            width: Fit, height: Fit
+            width: 72, height: Fit
             align: Align{x: 0.5}
             draw_text +: {
                 text_style: REGULAR_TEXT {font_size: 30},
@@ -26,7 +26,7 @@ script_mod! {
             }
         }
         description := Label {
-            width: Fit{max: FitBound.Abs(72.0)}, height: Fit
+            width: 72, height: Fit
             flow: Flow.Right{wrap: true}
             align: Align{x: 0.5}
             draw_text +: {
@@ -45,7 +45,7 @@ script_mod! {
 
         body := ModalBody {}
 
-        // SAS V1 always produces exactly 7 emojis, so 7 cells are declared up front.
+        // SAS V1 always produces exactly 7 emojis.
         emojis_view := View {
             width: Fill, height: Fit
             flow: Flow.Right{wrap: true}
@@ -155,9 +155,7 @@ impl WidgetMatchEvent for VerificationModal {
                 // Outgoing verification requests start with the accept button hidden
                 // since we're still in the waiting state then, so show it now
                 accept_button.set_visible(cx, true);
-                // The emoji grid is only relevant during the `KeysExchanged` emoji
-                // step; hide it by default and let that branch re-show it, so it
-                // never leaks into other states.
+                // The emoji grid is hidden by default and only shown during emoji verification.
                 self.view.view(cx, ids!(emojis_view)).set_visible(cx, false);
                 match verification_action {
                     VerificationAction::RequestCancelled(cancel_info) => {
@@ -245,10 +243,22 @@ impl WidgetMatchEvent for VerificationModal {
                             self.label(cx, ids!(body)).set_text(
                                 cx,
                                 "Keys have been exchanged. Please verify the following emoji:\n\n\
-                                Do these emoji keys match?",
+                                Do the emoji names match?",
                             );
-                            for (index, emoji) in emoji_list.emojis.iter().enumerate() {
-                                self.populate_emoji_cell(cx, index, emoji.symbol, emoji.description);
+                            let emoji_cell_paths: &[&[LiveId]] = ids_array!(
+                                emoji0,
+                                emoji1,
+                                emoji2,
+                                emoji3,
+                                emoji4,
+                                emoji5,
+                                emoji6,
+                            );
+                            for (emoji, cell) in emoji_list.emojis.iter().zip(
+                                self.view_set(cx, emoji_cell_paths).iter()
+                            ) {
+                                cell.label(cx, ids!(symbol)).set_text(cx, emoji.symbol);
+                                cell.label(cx, ids!(description)).set_text(cx, emoji.description);
                             }
                             self.view.view(cx, ids!(emojis_view)).set_visible(cx, true);
                         } else {
@@ -322,21 +332,6 @@ impl VerificationModal {
         self.is_final = false;
     }
 
-    fn populate_emoji_cell(&mut self, cx: &mut Cx, index: usize, symbol: &str, description: &str) {
-        let cell = match index {
-            0 => self.view.view(cx, ids!(emoji0)),
-            1 => self.view.view(cx, ids!(emoji1)),
-            2 => self.view.view(cx, ids!(emoji2)),
-            3 => self.view.view(cx, ids!(emoji3)),
-            4 => self.view.view(cx, ids!(emoji4)),
-            5 => self.view.view(cx, ids!(emoji5)),
-            6 => self.view.view(cx, ids!(emoji6)),
-            _ => return,
-        };
-        cell.label(cx, ids!(symbol)).set_text(cx, symbol);
-        cell.label(cx, ids!(description)).set_text(cx, description);
-    }
-
     fn initialize_with_data(
         &mut self,
         cx: &mut Cx,
@@ -363,8 +358,6 @@ impl VerificationModal {
             ).into()
         };
         self.label(cx, ids!(body)).set_text(cx, &prompt_text);
-        // Ensure the emoji grid from any prior verification is not shown
-        // on the initial prompt screen.
         self.view.view(cx, ids!(emojis_view)).set_visible(cx, false);
 
         let accept_button = self.button(cx, ids!(accept_button));
