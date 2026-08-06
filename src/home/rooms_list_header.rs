@@ -36,8 +36,8 @@ script_mod! {
             height: Fit,
             padding: 0
             margin: Inset{left: 5, top: -1}
-            flow: Flow.Right { wrap: false },
-            max_lines: 1,
+            flow: Flow.Right { wrap: true },
+            max_lines: 3,
             text_overflow: Ellipsis,
             text: "All Rooms"
             draw_text +: {

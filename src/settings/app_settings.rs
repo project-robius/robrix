@@ -206,7 +206,7 @@ script_mod! {
 
         View {
             width: Fill, height: Fit
-            flow: Right{wrap: true}
+            flow: Flow.Right{wrap: true}
             align: Align{y: 0.5}
 
             SubsectionLabel {
@@ -227,7 +227,7 @@ script_mod! {
 
         View {
             width: Fill, height: Fit
-            flow: Right{wrap: true}
+            flow: Flow.Right{wrap: true}
             align: Align{y: 0.5}
             spacing: 6
 

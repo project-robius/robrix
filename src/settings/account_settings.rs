@@ -112,7 +112,7 @@ script_mod! {
 
         View {
             width: Fill, height: Fit
-            flow: Right { wrap: true },
+            flow: Flow.Right { wrap: true },
             align: Align{y: 0.5}
 
             our_own_avatar := Avatar {
