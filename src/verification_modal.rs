@@ -304,8 +304,8 @@ impl WidgetMatchEvent for VerificationModal {
                     VerificationAction::RequestCompleted => {
                         self.label(cx, ids!(body)).set_text(
                             cx,
-                            "Verification completed successfully!\n\
-                            Now you can send and receive encrypted messages, \
+                            "Verification completed successfully!\n\n\
+                            Now you can send and receive encrypted messages,\
                             and everyone you chat with can trust this device is yours.",
                         );
                         accept_button.set_text(cx, "Ok");
