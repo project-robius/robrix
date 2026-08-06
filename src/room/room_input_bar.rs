@@ -38,6 +38,7 @@ script_mod! {
         width: Fill,
         height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
         flow: Down,
+        new_batch: true
 
         // These margins are a hack to make the borders of the RoomInputBar
         // line up with the boundaries of its parent widgets.
@@ -446,12 +447,12 @@ impl RoomInputBar {
         if let Err(_e) = init_location_subscriber(cx) {
             error!("Failed to initialize location subscriber");
             enqueue_popup_notification(
-                "Failed to initialize location services.",
+                "Couldn't start location services. Please try again.",
                 PopupKind::Error,
                 None,
             );
         }
-        self.view.location_preview(cx, ids!(location_preview)).show();
+        self.view.location_preview(cx, ids!(location_preview)).show(cx);
         self.redraw(cx);
     }
 

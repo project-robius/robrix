@@ -1,7 +1,7 @@
 [package]
 name = "robrix"
 authors = ["Kevin Boos <kevinaboos@gmail.com>", "Robius Project Maintainers"]
-description = "A Matrix chat client written using Makepad + Robius app dev framework in Rust."
+description = "A powerful multi-platform Matrix chat client written in Rust using Makepad + Robius app dev framework."
 documentation = "https://docs.rs/robrix"
 edition = "2024" ## mostly just to allow let-chains
 homepage = "https://robius.rs/"
@@ -10,23 +10,23 @@ license = "MIT"
 readme = "README.md"
 categories = ["gui"]
 repository = "https://github.com/project-robius/robrix"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
 # makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
 # makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "view_optimize_dont_redraw_cached_textures", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "view_optimize_dont_redraw_cached_textures" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "base_line_fit_bound", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "base_line_fit_bound" }
 
 
-## Including this crate automatically configures all `robius-*` crates to work with Makepad.
-robius-use-makepad = "0.1.1"
 robius-directories = { git = "https://github.com/project-robius/robius" }
 robius-file-picker = { git = "https://github.com/project-robius/robius" }
-robius-location = { git = "https://github.com/project-robius/robius" }
-robius-open = { git = "https://github.com/project-robius/robius" }
+robius-location    = { git = "https://github.com/project-robius/robius" }
+robius-open        = { git = "https://github.com/project-robius/robius" }
+robius-share       = { git = "https://github.com/project-robius/robius" }
+robius-use-makepad = "0.1.1" ## auto-configures all `robius-*` crates to work with Makepad.
 
 
 anyhow = "1.0"
@@ -72,6 +72,7 @@ ruma = { git = "https://github.com/ruma/ruma", rev = "8beb557b466a43b057c9c15527
     "compat-unset-avatar",
     "unstable-compat-lax-syncv5-deser",
 ] }
+num_cpus = "1.17.0"
 rand = "0.8.5"
 rangemap = "1.5.0"
 sanitize-filename = "0.6"
@@ -112,6 +113,11 @@ reqwest = { version = "0.12", default-features = false, optional = true, feature
 ## For OAuth/SSO login on iOS, via `ASWebAuthenticationSession`. Ugh....
 [target.'cfg(target_os = "ios")'.dependencies]
 robius-web-auth-session = { git = "https://github.com/project-robius/robius" }
+
+## On Android, the matrix-sdk no longer sets up TLS roots for rustls by default,
+## so we have to do it manually.
+[target.'cfg(target_os = "android")'.dependencies]
+webpki-root-certs = "1"
 
 
 [features]
@@ -233,10 +239,12 @@ authors = [
 publisher = "GOSIM Foundation"
 license_file = "LICENSE-MIT"
 copyright = "Copyright 2023-2026, Project Robius"
-homepage = "https://github.com/project-robius"
+homepage = "https://github.com/project-robius/robrix"
+### Note: there is an 80-character max for the one-line summary.
+description = "A powerful multi-platform Matrix chat client written from scratch in Rust"
 ### Note: there is an 80-character max for each line of the `long_description`.
 long_description = """
-Robrix is a multi-platform Matrix chat client written in pure Rust
+Robrix is a powerful open-source Matrix chat client written in pure Rust
 using the Makepad UI framework (https://github.com/makepad/makepad)
 and the Project Robius app dev framework and platform abstractions
 (https://github.com/project-robius).
@@ -292,6 +300,22 @@ depends = "./dist/depends_deb.txt"
 desktop_template = "./packaging/robrix.desktop"
 section = "utils"
 
+## These metainfo and licensing files are needed for package manager compliance.
+[package.metadata.packager.deb.files]
+"./packaging/rs.robius.robrix.metainfo.xml" = "/usr/share/metainfo/rs.robius.robrix.metainfo.xml"
+"./packaging/debian-copyright" = "/usr/share/doc/robrix/copyright"
+"./licenses/THIRD-PARTY-NOTICES.html" = "/usr/share/doc/robrix/THIRD-PARTY-NOTICES.html"
+
+[package.metadata.packager.appimage.files]
+"./packaging/rs.robius.robrix.metainfo.xml" = "/usr/share/metainfo/rs.robius.robrix.metainfo.xml"
+"./packaging/debian-copyright" = "/usr/share/doc/robrix/copyright"
+"./licenses/THIRD-PARTY-NOTICES.html" = "/usr/share/doc/robrix/THIRD-PARTY-NOTICES.html"
+
+[package.metadata.packager.pacman.files]
+"./packaging/rs.robius.robrix.metainfo.xml" = "/usr/share/metainfo/rs.robius.robrix.metainfo.xml"
+"./packaging/debian-copyright" = "/usr/share/licenses/robrix/copyright"
+"./licenses/THIRD-PARTY-NOTICES.html" = "/usr/share/licenses/robrix/THIRD-PARTY-NOTICES.html"
+
 [package.metadata.packager.macos]
 minimum_system_version = "11.0"
 frameworks = []
@@ -310,6 +334,7 @@ application_folder_position = { x = 760, y = 250 }
 
 ## Configuration for `cargo packager`'s generation of a Windows `.exe` setup installer.
 [package.metadata.packager.nsis]
+installer_icon = "./resources/icon.ico"
 ## See this: <https://nsis.sourceforge.io/Docs/Chapter4.html#varconstant>
 appdata_paths = [
     "$APPDATA/$PUBLISHER/$PRODUCTNAME",

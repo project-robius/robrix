@@ -4,12 +4,13 @@ use url::Url;
 
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
-use makepad_widgets::{Cx, Event, ImageRef, image_cache::ImageError};
+use makepad_widgets::{Cx, Event, ImageRef, image_cache::{looks_like_svg, ImageError}};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, RoomId}, RoomDisplayName};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
 use crate::{
     room::FetchedRoomAvatar,
+    shared::avatar::AvatarImage,
     sliding_sync::{submit_async_request, MatrixRequest, TimelineKind},
 };
 
@@ -19,7 +20,10 @@ pub const GEO_URI_SCHEME: &str = "geo:";
 
 /// Formats a byte count using decimal units with user-facing byte suffixes, e.g. KB/MB/GB.
 pub fn format_decimal_file_size(bytes: u64) -> String {
-    bytesize::ByteSize::b(bytes).display().si().to_string().to_uppercase()
+    let mut size = bytesize::ByteSize::b(bytes).display().si().to_string();
+    // SI suffixes are always ASCII
+    size.make_ascii_uppercase();
+    size
 }
 
 pub fn deserialize_or_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
@@ -106,12 +110,32 @@ pub fn is_supported_image_mimetype(mimetype: &str) -> bool {
     )
 }
 
-/// Loads the given image `data` into the given `ImageRef`, auto-detecting any
-/// image format that makepad supports (PNG, JPEG, GIF, WebP, BMP, ICO, QOI).
-///
-/// Returns an error if the format is unsupported or decoding fails.
-pub fn load_image(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), ImageError> {
-    img.load_image_from_data(cx, data)
+/// Loads the given fetched avatar into the given `ImageRef`.
+pub fn load_avatar_image(
+    img: &ImageRef,
+    cx: &mut Cx,
+    avatar: &AvatarImage,
+) -> Result<(), ImageError> {
+    load_image_with_cache_key(
+        img,
+        cx,
+        std::path::Path::new(avatar.uri.as_str()),
+        std::sync::Arc::clone(&avatar.data),
+    )
+}
+
+/// Loads the encoded image `data` into the given `ImageRef`,
+/// auto-detecting and handling any image format that makepad supports.
+pub fn load_image_with_cache_key(
+    img: &ImageRef,
+    cx: &mut Cx,
+    cache_key: &std::path::Path,
+    data: std::sync::Arc<[u8]>,
+) -> Result<(), ImageError> {
+    if looks_like_svg(&data) {
+        return img.load_svg_from_shared_data(cx, data);
+    }
+    img.load_image_from_data_async(cx, cache_key, data)
 }
 
 
@@ -543,18 +567,15 @@ pub fn stringify_pagination_error(
 ///
 /// # Cases:
 /// - **Less than 60 seconds ago**: Returns `"Just now"`.
-/// - **Less than 60 minutes ago**: Returns `"X minutes ago"`, where X is the number of minutes.
+/// - **Less than 60 minutes ago**: Returns `"X min(s) ago"`, where X is the number of minutes.
 /// - **Same day**: Returns `"HH:MM"` (current time format for today).
 /// - **Yesterday**: Returns `"Yesterday at HH:MM"` for messages from the previous day.
 /// - **Within the past week**: Returns the name of the day (e.g., "Tuesday").
 /// - **Older than a week**: Returns `"DD/MM/YY"` as the absolute date.
 ///
-/// # Arguments:
-/// - `millis`: The Unix timestamp in milliseconds to format.
-///
 /// # Returns:
 /// - `Option<String>` representing the human-readable time or `None` if formatting fails.
-pub fn relative_format(millis: MilliSecondsSinceUnixEpoch) -> Option<String> {
+pub fn relative_format(millis: MilliSecondsSinceUnixEpoch) -> Option<Cow<'static, str>> {
     let datetime = unix_time_millis_to_datetime(millis)?;
 
     // Calculate the time difference between now and the given timestamp
@@ -563,23 +584,57 @@ pub fn relative_format(millis: MilliSecondsSinceUnixEpoch) -> Option<String> {
 
     // Handle different time ranges and format accordingly
     if duration < Duration::seconds(60) {
-        Some("Now".to_string())
+        Some("Just now".into())
     } else if duration < Duration::minutes(60) {
-        let minutes_text = if duration.num_minutes() == 1 { "min" } else { "mins" };
-        Some(format!("{} {} ago", duration.num_minutes(), minutes_text))
+        let mins = duration.num_minutes();
+        if mins == 1 {
+            Some("1 min ago".into())
+        } else {
+            Some(format!("{mins} mins ago").into())
+        }
     } else if duration < Duration::hours(24) && now.date_naive() == datetime.date_naive() {
-        Some(format!("{}", datetime.format("%H:%M"))) // "HH:MM" format for today
+        Some(datetime.format("%H:%M").to_string().into()) // "HH:MM" format for today
     } else if duration < Duration::hours(48) {
         if let Some(yesterday) = now.date_naive().succ_opt() {
             if yesterday == datetime.date_naive() {
-                return Some(format!("Yesterday at {}", datetime.format("%H:%M")));
+                return Some(format!("Yesterday at {}", datetime.format("%H:%M")).into());
             }
         }
-        Some(format!("{}", datetime.format("%A"))) // Fallback to day of the week if not yesterday
+        Some(datetime.format("%A").to_string().into()) // Fallback to day of the week if not yesterday
     } else if duration < Duration::weeks(1) {
-        Some(format!("{}", datetime.format("%A"))) // Day of the week (e.g., "Tuesday")
+        Some(datetime.format("%A").to_string().into()) // Day of the week (e.g., "Tuesday")
     } else {
-        Some(format!("{}", datetime.format("%F"))) // "YYYY-MM-DD" format for older messages
+        Some(datetime.format("%F").to_string().into()) // "YYYY-MM-DD" format for older messages
+    }
+}
+
+/// Formats the given Unix timestamp in milliseconds into a fully-relative "time ago" label,
+///
+/// # Cases:
+/// - **Less than 1 hour ago**: Delegates to [`relative_format`] (`"Just now"` or `"X mins ago"`).
+/// - **Less than 24 hours ago**: Returns `"X hours ago"`, where X is the number of hours.
+/// - **Yesterday** (24 to 48 hours ago): Returns `"yesterday"`.
+/// - **Older than that**: Returns `"X days ago"`, where X is the number of days.
+///
+/// # Returns:
+/// - `Option<String>` representing the human-readable time or `None` if formatting fails.
+pub fn time_ago(millis: MilliSecondsSinceUnixEpoch) -> Option<Cow<'static, str>> {
+    let datetime = unix_time_millis_to_datetime(millis)?;
+    let duration = Local::now() - datetime;
+    if duration < Duration::hours(1) {
+        // Same as the rooms-list format for recent times ("Now", "X mins ago").
+        relative_format(millis)
+    } else if duration < Duration::hours(24) {
+        let hours = duration.num_hours();
+        if hours == 1 {
+            Some("1 hour ago".into())
+        } else {
+            Some(format!("{hours} hours ago").into())
+        }
+    } else if duration < Duration::hours(48) {
+        Some("yesterday".into())
+    } else {
+        Some(format!("{} days ago", duration.num_days()).into())
     }
 }
 
@@ -645,8 +700,10 @@ impl From<MediaThumbnailSettingsConst> for MediaThumbnailSettings {
 pub const AVATAR_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
     MediaThumbnailSettingsConst {
         method: Method::Scale,
-        width: 40,
-        height: 40,
+        // while we typically show avatars at around 40x40,
+        // fetching a higher quality one is needed for good downscaling.
+        width: 192,
+        height: 192,
         animated: false,
     }
 );
@@ -691,6 +748,7 @@ pub fn linkify_get_urls<'t>(
     const MAILTO: &str = "mailto:";
 
     use linkify::{Link, LinkFinder, LinkKind};
+    use std::fmt::Write as _;
     let mut links = LinkFinder::new()
         .links(text)
         .peekable();
@@ -707,8 +765,9 @@ pub fn linkify_get_urls<'t>(
         }
     };
 
-    let mut linkified_text = String::new();
+    let mut linkified_text = String::with_capacity(text.len() + 64);
     let mut last_end_index = 0;
+    let mut did_linkify = false;
     for link in links {
         let link_txt = link.as_str();
 
@@ -733,10 +792,7 @@ pub fn linkify_get_urls<'t>(
             || is_link_within_html_tag(&link)
             || is_mailto_link_within_href_attr(&link)
         {
-            linkified_text = format!(
-                "{linkified_text}{}",
-                text.get(last_end_index..link.end()).unwrap_or_default(),
-            );
+            linkified_text.push_str(text.get(last_end_index..link.end()).unwrap_or_default());
             if let Some(links_found) = links_found.as_mut() {
                 if let Ok(url) = Url::parse(link_txt) {
                     links_found.push(url);
@@ -745,12 +801,14 @@ pub fn linkify_get_urls<'t>(
         } else {
             match link.kind() {
                 LinkKind::Url => {
-                    linkified_text = format!(
-                        "{linkified_text}{}<a href=\"{}\">{}</a>",
+                    let _ = write!(
+                        linkified_text,
+                        "{}<a href=\"{}\">{}</a>",
                         escaped(text.get(last_end_index..link.start()).unwrap_or_default()),
                         htmlize::escape_attribute(link_txt),
                         htmlize::escape_text(link_txt),
                     );
+                    did_linkify = true;
                     if let Some(links_found) = links_found.as_mut() {
                         if let Ok(url) = Url::parse(link_txt) {
                             links_found.push(url);
@@ -758,17 +816,22 @@ pub fn linkify_get_urls<'t>(
                     }
                 }
                 LinkKind::Email => {
-                    linkified_text = format!(
-                        "{linkified_text}{}<a href=\"mailto:{}\">{}</a>",
+                    let _ = write!(
+                        linkified_text,
+                        "{}<a href=\"mailto:{}\">{}</a>",
                         escaped(text.get(last_end_index..link.start()).unwrap_or_default()),
                         htmlize::escape_attribute(link_txt),
                         htmlize::escape_text(link_txt),
                     );
+                    did_linkify = true;
                 }
                 _ => return Cow::Borrowed(text), // unreachable
             }
         }
         last_end_index = link.end();
+    }
+    if !did_linkify && is_html {
+        return Cow::Borrowed(text);
     }
     linkified_text.push_str(
         &escaped(text.get(last_end_index..).unwrap_or_default())
@@ -986,6 +1049,17 @@ impl RoomNameId {
             room.display_name().await.unwrap_or(RoomDisplayName::Empty),
             room.room_id().to_owned(),
         )
+    }
+
+    /// Returns an efficient displayable/string representation.
+    pub fn display(&self) -> Cow<'_, str> {
+        match &self.display_name {
+            RoomDisplayName::Named(n)
+            | RoomDisplayName::Aliased(n)
+            | RoomDisplayName::Calculated(n) => Cow::Borrowed(n),
+            RoomDisplayName::Empty => Cow::Owned(format!("Room ID {}", self.room_id)),
+            RoomDisplayName::EmptyWas(name) => Cow::Owned(format!("Empty Room (was \"{name}\")")),
+        }
     }
 
     /// Get a reference to the underlying display name.

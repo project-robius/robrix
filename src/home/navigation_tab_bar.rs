@@ -140,8 +140,8 @@ script_mod! {
             margin: 0,
             icon_walk: Walk {
                 margin: 0,
-                width: 30,
-                height: 30
+                width: 27,
+                height: 27
             }
             draw_icon +: {
                 color: (COLOR_NAVIGATION_TAB_FG)
@@ -173,6 +173,7 @@ script_mod! {
 
     mod.widgets.NavigationTabBar = #(NavigationTabBar::register_widget(vm)) {
         Desktop := RoundedView {
+            new_batch: true,
             flow: Down,
             align: Align{x: 0.5}
             padding: Inset{
@@ -206,6 +207,7 @@ script_mod! {
         }
 
         Mobile := RoundedView {
+            new_batch: true,
             flow: Right
             align: Align{x: 0.5, y: 0.5}
             width: Fill,
@@ -417,11 +419,11 @@ impl Widget for ProfileIcon {
         };
 
         let mut drew_avatar = false;
-        if let Some(avatar_img_data) = own_profile.avatar_state.data() {
+        if let Some(avatar_image) = own_profile.avatar_state.image() {
             drew_avatar = our_own_avatar.show_image(
                 cx,
                 None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
-                |cx, img| utils::load_image(&img, cx, avatar_img_data),
+                |cx, img| utils::load_avatar_image(&img, cx, avatar_image),
             ).is_ok();
         }
         if !drew_avatar {
@@ -673,7 +675,7 @@ pub fn get_own_profile(cx: &mut Cx) -> Option<UserProfile> {
         if let Some(Some(avatar_uri)) = avatar_uri_to_fetch {
             if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, &avatar_uri) {
                 if let Some(p) = own_profile.as_mut() {
-                    p.avatar_state = AvatarState::Loaded(data);
+                    p.avatar_state = AvatarState::Loaded((avatar_uri.clone(), data).into());
                     // Update the user profile cache with the new avatar data.
                     user_profile_cache::enqueue_user_profile_update(
                         UserProfileUpdate::UserProfileOnly(p.clone())

@@ -443,12 +443,6 @@ impl Widget for SpacesBarWrapper {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // TODO: i want to uncomment this, but adding it back in will break
-        //       the animation of showing the SpacesBarWrapper.
-        //       I'm not sure why the SpacesBar is getting redrawn constantly though.
-        // if walk.height.to_fixed().is_some_and(|h| h < 0.01) {
-        //     return DrawStep::done();
-        // }
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -509,8 +503,7 @@ impl Widget for HomeScreen {
                 match action.downcast_ref() {
                     Some(NavigationBarAction::GoToHome) => {
                         if !matches!(app_state.selected_tab, SelectedTab::Home) {
-                            self.previous_selection = app_state.selected_tab.clone();
-                            app_state.selected_tab = SelectedTab::Home;
+                            self.previous_selection = std::mem::replace(&mut app_state.selected_tab, SelectedTab::Home);
                             cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
                             self.update_active_page_from_selection(cx, app_state);
                             self.view.redraw(cx);
@@ -518,8 +511,7 @@ impl Widget for HomeScreen {
                     }
                     Some(NavigationBarAction::GoToAddRoom) => {
                         if !matches!(app_state.selected_tab, SelectedTab::AddRoom) {
-                            self.previous_selection = app_state.selected_tab.clone();
-                            app_state.selected_tab = SelectedTab::AddRoom;
+                            self.previous_selection = std::mem::replace(&mut app_state.selected_tab, SelectedTab::AddRoom);
                             cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
                             self.update_active_page_from_selection(cx, app_state);
                             self.view.redraw(cx);
@@ -528,8 +520,7 @@ impl Widget for HomeScreen {
                     Some(NavigationBarAction::GoToSpace { space_name_id }) => {
                         let new_space_selection = SelectedTab::Space { space_name_id: space_name_id.clone() };
                         if app_state.selected_tab != new_space_selection {
-                            self.previous_selection = app_state.selected_tab.clone();
-                            app_state.selected_tab = new_space_selection;
+                            self.previous_selection = std::mem::replace(&mut app_state.selected_tab, new_space_selection);
                             cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
                             self.update_active_page_from_selection(cx, app_state);
                             self.view.redraw(cx);
@@ -538,8 +529,7 @@ impl Widget for HomeScreen {
                     // Only open the settings screen if it is not currently open.
                     Some(NavigationBarAction::OpenSettings) => {
                         if !matches!(app_state.selected_tab, SelectedTab::Settings) {
-                            self.previous_selection = app_state.selected_tab.clone();
-                            app_state.selected_tab = SelectedTab::Settings;
+                            self.previous_selection = std::mem::replace(&mut app_state.selected_tab, SelectedTab::Settings);
                             cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
                             if let Some(settings_page) = self.update_active_page_from_selection(cx, app_state) {
                                 settings_page
@@ -661,6 +651,12 @@ impl HomeScreen {
         }
 
         self.clear_mobile_navigation_state(cx);
+
+        // Switching into mobile mode lands on the rooms list, so no room should
+        // be drawn as selected until one is actually clicked.
+        if !is_desktop {
+            cx.action(AppStateAction::FocusNone);
+        }
     }
 
     fn update_active_page_from_selection(
@@ -771,6 +767,8 @@ impl HomeScreen {
             let stack_navigation_view = stack_navigation.view_by_id(cx, view_id);
             Self::hide_displayed_stack_screen(cx, &stack_navigation_view);
         }
+        // Also go back to the root stack view to ensure no old roomscreens persist.
+        stack_navigation.pop_to_root(cx);
     }
 
     fn hide_displayed_stack_screen(cx: &mut Cx, stack_navigation_view: &WidgetRef) {
@@ -827,6 +825,9 @@ impl HomeScreen {
             return;
         }
         let Some(current_screen) = app_state.selected_room.take() else {
+            // If we didn't have a current screen, something's buggy,
+            // so the safest option is to clear the mobile stack and start over. nbd.
+            self.mobile_screen_history.clear();
             return;
         };
         match self.mobile_screen_history.pop() {

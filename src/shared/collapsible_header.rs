@@ -10,7 +10,6 @@
 use makepad_widgets::*;
 use makepad_widgets::animator::Animate;
 
-use crate::home::rooms_list::RoomsListScopeProps;
 
 use super::expand_arrow::ExpandArrow;
 use super::unread_badge::UnreadBadgeWidgetRefExt as _;
@@ -50,7 +49,10 @@ script_mod! {
             padding: 0,
             width: Fill,
             height: Fit,
+            flow: Flow.Right { wrap: false }
             text: "",
+            text_overflow: TextOverflow.Ellipsis,
+            max_lines: 1
             draw_text +: {
                 text_style: mod.widgets.REGULAR_TEXT {font_size: 11},
                 color: (mod.widgets.COLOR_HEADER_FG),
@@ -116,13 +118,12 @@ pub struct CollapsibleHeader {
 impl Widget for CollapsibleHeader {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // Handle hits on this view as a whole before passing the event to the inner view.
-        let rooms_list_props = scope.props.get::<RoomsListScopeProps>().unwrap();
         match event.hits(cx, self.view.area()) {
             Hit::FingerDown(..) => {
                 cx.set_key_focus(self.view.area());
             }
             Hit::FingerUp(fe)
-                if !rooms_list_props.was_scrolling && fe.is_over && fe.is_primary_hit() && fe.was_tap() =>
+                if fe.is_over && fe.is_primary_hit() && fe.was_tap() =>
             {
                 self.toggle_collapse(cx, scope);
             }

@@ -112,7 +112,7 @@ script_mod! {
 
         View {
             width: Fill, height: Fit
-            flow: Right { wrap: true },
+            flow: Flow.Right { wrap: true },
             align: Align{y: 0.5}
 
             our_own_avatar := Avatar {
@@ -621,11 +621,11 @@ impl AccountSettings {
 
         let our_own_avatar = self.view.avatar(cx, ids!(our_own_avatar));
         let mut drew_avatar = false;
-        if let Some(avatar_img_data) = own_profile.avatar_state.data() {
+        if let Some(avatar_image) = own_profile.avatar_state.image() {
             drew_avatar = our_own_avatar.show_image(
                 cx,
                 None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
-                |cx, img| utils::load_image(&img, cx, avatar_img_data),
+                |cx, img| utils::load_avatar_image(&img, cx, avatar_image),
             ).is_ok();
         }
         if !drew_avatar {

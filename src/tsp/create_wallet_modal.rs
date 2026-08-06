@@ -77,7 +77,7 @@ script_mod! {
 
                 wallet_file_name_input := RobrixTextInput {
                     width: Fill, height: Fit,
-                    flow: Right, // do not wrap
+                    flow: Flow.Right { wrap: false },
                     padding: Inset { left: 10, right: 10, top: 5, bottom: 5 }
                     empty_text: "my_wallet_file",
                     autocapitalize: None,

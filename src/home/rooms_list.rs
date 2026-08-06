@@ -26,7 +26,7 @@ use matrix_sdk::{RoomState, ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch
 use crate::{
     app::{AppState, AppStateAction, SelectedRoom},
     home::{
-        navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, rooms_list_entry::RoomsListEntryAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}
+        navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, room_screen::invalidate_timeline_state, rooms_list_entry::RoomsListEntryAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}
     },
     logout::logout_confirm_modal::LogoutAction,
     room::{
@@ -34,6 +34,7 @@ use crate::{
         room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn},
     },
     shared::{
+        avatar::AvatarImage,
         collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory},
         jump_to_bottom_button::UnreadMessageCount,
         popup_list::{PopupKind, enqueue_popup_notification},
@@ -120,6 +121,8 @@ script_mod! {
 
         list := PortalList {
             keep_invisible: false,
+            // Nothing here listens for scroll position changes.
+            emit_scroll_actions: false,
             auto_tail: false,
             width: Fill, height: Fill
             flow: Down,
@@ -175,7 +178,7 @@ pub enum RoomsListUpdate {
     UpdateRoomName {
         new_room_name: RoomNameId,
     },
-    /// Update the avatar (image) for the given room.
+    /// Update the avatar for the given room.
     UpdateRoomAvatar {
         room_id: OwnedRoomId,
         room_avatar: FetchedRoomAvatar,
@@ -288,11 +291,9 @@ pub struct JoinedRoomInfo {
     /// The avatar for this room: either an array of bytes holding the avatar image
     /// or a string holding the first Unicode character of the room name.
     pub room_avatar: FetchedRoomAvatar,
-    /// Whether this room has been paginated at least once.
-    /// We pre-paginate visible rooms at least once in order to
-    /// be able to display the latest message in the RoomsListEntry
-    /// and to have something to immediately show when a user first opens a room.
-    pub has_been_paginated: bool,
+    /// Whether this room has been shown in the rooms list yet.
+    /// Determines whether we do first-time actions like pagination and fetching its avatar.
+    pub has_been_shown: bool,
     /// Whether this room is currently selected in the UI.
     pub is_selected: bool,
     /// Whether this a direct room.
@@ -339,7 +340,7 @@ pub struct InvitedRoomInfo {
 pub struct InviterInfo {
     pub user_id: OwnedUserId,
     pub display_name: Option<String>,
-    pub avatar: Option<Arc<[u8]>>,
+    pub avatar: Option<AvatarImage>,
 }
 impl std::fmt::Debug for InviterInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -706,6 +707,13 @@ impl RoomsList {
                     }
 
                     self.hidden_rooms.remove(&room_id);
+
+                    // If the removed room is no longer joined (left/kicked/banned),
+                    // drop all of its saved UI state.
+                    if matches!(new_state, RoomState::Left | RoomState::Banned) {
+                        invalidate_timeline_state(cx, &TimelineKind::MainRoom { room_id });
+                    }
+
                     self.update_status();
                 }
                 RoomsListUpdate::ClearRooms => {
@@ -1179,12 +1187,8 @@ impl Widget for RoomsList {
 
         // First, we handle any actions that came from widgets within the room list,
         // e.g., the user clicking on a RoomsListEntry to select a room.
-        // We use Scope `props` to pass down the current scrolling state of the PortalList.
-        let props = RoomsListScopeProps {
-            was_scrolling: self.view.portal_list(cx, ids!(list)).was_scrolling(),
-        };
         let rooms_list_actions = cx.capture_actions(
-            |cx| self.view.handle_event(cx, event, &mut Scope::with_props(&props))
+            |cx| self.view.handle_event(cx, event, &mut Scope::empty())
         );
         for action in rooms_list_actions {
             // Handle a regular room (joined or invited) being clicked.
@@ -1391,7 +1395,9 @@ impl Widget for RoomsList {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let app_state = scope.data.get_mut::<AppState>().unwrap();
         // Update the currently-selected room from the AppState data.
-        self.current_active_room = app_state.selected_room.clone();
+        if self.current_active_room != app_state.selected_room {
+            self.current_active_room = app_state.selected_room.clone();
+        }
 
         // Based on the various displayed room lists and is_expanded state of each room header,
         // calculate the indexes in the PortalList where the headers and rooms should be drawn.
@@ -1481,23 +1487,26 @@ impl Widget for RoomsList {
                         direct_room.is_selected = self.current_active_room.as_ref()
                             .is_some_and(|sel_room| sel_room.room_id() == direct_room_id);
 
-                        // Paginate the room if it hasn't been paginated yet.
-                        if PREPAGINATE_VISIBLE_ROOMS && !direct_room.has_been_paginated {
-                            direct_room.has_been_paginated = true;
-                            submit_async_request(MatrixRequest::PaginateTimeline {
-                                timeline_kind: TimelineKind::MainRoom {
-                                    room_id: direct_room.room_name_id.room_id().clone(),
-                                },
-                                num_events: 50,
-                                direction: PaginationDirection::Backwards,
+                        if !direct_room.has_been_shown {
+                            direct_room.has_been_shown = true;
+                            if PREPAGINATE_VISIBLE_ROOMS {
+                                submit_async_request(MatrixRequest::PaginateTimeline {
+                                    timeline_kind: TimelineKind::MainRoom {
+                                        room_id: direct_room.room_name_id.room_id().clone(),
+                                    },
+                                    num_events: 50,
+                                    direction: PaginationDirection::Backwards,
+                                });
+                            }
+                            submit_async_request(MatrixRequest::FetchRoomAvatar {
+                                room_name_id: direct_room.room_name_id.clone(),
                             });
                         }
                         // Pass the room info down to the RoomsListEntry widget via Scope.
                         scope = Scope::with_props(&*direct_room);
                         item.draw_all(cx, &mut scope);
                     } else {
-                        list.item(cx, portal_list_index, id!(empty))
-                            .draw_all(cx, &mut scope);
+                        list.item(cx, portal_list_index, id!(empty)).draw_all(cx, &mut scope);
                     }
                 }
                 else if self.regular_rooms_indexes.header_index == Some(portal_list_index) {
@@ -1518,15 +1527,19 @@ impl Widget for RoomsList {
                         regular_room.is_selected = self.current_active_room.as_ref()
                             .is_some_and(|sel_room| sel_room.room_id() == regular_room_id);
 
-                        // Paginate the room if it hasn't been paginated yet.
-                        if PREPAGINATE_VISIBLE_ROOMS && !regular_room.has_been_paginated {
-                            regular_room.has_been_paginated = true;
-                            submit_async_request(MatrixRequest::PaginateTimeline {
-                                timeline_kind: TimelineKind::MainRoom {
-                                    room_id: regular_room.room_name_id.room_id().clone(),
-                                },
-                                num_events: 50,
-                                direction: PaginationDirection::Backwards,
+                        if !regular_room.has_been_shown {
+                            regular_room.has_been_shown = true;
+                            if PREPAGINATE_VISIBLE_ROOMS {
+                                submit_async_request(MatrixRequest::PaginateTimeline {
+                                    timeline_kind: TimelineKind::MainRoom {
+                                        room_id: regular_room.room_name_id.room_id().clone(),
+                                    },
+                                    num_events: 50,
+                                    direction: PaginationDirection::Backwards,
+                                });
+                            }
+                            submit_async_request(MatrixRequest::FetchRoomAvatar {
+                                room_name_id: regular_room.room_name_id.clone(),
                             });
                         }
                         // Pass the room info down to the RoomsListEntry widget via Scope.
@@ -1624,11 +1637,6 @@ impl RoomsListRef {
     }
 }
 
-pub struct RoomsListScopeProps {
-    /// Whether the RoomsList's inner PortalList was scrolling
-    /// when the latest finger down event occurred.
-    pub was_scrolling: bool,
-}
 
 /// The set of indexes for each room category in the the RoomsList's PortalList.
 ///

@@ -50,7 +50,7 @@ script_mod! {
                 padding: 0,
                 margin: 0,
                 width: Fit, height: Fit,
-                flow: Right, // do not wrap
+                flow: Flow.Right { wrap: false },
                 align: Align{ x: 0.5, y: 0.5 }
                 draw_text +: {
                     text_style: TITLE_TEXT { font_size: 15. }
@@ -82,7 +82,19 @@ script_mod! {
 }
 
 
-#[derive(ScriptHook, Script, Widget)]
+/// What an [`Avatar`] is currently set to display.
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+enum AvatarDisplayState {
+    /// No image was set, so the one-grapheme text label is visible.
+    #[default]
+    Text,
+    /// An image was set but is still being fetched/decoded, so we show text until it's ready.
+    ImageLoading,
+    /// Showing the fully-decoded avatar image.
+    Image,
+}
+
+#[derive(Script, Widget)]
 pub struct Avatar {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
@@ -90,23 +102,51 @@ pub struct Avatar {
     /// Information about the user profile being shown in this Avatar.
     /// If `Some`, this Avatar will respond to clicks/taps.
     #[rust] info: Option<UserProfileAndRoomId>,
+    #[rust] display_state: AvatarDisplayState,
+}
+
+impl ScriptHook for Avatar {
+    fn on_after_apply(&mut self, vm: &mut ScriptVm, apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
+        // A reapply (like rotation on mobile) resets the default visibility, so we need to set it again.
+        if !apply.is_script_reapply() {
+            return;
+        }
+        let cx = vm.cx_mut();
+        let show_img = self.display_state != AvatarDisplayState::Text
+            && self.image(cx, ids!(img_view.img)).has_content();
+        self.view(cx, ids!(img_view)).set_visible(cx, show_img);
+        self.view(cx, ids!(text_view)).set_visible(cx, !show_img);
+    }
 }
 
 impl Widget for Avatar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
 
-        let Some(info) = self.info.clone() else { return };
+        // Check to see if this image has been loaded/decoded.
+        if self.display_state == AvatarDisplayState::ImageLoading {
+            if let Event::Actions(actions) = event {
+                if actions.iter().any(|a| a.downcast_ref::<AsyncImageLoad>().is_some())
+                    && self.image(cx, ids!(img_view.img)).has_content()
+                {
+                    self.display_state = AvatarDisplayState::Image;
+                    self.view(cx, ids!(img_view)).set_visible(cx, true);
+                    self.view(cx, ids!(text_view)).set_visible(cx, false);
+                    self.view.redraw(cx);
+                }
+            }
+        }
+
+        let Some(info) = self.info.as_ref() else { return };
         let area = self.view.area();
-        let widget_uid = self.widget_uid();
         match event.hits(cx, area) {
             Hit::FingerDown(_fde) => {
                 cx.set_key_focus(area);
             }
             Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() && fue.was_tap() => {
                 cx.widget_action(
-                    widget_uid,
-                    ShowUserProfileAction::ShowUserProfile(info),
+                    self.widget_uid(),
+                    ShowUserProfileAction::ShowUserProfile(info.clone()),
                 );
             }
             _ =>()
@@ -118,15 +158,23 @@ impl Widget for Avatar {
     }
 
     fn set_text(&mut self, cx: &mut Cx, v: &str) {
-        let f = utils::user_name_first_letter(v)
-            .unwrap_or("?").to_uppercase();
-        self.label(cx, ids!(text_view.text)).set_text(cx, &f);
+        self.display_state = AvatarDisplayState::Text;
+        self.set_text_label(cx, v);
         self.view(cx, ids!(img_view)).set_visible(cx, false);
         self.view(cx, ids!(text_view)).set_visible(cx, true);
     }
 }
 
 impl Avatar {
+    /// Internal function to sets the text label to the first grapheme of `v`.
+    ///
+    /// Specifically does NOT change the avatar's display state or image/text view visibility.
+    fn set_text_label(&mut self, cx: &mut Cx, v: &str) {
+        let f = utils::user_name_first_letter(v)
+            .unwrap_or("?").to_uppercase();
+        self.label(cx, ids!(text_view.text)).set_text(cx, &f);
+    }
+
     /// Sets the text content of this avatar, making the user name visible
     /// and the image invisible.
     ///
@@ -172,6 +220,9 @@ impl Avatar {
     /// Sets the image content of this avatar, making the image visible
     /// and the user name text invisible.
     ///
+    /// If the image is still being loaded/decoded asynchronously and isn't ready yet,
+    /// the text label will still be shown until the image is ready.
+    ///
     /// ## Arguments
     /// * `info`: information about the user represented by this avatar:
     ///   the user name, user ID, room ID, and avatar image data.
@@ -190,10 +241,13 @@ impl Avatar {
         where F: FnOnce(&mut Cx, ImageRef) -> Result<(), E>
     {
         let img_ref = self.image(cx, ids!(img_view.img));
-        let res = image_set_function(cx, img_ref);
+        let res = image_set_function(cx, img_ref.clone());
         if res.is_ok() {
-            self.view(cx, ids!(img_view)).set_visible(cx, true);
-            self.view(cx, ids!(text_view)).set_visible(cx, false);
+            // Don't show the avatar image until it's been decoded in full (which is async).
+            let has_content = img_ref.has_content();
+            self.display_state = if has_content { AvatarDisplayState::Image } else { AvatarDisplayState::ImageLoading };
+            self.view(cx, ids!(img_view)).set_visible(cx, has_content);
+            self.view(cx, ids!(text_view)).set_visible(cx, !has_content);
 
             if let Some(AvatarImageInfo { user_id, username, room_id, img_data }) = info {
                 self.info = Some(UserProfileAndRoomId {
@@ -211,15 +265,6 @@ impl Avatar {
             }
         }
         res
-    }
-
-    /// Returns whether this avatar is currently displaying an image or text.
-    pub fn status(&mut self, cx: &mut Cx) -> AvatarDisplayStatus {
-        if self.view(cx, ids!(img_view)).visible() {
-            AvatarDisplayStatus::Image
-        } else {
-            AvatarDisplayStatus::Text
-        }
     }
 
     /// Sets the given avatar and returns a displayable username based on the
@@ -301,10 +346,10 @@ impl Avatar {
             .or_else(try_get_cached_username_avatar)
             .unwrap_or((None, AvatarState::Unknown));
 
-        let (avatar_img_data_opt, profile_drawn) = match avatar_state {
-            AvatarState::Loaded(data) => (Some(data), true),
+        let (avatar_img_opt, profile_drawn) = match avatar_state {
+            AvatarState::Loaded(image) => (Some(image), true),
             AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, &uri) {
-                AvatarCacheEntry::Loaded(data) => (Some(data), true),
+                AvatarCacheEntry::Loaded(data) => (Some((uri, data).into()), true),
                 AvatarCacheEntry::Failed => (None, true),
                 AvatarCacheEntry::Requested => (None, false),
             },
@@ -318,32 +363,35 @@ impl Avatar {
             .unwrap_or_else(|| avatar_user_id.to_string());
 
         // Set the sender's avatar image, or use the username if no image is available.
-        avatar_img_data_opt
-            .and_then(|data| {
-                self.show_image(
-                    cx,
-                    is_clickable.then(|| AvatarImageInfo::from((
-                        avatar_user_id.to_owned(),
-                        username_opt.clone(),
-                        timeline_kind.room_id().to_owned(),
-                        data.clone()
-                    ))),
-                    |cx, img| utils::load_image(&img, cx, &data),
-                )
-                .ok()
-            })
-            .unwrap_or_else(|| {
-                self.show_text(
-                    cx,
-                    None,
-                    is_clickable.then(|| AvatarTextInfo::from((
-                        avatar_user_id.to_owned(),
-                        username_opt,
-                        timeline_kind.room_id().to_owned(),
-                    ))),
-                    &username,
-                )
-            });
+        avatar_img_opt.and_then(|image| {
+            self.show_image(
+                cx,
+                is_clickable.then(|| AvatarImageInfo::from((
+                    avatar_user_id.to_owned(),
+                    username_opt.clone(),
+                    timeline_kind.room_id().to_owned(),
+                    image.clone()
+                ))),
+                |cx, img| utils::load_avatar_image(&img, cx, &image),
+            )
+            .ok()
+        }).inspect(|_| {
+            // While the image is being decoded, show the text avatar as the placeholder.
+            if self.display_state == AvatarDisplayState::ImageLoading {
+                self.set_text_label(cx, &username);
+            }
+        }).unwrap_or_else(|| {
+            self.show_text(
+                cx,
+                None,
+                is_clickable.then(|| AvatarTextInfo::from((
+                    avatar_user_id.to_owned(),
+                    username_opt,
+                    timeline_kind.room_id().to_owned(),
+                ))),
+                &username,
+            )
+        });
         (username, profile_drawn)
     }
 }
@@ -378,15 +426,6 @@ impl AvatarRef {
         }
     }
 
-    /// See [`Avatar::status()`].
-    pub fn status(&self, cx: &mut Cx) -> AvatarDisplayStatus {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.status(cx)
-        } else {
-            AvatarDisplayStatus::Text
-        }
-    }
-
     /// See [`Avatar::set_avatar_and_get_username()`].
     pub fn set_avatar_and_get_username(
         &self,
@@ -412,14 +451,6 @@ impl AvatarRef {
     }
 }
 
-/// What an Avatar instance is currently displaying.
-pub enum AvatarDisplayStatus {
-    /// The avatar is displaying a text label.
-    Text,
-    /// The avatar is displaying an image.
-    Image,
-}
-
 /// Information about a text-based Avatar.
 pub struct AvatarTextInfo {
     pub user_id: OwnedUserId,
@@ -437,14 +468,35 @@ pub struct AvatarImageInfo {
     pub user_id: OwnedUserId,
     pub username: Option<String>,
     pub room_id: OwnedRoomId,
-    pub img_data: Arc<[u8]>,
+    pub img_data: AvatarImage,
 }
-impl From<(OwnedUserId, Option<String>, OwnedRoomId, Arc<[u8]>)> for AvatarImageInfo {
-    fn from((user_id, username, room_id, img_data): (OwnedUserId, Option<String>, OwnedRoomId, Arc<[u8]>)) -> Self {
+impl From<(OwnedUserId, Option<String>, OwnedRoomId, AvatarImage)> for AvatarImageInfo {
+    fn from((user_id, username, room_id, img_data): (OwnedUserId, Option<String>, OwnedRoomId, AvatarImage)) -> Self {
         Self { user_id, username, room_id, img_data }
     }
 }
 
+
+/// A fetched avatar: its image data and its MxcUri.
+#[derive(Clone)]
+pub struct AvatarImage {
+    pub uri: OwnedMxcUri,
+    pub data: Arc<[u8]>,
+}
+impl<U, D> From<(U, D)> for AvatarImage
+where
+    U: Into<OwnedMxcUri>,
+    D: Into<Arc<[u8]>>,
+{
+    fn from((uri, data): (U, D)) -> Self {
+        Self { uri: uri.into(), data: data.into() }
+    }
+}
+impl From<AvatarImage> for AvatarState {
+    fn from(image: AvatarImage) -> Self {
+        Self::Loaded(image)
+    }
+}
 
 /// The currently-known state of an avatar for a user, room, or space.
 #[derive(Clone, Default)]
@@ -454,7 +506,7 @@ pub enum AvatarState {
     /// It is known that this user/room/space does or does not have an avatar.
     Known(Option<OwnedMxcUri>),
     /// The avatar is known to exist and has been fetched successfully.
-    Loaded(Arc<[u8]>),
+    Loaded(AvatarImage),
     /// The avatar is known to exist but could not be fetched.
     Failed,
 }
@@ -464,7 +516,7 @@ impl std::fmt::Debug for AvatarState {
             AvatarState::Unknown        => write!(f, "Unknown"),
             AvatarState::Known(Some(_)) => write!(f, "Known(Some)"),
             AvatarState::Known(None)    => write!(f, "Known(None)"),
-            AvatarState::Loaded(data)   => write!(f, "Loaded({} bytes)", data.len()),
+            AvatarState::Loaded(image)  => write!(f, "Loaded({} bytes)", image.data.len()),
             AvatarState::Failed         => write!(f, "Failed"),
         }
     }
@@ -473,20 +525,20 @@ impl AvatarState {
     /// Tries to update this `AvatarState` if it has a known avatar URI
     /// by loading the avatar from the cache.
     ///
-    /// Returns the image data if this `AvatarState` is in the `Loaded` state.
-    pub fn update_from_cache(&mut self, cx: &mut Cx) -> Option<&Arc<[u8]>> {
+    /// Returns the fetched avatar if this `AvatarState` is in the `Loaded` state.
+    pub fn update_from_cache(&mut self, cx: &mut Cx) -> Option<&AvatarImage> {
         if let Self::Known(Some(uri)) = self {
             if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, uri) {
-                *self = Self::Loaded(data.clone());
+                *self = Self::Loaded((uri.clone(), data).into());
             }
         }
-        self.data()
+        self.image()
     }
 
-    /// Returns the avatar data, if in the `Loaded` state.
-    pub fn data(&self) -> Option<&Arc<[u8]>> {
-        if let Self::Loaded(data) = self {
-            Some(data)
+    /// Returns the fetched avatar, if in the `Loaded` state.
+    pub fn image(&self) -> Option<&AvatarImage> {
+        if let Self::Loaded(image) = self {
+            Some(image)
         } else {
             None
         }

@@ -6,6 +6,7 @@ use std::{borrow::Cow, cell::RefCell, ops::{DerefMut, Range}, sync::Arc};
 use hashbrown::{HashMap, HashSet};
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
+use matrix_sdk::reqwest::StatusCode;
 use matrix_sdk::{
     OwnedServerName, media::{MediaFormat, MediaRequestParameters}, room::RoomMember, ruma::{
         EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId, events::{
@@ -26,13 +27,13 @@ use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, e
 
 use matrix_sdk_ui::sync_service::State;
 use crate::{
-    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{get_image_name_and_filesize, populate_matrix_image_modal}, rooms_list::{RoomsListAction, RoomsListRef}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{fetch_full_image_for_viewer, get_image_name_and_filesize}, rooms_list::{RoomsListAction, RoomsListRef}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
-    room::{BasicRoomDetails, reply_preview::CollapsiblePreviewWidgetRefExt, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
+    room::{BasicRoomDetails, reply_preview::{CollapsiblePreviewRef, CollapsiblePreviewWidgetRefExt}, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, media_source_mxc, start_attachment_download}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageStatus, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints}, utils::{self, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -100,6 +101,15 @@ script_mod! {
             draw_icon.svg: (ICON_DOWNLOAD)
             icon_walk: Walk{width: 16, height: 16}
             text: "Download"
+        }
+
+        share_button := RobrixIconButton {
+            height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
+            padding: Inset{left: 12, right: 12}
+            margin: Inset{left: 8}
+            draw_icon.svg: (ICON_SHARE)
+            icon_walk: Walk{width: 16, height: 16}
+            text: "Share"
         }
 
         downloading_view := View {
@@ -323,7 +333,7 @@ script_mod! {
                     height: Fit,
                     username := Label {
                         width: Fill,
-                        flow: Right, // do not wrap
+                        flow: Flow.Right { wrap: false },
                         padding: 0,
                         margin: Inset{bottom: 9.0, top: 20.0, right: 10.0,}
                         max_lines: 1
@@ -421,9 +431,6 @@ script_mod! {
                         image_view +: { image +: {
                             height: (mod.widgets.IMG_MSG_FIT)
                         } }
-                        default_image_view +: { image +: {
-                            height: (mod.widgets.IMG_MSG_FIT)
-                        } }
                     }
                 }
                 download_section := mod.widgets.MessageDownloadSection {}
@@ -457,9 +464,6 @@ script_mod! {
                     }
                     image := TextOrImage {
                         image_view +: { image +: {
-                            height: (mod.widgets.IMG_MSG_FIT)
-                        } }
-                        default_image_view +: { image +: {
                             height: (mod.widgets.IMG_MSG_FIT)
                         } }
                     }
@@ -610,7 +614,7 @@ script_mod! {
             width: Fill,
             height: Fit,
             align: Align{x: 0.5, y: 0.5},
-            flow: Right,
+            flow: Flow.Right { wrap: true },
             padding: Inset{ top: 10.0, bottom: 7.0, left: 15.0, right: 15.0 }
             draw_text +: {
                 text_style: MESSAGE_TEXT_STYLE { font_size: 10 },
@@ -625,6 +629,7 @@ script_mod! {
         height: Fill,
         align: Align{x: 0.5, y: 0.0} // center horizontally, align to top vertically
         flow: Overlay,
+        new_batch: true
 
         list := PortalList {
             height: Fill,
@@ -632,7 +637,13 @@ script_mod! {
             flow: Down
 
             auto_tail: true, // set to `true` to lock the view to the last item.
-            max_pull_down: 0.0, // set to `0.0` to disable the pulldown bounce animation.
+            // only bounce at the end, not the start because that triggers back pagination.
+            bounce_at_start: false,
+            bounce_at_end: true,
+            // Read-receipt logic listens for scroll position changes.
+            emit_scroll_actions: true,
+            // Prefetch older history shortly before the user actually hits the top.
+            reached_start_margin: 2,
             // TODO: enable `reuse_items: true` once Makepad's Html/TextFlow widget
             //   properly resets all internal state during `script_apply(Reload)`.
             //   Currently, stale TextFlow layout state (particularly related to
@@ -750,6 +761,16 @@ pub struct RoomScreen {
     #[rust] relayout_redraws_left: u8,
     #[rust] relayout_last_first_id: usize,
     #[rust] relayout_last_scroll: f64,
+    #[rust] cached_refs: Option<RoomScreenWidgetRefs>,
+}
+
+/// Cached references to RoomScreen child widgets used in every event handler.
+#[derive(Clone)]
+struct RoomScreenWidgetRefs {
+    portal_list: PortalListRef,
+    user_profile_sliding_pane: UserProfileSlidingPaneRef,
+    loading_pane: LoadingPaneRef,
+    room_input_popup_menu: RoomInputPopupMenuRef,
 }
 
 impl Drop for RoomScreen {
@@ -765,6 +786,8 @@ impl Drop for RoomScreen {
 
 impl ScriptHook for RoomScreen {
     fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        // A script reload changes the RoomScreen's children; invalidate the ones we cached.
+        self.cached_refs = None;
         vm.with_cx_mut(|cx| {
             if let Some(tl_state) = &mut self.tl_state.as_mut() {
                 // Clear the timeline's drawn items caches and redraw it.
@@ -785,10 +808,12 @@ impl Widget for RoomScreen {
         }
 
         let room_screen_widget_uid = self.widget_uid();
-        let portal_list = self.portal_list(cx, ids!(timeline.list));
-        let user_profile_sliding_pane = self.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane));
-        let loading_pane = self.loading_pane(cx, ids!(loading_pane));
-        let room_input_popup_menu = self.room_input_popup_menu(cx, ids!(room_input_popup_menu));
+        let RoomScreenWidgetRefs {
+            portal_list,
+            user_profile_sliding_pane,
+            loading_pane,
+            room_input_popup_menu,
+        } = self.cached_widget_refs(cx);
 
         // Handle actions here before processing timeline updates.
         // Normally (in most other widgets), the order of event handling doesn't matter much.
@@ -958,6 +983,8 @@ impl Widget for RoomScreen {
                     } else if let Some(tl) = self.tl_state.as_mut() {
                         tl.media_cache.clear_all_pending_and_failed_requests();
                         tl.link_preview_cache.clear_all_pending_and_failed_requests();
+                        tl.content_drawn_since_last_update.clear();
+                        self.view.portal_list(cx, ids!(timeline.list)).redraw(cx);
                     }
                     continue;
                 }
@@ -985,8 +1012,8 @@ impl Widget for RoomScreen {
             }
             */
 
-            // Set visibility of loading message banner based of pagination logic
-            self.send_pagination_request_based_on_scroll_pos(cx, actions, &portal_list);
+            // Back paginate the timeline when the start of the timeline comes into view.
+            self.send_pagination_request_on_reached_start(cx, actions, &portal_list);
             // Handle sending any read receipts for the current logged-in user.
             self.send_user_read_receipts_based_on_scroll_pos(cx, actions, &portal_list);
 
@@ -1338,12 +1365,14 @@ impl Widget for RoomScreen {
                             }
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::DateDivider(millis)) => {
-                            let item = list.item(cx, item_id, id!(DateDivider));
-                            let text = unix_time_millis_to_datetime(*millis)
-                                // format the time as a shortened date (Sat, Sept 5, 2021)
-                                .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
-                                .unwrap_or_else(|| format!("{:?}", millis));
-                            item.label(cx, ids!(date)).set_text(cx, &text);
+                            let (item, existed) = list.item_with_existed(cx, item_id, id!(DateDivider));
+                            if !(existed && item_drawn_status.content_drawn) {
+                                let text = unix_time_millis_to_datetime(*millis)
+                                    // format the time as a shortened date (Sat, Sept 5, 2021)
+                                    .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
+                                    .unwrap_or_else(|| format!("{:?}", millis));
+                                item.label(cx, ids!(date)).set_text(cx, &text);
+                            }
                             (item, ItemDrawnStatus::both_drawn())
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
@@ -1370,8 +1399,12 @@ impl Widget for RoomScreen {
 
             // If the list is not filling the viewport, we need to back paginate the timeline
             // until we have enough events items to fill the viewport.
-            if !tl_state.fully_paginated && !list.is_filling_viewport() {
+            if !tl_state.fully_paginated
+                && !tl_state.is_paginating
+                && !list.is_filling_viewport()
+            {
                 log!("Automatically paginating timeline to fill viewport for room {:?}", self.room_name_id);
+                tl_state.is_paginating = true;
                 submit_async_request(MatrixRequest::PaginateTimeline {
                     timeline_kind: tl_state.kind.clone(),
                     num_events: 50,
@@ -1480,7 +1513,9 @@ impl RoomScreen {
                 TimelineUpdate::FirstUpdate { initial_items } => {
                     tl.content_drawn_since_last_update.clear();
                     tl.profile_drawn_since_last_update.clear();
+                    // Upon first showing a timeline, assume it's not fully paginated nor currently paginating.
                     tl.fully_paginated = false;
+                    tl.is_paginating = false;
                     // Set the portal list to the very bottom of the timeline.
                     portal_list.set_first_id_and_scroll(initial_items.len().saturating_sub(1), 0.0);
                     portal_list.set_tail_range(true);
@@ -1598,7 +1633,15 @@ impl RoomScreen {
                     if clear_cache {
                         tl.content_drawn_since_last_update.clear();
                         tl.profile_drawn_since_last_update.clear();
+                        let has_more_history = !tl.fully_paginated;
                         tl.fully_paginated = false;
+                        tl.is_paginating = false;
+                        // If the top of the timeline is still visible after getting new items,
+                        // go ahead and fetch more items proactively so that the user
+                        // doesn't have to do some kind of annoying scroll-up gesture again.
+                        if has_more_history && portal_list.first_id() <= 2 {
+                            should_continue_backwards_pagination = true;
+                        }
                     } else {
                         tl.content_drawn_since_last_update.remove(changed_indices.clone());
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
@@ -1616,8 +1659,8 @@ impl RoomScreen {
                 }
                 TimelineUpdate::TargetEventFound { target_event_id, index } => {
                     // log!("Target event found in room {}: {target_event_id}, index: {index}", tl.kind.room_id());
-                    tl.request_sender.send_if_modified(|requests| {
-                        requests.retain(|r| &r.room_id != tl.kind.room_id());
+                    tl.request_sender.send_if_modified(|req| {
+                        req.backwards_paginate.retain(|r| &r.room_id != tl.kind.room_id());
                         // no need to notify/wake-up all receivers for a completed request
                         false
                     });
@@ -1664,6 +1707,7 @@ impl RoomScreen {
                 }
                 TimelineUpdate::PaginationRunning(direction) => {
                     if direction == PaginationDirection::Backwards {
+                        tl.is_paginating = true;
                         top_space.set_visible(cx, true);
                         done_loading = false;
                     } else {
@@ -1678,6 +1722,10 @@ impl RoomScreen {
                         PopupKind::Error,
                         Some(10.0),
                     );
+                    tl.is_paginating = false;
+                    // We could automatically retry here after a failure, but it's not
+                    // really that valuable when the user can just try to scroll again.
+                    tl.pending_reached_start = false;
                     done_loading = true;
                 }
                 TimelineUpdate::PaginationIdle { fully_paginated, direction } => {
@@ -1685,8 +1733,13 @@ impl RoomScreen {
                         // Don't set `done_loading` to `true` here, because we want to keep the top space visible
                         // (with the "loading" message) until the corresponding `NewItems` update is received.
                         tl.fully_paginated = fully_paginated;
+                        tl.is_paginating = false;
                         if fully_paginated {
+                            tl.pending_reached_start = false;
                             done_loading = true;
+                        } else if tl.pending_reached_start || portal_list.first_id() <= 2 {
+                            tl.pending_reached_start = false;
+                            should_continue_backwards_pagination = true;
                         }
                     } else {
                         error!("Unexpected PaginationIdle update in the Forwards direction");
@@ -1736,12 +1789,8 @@ impl RoomScreen {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .set_room_context(cx, ui, tl.kind.clone(), tl.room_members.clone());
                 },
-                TimelineUpdate::MediaFetched(request) => {
+                TimelineUpdate::MediaFetched(_request) => {
                     log!("process_timeline_updates(): media fetched for room {}", tl.kind.room_id());
-                    // Set Image to image viewer modal if the media is not a thumbnail.
-                    if let (MediaFormat::File, media_source) = (request.format, request.source) {
-                        populate_matrix_image_modal(cx, media_source, &mut tl.media_cache);
-                    }
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
@@ -1808,7 +1857,9 @@ impl RoomScreen {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .update_encryption_state(cx, true);
                 }
-                TimelineUpdate::LinkPreviewFetched => {}
+                TimelineUpdate::LinkPreviewFetched => {
+                    // fall through to this item being redrawn
+                }
                 TimelineUpdate::FileUploadStarted { upload_id, file_name, in_reply_to, abort_handle } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .handle_file_upload_started(cx, upload_id, &file_name, in_reply_to.as_ref(), abort_handle);
@@ -1842,6 +1893,7 @@ impl RoomScreen {
         }
 
         if should_continue_backwards_pagination {
+            tl.is_paginating = true;
             submit_async_request(MatrixRequest::PaginateTimeline {
                 timeline_kind: tl.kind.clone(),
                 num_events: 50,
@@ -2000,7 +2052,7 @@ impl RoomScreen {
         let Some(media_source) = mxc_uri else {
             return;
         };
-        let Some(tl_state) = self.tl_state.as_mut() else { return };
+        let Some(tl_state) = self.tl_state.as_ref() else { return };
         let Some(event_tl_item) = tl_state.items.get(item_id).and_then(|item| item.as_event()) else { return };
 
         let timestamp_millis = event_tl_item.timestamp();
@@ -2025,7 +2077,7 @@ impl RoomScreen {
             }),
         )));
 
-        populate_matrix_image_modal(cx, media_source, &mut tl_state.media_cache);
+        fetch_full_image_for_viewer(media_source);
     }
 
     /// Looks up the event specified by the given message details in the given timeline.
@@ -2053,6 +2105,34 @@ impl RoomScreen {
             .take(MAX_ITEMS_TO_SEARCH_THROUGH)
             .filter_map(|item| item.as_event())
             .find(|ev| ev.event_id().is_some_and(|id| id == target_event_id))
+    }
+
+    /// Registers a pending download for a media transfer (e.g., download, share)
+    /// and shows the loading spinner, then calls `start` to kick off the transfer.
+    ///
+    /// Does nothing if the transfer was already in progress.
+    fn begin_media_transfer(
+        &mut self,
+        cx: &mut Cx,
+        portal_list: &PortalListRef,
+        info: &DownloadableAttachment,
+        kind: TransferKind,
+        start: fn(DownloadableAttachment, TimelineUpdateSenderOption),
+    ) {
+        let Some(tl) = self.tl_state.as_mut() else { return };
+        let mxc = media_source_mxc(&info.media_source);
+        if tl.pending_downloads.iter().any(|p| &p.mxc == mxc) {
+            enqueue_already_downloading_notification();
+            return;
+        }
+        tl.pending_downloads.push(PendingDownload {
+            mxc: mxc.clone(),
+            state: PendingDownloadState::InProgress,
+            kind,
+        });
+        portal_list.redraw(cx);
+        let update_sender = tl.media_cache.timeline_update_sender().cloned();
+        start(info.clone(), update_sender);
     }
 
     /// Handles any [`MessageAction`]s received by this RoomScreen.
@@ -2331,6 +2411,7 @@ impl RoomScreen {
                             tl.expanded_reply_previews.insert(message_id.clone());
                         }
                     }
+
                     // If we collapsed the preview, redraw until the list fills the viewport again.
                     self.relayout_redraws_left = 12; // but not more than 12 times
                     self.relayout_last_first_id = usize::MAX;
@@ -2383,20 +2464,10 @@ impl RoomScreen {
                 // }
 
                 MessageAction::DownloadAttachment(info) => {
-                    let Some(tl) = self.tl_state.as_mut() else { continue };
-                    let mxc = media_source_mxc(&info.media_source);
-                    // Prevent the same attachment from being downloaded more than once at a time.
-                    if tl.pending_downloads.iter().any(|p| &p.mxc == mxc) {
-                        enqueue_already_downloading_notification();
-                        continue;
-                    }
-                    tl.pending_downloads.push(PendingDownload {
-                        mxc: mxc.clone(),
-                        state: PendingDownloadState::InProgress,
-                    });
-                    portal_list.redraw(cx);
-                    let update_sender = tl.media_cache.timeline_update_sender().cloned();
-                    start_attachment_download(info.clone(), update_sender);
+                    self.begin_media_transfer(cx, portal_list, info, TransferKind::Download, start_attachment_download);
+                }
+                MessageAction::ShareAttachment(info) => {
+                    self.begin_media_transfer(cx, portal_list, info, TransferKind::Share, start_attachment_share);
                 }
                 MessageAction::CancelDownload(mxc) => {
                     submit_async_request(MatrixRequest::CancelDownload(mxc.clone()));
@@ -2477,13 +2548,13 @@ impl RoomScreen {
             );
             loading_pane.show(cx);
 
-            tl.request_sender.send_if_modified(|requests| {
-                if let Some(existing) = requests.iter_mut().find(|r| &r.room_id == tl.kind.room_id()) {
+            tl.request_sender.send_if_modified(|req| {
+                if let Some(existing) = req.backwards_paginate.iter_mut().find(|r| &r.room_id == tl.kind.room_id()) {
                     warning!("Unexpected: room {} already had an existing timeline request in progress, event: {:?}", tl.kind.room_id(), existing.target_event_id);
                     // We might as well re-use this existing request...
                     existing.target_event_id = target_event_id.clone();
                 } else {
-                    requests.push(BackwardsPaginateUntilEventRequest {
+                    req.backwards_paginate.push(BackwardsPaginateUntilEventRequest {
                         room_id: tl.kind.room_id().clone(),
                         target_event_id: target_event_id.clone(),
                         // avoid re-searching through items we already searched through.
@@ -2573,6 +2644,7 @@ impl RoomScreen {
                     room_members: None,
                     // We assume timelines being viewed for the first time haven't been fully paginated.
                     fully_paginated: false,
+                    is_paginating: false,
                     items: Vector::new(),
                     content_drawn_since_last_update: RangeSet::new(),
                     profile_drawn_since_last_update: RangeSet::new(),
@@ -2584,7 +2656,7 @@ impl RoomScreen {
                     pending_thread_summary_fetches: HashSet::new(),
                     saved_state: SavedState::default(),
                     message_highlight_animation_state: MessageHighlightAnimationState::default(),
-                    last_scrolled_index: usize::MAX,
+                    pending_reached_start: false,
                     prev_first_index: None,
                     scrolled_past_read_marker: false,
                     latest_own_user_receipt: None,
@@ -2623,8 +2695,9 @@ impl RoomScreen {
         // because we want to show the user some messages as soon as possible
         // when they first open the room, and there might not be any messages yet.
         if is_first_time_being_loaded {
-            if !tl_state.fully_paginated {
+            if !tl_state.fully_paginated && !tl_state.is_paginating {
                 log!("Sending a first-time backwards pagination request for {}", tl_state.kind);
+                tl_state.is_paginating = true;
                 submit_async_request(MatrixRequest::PaginateTimeline {
                     timeline_kind: tl_state.kind.clone(),
                     num_events: 50,
@@ -2684,6 +2757,11 @@ impl RoomScreen {
         // such that it can be accessed in future functions like event/draw handlers.
         self.tl_state = Some(tl_state);
 
+        // Tell the background subscriber that this timeline is now open (if it was previously closed).
+        if let Some(tl) = self.tl_state.as_ref() {
+            tl.request_sender.send_if_modified(|req| !std::mem::replace(&mut req.is_timeline_open, true));
+        }
+
         // Now that we have restored the TimelineUiState into this RoomScreen widget,
         // we can proceed to processing pending background updates.
         self.process_timeline_updates(cx, &self.portal_list(cx, ids!(list)));
@@ -2696,6 +2774,11 @@ impl RoomScreen {
         let Some(timeline_kind) = self.timeline_kind.clone() else { return };
         if self.tl_state.is_none() {
             return;
+        }
+
+        // Tell the background subscriber that this timeline is now closed.
+        if let Some(tl) = self.tl_state.as_ref() {
+            tl.request_sender.send_if_modified(|req| std::mem::replace(&mut req.is_timeline_open, false));
         }
 
         self.save_state();
@@ -2810,8 +2893,8 @@ impl RoomScreen {
         }
 
         // If this timeline is already displayed, we don't need to do anything major,
-        // but we do need update the `room_name_id` in case it has changed, or it has been cleared.
-        if self.timeline_kind.as_ref().is_some_and(|kind| kind == &timeline_kind) {
+        // but we do need update the `room_name_id` in case it has changed/cleared.
+        if self.tl_state.is_some() && self.timeline_kind.as_ref().is_some_and(|k| k == &timeline_kind) {
             self.room_name_id = Some(room_name_id.clone());
             return;
         }
@@ -2890,8 +2973,9 @@ impl RoomScreen {
                             receipt_type: ReceiptType::FullyRead,
                         });
                     } else {
-                        if let Some(own_user_receipt_timestamp) = &tl_state.latest_own_user_receipt.clone()
-                        .and_then(|receipt| receipt.ts) {
+                        if let Some(own_user_receipt_timestamp) = tl_state.latest_own_user_receipt
+                            .as_ref().and_then(|receipt| receipt.ts)
+                        {
                             let Some((_first_event_id, first_timestamp)) = tl_state
                                 .items
                                 .get(first_index)
@@ -2901,8 +2985,8 @@ impl RoomScreen {
                                     *index = first_index;
                                     return;
                                 };
-                            if own_user_receipt_timestamp >= &first_timestamp
-                                && own_user_receipt_timestamp <= &last_timestamp
+                            if own_user_receipt_timestamp >= first_timestamp
+                                && own_user_receipt_timestamp <= last_timestamp
                             {
                                 tl_state.scrolled_past_read_marker = true;
                                 submit_async_request(MatrixRequest::ReadReceipt {
@@ -2922,30 +3006,43 @@ impl RoomScreen {
         }
     }
 
-    /// Sends a backwards pagination request if the user is scrolling up
-    /// and is approaching the top of the timeline.
-    fn send_pagination_request_based_on_scroll_pos(
+    /// Returns the widget refs used on every event, caching them if None.
+    fn cached_widget_refs(&mut self, cx: &mut Cx) -> RoomScreenWidgetRefs {
+        if let Some(refs) = &self.cached_refs {
+            return refs.clone();
+        }
+        let refs = RoomScreenWidgetRefs {
+            portal_list: self.portal_list(cx, ids!(timeline.list)),
+            user_profile_sliding_pane: self.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane)),
+            loading_pane: self.loading_pane(cx, ids!(loading_pane)),
+            room_input_popup_menu: self.room_input_popup_menu(cx, ids!(room_input_popup_menu)),
+        };
+        self.cached_refs = Some(refs.clone());
+        refs
+    }
+
+    /// Sends a backwards pagination request if the first item(s) in the timeline are visible.
+    fn send_pagination_request_on_reached_start(
         &mut self,
         _cx: &mut Cx,
         actions: &ActionsBuf,
         portal_list: &PortalListRef,
     ) {
         let Some(tl) = self.tl_state.as_mut() else { return };
+        if !portal_list.reached_start(actions) { return };
         if tl.fully_paginated { return };
-        if !portal_list.scrolled(actions) { return };
-
-        let first_index = portal_list.first_id();
-        if first_index == 0 && tl.last_scrolled_index > 0 {
-            log!("Scrolled up from item {} --> 0, sending back pagination request for room {}",
-                tl.last_scrolled_index, tl.kind,
-            );
-            submit_async_request(MatrixRequest::PaginateTimeline {
-                timeline_kind: tl.kind.clone(),
-                num_events: 50,
-                direction: PaginationDirection::Backwards,
-            });
+        if tl.is_paginating {
+            tl.pending_reached_start = true;
+            return;
         }
-        tl.last_scrolled_index = first_index;
+
+        log!("Timeline hit first item, sending back pagination request for room {}", tl.kind);
+        tl.is_paginating = true;
+        submit_async_request(MatrixRequest::PaginateTimeline {
+            timeline_kind: tl.kind.clone(),
+            num_events: 50,
+            direction: PaginationDirection::Backwards,
+        });
     }
 }
 
@@ -3289,6 +3386,9 @@ struct TimelineUiState {
     /// This must be reset to `false` whenever the timeline is fully cleared.
     fully_paginated: bool,
 
+    /// Whether a pagination request is currently in flight.
+    is_paginating: bool,
+
     /// The list of items (events) in this room's timeline that our client currently knows about.
     items: Vector<Arc<TimelineItem>>,
 
@@ -3346,11 +3446,9 @@ struct TimelineUiState {
     /// If the animation was triggered, the state goes back to Off.
     message_highlight_animation_state: MessageHighlightAnimationState,
 
-    /// The index of the timeline item that was most recently scrolled up past it.
-    /// This is used to detect when the user has scrolled up past the second visible item (index 1)
-    /// upwards to the first visible item (index 0), which is the top of the timeline,
-    /// at which point we submit a backwards pagination request to fetch more events.
-    last_scrolled_index: usize,
+    /// Whether the first item(s) in the timeline became visible while an existing
+    /// pagination request was already in flight.
+    pending_reached_start: bool,
 
     /// The index of the first item shown in the timeline's PortalList from *before* the last "jump".
     ///
@@ -3375,8 +3473,7 @@ struct TimelineUiState {
     /// are contained within. If `None`, the room has not been tombstoned.
     tombstone_info: Option<SuccessorRoomDetails>,
 
-    /// Media/file attachments in this timeline currently being downloaded.
-    /// the inline button's spinner state.
+    /// Media/file attachments in this timeline that are currently being downloaded.
     pending_downloads: SmallVec<[PendingDownload; 1]>,
 
     /// Reply previews the user has eaxpanded that should be shown in full.
@@ -3707,11 +3804,11 @@ fn populate_message_view(
                                 Cow::from(&fb.body),
                                 Some(FormattedBody {
                                     format: fb.format.clone(),
-                                    body: format!("* {} {}", &username, &fb.body),
+                                    body: format!("* {} {}", username, fb.body),
                                 })
                             )
                         } else {
-                            (Cow::from(format!("* {} {}", &username, body)), None)
+                            (Cow::from(format!("* {} {}", username, body)), None)
                         };
                         let html_or_plaintext_ref =
                             item.html_or_plaintext(cx, ids!(content.message));
@@ -3745,22 +3842,21 @@ fn populate_message_view(
                     let text_or_image_ref = item.text_or_image(cx, ids!(content.message.image));
                     let fallback = if was_cached {
                         // Cached path re-reads the status the widget already has.
-                        matches!(text_or_image_ref.status(), TextOrImageStatus::Text)
-                            .then(|| DownloadableAttachment {
-                                media_source: image.source.clone(),
-                                filename: image.filename().to_owned(),
-                                size: image.info.as_ref().and_then(|i| i.size).map(u64::from),
-                                kind: DownloadKind::Image,
-                            })
+                        text_or_image_ref.status().is_text().then(|| DownloadableAttachment {
+                            media_source: image.source.clone(),
+                            filename: image.filename().to_owned(),
+                            size: image.info.as_ref().and_then(|i| i.size).map(u64::from),
+                            kind: DownloadKind::Image,
+                        })
                     } else {
                         let (is_image_fully_drawn, fallback) = populate_image_message_content_with_fallback(
                             cx,
                             &text_or_image_ref,
-                            image.info.clone(),
+                            image.info.as_deref(),
                             image.source.clone(),
                             msg.body(),
                             media_cache,
-                            image.filename().to_owned(),
+                            image.filename(),
                             image.info.as_ref().and_then(|i| i.size).map(u64::from),
                             DownloadKind::Image,
                         );
@@ -3947,21 +4043,20 @@ fn populate_message_view(
 
             let text_or_image_ref = item.text_or_image(cx, ids!(content.message.image));
             let media_source: MediaSource = source.clone().into();
-            let filename = if body.is_empty() { "sticker".to_owned() } else { body.clone() };
+            let filename = if body.is_empty() { "sticker" } else { body.as_str() };
             let size = info.size.map(u64::from);
             download_info = if was_cached {
-                matches!(text_or_image_ref.status(), TextOrImageStatus::Text)
-                    .then(|| DownloadableAttachment {
-                        media_source,
-                        filename,
-                        size,
-                        kind: DownloadKind::Image,
-                    })
+                text_or_image_ref.status().is_text().then(|| DownloadableAttachment {
+                    media_source,
+                    filename: filename.to_owned(),
+                    size,
+                    kind: DownloadKind::Image,
+                })
             } else {
                 let (is_image_fully_drawn, fallback) = populate_image_message_content_with_fallback(
                     cx,
                     &text_or_image_ref,
-                    Some(Box::new(info.clone())),
+                    Some(info),
                     media_source,
                     body,
                     media_cache,
@@ -4038,8 +4133,8 @@ fn populate_message_view(
         item.reaction_list(cx, ids!(content.reaction_list)).set_list(
             cx,
             reactions,
-            timeline_kind.clone(),
-            timeline_event_id.clone(),
+            timeline_kind,
+            &timeline_event_id,
             item_id,
         );
         populate_read_receipts(&item, cx, timeline_kind, event_tl_item);
@@ -4095,7 +4190,7 @@ fn populate_message_view(
             let mxc = media_source_mxc(&info.media_source);
             pending_downloads.iter()
                 .find(|p| &p.mxc == mxc)
-                .map(|p| p.state.display())
+                .map(|p| p.state.display(p.kind))
         })
         .unwrap_or_default();
     let is_reply_expanded = expanded_reply_previews.contains(&message_details.timeline_event_id);
@@ -4305,11 +4400,11 @@ fn populate_media_caption(
 fn populate_image_message_content_with_fallback(
     cx: &mut Cx,
     text_or_image_ref: &TextOrImageRef,
-    image_info_source: Option<Box<ImageInfo>>,
+    image_info_source: Option<&ImageInfo>,
     original_source: MediaSource,
     body: &str,
     media_cache: &mut MediaCache,
-    filename: String,
+    filename: &str,
     size: Option<u64>,
     kind: DownloadKind,
 ) -> (bool, Option<DownloadableAttachment>) {
@@ -4321,13 +4416,12 @@ fn populate_image_message_content_with_fallback(
         body,
         media_cache,
     );
-    let fallback = matches!(text_or_image_ref.status(), TextOrImageStatus::Text)
-        .then(|| DownloadableAttachment {
-            media_source: original_source,
-            filename,
-            size,
-            kind,
-        });
+    let fallback = text_or_image_ref.status().is_text().then(|| DownloadableAttachment {
+        media_source: original_source,
+        filename: filename.to_owned(),
+        size,
+        kind,
+    });
     (fully_drawn, fallback)
 }
 
@@ -4337,12 +4431,12 @@ fn populate_image_message_content_with_fallback(
 fn populate_image_message_content(
     cx: &mut Cx,
     text_or_image_ref: &TextOrImageRef,
-    image_info_source: Option<Box<ImageInfo>>,
+    image_info_source: Option<&ImageInfo>,
     original_source: MediaSource,
     body: &str,
     media_cache: &mut MediaCache,
 ) -> bool {
-    let (mimetype, _width, _height) = image_info_source.as_ref()
+    let (mimetype, _width, _height) = image_info_source
         .map(|info| (info.mimetype.as_deref(), info.width, info.height))
         .unwrap_or_default();
 
@@ -4364,11 +4458,20 @@ fn populate_image_message_content(
 
     let mut fully_drawn = false;
 
-    let mut fetch_and_show_media_source = |cx: &mut Cx, media_source: MediaSource, image_info: Box<ImageInfo>| {
+    // Fall back to fetching the full-size image instead of a failed thumbnail if it's not too big.
+    const MAX_FULL_IMAGE_SIZE: u64 = 1024 * 1024; // 1MiB
+    let should_fetch_full_size = image_info_source
+        .and_then(|info| info.size)
+        .is_none_or(|size| u64::from(size) <= MAX_FULL_IMAGE_SIZE);
+
+    let mut fetch_and_show_media_source = |cx: &mut Cx, media_source: MediaSource, image_info: &ImageInfo| {
         match media_cache.try_get_media_or_fetch(&media_source, MEDIA_THUMBNAIL_FORMAT.into()) {
-            (MediaCacheEntry::Loaded(data), _media_format) => {
+            (MediaCacheEntry::Loaded(data), media_format) => {
+                // Include the file type (full or thumbnail) in the cache key to disambiguate.
+                let variant = if matches!(media_format, MediaFormat::File) { "full" } else { "thumb" };
+                let cache_key = format!("{}#{variant}", media_source_mxc(&media_source));
                 let show_image_result = text_or_image_ref.show_image(cx, Some(media_source), |cx, img| {
-                    utils::load_image(&img, cx, &data)
+                    utils::load_image_with_cache_key(&img, cx, std::path::Path::new(&cache_key), Arc::clone(&data))
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
                 if let Err(e) = show_image_result {
@@ -4382,7 +4485,7 @@ fn populate_image_message_content(
             }
             (MediaCacheEntry::Requested, _media_format) => {
                 // If the image is being fetched, we try to show its blurhash.
-                if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
+                if let (Some(blurhash), Some(width), Some(height)) = (image_info.blurhash.as_deref(), image_info.width, image_info.height) {
                     let show_image_result = text_or_image_ref.show_image(cx, Some(media_source), |cx, img| {
                         let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else {
                             return Err(image_cache::ImageError::EmptyData)
@@ -4427,11 +4530,26 @@ fn populate_image_message_content(
                 }
                 fully_drawn = false;
             }
-            (MediaCacheEntry::Failed(_status_code), _media_format) => {
-                if text_or_image_ref.view(cx, ids!(default_image_view)).visible() {
-                    fully_drawn = true;
-                    return;
+            (MediaCacheEntry::Failed(status_code), MediaFormat::Thumbnail(_))
+                if should_fetch_full_size && status_code != StatusCode::NOT_FOUND =>
+            {
+                match media_cache.try_get_media_or_fetch(&media_source, MediaFormat::File) {
+                    (MediaCacheEntry::Loaded(data), _) => {
+                        let cache_key = format!("{}#full", media_source_mxc(&media_source));
+                        let res = text_or_image_ref.show_image(cx, Some(media_source.clone()), |cx, img| {
+                            utils::load_image_with_cache_key(&img, cx, std::path::Path::new(&cache_key), Arc::clone(&data))
+                                .map(|()| img.size_in_pixels(cx).unwrap_or_default())
+                        });
+                        if let Err(e) = res {
+                            error!("Failed to display full-size image: {e:?}");
+                        }
+                        fully_drawn = true;
+                    }
+                    (MediaCacheEntry::Requested, _) => fully_drawn = false,
+                    (MediaCacheEntry::Failed(_), _) => fully_drawn = true,
                 }
+            }
+            (MediaCacheEntry::Failed(_status_code), _media_format) => {
                 text_or_image_ref.show_text(
                     cx,
                     format!("{body}\n\nFailed to fetch image from {:?}", media_source_mxc(&media_source)),
@@ -4451,7 +4569,7 @@ fn populate_image_message_content(
             fetch_and_show_media_source(cx, media_source, image_info);
         }
         None => {
-            text_or_image_ref.show_text(cx, "{body}\n\nImage message had no source URL.");
+            text_or_image_ref.show_text(cx, format!("{body}\n\nImage message had no source URL."));
             fully_drawn = true;
         }
     }
@@ -5278,6 +5396,8 @@ pub enum MessageAction {
 
     /// The user clicked the "Download" button on a media/file message.
     DownloadAttachment(DownloadableAttachment),
+    /// The user clicked the "Share" button on a media/file message.
+    ShareAttachment(DownloadableAttachment),
     /// User clicked the cancel × next to the in-progress spinner.
     CancelDownload(OwnedMxcUri),
     /// The message at the given item index in the timeline should be highlighted.
@@ -5311,7 +5431,7 @@ impl ActionDefaultRef for MessageAction {
 }
 
 /// A widget representing a single message of any kind within a room timeline.
-#[derive(Script, ScriptHook, Widget, Animator)]
+#[derive(Script, Widget, Animator)]
 pub struct Message {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
@@ -5325,6 +5445,18 @@ pub struct Message {
     /// Cached so `set_data` can reset_hover only on the button that just
     /// transitioned into visibility, not on every redraw.
     #[rust] download_state: DownloadDisplayState,
+
+    // Belowhere: cached references to child widgets, for efficiency.
+    #[rust] replied_to_message_view: Option<CollapsiblePreviewRef>,
+    #[rust] thread_root_summary_view: Option<ViewRef>,
+}
+
+impl ScriptHook for Message {
+    fn on_after_reload(&mut self, _vm: &mut ScriptVm) {
+        // A script reload changes the Message's children; invalidate the ones we cached.
+        self.replied_to_message_view = None;
+        self.thread_root_summary_view = None;
+    }
 }
 
 impl Widget for Message {
@@ -5339,9 +5471,14 @@ impl Widget for Message {
             self.animator_play(cx, ids!(highlight.off));
         }
 
-        let Some(details) = self.details.clone() else { return };
+        let Some(d) = self.details.as_ref() else { return };
+        let room_screen_widget_uid = d.room_screen_widget_uid;
+        let thread_root_event_id = d.thread_root_event_id.clone();
 
-        let reply = self.view.widget(cx, ids!(replied_to_message)).as_collapsible_preview();
+        // We first handle a click on the replied-to message preview, if present,
+        // because we don't want any widgets within the replied-to message to be
+        // clickable or otherwise interactive.
+        let reply = self.replied_to_message_view(cx);
         let reply_content_area = reply.content_area(cx);
         match event.hits(cx, reply_content_area) {
             Hit::FingerHoverIn(..) => {
@@ -5352,18 +5489,18 @@ impl Widget for Message {
             }
             Hit::FingerDown(fe) if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) => {
                 cx.widget_action(
-                    details.room_screen_widget_uid,
+                    room_screen_widget_uid,
                     MessageAction::OpenMessageContextMenu {
-                        details: details.clone(),
+                        details: self.details.clone().unwrap(), // guaranteed to be Some()
                         abs_pos: fe.abs,
                     }
                 );
             }
             Hit::FingerLongPress(lp) => {
                 cx.widget_action(
-                    details.room_screen_widget_uid,
+                    room_screen_widget_uid,
                     MessageAction::OpenMessageContextMenu {
-                        details: details.clone(),
+                        details: self.details.clone().unwrap(), // guaranteed to be Some()
                         abs_pos: lp.abs,
                     }
                 );
@@ -5372,18 +5509,20 @@ impl Widget for Message {
                 // Tapping on a collapsed reply preview expands it.
                 // Tapping on an expanded reply preview jumps to the replied-to message.
                 let action = if reply.is_collapsed() {
-                    MessageAction::ToggleReplyPreviewExpanded(details.timeline_event_id.clone())
+                    MessageAction::ToggleReplyPreviewExpanded(
+                        self.details.as_ref().unwrap().timeline_event_id.clone(), // guaranteed to be Some()
+                    )
                 } else {
-                    MessageAction::JumpToRelated(details.clone())
+                    MessageAction::JumpToRelated(self.details.clone().unwrap()) // guaranteed to be Some()
                 };
-                cx.widget_action(details.room_screen_widget_uid, action);
+                cx.widget_action(room_screen_widget_uid, action);
             }
             _ => { }
         }
 
         // Handle clicks on the thread summary shown beneath a thread-root message.
-        if let Some(thread_root_event_id) = details.thread_root_event_id.as_ref() {
-            let thread_root_summary = self.view(cx, ids!(thread_root_summary));
+        if let Some(thread_root_event_id) = thread_root_event_id.as_ref() {
+            let thread_root_summary = self.thread_root_summary_view(cx);
             let apply_hover = |cx: &mut Cx, bg_color: Vec4| {
                 let mut thread_root_summary_ref = thread_root_summary.clone();
                 script_apply_eval!(cx, thread_root_summary_ref, {
@@ -5395,9 +5534,9 @@ impl Widget for Message {
                     apply_hover(cx, COLOR_THREAD_SUMMARY_BG_HOVER);
                     if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                         cx.widget_action(
-                            details.room_screen_widget_uid, 
+                            room_screen_widget_uid, 
                             MessageAction::OpenMessageContextMenu {
-                                details: details.clone(),
+                                details: self.details.clone().unwrap(), // guaranteed to be Some()
                                 abs_pos: fe.abs,
                             }
                         );
@@ -5411,9 +5550,9 @@ impl Widget for Message {
                 }
                 Hit::FingerLongPress(lp) => {
                     cx.widget_action(
-                        details.room_screen_widget_uid, 
+                        room_screen_widget_uid, 
                         MessageAction::OpenMessageContextMenu {
-                            details: details.clone(),
+                            details: self.details.clone().unwrap(), // guaranteed to be Some()
                             abs_pos: lp.abs,
                         }
                     );
@@ -5422,7 +5561,7 @@ impl Widget for Message {
                     apply_hover(cx, COLOR_THREAD_SUMMARY_BG);
                     if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
                         cx.widget_action(
-                            details.room_screen_widget_uid, 
+                            room_screen_widget_uid, 
                             MessageAction::OpenThread(thread_root_event_id.clone()),
                         );
                     }
@@ -5446,9 +5585,9 @@ impl Widget for Message {
                 // A right click means we should display the context menu.
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                     cx.widget_action(
-                        details.room_screen_widget_uid, 
+                        room_screen_widget_uid, 
                         MessageAction::OpenMessageContextMenu {
-                            details: details.clone(),
+                            details: self.details.clone().unwrap(), // guaranteed to be Some()
                             abs_pos: fe.abs,
                         }
                     );
@@ -5456,9 +5595,9 @@ impl Widget for Message {
             }
             Hit::FingerLongPress(lp) => {
                 cx.widget_action(
-                    details.room_screen_widget_uid, 
+                    room_screen_widget_uid, 
                     MessageAction::OpenMessageContextMenu {
-                        details: details.clone(),
+                        details: self.details.clone().unwrap(), // guaranteed to be Some()
                         abs_pos: lp.abs,
                     }
                 );
@@ -5476,8 +5615,8 @@ impl Widget for Message {
 
         if let Event::Actions(actions) = event {
             for action in actions {
-                match action.as_widget_action().widget_uid_eq(details.room_screen_widget_uid).cast_ref() {
-                    MessageAction::HighlightMessage(id) if id == &details.item_id => {
+                match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast_ref() {
+                    MessageAction::HighlightMessage(id) if id == &self.details.as_ref().unwrap().item_id => { // guaranteed to be Some()
                         self.animator_play(cx, ids!(highlight.on));
                         self.redraw(cx);
                     }
@@ -5486,33 +5625,39 @@ impl Widget for Message {
             }
 
             // Handle clicks on the reply preview's "show more" or "show less" buttons.
-            let reply = self.view.widget(cx, ids!(replied_to_message));
-            if reply.button(cx, ids!(reply_expand_button)).clicked(actions)
-                || reply.button(cx, ids!(reply_collapse_button)).clicked(actions)
-            {
+            let reply_expand_button = self.button(cx, ids!(replied_to_message.reply_expand_button));
+            let reply_collapse_button = self.button(cx, ids!(replied_to_message.reply_collapse_button));
+            if reply_expand_button.clicked(actions) || reply_collapse_button.clicked(actions)             {
                 cx.widget_action(
-                    details.room_screen_widget_uid,
-                    MessageAction::ToggleReplyPreviewExpanded(details.timeline_event_id.clone()),
+                    room_screen_widget_uid,
+                    MessageAction::ToggleReplyPreviewExpanded(
+                        self.details.as_ref().unwrap().timeline_event_id.clone(), // guaranteed to be Some()
+                    ),
                 );
+                reply_expand_button.reset_hover(cx);
+                reply_collapse_button.reset_hover(cx);
             }
 
-            // Handle clicks on the "Download" button shown beneath media messages.
-            if let Some(info) = self.download_info.as_ref()
-                && self.view.button(cx, ids!(content.download_section.download_button)).clicked(actions)
-            {
-                cx.widget_action(
-                    details.room_screen_widget_uid,
-                    MessageAction::DownloadAttachment(info.clone()),
-                );
-            }
-            // Cancel × shown next to the in-progress spinner.
-            if let Some(info) = self.download_info.as_ref()
-                && self.view.button(cx, ids!(content.download_section.downloading_view.cancel_button)).clicked(actions)
-            {
-                cx.widget_action(
-                    details.room_screen_widget_uid,
-                    MessageAction::CancelDownload(media_source_mxc(&info.media_source).clone()),
-                );
+            // Handle clicks on the media-related buttons (download, share, cancel) beneath media messages.
+            if let Some(info) = self.download_info.as_ref() {
+                if self.view.button(cx, ids!(content.download_section.download_button)).clicked(actions) {
+                    cx.widget_action(
+                        room_screen_widget_uid,
+                        MessageAction::DownloadAttachment(info.clone()),
+                    );
+                }
+                if self.view.button(cx, ids!(content.download_section.share_button)).clicked(actions) {
+                    cx.widget_action(
+                        room_screen_widget_uid,
+                        MessageAction::ShareAttachment(info.clone()),
+                    );
+                }
+                if self.view.button(cx, ids!(content.download_section.downloading_view.cancel_button)).clicked(actions) {
+                    cx.widget_action(
+                        room_screen_widget_uid,
+                        MessageAction::CancelDownload(media_source_mxc(&info.media_source).clone()),
+                    );
+                }
             }
         }
     }
@@ -5532,8 +5677,26 @@ impl Widget for Message {
 }
 
 impl Message {
+    fn replied_to_message_view(&mut self, cx: &mut Cx) -> CollapsiblePreviewRef {
+        if let Some(reply) = &self.replied_to_message_view {
+            return reply.clone();
+        }
+        let reply = self.view.widget(cx, ids!(replied_to_message)).as_collapsible_preview();
+        self.replied_to_message_view = Some(reply.clone());
+        reply
+    }
+
+    fn thread_root_summary_view(&mut self, cx: &mut Cx) -> ViewRef {
+        if let Some(view) = &self.thread_root_summary_view {
+            return view.clone();
+        }
+        let view = self.view(cx, ids!(thread_root_summary));
+        self.thread_root_summary_view = Some(view.clone());
+        view
+    }
+
     /// Called every time `populate_message_view` runs, including on cached
-    /// items, so all state must be re-set unconditionally.
+    /// items, so all states must be re-set unconditionally.
     fn set_data(
         &mut self,
         cx: &mut Cx,
@@ -5553,24 +5716,35 @@ impl Message {
 
         let section_visible = self.download_info.is_some();
         self.view.view(cx, ids!(content.download_section)).set_visible(cx, section_visible);
-        if let Some(info) = self.download_info.as_ref() {
-            let download_button = self.view.button(cx, ids!(content.download_section.download_button));
+        if section_visible {
+            let download_button  = self.view.button(cx, ids!(content.download_section.download_button));
+            let share_button     = self.view.button(cx, ids!(content.download_section.share_button));
             let downloading_view = self.view.view(cx, ids!(content.download_section.downloading_view));
-            let cancel_button = self.view.button(cx, ids!(content.download_section.downloading_view.cancel_button));
-            let success_button = self.view.button(cx, ids!(content.download_section.success_button));
-            let failure_button = self.view.button(cx, ids!(content.download_section.failure_button));
-            download_button.set_text(cx, info.kind.button_text());
-            download_button.set_visible(cx, matches!(download_state, DownloadDisplayState::Idle));
+            let cancel_button    = self.view.button(cx, ids!(content.download_section.downloading_view.cancel_button));
+            let success_button   = self.view.button(cx, ids!(content.download_section.success_button));
+            let failure_button   = self.view.button(cx, ids!(content.download_section.failure_button));
+            let is_idle = matches!(download_state, DownloadDisplayState::Idle);
+            download_button.set_visible(cx, is_idle);
+            share_button.set_visible(cx, is_idle);
             downloading_view.set_visible(cx, matches!(download_state, DownloadDisplayState::InProgress));
-            success_button.set_visible(cx, matches!(download_state, DownloadDisplayState::Succeeded));
+            success_button.set_visible(cx, matches!(download_state, DownloadDisplayState::Succeeded(_)));
             failure_button.set_visible(cx, matches!(download_state, DownloadDisplayState::Failed));
-            // Only reset hover for the button that is just now becoming visible.
+            if let DownloadDisplayState::Succeeded(kind) = download_state {
+                success_button.set_text(cx, match kind {
+                    TransferKind::Download => "Downloaded",
+                    TransferKind::Share => "Shared",
+                });
+            }
+            // Only reset hover for the button(s) just now becoming visible.
             let newly_visible = !prev_section_visible || prev_state != download_state;
             if newly_visible {
                 match download_state {
-                    DownloadDisplayState::Idle => download_button.reset_hover(cx),
+                    DownloadDisplayState::Idle => {
+                        download_button.reset_hover(cx);
+                        share_button.reset_hover(cx);
+                    }
                     DownloadDisplayState::InProgress => cancel_button.reset_hover(cx),
-                    DownloadDisplayState::Succeeded => success_button.reset_hover(cx),
+                    DownloadDisplayState::Succeeded(_) => success_button.reset_hover(cx),
                     DownloadDisplayState::Failed => failure_button.reset_hover(cx),
                 }
             }

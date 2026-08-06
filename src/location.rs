@@ -1,6 +1,6 @@
 //! Functions for querying the device's current location.
 
-use std::{sync::{mpsc::{self, Receiver, Sender}, Mutex}, time::SystemTime};
+use std::{sync::Mutex, time::SystemTime};
 
 use makepad_widgets::{Cx, error, log};
 use robius_location::{Access, Accuracy, Coordinates, Location, Manager};
@@ -12,7 +12,6 @@ pub enum LocationAction {
     Update(LocationUpdate),
     /// The location handler encountered an error.
     Error(robius_location::Error),
-    None
 }
 
 /// An updated location sample, including coordinates and a system timestamp.
@@ -24,7 +23,7 @@ pub struct LocationUpdate {
 
 static LATEST_LOCATION: Mutex<Option<LocationUpdate>> = Mutex::new(None);
 
-/// Returns the latest location update's coordinates, if available.
+/// Returns the latest location update, if one has been received.
 ///
 /// Note that this function is guaranteed to return `None` if
 /// [`init_location_subscriber`] has not been called yet.
@@ -62,90 +61,51 @@ impl robius_location::Handler for LocationHandler {
 }
 
 
-fn location_request_loop(
-    request_receiver: Receiver<LocationRequest>,
-    mut manager: ManagerWrapper,
-) -> Result<(), robius_location::Error> {
-    
-    manager.update_once()?;
-
-    while let Ok(request) = request_receiver.recv() {
-        match request {
-            LocationRequest::UpdateOnce => {
-                manager.update_once()?;
-            }
-            LocationRequest::StartUpdates => {
-                manager.start_updates()?;
-            }
-            LocationRequest::StopUpdates => {
-                manager.stop_updates()?;
-            }
-        }
-    }
-
-    error!("Location request loop exited unexpectedly (the senders all died).");
-    Err(robius_location::Error::Unknown)
-}
-
-
 pub enum LocationRequest {
     UpdateOnce,
     StartUpdates,
     StopUpdates,
 }
 
-static LOCATION_REQUEST_SENDER: Mutex<Option<Sender<LocationRequest>>> = Mutex::new(None);
+/// A wrapper struct for storing the singleton location manager in Cx globals.
+#[derive(Default)]
+struct LocationManagerGlobal(Option<Manager>);
 
 /// Submits a request to start, stop, or get a single new location update(s).
-pub fn request_location_update(request: LocationRequest) {
-    if let Some(sender) = LOCATION_REQUEST_SENDER.lock().unwrap().as_ref() {
-        if let Err(err) = sender.send(request) {
-            error!("Error sending location request: {err:?}");
+pub fn request_location_update(cx: &mut Cx, request: LocationRequest) {
+    let Some(manager) = cx.global::<LocationManagerGlobal>().0.as_mut() else {
+        error!("Location subscriber not initialized on this thread.");
+        Cx::post_action(LocationAction::Error(robius_location::Error::Unknown));
+        return;
+    };
+    let (result, show_error) = match request {
+        LocationRequest::UpdateOnce => (manager.update_once(), true),
+        LocationRequest::StartUpdates => (manager.start_updates(), true),
+        LocationRequest::StopUpdates => (manager.stop_updates(), false),
+    };
+    if let Err(e) = result {
+        error!("Error handling location request: {e:?}");
+        if show_error {
+            Cx::post_action(LocationAction::Error(e));
         }
-    } else {
-        error!("No location request sender available.");
     }
 }
 
-/// Spawns a thread to listen for location requests and updates to the latest location.
+/// Initializes the location manager and requests a single location update.
 ///
-/// This will request a single location update immediately upon starting.
 /// To request additional updates, use [`request_location_update`].
 ///
-/// It is okay to call this function multiple times, as it will only re-initialize
-/// the location subscriber thread if it has not been initialized yet
-/// or if it has died and needs to be restarted.
-///
-/// This function requires passing in a reference to `Cx`,
-/// which isn't used, but acts as a guarantee that this function
-/// must only be called by the main UI thread.
-pub fn init_location_subscriber(_cx: &mut Cx) -> Result<(), robius_location::Error> {
-    let mut lrs = LOCATION_REQUEST_SENDER.lock().unwrap();
-    if lrs.is_some() {
-        log!("Location subscriber already initialized.");
+/// It is okay to call this function multiple times; it only initializes the manager once.
+pub fn init_location_subscriber(cx: &mut Cx) -> Result<(), robius_location::Error> {
+    let lm = cx.global::<LocationManagerGlobal>();
+    if lm.0.is_some() {
+        // log!("Location subscriber already initialized.");
         return Ok(());
     }
-    let manager = ManagerWrapper(Manager::new(LocationHandler)?);
-    manager.request_authorization(Access::Foreground, Accuracy::Precise)?;
-    let _ = manager.update_once();
 
-    let (request_sender, request_receiver) = mpsc::channel::<LocationRequest>();
-    *lrs = Some(request_sender);
-    std::thread::spawn(|| location_request_loop(request_receiver, manager));
+    let new_manager = Manager::new(LocationHandler)?;
+    new_manager.request_authorization(Access::Foreground, Accuracy::Precise)?;
+    let _ = new_manager.update_once();
+    lm.0 = Some(new_manager);
     Ok(())
-}
-
-struct ManagerWrapper(Manager);
-unsafe impl Send for ManagerWrapper {}
-unsafe impl Sync for ManagerWrapper {}
-impl std::ops::Deref for ManagerWrapper {
-    type Target = Manager;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl std::ops::DerefMut for ManagerWrapper {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
 }

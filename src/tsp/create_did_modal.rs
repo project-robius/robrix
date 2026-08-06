@@ -84,7 +84,7 @@ script_mod! {
 
                 server_input := RobrixTextInput {
                     width: Fill, height: Fit,
-                    flow: Right, // do not wrap
+                    flow: Flow.Right { wrap: false },
                     padding: Inset { left: 10, right: 10, top: 5, bottom: 5 }
                     empty_text: "p.teaspoon.world",
                     autocapitalize: None,
@@ -129,7 +129,7 @@ script_mod! {
 
                 did_server_input := RobrixTextInput {
                     width: Fill, height: Fit,
-                    flow: Right, // do not wrap
+                    flow: Flow.Right { wrap: false },
                     padding: Inset { left: 10, right: 10, top: 5, bottom: 5 }
                     empty_text: "did.teaspoon.world",
                     autocapitalize: None,

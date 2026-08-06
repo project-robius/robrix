@@ -178,11 +178,11 @@ impl TombstoneFooter {
                     FetchedRoomAvatar::Text(text) => {
                         successor_room_avatar.show_text(cx, None, None, text);
                     }
-                    FetchedRoomAvatar::Image(image_data) => {
+                    FetchedRoomAvatar::Image(avatar_image) => {
                         let res = successor_room_avatar.show_image(
                             cx,
                             None,
-                            |cx, img_ref| utils::load_image(&img_ref, cx, image_data),
+                            |cx, img_ref| utils::load_avatar_image(&img_ref, cx, avatar_image),
                         );
                         if res.is_err() {
                             successor_room_avatar.show_text(

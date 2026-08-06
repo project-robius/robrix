@@ -7,6 +7,7 @@
 //!
 
 use std::cell::RefCell;
+use std::fmt::Write as _;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use imbl::Vector;
 use makepad_widgets::*;
@@ -15,7 +16,7 @@ use matrix_sdk::{RoomDisplayName, RoomState, ruma::OwnedRoomId};
 use matrix_sdk_ui::spaces::SpaceRoom;
 use ruma::{OwnedRoomAliasId, room::JoinRuleSummary};
 use tokio::sync::mpsc::UnboundedSender;
-use crate::shared::avatar::AvatarState;
+use crate::shared::avatar::{AvatarImage, AvatarState};
 use crate::shared::expand_arrow::ExpandArrow;
 use crate::utils::replace_linebreaks_separators;
 /// The horizontal indent width (in pixels) per tree level.
@@ -131,7 +132,7 @@ script_mod! {
 
         space_lobby_label := Label {
             width: Fill, height: Fit
-            flow: Right,
+            flow: Flow.Right { wrap: true },
             padding: 0,
 
             draw_text +: {
@@ -519,7 +520,7 @@ script_mod! {
                 space_info_label := Label {
                     width: Fit,
                     height: Fit,
-                    flow: Right, // do not wrap
+                    flow: Flow.Right { wrap: false },
                     margin: Inset{left: 2}
                     draw_text +: {
                         text_style: REGULAR_TEXT {font_size: 10},
@@ -552,7 +553,8 @@ script_mod! {
                 parent_name := Label {
                     width: Fill,
                     height: Fit,
-                    flow: Right, // do not wrap
+                    flow: Flow.Right { wrap: false },
+                    text_overflow: Ellipsis,
                     margin: Inset{top: 4} // vertically center-align with the avatar
                     draw_text +: {
                         text_style: TITLE_TEXT {font_size: 14},
@@ -576,7 +578,10 @@ script_mod! {
         // The hierarchical tree list
         tree_list := PortalList {
             keep_invisible: false,
-            max_pull_down: 0.0,
+            bounce_at_start: true,
+            bounce_at_end: true,
+            // Nothing here listens for scroll position changes.
+            emit_scroll_actions: false,
             auto_tail: false,
             width: Fill, height: Fill
             flow: Down,
@@ -621,6 +626,9 @@ pub struct SpaceLobbyEntry {
 
 impl Widget for SpaceLobbyEntry {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+        if !self.visible {
+            return;
+        }
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
         }
@@ -1148,11 +1156,11 @@ impl Widget for SpaceLobbyScreen {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // Draw parent avatar from the SpaceRoom's avatar URL, or show initials.
         let parent_avatar_ref = self.view.avatar(cx, ids!(parent_avatar));
-        if self.space_avatar_state.update_from_cache(cx).is_none_or(|data| {
+        if self.space_avatar_state.update_from_cache(cx).is_none_or(|image| {
             parent_avatar_ref.show_image(
                 cx,
                 None,
-                |cx, img| utils::load_image(&img, cx, data),
+                |cx, img| utils::load_avatar_image(&img, cx, image),
             ).is_err()
         }) {
             let first_char = self.space_name_id.as_ref().and_then(|sni| sni.name_for_avatar())
@@ -1260,22 +1268,23 @@ impl Widget for SpaceLobbyScreen {
                             let mut drew_avatar = false;
 
                             match &info.avatar {
-                                AvatarState::Loaded(data) => {
+                                AvatarState::Loaded(image) => {
                                     drew_avatar = avatar_ref.show_image(
                                         cx,
                                         None,
-                                        |cx, img| utils::load_image(&img, cx, data),
+                                        |cx, img| utils::load_avatar_image(&img, cx, image),
                                     ).is_ok();
                                 }
                                 AvatarState::Known(Some(uri)) => {
                                     match avatar_cache::get_or_fetch_avatar(cx, uri) {
                                         AvatarCacheEntry::Loaded(data) => {
+                                            let image = AvatarImage::from((uri.clone(), data));
                                             drew_avatar = avatar_ref.show_image(
                                                 cx,
                                                 None,
-                                                |cx, img| utils::load_image(&img, cx, &data),
+                                                |cx, img| utils::load_avatar_image(&img, cx, &image),
                                             ).is_ok();
-                                            info.avatar = AvatarState::Loaded(data);
+                                            info.avatar = AvatarState::Loaded(image);
                                         }
                                         AvatarCacheEntry::Failed => {
                                             info.avatar = AvatarState::Failed;
@@ -1312,45 +1321,40 @@ impl Widget for SpaceLobbyScreen {
                             // Build the info label with join status, member count, and topic
                             // Note: Public/Private is intentionally not shown per-item to reduce clutter
                             let info_label = item.child_by_path(ids!(main_entry.content.info_label)).as_label();
-                            let mut info_parts = Vec::new();
+                            let mut info_text = String::new();
 
                             // Add join status for rooms we haven't joined
                             if let Some(state) = &info.state {
-                                match state {
-                                    RoomState::Joined => info_parts.push("✅ Joined".to_string()),
-                                    RoomState::Left => info_parts.push("Left".to_string()),
-                                    RoomState::Invited => info_parts.push("Invited".to_string()),
-                                    RoomState::Knocked => info_parts.push("Knocked".to_string()),
-                                    RoomState::Banned => info_parts.push("Banned".to_string()),
-                                }
+                                info_text.push_str(match state {
+                                    RoomState::Joined => "✅ Joined",
+                                    RoomState::Left => "Left",
+                                    RoomState::Invited => "Invited",
+                                    RoomState::Knocked => "Knocked",
+                                    RoomState::Banned => "Banned",
+                                });
+                                info_text.push_str("  |  ");
                             }
 
                             // Add member count
-                            info_parts.push(format!(
+                            let _ = write!(
+                                info_text,
                                 "{} {}",
                                 info.num_joined_members,
-                                if info.num_joined_members == 1 { "member" } else { "members" }
-                            ));
+                                if info.num_joined_members == 1 { "member" } else { "members" },
+                            );
 
                             // Add children count for spaces
-                            if let Some(c) = info.children_count {
-                                if c > 0 {
-                                    info_parts.push(format!(
-                                        "~{} {}",
-                                        c,
-                                        if c == 1 { "room" } else { "rooms" }
-                                    ));
-                                }
+                            if let Some(c) = info.children_count.filter(|c| *c > 0) {
+                                let _ = write!(info_text, "  |  ~{} {}", c, if c == 1 { "room" } else { "rooms" });
                             }
 
                             // Add topic if available (Label handles truncation via flow: Flow.Right{wrap: false})
-                            if let Some(topic) = &info.topic {
-                                if !topic.is_empty() {
-                                    info_parts.push(topic.to_string());
-                                }
+                            if let Some(topic) = info.topic.as_deref().filter(|t| !t.is_empty()) {
+                                info_text.push_str("  |  ");
+                                info_text.push_str(topic);
                             }
 
-                            info_label.set_text(cx, &info_parts.join("  |  "));
+                            info_label.set_text(cx, &info_text);
 
                             item
                         }
@@ -1734,7 +1738,7 @@ impl SpaceLobbyScreen {
     }
 
     pub fn set_displayed_space(&mut self, cx: &mut Cx, space_name_id: &RoomNameId) {
-        let space_name = space_name_id.to_string();
+        let space_name = space_name_id.display();
         let parent_name = self.view.label(cx, ids!(header.parent_space_row.parent_name));
         parent_name.set_text(cx, &space_name);
 

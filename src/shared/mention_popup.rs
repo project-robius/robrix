@@ -15,7 +15,7 @@ use crate::{
     avatar_cache::{get_or_fetch_avatar, process_avatar_updates, AvatarCacheEntry},
     home::rooms_list::RoomsListRef,
     room::FetchedRoomAvatar,
-    shared::{avatar::AvatarWidgetRefExt, slash_commands::SlashCommand, styles::*},
+    shared::{avatar::{AvatarImage, AvatarWidgetRefExt}, slash_commands::SlashCommand, styles::*},
     utils::{self, RoomNameId},
 };
 use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId};
@@ -606,7 +606,8 @@ fn set_user_avatar(cx: &mut Cx, row: &WidgetRef, avatar_url: Option<&OwnedMxcUri
     match avatar_url {
         Some(mxc) => match get_or_fetch_avatar(cx, mxc) {
             AvatarCacheEntry::Loaded(data) => {
-                let _ = avatar.show_image(cx, None, |cx, img| utils::load_image(&img, cx, &data));
+                let image = AvatarImage::from((mxc.clone(), data));
+                let _ = avatar.show_image(cx, None, |cx, img| utils::load_avatar_image(&img, cx, &image));
                 true
             }
             AvatarCacheEntry::Requested => {
@@ -629,8 +630,8 @@ fn set_user_avatar(cx: &mut Cx, row: &WidgetRef, avatar_url: Option<&OwnedMxcUri
 fn set_room_avatar(cx: &mut Cx, row: &WidgetRef, room_id: &OwnedRoomId, avatar_url: Option<&OwnedMxcUri>, name_for_avatar: Option<&str>) -> bool {
     let avatar = row.avatar(cx, ids!(avatar));
     if cx.has_global::<RoomsListRef>() {
-        if let Some(FetchedRoomAvatar::Image(data)) = cx.get_global::<RoomsListRef>().get_room_avatar(room_id) {
-            let _ = avatar.show_image(cx, None, |cx, img| utils::load_image(&img, cx, &data));
+        if let Some(FetchedRoomAvatar::Image(image)) = cx.get_global::<RoomsListRef>().get_room_avatar(room_id) {
+            let _ = avatar.show_image(cx, None, |cx, img| utils::load_avatar_image(&img, cx, &image));
             return true;
         }
     }
@@ -638,7 +639,8 @@ fn set_room_avatar(cx: &mut Cx, row: &WidgetRef, room_id: &OwnedRoomId, avatar_u
     if let Some(mxc) = avatar_url {
         match get_or_fetch_avatar(cx, mxc) {
             AvatarCacheEntry::Loaded(data) => {
-                let _ = avatar.show_image(cx, None, |cx, img| utils::load_image(&img, cx, &data));
+                let image = AvatarImage::from((mxc.clone(), data));
+                let _ = avatar.show_image(cx, None, |cx, img| utils::load_avatar_image(&img, cx, &image));
                 return true;
             }
             AvatarCacheEntry::Requested => fully_drawn = false,

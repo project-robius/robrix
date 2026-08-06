@@ -581,13 +581,13 @@ fn remove_space(space: &SpaceRoom) {
 /// Returns `Some` if the avatar image was successfully fetched.
 async fn fetch_space_avatar(url: OwnedMxcUri, client: &Client) -> matrix_sdk::Result<FetchedRoomAvatar> {
     let request = MediaRequestParameters {
-        source: MediaSource::Plain(url),
+        source: MediaSource::Plain(url.clone()),
         format: utils::AVATAR_THUMBNAIL_FORMAT.into(),
     };
     client.media()
         .get_media_content(&request, true)
         .await
-        .map(|img_data| FetchedRoomAvatar::Image(img_data.into()))
+        .map(|img_data| FetchedRoomAvatar::Image((url, img_data).into()))
 }
 
 

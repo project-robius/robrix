@@ -36,7 +36,9 @@ script_mod! {
             height: Fit,
             padding: 0
             margin: Inset{left: 5, top: -1}
-            flow: Right, // do not wrap
+            flow: Flow.Right { wrap: true },
+            max_lines: 3,
+            text_overflow: Ellipsis,
             text: "All Rooms"
             draw_text +: {
                 color: #x0
@@ -155,7 +157,7 @@ impl Widget for RoomsListHeader {
                     let header_title = self.view.label(cx, ids!(header_title));
                     match tab {
                         SelectedTab::Space { space_name_id } => {
-                            header_title.set_text(cx, &space_name_id.to_string());
+                            header_title.set_text(cx, &space_name_id.display());
                         }
                         _ => header_title.set_text(cx, "All Rooms"),
                     }

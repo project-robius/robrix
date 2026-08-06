@@ -39,7 +39,7 @@ script_mod! {
         height: 15.0,
         plus_template: Label {
             padding: 0,
-            flow: Right, // do not wrap
+            flow: Flow.Right { wrap: false },
             draw_text +: {
                 color: #x0,
                 text_style: TITLE_TEXT { font_size: 10}
@@ -85,7 +85,15 @@ pub struct AvatarRow {
 }
 
 impl Widget for AvatarRow {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // The avatars aren't children of this widget (they're created from a template),
+        // so we have to manually forward events to them (mostly async image loads).
+        if let Event::Actions(_) = event {
+            for (avatar_ref, _) in self.buttons.iter() {
+                avatar_ref.handle_event(cx, event, scope);
+            }
+        }
+
         let Some(read_receipts) = &self.read_receipts else {
             return;
         };
@@ -131,13 +139,6 @@ impl Widget for AvatarRow {
         }
         if read_receipts.len() > MAX_VISIBLE_AVATARS_IN_READ_RECEIPT {
             if let Some(label) = &mut self.label {
-                label.set_text(
-                    cx,
-                    &format!(
-                        " + {}",
-                        read_receipts.len() - MAX_VISIBLE_AVATARS_IN_READ_RECEIPT
-                    ),
-                );
                 let _ = label.draw(cx, scope);
             }
         }
@@ -176,7 +177,14 @@ impl AvatarRow {
                     false,
                 ));
             }
-            self.label = Some(widget_ref_from_live_ptr(cx, self.plus_template).as_label());
+            let label = widget_ref_from_live_ptr(cx, self.plus_template).as_label();
+            if receipts_map.len() > MAX_VISIBLE_AVATARS_IN_READ_RECEIPT {
+                label.set_text(cx, &format!(
+                    " + {}",
+                    receipts_map.len() - MAX_VISIBLE_AVATARS_IN_READ_RECEIPT,
+                ));
+            }
+            self.label = Some(label);
             self.read_receipts = Some(receipts_map.clone());
         }
         for ((avatar_ref, drawn), (user_id, _)) in

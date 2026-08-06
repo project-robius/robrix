@@ -50,7 +50,7 @@ script_mod! {
 
             Label {
                 width: Fill,
-                flow: Right, // do not wrap
+                flow: Flow.Right { wrap: true },
                 margin: Inset{top: 3}
                 draw_text +: {
                     text_style: USERNAME_TEXT_STYLE {},

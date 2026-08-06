@@ -1,0 +1,35 @@
+name: Import Apple signing certificate
+description: Decode a base64 .p12 and import it into a fresh keychain for codesign.
+inputs:
+  certificate:
+    description: base64-encoded .p12 (Developer ID Application and/or Apple Distribution)
+    required: true
+  password:
+    description: password used when the .p12 was exported
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        APPLE_CERTIFICATE: ${{ inputs.certificate }}
+        APPLE_CERTIFICATE_PASSWORD: ${{ inputs.password }}
+      run: |
+        # RUNNER_TEMP fixed names: macOS mktemp won't expand a mid-name XXXXXX,
+        # and create-keychain fails on an existing file, so delete any prior one.
+        CERT_FILE="$RUNNER_TEMP/robrix-certificate.p12"
+        KEYCHAIN_FILE="$RUNNER_TEMP/robrix-signing.keychain-db"
+        KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+        echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_FILE"
+        security delete-keychain "$KEYCHAIN_FILE" 2>/dev/null || true
+        security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
+        security set-keychain-settings -lut 21600 "$KEYCHAIN_FILE"
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
+        security import "$CERT_FILE" -k "$KEYCHAIN_FILE" \
+          -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+        security set-key-partition-list -S apple-tool:,apple: \
+          -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
+        security list-keychains -d user -s "$KEYCHAIN_FILE" login.keychain
+
+        rm -f "$CERT_FILE"

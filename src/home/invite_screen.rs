@@ -392,11 +392,11 @@ impl Widget for InviteScreen {
         let (is_visible, invite_text) = if let Some(inviter) = info.inviter.as_ref() {
             let inviter_avatar = inviter_view.avatar(cx, ids!(inviter_avatar));
             let mut drew_avatar = false;
-            if let Some(avatar_bytes) = inviter.avatar.as_ref() {
+            if let Some(avatar_image) = inviter.avatar.as_ref() {
                 drew_avatar = inviter_avatar.show_image(
                     cx,
                     None, // don't make this avatar clickable.
-                    |cx, img| utils::load_image(&img, cx, avatar_bytes),
+                    |cx, img| utils::load_avatar_image(&img, cx, avatar_image),
                 ).is_ok();
             }
             if !drew_avatar {
@@ -441,11 +441,11 @@ impl Widget for InviteScreen {
                     text,
                 );
             }
-            FetchedRoomAvatar::Image(avatar_bytes) => {
+            FetchedRoomAvatar::Image(avatar_image) => {
                 let _ = room_avatar.show_image(
                     cx,
                     None, // don't make this avatar clickable.
-                    |cx, img| utils::load_image(&img, cx, avatar_bytes),
+                    |cx, img| utils::load_avatar_image(&img, cx, avatar_image),
                 );
             }
         }

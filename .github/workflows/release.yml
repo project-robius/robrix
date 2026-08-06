@@ -90,7 +90,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Check tag and Cargo.toml version
         run: |
@@ -125,7 +125,7 @@ jobs:
     steps:
       - name: Build matrix from inputs
         id: set
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const isPush = context.eventName === 'push';
@@ -185,8 +185,9 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       release_id: ${{ steps.create_release.outputs.id }}
+      tag: ${{ steps.resolve.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Resolve release metadata
         id: resolve
@@ -218,9 +219,27 @@ jobs:
           echo "tag=${resolved_tag}" >> "$GITHUB_OUTPUT"
           echo "name=Robrix ${resolved_tag}" >> "$GITHUB_OUTPUT"
 
+      # Safety: this workflow only ever creates a NEW release. If one already
+      # exists for the tag, bail so we never adopt, overwrite, or unpublish it.
+      - name: Refuse to reuse an existing release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.ROBRIX_RELEASE }}
+        run: |
+          TAG="${{ steps.resolve.outputs.tag }}"
+          existing=$(gh api "repos/${{ github.repository }}/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"$TAG\") | \"id=\(.id) draft=\(.draft)\"")
+          if [[ -n "$existing" ]]; then
+            echo "::error::A release already exists for tag '$TAG' ($existing)."
+            echo "::error::This workflow only creates new releases; it will not touch an existing one."
+            echo "::error::For testing, dispatch a throwaway release_tag. For a real re-release, delete the old one first, deliberately."
+            exit 1
+          fi
+          echo "No existing release for '$TAG'; safe to create a fresh one."
+
       - name: Create Release
         id: create_release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.resolve.outputs.tag }}
           name: ${{ steps.resolve.outputs.name }}
@@ -244,12 +263,14 @@ jobs:
       matrix: ${{ fromJson(needs.determine_matrices.outputs.linux_matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Linux necessary dependencies
         if: matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm' || matrix.os == 'ubuntu-24.04' || matrix.os == 'ubuntu-24.04-arm'
         run: |
           sudo apt-get update
+          # libegl1: Makepad dlopen's libEGL, so it has to be present here for the
+          # packaging tool to work out which package provides it. Runners have no GPU stack.
           sudo apt-get install -y \
             libssl-dev \
             libsqlite3-dev \
@@ -262,13 +283,14 @@ jobs:
             libx11-dev \
             libasound2-dev \
             libpulse-dev \
-            libwayland-dev libxkbcommon-dev
+            libwayland-dev libxkbcommon-dev \
+            libegl1
 
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (desktop)
-        uses: project-robius/makepad-packaging-action@v1
+        uses: project-robius/makepad-packaging-action@v1.7.0
         env:
           CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
           CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
@@ -276,6 +298,20 @@ jobs:
           github_token: ${{ secrets.ROBRIX_RELEASE }}
           packager_formats: deb
           releaseId: ${{ needs.create_release.outputs.release_id }}
+          ## Include the distro in asset names: the 22.04 and 24.04 legs produce
+          ## debs with different Depends, and identical names would overwrite
+          ## each other in the release.
+          asset_name_template: __APP__-__VERSION__-${{ matrix.os }}-__ARCH__-__MODE__.__EXT__
+          ## Boot the packaged app in a clean container with only its declared
+          ## Depends, to catch runtime deps that static analysis can't see
+          ## (dlopen'd libs like libEGL, spawned tools like xdg-open).
+          verify_deb: true
+          ## TODO: flip to true once this has passed on all four Linux legs.
+          ## Until then it reports problems without blocking releases.
+          verify_strict: false
+          ## Nothing in Robrix consumes updater metadata, and .deb has no updater
+          ## format mapping anyway, so latest.json would ship empty and misleading.
+          uploadUpdaterJson: false
 
   for_macos:
     name: Release Robrix for macOS (${{ matrix.os }}, ${{ matrix.arch }})
@@ -286,7 +322,7 @@ jobs:
       matrix: ${{ fromJson(needs.determine_matrices.outputs.macos_matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
@@ -297,69 +333,30 @@ jobs:
           cargo install robius-packaging-commands --locked
 
       - name: Import Apple certificate
+        uses: ./.github/actions/import-apple-cert
+        with:
+          certificate: ${{ secrets.APPLE_CERTIFICATE }}
+          password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      # The script signs, notarizes, and staples the DMG itself, so there's
+      # no separate notarize step. Mirrors running it locally.
+      - name: Build, sign, notarize, and staple the DMG
         env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          CERT_FILE=$(mktemp /tmp/certificate.XXXXXX.p12)
-          KEYCHAIN_FILE=$(mktemp /tmp/keychain.XXXXXX.keychain-db)
-          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
-
-          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_FILE"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_FILE"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
-          security import "$CERT_FILE" -k "$KEYCHAIN_FILE" \
-            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: \
-            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
-          security list-keychains -d user -s "$KEYCHAIN_FILE" login.keychain
-
-          rm -f "$CERT_FILE"
-
-      - name: Build DMG with Applications icon fix
-        env:
-          CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
-          CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           chmod +x ./packaging/build-macos-dmg.sh ./packaging/fix-dmg-applications-icon.sh
           ./packaging/build-macos-dmg.sh
 
-      - name: Notarize DMG
-        env:
-          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
-          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-        run: |
-          API_KEY_FILE=$(mktemp /tmp/api_key.XXXXXX.p8)
-          echo "$APP_STORE_CONNECT_API_KEY_CONTENT" > "$API_KEY_FILE"
-
-          DMG_FILE=$(find ./dist -name '*.dmg' -print -quit)
-          if [[ -z "$DMG_FILE" ]]; then
-            echo "Error: No DMG file found in dist/"
-            exit 1
-          fi
-
-          xcrun notarytool submit "$DMG_FILE" \
-            --key "$API_KEY_FILE" \
-            --key-id "$APP_STORE_CONNECT_KEY_ID" \
-            --issuer "$APP_STORE_CONNECT_ISSUER_ID" \
-            --wait
-
-          xcrun stapler staple "$DMG_FILE"
-          rm -f "$API_KEY_FILE"
-
       - name: Upload DMG to Release
+        if: ${{ needs.create_release.outputs.release_id != '' }}
         env:
           GH_TOKEN: ${{ secrets.ROBRIX_RELEASE }}
         run: |
           DMG_FILE=$(find ./dist -name '*.dmg' -print -quit)
-          RELEASE_ID="${{ needs.create_release.outputs.release_id }}"
-          gh api "repos/${{ github.repository }}/releases/${RELEASE_ID}/assets" \
-            --method POST \
-            -H "Content-Type: application/octet-stream" \
-            --input "$DMG_FILE" \
-            -f "name=$(basename "$DMG_FILE")"
+          gh release upload "${{ needs.create_release.outputs.tag }}" "$DMG_FILE" \
+            --repo ${{ github.repository }}
 
   for_windows:
     name: Release Robrix for Windows (${{ matrix.os }}, ${{ matrix.arch }})
@@ -370,13 +367,13 @@ jobs:
       matrix: ${{ fromJson(needs.determine_matrices.outputs.windows_matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (windows)
-        uses: project-robius/makepad-packaging-action@v1
+        uses: project-robius/makepad-packaging-action@v1.7.0
         env:
           CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
           CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
@@ -384,6 +381,7 @@ jobs:
           github_token: ${{ secrets.ROBRIX_RELEASE }}
           packager_formats: nsis
           releaseId: ${{ needs.create_release.outputs.release_id }}
+          uploadUpdaterJson: false
 
   for_android:
     name: Release Robrix for Android (aarch64)
@@ -391,13 +389,13 @@ jobs:
     if: ${{ always() && ((github.event_name == 'push' && needs.check_tag_version.result == 'success') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_android_aarch64 == 'true')) }}
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (android)
-        uses: project-robius/makepad-packaging-action@v1
+        uses: project-robius/makepad-packaging-action@v1.7.0
         env:
           AWS_LC_SYS_CMAKE_BUILDER: 1
           MAKEPAD_ANDROID_FULL_NDK: true
@@ -410,42 +408,98 @@ jobs:
         with:
           github_token: ${{ secrets.ROBRIX_RELEASE }}
           args: --target aarch64-linux-android
+          app_name: Robrix
           releaseId: ${{ needs.create_release.outputs.release_id }}
+          uploadUpdaterJson: false
 
   for_ios:
     name: Release Robrix for iOS
     needs: [check_tag_version, create_release]
     if: ${{ always() && ((github.event_name == 'push' && needs.check_tag_version.result == 'success') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_ios == 'true')) }}
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      # Apple requires uploads built with the iOS 26 SDK (Xcode 26+). macos-15
+      # ships several Xcode 26.x but defaults to 16.4, so pick the newest 26.
+      - name: Select Xcode 26 (iOS 26 SDK)
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -viE 'beta' | sort -V | tail -1)
+          if [[ -z "$XCODE" ]]; then
+            echo "::error::No GA Xcode 26.x found on this runner (need the iOS 26 SDK for TestFlight uploads)."
+            ls -d /Applications/Xcode_*.app || true
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE"
+          echo "DEVELOPER_DIR=$XCODE/Contents/Developer" >> "$GITHUB_ENV"
+          xcodebuild -version
+          echo "iphoneos SDK: $(xcrun --sdk iphoneos --show-sdk-version)"
 
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Package (iOS)
-        uses: project-robius/makepad-packaging-action@v1
+      - name: Install Rust nightly
+        run: rustup toolchain install nightly
+
+      - name: Setup cargo-makepad
+        uses: ./.github/actions/setup-cargo-makepad
+
+      - name: Install iOS toolchain
+        run: cargo makepad apple ios install-toolchain
+
+      - name: Install bindgen-cli for aws-lc-sys cross-compilation
+        run: cargo install --force --locked bindgen-cli
+
+      - name: Import Apple certificate
+        uses: ./.github/actions/import-apple-cert
+        with:
+          certificate: ${{ secrets.APPLE_CERTIFICATE }}
+          password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      - name: Install provisioning profile
         env:
-          AWS_LC_SYS_CMAKE_BUILDER: 1
-          MAKEPAD_MOBILE_CARGO_EXTRA_ARGS: >-
-            --config profile.dev.opt-level=0
-            --config profile.dev.debug=false
-            --config profile.dev.lto=false
-            --config profile.dev.strip=true
-            --config profile.dev.debug-assertions=false
-          MAKEPAD_IOS_ORG: org.robius.robrix
-          MAKEPAD_IOS_APP: Robrix
-          MAKEPAD_IOS_CREATE_IPA: 'true'
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
-          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: Apple Development
+        run: |
+          PROFILE_FILE="$RUNNER_TEMP/robrix-profile.mobileprovision"
+          echo "$APPLE_PROVISIONING_PROFILE" | base64 --decode > "$PROFILE_FILE"
+          security cms -D -i "$PROFILE_FILE" > /tmp/profile.plist
+          UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /tmp/profile.plist)
+          DEST="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$DEST"
+          cp "$PROFILE_FILE" "$DEST/${UUID}.mobileprovision"
+          echo "IOS_PROVISIONING_PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
+          rm -f "$PROFILE_FILE"
+
+      - name: Write App Store Connect API key
+        env:
           APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-        with:
-          github_token: ${{ secrets.ROBRIX_RELEASE }}
-          upload_to_testflight: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.upload_testflight == 'true' }}
-          args: --target aarch64-apple-ios
-          releaseId: ${{ needs.create_release.outputs.release_id }}
+        run: |
+          DEST="$HOME/.appstoreconnect/private_keys"
+          mkdir -p "$DEST"
+          printf '%s' "$APP_STORE_CONNECT_API_KEY_CONTENT" > "$DEST/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+          chmod 600 "$DEST/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+
+      - name: Build, sign, package, and upload to TestFlight
+        env:
+          AWS_LC_SYS_CMAKE_BUILDER: 1
+          IOS_SIGNING_IDENTITY: Apple Distribution
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          IOS_UPLOAD_TESTFLIGHT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.upload_testflight == 'true' }}
+        run: |
+          chmod +x ./packaging/build-ios-testflight.sh
+          ./packaging/build-ios-testflight.sh
+
+      - name: Upload IPA to Release
+        if: ${{ needs.create_release.outputs.release_id != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.ROBRIX_RELEASE }}
+        run: |
+          IPA_FILE=$(find target/apple/makepad-apple-app/aarch64-apple-ios/release -name '*.ipa' -print -quit)
+          if [[ -z "$IPA_FILE" ]]; then
+            echo "Error: no .ipa found to upload"
+            exit 1
+          fi
+          gh release upload "${{ needs.create_release.outputs.tag }}" "$IPA_FILE" \
+            --repo ${{ github.repository }}

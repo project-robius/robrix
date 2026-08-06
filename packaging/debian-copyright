@@ -1,0 +1,311 @@
+Upstream-Name: Robrix
+Upstream-Contact: Project Robius <contact@robius.rs>
+Source: https://github.com/project-robius/robrix
+Comment: The Files: paths below are the paths of the files as installed, not paths
+ in the upstream source tree, so this file deliberately does not claim conformance
+ to the machine-readable copyright-format spec.
+
+Files: *
+Copyright: 2023-2026 Project Robius Developers
+License: MIT
+
+Files: usr/lib/robrix/makepad_widgets/resources/IBMPlexSans-*.ttf
+Copyright: 2018 IBM Corp.
+License: OFL-1.1
+Comment: Reserved Font Name "Plex". Bundled via the makepad-widgets dependency.
+ Upstream declares the RFN and a 2017 year; 2018 above is the shipped binaries'
+ own embedded copyright string.
+
+Files: usr/lib/robrix/makepad_widgets/resources/LXGWWenKai*.ttf
+Copyright: 2021-2024 LXGW <https://github.com/lxgw/LxgwWenKai>
+           2020 The Klee Project Authors <https://github.com/fontworks-fonts/Klee>
+License: OFL-1.1
+
+Files: usr/lib/robrix/makepad_widgets/resources/NotoColorEmoji.ttf
+       usr/lib/robrix/makepad_widgets/resources/NotoSans-Regular.ttf
+Copyright: 2012, 2022 Google Inc.
+License: OFL-1.1
+
+Files: usr/lib/robrix/makepad_widgets/resources/jetbrains_mono_variable.ttf
+Copyright: 2020 The JetBrains Mono Project Authors <https://github.com/JetBrains/JetBrainsMono>
+License: OFL-1.1
+
+Files: usr/lib/robrix/makepad_widgets/resources/fa-solid-900.ttf
+Copyright: 2024 Fonticons, Inc. <https://fontawesome.com>
+License: OFL-1.1
+Comment: Font Awesome 6 Free 6.7.2, Reserved Font Name "Font Awesome".
+ Font Awesome Free licenses its web and desktop font files under OFL-1.1; the
+ CC-BY-4.0 terms cover only the .svg and .js icon packagings, which are not
+ shipped in this package.
+
+Files: usr/lib/robrix/makepad_widgets/resources/LiberationMono-Regular.ttf
+Copyright: 2007 Red Hat, Inc.
+           2007 Ascender Corporation (digitized data)
+License: GPL-2-with-Liberation-exceptions
+Comment: Liberation Mono 1.04. LIBERATION is a trademark of Red Hat, Inc.
+ Liberation 2.00 and later are licensed under OFL-1.1 instead; this package
+ bundles a 1.x release, which predates that relicensing.
+
+Files: usr/lib/robrix/makepad_widgets/resources/NewCMMath-Regular.otf
+Copyright: 2019-2021 Antonis Tsolomitis
+License: GUST-Font-License
+Comment: New Computer Modern Math 4.0.
+
+Files: usr/lib/robrix/robrix/resources/icons/*
+       usr/lib/robrix/robrix/resources/*.svg
+       usr/lib/robrix/makepad_widgets/resources/icons/*
+Copyright: various, see the upstream icon sources
+License: SVG-Repo-terms
+Comment: Nearly all icons are obtained from SVG Repo and used in accordance with
+ their licensing terms. SVG Repo aggregates icons under a mix of upstream licences,
+ so no single licence applies and no grant is claimed here beyond those terms.
+ See licenses/ATTRIBUTIONS.md in the upstream source.
+
+Files: usr/lib/robrix/robrix/resources/icons/add_wallet.svg
+Copyright: Creative Stall
+License: CC-BY-3.0
+Comment: "Add Wallet" by Creative Stall from Noun Project.
+ <https://thenounproject.com/browse/icons/term/add-wallet/>
+
+Files: usr/lib/robrix/robrix/resources/img/apple.png
+       usr/lib/robrix/robrix/resources/img/facebook.png
+       usr/lib/robrix/robrix/resources/img/github.png
+       usr/lib/robrix/robrix/resources/img/gitlab.png
+       usr/lib/robrix/robrix/resources/img/google.png
+Copyright: the respective trademark owners
+License: brand-logo-no-grant
+Comment: Third-party brand logos, shown only to identify the corresponding
+ single-sign-on provider. No copyright licence is asserted over them.
+
+Files: usr/lib/robrix/robrix/resources/img/x.png
+Copyright: shobumiah
+License: Vecteezy-Free
+Comment: X logo obtained from Vecteezy, attribution as required by their free
+ licence. <https://www.vecteezy.com/png/42148611-new-twitter-x-logo-twitter-icon-x-social-media-icon>
+
+Files: usr/bin/robrix
+Copyright: 2023-2026 Project Robius Developers
+License: MIT
+Comment: Robrix's own code is MIT. This binary also statically links Rust crates
+ under their own licences, predominantly MIT and Apache-2.0. Their copyright
+ notices and full licence texts are installed alongside this file as
+ THIRD-PARTY-NOTICES.html.
+
+License: MIT
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to
+ deal in the Software without restriction, including without limitation the
+ rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ sell copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
+ .
+ The above copyright notice and this permission notice shall be included in
+ all copies or substantial portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ IN THE SOFTWARE.
+
+License: OFL-1.1
+ SIL OPEN FONT LICENSE
+ Version 1.1 - 26 February 2007
+ .
+ PREAMBLE
+ The goals of the Open Font License (OFL) are to stimulate worldwide
+ development of collaborative font projects, to support the font creation
+ efforts of academic and linguistic communities, and to provide a free and
+ open framework in which fonts may be shared and improved in partnership
+ with others.
+ .
+ The OFL allows the licensed fonts to be used, studied, modified and
+ redistributed freely as long as they are not sold by themselves. The
+ fonts, including any derivative works, can be bundled, embedded,
+ redistributed and/or sold with any software provided that any reserved
+ names are not used by derivative works. The fonts and derivatives,
+ however, cannot be released under any other type of license. The
+ requirement for fonts to remain under this license does not apply
+ to any document created using the fonts or their derivatives.
+ .
+ DEFINITIONS
+ "Font Software" refers to the set of files released by the Copyright
+ Holder(s) under this license and clearly marked as such. This may
+ include source files, build scripts and documentation.
+ .
+ "Reserved Font Name" refers to any names specified as such after the
+ copyright statement(s).
+ .
+ "Original Version" refers to the collection of Font Software components as
+ distributed by the Copyright Holder(s).
+ .
+ "Modified Version" refers to any derivative made by adding to, deleting,
+ or substituting — in part or in whole — any of the components of the
+ Original Version, by changing formats or by porting the Font Software to a
+ new environment.
+ .
+ "Author" refers to any designer, engineer, programmer, technical
+ writer or other person who contributed to the Font Software.
+ .
+ PERMISSION & CONDITIONS
+ Permission is hereby granted, free of charge, to any person obtaining
+ a copy of the Font Software, to use, study, copy, merge, embed, modify,
+ redistribute, and sell modified and unmodified copies of the Font
+ Software, subject to the following conditions:
+ .
+ 1) Neither the Font Software nor any of its individual components,
+ in Original or Modified Versions, may be sold by itself.
+ .
+ 2) Original or Modified Versions of the Font Software may be bundled,
+ redistributed and/or sold with any software, provided that each copy
+ contains the above copyright notice and this license. These can be
+ included either as stand-alone text files, human-readable headers or
+ in the appropriate machine-readable metadata fields within text or
+ binary files as long as those fields can be easily viewed by the user.
+ .
+ 3) No Modified Version of the Font Software may use the Reserved Font
+ Name(s) unless explicit written permission is granted by the corresponding
+ Copyright Holder. This restriction only applies to the primary font name as
+ presented to the users.
+ .
+ 4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+ Software shall not be used to promote, endorse or advertise any
+ Modified Version, except to acknowledge the contribution(s) of the
+ Copyright Holder(s) and the Author(s) or with their explicit written
+ permission.
+ .
+ 5) The Font Software, modified or unmodified, in part or in whole,
+ must be distributed entirely under this license, and must not be
+ distributed under any other license. The requirement for fonts to
+ remain under this license does not apply to any document created
+ using the Font Software.
+ .
+ TERMINATION
+ This license becomes null and void if any of the above conditions are
+ not met.
+ .
+ DISCLAIMER
+ THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+ MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+ OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+ COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+ DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+ OTHER DEALINGS IN THE FONT SOFTWARE.
+
+License: GPL-2-with-Liberation-exceptions
+  This agreement governs the use of the Software and any updates to the Software,
+  regardless of the delivery mechanism. Subject to the following terms, Red Hat, Inc.
+  ("Red Hat") grants to the user ("Client") a license to this work pursuant to
+  the GNU General Public License v.2 with the exceptions set forth below and such
+  other terms as our set forth in this End User License Agreement.
+ .
+  1. The Software and License Exception. LIBERATION font software  (the "Software")
+  consists of TrueType-OpenType formatted font software for rendering LIBERATION
+  typefaces in sans serif, serif, and monospaced character styles. You are licensed
+  to  use, modify, copy, and distribute the Software pursuant to the GNU General
+  Public License v.2 with the following exceptions:
+ .
+  (a) As a special exception, if you create a document which uses this font, and
+      embed this font or unaltered portions of this font into the document, this
+      font does not by itself cause the resulting document to be covered by the
+      GNU General Public License.  This exception does not however invalidate any
+      other reasons why the document might be covered by the GNU General Public
+      License.  If you modify this font, you may extend this exception to your
+      version of the font, but you are not obligated to do so. If you do not
+      wish to do so, delete this exception statement from your version.
+ .
+  (b) As a further exception, any distribution of the object code of the Software
+      in a physical product must provide you the right to access and modify the
+      source code for the Software and to reinstall that modified version of the
+      Software in object code form on the same physical product on which you
+      received it.
+ .
+  2. Intellectual Property Rights. The Software and each of its components, including
+     the source code, documentation, appearance, structure and organization are owned
+     by Red Hat and others and are protected under copyright and other laws. Title to
+     the Software and any component, or to any copy, modification, or merged portion
+     shall remain with the aforementioned, subject to the applicable license.
+     The "LIBERATION" trademark is a trademark of Red Hat, Inc. in the U.S. and other
+     countries. This agreement does not permit Client to distribute modified versions
+     of the Software using Red Hat's trademarks. If Client makes a redistribution of
+     a modified version of the Software, then Client must modify the files names to
+     remove any reference to the Red Hat trademarks and must not use the Red Hat
+     trademarks in any way to reference or promote the modified Software.
+ .
+  3. Limited Warranty. To the maximum extent permitted under applicable law, the
+     Software is provided and licensed "as is" without warranty of any kind,
+     expressed or implied, including the implied warranties of merchantability,
+     non-infringement or fitness for a particular purpose. Red Hat does not warrant
+     that the functions contained in the Software will meet Client's requirements or
+     that the operation of the Software will be entirely error free or appear precisely
+     as described in the accompanying documentation.
+ .
+  4. Limitation of Remedies and Liability.  To the maximum extent permitted by applicable
+     law, Red Hat or any Red Hat authorized dealer will not be liable to Client for any
+     incidental or consequential damages, including lost profits or lost savings arising
+     out of the use or inability to use the Software, even if Red Hat or such dealer has
+     been advised of the possibility of such damages.
+ .
+  5. General. If any provision of this agreement is held to be unenforceable, that shall
+     not affect the enforceability of the remaining provisions. This agreement shall be
+     governed by the laws of the State of North Carolina and of the United States, without
+     regard to any conflict of laws provisions, except that the United Nations Convention
+     on the International Sale of Goods shall not apply.
+ .
+ On Debian systems, the full text of the GNU General Public License version 2
+ can be found in `/usr/share/common-licenses/GPL-2'.
+
+License: GUST-Font-License
+ % This is version 1.0, dated 22 June 2009, of the GUST Font License.
+ % (GUST is the Polish TeX Users Group, http://www.gust.org.pl)
+ %
+ % For the most recent version of this license see
+ % http://www.gust.org.pl/fonts/licenses/GUST-FONT-LICENSE.txt
+ % or
+ % http://tug.org/fonts/licenses/GUST-FONT-LICENSE.txt
+ %
+ % This work may be distributed and/or modified under the conditions
+ % of the LaTeX Project Public License, either version 1.3c of this
+ % license or (at your option) any later version.
+ %
+ % Please also observe the following clause:
+ % 1) it is requested, but not legally required, that derived works be
+ %    distributed only after changing the names of the fonts comprising this
+ %    work and given in an accompanying "manifest", and that the
+ %    files comprising the Work, as listed in the manifest, also be given
+ %    new names. Any exceptions to this request are also given in the
+ %    manifest.
+ %
+ %    We recommend the manifest be given in a separate file named
+ %    MANIFEST-<fontid>.txt, where <fontid> is some unique identification
+ %    of the font family. If a separate "readme" file accompanies the Work,
+ %    we recommend a name of the form README-<fontid>.txt.
+ %
+ % The latest version of the LaTeX Project Public License is in
+ % http://www.latex-project.org/lppl.txt and version 1.3c or later
+ % is part of all distributions of LaTeX version 2006/05/20 or later.
+
+License: SVG-Repo-terms
+ Icons obtained from SVG Repo <https://www.svgrepo.com/> and used in accordance
+ with the licensing terms published at <https://www.svgrepo.com/page/licensing/>.
+ Individual icons carry their own upstream licences, which SVG Repo records per
+ icon; consult that site for the licence of a specific icon.
+
+License: CC-BY-3.0
+ Licensed under the Creative Commons Attribution 3.0 Unported licence. The full
+ text is available at <https://creativecommons.org/licenses/by/3.0/legalcode>.
+
+License: brand-logo-no-grant
+ These files are third-party brand logos and are the trademarks of their
+ respective owners. They are included solely to identify the corresponding
+ single-sign-on provider within the user interface. No copyright licence is
+ granted or implied by this package, and no endorsement is claimed.
+
+License: Vecteezy-Free
+ Obtained from Vecteezy under their Free License, which permits use with
+ attribution to the author. See <https://www.vecteezy.com/licensing-agreement>.

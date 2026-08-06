@@ -163,7 +163,16 @@ rm -rf "$PROJECT_DIR/dist/Robrix.app" \
 # way to find notarization credentials. Result: unsigned .app + DMG.
 
 sed -i.bak 's/^signing_identity[[:space:]]*=/#&/' "$CARGO_TOML"
-trap 'mv "$CARGO_TOML.bak" "$CARGO_TOML" 2>/dev/null && echo "Restored Cargo.toml"' EXIT
+
+# cargo-packager copies our custom Info.plist verbatim, so the version keys in it
+# would otherwise stay frozen at whatever was committed. Stamp them from Cargo.toml.
+INFO_PLIST="$PROJECT_DIR/packaging/Info.plist"
+cp "$INFO_PLIST" "$INFO_PLIST.bak"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $PRODUCT_VERSION" "$INFO_PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(date +%Y%m%d.%H%M)" "$INFO_PLIST"
+echo "==> Info.plist version set to $PRODUCT_VERSION (build $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO_PLIST"))"
+
+trap 'mv "$CARGO_TOML.bak" "$CARGO_TOML" 2>/dev/null && echo "Restored Cargo.toml"; mv "$INFO_PLIST.bak" "$INFO_PLIST" 2>/dev/null && echo "Restored Info.plist"' EXIT
 
 TS_MARKER=$(mktemp)
 

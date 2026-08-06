@@ -905,7 +905,7 @@ async fn create_did_web(
     let transport = Url::parse(
         &format!("https://{}/endpoint/{}",
             server,
-            &did.replace("%", "%25")
+            did.replace("%", "%25")
         )
     ).map_err(|e| anyhow!("Invalid transport URL: {e}"))?;
 
