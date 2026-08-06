@@ -132,7 +132,7 @@ script_mod! {
 
         space_lobby_label := Label {
             width: Fill, height: Fit
-            flow: Right,
+            flow: Flow.Right { wrap: true },
             padding: 0,
 
             draw_text +: {
@@ -520,7 +520,7 @@ script_mod! {
                 space_info_label := Label {
                     width: Fit,
                     height: Fit,
-                    flow: Right, // do not wrap
+                    flow: Flow.Right { wrap: false },
                     margin: Inset{left: 2}
                     draw_text +: {
                         text_style: REGULAR_TEXT {font_size: 10},
@@ -553,7 +553,8 @@ script_mod! {
                 parent_name := Label {
                     width: Fill,
                     height: Fit,
-                    flow: Right, // do not wrap
+                    flow: Flow.Right { wrap: false },
+                    text_overflow: Ellipsis,
                     margin: Inset{top: 4} // vertically center-align with the avatar
                     draw_text +: {
                         text_style: TITLE_TEXT {font_size: 14},

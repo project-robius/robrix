@@ -20,7 +20,7 @@ script_mod! {
         width: Fill, height: Fit
         margin: Inset{top: 5},
         align: Align{x: 0.0, y: 0.5}
-        flow: Right,
+        flow: Flow.Right { wrap: true },
         draw_text +: {
             color: (COLOR_TEXT),
             text_style: theme.font_bold { font_size: 13 },

@@ -333,7 +333,7 @@ script_mod! {
                     height: Fit,
                     username := Label {
                         width: Fill,
-                        flow: Right, // do not wrap
+                        flow: Flow.Right { wrap: false },
                         padding: 0,
                         margin: Inset{bottom: 9.0, top: 20.0, right: 10.0,}
                         max_lines: 1
@@ -614,7 +614,7 @@ script_mod! {
             width: Fill,
             height: Fit,
             align: Align{x: 0.5, y: 0.5},
-            flow: Right,
+            flow: Flow.Right { wrap: true },
             padding: Inset{ top: 10.0, bottom: 7.0, left: 15.0, right: 15.0 }
             draw_text +: {
                 text_style: MESSAGE_TEXT_STYLE { font_size: 10 },

@@ -39,7 +39,7 @@ script_mod! {
         height: 15.0,
         plus_template: Label {
             padding: 0,
-            flow: Right, // do not wrap
+            flow: Flow.Right { wrap: false },
             draw_text +: {
                 color: #x0,
                 text_style: TITLE_TEXT { font_size: 10}

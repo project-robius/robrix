@@ -54,7 +54,7 @@ script_mod! {
 
             reply_preview_username := Label {
                 width: Fill,
-                flow: Right, // do not wrap
+                flow: Flow.Right { wrap: false },
                 margin: Inset{ left: 5.0, top: 2 }
                 max_lines: 1
                 text_overflow: Ellipsis
@@ -197,7 +197,7 @@ script_mod! {
 
             Label {
                 width: Fill,
-                flow: Right, // do not wrap
+                flow: Flow.Right { wrap: true },
                 // Vertically align the text with the X icon in the cancel_reply_button
                 padding: Inset{top: 5}
 

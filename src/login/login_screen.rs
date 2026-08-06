@@ -109,7 +109,7 @@ script_mod! {
 
                     user_id_input := RobrixTextInput {
                         width: 275, height: Fit
-                        flow: Right, // do not wrap
+                        flow: Flow.Right { wrap: false },
                         padding: 10,
                         empty_text: "User ID"
                         autocapitalize: None,
@@ -124,7 +124,7 @@ script_mod! {
 
                         password_input := RobrixTextInput {
                             width: Fill, height: Fit
-                            flow: Right, // do not wrap
+                            flow: Flow.Right { wrap: false },
                             padding: Inset{top: 10, bottom: 10, left: 10, right: 38}
                             empty_text: "Password"
                             is_password: true,
@@ -180,7 +180,7 @@ script_mod! {
 
                         homeserver_input := RobrixTextInput {
                             width: 275, height: Fit,
-                            flow: Right, // do not wrap
+                            flow: Flow.Right { wrap: false },
                             padding: Inset{top: 5, bottom: 5, left: 10, right: 10}
                             empty_text: "matrix.org"
                             autocapitalize: None,

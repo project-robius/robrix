@@ -12,11 +12,11 @@ script_mod! {
 
     mod.widgets.Timestamp = #(Timestamp::register_widget(vm)) {
         width: Fit, height: Fit
-        flow: Right,
+        flow: Flow.Right { wrap: false },
 
         ts_label := Label {
             width: Fit, height: Fit
-            flow: Right, // do not wrap
+            flow: Flow.Right { wrap: false },
             padding: 0,
             draw_text +: {
                 text_style: TIMESTAMP_TEXT_STYLE {},

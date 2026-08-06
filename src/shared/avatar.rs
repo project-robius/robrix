@@ -50,7 +50,7 @@ script_mod! {
                 padding: 0,
                 margin: 0,
                 width: Fit, height: Fit,
-                flow: Right, // do not wrap
+                flow: Flow.Right { wrap: false },
                 align: Align{ x: 0.5, y: 0.5 }
                 draw_text +: {
                     text_style: TITLE_TEXT { font_size: 15. }
