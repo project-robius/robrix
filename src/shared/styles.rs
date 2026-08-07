@@ -15,8 +15,7 @@ script_mod! {
     mod.widgets.ICON_CLOSE            = crate_resource("self://resources/icons/close.svg")
     mod.widgets.ICON_CLOUD_CHECKMARK  = crate_resource("self://resources/icons/cloud_checkmark.svg")
     mod.widgets.ICON_CLOUD_OFFLINE    = crate_resource("self://resources/icons/cloud_offline.svg")
-    mod.widgets.ICON_ROTATE_CW        = crate_resource("self://resources/icons/rotate_right_fa.svg")
-    mod.widgets.ICON_ROTATE_CCW       = crate_resource("self://resources/icons/rotate_left_fa.svg")
+    mod.widgets.ICON_ROTATE_CW        = crate_resource("self://resources/icons/rotate_right.svg")
     mod.widgets.ICON_COPY             = crate_resource("self://resources/icons/copy.svg")
     mod.widgets.ICON_DOWNLOAD         = crate_resource("self://resources/icons/download.svg")
     mod.widgets.ICON_EDIT             = crate_resource("self://resources/icons/edit.svg")
@@ -51,6 +50,7 @@ script_mod! {
     mod.widgets.ICON_WARNING          = crate_resource("self://resources/icons/warning.svg")
     mod.widgets.ICON_ZOOM_IN          = crate_resource("self://resources/icons/zoom_in.svg")
     mod.widgets.ICON_ZOOM_OUT         = crate_resource("self://resources/icons/zoom_out.svg")
+    mod.widgets.ICON_ZOOM_TO_FIT      = crate_resource("self://resources/icons/zoom_to_fit.svg")
     mod.widgets.ICON_ADD_ATTACHMENT   = crate_resource("self://resources/icons/add_attachment.svg")
     mod.widgets.ICON_FILE             = crate_resource("self://resources/icons/file.svg")
 

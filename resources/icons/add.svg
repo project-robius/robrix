@@ -3,4 +3,5 @@
        device-aware; round caps give the rounded stroke ends the toolbar/nav icons share. -->
   <path d="M12 5 V19"/>
   <path d="M5 12 H19"/>
+<path d="M3.98 3.98M20.02 20.02" fill="none" stroke="none"/>
 </svg>
