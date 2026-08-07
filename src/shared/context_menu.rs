@@ -1,5 +1,4 @@
-//! Shared sizing and styling for Robrix's popup context menus,
-//! matching that of the `RoomInputPopupMenu`.
+//! Shared widgets and DSL styling definitions for context menus.
 
 use makepad_widgets::*;
 
@@ -74,8 +73,7 @@ script_mod! {
     }
 }
 
-/// Broadcast when a context menu closes, so the widget it was opened from can drop
-/// the hover highlight that the menu left it holding.
+/// An action broadcast when a context menu was closed.
 #[derive(Clone, Debug)]
 pub struct ContextMenuClosed;
 
@@ -87,7 +85,8 @@ pub fn expected_menu_size(num_buttons: usize, num_dividers: usize) -> DVec2 {
     dvec2(MENU_WIDTH, height)
 }
 
-/// Places the menu at `anchor_pos`, pulled back so it stays within `container_rect`.
+/// Returns a margin that positions the context menu at `anchor_pos`,
+/// but ensuring that it stays within the given `container_rect`.
 pub fn menu_position_margin(container_rect: Rect, anchor_pos: DVec2, menu_size: DVec2) -> Inset {
     Inset {
         left: (anchor_pos.x - container_rect.pos.x)

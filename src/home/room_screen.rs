@@ -5526,7 +5526,7 @@ impl Widget for Message {
                     };
                     cx.widget_action(room_screen_widget_uid, action);
                 }
-                // A touch release leaves nothing hovering, so only a mouse still over us stays lit.
+                // A released hit clears all hovers, unless the mouse is still hovering over us
                 self.animator_toggle(cx, fe.device.has_hovers() && fe.is_over, Animate::Yes, ids!(hover.on), ids!(hover.off));
             }
             _ => { }
@@ -5620,7 +5620,7 @@ impl Widget for Message {
                 self.animator_play(cx, ids!(hover.off));
             }
             Hit::FingerUp(fe) => {
-                // A touch release leaves nothing hovering, so only a mouse still over us stays lit.
+                // A released hit clears all hovers, unless the mouse is still hovering over us
                 self.animator_toggle(cx, fe.device.has_hovers() && fe.is_over, Animate::Yes, ids!(hover.on), ids!(hover.off));
             }
             Hit::FingerHoverIn(..) => {
@@ -5635,17 +5635,17 @@ impl Widget for Message {
         }
 
         if let Event::Actions(actions) = event {
-            // A context menu covers us while it's open, so we never see a hover-out.
-            // Drop the highlight once it closes.
-            if actions.iter().any(|a| a.downcast_ref::<ContextMenuClosed>().is_some()) {
-                self.animator_play(cx, ids!(hover.off));
-            }
-
             for action in actions {
+                if action.downcast_ref::<ContextMenuClosed>().is_some() {
+                    self.animator_play(cx, ids!(hover.off));
+                    continue;
+                }
+
                 match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast_ref() {
                     MessageAction::HighlightMessage(id) if id == &self.details.as_ref().unwrap().item_id => { // guaranteed to be Some()
                         self.animator_play(cx, ids!(highlight.on));
                         self.redraw(cx);
+                        continue;
                     }
                     _ => {}
                 }

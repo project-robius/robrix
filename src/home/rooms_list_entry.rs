@@ -172,8 +172,6 @@ script_mod! {
                     }
                 }
             }
-            // Snap both ways: the resting color is transparent, so a faded
-            // mid-blend would composite darker than either end.
             hover: {
                 default: @off
                 off: AnimatorState{
@@ -333,8 +331,6 @@ impl Widget for RoomsListEntryContent {
             self.redraw(cx);
         }
 
-        // A context menu covers us while it's open, so we never see a hover-out.
-        // Drop the highlight once it closes.
         if let Event::Actions(actions) = event
             && actions.iter().any(|a| a.downcast_ref::<ContextMenuClosed>().is_some())
         {
@@ -353,8 +349,7 @@ impl Widget for RoomsListEntryContent {
             Hit::FingerHoverOut(_) => {
                 self.animator_play(cx, ids!(hover.off));
             }
-            // Un-press as soon as the finger leaves us, since a drag-scroll of the
-            // rooms list won't deliver anything else.
+            // De-select it as soon as the finger isn't over us, e.g., a touch drag scroll.
             Hit::FingerMove(fe) if !fe.is_over => {
                 self.animator_play(cx, ids!(hover.off));
             }
@@ -385,7 +380,7 @@ impl Widget for RoomsListEntryContent {
                 {
                     cx.widget_action(uid, RoomsListEntryAction::PrimaryClicked(room_id.clone()));
                 }
-                // A touch release leaves nothing hovering, so only a mouse still over us stays lit.
+                // A released hit clears all hovers, unless the mouse is still hovering over us
                 self.animator_toggle(cx, fe.device.has_hovers() && fe.is_over, Animate::Yes, ids!(hover.on), ids!(hover.off));
             }
             _ => { }
