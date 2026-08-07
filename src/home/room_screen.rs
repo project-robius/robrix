@@ -33,7 +33,7 @@ use crate::{
     },
     room::{BasicRoomDetails, reply_preview::{CollapsiblePreviewRef, CollapsiblePreviewWidgetRefExt}, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints}, utils::{self, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -226,6 +226,7 @@ script_mod! {
             highlight: instance(0.0)
             hover: instance(0.0)
             color: instance((COLOR_PRIMARY)) // default color)
+            color_hover: instance(COLOR_LIST_ITEM_BG_HOVER)
 
             mentions_bar_color: instance((COLOR_PRIMARY))
             mentions_bar_width: instance(4.0)
@@ -233,7 +234,7 @@ script_mod! {
             pixel: fn() {
                 let base_color = mix(
                     self.color,
-                    #fafafa,
+                    self.color_hover,
                     self.hover
                 );
 
@@ -5487,16 +5488,23 @@ impl Widget for Message {
             Hit::FingerHoverOut(_fho) => {
                 self.animator_play(cx, ids!(hover.off));
             }
-            Hit::FingerDown(fe) if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) => {
-                cx.widget_action(
-                    room_screen_widget_uid,
-                    MessageAction::OpenMessageContextMenu {
-                        details: self.details.clone().unwrap(), // guaranteed to be Some()
-                        abs_pos: fe.abs,
-                    }
-                );
+            Hit::FingerMove(fe) if !fe.is_over => {
+                self.animator_play(cx, ids!(hover.off));
+            }
+            Hit::FingerDown(fe) => {
+                self.animator_play(cx, ids!(hover.on));
+                if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
+                    cx.widget_action(
+                        room_screen_widget_uid,
+                        MessageAction::OpenMessageContextMenu {
+                            details: self.details.clone().unwrap(), // guaranteed to be Some()
+                            abs_pos: fe.abs,
+                        }
+                    );
+                }
             }
             Hit::FingerLongPress(lp) => {
+                self.animator_play(cx, ids!(hover.on));
                 cx.widget_action(
                     room_screen_widget_uid,
                     MessageAction::OpenMessageContextMenu {
@@ -5505,17 +5513,21 @@ impl Widget for Message {
                     }
                 );
             }
-            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                // Tapping on a collapsed reply preview expands it.
-                // Tapping on an expanded reply preview jumps to the replied-to message.
-                let action = if reply.is_collapsed() {
-                    MessageAction::ToggleReplyPreviewExpanded(
-                        self.details.as_ref().unwrap().timeline_event_id.clone(), // guaranteed to be Some()
-                    )
-                } else {
-                    MessageAction::JumpToRelated(self.details.clone().unwrap()) // guaranteed to be Some()
-                };
-                cx.widget_action(room_screen_widget_uid, action);
+            Hit::FingerUp(fe) => {
+                if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
+                    // Tapping on a collapsed reply preview expands it.
+                    // Tapping on an expanded reply preview jumps to the replied-to message.
+                    let action = if reply.is_collapsed() {
+                        MessageAction::ToggleReplyPreviewExpanded(
+                            self.details.as_ref().unwrap().timeline_event_id.clone(), // guaranteed to be Some()
+                        )
+                    } else {
+                        MessageAction::JumpToRelated(self.details.clone().unwrap()) // guaranteed to be Some()
+                    };
+                    cx.widget_action(room_screen_widget_uid, action);
+                }
+                // A touch release leaves nothing hovering, so only a mouse still over us stays lit.
+                self.animator_toggle(cx, fe.device.has_hovers() && fe.is_over, Animate::Yes, ids!(hover.on), ids!(hover.off));
             }
             _ => { }
         }
@@ -5581,11 +5593,12 @@ impl Widget for Message {
         let message_view_area = self.view.area();
         match event.hits(cx, message_view_area) {
             Hit::FingerDown(fe) => {
+                self.animator_play(cx, ids!(hover.on));
                 cx.set_key_focus(message_view_area);
                 // A right click means we should display the context menu.
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                     cx.widget_action(
-                        room_screen_widget_uid, 
+                        room_screen_widget_uid,
                         MessageAction::OpenMessageContextMenu {
                             details: self.details.clone().unwrap(), // guaranteed to be Some()
                             abs_pos: fe.abs,
@@ -5594,13 +5607,21 @@ impl Widget for Message {
                 }
             }
             Hit::FingerLongPress(lp) => {
+                self.animator_play(cx, ids!(hover.on));
                 cx.widget_action(
-                    room_screen_widget_uid, 
+                    room_screen_widget_uid,
                     MessageAction::OpenMessageContextMenu {
                         details: self.details.clone().unwrap(), // guaranteed to be Some()
                         abs_pos: lp.abs,
                     }
                 );
+            }
+            Hit::FingerMove(fe) if !fe.is_over => {
+                self.animator_play(cx, ids!(hover.off));
+            }
+            Hit::FingerUp(fe) => {
+                // A touch release leaves nothing hovering, so only a mouse still over us stays lit.
+                self.animator_toggle(cx, fe.device.has_hovers() && fe.is_over, Animate::Yes, ids!(hover.on), ids!(hover.off));
             }
             Hit::FingerHoverIn(..) => {
                 self.animator_play(cx, ids!(hover.on));
@@ -5614,6 +5635,12 @@ impl Widget for Message {
         }
 
         if let Event::Actions(actions) = event {
+            // A context menu covers us while it's open, so we never see a hover-out.
+            // Drop the highlight once it closes.
+            if actions.iter().any(|a| a.downcast_ref::<ContextMenuClosed>().is_some()) {
+                self.animator_play(cx, ids!(hover.off));
+            }
+
             for action in actions {
                 match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast_ref() {
                     MessageAction::HighlightMessage(id) if id == &self.details.as_ref().unwrap().item_id => { // guaranteed to be Some()

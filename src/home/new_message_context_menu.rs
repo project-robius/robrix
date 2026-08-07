@@ -6,7 +6,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedEventId;
 use matrix_sdk_ui::timeline::{EventTimelineItem, MsgLikeContent, TimelineEventItemId};
 
-use crate::{shared::context_menu::{BUTTON_HEIGHT, expected_menu_size}, sliding_sync::UserPowerLevels};
+use crate::{shared::context_menu::{BUTTON_HEIGHT, ContextMenuClosed, expected_menu_size}, sliding_sync::UserPowerLevels};
 
 use super::room_screen::MessageAction;
 
@@ -556,6 +556,7 @@ impl NewMessageContextMenu {
         self.details = None;
         cx.revert_key_focus();
         cx.unblock_scrolling();
+        cx.action(ContextMenuClosed);
         self.redraw(cx);
     }
 }

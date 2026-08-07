@@ -74,6 +74,11 @@ script_mod! {
     }
 }
 
+/// Broadcast when a context menu closes, so the widget it was opened from can drop
+/// the hover highlight that the menu left it holding.
+#[derive(Clone, Debug)]
+pub struct ContextMenuClosed;
+
 pub fn expected_menu_size(num_buttons: usize, num_dividers: usize) -> DVec2 {
     let height = num_buttons as f64 * BUTTON_HEIGHT
         + num_dividers as f64 * DIVIDER_HEIGHT

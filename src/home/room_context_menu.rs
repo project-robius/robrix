@@ -3,7 +3,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
-use crate::{home::invite_modal::InviteModalAction, shared::{context_menu::expected_menu_size, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
+use crate::{home::invite_modal::InviteModalAction, shared::{context_menu::{ContextMenuClosed, expected_menu_size}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
 
 /// Nothing here is conditionally shown, so keep these matching the DSL below.
 const NUM_BUTTONS: usize = 8;
@@ -269,6 +269,7 @@ impl RoomContextMenu {
         self.details = None;
         cx.revert_key_focus();
         cx.unblock_scrolling();
+        cx.action(ContextMenuClosed);
         self.redraw(cx);
     }
 }
