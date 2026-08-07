@@ -3,29 +3,15 @@
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
-use crate::{home::invite_modal::InviteModalAction, shared::popup_list::{PopupKind, enqueue_popup_notification}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
+use crate::{home::invite_modal::InviteModalAction, shared::{context_menu::expected_menu_size, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
 
-const BUTTON_HEIGHT: f64 = 35.0;
-const MENU_WIDTH: f64 = 215.0;
+/// Nothing here is conditionally shown, so keep these matching the DSL below.
+const NUM_BUTTONS: usize = 8;
+const NUM_DIVIDERS: usize = 2;
 
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
-
-
-    mod.widgets.ROOM_CONTEXT_MENU_BUTTON_HEIGHT = 35
-    mod.widgets.ROOM_CONTEXT_MENU_WIDTH = 215
-
-    mod.widgets.RoomContextMenuButton = RobrixIconButton {
-        height: (mod.widgets.ROOM_CONTEXT_MENU_BUTTON_HEIGHT)
-        width: Fill,
-        margin: 0,
-        icon_walk: Walk{width: 16, height: 16, margin: Inset{right: 3}}
-        // Override the blue default back to neutral for context menu items
-        draw_bg +: { color: (COLOR_PRIMARY), color_hover: #EBEBEB, color_down: #DCDCDC }
-        draw_icon.color: #000
-        draw_text +: { color: #000, color_hover: #000, color_down: #000 }
-    }
 
     mod.widgets.RoomContextMenu = set_type_default() do #(RoomContextMenu::register_widget(vm)) {
         ..mod.widgets.SolidView
@@ -42,73 +28,48 @@ script_mod! {
             color: #0000004d
         }
 
-        main_content := RoundedView {
-            flow: Down
-            width: (mod.widgets.ROOM_CONTEXT_MENU_WIDTH),
-            height: Fit,
-            padding: 5
-            spacing: 0,
-            align: Align{x: 0, y: 0}
-
-            show_bg: true
-            draw_bg +: {
-                color: (COLOR_PRIMARY)
-                border_radius: 5.0
-                border_size: 0.5
-                border_color: #888
-            }
-
-            mark_unread_button := mod.widgets.RoomContextMenuButton {
+        main_content := mod.widgets.ContextMenuContent {
+            mark_unread_button := mod.widgets.ContextMenuButton {
                 draw_icon +: { svg: (ICON_CHECKMARK) }
                 text: "Mark as Unread"
             }
 
-            favorite_button := mod.widgets.RoomContextMenuButton {
+            favorite_button := mod.widgets.ContextMenuButton {
                 draw_icon +: { svg: (ICON_PIN) }
                 text: "Favorite"
             }
 
-            priority_button := mod.widgets.RoomContextMenuButton {
-                draw_icon +: { svg: (ICON_TOMBSTONE) } 
+            priority_button := mod.widgets.ContextMenuButton {
+                draw_icon +: { svg: (ICON_TOMBSTONE) }
                 text: "Set Low Priority"
             }
 
-            copy_link_button := mod.widgets.RoomContextMenuButton {
+            copy_link_button := mod.widgets.ContextMenuButton {
                 draw_icon +: { svg: (ICON_LINK) }
                 text: "Copy Link to Room"
             }
-            
-            divider1 := LineH {
-                margin: Inset{top: 3, bottom: 3}
-                width: Fill,
-            }
 
-            room_settings_button := mod.widgets.RoomContextMenuButton {
+            divider1 := mod.widgets.ContextMenuDivider { }
+
+            room_settings_button := mod.widgets.ContextMenuButton {
                 draw_icon +: { svg: (ICON_SETTINGS) }
                 text: "Settings"
             }
 
-            notifications_button := mod.widgets.RoomContextMenuButton {
+            notifications_button := mod.widgets.ContextMenuButton {
                 // TODO: use a proper bell icon
                 draw_icon +: { svg: (ICON_INFO) }
                 text: "Notifications"
             }
 
-            invite_button := mod.widgets.RoomContextMenuButton {
+            invite_button := mod.widgets.ContextMenuButton {
                 draw_icon +: { svg: (ICON_ADD_USER) }
                 text: "Invite"
             }
 
-            divider2 := LineH {
-                margin: Inset{top: 3, bottom: 3}
-                width: Fill,
-            }
+            divider2 := mod.widgets.ContextMenuDivider { }
 
-            leave_button := RobrixNegativeIconButton {
-                height: (mod.widgets.ROOM_CONTEXT_MENU_BUTTON_HEIGHT)
-                width: Fill,
-                margin: 0,
-                icon_walk: Walk{width: 16, height: 16, margin: Inset{right: 3}}
+            leave_button := mod.widgets.ContextMenuDangerButton {
                 draw_icon.svg: (ICON_LOGOUT)
                 text: "Leave Room"
             }
@@ -261,14 +222,14 @@ impl RoomContextMenu {
     }
 
     pub fn show(&mut self, cx: &mut Cx, details: RoomContextMenuDetails) -> DVec2 {
-        let height = self.update_buttons(cx, &details);
+        self.update_buttons(cx, &details);
         self.details = Some(details);
         self.visible = true;
         cx.set_key_focus(self.view.area());
-        dvec2(MENU_WIDTH, height)
+        expected_menu_size(NUM_BUTTONS, NUM_DIVIDERS)
     }
-    
-    fn update_buttons(&mut self, cx: &mut Cx, details: &RoomContextMenuDetails) -> f64 {
+
+    fn update_buttons(&mut self, cx: &mut Cx, details: &RoomContextMenuDetails) {
         let mark_unread_button = self.button(cx, ids!(mark_unread_button));
         if details.is_marked_unread {
             mark_unread_button.set_text(cx, "Mark as Read");
@@ -299,12 +260,8 @@ impl RoomContextMenu {
         self.button(cx, ids!(notifications_button)).reset_hover(cx);
         self.button(cx, ids!(invite_button)).reset_hover(cx);
         self.button(cx, ids!(leave_button)).reset_hover(cx);
-        
+
         self.redraw(cx);
-        
-        // Calculate height (rudimentary) - sum of visible buttons + padding
-        // 8 buttons * 35.0 + 2 dividers * ~10.0 + padding
-        (8.0 * BUTTON_HEIGHT) + 20.0 + 10.0 // approx
     }
 
     fn close(&mut self, cx: &mut Cx) {
