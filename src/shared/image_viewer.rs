@@ -304,17 +304,14 @@ script_mod! {
                     icon_walk: Walk{width: 27, height: 27, margin: Inset{left: 2}}
                 }
 
-                rotate_ccw_button := mod.widgets.ImageViewerButton {
-                    draw_icon +: { svg: (ICON_ROTATE_CCW) }
-                }
-
                 rotate_cw_button := mod.widgets.ImageViewerButton {
                     draw_icon +: { svg: (ICON_ROTATE_CW) }
+                    icon_walk: Walk{width: 30, height: 30, margin: Inset{left: 2}}
                 }
 
-                reset_button := mod.widgets.ImageViewerButton {
-                    draw_icon +: { svg: (ICON_JUMP) }
-                    icon_walk: Walk{width: 25, height: 25, margin: Inset{bottom: 2}}
+                zoom_to_fit_button := mod.widgets.ImageViewerButton {
+                    draw_icon +: { svg: (ICON_ZOOM_TO_FIT) }
+                    icon_walk: Walk{width: 25, height: 25}
                 }
 
                 download_button := mod.widgets.ImageViewerButton {
@@ -324,7 +321,7 @@ script_mod! {
 
                 share_button := mod.widgets.ImageViewerButton {
                     draw_icon +: { svg: (ICON_SHARE) }
-                    icon_walk: Walk{width: 22, height: 22}
+                    icon_walk: Walk{width: 24, height: 24}
                 }
 
                 close_button := mod.widgets.ImageViewerButton {
@@ -717,7 +714,7 @@ impl MatchEvent for ImageViewer {
         }
 
         let mut was_overlay_button_clicked = false;
-        if self.view.button(cx, ids!(reset_button)).clicked(actions) {
+        if self.view.button(cx, ids!(zoom_to_fit_button)).clicked(actions) {
             was_overlay_button_clicked = true;
             self.reset(cx);
         }
@@ -734,11 +731,6 @@ impl MatchEvent for ImageViewer {
         if self.view.button(cx, ids!(rotate_cw_button)).clicked(actions) {
             was_overlay_button_clicked = true;
             self.start_rotation(cx, 90.0);
-        }
-
-        if self.view.button(cx, ids!(rotate_ccw_button)).clicked(actions) {
-            was_overlay_button_clicked = true;
-            self.start_rotation(cx, -90.0);
         }
 
         if let Some(info) = self.downloadable.as_ref() {
