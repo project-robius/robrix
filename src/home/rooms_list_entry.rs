@@ -5,6 +5,7 @@ use crate::{
     room::FetchedRoomAvatar,
     shared::{
     avatar::AvatarWidgetExt,
+        context_menu::ContextMenuClosed,
         html_or_plaintext::HtmlOrPlaintextWidgetExt, unread_badge::UnreadBadgeWidgetExt as _,
     },
     utils::{self, relative_format}
@@ -116,19 +117,27 @@ script_mod! {
         spacing: 10,
         padding: 10,
         width: Fill, height: Fit
+        cursor: MouseCursor.Default,
 
         show_bg: true
         draw_bg +: {
             active: instance(0.0)
+            hover: instance(0.0)
             color: instance(#0000)
+            color_hover: instance(COLOR_LIST_ITEM_BG_HOVER)
             color_selected: instance(COLOR_ACTIVE_PRIMARY)
+            color_selected_hover: instance(COLOR_ACTIVE_PRIMARY_DARKER)
             border_color: instance(#0000)
             border_size: uniform(0.0)
             border_radius: uniform(4.0)
             border_inset: uniform(vec4(0.0))
 
             get_color: fn() -> vec4 {
-                return mix(self.color, self.color_selected, self.active)
+                return mix(
+                    mix(self.color, self.color_hover, self.hover),
+                    mix(self.color_selected, self.color_selected_hover, self.hover),
+                    self.active
+                )
             }
 
             pixel: fn() {
@@ -163,12 +172,26 @@ script_mod! {
                     }
                 }
             }
+            hover: {
+                default: @off
+                off: AnimatorState{
+                    from: {all: Snap}
+                    apply: {
+                        draw_bg: {hover: 0.0}
+                    }
+                }
+                on: AnimatorState{
+                    from: {all: Snap}
+                    apply: {
+                        draw_bg: {hover: 1.0}
+                    }
+                }
+            }
         }
     }
 
     mod.widgets.RoomsListEntry = #(RoomsListEntry::register_widget(vm)) {
         flow: Down, height: Fit
-        cursor: MouseCursor.Default,
 
         // Wrap the RoomsListEntryContent in an AdaptiveView to change the displayed content
         // (and its layout) based on the available space in the sidebar.
@@ -241,7 +264,6 @@ script_mod! {
 #[derive(Script, Widget)]
 pub struct RoomsListEntry {
     #[deref] view: View,
-    #[rust] room_id: Option<OwnedRoomId>,
 }
 
 impl ScriptHook for RoomsListEntry {
@@ -277,46 +299,10 @@ impl RoomsListEntry {
 
 impl Widget for RoomsListEntry {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let uid = self.widget_uid();
-        // We handle hits on this widget first to ensure that any clicks on it
-        // will just select the room, rather than resulting in a click on any child view
-        // within the RoomsListEntry content itself, such as links or avatars.
-        if let Some(room_id) = &self.room_id {
-            let area = self.view.area();
-            match event.hits(cx, area) {
-                Hit::FingerDown(fe) => {
-                    cx.set_key_focus(area);
-                    if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
-                        cx.widget_action(
-                            uid, 
-                            RoomsListEntryAction::SecondaryClicked(room_id.clone(), fe.abs),
-                        );
-                    }
-                }
-                Hit::FingerLongPress(fe) => {
-                    cx.widget_action(
-                        uid, 
-                        RoomsListEntryAction::SecondaryClicked(room_id.clone(), fe.abs),
-                    );
-                }
-                Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                    cx.widget_action(uid,  RoomsListEntryAction::PrimaryClicked(room_id.clone()));
-                }
-                _ => { }
-            }
-        }
-
         self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if let Some(room_info) = scope.props.get::<JoinedRoomInfo>() {
-            self.room_id = Some(room_info.room_name_id.room_id().clone());
-        }
-        else if let Some(room_info) = scope.props.get::<InvitedRoomInfo>() {
-            self.room_id = Some(room_info.room_name_id.room_id().clone());
-        }
-
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -326,6 +312,8 @@ pub struct RoomsListEntryContent {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
     #[apply_default] animator: Animator,
+
+    #[rust] room_id: Option<OwnedRoomId>,
 
     /// The preview colors that were last drawn for this entry.
     /// * Some(true): this entry was last drawn as selected.
@@ -342,13 +330,71 @@ impl Widget for RoomsListEntryContent {
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
         }
+
+        if let Event::Actions(actions) = event
+            && actions.iter().any(|a| a.downcast_ref::<ContextMenuClosed>().is_some())
+        {
+            self.animator_play(cx, ids!(hover.off));
+        }
+
+        let uid = self.widget_uid();
+        let area = self.view.area();
+        // We handle hits on this widget first to ensure that any clicks on it
+        // will just select the room, rather than resulting in a click on any child view
+        // within the RoomsListEntry content itself, such as links or avatars.
+        match event.hits(cx, area) {
+            Hit::FingerHoverIn(_) => {
+                self.animator_play(cx, ids!(hover.on));
+            }
+            Hit::FingerHoverOut(_) => {
+                self.animator_play(cx, ids!(hover.off));
+            }
+            // De-select it as soon as the finger isn't over us, e.g., a touch drag scroll.
+            Hit::FingerMove(fe) if !fe.is_over => {
+                self.animator_play(cx, ids!(hover.off));
+            }
+            Hit::FingerDown(fe) => {
+                self.animator_play(cx, ids!(hover.on));
+                cx.set_key_focus(area);
+                if fe.device.mouse_button().is_some_and(|b| b.is_secondary())
+                    && let Some(room_id) = self.room_id.as_ref()
+                {
+                    cx.widget_action(
+                        uid,
+                        RoomsListEntryAction::SecondaryClicked(room_id.clone(), fe.abs),
+                    );
+                }
+            }
+            Hit::FingerLongPress(fe) => {
+                self.animator_play(cx, ids!(hover.on));
+                if let Some(room_id) = self.room_id.as_ref() {
+                    cx.widget_action(
+                        uid,
+                        RoomsListEntryAction::SecondaryClicked(room_id.clone(), fe.abs),
+                    );
+                }
+            }
+            Hit::FingerUp(fe) => {
+                if fe.is_over && fe.is_primary_hit() && fe.was_tap()
+                    && let Some(room_id) = self.room_id.as_ref()
+                {
+                    cx.widget_action(uid, RoomsListEntryAction::PrimaryClicked(room_id.clone()));
+                }
+                // A released hit clears all hovers, unless the mouse is still hovering over us
+                self.animator_toggle(cx, fe.device.has_hovers() && fe.is_over, Animate::Yes, ids!(hover.on), ids!(hover.off));
+            }
+            _ => { }
+        }
+
         self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if let Some(joined_room_info) = scope.props.get::<JoinedRoomInfo>() {
+            self.room_id = Some(joined_room_info.room_name_id.room_id().clone());
             self.draw_joined_room(cx, joined_room_info);
         } else if let Some(invited_room_info) = scope.props.get::<InvitedRoomInfo>() {
+            self.room_id = Some(invited_room_info.room_name_id.room_id().clone());
             self.draw_invited_room(cx, invited_room_info);
         }
 

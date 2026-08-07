@@ -3,6 +3,7 @@ use makepad_widgets::ScriptVm;
 pub mod attachment_download;
 pub mod avatar;
 pub mod collapsible_header;
+pub mod context_menu;
 pub mod expand_arrow;
 pub mod confirmation_modal;
 pub mod file_upload_modal;
@@ -33,6 +34,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     styles::script_mod(vm);
     helpers::script_mod(vm);
     icon_button::script_mod(vm);
+    context_menu::script_mod(vm);
     navigation_bar_button::script_mod(vm);
     expand_arrow::script_mod(vm);
     unread_badge::script_mod(vm);

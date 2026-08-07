@@ -6,31 +6,13 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedEventId;
 use matrix_sdk_ui::timeline::{EventTimelineItem, MsgLikeContent, TimelineEventItemId};
 
-use crate::sliding_sync::UserPowerLevels;
+use crate::{shared::context_menu::{BUTTON_HEIGHT, ContextMenuClosed, expected_menu_size}, sliding_sync::UserPowerLevels};
 
 use super::room_screen::MessageAction;
-
-const BUTTON_HEIGHT: f64 = 35.0; // KEEP IN SYNC WITH BUTTON_HEIGHT BELOW
-const MENU_WIDTH: f64 = 215.0;   // KEEP IN SYNC WITH MENU_WIDTH BELOW
 
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
-
-
-    mod.widgets.NEW_MESSAGE_CONTEXT_MENU_BUTTON_HEIGHT = 35  // KEEP IN SYNC WITH BUTTON_HEIGHT ABOVE
-    mod.widgets.NEW_MESSAGE_CONTEXT_MENU_WIDTH = 215    // KEEP IN SYNC WITH MENU_WIDTH ABOVE
-
-    mod.widgets.NewMessageContextMenuButton = RobrixIconButton {
-        height: (mod.widgets.NEW_MESSAGE_CONTEXT_MENU_BUTTON_HEIGHT)
-        width: Fill,
-        margin: 0,
-        icon_walk: Walk{width: 16, height: 16, margin: Inset{right: 3}}
-        // Override the blue default back to neutral for context menu items
-        draw_bg +: { color: (COLOR_PRIMARY), color_hover: #EBEBEB, color_down: #DCDCDC }
-        draw_icon.color: #000
-        draw_text +: { color: #000, color_hover: #000, color_down: #000 }
-    }
 
     mod.widgets.NewMessageContextMenu = set_type_default() do #(NewMessageContextMenu::register_widget(vm)) {
         ..mod.widgets.SolidView
@@ -50,36 +32,21 @@ script_mod! {
             color: #0000004D
         }
 
-        main_content := RoundedView {
-            flow: Down
-            width: (mod.widgets.NEW_MESSAGE_CONTEXT_MENU_WIDTH),
-            height: Fit,
-            padding: 10
-            spacing: 0,
-            align: Align{x: 0, y: 0}
-
-            show_bg: true
-            draw_bg +: {
-                color: (COLOR_PRIMARY)
-                border_radius: 5.0
-                border_size: 0.5
-                border_color: #888
-            }
-
+        main_content := mod.widgets.ContextMenuContent {
             // Shows either the "Add Reaction" button or a reaction text input.
             react_view := View {
                 flow: Overlay
-                height: (mod.widgets.NEW_MESSAGE_CONTEXT_MENU_BUTTON_HEIGHT)
+                height: #(BUTTON_HEIGHT)
                 align: Align{y: 0.5}
 
-                react_button := mod.widgets.NewMessageContextMenuButton {
+                react_button := mod.widgets.ContextMenuButton {
                     draw_icon +: { svg: (ICON_ADD_REACTION) }
                     text: "Add Reaction"
                 }
 
                 reaction_input_view := View {
                     width: Fill,
-                    height: (mod.widgets.NEW_MESSAGE_CONTEXT_MENU_BUTTON_HEIGHT)
+                    height: #(BUTTON_HEIGHT)
                     align: Align{y: 0.5}
                     flow: Right,
                     visible: false, // will be shown once the react_button is clicked
@@ -100,7 +67,7 @@ script_mod! {
                         empty_text: "Enter reaction..."
                     }
                     reaction_send_button := RobrixPositiveIconButton {
-                        height: (mod.widgets.NEW_MESSAGE_CONTEXT_MENU_BUTTON_HEIGHT)
+                        height: #(BUTTON_HEIGHT)
                         align: Align{x: 0.5, y: 0.5}
                         padding: Inset{left: 10, right: 10, top: 8, bottom: 8}
                         spacing: 0,
@@ -110,82 +77,64 @@ script_mod! {
                 }
             }
 
-            reply_button := mod.widgets.NewMessageContextMenuButton {
+            reply_button := mod.widgets.ContextMenuButton {
                 draw_icon +: { svg: (ICON_REPLY) }
-                icon_walk +: { margin: Inset{top: 1, right: 3}}
+                icon_walk +: { margin: Inset{top: 1} }
                 text: "Reply"
             }
 
-            reply_in_thread_button := mod.widgets.NewMessageContextMenuButton {
+            reply_in_thread_button := mod.widgets.ContextMenuButton {
                 draw_icon +: { svg: (ICON_REPLY_IN_THREAD) }
-                icon_walk +: { margin: Inset{top: 1, right: 3}}
+                icon_walk +: { margin: Inset{top: 1} }
                 text: "Reply In Thread"
             }
 
-            divider_after_react_reply := LineH {
-                margin: Inset{top: 3, bottom: 3}
-                width: Fill,
-            }
+            divider_after_react_reply := mod.widgets.ContextMenuDivider { }
 
-            edit_message_button := mod.widgets.NewMessageContextMenuButton {
+            edit_message_button := mod.widgets.ContextMenuButton {
                 draw_icon +: { svg: (ICON_EDIT) }
-                icon_walk +: { margin: Inset{top: -3, right: 3} }
+                icon_walk +: { margin: Inset{top: -3} }
                 text: "Edit Message"
             }
 
             // TODO: check if the current user is allowed to pin/unpin messages:
             //       <https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_base/struct.RoomMember.html#method.can_pin_or_unpin_event>
-            pin_button := mod.widgets.NewMessageContextMenuButton {
+            pin_button := mod.widgets.ContextMenuButton {
                 draw_icon +: { svg: (ICON_PIN) }
                 text: "" // set dynamically to "Pin Message" or "Unpin Message"
             }
 
-            copy_text_button := mod.widgets.NewMessageContextMenuButton {
+            copy_text_button := mod.widgets.ContextMenuButton {
                 draw_icon +: { svg: (ICON_COPY) }
                 text: "Copy Text"
             }
 
-            copy_html_button := mod.widgets.NewMessageContextMenuButton {
+            copy_html_button := mod.widgets.ContextMenuButton {
                 draw_icon +: { svg: (ICON_HTML_FILE) }
-                icon_walk +: { margin: Inset{left: 1.5, right: 1.5} }
+                icon_walk +: { margin: Inset{left: 1.5} }
                 text: "Copy Text as HTML"
             }
 
-            copy_link_to_message_button := mod.widgets.NewMessageContextMenuButton {
+            copy_link_to_message_button := mod.widgets.ContextMenuButton {
                 draw_icon +: { svg: (ICON_LINK) }
                 text: "Copy Link to Message"
             }
 
-            view_source_button := mod.widgets.NewMessageContextMenuButton {
+            view_source_button := mod.widgets.ContextMenuButton {
                 draw_icon +: { svg: (ICON_VIEW_SOURCE) }
                 text: "View Source"
             }
 
-            jump_to_related_button := mod.widgets.NewMessageContextMenuButton {
+            jump_to_related_button := mod.widgets.ContextMenuButton {
                 draw_icon +: { svg: (ICON_JUMP) }
                 text: "Jump to Related Event"
             }
 
-            divider_before_report_delete := LineH {
-                margin: Inset{top: 3, bottom: 3}
-                width: Fill,
-            }
+            divider_before_report_delete := mod.widgets.ContextMenuDivider { }
 
-            // report_button = ContextMenuButton {
-            //     draw_icon +: {
-            //         svg: (ICON_TRASH) // TODO: ICON_REPORT/WARNING/FLAG
-            //         color: (COLOR_FG_DANGER_RED),
-            //     }
-            //     icon_walk +: { margin: Inset{left: -2, right: 3} }
-            //
-            //     draw_bg +: {
-            //         border_color: (COLOR_FG_DANGER_RED),
-            //         color: (COLOR_BG_DANGER_RED)
-            //     }
+            // report_button = mod.widgets.ContextMenuDangerButton {
+            //     draw_icon.svg: (ICON_TRASH) // TODO: ICON_REPORT/WARNING/FLAG
             //     text: "Report"
-            //     draw_text +: {
-            //         color: (COLOR_FG_DANGER_RED),
-            //     }
             // }
 
             // Note: we don't yet support deleting others' messages via admin/moderator power levels.
@@ -193,16 +142,8 @@ script_mod! {
             //       The caller needs to use `can_redact_own()` or `can_redact_other()`:
             //       https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_base/struct.RoomMember.html#method.can_redact_own
 
-            delete_button := mod.widgets.NewMessageContextMenuButton {
-                draw_icon +: {
-                    svg: (ICON_TRASH)
-                    color: (COLOR_FG_DANGER_RED),
-                }
-                draw_bg +: {
-                    border_color: (COLOR_FG_DANGER_RED),
-                    color: (COLOR_BG_DANGER_RED)
-                }
-                draw_text.color: (COLOR_FG_DANGER_RED),
+            delete_button := mod.widgets.ContextMenuDangerButton {
+                draw_icon.svg: (ICON_TRASH)
                 text: "Delete"
             }
         }
@@ -499,7 +440,7 @@ impl NewMessageContextMenu {
 
     /// Shows this context menu with the given message details.
     ///
-    /// Returns the expected (approximate) dimensions of the context menu,
+    /// Returns the expected dimensions of the context menu,
     /// which can be used to proactively reposition it such that it fits on screen.
     pub fn show(&mut self, cx: &mut Cx, details: MessageDetails) -> DVec2 {
         self.details = Some(details);
@@ -507,16 +448,14 @@ impl NewMessageContextMenu {
         cx.set_key_focus(self.view.area());
 
         // log!("Showing context menu for message: {:?}", self.details);
-        let height = self.set_button_visibility(cx);
-
-        dvec2(MENU_WIDTH, height)
+        self.set_button_visibility(cx)
     }
 
     /// Sets up all of the buttons based this context menu's inner details.
     ///
-    /// Returns the total height of all visible items.
-    fn set_button_visibility(&mut self, cx: &mut Cx) -> f64 {
-        let Some(details) = self.details.as_ref() else { return 0.0 };
+    /// Returns the expected dimensions of all visible items.
+    fn set_button_visibility(&mut self, cx: &mut Cx) -> DVec2 {
+        let Some(details) = self.details.as_ref() else { return DVec2::default() };
 
         let react_button = self.view.button(cx, ids!(react_button));
         let reply_button = self.view.button(cx, ids!(reply_button));
@@ -593,25 +532,23 @@ impl NewMessageContextMenu {
         self.redraw(cx);
 
         let num_visible_buttons =
-            show_react as u8
-            + show_reply_to as u8
-            + show_reply_in_thread as u8
-            + show_edit as u8
-            + show_pin as u8
-            + show_copy_text as u8
-            + show_copy_html as u8
-            + show_copy_link as u8
-            + show_view_source as u8
-            + show_jump_to_related as u8
-            // + show_report as u8
-            + show_delete as u8;
+            show_react as usize
+            + show_reply_to as usize
+            + show_reply_in_thread as usize
+            + show_edit as usize
+            + show_pin as usize
+            + show_copy_text as usize
+            + show_copy_html as usize
+            + show_copy_link as usize
+            + show_view_source as usize
+            + show_jump_to_related as usize
+            // + show_report as usize
+            + show_delete as usize;
+        let num_visible_dividers =
+            show_divider_after_react_reply as usize
+            + show_divider_before_report_delete as usize;
 
-        // Calculate and return the total expected height:
-        (num_visible_buttons as f64 * BUTTON_HEIGHT)
-            + if show_divider_after_react_reply { 10.0 } else { 0.0 }
-            + if show_divider_before_report_delete { 10.0 } else { 0.0 }
-            + 20.0  // top and bottom padding
-            + 1.0   // top and bottom border
+        expected_menu_size(num_visible_buttons, num_visible_dividers)
     }
 
     fn close(&mut self, cx: &mut Cx) {
@@ -619,6 +556,7 @@ impl NewMessageContextMenu {
         self.details = None;
         cx.revert_key_focus();
         cx.unblock_scrolling();
+        cx.action(ContextMenuClosed);
         self.redraw(cx);
     }
 }
