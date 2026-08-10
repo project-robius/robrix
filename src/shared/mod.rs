@@ -8,6 +8,7 @@ pub mod expand_arrow;
 pub mod confirmation_modal;
 pub mod file_upload_modal;
 pub mod helpers;
+pub mod hover_highlight;
 pub mod html_or_plaintext;
 pub mod icon_button;
 pub mod jump_to_bottom_button;

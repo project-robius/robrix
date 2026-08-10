@@ -310,6 +310,16 @@ impl LinkPreview {
 }
 
 impl LinkPreviewRef {
+    /// Clears the hover highlight on every preview card and the show more/fewer buttons.
+    pub fn reset_hovers(&self, cx: &mut Cx) {
+        let Some(inner) = self.borrow() else { return };
+        for item in inner.children.iter() {
+            reset_hover(cx, item);
+        }
+        inner.view.button(cx, ids!(collapsible_buttons.expand_button)).reset_hover(cx);
+        inner.view.button(cx, ids!(collapsible_buttons.collapse_button)).reset_hover(cx);
+    }
+
     /// Clears any displayed link preview(s), resetting this widget to its empty state.
     ///
     /// Needed for messages that never show link previews (e.g. redacted messages).
