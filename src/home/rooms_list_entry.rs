@@ -6,6 +6,7 @@ use crate::{
     shared::{
     avatar::AvatarWidgetExt,
         context_menu::ContextMenuClosed,
+        hover_highlight::handle_hover_hit,
         html_or_plaintext::HtmlOrPlaintextWidgetExt, unread_badge::UnreadBadgeWidgetExt as _,
     },
     utils::{self, relative_format}
@@ -172,7 +173,7 @@ script_mod! {
                     }
                 }
             }
-            hover: {
+            bg_hover: {
                 default: @off
                 off: AnimatorState{
                     from: {all: Snap}
@@ -315,6 +316,9 @@ pub struct RoomsListEntryContent {
 
     #[rust] room_id: Option<OwnedRoomId>,
 
+    /// `True` while a context menu that we opened is being shown.
+    #[rust] is_context_menu_open: bool,
+
     /// The preview colors that were last drawn for this entry.
     /// * Some(true): this entry was last drawn as selected.
     /// * Some(false): this entry was last drawn as not selected.
@@ -331,59 +335,44 @@ impl Widget for RoomsListEntryContent {
             self.redraw(cx);
         }
 
-        if let Event::Actions(actions) = event
+        if self.is_context_menu_open
+            && let Event::Actions(actions) = event
             && actions.iter().any(|a| a.downcast_ref::<ContextMenuClosed>().is_some())
         {
-            self.animator_play(cx, ids!(hover.off));
+            self.is_context_menu_open = false;
+            self.animator_play(cx, ids!(bg_hover.off));
         }
 
-        let uid = self.widget_uid();
-        let area = self.view.area();
         // We handle hits on this widget first to ensure that any clicks on it
         // will just select the room, rather than resulting in a click on any child view
         // within the RoomsListEntry content itself, such as links or avatars.
-        match event.hits(cx, area) {
-            Hit::FingerHoverIn(_) => {
-                self.animator_play(cx, ids!(hover.on));
-            }
-            Hit::FingerHoverOut(_) => {
-                self.animator_play(cx, ids!(hover.off));
-            }
-            // De-select it as soon as the finger isn't over us, e.g., a touch drag scroll.
-            Hit::FingerMove(fe) if !fe.is_over => {
-                self.animator_play(cx, ids!(hover.off));
-            }
-            Hit::FingerDown(fe) => {
-                self.animator_play(cx, ids!(hover.on));
-                cx.set_key_focus(area);
-                if fe.device.mouse_button().is_some_and(|b| b.is_secondary())
-                    && let Some(room_id) = self.room_id.as_ref()
-                {
+        if self.room_id.is_some() {
+            let uid = self.widget_uid();
+            let area = self.view.area();
+            let hit = handle_hover_hit(self, cx, event, area, self.is_context_menu_open);
+            match hit {
+                Hit::FingerDown(fe) => {
+                    cx.set_key_focus(area);
+                    if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
+                        self.is_context_menu_open = true;
+                        cx.widget_action(
+                            uid,
+                            RoomsListEntryAction::SecondaryClicked(self.room_id.clone().unwrap(), fe.abs),
+                        );
+                    }
+                }
+                Hit::FingerLongPress(fe) => {
+                    self.is_context_menu_open = true;
                     cx.widget_action(
                         uid,
-                        RoomsListEntryAction::SecondaryClicked(room_id.clone(), fe.abs),
+                        RoomsListEntryAction::SecondaryClicked(self.room_id.clone().unwrap(), fe.abs),
                     );
                 }
-            }
-            Hit::FingerLongPress(fe) => {
-                self.animator_play(cx, ids!(hover.on));
-                if let Some(room_id) = self.room_id.as_ref() {
-                    cx.widget_action(
-                        uid,
-                        RoomsListEntryAction::SecondaryClicked(room_id.clone(), fe.abs),
-                    );
+                Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                    cx.widget_action(uid, RoomsListEntryAction::PrimaryClicked(self.room_id.clone().unwrap()));
                 }
+                _ => { }
             }
-            Hit::FingerUp(fe) => {
-                if fe.is_over && fe.is_primary_hit() && fe.was_tap()
-                    && let Some(room_id) = self.room_id.as_ref()
-                {
-                    cx.widget_action(uid, RoomsListEntryAction::PrimaryClicked(room_id.clone()));
-                }
-                // A released hit clears all hovers, unless the mouse is still hovering over us
-                self.animator_toggle(cx, fe.device.has_hovers() && fe.is_over, Animate::Yes, ids!(hover.on), ids!(hover.off));
-            }
-            _ => { }
         }
 
         self.view.handle_event(cx, event, scope);

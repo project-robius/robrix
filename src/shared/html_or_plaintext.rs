@@ -785,6 +785,18 @@ impl HtmlOrPlaintext {
             }
         });
     }
+
+    /// Clears the hover highlight on every link, for when an overlay ate the hover-out.
+    pub fn reset_link_hovers(&mut self, cx: &mut Cx) {
+        let html_ref = self.html(cx, ids!(html_view.html));
+        let Some(html) = html_ref.borrow() else { return };
+        html.text_flow.children(&mut |_id, item| {
+            let Some(link) = item.borrow_mut::<RobrixHtmlLink>() else { return };
+            if let Some(mut html_link) = link.html_link(cx, ids!(html_link)).borrow_mut() {
+                html_link.animator_cut(cx, ids!(hover.off));
+            }
+        });
+    }
 }
 
 impl HtmlOrPlaintextRef {
@@ -806,6 +818,13 @@ impl HtmlOrPlaintextRef {
     pub fn set_link_color(&self, cx: &mut Cx, color: Option<Vec4>) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_link_color(cx, color);
+        }
+    }
+
+    /// See [`HtmlOrPlaintext::reset_link_hovers()`].
+    pub fn reset_link_hovers(&self, cx: &mut Cx) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.reset_link_hovers(cx);
         }
     }
 }

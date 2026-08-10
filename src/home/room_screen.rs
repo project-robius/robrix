@@ -27,13 +27,13 @@ use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, e
 
 use matrix_sdk_ui::sync_service::State;
 use crate::{
-    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{fetch_full_image_for_viewer, get_image_name_and_filesize}, rooms_list::{RoomsListAction, RoomsListRef}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetExt, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{fetch_full_image_for_viewer, get_image_name_and_filesize}, rooms_list::{RoomsListAction, RoomsListRef}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
     room::{BasicRoomDetails, reply_preview::{CollapsiblePreviewRef, CollapsiblePreviewWidgetRefExt}, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetExt, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints}, utils::{self, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -232,9 +232,11 @@ script_mod! {
             mentions_bar_width: instance(4.0)
 
             pixel: fn() {
+                // Multiply rather than replace, so a mention-highlighted message
+                // keeps its yellow on hover, just darker.
                 let base_color = mix(
                     self.color,
-                    self.color_hover,
+                    self.color * self.color_hover,
                     self.hover
                 );
 
@@ -274,7 +276,7 @@ script_mod! {
                     apply: { draw_bg: {highlight: 1.0} }
                 }
             }
-            hover: {
+            bg_hover: {
                 default: @off
                 off: AnimatorState{
                     redraw: true,
@@ -5439,6 +5441,8 @@ pub struct Message {
     #[apply_default] animator: Animator,
 
     #[rust] details: Option<MessageDetails>,
+    /// `True` while a context menu that we opened is being shown.
+    #[rust] is_context_menu_open: bool,
     /// Set on file/image/audio/video messages so the download button knows
     /// what to save when the user clicks it. `None` for plain text messages,
     /// which hide the download button entirely.
@@ -5476,58 +5480,61 @@ impl Widget for Message {
         let room_screen_widget_uid = d.room_screen_widget_uid;
         let thread_root_event_id = d.thread_root_event_id.clone();
 
+        // A right-click or long-press anywhere on a message widget should show its context menu,
+        // so we have to handle the raw events instead of relying on the hit system.
+        if let Event::MouseDown(mde) = event
+            && mde.button.is_secondary()
+            && mde.handled.get().is_empty()
+            && self.view.area().clipped_rect(cx).contains(mde.abs)
+            && !self.is_within_excluded_child(cx, mde.abs, false)
+        {
+            mde.handled.set(self.view.area());
+            let details = d.clone();
+            self.animator_play(cx, ids!(bg_hover.on));
+            self.open_context_menu(cx, room_screen_widget_uid, details, mde.abs);
+        }
+        else if let Event::LongPress(lpe) = event {
+            let msg_rect = self.view.area().clipped_rect(cx);
+            // the long press must've been captured by this message originally (on touch-down).
+            let capture_is_ours = cx.fingers.touch_capture_area(lpe.uid)
+                .is_none_or(|a| {
+                    let r = a.clipped_rect(cx);
+                    msg_rect.contains(r.pos) && msg_rect.contains(r.pos + r.size)
+                });
+            if msg_rect.contains(lpe.abs)
+                && capture_is_ours
+                && !self.is_within_excluded_child(cx, lpe.abs, true)
+            {
+                let details = d.clone();
+                self.animator_play(cx, ids!(bg_hover.on));
+                self.open_context_menu(cx, room_screen_widget_uid, details, lpe.abs);
+            }
+        }
+
         // We first handle a click on the replied-to message preview, if present,
         // because we don't want any widgets within the replied-to message to be
         // clickable or otherwise interactive.
         let reply = self.replied_to_message_view(cx);
         let reply_content_area = reply.content_area(cx);
-        match event.hits(cx, reply_content_area) {
+        let reply_hit = event.hits(cx, reply_content_area);
+        match reply_hit {
             Hit::FingerHoverIn(..) => {
-                self.animator_play(cx, ids!(hover.on));
+                self.animator_play(cx, ids!(bg_hover.on));
             }
-            Hit::FingerHoverOut(_fho) => {
-                self.animator_play(cx, ids!(hover.off));
+            Hit::FingerDown(_) => {
+                self.animator_play(cx, ids!(bg_hover.on));
             }
-            Hit::FingerMove(fe) if !fe.is_over => {
-                self.animator_play(cx, ids!(hover.off));
-            }
-            Hit::FingerDown(fe) => {
-                self.animator_play(cx, ids!(hover.on));
-                if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
-                    cx.widget_action(
-                        room_screen_widget_uid,
-                        MessageAction::OpenMessageContextMenu {
-                            details: self.details.clone().unwrap(), // guaranteed to be Some()
-                            abs_pos: fe.abs,
-                        }
-                    );
-                }
-            }
-            Hit::FingerLongPress(lp) => {
-                self.animator_play(cx, ids!(hover.on));
-                cx.widget_action(
-                    room_screen_widget_uid,
-                    MessageAction::OpenMessageContextMenu {
-                        details: self.details.clone().unwrap(), // guaranteed to be Some()
-                        abs_pos: lp.abs,
-                    }
-                );
-            }
-            Hit::FingerUp(fe) => {
-                if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
-                    // Tapping on a collapsed reply preview expands it.
-                    // Tapping on an expanded reply preview jumps to the replied-to message.
-                    let action = if reply.is_collapsed() {
-                        MessageAction::ToggleReplyPreviewExpanded(
-                            self.details.as_ref().unwrap().timeline_event_id.clone(), // guaranteed to be Some()
-                        )
-                    } else {
-                        MessageAction::JumpToRelated(self.details.clone().unwrap()) // guaranteed to be Some()
-                    };
-                    cx.widget_action(room_screen_widget_uid, action);
-                }
-                // A released hit clears all hovers, unless the mouse is still hovering over us
-                self.animator_toggle(cx, fe.device.has_hovers() && fe.is_over, Animate::Yes, ids!(hover.on), ids!(hover.off));
+            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                // Tapping on a collapsed reply preview expands it.
+                // Tapping on an expanded reply preview jumps to the replied-to message.
+                let action = if reply.is_collapsed() {
+                    MessageAction::ToggleReplyPreviewExpanded(
+                        self.details.as_ref().unwrap().timeline_event_id.clone(), // guaranteed to be Some()
+                    )
+                } else {
+                    MessageAction::JumpToRelated(self.details.clone().unwrap()) // guaranteed to be Some()
+                };
+                cx.widget_action(room_screen_widget_uid, action);
             }
             _ => { }
         }
@@ -5541,39 +5548,31 @@ impl Widget for Message {
                     draw_bg.color: #(bg_color)
                 });
             };
-            match event.hits(cx, thread_root_summary.area()) {
-                Hit::FingerDown(fe) => {
+            let summary_hit = event.hits(cx, thread_root_summary.area());
+            match summary_hit {
+                Hit::FingerDown(_) => {
+                    self.animator_play(cx, ids!(bg_hover.on));
                     apply_hover(cx, COLOR_THREAD_SUMMARY_BG_HOVER);
-                    if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
-                        cx.widget_action(
-                            room_screen_widget_uid, 
-                            MessageAction::OpenMessageContextMenu {
-                                details: self.details.clone().unwrap(), // guaranteed to be Some()
-                                abs_pos: fe.abs,
-                            }
-                        );
-                    }
                 }
                 Hit::FingerHoverIn(_) => {
+                    self.animator_play(cx, ids!(bg_hover.on));
                     apply_hover(cx, COLOR_THREAD_SUMMARY_BG_HOVER);
                 }
                 Hit::FingerHoverOut(_) => {
                     apply_hover(cx, COLOR_THREAD_SUMMARY_BG);
                 }
-                Hit::FingerLongPress(lp) => {
-                    cx.widget_action(
-                        room_screen_widget_uid, 
-                        MessageAction::OpenMessageContextMenu {
-                            details: self.details.clone().unwrap(), // guaranteed to be Some()
-                            abs_pos: lp.abs,
-                        }
-                    );
+                Hit::FingerMove(fe) if !fe.is_over => {
+                    apply_hover(cx, COLOR_THREAD_SUMMARY_BG);
+                }
+                Hit::FingerLongPress(_) => {
+                    apply_hover(cx, COLOR_THREAD_SUMMARY_BG_HOVER);
                 }
                 Hit::FingerUp(fe) => {
-                    apply_hover(cx, COLOR_THREAD_SUMMARY_BG);
+                    let still_hovered = fe.device.has_hovers() && fe.is_over;
+                    apply_hover(cx, if still_hovered { COLOR_THREAD_SUMMARY_BG_HOVER } else { COLOR_THREAD_SUMMARY_BG });
                     if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
                         cx.widget_action(
-                            room_screen_widget_uid, 
+                            room_screen_widget_uid,
                             MessageAction::OpenThread(thread_root_event_id.clone()),
                         );
                     }
@@ -5591,56 +5590,39 @@ impl Widget for Message {
 
         // Finally, handle any hits on the rest of the message body itself.
         let message_view_area = self.view.area();
-        match event.hits(cx, message_view_area) {
-            Hit::FingerDown(fe) => {
-                self.animator_play(cx, ids!(hover.on));
+        let body_hit = handle_hover_hit(self, cx, event, message_view_area, self.is_context_menu_open);
+        match body_hit {
+            Hit::FingerDown(_) => {
                 cx.set_key_focus(message_view_area);
-                // A right click means we should display the context menu.
-                if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
-                    cx.widget_action(
-                        room_screen_widget_uid,
-                        MessageAction::OpenMessageContextMenu {
-                            details: self.details.clone().unwrap(), // guaranteed to be Some()
-                            abs_pos: fe.abs,
-                        }
-                    );
-                }
-            }
-            Hit::FingerLongPress(lp) => {
-                self.animator_play(cx, ids!(hover.on));
-                cx.widget_action(
-                    room_screen_widget_uid,
-                    MessageAction::OpenMessageContextMenu {
-                        details: self.details.clone().unwrap(), // guaranteed to be Some()
-                        abs_pos: lp.abs,
-                    }
-                );
-            }
-            Hit::FingerMove(fe) if !fe.is_over => {
-                self.animator_play(cx, ids!(hover.off));
-            }
-            Hit::FingerUp(fe) => {
-                // A released hit clears all hovers, unless the mouse is still hovering over us
-                self.animator_toggle(cx, fe.device.has_hovers() && fe.is_over, Animate::Yes, ids!(hover.on), ids!(hover.off));
             }
             Hit::FingerHoverIn(..) => {
-                self.animator_play(cx, ids!(hover.on));
                 // TODO: here, show the "action bar" buttons upon hover-in
             }
             Hit::FingerHoverOut(_fho) => {
-                self.animator_play(cx, ids!(hover.off));
                 // TODO: here, hide the "action bar" buttons upon hover-out
             }
             _ => { }
         }
 
         if let Event::Actions(actions) = event {
-            for action in actions {
-                if action.downcast_ref::<ContextMenuClosed>().is_some() {
-                    self.animator_play(cx, ids!(hover.off));
-                    continue;
-                }
+            // when the context menu overlay is closed, clear all hovers.
+            if self.is_context_menu_open
+                && actions.iter().any(|a| a.downcast_ref::<ContextMenuClosed>().is_some())
+            {
+                self.is_context_menu_open = false;
+                self.animator_play(cx, ids!(bg_hover.off));
+                self.button(cx, ids!(replied_to_message.reply_expand_button)).reset_hover(cx);
+                self.button(cx, ids!(replied_to_message.reply_collapse_button)).reset_hover(cx);
+                self.link_preview(cx, ids!(content.link_preview_view)).reset_hovers(cx);
+                self.html_or_plaintext(cx, ids!(content.message)).reset_link_hovers(cx);
+                let mut summary = self.thread_root_summary_view(cx);
+                script_apply_eval!(cx, summary, {
+                    draw_bg.color: #(COLOR_THREAD_SUMMARY_BG)
+                });
+                self.redraw(cx);
+            }
 
+            for action in actions {
                 match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast_ref() {
                     MessageAction::HighlightMessage(id) if id == &self.details.as_ref().unwrap().item_id => { // guaranteed to be Some()
                         self.animator_play(cx, ids!(highlight.on));
@@ -5711,6 +5693,32 @@ impl Message {
         let reply = self.view.widget(cx, ids!(replied_to_message)).as_collapsible_preview();
         self.replied_to_message_view = Some(reply.clone());
         reply
+    }
+
+    /// Whether a click/tap at `abs` is within a child widget (within this message) that has its own hit behavior.
+    ///
+    /// This currently includes: reactions, download/share buttons, the read receipts row.
+    /// On long-presses specifically, it also excludes timestamps, edited indicators, and TSP sign indicators.
+    fn is_within_excluded_child(&self, cx: &mut Cx, abs: DVec2, is_long_press: bool) -> bool {
+        self.view.widget(cx, ids!(reaction_list)).area().clipped_rect(cx).contains(abs)
+            || self.view.widget(cx, ids!(avatar_row)).area().clipped_rect(cx).contains(abs)
+            || self.view.widget(cx, ids!(content.download_section)).area().clipped_rect(cx).contains(abs)
+            || (is_long_press && (
+                self.view.widget(cx, ids!(timestamp)).area().clipped_rect(cx).contains(abs)
+                || self.view.widget(cx, ids!(edited_indicator)).area().clipped_rect(cx).contains(abs)
+                || self.view.widget(cx, ids!(tsp_sign_indicator)).area().clipped_rect(cx).contains(abs)
+            ))
+    }
+
+    fn open_context_menu(&mut self, cx: &mut Cx, room_screen_widget_uid: WidgetUid, details: MessageDetails, abs_pos: DVec2) {
+        self.is_context_menu_open = true;
+        cx.widget_action(
+            room_screen_widget_uid,
+            MessageAction::OpenMessageContextMenu {
+                details,
+                abs_pos,
+            },
+        );
     }
 
     fn thread_root_summary_view(&mut self, cx: &mut Cx) -> ViewRef {

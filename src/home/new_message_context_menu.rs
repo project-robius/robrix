@@ -111,7 +111,6 @@ script_mod! {
 
             copy_html_button := mod.widgets.ContextMenuButton {
                 draw_icon +: { svg: (ICON_HTML_FILE) }
-                icon_walk +: { margin: Inset{left: 1.5} }
                 text: "Copy Text as HTML"
             }
 

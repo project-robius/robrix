@@ -146,8 +146,8 @@ script_mod! {
     mod.widgets.COLOR_SECONDARY = #E3E3E3
     mod.widgets.COLOR_SECONDARY_DARKER = #C8C8C8
 
-    // Shown behind a hovered or pressed list item: a rooms list entry, a timeline message.
-    mod.widgets.COLOR_LIST_ITEM_BG_HOVER = #f0f0f0
+    // What a rooms list entry or timeline message darkens to on hover or press.
+    mod.widgets.COLOR_LIST_ITEM_BG_HOVER = #f4f4f4
 
     mod.widgets.COLOR_ACTIVE_PRIMARY = #0f88fe
 
