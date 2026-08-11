@@ -770,14 +770,14 @@ impl Widget for SubspaceEntry {
         //       (e.g., self.view.view(), self.view.button()) because these
         //       fail for portal list items.
         let buttons_view_ref = self.view.child_by_path(ids!(buttons_view));
-        let buttons_view_rect = buttons_view_ref.area().rect(cx);
+        // Clipped, to match the rect the hit system itself tests against.
+        let buttons_view_rect = buttons_view_ref.area().clipped_rect(cx);
 
         // While the pointer is over our buttons we aren't makepad's hover owner,
         // so it never tells us when the pointer leaves us for another entry.
         if let Event::MouseMove(mm) = event
-            && self.show_buttons_view
             && !self.buttons_shown_by_tap
-            && !self.view.area().rect(cx).contains(mm.abs)
+            && !self.view.area().clipped_rect(cx).contains(mm.abs)
             && !buttons_view_rect.contains(mm.abs)
         {
             self.unhover(cx);
@@ -933,6 +933,10 @@ impl SubspaceEntry {
     /// Clears the hover highlight and hides the buttons.
     fn unhover(&mut self, cx: &mut Cx) {
         self.animator_play(cx, ids!(bg_hover.off));
+        // The highlight can be on without the buttons, so only tear those down once.
+        if !self.show_buttons_view {
+            return;
+        }
         self.show_buttons_view = false;
         self.buttons_shown_by_tap = false;
         self.view.child_by_path(ids!(buttons_view)).set_visible(cx, false);
@@ -1267,6 +1271,7 @@ impl Widget for SpaceLobbyScreen {
                                     if id_changed {
                                         inner.show_buttons_view = false;
                                         inner.buttons_shown_by_tap = false;
+                                        inner.animator_cut(cx, ids!(bg_hover.off));
                                     }
                                     show_buttons_view = inner.show_buttons_view;
                                 }
@@ -1289,6 +1294,7 @@ impl Widget for SpaceLobbyScreen {
                                     if id_changed {
                                         inner.show_buttons_view = false;
                                         inner.buttons_shown_by_tap = false;
+                                        inner.animator_cut(cx, ids!(bg_hover.off));
                                     }
                                     show_buttons_view = inner.show_buttons_view;
                                 }
