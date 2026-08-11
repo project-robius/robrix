@@ -13,8 +13,14 @@ pub fn handle_hover_hit<W: AnimatorImpl>(
     claim_before: Area,
     keep_hovered: bool,
 ) -> Hit {
-    handle_hover_hit_with_test(widget, cx, event, area, claim_before, keep_hovered,
-        |abs, rect, inset| Inset::rect_contains_with_inset(abs, rect, inset),
+    handle_hover_hit_with_test(
+        widget,
+        cx,
+        event,
+        area,
+        claim_before,
+        keep_hovered,
+        Inset::rect_contains_with_inset
     )
 }
 
