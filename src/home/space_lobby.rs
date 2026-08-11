@@ -771,6 +771,18 @@ impl Widget for SubspaceEntry {
         //       fail for portal list items.
         let buttons_view_ref = self.view.child_by_path(ids!(buttons_view));
         let buttons_view_rect = buttons_view_ref.area().rect(cx);
+
+        // While the pointer is over our buttons we aren't makepad's hover owner,
+        // so it never tells us when the pointer leaves us for another entry.
+        if let Event::MouseMove(mm) = event
+            && self.show_buttons_view
+            && !self.buttons_shown_by_tap
+            && !self.view.area().rect(cx).contains(mm.abs)
+            && !buttons_view_rect.contains(mm.abs)
+        {
+            self.unhover(cx);
+        }
+
         let are_buttons_visible = self.show_buttons_view;
         match event.hits_with_test(cx, self.view.area(), |abs, rect, _| {
             rect.contains(abs) && !(are_buttons_visible && buttons_view_rect.contains(abs))
@@ -800,11 +812,7 @@ impl Widget for SubspaceEntry {
                 let entry_rect = self.view.area().rect(cx);
                 let is_over_buttons_view = self.show_buttons_view && buttons_view_rect.contains(fe.abs);
                 if !entry_rect.contains(fe.abs) && !is_over_buttons_view {
-                    self.animator_play(cx, ids!(bg_hover.off));
-                    self.show_buttons_view = false;
-                    self.buttons_shown_by_tap = false;
-                    self.view.child_by_path(ids!(buttons_view)).set_visible(cx, false);
-                    self.redraw(cx);
+                    self.unhover(cx);
                 }
             }
             Hit::FingerDown(_) => {
@@ -922,20 +930,26 @@ impl Widget for SubspaceEntry {
 }
 
 impl SubspaceEntry {
+    /// Clears the hover highlight and hides the buttons.
+    fn unhover(&mut self, cx: &mut Cx) {
+        self.animator_play(cx, ids!(bg_hover.off));
+        self.show_buttons_view = false;
+        self.buttons_shown_by_tap = false;
+        self.view.child_by_path(ids!(buttons_view)).set_visible(cx, false);
+        self.redraw(cx);
+    }
+
     /// Toggles the buttons_view visibility for a touch tap.
     fn toggle_buttons_for_tap(&mut self, cx: &mut Cx) {
         if self.show_buttons_view {
-            self.animator_play(cx, ids!(bg_hover.off));
-            self.show_buttons_view = false;
-            self.buttons_shown_by_tap = false;
-            self.view.child_by_path(ids!(buttons_view)).set_visible(cx, false);
+            self.unhover(cx);
         } else {
             self.animator_play(cx, ids!(bg_hover.on));
             self.show_buttons_view = true;
             self.buttons_shown_by_tap = true;
             self.view.child_by_path(ids!(buttons_view)).set_visible(cx, true);
+            self.redraw(cx);
         }
-        self.redraw(cx);
     }
 }
 
