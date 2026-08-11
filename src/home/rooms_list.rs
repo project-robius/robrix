@@ -390,6 +390,18 @@ struct SpaceMapValue {
     parent_chain: ParentChain,
 }
 
+/// The room lists and unread-count totals produced by a full display-filter pass.
+struct GeneratedDisplayedRooms {
+    invited: Vec<OwnedRoomId>,
+    regular: Vec<OwnedRoomId>,
+    direct: Vec<OwnedRoomId>,
+    joined_room_ids: HashSet<OwnedRoomId>,
+    regular_unread_mentions: u64,
+    regular_unread_messages: u64,
+    direct_unread_mentions: u64,
+    direct_unread_messages: u64,
+}
+
 #[derive(Script, Widget)]
 pub struct RoomsList {
     #[deref] view: View,
@@ -443,6 +455,10 @@ pub struct RoomsList {
 
     /// The list of direct rooms currently displayed in the UI.
     #[rust] displayed_direct_rooms: Vec<OwnedRoomId>,
+    /// The total number of unread mentions in the displayed direct rooms.
+    #[rust] displayed_direct_rooms_unread_mentions: u64,
+    /// The total number of unread messages in the displayed direct rooms.
+    #[rust] displayed_direct_rooms_unread_messages: u64,
     #[rust(false)] is_direct_rooms_header_expanded: bool,
     #[rust] direct_rooms_indexes: RoomCategoryIndexes,
 
@@ -450,8 +466,15 @@ pub struct RoomsList {
     ///
     /// **Direct rooms are excluded** from this; they are in `displayed_direct_rooms`.
     #[rust] displayed_regular_rooms: Vec<OwnedRoomId>,
+    /// The total number of unread mentions in the displayed regular rooms.
+    #[rust] displayed_regular_rooms_unread_mentions: u64,
+    /// The total number of unread messages in the displayed regular rooms.
+    #[rust] displayed_regular_rooms_unread_messages: u64,
     #[rust(true)] is_regular_rooms_header_expanded: bool,
     #[rust] regular_rooms_indexes: RoomCategoryIndexes,
+
+    /// A membership cache for applying unread-count deltas without scanning either displayed list.
+    #[rust] displayed_joined_room_ids: HashSet<OwnedRoomId>,
 
     /// The latest status message that should be displayed in the bottom status label.
     #[rust] status: String,
@@ -520,6 +543,96 @@ impl RoomsList {
         self.redraw(cx);
     }
 
+    /// Adds a joined room to its displayed category and updates the cached unread totals.
+    fn add_displayed_joined_room(
+        &mut self,
+        room_id: OwnedRoomId,
+        is_direct: bool,
+        num_unread_mentions: u64,
+        num_unread_messages: u64,
+    ) {
+        if !self.displayed_joined_room_ids.insert(room_id.clone()) {
+            return;
+        }
+
+        let (displayed_rooms, unread_mentions, unread_messages) = if is_direct {
+            (
+                &mut self.displayed_direct_rooms,
+                &mut self.displayed_direct_rooms_unread_mentions,
+                &mut self.displayed_direct_rooms_unread_messages,
+            )
+        } else {
+            (
+                &mut self.displayed_regular_rooms,
+                &mut self.displayed_regular_rooms_unread_mentions,
+                &mut self.displayed_regular_rooms_unread_messages,
+            )
+        };
+        displayed_rooms.push(room_id);
+        *unread_mentions = unread_mentions.saturating_add(num_unread_mentions);
+        *unread_messages = unread_messages.saturating_add(num_unread_messages);
+    }
+
+    /// Removes a joined room from its displayed category and updates the cached unread totals.
+    fn remove_displayed_joined_room(
+        &mut self,
+        room_id: &OwnedRoomId,
+        is_direct: bool,
+        num_unread_mentions: u64,
+        num_unread_messages: u64,
+    ) {
+        if !self.displayed_joined_room_ids.remove(room_id) {
+            return;
+        }
+
+        let (displayed_rooms, unread_mentions, unread_messages) = if is_direct {
+            (
+                &mut self.displayed_direct_rooms,
+                &mut self.displayed_direct_rooms_unread_mentions,
+                &mut self.displayed_direct_rooms_unread_messages,
+            )
+        } else {
+            (
+                &mut self.displayed_regular_rooms,
+                &mut self.displayed_regular_rooms_unread_mentions,
+                &mut self.displayed_regular_rooms_unread_messages,
+            )
+        };
+        if let Some(index) = displayed_rooms.iter().position(|r| r == room_id) {
+            displayed_rooms.remove(index);
+        }
+        *unread_mentions = unread_mentions.saturating_sub(num_unread_mentions);
+        *unread_messages = unread_messages.saturating_sub(num_unread_messages);
+    }
+
+    /// Applies one room's unread-count deltas to its displayed category.
+    fn update_displayed_unread_counts(
+        &mut self,
+        is_direct: bool,
+        old_mentions: u64,
+        new_mentions: u64,
+        old_messages: u64,
+        new_messages: u64,
+    ) {
+        let (unread_mentions, unread_messages) = if is_direct {
+            (
+                &mut self.displayed_direct_rooms_unread_mentions,
+                &mut self.displayed_direct_rooms_unread_messages,
+            )
+        } else {
+            (
+                &mut self.displayed_regular_rooms_unread_mentions,
+                &mut self.displayed_regular_rooms_unread_messages,
+            )
+        };
+        *unread_mentions = unread_mentions
+            .saturating_sub(old_mentions)
+            .saturating_add(new_mentions);
+        *unread_messages = unread_messages
+            .saturating_sub(old_messages)
+            .saturating_add(new_messages);
+    }
+
     /// Handle all pending updates to the list of all rooms.
     fn handle_rooms_list_updates(&mut self, cx: &mut Cx, _event: &Event, _scope: &mut Scope) {
         let mut num_updates: usize = 0;
@@ -540,14 +653,25 @@ impl RoomsList {
                 RoomsListUpdate::AddJoinedRoom(joined_room) => {
                     let room_id = joined_room.room_name_id.room_id().clone();
                     let is_direct = joined_room.is_direct;
+                    let num_unread_mentions = joined_room.num_unread_mentions;
+                    let num_unread_messages = joined_room.num_unread_messages;
                     let should_display = should_display_room!(self, &room_id, &joined_room);
-                    let _replaced = self.all_joined_rooms.insert(room_id.clone(), joined_room);
+                    let replaced = self.all_joined_rooms.insert(room_id.clone(), joined_room);
+                    if let Some(replaced) = replaced {
+                        self.remove_displayed_joined_room(
+                            &room_id,
+                            replaced.is_direct,
+                            replaced.num_unread_mentions,
+                            replaced.num_unread_messages,
+                        );
+                    }
                     if should_display {
-                        if is_direct {
-                            self.displayed_direct_rooms.push(room_id.clone());
-                        } else {
-                            self.displayed_regular_rooms.push(room_id.clone());
-                        }
+                        self.add_displayed_joined_room(
+                            room_id.clone(),
+                            is_direct,
+                            num_unread_mentions,
+                            num_unread_messages,
+                        );
                     }
 
                     // If this room was added as a result of accepting an invite, we must:
@@ -590,13 +714,27 @@ impl RoomsList {
                     }
                 }
                 RoomsListUpdate::UpdateNumUnreadMessages { room_id, is_marked_unread, unread_messages, unread_mentions } => {
+                    let is_displayed = self.displayed_joined_room_ids.contains(&room_id);
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
-                        room.num_unread_messages = match unread_messages {
+                        let old_unread_mentions = room.num_unread_mentions;
+                        let old_unread_messages = room.num_unread_messages;
+                        let is_direct = room.is_direct;
+                        let num_unread_messages = match unread_messages {
                             UnreadMessageCount::Unknown => 0,
                             UnreadMessageCount::Known(count) => count,
                         };
+                        room.num_unread_messages = num_unread_messages;
                         room.num_unread_mentions = unread_mentions;
                         room.is_marked_unread = is_marked_unread;
+                        if is_displayed {
+                            self.update_displayed_unread_counts(
+                                is_direct,
+                                old_unread_mentions,
+                                unread_mentions,
+                                old_unread_messages,
+                                num_unread_messages,
+                            );
+                        }
                     } else {
                         warning!("Warning: couldn't find room {} to update unread messages count", room_id);
                     }
@@ -612,24 +750,23 @@ impl RoomsList {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         room.room_name_id = new_room_name;
                         let is_direct = room.is_direct;
+                        let num_unread_mentions = room.num_unread_mentions;
+                        let num_unread_messages = room.num_unread_messages;
                         let should_display = should_display_room!(self, &room_id, room);
-                        let (pos_in_list, displayed_list) = if is_direct {
-                            (
-                                self.displayed_direct_rooms.iter().position(|r| r == &room_id),
-                                &mut self.displayed_direct_rooms,
-                            )
-                        } else {
-                            (
-                                self.displayed_regular_rooms.iter().position(|r| r == &room_id),
-                                &mut self.displayed_regular_rooms,
-                            )
-                        };
                         if should_display {
-                            if pos_in_list.is_none() {
-                                displayed_list.push(room_id);
-                            }
+                            self.add_displayed_joined_room(
+                                room_id,
+                                is_direct,
+                                num_unread_mentions,
+                                num_unread_messages,
+                            );
                         } else {
-                            pos_in_list.map(|i| displayed_list.remove(i));
+                            self.remove_displayed_joined_room(
+                                &room_id,
+                                is_direct,
+                                num_unread_mentions,
+                                num_unread_messages,
+                            );
                         }
                     }
                     // If not a joined room, try to update invited room
@@ -659,24 +796,24 @@ impl RoomsList {
                             continue;
                         }
 
-                        // Remove the room from the previous list (direct or regular).
-                        let list_to_remove_from = if was_direct {
-                            &mut self.displayed_direct_rooms
-                        } else {
-                            &mut self.displayed_regular_rooms
-                        };
-                        list_to_remove_from.iter()
-                            .position(|r| r == &room_id)
-                            .map(|index| list_to_remove_from.remove(index));
-
                         // Update the room. If it should be displayed, add it to the proper list.
                         room.is_direct = is_direct;
-                        if should_display_room!(self, &room_id, room) {
-                            if is_direct {
-                                self.displayed_direct_rooms.push(room_id);
-                            } else {
-                                self.displayed_regular_rooms.push(room_id);
-                            }
+                        let num_unread_mentions = room.num_unread_mentions;
+                        let num_unread_messages = room.num_unread_messages;
+                        let should_display = should_display_room!(self, &room_id, room);
+                        self.remove_displayed_joined_room(
+                            &room_id,
+                            was_direct,
+                            num_unread_mentions,
+                            num_unread_messages,
+                        );
+                        if should_display {
+                            self.add_displayed_joined_room(
+                                room_id,
+                                is_direct,
+                                num_unread_mentions,
+                                num_unread_messages,
+                            );
                         }
                     } else {
                         error!("Error: couldn't find room {room_id} to update is_direct");
@@ -690,14 +827,12 @@ impl RoomsList {
 
                     if let Some(removed) = self.all_joined_rooms.remove(&room_id) {
                         log!("Removed room {room_id} from the list of all joined rooms, now has state {new_state:?}");
-                        let list_to_remove_from = if removed.is_direct {
-                            &mut self.displayed_direct_rooms
-                        } else {
-                            &mut self.displayed_regular_rooms
-                        };
-                        list_to_remove_from.iter()
-                            .position(|r| r == &room_id)
-                            .map(|index| list_to_remove_from.remove(index));
+                        self.remove_displayed_joined_room(
+                            &room_id,
+                            removed.is_direct,
+                            removed.num_unread_mentions,
+                            removed.num_unread_messages,
+                        );
                     }
                     else if let Some(_removed) = self.invited_rooms.borrow_mut().remove(&room_id) {
                         log!("Removed room {room_id} from the list of all invited rooms");
@@ -719,7 +854,12 @@ impl RoomsList {
                 RoomsListUpdate::ClearRooms => {
                     self.all_joined_rooms.clear();
                     self.displayed_direct_rooms.clear();
+                    self.displayed_direct_rooms_unread_mentions = 0;
+                    self.displayed_direct_rooms_unread_messages = 0;
                     self.displayed_regular_rooms.clear();
+                    self.displayed_regular_rooms_unread_mentions = 0;
+                    self.displayed_regular_rooms_unread_messages = 0;
+                    self.displayed_joined_room_ids.clear();
                     self.invited_rooms.borrow_mut().clear();
                     self.displayed_invited_rooms.clear();
                     self.update_status();
@@ -733,6 +873,25 @@ impl RoomsList {
                 RoomsListUpdate::Tags { room_id, new_tags } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         room.tags = new_tags;
+                        let is_direct = room.is_direct;
+                        let num_unread_mentions = room.num_unread_mentions;
+                        let num_unread_messages = room.num_unread_messages;
+                        let should_display = should_display_room!(self, &room_id, room);
+                        if should_display {
+                            self.add_displayed_joined_room(
+                                room_id,
+                                is_direct,
+                                num_unread_mentions,
+                                num_unread_messages,
+                            );
+                        } else {
+                            self.remove_displayed_joined_room(
+                                &room_id,
+                                is_direct,
+                                num_unread_mentions,
+                                num_unread_messages,
+                            );
+                        }
                     } else if let Some(_room) = self.invited_rooms.borrow().get(&room_id) {
                         log!("Ignoring updated tags update for invited room {room_id}");
                     } else {
@@ -746,24 +905,23 @@ impl RoomsList {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         room.is_tombstoned = true;
                         let is_direct = room.is_direct;
+                        let num_unread_mentions = room.num_unread_mentions;
+                        let num_unread_messages = room.num_unread_messages;
                         let should_display = should_display_room!(self, &room_id, room);
-                        let (pos_in_list, displayed_list) = if is_direct {
-                            (
-                                self.displayed_direct_rooms.iter().position(|r| r == &room_id),
-                                &mut self.displayed_direct_rooms,
-                            )
-                        } else {
-                            (
-                                self.displayed_regular_rooms.iter().position(|r| r == &room_id),
-                                &mut self.displayed_regular_rooms,
-                            )
-                        };
                         if should_display {
-                            if pos_in_list.is_none() {
-                                displayed_list.push(room_id);
-                            }
+                            self.add_displayed_joined_room(
+                                room_id,
+                                is_direct,
+                                num_unread_mentions,
+                                num_unread_messages,
+                            );
                         } else {
-                            pos_in_list.map(|i| displayed_list.remove(i));
+                            self.remove_displayed_joined_room(
+                                &room_id,
+                                is_direct,
+                                num_unread_mentions,
+                                num_unread_messages,
+                            );
                         }
                     } else {
                         warning!("Warning: couldn't find room {room_id} to update the tombstone status");
@@ -771,15 +929,17 @@ impl RoomsList {
                 }
                 RoomsListUpdate::HideRoom { room_id } => {
                     self.hidden_rooms.insert(room_id.clone());
-                    // Hiding a regular room is the most common case (e.g., after its successor is joined),
-                    // so we check that list first.
-                    if let Some(i) = self.displayed_regular_rooms.iter().position(|r| r == &room_id) {
-                        self.displayed_regular_rooms.remove(i);
-                    }
-                    else if let Some(i) = self.displayed_direct_rooms.iter().position(|r| r == &room_id) {
-                        self.displayed_direct_rooms.remove(i);
-                    }
-                    else if let Some(i) = self.displayed_invited_rooms.iter().position(|r| r == &room_id) {
+                    if let Some(room) = self.all_joined_rooms.get(&room_id) {
+                        let is_direct = room.is_direct;
+                        let num_unread_mentions = room.num_unread_mentions;
+                        let num_unread_messages = room.num_unread_messages;
+                        self.remove_displayed_joined_room(
+                            &room_id,
+                            is_direct,
+                            num_unread_mentions,
+                            num_unread_messages,
+                        );
+                    } else if let Some(i) = self.displayed_invited_rooms.iter().position(|r| r == &room_id) {
                         self.displayed_invited_rooms.remove(i);
                     }
                 }
@@ -917,10 +1077,15 @@ impl RoomsList {
     /// If `false`, the scroll position is preserved, unless it exceeds the new list length,
     /// in which case the logic in `draw_walk()` will limit it to the max valid index.
     fn update_displayed_rooms(&mut self, cx: &mut Cx, reset_scroll: bool) {
-        let (invited, regular, direct) = self.generate_displayed_rooms();
-        self.displayed_invited_rooms = invited;
-        self.displayed_regular_rooms = regular;
-        self.displayed_direct_rooms = direct;
+        let generated = self.generate_displayed_rooms();
+        self.displayed_invited_rooms = generated.invited;
+        self.displayed_regular_rooms = generated.regular;
+        self.displayed_direct_rooms = generated.direct;
+        self.displayed_joined_room_ids = generated.joined_room_ids;
+        self.displayed_regular_rooms_unread_mentions = generated.regular_unread_mentions;
+        self.displayed_regular_rooms_unread_messages = generated.regular_unread_messages;
+        self.displayed_direct_rooms_unread_mentions = generated.direct_unread_mentions;
+        self.displayed_direct_rooms_unread_messages = generated.direct_unread_messages;
 
         self.update_status();
 
@@ -932,24 +1097,38 @@ impl RoomsList {
     }
 
 
-    /// Generates a tuple of three kinds of displayed rooms (accounting for the current `display_filter`):
-    /// 1. displayed_invited_rooms
-    /// 2. displayed_regular_rooms
-    /// 3. displayed_direct_rooms
+    /// Generates the three kinds of displayed rooms (accounting for the current `display_filter`),
+    /// along with joined-room membership and unread-count totals.
     ///
     /// If `self.sort_fn` is `Some`, the rooms are ordered based on that function.
     /// Otherwise, the rooms are ordered based on `self.all_known_rooms_order` (the default).
-    fn generate_displayed_rooms(&self) -> (Vec<OwnedRoomId>,Vec<OwnedRoomId>, Vec<OwnedRoomId>) {
+    fn generate_displayed_rooms(&self) -> GeneratedDisplayedRooms {
         let mut new_displayed_invited_rooms = Vec::new();
         let mut new_displayed_regular_rooms = Vec::new();
         let mut new_displayed_direct_rooms = Vec::new();
+        let mut new_displayed_joined_room_ids = HashSet::new();
+        let mut regular_unread_mentions = 0_u64;
+        let mut regular_unread_messages = 0_u64;
+        let mut direct_unread_mentions = 0_u64;
+        let mut direct_unread_messages = 0_u64;
 
         let mut push_joined_room = |room_id: &OwnedRoomId, jr: &JoinedRoomInfo| {
             let room_id = room_id.clone();
+            if !new_displayed_joined_room_ids.insert(room_id.clone()) {
+                return;
+            }
             if jr.is_direct {
                 new_displayed_direct_rooms.push(room_id);
+                direct_unread_mentions = direct_unread_mentions
+                    .saturating_add(jr.num_unread_mentions);
+                direct_unread_messages = direct_unread_messages
+                    .saturating_add(jr.num_unread_messages);
             } else {
                 new_displayed_regular_rooms.push(room_id);
+                regular_unread_mentions = regular_unread_mentions
+                    .saturating_add(jr.num_unread_mentions);
+                regular_unread_messages = regular_unread_messages
+                    .saturating_add(jr.num_unread_messages);
             }
         };
 
@@ -988,7 +1167,16 @@ impl RoomsList {
             }
         }
 
-        (new_displayed_invited_rooms, new_displayed_regular_rooms, new_displayed_direct_rooms)
+        GeneratedDisplayedRooms {
+            invited: new_displayed_invited_rooms,
+            regular: new_displayed_regular_rooms,
+            direct: new_displayed_direct_rooms,
+            joined_room_ids: new_displayed_joined_room_ids,
+            regular_unread_mentions,
+            regular_unread_messages,
+            direct_unread_mentions,
+            direct_unread_messages,
+        }
     }
 
     /// Calculates the indexes in the PortalList where the headers and rooms should be drawn.
@@ -1284,9 +1472,14 @@ impl Widget for RoomsList {
                     self.displayed_invited_rooms.clear();
                     self.invited_rooms_indexes = Default::default();
                     self.displayed_direct_rooms.clear();
+                    self.displayed_direct_rooms_unread_mentions = 0;
+                    self.displayed_direct_rooms_unread_messages = 0;
                     self.direct_rooms_indexes = Default::default();
                     self.displayed_regular_rooms.clear();
+                    self.displayed_regular_rooms_unread_mentions = 0;
+                    self.displayed_regular_rooms_unread_messages = 0;
                     self.regular_rooms_indexes = Default::default();
+                    self.displayed_joined_room_ids.clear();
                     self.current_active_room = None;
                     self.max_known_rooms = None;
                     self.status = String::new();
@@ -1452,6 +1645,7 @@ impl Widget for RoomsList {
                         self.is_invited_rooms_header_expanded,
                         HeaderCategory::Invites,
                         self.displayed_invited_rooms.len() as u64,
+                        0,
                     );
                     item.draw_all(cx, &mut scope);
                 }
@@ -1475,9 +1669,8 @@ impl Widget for RoomsList {
                         cx,
                         self.is_direct_rooms_header_expanded,
                         HeaderCategory::DirectRooms,
-                        0,
-                        // TODO: sum up all the unread mentions in rooms
-                        // NOTE: this might be really slow, so we should maintain a running total of mentions in this struct
+                        self.displayed_direct_rooms_unread_mentions,
+                        self.displayed_direct_rooms_unread_messages,
                     );
                     item.draw_all(cx, &mut scope);
                 }
@@ -1515,9 +1708,8 @@ impl Widget for RoomsList {
                         cx,
                         self.is_regular_rooms_header_expanded,
                         HeaderCategory::RegularRooms,
-                        0,
-                        // TODO: sum up all the unread mentions in rooms.
-                        // NOTE: this might be really slow, so we should maintain a running total of mentions in this struct
+                        self.displayed_regular_rooms_unread_mentions,
+                        self.displayed_regular_rooms_unread_messages,
                     );
                     item.draw_all(cx, &mut scope);
                 }
