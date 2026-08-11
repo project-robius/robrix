@@ -18,6 +18,7 @@ use ruma::{OwnedRoomAliasId, room::JoinRuleSummary};
 use tokio::sync::mpsc::UnboundedSender;
 use crate::shared::avatar::{AvatarImage, AvatarState};
 use crate::shared::expand_arrow::ExpandArrow;
+use crate::shared::hover_highlight::handle_hover_hit_with_test;
 use crate::utils::replace_linebreaks_separators;
 /// The horizontal indent width (in pixels) per tree level.
 const TREE_INDENT_WIDTH: f64 = 44.0;
@@ -760,67 +761,41 @@ impl Widget for SubspaceEntry {
             self.redraw(cx);
         }
 
-        if let Event::ClearHover = event
-            && !self.buttons_shown_by_tap
-        {
-            self.animator_play(cx, ids!(bg_hover.off));
-        }
-
         // NOTE: Use child_by_path instead of widget tree-based lookups
         //       (e.g., self.view.view(), self.view.button()) because these
         //       fail for portal list items.
-        let buttons_view_ref = self.view.child_by_path(ids!(buttons_view));
-        // Clipped, to match the rect the hit system itself tests against.
-        let buttons_view_rect = buttons_view_ref.area().clipped_rect(cx);
-
-        // While the pointer is over our buttons we aren't makepad's hover owner,
-        // so it never tells us when the pointer leaves us for another entry.
-        if let Event::MouseMove(mm) = event
-            && !self.buttons_shown_by_tap
-            && !self.view.area().clipped_rect(cx).contains(mm.abs)
-            && !buttons_view_rect.contains(mm.abs)
-        {
-            self.unhover(cx);
-        }
-
+        let buttons_view_rect = self.view.child_by_path(ids!(buttons_view)).area().clipped_rect(cx);
         let are_buttons_visible = self.show_buttons_view;
-        match event.hits_with_test(cx, self.view.area(), |abs, rect, _| {
-            rect.contains(abs) && !(are_buttons_visible && buttons_view_rect.contains(abs))
-        }) {
-            Hit::FingerHoverIn(_) => {
-                self.animator_play(cx, ids!(bg_hover.on));
-                if !self.show_buttons_view {
-                    self.show_buttons_view = true;
-                    self.buttons_shown_by_tap = false;
-                    self.view.child_by_path(ids!(buttons_view)).set_visible(cx, true);
-                    self.redraw(cx);
-                }
-            }
-            // Occasionally there's an issue with Makepad hover events where hover in/out
-            // doesn't work as expected, so we double-check here.
-            Hit::FingerHoverOver(_) if !self.show_buttons_view => {
-                self.animator_play(cx, ids!(bg_hover.on));
-                self.show_buttons_view = true;
-                self.buttons_shown_by_tap = false;
-                self.view.child_by_path(ids!(buttons_view)).set_visible(cx, true);
+        let claim_before = event.pointer_claimed_area();
+
+        // Excluding the buttons from the hit test leaves them free to claim their
+        // own hover and presses; our highlight comes from the positional pass.
+        let hit = handle_hover_hit_with_test(
+            self,
+            cx,
+            event,
+            self.view.area(),
+            claim_before,
+            self.buttons_shown_by_tap,
+            |abs, rect, _| rect.contains(abs) && !(are_buttons_visible && buttons_view_rect.contains(abs)),
+        );
+
+        // The buttons follow the mouse highlight. Touch drives them through
+        // `buttons_shown_by_tap` instead, so a touch-down must not show them.
+        if matches!(event, Event::MouseMove(_) | Event::ClearHover)
+            && !self.buttons_shown_by_tap
+        {
+            let lit = self.animator_in_state(cx, ids!(bg_hover.on));
+            if lit != self.show_buttons_view {
+                self.show_buttons_view = lit;
+                self.view.child_by_path(ids!(buttons_view)).set_visible(cx, lit);
                 self.redraw(cx);
             }
-            Hit::FingerHoverOut(fe) => {
-                // When the mouse moves from the main SubspaceEntry area into the buttons_view,
-                // Makepad emits a HoverOut hit, but we don't want that to actually count as a hover-out
-                // because the mouse is still hovering over the buttons_view.
-                let entry_rect = self.view.area().rect(cx);
-                let is_over_buttons_view = self.show_buttons_view && buttons_view_rect.contains(fe.abs);
-                if !entry_rect.contains(fe.abs) && !is_over_buttons_view {
-                    self.unhover(cx);
-                }
-            }
+        }
+
+        match hit {
             Hit::FingerDown(_) => {
-                self.animator_play(cx, ids!(bg_hover.on));
                 cx.set_key_focus(self.view.area());
-            }
-            Hit::FingerMove(fe) if !fe.is_over && !self.buttons_shown_by_tap => {
-                self.animator_play(cx, ids!(bg_hover.off));
             }
             Hit::FingerUp(fe) => {
                 let is_tap = fe.is_over && fe.is_primary_hit() && fe.was_tap();
@@ -931,22 +906,14 @@ impl Widget for SubspaceEntry {
 
 impl SubspaceEntry {
     /// Clears the hover highlight and hides the buttons.
-    fn unhover(&mut self, cx: &mut Cx) {
-        self.animator_play(cx, ids!(bg_hover.off));
-        // The highlight can be on without the buttons, so only tear those down once.
-        if !self.show_buttons_view {
-            return;
-        }
-        self.show_buttons_view = false;
-        self.buttons_shown_by_tap = false;
-        self.view.child_by_path(ids!(buttons_view)).set_visible(cx, false);
-        self.redraw(cx);
-    }
-
     /// Toggles the buttons_view visibility for a touch tap.
     fn toggle_buttons_for_tap(&mut self, cx: &mut Cx) {
         if self.show_buttons_view {
-            self.unhover(cx);
+            self.animator_play(cx, ids!(bg_hover.off));
+            self.show_buttons_view = false;
+            self.buttons_shown_by_tap = false;
+            self.view.child_by_path(ids!(buttons_view)).set_visible(cx, false);
+            self.redraw(cx);
         } else {
             self.animator_play(cx, ids!(bg_hover.on));
             self.show_buttons_view = true;

@@ -13,6 +13,27 @@ pub fn handle_hover_hit<W: AnimatorImpl>(
     claim_before: Area,
     keep_hovered: bool,
 ) -> Hit {
+    handle_hover_hit_with_test(widget, cx, event, area, claim_before, keep_hovered,
+        |abs, rect, inset| Inset::rect_contains_with_inset(abs, rect, inset),
+    )
+}
+
+/// Same as [`handle_hover_hit()`], but with a custom hit test.
+///
+/// The test only narrows the returned hit; the highlight still covers the whole
+/// `area`, so a child that owns the pointer can't darken us.
+pub fn handle_hover_hit_with_test<W: AnimatorImpl, F>(
+    widget: &mut W,
+    cx: &mut Cx,
+    event: &Event,
+    area: Area,
+    claim_before: Area,
+    keep_hovered: bool,
+    hit_test: F,
+) -> Hit
+where
+    F: Fn(Vec2d, &Rect, &Option<Inset>) -> bool,
+{
     // Hover hits go to exactly one widget, so a child claiming them would leave
     // us dark (or stuck lit). Instead, light up whenever the pointer rests inside
     // us and any claim on it appeared during our own dispatch (us or a child).
@@ -38,7 +59,7 @@ pub fn handle_hover_hit<W: AnimatorImpl>(
         widget.animator_play(cx, ids!(bg_hover.off));
     }
 
-    let hit = event.hits(cx, area);
+    let hit = event.hits_with_test(cx, area, hit_test);
     match &hit {
         Hit::FingerHoverIn(_) | Hit::FingerDown(_) | Hit::FingerLongPress(_) => {
             widget.animator_play(cx, ids!(bg_hover.on));
