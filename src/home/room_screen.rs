@@ -33,7 +33,7 @@ use crate::{
     },
     room::{BasicRoomDetails, reply_preview::{CollapsiblePreviewRef, CollapsiblePreviewWidgetRefExt}, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
     shared::{
-        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
+        attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
     sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints}, utils::{self, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
@@ -1597,11 +1597,19 @@ impl RoomScreen {
                         // warning!("!!! Couldn't find new event with matching ID for ANY event currently visible in the portal list");
                     }
 
-                    // If new items were appended to the end of the timeline, show an unread messages badge on the jump to bottom button.
-                    if is_append && !portal_list.is_at_end() {
+                    // If the last event in the timeline was even partially visible, we auto-tail it to the end.
+                    let list_height = portal_list.area().rect(cx).size.y;
+                    let bottom_was_visible = tl.items.len().checked_sub(1).is_some_and(|last_id|
+                        portal_list.position_of_item(cx, last_id).is_some_and(|pos| pos < list_height)
+                    );
+                    if is_append {
+                        if bottom_was_visible {
+                            portal_list.smooth_scroll_to_end(cx, SCROLL_TO_BOTTOM_SPEED, None);
+                        }
+                        // Otherwise the append is off-screen, so flag it on the jump to bottom button.
                         // We only show unread message badges on the jump to bottom button for main room timelines,
                         // because the matrix SDK doesn't currently support querying unread message counts for threads.
-                        if matches!(tl.kind, TimelineKind::MainRoom { .. }) {
+                        else if matches!(tl.kind, TimelineKind::MainRoom { .. }) {
                             // Immediately show the unread badge with no count while we fetch the actual count in the background.
                             jump_to_bottom_button.show_unread_message_badge(cx, UnreadMessageCount::Unknown);
                             submit_async_request(MatrixRequest::GetNumberUnreadMessages{
@@ -2823,6 +2831,7 @@ impl RoomScreen {
         log!("Saving state for room {:?}\n\t{:?}\n\tfirst_id: {:?}, scroll: {}", self.room_name_id.as_ref().map(|r| r.display_name()), self.timeline_kind, portal_list.first_id(), portal_list.scroll_position());
         let state = SavedState {
             first_index_and_scroll: Some((portal_list.first_id(), portal_list.scroll_position())),
+            was_at_end: portal_list.is_at_end(),
             room_input_bar_state: room_input_bar.save_state(),
         };
         tl.saved_state = state;
@@ -2839,6 +2848,7 @@ impl RoomScreen {
     fn restore_state(&mut self, cx: &mut Cx, tl_state: &mut TimelineUiState) {
         let SavedState {
             first_index_and_scroll,
+            was_at_end,
             room_input_bar_state,
         } = &mut tl_state.saved_state;
 
@@ -2847,7 +2857,7 @@ impl RoomScreen {
         if let Some((first_index, scroll_from_first_id)) = first_index_and_scroll {
             log!("Restoring state for room {:?}: first_id: {:?}, scroll: {}", self.room_name_id, first_index, scroll_from_first_id);
             portal_list.set_first_id_and_scroll(*first_index, *scroll_from_first_id);
-            portal_list.set_tail_range(false);
+            portal_list.set_tail_range(*was_at_end);
         } else {
             // If the first index is not set, then the timeline has not yet been scrolled by the user,
             // so we reset the portal list's scroll position and set it to "tail" (track) the bottom.
@@ -3502,6 +3512,8 @@ struct SavedState {
     /// If this is `None`, then the timeline has not yet been scrolled by the user
     /// and the portal list will be set to "tail" (track) the bottom of the list.
     first_index_and_scroll: Option<(usize, f64)>,
+    /// Whether the timeline was tracking the end of the list.
+    was_at_end: bool,
     /// The state of all UI elements in the `RoomInputBar`.
     room_input_bar_state: RoomInputBarState,
 }
