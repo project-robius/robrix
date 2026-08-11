@@ -5450,8 +5450,8 @@ pub struct Message {
     /// Cached so `set_data` can reset_hover only on the button that just
     /// transitioned into visibility, not on every redraw.
     #[rust] download_state: DownloadDisplayState,
-    /// Uid of the touch whose press was claimed by us or a descendant,
-    /// so a later raw `LongPress` can be attributed to this message.
+    /// The UID of the touch that was claimed by this message or one of its children.
+    /// This is used to determine if a future long press was on this message.
     #[rust] pressed_touch_uid: Option<u64>,
 
     // Belowhere: cached references to child widgets, for efficiency.
@@ -5483,7 +5483,7 @@ impl Widget for Message {
         let room_screen_widget_uid = d.room_screen_widget_uid;
         let thread_root_event_id = d.thread_root_event_id.clone();
 
-        // Claim state at our dispatch entry; any claim appearing after this came from within us.
+        // determine if any other ancestor widget has already claimed this pointer event.
         let claim_before = event.pointer_claimed_area();
 
         // A right-click or long-press anywhere on a message widget should show its context menu,
@@ -5540,8 +5540,8 @@ impl Widget for Message {
                     };
                     cx.widget_action(room_screen_widget_uid, action);
                 }
-                // We captured this press, so the body's hit test below won't see the
-                // release; settle here or a touch tap would leave us lit forever.
+                // since we already captured this finger-up, the hit test on the message body itself
+                // won't result in anything, so we have to un-set the hover here.
                 if !self.is_context_menu_open {
                     self.animator_toggle(cx, fe.device.has_hovers() && fe.is_over, Animate::Yes, ids!(bg_hover.on), ids!(bg_hover.off));
                 }
@@ -5637,11 +5637,8 @@ impl Widget for Message {
             }
         }
 
-        // Everything else resets itself on ClearHover; the thread summary's color
-        // is set imperatively, so it's ours to reset.
-        if let Event::ClearHover = event
-            && thread_root_event_id.is_some()
-        {
+        // TODO: use regular animator states for the thread root summary hover too.
+        if let Event::ClearHover = event && thread_root_event_id.is_some() {
             let mut summary = self.thread_root_summary_view(cx);
             script_apply_eval!(cx, summary, {
                 draw_bg.color: #(COLOR_THREAD_SUMMARY_BG)
@@ -5649,13 +5646,12 @@ impl Widget for Message {
         }
 
         if let Event::Actions(actions) = event {
-            if self.is_context_menu_open
-                && actions.iter().any(|a| a.downcast_ref::<ContextMenuClosed>().is_some())
-            {
-                self.is_context_menu_open = false;
-            }
-
             for action in actions {
+                if self.is_context_menu_open && action.downcast_ref::<ContextMenuClosed>().is_some() {
+                    self.is_context_menu_open = false;
+                    continue;
+                }
+
                 match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast_ref() {
                     MessageAction::HighlightMessage(id) if id == &self.details.as_ref().unwrap().item_id => { // guaranteed to be Some()
                         self.animator_play(cx, ids!(highlight.on));
@@ -5776,11 +5772,8 @@ impl Message {
         let prev_section_visible = self.download_info.is_some();
         let prev_state = self.download_state;
 
-        // A reused widget may be given a different message while it holds hover
-        // state, the menu-open latch, or an in-flight press; none belong to the new message.
-        if self.details.as_ref()
-            .is_none_or(|d| d.timeline_event_id != details.timeline_event_id)
-        {
+        // If the message details changed, reset any UI state that belongs to the old message.
+        if self.details.as_ref().is_none_or(|d| d.timeline_event_id != details.timeline_event_id) {
             self.is_context_menu_open = false;
             self.pressed_touch_uid = None;
             self.animator_cut(cx, ids!(bg_hover.off));

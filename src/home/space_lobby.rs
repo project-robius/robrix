@@ -659,7 +659,7 @@ impl Widget for SpaceLobbyEntry {
                 if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
                     cx.action(SpaceLobbyAction::SpaceLobbyEntryClicked);
                 }
-                // A released hit clears all hovers, unless the mouse is still hovering over us.
+                // A finger-up clears all hovers unless the mouse is still over us.
                 self.animator_toggle(cx, fe.device.has_hovers() && fe.is_over, Animate::Yes, ids!(bg_hover.on), ids!(bg_hover.off));
             }
             _ => {}
@@ -768,8 +768,7 @@ impl Widget for SubspaceEntry {
         let are_buttons_visible = self.show_buttons_view;
         let claim_before = event.pointer_claimed_area();
 
-        // Excluding the buttons from the hit test leaves them free to claim their
-        // own hover and presses; our highlight comes from the positional pass.
+        // We exclude the buttons from the hit test so that they can handle their own hits.
         let hit = handle_hover_hit_with_test(
             self,
             cx,
@@ -780,15 +779,14 @@ impl Widget for SubspaceEntry {
             |abs, rect, _| rect.contains(abs) && !(are_buttons_visible && buttons_view_rect.contains(abs)),
         );
 
-        // The buttons follow the mouse highlight. Touch drives them through
-        // `buttons_shown_by_tap` instead, so a touch-down must not show them.
+        // Show buttons based on the mouse hover (if they're not shown via a prior touch tap).
         if matches!(event, Event::MouseMove(_) | Event::ClearHover)
             && !self.buttons_shown_by_tap
         {
-            let lit = self.animator_in_state(cx, ids!(bg_hover.on));
-            if lit != self.show_buttons_view {
-                self.show_buttons_view = lit;
-                self.view.child_by_path(ids!(buttons_view)).set_visible(cx, lit);
+            let is_hovered = self.animator_in_state(cx, ids!(bg_hover.on));
+            if is_hovered != self.show_buttons_view {
+                self.show_buttons_view = is_hovered;
+                self.view.child_by_path(ids!(buttons_view)).set_visible(cx, is_hovered);
                 self.redraw(cx);
             }
         }
@@ -802,7 +800,7 @@ impl Widget for SubspaceEntry {
                 let is_within_buttons_view = self.show_buttons_view
                     && self.view.child_by_path(ids!(buttons_view)).area().rect(cx).contains(fe.abs);
                 if !is_tap {
-                    // Not a tap: nothing to activate, just settle the hover below.
+                    // if it's not a tap, do nothing.
                 }
                 else if is_within_buttons_view {
                     // Let individual button handlers deal with taps on the buttons.
@@ -851,9 +849,7 @@ impl Widget for SubspaceEntry {
                         );
                     }
                 }
-                // A released hit clears all hovers, unless the mouse is still over
-                // us (the buttons_view counts, though our hit test excludes it)
-                // or the buttons were just toggled visible by this tap.
+                // A finger-up clears all hovers, unless the mouse is still over us (including the button view).
                 if !self.buttons_shown_by_tap {
                     let still_over = fe.is_over || is_within_buttons_view;
                     self.animator_toggle(cx, fe.device.has_hovers() && still_over, Animate::Yes, ids!(bg_hover.on), ids!(bg_hover.off));

@@ -128,9 +128,8 @@ impl Widget for AvatarRow {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // Clear the area when we draw nothing, so a recycled row doesn't
-        // keep hit-testing against the previous message's avatars.
         let Some(read_receipts) = self.read_receipts.as_ref().filter(|r| !r.is_empty()) else {
+            // If we drew nothing, clear the widget's area
             self.area = Area::Empty;
             return DrawStep::done();
         };

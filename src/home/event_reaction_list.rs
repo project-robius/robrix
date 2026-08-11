@@ -328,8 +328,7 @@ impl ReactionListRef {
         inner.timeline_event_id = Some(timeline_event_item_id.clone());
     }
 
-    /// Whether `abs` is within one of the reaction buttons.
-    /// The list is `width: Fill`, so testing its own area would be far too wide.
+    /// Returns `true` if the `abs` coord is within one of the reaction buttons.
     pub fn contains_button(&self, cx: &Cx, abs: DVec2) -> bool {
         let Some(inner) = self.borrow() else { return false };
         inner.children.iter().any(|(button, _)|

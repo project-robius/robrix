@@ -229,6 +229,7 @@ pub struct LinkPreview {
 
 impl Widget for LinkPreview {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // clear hovers on every link preview card and the show more/fewer buttons
         if let Event::ClearHover = event {
             for item in self.children.iter() {
                 reset_hover(cx, item);

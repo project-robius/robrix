@@ -352,8 +352,8 @@ impl Widget for RoomsListEntryContent {
             let area = self.view.area();
             let claim_before = event.pointer_claimed_area();
             let hit = handle_hover_hit(self, cx, event, area, claim_before, self.is_context_menu_open);
-            // Invited rooms have no context menu, so don't emit secondary clicks
-            // (nothing would consume them) or latch `is_context_menu_open`.
+            // TODO: Invited rooms have no context menu, so don't emit secondary clicks.
+            //       We should add a context menu for invited rooms.
             match hit {
                 Hit::FingerDown(fe) => {
                     cx.set_key_focus(area);
@@ -396,9 +396,8 @@ impl Widget for RoomsListEntryContent {
 }
 
 impl RoomsListEntryContent {
-    /// A reused widget may be given a different room while it holds hover state
-    /// or the menu-open latch; neither belongs to the new room.
     fn set_room(&mut self, cx: &mut Cx, room_id: &RoomId, is_invited: bool) {
+        // If the room ID changed, reset any UI state that belongs to the previous room.
         if self.room_id.as_deref() != Some(room_id) {
             self.is_context_menu_open = false;
             self.animator_cut(cx, ids!(bg_hover.off));

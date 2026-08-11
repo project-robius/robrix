@@ -2,9 +2,12 @@
 
 use makepad_widgets::*;
 
-/// Hit-tests `area`, drives the widget's `bg_hover` animator, and returns the hit.
-/// `claim_before` is `event.pointer_claimed_area()` snapshotted at the widget's handle_event entry.
-/// Pass `true` for `keep_hovered` to leave the hover on even if it should be off.
+/// Hit-tests the given `area`, drives the widget's `bg_hover` animator, and returns the hit.
+///
+/// The `claim_before` area should come from `event.pointer_claimed_area()`, which should've been
+/// obtained *before* the widget forwarded the event to its children (e.g., at the start of `handle_event()`).
+///
+/// If `keep_hovered` is `true`, the hover will be left on even if the hit-test says it should be off.
 pub fn handle_hover_hit<W: AnimatorImpl>(
     widget: &mut W,
     cx: &mut Cx,
@@ -26,8 +29,8 @@ pub fn handle_hover_hit<W: AnimatorImpl>(
 
 /// Same as [`handle_hover_hit()`], but with a custom hit test.
 ///
-/// The test only narrows the returned hit; the highlight still covers the whole
-/// `area`, so a child that owns the pointer can't darken us.
+/// The `hit_test` fn only narrows the returned hit, it doesn't affect
+/// the area that may be hovered.
 pub fn handle_hover_hit_with_test<W: AnimatorImpl, F>(
     widget: &mut W,
     cx: &mut Cx,
@@ -40,9 +43,10 @@ pub fn handle_hover_hit_with_test<W: AnimatorImpl, F>(
 where
     F: Fn(Vec2d, &Rect, &Option<Inset>) -> bool,
 {
-    // Hover hits go to exactly one widget, so a child claiming them would leave
-    // us dark (or stuck lit). Instead, light up whenever the pointer rests inside
-    // us and any claim on it appeared during our own dispatch (us or a child).
+    // A hover hit can only be delivered to exactly one widget, so if a child claimed it
+    // then that would leave the given `widget` not hovered.
+    // Here, we want to activate the hover for the widget even if a child claimed it,
+    // but not if an ancestor widget claimed it.
     if let Event::MouseMove(mm) = event {
         let rect = area.clipped_rect(cx);
         if !rect.contains(mm.abs) {
@@ -53,15 +57,12 @@ where
             if claim_before.is_empty() {
                 widget.animator_play(cx, ids!(bg_hover.on));
             } else if !keep_hovered {
-                // A claim predating our dispatch means an overlay above us owns the pointer.
                 widget.animator_play(cx, ids!(bg_hover.off));
             }
         }
     }
 
-    if let Event::ClearHover = event
-        && !keep_hovered
-    {
+    if let Event::ClearHover = event && !keep_hovered {
         widget.animator_play(cx, ids!(bg_hover.off));
     }
 
@@ -70,7 +71,6 @@ where
         Hit::FingerHoverIn(_) | Hit::FingerDown(_) | Hit::FingerLongPress(_) => {
             widget.animator_play(cx, ids!(bg_hover.on));
         }
-        // Touch sends no mouse moves, so a drag off of us is handled here.
         Hit::FingerMove(fe) if !keep_hovered && !fe.is_over => {
             widget.animator_play(cx, ids!(bg_hover.off));
         }
