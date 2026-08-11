@@ -113,6 +113,7 @@ pub struct CollapsibleHeader {
     #[rust(true)] is_expanded: bool,
     #[rust] category: HeaderCategory,
     #[rust] num_unread_mentions: u64,
+    #[rust] num_unread_messages: u64,
 }
 
 impl Widget for CollapsibleHeader {
@@ -140,7 +141,7 @@ impl Widget for CollapsibleHeader {
         self.view.child_by_path(ids!(label)).set_text(cx, self.category.as_str());
         self.view.child_by_path(ids!(unread_badge))
             .as_unread_badge()
-            .update_counts(false, self.num_unread_mentions, 0);
+            .update_counts(false, self.num_unread_mentions, self.num_unread_messages);
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -169,11 +170,13 @@ impl CollapsibleHeaderRef {
         is_expanded: bool,
         category: HeaderCategory,
         num_unread_mentions: u64,
+        num_unread_messages: u64,
     ) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.is_expanded = is_expanded;
             inner.category = category;
             inner.num_unread_mentions = num_unread_mentions;
+            inner.num_unread_messages = num_unread_messages;
         }
     }
 }
