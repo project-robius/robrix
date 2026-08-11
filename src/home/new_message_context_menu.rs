@@ -556,6 +556,7 @@ impl NewMessageContextMenu {
         cx.revert_key_focus();
         cx.unblock_scrolling();
         cx.action(ContextMenuClosed);
+        cx.clear_all_hovers();
         self.redraw(cx);
     }
 }

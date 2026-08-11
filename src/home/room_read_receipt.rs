@@ -75,6 +75,7 @@ pub struct AvatarRow {
     label: Option<LabelRef>,
     /// The area of the widget
     #[redraw]
+    #[area]
     #[rust]
     area: Area,
     /// The read receipts for this row
@@ -127,12 +128,12 @@ impl Widget for AvatarRow {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let Some(read_receipts) = &self.read_receipts else {
+        // Clear the area when we draw nothing, so a recycled row doesn't
+        // keep hit-testing against the previous message's avatars.
+        let Some(read_receipts) = self.read_receipts.as_ref().filter(|r| !r.is_empty()) else {
+            self.area = Area::Empty;
             return DrawStep::done();
         };
-        if read_receipts.is_empty() {
-            return DrawStep::done();
-        }
         cx.begin_turtle(walk, Layout::default());
         for (avatar_ref, _) in self.buttons.iter_mut() {
             let _ = avatar_ref.draw(cx, scope);

@@ -1,5 +1,5 @@
 use makepad_widgets::*;
-use matrix_sdk::ruma::OwnedRoomId;
+use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 
 use crate::{
     room::FetchedRoomAvatar,
@@ -316,8 +316,10 @@ pub struct RoomsListEntryContent {
 
     #[rust] room_id: Option<OwnedRoomId>,
 
-    /// `True` while a context menu that we opened is being shown.
+    /// `true` while a context menu that we opened is being shown.
     #[rust] is_context_menu_open: bool,
+    /// Whether this entry currently shows an invited (not joined) room.
+    #[rust] is_invited: bool,
 
     /// The preview colors that were last drawn for this entry.
     /// * Some(true): this entry was last drawn as selected.
@@ -340,36 +342,38 @@ impl Widget for RoomsListEntryContent {
             && actions.iter().any(|a| a.downcast_ref::<ContextMenuClosed>().is_some())
         {
             self.is_context_menu_open = false;
-            self.animator_play(cx, ids!(bg_hover.off));
         }
 
         // We handle hits on this widget first to ensure that any clicks on it
         // will just select the room, rather than resulting in a click on any child view
         // within the RoomsListEntry content itself, such as links or avatars.
-        if self.room_id.is_some() {
+        if let Some(room_id) = self.room_id.clone() {
             let uid = self.widget_uid();
             let area = self.view.area();
-            let hit = handle_hover_hit(self, cx, event, area, self.is_context_menu_open);
+            let claim_before = event.pointer_claimed_area();
+            let hit = handle_hover_hit(self, cx, event, area, claim_before, self.is_context_menu_open);
+            // Invited rooms have no context menu, so don't emit secondary clicks
+            // (nothing would consume them) or latch `is_context_menu_open`.
             match hit {
                 Hit::FingerDown(fe) => {
                     cx.set_key_focus(area);
-                    if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
+                    if !self.is_invited && fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                         self.is_context_menu_open = true;
                         cx.widget_action(
                             uid,
-                            RoomsListEntryAction::SecondaryClicked(self.room_id.clone().unwrap(), fe.abs),
+                            RoomsListEntryAction::SecondaryClicked(room_id, fe.abs),
                         );
                     }
                 }
-                Hit::FingerLongPress(fe) => {
+                Hit::FingerLongPress(fe) if !self.is_invited => {
                     self.is_context_menu_open = true;
                     cx.widget_action(
                         uid,
-                        RoomsListEntryAction::SecondaryClicked(self.room_id.clone().unwrap(), fe.abs),
+                        RoomsListEntryAction::SecondaryClicked(room_id, fe.abs),
                     );
                 }
                 Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                    cx.widget_action(uid, RoomsListEntryAction::PrimaryClicked(self.room_id.clone().unwrap()));
+                    cx.widget_action(uid, RoomsListEntryAction::PrimaryClicked(room_id));
                 }
                 _ => { }
             }
@@ -380,10 +384,10 @@ impl Widget for RoomsListEntryContent {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if let Some(joined_room_info) = scope.props.get::<JoinedRoomInfo>() {
-            self.room_id = Some(joined_room_info.room_name_id.room_id().clone());
+            self.set_room(cx, joined_room_info.room_name_id.room_id(), false);
             self.draw_joined_room(cx, joined_room_info);
         } else if let Some(invited_room_info) = scope.props.get::<InvitedRoomInfo>() {
-            self.room_id = Some(invited_room_info.room_name_id.room_id().clone());
+            self.set_room(cx, invited_room_info.room_name_id.room_id(), true);
             self.draw_invited_room(cx, invited_room_info);
         }
 
@@ -392,6 +396,17 @@ impl Widget for RoomsListEntryContent {
 }
 
 impl RoomsListEntryContent {
+    /// A reused widget may be given a different room while it holds hover state
+    /// or the menu-open latch; neither belongs to the new room.
+    fn set_room(&mut self, cx: &mut Cx, room_id: &RoomId, is_invited: bool) {
+        if self.room_id.as_deref() != Some(room_id) {
+            self.is_context_menu_open = false;
+            self.animator_cut(cx, ids!(bg_hover.off));
+            self.room_id = Some(room_id.to_owned());
+        }
+        self.is_invited = is_invited;
+    }
+
     /// Populates this RoomsListEntry with info about a joined room.
     pub fn draw_joined_room(
         &mut self,

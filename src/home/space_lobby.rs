@@ -162,7 +162,7 @@ script_mod! {
         }
 
         animator: Animator{
-            hover: {
+            bg_hover: {
                 default: @off
                 off: AnimatorState{
                     from: {all: Forward {duration: 0.15}}
@@ -270,7 +270,7 @@ script_mod! {
         draw_bg +: {
             hover: instance(0.0)
             color: instance(#fff)
-            color_hover: instance(#f5f5f5)
+            color_hover: instance(COLOR_LIST_ITEM_BG_HOVER)
             pixel: fn() {
                 return mix(self.color, self.color_hover, self.hover);
             }
@@ -399,7 +399,7 @@ script_mod! {
         tree_lines := mod.widgets.TreeLines {}
 
         animator: Animator{
-            hover: {
+            bg_hover: {
                 default: @off
                 off: AnimatorState{ from: {all: Forward {duration: 0.1}}, apply: { draw_bg: {hover: 0.0} } }
                 on: AnimatorState{ from: {all: Snap}, apply: { draw_bg: {hover: 1.0} } }
@@ -633,28 +633,34 @@ impl Widget for SpaceLobbyEntry {
             self.redraw(cx);
         }
 
+        if let Event::ClearHover = event {
+            self.animator_play(cx, ids!(bg_hover.off));
+        }
+
         let area = self.draw_bg.area();
         match event.hits(cx, area) {
             Hit::FingerHoverIn(_) => {
-                self.animator_play(cx, ids!(hover.on));
+                self.animator_play(cx, ids!(bg_hover.on));
             }
             Hit::FingerHoverOut(_) => {
-                self.animator_play(cx, ids!(hover.off));
+                self.animator_play(cx, ids!(bg_hover.off));
             }
             Hit::FingerDown(_fe) => {
-                self.animator_play(cx, ids!(hover.down));
+                self.animator_play(cx, ids!(bg_hover.down));
             }
             Hit::FingerLongPress(_lp) => {
-                self.animator_play(cx, ids!(hover.down));
+                self.animator_play(cx, ids!(bg_hover.down));
             }
-            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                self.animator_play(cx, ids!(hover.on));
-                cx.action(SpaceLobbyAction::SpaceLobbyEntryClicked);
+            Hit::FingerMove(fe) if !fe.is_over => {
+                self.animator_play(cx, ids!(bg_hover.off));
             }
-            Hit::FingerUp(fe) if !fe.is_over => {
-                self.animator_play(cx, ids!(hover.off));
+            Hit::FingerUp(fe) => {
+                if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
+                    cx.action(SpaceLobbyAction::SpaceLobbyEntryClicked);
+                }
+                // A released hit clears all hovers, unless the mouse is still hovering over us.
+                self.animator_toggle(cx, fe.device.has_hovers() && fe.is_over, Animate::Yes, ids!(bg_hover.on), ids!(bg_hover.off));
             }
-            Hit::FingerMove(_fe) => { }
             _ => {}
         }
     }
@@ -754,6 +760,12 @@ impl Widget for SubspaceEntry {
             self.redraw(cx);
         }
 
+        if let Event::ClearHover = event
+            && !self.buttons_shown_by_tap
+        {
+            self.animator_play(cx, ids!(bg_hover.off));
+        }
+
         // NOTE: Use child_by_path instead of widget tree-based lookups
         //       (e.g., self.view.view(), self.view.button()) because these
         //       fail for portal list items.
@@ -764,7 +776,7 @@ impl Widget for SubspaceEntry {
             rect.contains(abs) && !(are_buttons_visible && buttons_view_rect.contains(abs))
         }) {
             Hit::FingerHoverIn(_) => {
-                self.animator_play(cx, ids!(hover.on));
+                self.animator_play(cx, ids!(bg_hover.on));
                 if !self.show_buttons_view {
                     self.show_buttons_view = true;
                     self.buttons_shown_by_tap = false;
@@ -775,7 +787,7 @@ impl Widget for SubspaceEntry {
             // Occasionally there's an issue with Makepad hover events where hover in/out
             // doesn't work as expected, so we double-check here.
             Hit::FingerHoverOver(_) if !self.show_buttons_view => {
-                self.animator_play(cx, ids!(hover.on));
+                self.animator_play(cx, ids!(bg_hover.on));
                 self.show_buttons_view = true;
                 self.buttons_shown_by_tap = false;
                 self.view.child_by_path(ids!(buttons_view)).set_visible(cx, true);
@@ -788,7 +800,7 @@ impl Widget for SubspaceEntry {
                 let entry_rect = self.view.area().rect(cx);
                 let is_over_buttons_view = self.show_buttons_view && buttons_view_rect.contains(fe.abs);
                 if !entry_rect.contains(fe.abs) && !is_over_buttons_view {
-                    self.animator_play(cx, ids!(hover.off));
+                    self.animator_play(cx, ids!(bg_hover.off));
                     self.show_buttons_view = false;
                     self.buttons_shown_by_tap = false;
                     self.view.child_by_path(ids!(buttons_view)).set_visible(cx, false);
@@ -796,12 +808,20 @@ impl Widget for SubspaceEntry {
                 }
             }
             Hit::FingerDown(_) => {
+                self.animator_play(cx, ids!(bg_hover.on));
                 cx.set_key_focus(self.view.area());
             }
-            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+            Hit::FingerMove(fe) if !fe.is_over && !self.buttons_shown_by_tap => {
+                self.animator_play(cx, ids!(bg_hover.off));
+            }
+            Hit::FingerUp(fe) => {
+                let is_tap = fe.is_over && fe.is_primary_hit() && fe.was_tap();
                 let is_within_buttons_view = self.show_buttons_view
                     && self.view.child_by_path(ids!(buttons_view)).area().rect(cx).contains(fe.abs);
-                if is_within_buttons_view {
+                if !is_tap {
+                    // Not a tap: nothing to activate, just settle the hover below.
+                }
+                else if is_within_buttons_view {
                     // Let individual button handlers deal with taps on the buttons.
                 }
                 // On touch devices, tapping on the avatar or to its left
@@ -847,6 +867,13 @@ impl Widget for SubspaceEntry {
                             SubspaceEntryAction::RoomClicked { room_id: room_id.clone() },
                         );
                     }
+                }
+                // A released hit clears all hovers, unless the mouse is still over
+                // us (the buttons_view counts, though our hit test excludes it)
+                // or the buttons were just toggled visible by this tap.
+                if !self.buttons_shown_by_tap {
+                    let still_over = fe.is_over || is_within_buttons_view;
+                    self.animator_toggle(cx, fe.device.has_hovers() && still_over, Animate::Yes, ids!(bg_hover.on), ids!(bg_hover.off));
                 }
             }
             _ => {}
@@ -898,12 +925,12 @@ impl SubspaceEntry {
     /// Toggles the buttons_view visibility for a touch tap.
     fn toggle_buttons_for_tap(&mut self, cx: &mut Cx) {
         if self.show_buttons_view {
-            self.animator_play(cx, ids!(hover.off));
+            self.animator_play(cx, ids!(bg_hover.off));
             self.show_buttons_view = false;
             self.buttons_shown_by_tap = false;
             self.view.child_by_path(ids!(buttons_view)).set_visible(cx, false);
         } else {
-            self.animator_play(cx, ids!(hover.on));
+            self.animator_play(cx, ids!(bg_hover.on));
             self.show_buttons_view = true;
             self.buttons_shown_by_tap = true;
             self.view.child_by_path(ids!(buttons_view)).set_visible(cx, true);

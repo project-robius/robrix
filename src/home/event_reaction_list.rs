@@ -133,7 +133,7 @@ impl Widget for ReactionList {
         for (button, _) in self.children.iter_mut() {
             let _ = button.draw(cx, scope);
         }
-        cx.end_turtle();
+        cx.end_turtle_with_area(&mut self.area);
         DrawStep::done()
     }
 
@@ -326,6 +326,15 @@ impl ReactionListRef {
         }
         inner.timeline_kind = Some(timeline_kind.clone());
         inner.timeline_event_id = Some(timeline_event_item_id.clone());
+    }
+
+    /// Whether `abs` is within one of the reaction buttons.
+    /// The list is `width: Fill`, so testing its own area would be far too wide.
+    pub fn contains_button(&self, cx: &Cx, abs: DVec2) -> bool {
+        let Some(inner) = self.borrow() else { return false };
+        inner.children.iter().any(|(button, _)|
+            button.area().clipped_rect(cx).contains(abs)
+        )
     }
 
     /// Returns any `RoomScreenTooltipActions` that occurred in the given list of `actions`.

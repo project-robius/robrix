@@ -346,9 +346,7 @@ impl MatchEvent for App {
                 continue;
             }
 
-            // Hide the tooltip when the context menu is closed (since we're clearing hovers).
             if action.downcast_ref::<ContextMenuClosed>().is_some() {
-                self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
                 continue;
             }
 

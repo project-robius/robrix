@@ -1,45 +1,39 @@
 //! Shared logic for handling gray hover/press highlights for list items.
 
 use makepad_widgets::*;
-use makepad_widgets::makepad_platform::event::finger::TouchState;
 
-/// Hit-tests `area`, drives the widget's `hover` animator, and returns the hit.
-///
+/// Hit-tests `area`, drives the widget's `bg_hover` animator, and returns the hit.
+/// `claim_before` is `event.pointer_claimed_area()` snapshotted at the widget's handle_event entry.
 /// Pass `true` for `keep_hovered` to leave the hover on even if it should be off.
-///
-/// Note the animator group is `bg_hover`, not `hover`: `View` drives its own
-/// `hover` group off any hit a child steals, which would fight us.
 pub fn handle_hover_hit<W: AnimatorImpl>(
     widget: &mut W,
     cx: &mut Cx,
     event: &Event,
     area: Area,
+    claim_before: Area,
     keep_hovered: bool,
 ) -> Hit {
-    // Drive from the mouse position, not from hover hits: a child widget steals those,
-    // and scrolling slides us off the area the hover was recorded against.
+    // Hover hits go to exactly one widget, so a child claiming them would leave
+    // us dark (or stuck lit). Instead, light up whenever the pointer rests inside
+    // us and any claim on it appeared during our own dispatch (us or a child).
     if let Event::MouseMove(mm) = event {
         let rect = area.clipped_rect(cx);
         if !rect.contains(mm.abs) {
             if !keep_hovered {
                 widget.animator_play(cx, ids!(bg_hover.off));
             }
-        }
-        // Whatever claimed a move inside our rect is us or a child, unless it's
-        // layered on top, which is always bigger. Stay dark under a menu or modal.
-        else {
-            let claimed = mm.handled.get().rect(cx).size;
-            if claimed.x <= rect.size.x && claimed.y <= rect.size.y {
+        } else if cx.fingers.first_mouse_button.is_none() {
+            if claim_before.is_empty() {
                 widget.animator_play(cx, ids!(bg_hover.on));
+            } else if !keep_hovered {
+                // A claim predating our dispatch means an overlay above us owns the pointer.
+                widget.animator_play(cx, ids!(bg_hover.off));
             }
         }
     }
 
-    // Touch has no mouse moves, and a child may have captured the press, so our own
-    // FingerUp below can't be relied on. Any release ends the hover.
-    if !keep_hovered
-        && let Event::TouchUpdate(tu) = event
-        && tu.touches.iter().any(|t| t.state == TouchState::Stop)
+    if let Event::ClearHover = event
+        && !keep_hovered
     {
         widget.animator_play(cx, ids!(bg_hover.off));
     }
@@ -49,7 +43,7 @@ pub fn handle_hover_hit<W: AnimatorImpl>(
         Hit::FingerHoverIn(_) | Hit::FingerDown(_) | Hit::FingerLongPress(_) => {
             widget.animator_play(cx, ids!(bg_hover.on));
         }
-        // Touch sends no mouse moves, so it needs the drag-off case handled here.
+        // Touch sends no mouse moves, so a drag off of us is handled here.
         Hit::FingerMove(fe) if !keep_hovered && !fe.is_over => {
             widget.animator_play(cx, ids!(bg_hover.off));
         }

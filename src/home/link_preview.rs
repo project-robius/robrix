@@ -229,6 +229,14 @@ pub struct LinkPreview {
 
 impl Widget for LinkPreview {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if let Event::ClearHover = event {
+            for item in self.children.iter() {
+                reset_hover(cx, item);
+            }
+            self.view.button(cx, ids!(collapsible_buttons.expand_button)).reset_hover(cx);
+            self.view.button(cx, ids!(collapsible_buttons.collapse_button)).reset_hover(cx);
+        }
+
         // Handle collapsible button clicks
         if let Event::Actions(actions) = event {
             let expand_btn = self.view.button(cx, ids!(collapsible_buttons.expand_button));
@@ -310,16 +318,6 @@ impl LinkPreview {
 }
 
 impl LinkPreviewRef {
-    /// Clears the hover highlight on every preview card and the show more/fewer buttons.
-    pub fn reset_hovers(&self, cx: &mut Cx) {
-        let Some(inner) = self.borrow() else { return };
-        for item in inner.children.iter() {
-            reset_hover(cx, item);
-        }
-        inner.view.button(cx, ids!(collapsible_buttons.expand_button)).reset_hover(cx);
-        inner.view.button(cx, ids!(collapsible_buttons.collapse_button)).reset_hover(cx);
-    }
-
     /// Clears any displayed link preview(s), resetting this widget to its empty state.
     ///
     /// Needed for messages that never show link previews (e.g. redacted messages).
