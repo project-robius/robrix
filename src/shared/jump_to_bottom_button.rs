@@ -1,6 +1,6 @@
 use makepad_widgets::*;
 
-const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
+pub const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
 
 script_mod! {
     use mod.prelude.widgets.*
