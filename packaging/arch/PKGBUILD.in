@@ -1,0 +1,50 @@
+# Maintainer: Project Robius <contact@robius.rs>
+#
+# Template for the pacman package attached to each GitHub release, so Arch users can
+# install Robrix with a single `pacman -U`. The release workflow fills in the two
+# placeholders below and runs `makepkg` against it inside an Arch container.
+#
+# The source version is the raw crate version, which is what the payload tarball is
+# named after. The package version is that with the pre-release hyphen removed, since
+# pacman forbids hyphens in pkgver. It's removed rather than turned into a dot because
+# vercmp sorts `1.0.0alpha.2` below `1.0.0` but `1.0.0.alpha.2` above it, which would
+# make the eventual 1.0.0 release look like a downgrade.
+
+pkgname=robrix
+pkgver=@PKGVER@
+pkgrel=1
+pkgdesc="A multi-platform Matrix chat client written in Rust, using the Makepad UI toolkit and the Robius app dev framework"
+arch=('x86_64')
+url="https://github.com/project-robius/robrix"
+license=('MIT')
+depends=(
+  'glibc'
+  'gcc-libs'
+  'libx11'
+  'libxcursor'
+  'libxkbcommon'
+  'wayland'
+  'alsa-lib'
+  'libpulse'
+  'openssl'
+  ## The next three are all dlopen'd or spawned rather than linked, so nothing catches
+  ## them automatically. Missing libEGL is what made the .deb install fine and then die
+  ## with "can't load LibEGL"; dbus and xdg-utils fail the same way, just later.
+  'libglvnd'    ## libEGL.so.1, loaded by Makepad at startup
+  'dbus'        ## libdbus-1.so.3, loaded by the file picker
+  'xdg-utils'   ## xdg-open, spawned to open links and attachments
+  'ca-certificates'
+  'hicolor-icon-theme'
+)
+conflicts=('robrix-bin' 'robrix-git')
+## We're packaging an already-built binary, so there's nothing to compile or strip.
+options=('!strip' '!debug')
+
+## Both are copied in next to this file by the release workflow.
+source=("robrix_@SRCVER@_x86_64.tar.gz" "LICENSE-MIT")
+sha256sums=('SKIP' 'SKIP')
+
+package() {
+    cp -a "${srcdir}/usr" "${pkgdir}/"
+    install -Dm644 "${srcdir}/LICENSE-MIT" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE-MIT"
+}

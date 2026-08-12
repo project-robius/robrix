@@ -243,7 +243,9 @@ jobs:
         with:
           tag_name: ${{ steps.resolve.outputs.tag }}
           name: ${{ steps.resolve.outputs.name }}
-          draft: ${{ github.event_name == 'workflow_dispatch' }}
+          ## Always a draft, so we can confirm every artifact landed before
+          ## anyone can download a half-built release. Publish it by hand.
+          draft: true
           prerelease: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.pre_release == 'true') || (github.event_name == 'push' && contains(github.ref, '-')) }}
           token: ${{ secrets.ROBRIX_RELEASE }}
 
@@ -289,7 +291,7 @@ jobs:
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Package (desktop)
+      - name: Package .deb (desktop)
         uses: project-robius/makepad-packaging-action@v1.7.0
         env:
           CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
@@ -312,6 +314,104 @@ jobs:
           ## Nothing in Robrix consumes updater metadata, and .deb has no updater
           ## format mapping anyway, so latest.json would ship empty and misleading.
           uploadUpdaterJson: false
+
+      ## Each packaging pass uploads every artifact left in dist/, and it prefers
+      ## .deb/.AppImage over anything else in the same group, which would silently drop
+      ## the pacman payload. Clearing dist/ between passes keeps each upload to its own
+      ## format. Only the built packages are removed, never dist/resources.
+      - name: Clear packaged artifacts before the next pass
+        if: matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm'
+        run: rm -f dist/*.deb
+
+      ## AppImages aren't tied to a distro, so we build one per arch on 22.04,
+      ## our oldest glibc, which gets them running on the widest range of systems.
+      - name: Package AppImage (desktop)
+        if: matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm'
+        uses: project-robius/makepad-packaging-action@v1.7.0
+        env:
+          CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
+          CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
+        with:
+          github_token: ${{ secrets.ROBRIX_RELEASE }}
+          packager_formats: appimage
+          releaseId: ${{ needs.create_release.outputs.release_id }}
+          ## No distro in the name, unlike the .deb above, since an AppImage
+          ## isn't built against a specific one.
+          asset_name_template: __APP__-__VERSION__-__ARCH__.__EXT__
+          uploadUpdaterJson: false
+
+      - name: Clear packaged artifacts before the next pass
+        if: matrix.os == 'ubuntu-22.04'
+        run: rm -f dist/*.AppImage
+
+      ## This tarball isn't installable on its own, it's the payload an Arch PKGBUILD
+      ## unpacks. We turn it into a real package below, and the `robrix-bin` AUR package
+      ## fetches it by cargo-packager's own file name, so `__FILENAME__` keeps that
+      ## stable. Renaming it breaks the AUR package.
+      - name: Package pacman payload (desktop)
+        if: matrix.os == 'ubuntu-22.04'
+        uses: project-robius/makepad-packaging-action@v1.7.0
+        env:
+          CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
+          CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
+        with:
+          github_token: ${{ secrets.ROBRIX_RELEASE }}
+          packager_formats: pacman
+          releaseId: ${{ needs.create_release.outputs.release_id }}
+          asset_name_template: __FILENAME__
+          uploadUpdaterJson: false
+
+      ## Arch Linux is x86_64-only and `makepkg` only exists on Arch, so we build the
+      ## actual installable package in a container. Without this, an Arch user has no
+      ## one-command install: the payload above can't be fed to `pacman -U` directly.
+      - name: Build and upload Arch Linux package
+        if: matrix.os == 'ubuntu-22.04' && needs.create_release.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.ROBRIX_RELEASE }}
+          TAG: ${{ needs.create_release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          srcver="$(awk -F'"' '/^version[[:space:]]*=/ {print $2; exit}' Cargo.toml)"
+          payload="dist/robrix_${srcver}_x86_64.tar.gz"
+          if [[ ! -f "$payload" ]]; then
+            echo "::error::Expected pacman payload at $payload, but it isn't there."
+            ls -la dist/ || true
+            exit 1
+          fi
+
+          ## Drop the first hyphen only, so 1.0.0-alpha.2 becomes 1.0.0alpha.2, which
+          ## vercmp sorts *below* the eventual 1.0.0. Dotting it instead would sort above.
+          pkgver="${srcver/-/}"
+          pkgver="${pkgver//-/.}"
+
+          ## mktemp gives us 0700, but the container re-owns this to its own uid, which
+          ## would leave the runner unable to read the package back out.
+          build_dir="$(mktemp -d)"
+          chmod 0755 "$build_dir"
+          cp "$payload" LICENSE-MIT "$build_dir"/
+          sed -e "s|@SRCVER@|${srcver}|g" \
+              -e "s|@PKGVER@|${pkgver}|g" \
+              packaging/arch/PKGBUILD.in > "$build_dir/PKGBUILD"
+
+          ## makepkg refuses to run as root, hence the unprivileged build user.
+          ## --nodeps because it otherwise resolves the runtime deps against the
+          ## container, which has the toolchain only, and we're compiling nothing here.
+          docker run --rm -v "$build_dir:/build" -w /build archlinux:base-devel bash -euo pipefail -c '
+            ## These images ship without the pacman lsign key.
+            pacman-key --init && pacman-key --populate archlinux
+            pacman -Syu --noconfirm --needed namcap || echo "::warning::namcap unavailable, skipping lint"
+            useradd --create-home builder
+            chown -R builder /build
+            sudo -u builder makepkg --force --noconfirm --nodeps
+            ## Reports missing or surplus dependencies. Advisory only, so a lint
+            ## warning never blocks a release.
+            command -v namcap >/dev/null && namcap ./*.pkg.tar.zst || true
+          '
+
+          pkg="$(ls "$build_dir"/*.pkg.tar.zst)"
+          echo "Built $(basename "$pkg")"
+          gh release upload "$TAG" "$pkg" --clobber --repo "${{ github.repository }}"
 
   for_macos:
     name: Release Robrix for macOS (${{ matrix.os }}, ${{ matrix.arch }})
