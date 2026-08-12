@@ -323,6 +323,33 @@ jobs:
         if: matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm'
         run: rm -f dist/*.deb
 
+      ## cargo-packager fetches its AppImage tools with a single un-retried GET, and a
+      ## truncated response fails the whole release, which bites us in the ass all the time...
+      ## It skips any tool already in its cache, so we fetch them here with curl + retries.
+      ## Note the plugin's local name has no arch suffix even though its URL does.
+      - name: Pre-seed cargo-packager's AppImage tools
+        if: matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm'
+        run: |
+          set -euo pipefail
+          arch="$(uname -m)"
+          tools="${XDG_CACHE_HOME:-$HOME/.cache}/.cargo-packager/AppImage"
+          mkdir -p "$tools"
+          fetch() {
+            ## Download to .part first so an interrupted run can't leave a truncated
+            ## file that cargo-packager would then happily accept.
+            curl -fL --retry 8 --retry-all-errors --retry-delay 3 \
+                 --connect-timeout 20 --max-time 900 -o "$2.part" "$1"
+            mv "$2.part" "$2"
+            chmod 0764 "$2"
+          }
+          fetch "https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-$arch" \
+                "$tools/AppRun-$arch"
+          fetch "https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy/linuxdeploy-$arch.AppImage" \
+                "$tools/linuxdeploy-$arch.AppImage"
+          fetch "https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-$arch.AppImage" \
+                "$tools/linuxdeploy-plugin-appimage.AppImage"
+          ls -l "$tools"
+
       ## AppImages aren't tied to a distro, so we build one per arch on 22.04,
       ## our oldest glibc, which gets them running on the widest range of systems.
       - name: Package AppImage (desktop)
