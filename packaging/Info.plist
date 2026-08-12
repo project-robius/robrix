@@ -18,10 +18,12 @@
 	<string>Robrix</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
+	<!-- Both are overwritten from Cargo.toml at build time by build-macos-dmg.sh.
+	     Keep them roughly current anyway, so the committed file isn't misleading. -->
 	<key>CFBundleShortVersionString</key>
-	<string>0.0.1-pre-alpha</string>
+	<string>1.0.0-alpha.2</string>
 	<key>CFBundleVersion</key>
-	<string>20241009.225157</string>
+	<string>20260812.1415</string>
 	<key>CSResourcesFileMapped</key>
 	<true/>
 	<key>LSApplicationCategoryType</key>

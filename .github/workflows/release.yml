@@ -586,7 +586,9 @@ jobs:
           IOS_SIGNING_IDENTITY: Apple Distribution
           ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          IOS_UPLOAD_TESTFLIGHT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.upload_testflight == 'true' }}
+          ## Tagging a release always sends the build to TestFlight. A manual run only
+          ## does when asked, so test builds don't burn a TestFlight build number.
+          IOS_UPLOAD_TESTFLIGHT: ${{ github.event_name == 'push' || github.event.inputs.upload_testflight == 'true' }}
         run: |
           chmod +x ./packaging/build-ios-testflight.sh
           ./packaging/build-ios-testflight.sh
