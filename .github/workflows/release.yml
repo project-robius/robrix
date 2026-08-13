@@ -454,7 +454,10 @@ jobs:
             pacman -Syu --noconfirm --needed namcap || echo "::warning::namcap unavailable, skipping lint"
             useradd --create-home builder
             chown -R builder /build
-            sudo -u builder makepkg --force --noconfirm --nodeps
+            ## sudo drops the environment, so PACKAGER has to be passed through here,
+            ## otherwise the package records "Unknown Packager".
+            sudo -u builder env PACKAGER="Project Robius <contact@robius.rs>" \
+              makepkg --force --noconfirm --nodeps
             ## Reports missing or surplus dependencies. Advisory only, so a lint
             ## warning never blocks a release.
             command -v namcap >/dev/null && namcap ./*.pkg.tar.zst || true
