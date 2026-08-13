@@ -292,7 +292,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package .deb (desktop)
-        uses: project-robius/makepad-packaging-action@v1.7.0
+        uses: project-robius/makepad-packaging-action@v1.8.0
         env:
           CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
           CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
@@ -354,7 +354,7 @@ jobs:
       ## our oldest glibc, which gets them running on the widest range of systems.
       - name: Package AppImage (desktop)
         if: matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm'
-        uses: project-robius/makepad-packaging-action@v1.7.0
+        uses: project-robius/makepad-packaging-action@v1.8.0
         env:
           CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
           CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
@@ -377,7 +377,7 @@ jobs:
       ## stable. Renaming it breaks the AUR package.
       - name: Package pacman payload (desktop)
         if: matrix.os == 'ubuntu-22.04'
-        uses: project-robius/makepad-packaging-action@v1.7.0
+        uses: project-robius/makepad-packaging-action@v1.8.0
         env:
           CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
           CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
@@ -500,7 +500,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (windows)
-        uses: project-robius/makepad-packaging-action@v1.7.0
+        uses: project-robius/makepad-packaging-action@v1.8.0
         env:
           CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
           CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
@@ -522,7 +522,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (android)
-        uses: project-robius/makepad-packaging-action@v1.7.0
+        uses: project-robius/makepad-packaging-action@v1.8.0
         env:
           AWS_LC_SYS_CMAKE_BUILDER: 1
           MAKEPAD_ANDROID_FULL_NDK: true
