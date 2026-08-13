@@ -303,7 +303,7 @@ jobs:
           ## Include the distro in asset names: the 22.04 and 24.04 legs produce
           ## debs with different Depends, and identical names would overwrite
           ## each other in the release.
-          asset_name_template: __APP__-__VERSION__-${{ matrix.os }}-__ARCH__-__MODE__.__EXT__
+          asset_name_template: __APP__-__VERSION__-${{ matrix.os }}-__ARCH__.__EXT__
           ## Boot the packaged app in a clean container with only its declared
           ## Depends, to catch runtime deps that static analysis can't see
           ## (dlopen'd libs like libEGL, spawned tools like xdg-open).
@@ -508,6 +508,8 @@ jobs:
           github_token: ${{ secrets.ROBRIX_RELEASE }}
           packager_formats: nsis
           releaseId: ${{ needs.create_release.outputs.release_id }}
+          ## Same as the action's default naming, minus the `-release` mode suffix.
+          asset_name_template: __APP__-__VERSION__-__PLATFORM__-__ARCH__.__EXT__
           uploadUpdaterJson: false
 
   for_android:
@@ -537,6 +539,8 @@ jobs:
           args: --target aarch64-linux-android
           app_name: Robrix
           releaseId: ${{ needs.create_release.outputs.release_id }}
+          ## Same as the action's default naming, minus the `-release` mode suffix.
+          asset_name_template: __APP__-__VERSION__-__PLATFORM__-__ARCH__.__EXT__
           uploadUpdaterJson: false
 
   for_ios:
