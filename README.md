@@ -3,7 +3,22 @@
 [![Robrix Matrix Chat](https://img.shields.io/matrix/robius-robrix%3Amatrix.org?server_fqdn=matrix.org&style=flat&logo=matrix&label=Robrix%20Matrix%20Chat&color=B7410E)](https://matrix.to/#/#robius-robrix:matrix.org)
 [![Project Robius Matrix Chat](https://img.shields.io/matrix/robius-general%3Amatrix.org?server_fqdn=matrix.org&style=flat&logo=matrix&label=Project%20Robius%20Matrix%20Chat&color=B7410E)](https://matrix.to/#/#robius:matrix.org)
 
-Robrix is a Matrix chat client written in Rust to exemplify the features of [Project Robius](https://github.com/project-robius), a framework for multi-platform application development in Rust. Robrix is written using the [Makepad UI toolkit](https://github.com/makepad/makepad/).
+> [!TIP]
+> ▶️  [Click here to download & install Robrix](https://github.com/project-robius/robrix/releases/latest) on macOS, iOS, Android, Linux, and Windows.
+
+Robrix is a fast, powerful Matrix chat client written from scratch in Rust.
+
+It brings some cool new features to the world of Matrix, like our signature "dockable tabs" layout
+that lets you view and interact with multiple rooms or threads simultaneously.
+This works just like your favorite multi-tab IDE or web browser, letting you keep tabs on as many conversations as you want.
+
+Robrix stays sleek and smooth even under heavy usage. We designed it to be fast and light (but also feature-rich), as it's fully native on every platform: no Electron, no underlying web engine, no JavaScript, and no cruft.
+Scrolling through many rooms at once with millions of messages each is no problem.
+Native sliding sync logs you in quickly, and your rooms list fully syncs without a long wait.
+We also went to great lengths to ensure that Robrix's room timeline view is consistent and predictable; it won't unexpectedly jump around while loading messages, images, or other room content. We've always found this to be annoying in other chat apps.
+
+## More about Robrix, Makepad, and Project Robius
+Robrix is the flagship app of [Project Robius](https://github.com/project-robius), a framework for multi-platform application development in Rust, and is written atop the [Makepad UI toolkit](https://github.com/makepad/makepad/), which we also contribute to significantly.
 
 Check out our most recent talks and presentations for more info:
   * Robrix: a complex, multi-platform app in Rust for secure chat using Matrix ([Rust China Conf 2025](https://rustcc.cn/2025conf/schedule.html))
@@ -22,10 +37,6 @@ Check out our most recent talks and presentations for more info:
     * Slides:
       [PowerPoint (22MB)](https://github.com/project-robius/files/raw/3ac0a9d2e9f3c78ea51b4875abe02d288fa3685f/RustNL%202024%20and%20GOSIM%20Europe%202024/Robrix%20Talk%20GOSIM%20Europe%20May%206,%202024.pptx),
       [PDF version (16MB)](https://github.com/project-robius/files/blob/3ac0a9d2e9f3c78ea51b4875abe02d288fa3685f/RustNL%202024%20and%20GOSIM%20Europe%202024/Robrix%20Talk%20GOSIM%20Europe%20May%206%2C%202024.pdf)
-
-
-> [!NOTE]
-> ▶️  [Click here to see the Robrix project tracker!](https://github.com/orgs/project-robius/projects/4/)
 
 
 The following table shows which host systems can currently be used to build Robrix for which target platforms.
