@@ -120,7 +120,7 @@ codesign -d --entitlements - "$APP_BUNDLE"
 # ---- 7. Package .ipa ----
 BUILD_DIR="$REPO_ROOT/target/apple/makepad-apple-app/aarch64-apple-ios/release"
 cd "$BUILD_DIR"
-IPA_NAME="robrix-${FULL_VERSION}-ios-aarch64-release.ipa"
+IPA_NAME="robrix-${FULL_VERSION}-ios-aarch64.ipa"
 rm -rf Payload "$IPA_NAME"
 ditto "${APP}.app" "Payload/${APP}.app"
 ditto -c -k --sequesterRsrc --keepParent Payload "$IPA_NAME"

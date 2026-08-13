@@ -237,12 +237,36 @@ jobs:
           fi
           echo "No existing release for '$TAG'; safe to create a fresh one."
 
+      ## Fills in the release description from docs/RELEASE_NOTES_<tag>.md, so the
+      ## download links can't drift from the assets we actually upload. @PKGVER@ is
+      ## the Arch package's version, which drops the pre-release hyphen.
+      - name: Render release notes
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.resolve.outputs.tag }}"
+          version="${TAG#v}"
+          pkgver="${version/-/}"
+          pkgver="${pkgver//-/.}"
+          notes="docs/RELEASE_NOTES_${TAG}.md"
+          body="${RUNNER_TEMP}/release-body.md"
+          if [[ -f "$notes" ]]; then
+            sed -e "s|@VERSION@|${version}|g" -e "s|@PKGVER@|${pkgver}|g" "$notes" > "$body"
+            echo "Rendered $notes ($(wc -l < "$body") lines)"
+          else
+            echo "::warning::No release notes found at $notes; publishing with an empty description."
+            : > "$body"
+          fi
+          echo "body_path=$body" >> "$GITHUB_OUTPUT"
+
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.resolve.outputs.tag }}
           name: ${{ steps.resolve.outputs.name }}
+          body_path: ${{ steps.notes.outputs.body_path }}
           ## Always a draft, so we can confirm every artifact landed before
           ## anyone can download a half-built release. Publish it by hand.
           draft: true
@@ -292,7 +316,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package .deb (desktop)
-        uses: project-robius/makepad-packaging-action@v1.7.0
+        uses: project-robius/makepad-packaging-action@v1.8.0
         env:
           CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
           CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
@@ -303,7 +327,7 @@ jobs:
           ## Include the distro in asset names: the 22.04 and 24.04 legs produce
           ## debs with different Depends, and identical names would overwrite
           ## each other in the release.
-          asset_name_template: __APP__-__VERSION__-${{ matrix.os }}-__ARCH__-__MODE__.__EXT__
+          asset_name_template: __APP__-__VERSION__-${{ matrix.os }}-__ARCH__.__EXT__
           ## Boot the packaged app in a clean container with only its declared
           ## Depends, to catch runtime deps that static analysis can't see
           ## (dlopen'd libs like libEGL, spawned tools like xdg-open).
@@ -354,7 +378,7 @@ jobs:
       ## our oldest glibc, which gets them running on the widest range of systems.
       - name: Package AppImage (desktop)
         if: matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm'
-        uses: project-robius/makepad-packaging-action@v1.7.0
+        uses: project-robius/makepad-packaging-action@v1.8.0
         env:
           CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
           CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
@@ -377,7 +401,7 @@ jobs:
       ## stable. Renaming it breaks the AUR package.
       - name: Package pacman payload (desktop)
         if: matrix.os == 'ubuntu-22.04'
-        uses: project-robius/makepad-packaging-action@v1.7.0
+        uses: project-robius/makepad-packaging-action@v1.8.0
         env:
           CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
           CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
@@ -430,7 +454,10 @@ jobs:
             pacman -Syu --noconfirm --needed namcap || echo "::warning::namcap unavailable, skipping lint"
             useradd --create-home builder
             chown -R builder /build
-            sudo -u builder makepkg --force --noconfirm --nodeps
+            ## sudo drops the environment, so PACKAGER has to be passed through here,
+            ## otherwise the package records "Unknown Packager".
+            sudo -u builder env PACKAGER="Project Robius <contact@robius.rs>" \
+              makepkg --force --noconfirm --nodeps
             ## Reports missing or surplus dependencies. Advisory only, so a lint
             ## warning never blocks a release.
             command -v namcap >/dev/null && namcap ./*.pkg.tar.zst || true
@@ -500,7 +527,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (windows)
-        uses: project-robius/makepad-packaging-action@v1.7.0
+        uses: project-robius/makepad-packaging-action@v1.8.0
         env:
           CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
           CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
@@ -508,6 +535,8 @@ jobs:
           github_token: ${{ secrets.ROBRIX_RELEASE }}
           packager_formats: nsis
           releaseId: ${{ needs.create_release.outputs.release_id }}
+          ## Same as the action's default naming, minus the `-release` mode suffix.
+          asset_name_template: __APP__-__VERSION__-__PLATFORM__-__ARCH__.__EXT__
           uploadUpdaterJson: false
 
   for_android:
@@ -522,7 +551,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package (android)
-        uses: project-robius/makepad-packaging-action@v1.7.0
+        uses: project-robius/makepad-packaging-action@v1.8.0
         env:
           AWS_LC_SYS_CMAKE_BUILDER: 1
           MAKEPAD_ANDROID_FULL_NDK: true
@@ -537,6 +566,8 @@ jobs:
           args: --target aarch64-linux-android
           app_name: Robrix
           releaseId: ${{ needs.create_release.outputs.release_id }}
+          ## Same as the action's default naming, minus the `-release` mode suffix.
+          asset_name_template: __APP__-__VERSION__-__PLATFORM__-__ARCH__.__EXT__
           uploadUpdaterJson: false
 
   for_ios:
