@@ -237,12 +237,36 @@ jobs:
           fi
           echo "No existing release for '$TAG'; safe to create a fresh one."
 
+      ## Fills in the release description from docs/RELEASE_NOTES_<tag>.md, so the
+      ## download links can't drift from the assets we actually upload. @PKGVER@ is
+      ## the Arch package's version, which drops the pre-release hyphen.
+      - name: Render release notes
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.resolve.outputs.tag }}"
+          version="${TAG#v}"
+          pkgver="${version/-/}"
+          pkgver="${pkgver//-/.}"
+          notes="docs/RELEASE_NOTES_${TAG}.md"
+          body="${RUNNER_TEMP}/release-body.md"
+          if [[ -f "$notes" ]]; then
+            sed -e "s|@VERSION@|${version}|g" -e "s|@PKGVER@|${pkgver}|g" "$notes" > "$body"
+            echo "Rendered $notes ($(wc -l < "$body") lines)"
+          else
+            echo "::warning::No release notes found at $notes; publishing with an empty description."
+            : > "$body"
+          fi
+          echo "body_path=$body" >> "$GITHUB_OUTPUT"
+
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.resolve.outputs.tag }}
           name: ${{ steps.resolve.outputs.name }}
+          body_path: ${{ steps.notes.outputs.body_path }}
           ## Always a draft, so we can confirm every artifact landed before
           ## anyone can download a half-built release. Publish it by hand.
           draft: true
