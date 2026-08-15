@@ -720,7 +720,8 @@ impl RoomsList {
                         let old_unread_messages = room.num_unread_messages;
                         let is_direct = room.is_direct;
                         let num_unread_messages = match unread_messages {
-                            UnreadMessageCount::Unknown => 0,
+                            // Keep the last known count rather than zeroing the badge.
+                            UnreadMessageCount::Unknown => old_unread_messages,
                             UnreadMessageCount::Known(count) => count,
                         };
                         room.num_unread_messages = num_unread_messages;
