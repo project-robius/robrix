@@ -170,7 +170,9 @@ pub enum RoomsListUpdate {
     /// Update the number of unread messages and mentions for the given room.
     UpdateNumUnreadMessages {
         room_id: OwnedRoomId,
-        is_marked_unread: bool,
+        /// Whether to mark it as unread (`true`) or read (`false`).
+        /// Set to `None` to preserve the current flag.
+        is_marked_unread: Option<bool>,
         unread_messages: UnreadMessageCount,
         unread_mentions: u64,
     },
@@ -726,7 +728,9 @@ impl RoomsList {
                         };
                         room.num_unread_messages = num_unread_messages;
                         room.num_unread_mentions = unread_mentions;
-                        room.is_marked_unread = is_marked_unread;
+                        if let Some(marked) = is_marked_unread {
+                            room.is_marked_unread = marked;
+                        }
                         if is_displayed {
                             self.update_displayed_unread_counts(
                                 is_direct,

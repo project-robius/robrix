@@ -148,8 +148,8 @@ impl JumpToBottomButton {
     /// Updates the visibility of the jump to bottom button *without* redrawing.
     ///
     /// * If `is_at_bottom` is `true`, both the main jump to bottom view and
-    ///   the unread message badge are made invisible, because we consider all messages
-    ///   to be read by the user if the timeline has reached the bottom.
+    ///   the unread message badge are made invisible, since there's nothing
+    ///   below the viewport to jump to.
     /// * If `is_at_bottom` is `false`, only the main jump to bottom "parent" view
     ///   is made visible; the unread message badge is *not* made visible, as that is done
     ///   via a separate call to [`JumpToBottomButton::show_unread_message_badge()`].
