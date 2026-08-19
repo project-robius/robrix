@@ -4,7 +4,7 @@ use makepad_widgets::*;
 
 use crate::{
     app::AppState,
-    settings::app_preferences::{AppPreferences, AppPreferencesAction, AppPreferencesGlobal, ThumbnailMaxHeight, UiZoom, ViewModeOverride},
+    settings::app_preferences::{AppPreferences, AppPreferencesAction, AppPreferencesGlobal, MarkAsReadBehavior, ReadReceiptsPrivacy, ThumbnailMaxHeight, UiZoom, ViewModeOverride},
     shared::popup_list::{enqueue_popup_notification, PopupKind},
 };
 
@@ -14,28 +14,64 @@ const SEND_SHORTCUT_TOGGLE_LABEL: &str = "Send with Cmd⌘ + Enter";
 const SEND_SHORTCUT_TOGGLE_LABEL: &str = "Send with Ctrl + Enter";
 
 #[cfg(target_vendor = "apple")]
-const SEND_SHORTCUT_DESC_CMD: &str = "Currently: 'Cmd⌘ + Enter' to send, 'Enter' for a new line";
+const SEND_SHORTCUT_DESC_CMD: &str = "<ul><li>Currently: 'Cmd⌘ + Enter' to send, 'Enter' for a new line</li></ul>";
 #[cfg(not(target_vendor = "apple"))]
-const SEND_SHORTCUT_DESC_CMD: &str = "Currently: 'Ctrl + Enter' to send, 'Enter' for a new line";
+const SEND_SHORTCUT_DESC_CMD: &str = "<ul><li>Currently: 'Ctrl + Enter' to send, 'Enter' for a new line</li></ul>";
 
 #[cfg(target_vendor = "apple")]
-const UI_ZOOM_DESCRIPTION: &str = "Scales the entire UI uniformly.\n'Cmd⌘ + +/-' zooms in or out, 'Cmd⌘ + 0' resets zoom";
+const UI_ZOOM_DESCRIPTION: &str = "<ul><li>Scales the entire UI uniformly.</li><li>'Cmd⌘ + +/-' zooms in or out, 'Cmd⌘ + 0' resets zoom</li></ul>";
 #[cfg(not(target_vendor = "apple"))]
-const UI_ZOOM_DESCRIPTION: &str = "Scales the entire UI uniformly.\n'Ctrl + +/-' zooms in or out, 'Ctrl + 0' resets zoom.";
+const UI_ZOOM_DESCRIPTION: &str = "<ul><li>Scales the entire UI uniformly.</li><li>'Ctrl + +/-' zooms in or out, 'Ctrl + 0' resets zoom.</li></ul>";
+
+const READ_RECEIPTS_PRIVACY_DESC_EVERYONE: &str =
+    "<ul><li>Currently: others can see how far you've read.</li></ul>";
+const READ_RECEIPTS_PRIVACY_DESC_OWN_DEVICES: &str =
+    "<ul><li>Currently: only your own devices can see how far you've read.</li></ul>";
+
+const SHOW_READ_RECEIPTS_DESC_SHOWN: &str =
+    "<ul><li>Currently: each message shows the avatars of people who have read it.</li></ul>";
+const SHOW_READ_RECEIPTS_DESC_HIDDEN: &str =
+    "<ul><li>Currently: messages don't show who has read them.</li></ul>";
+
+const MARK_AS_READ_DESC_VIEWING: &str =
+    "<ul><li>Currently: messages are marked as read after you scroll or interact with a timeline.</li></ul>";
+const MARK_AS_READ_DESC_MANUAL: &str =
+    "<ul><li>Currently: you must mark each room as read manually.</li></ul>";
 
 
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    mod.widgets.SettingsSectionDescription = Label {
+    // The bold counterpart to `SETTINGS_REGULAR_TEXT_STYLE`, for setting labels.
+    mod.widgets.SETTINGS_BOLD_TEXT_STYLE = theme.font_bold {
+        font_size: (mod.widgets.SETTINGS_REGULAR_FONT_SIZE),
+    }
+
+    // A label for one setting. It has no vertical margin: spacing above the row
+    // comes from the row itself, so it stays the same when the control wraps below.
+    mod.widgets.SettingsItemLabel = Label {
+        width: Fit, height: Fit,
+        margin: Inset{right: 4}
+        align: Align{x: 0.0, y: 0.5}
+        flow: Flow.Right{wrap: false}
+        draw_text +: {
+            color: (MESSAGE_TEXT_COLOR),
+            text_style: mod.widgets.SETTINGS_BOLD_TEXT_STYLE {},
+        }
+    }
+
+    // Descriptions are `<ul>` lists so that wrapped lines hang under the
+    // text rather than under the bullet.
+    mod.widgets.SettingsSectionDescription = Html {
         width: Fill, height: Fit
         flow: Flow.Right{wrap: true}
-        margin: Inset{left: 0.5, top: 0, bottom: 0, right: 5}
-        draw_text +: {
-            color: #666,
-            text_style: MESSAGE_TEXT_STYLE { font_size: 11 },
-        }
+        margin: Inset{left: 14, top: 0, bottom: 0, right: 5}
+        padding: 0,
+        font_size: 11,
+        font_color: #666,
+        draw_text +: { color: #666 }
+        text_style_normal: MESSAGE_TEXT_STYLE { font_size: 11 },
     }
 
     // A single item within a Robrix-styled settings DropDown popup menu.
@@ -221,7 +257,7 @@ script_mod! {
             }
         }
         mod.widgets.SettingsSectionDescription {
-            text: "By default, the app layout auto-adapts based on width."
+            body: "<ul><li>By default, the app layout auto-adapts based on width.</li></ul>"
         }
 
 
@@ -277,7 +313,7 @@ script_mod! {
         }
 
         ui_zoom_description := mod.widgets.SettingsSectionDescription {
-            text: "" // see UI_ZOOM_DESCRIPTION
+            body: "" // see UI_ZOOM_DESCRIPTION
         }
 
 
@@ -286,24 +322,24 @@ script_mod! {
         }
 
         send_on_cmd_enter_toggle := ToggleFlat {
-            margin: Inset{left: 6.5, top: 5, bottom: 6}
+            margin: Inset{left: 6.5, top: 5, bottom: 10}
             padding: Inset { left: 15}
             active: false,
             draw_bg +: { size: 21 }
             text: "" // we set this text dynamically based on the toggle state and target platform
             draw_text +: {
-                text_style: SETTINGS_REGULAR_TEXT_STYLE {},
+                text_style: mod.widgets.SETTINGS_BOLD_TEXT_STYLE {},
             }
         }
 
         send_shortcut_description := mod.widgets.SettingsSectionDescription {
-            text: "Current setting: \"Enter\" to send, \"Shift + Enter\" for a new line"
+            body: "<ul><li>Current setting: 'Enter' to send, 'Shift + Enter' for a new line</li></ul>"
         }
 
         send_shortcut_soft_keyboard_warning := mod.widgets.SettingsSectionDescription {
             visible: false // shown only on iOS/Android, see `populate_safe()``
             draw_text +: { color: (COLOR_TEXT_WARNING_NOT_FOUND) }
-            text: "Note: this only applies to physical (hardware) keyboards."
+            body: "<ul><li>Note: this only applies to physical (hardware) keyboards.</li></ul>"
         }
 
         SubsectionLabel {
@@ -356,6 +392,71 @@ script_mod! {
                     }
                     text: "pixels"
                 }
+            }
+        }
+
+        SubsectionLabel {
+            text: "Read Receipts"
+        }
+
+        View {
+            width: Fill, height: Fit
+            flow: Down,
+            margin: Inset{left: 6},
+
+            show_read_receipts_toggle := ToggleFlat {
+                margin: Inset{left: 0.5, top: 5, bottom: 10}
+                padding: Inset { left: 15}
+                active: true,
+                draw_bg +: { size: 21 }
+                text: "Show who has seen/read a message"
+                draw_text +: {
+                    text_style: mod.widgets.SETTINGS_BOLD_TEXT_STYLE {},
+                }
+            }
+            show_read_receipts_description := mod.widgets.SettingsSectionDescription {
+                body: "" // set dynamically, see `SHOW_READ_RECEIPTS_DESC_*`
+            }
+
+            View {
+                width: Fill, height: Fit
+                margin: Inset{top: 6}
+                // `row_align` (not `align.y`) is what centers items within a wrapping row.
+                flow: Flow.Right{wrap: true, row_align: RowAlign.Center}
+
+                mod.widgets.SettingsItemLabel {
+                    width: 155,
+                    text: "Send read receipts to:"
+                }
+
+                read_receipts_privacy_dropdown := mod.widgets.RobrixSettingsDropDown {
+                    labels: ["Everyone (default)", "Only my own devices"]
+                    selected_item: 0
+                }
+            }
+            read_receipts_privacy_description := mod.widgets.SettingsSectionDescription {
+                body: "" // set dynamically, see `READ_RECEIPTS_PRIVACY_DESC_*`
+            }
+
+            View {
+                width: Fill, height: Fit
+                margin: Inset{top: 6}
+                // `row_align` (not `align.y`) is what centers items within a wrapping row.
+                flow: Flow.Right{wrap: true, row_align: RowAlign.Center}
+
+                mod.widgets.SettingsItemLabel {
+                    width: 155,
+                    text: "Mark a room as read:"
+                }
+
+                mark_as_read_dropdown := mod.widgets.RobrixSettingsDropDown {
+                    width: 240,
+                    labels: ["When viewing messages", "Only manually"]
+                    selected_item: 0
+                }
+            }
+            mark_as_read_description := mod.widgets.SettingsSectionDescription {
+                body: "" // set dynamically, see `MARK_AS_READ_DESC_*`
             }
         }
     }
@@ -535,6 +636,50 @@ impl AppSettings {
             }
         }
 
+        let receipts_privacy_dropdown = self.view.drop_down(cx, ids!(read_receipts_privacy_dropdown));
+        if let Some(index) = receipts_privacy_dropdown.changed(actions) {
+            let new_privacy = ReadReceiptsPrivacy::from_index(index);
+            if new_privacy != app_state.app_prefs.read_receipts_privacy {
+                app_state.app_prefs.read_receipts_privacy = new_privacy;
+                Self::update_read_receipts_privacy_description(cx, &self.view, new_privacy);
+                app_state.app_prefs.on_read_receipts_privacy_changed(cx);
+                enqueue_popup_notification(
+                    "Updated read receipt privacy.",
+                    PopupKind::Success,
+                    Some(3.0),
+                );
+            }
+        }
+
+        let mark_as_read_dropdown = self.view.drop_down(cx, ids!(mark_as_read_dropdown));
+        if let Some(index) = mark_as_read_dropdown.changed(actions) {
+            let new_behavior = MarkAsReadBehavior::from_index(index);
+            if new_behavior != app_state.app_prefs.mark_as_read_behavior {
+                app_state.app_prefs.mark_as_read_behavior = new_behavior;
+                Self::update_mark_as_read_description(cx, &self.view, new_behavior);
+                app_state.app_prefs.on_mark_as_read_behavior_changed(cx);
+                enqueue_popup_notification(
+                    "Updated mark-as-read behavior.",
+                    PopupKind::Success,
+                    Some(3.0),
+                );
+            }
+        }
+
+        let show_receipts_toggle = self.view.check_box(cx, ids!(show_read_receipts_toggle));
+        if let Some(show) = show_receipts_toggle.changed(actions) {
+            if show != app_state.app_prefs.show_read_receipts {
+                app_state.app_prefs.show_read_receipts = show;
+                Self::update_show_read_receipts_description(cx, &self.view, show);
+                app_state.app_prefs.on_show_read_receipts_changed(cx);
+                enqueue_popup_notification(
+                    "Updated read receipt visibility.",
+                    PopupKind::Success,
+                    Some(3.0),
+                );
+            }
+        }
+
         // Only process the custom thumbnail input when the user presses Enter
         // or moves key focus away from the input, not on every keypress.
         if custom_input.returned(actions).is_some() || custom_input.key_focus_lost(actions) {
@@ -585,6 +730,9 @@ impl AppSettings {
         let send_toggle = self.view.check_box(cx, ids!(send_on_cmd_enter_toggle));
         send_toggle.set_active(cx, !prefs.send_on_enter, Animate::No);
 
+        self.view.check_box(cx, ids!(show_read_receipts_toggle))
+            .set_active(cx, prefs.show_read_receipts, Animate::No);
+
         let (small, medium, large, custom, custom_text) = match prefs.thumbnail_max_height {
             ThumbnailMaxHeight::Small => (true, false, false, false, String::new()),
             ThumbnailMaxHeight::Medium => (false, true, false, false, String::new()),
@@ -612,9 +760,17 @@ impl AppSettings {
         view.drop_down(cx, ids!(view_mode_dropdown))
             .set_selected_item(cx, prefs.view_mode.to_index());
 
+        view.drop_down(cx, ids!(read_receipts_privacy_dropdown))
+            .set_selected_item(cx, prefs.read_receipts_privacy.to_index());
+        Self::update_read_receipts_privacy_description(cx, view, prefs.read_receipts_privacy);
+        view.drop_down(cx, ids!(mark_as_read_dropdown))
+            .set_selected_item(cx, prefs.mark_as_read_behavior.to_index());
+        Self::update_mark_as_read_description(cx, view, prefs.mark_as_read_behavior);
+        Self::update_show_read_receipts_description(cx, view, prefs.show_read_receipts);
+
         view.text_input(cx, ids!(ui_zoom_input))
             .set_text(cx, &prefs.ui_zoom.format_percent());
-        view.label(cx, ids!(ui_zoom_description))
+        view.html(cx, ids!(ui_zoom_description))
             .set_text(cx, UI_ZOOM_DESCRIPTION);
 
         view.check_box(cx, ids!(send_on_cmd_enter_toggle))
@@ -630,13 +786,38 @@ impl AppSettings {
         Self::set_thumb_custom_input_read_only(cx, view, custom_active);
     }
 
+    fn update_show_read_receipts_description(cx: &mut Cx, view: &View, show: bool) {
+        let text = if show {
+            SHOW_READ_RECEIPTS_DESC_SHOWN
+        } else {
+            SHOW_READ_RECEIPTS_DESC_HIDDEN
+        };
+        view.html(cx, ids!(show_read_receipts_description)).set_text(cx, text);
+    }
+
+    fn update_read_receipts_privacy_description(cx: &mut Cx, view: &View, privacy: ReadReceiptsPrivacy) {
+        let text = match privacy {
+            ReadReceiptsPrivacy::Everyone => READ_RECEIPTS_PRIVACY_DESC_EVERYONE,
+            ReadReceiptsPrivacy::OnlyMyDevices => READ_RECEIPTS_PRIVACY_DESC_OWN_DEVICES,
+        };
+        view.html(cx, ids!(read_receipts_privacy_description)).set_text(cx, text);
+    }
+
+    fn update_mark_as_read_description(cx: &mut Cx, view: &View, behavior: MarkAsReadBehavior) {
+        let text = match behavior {
+            MarkAsReadBehavior::WhenViewingMessages => MARK_AS_READ_DESC_VIEWING,
+            MarkAsReadBehavior::Manual => MARK_AS_READ_DESC_MANUAL,
+        };
+        view.html(cx, ids!(mark_as_read_description)).set_text(cx, text);
+    }
+
     fn update_send_shortcut_description(cx: &mut Cx, view: &View, send_on_enter: bool) {
         let text = if send_on_enter {
-            "Currently: 'Enter' to send, 'Shift + Enter' for a new line"
+            "<ul><li>Currently: 'Enter' to send, 'Shift + Enter' for a new line</li></ul>"
         } else {
             SEND_SHORTCUT_DESC_CMD
         };
-        view.label(cx, ids!(send_shortcut_description)).set_text(cx, text);
+        view.html(cx, ids!(send_shortcut_description)).set_text(cx, text);
     }
 
     /// Sets `is_read_only` based on whether the custom radio is selected.
