@@ -3075,11 +3075,13 @@ impl RoomScreen {
         // A "New Messages" marker still below what we've seen means there are
         // unread messages further down, so don't claim to have read past it.
         // (No marker at all just means the fully-read event isn't loaded.)
-        let marker_below_view = tl_state.items
+        let num_items_below_view = tl_state.items.len() - 1 - index_of_last_seen;
+        let is_marker_below_view = tl_state.items
             .iter()
-            .skip(index_of_last_seen + 1)
+            .rev()
+            .take(num_items_below_view)
             .any(|item| matches!(item.kind(), TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker)));
-        if marker_below_view { return; }
+        if is_marker_below_view { return; }
 
         // Never move the marker backwards past a FullyRead we already sent.
         // Look backwards from the end to find the last-sent FullyRead event.
