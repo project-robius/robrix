@@ -32,6 +32,10 @@
             overflow-y: scroll;
             white-space: pre-wrap;
         }
+        /* Having nothing to disclose is the normal case, so don't leave a bare heading. */
+        .undetermined:not(:has(li)) {
+            display: none;
+        }
     </style>
 </head>
 
@@ -48,6 +52,17 @@
             <li><a href="#{{id}}">{{name}}</a> ({{count}})</li>
             {{/each}}
         </ul>
+
+        <section class="undetermined">
+            <h2>Crates with no license information:</h2>
+            <p>No <code>license</code> field and no license file could be found for these, so their
+            terms aren't reproduced below. They're listed here rather than dropped silently.</p>
+            <ul>
+                {{#each crates}}{{#if (eq license "Unknown")}}
+                <li><a href="{{#if package.repository}} {{package.repository}} {{else}} https://crates.io/crates/{{package.name}} {{/if}}">{{package.name}} {{package.version}}</a></li>
+                {{/if}}{{/each}}
+            </ul>
+        </section>
 
         <h2>All license text:</h2>
         <ul class="licenses-list">

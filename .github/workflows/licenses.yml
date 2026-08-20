@@ -13,8 +13,10 @@
 # stale notices, then this workflow refreshes them right after.
 #
 # If a dependency uses a license not accepted in licenses/config/about.toml,
-# `--fail` aborts the run before anything is pushed, so a new license type needs
-# a human to vet it and add it there. You'll see this as a failed run on main.
+# cargo-about aborts the run before anything is pushed, so a new license type
+# needs a human to vet it and add it there. You'll see this as a failed run on
+# main. A crate that declares no license at all isn't fatal, it just lands in
+# the notices as "Unknown"; passing `--fail` is what would abort on those too.
 
 name: Third-party licenses
 
@@ -91,8 +93,8 @@ jobs:
       # without losing them.
       - name: Regenerate notices
         run: |
-          cargo about generate --fail -c licenses/config/about.toml licenses/config/about.hbs    -o "$RUNNER_TEMP/THIRD-PARTY-NOTICES.html"
-          cargo about generate --fail -c licenses/config/about.toml licenses/config/about.md.hbs -o "$RUNNER_TEMP/THIRD-PARTY-LICENSES.md"
+          cargo about generate -c licenses/config/about.toml licenses/config/about.hbs    -o "$RUNNER_TEMP/THIRD-PARTY-NOTICES.html"
+          cargo about generate -c licenses/config/about.toml licenses/config/about.md.hbs -o "$RUNNER_TEMP/THIRD-PARTY-LICENSES.md"
 
       # Each attempt rebuilds the commit on main's current tip, so the push is
       # always a plain fast-forward. Nobody can force-push main, not even an admin.

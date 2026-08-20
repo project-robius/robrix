@@ -178,6 +178,10 @@ pub struct RoomInputBar {
     #[rust] is_encrypted: bool,
     /// Whether the send button is currently enabled (the message input is non-empty).
     #[rust] is_send_enabled: bool,
+    /// Whether the user has permission to send messages to the current room.
+    #[rust] can_send_message: bool,
+    /// Whether the current room has been tombstoned (replaced by a successor room).
+    #[rust] is_tombstoned: bool,
     /// The room or thread that this RoomInputBar is currently within.
     #[rust] timeline_kind: Option<TimelineKind>,
     /// The widget UID of the RoomScreen containing this RoomInputBar.
@@ -577,15 +581,22 @@ impl RoomInputBar {
         successor_room_details: Option<&SuccessorRoomDetails>,
     ) {
         let tombstone_footer = self.tombstone_footer(cx, ids!(tombstone_footer));
-        let input_bar = self.view(cx, ids!(input_bar));
-
         if let Some(srd) = successor_room_details {
             tombstone_footer.show(cx, tombstoned_room_id, srd);
-            input_bar.set_visible(cx, false);
         } else {
             tombstone_footer.hide(cx);
-            input_bar.set_visible(cx, true);
         }
+        self.is_tombstoned = successor_room_details.is_some();
+        self.update_input_bar_visibility(cx);
+    }
+
+    /// Shows either the `input_bar` or the `can_not_send_message_notice`,
+    /// or neither of them if the tombstone footer is covering them both.
+    fn update_input_bar_visibility(&mut self, cx: &mut Cx) {
+        let can_send = !self.is_tombstoned && self.can_send_message;
+        let cannot_send = !self.is_tombstoned && !self.can_send_message;
+        self.view.view(cx, ids!(input_bar)).set_visible(cx, can_send);
+        self.view.view(cx, ids!(can_not_send_message_notice)).set_visible(cx, cannot_send);
     }
 
     /// Enables or disables (grays out) the send_message_button.
@@ -616,9 +627,8 @@ impl RoomInputBar {
         cx: &mut Cx,
         user_power_levels: UserPowerLevels,
     ) {
-        let can_send = user_power_levels.can_send_message();
-        self.view.view(cx, ids!(input_bar)).set_visible(cx, can_send);
-        self.view.view(cx, ids!(can_not_send_message_notice)).set_visible(cx, !can_send);
+        self.can_send_message = user_power_levels.can_send_message();
+        self.update_input_bar_visibility(cx);
 
         // Forward the updated power levels to the two mentionable text inputs within this widget.
         let can_notify = user_power_levels.can_notify_room();
