@@ -1,6 +1,9 @@
 //! App-wide preferences and related types.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use makepad_widgets::*;
+use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
 use serde::{Deserialize, Serialize};
 
 /// App-wide user preferences controlled by the App Settings UI.
@@ -14,7 +17,7 @@ pub struct AppPreferences {
     /// * If `false`, Cmd+Enter (Apple platforms) / Ctrl+Enter (other platforms) sends the
     ///   message and plain Enter inserts a newline. This is only relevant for physical keyboards;
     ///   virtual/soft keyboards always insert a newline upon Enter.
-    #[serde(default = "default_send_on_enter", deserialize_with = "deserialize_send_on_enter")]
+    #[serde(default = "default_true", deserialize_with = "deserialize_or_true")]
     pub send_on_enter: bool,
     /// Max height of image thumbnails in the room timeline.
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
@@ -22,6 +25,15 @@ pub struct AppPreferences {
     /// UI-wide zoom level, which scaled the entire UI (not just text).
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub ui_zoom: UiZoom,
+    /// Whether we send read receipts that are visible to other users or just ourself.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    pub read_receipts_privacy: ReadReceiptsPrivacy,
+    /// When rooms get automatically marked as read.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    pub mark_as_read_behavior: MarkAsReadBehavior,
+    /// Whether to show other users' read receipts beneath timeline events.
+    #[serde(default = "default_true", deserialize_with = "deserialize_or_true")]
+    pub show_read_receipts: bool,
 
     // Note: if you add a new preference here, be sure to add a new
     // function `on_<NEW_PREFERENCE>_changed` and update `broadcast_all()`.
@@ -34,6 +46,9 @@ impl Default for AppPreferences {
             send_on_enter: true,
             thumbnail_max_height: ThumbnailMaxHeight::default(),
             ui_zoom: UiZoom::default(),
+            read_receipts_privacy: ReadReceiptsPrivacy::default(),
+            mark_as_read_behavior: MarkAsReadBehavior::default(),
+            show_read_receipts: true,
         }
     }
 }
@@ -123,6 +138,27 @@ impl AppPreferences {
         }
     }
 
+    /// Applies the current `read_receipts_privacy` value for all receipt senders.
+    pub fn on_read_receipts_privacy_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.read_receipts_privacy = self.read_receipts_privacy;
+        SEND_PUBLIC_READ_RECEIPTS.store(
+            self.read_receipts_privacy == ReadReceiptsPrivacy::Everyone,
+            Ordering::Relaxed,
+        );
+    }
+
+    /// Applies the current `mark_as_read_behavior` value.
+    pub fn on_mark_as_read_behavior_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.mark_as_read_behavior = self.mark_as_read_behavior;
+    }
+
+    /// Applies the current `show_read_receipts` value.
+    pub fn on_show_read_receipts_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.show_read_receipts = self.show_read_receipts;
+        // Read receipt avatar rows check this pref at draw time, so redraw everything.
+        cx.redraw_all();
+    }
+
     /// Broadcasts every preference to listening widgets.
     ///
     /// Used upon app-state restore so every listener picks up the loaded
@@ -134,6 +170,9 @@ impl AppPreferences {
         self.on_send_on_enter_changed(cx);
         self.on_thumbnail_max_height_changed(cx);
         self.on_ui_zoom_changed(cx);
+        self.on_read_receipts_privacy_changed(cx);
+        self.on_mark_as_read_behavior_changed(cx);
+        self.on_show_read_receipts_changed(cx);
     }
 }
 
@@ -214,17 +253,78 @@ impl ThumbnailMaxHeight {
     }
 }
 
-/// `send_on_enter` defaults to `true`, unlike the typical `false` bool value.
-fn default_send_on_enter() -> bool {
+/// Whether the read receipts we send are visible to other users.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReadReceiptsPrivacy {
+    /// Sends public `m.read` receipts that other users can see.
+    #[default]
+    Everyone,
+    /// Sends private `m.read.private` receipts, which update unread counts
+    /// across your own devices, but nobody else can see your read marker.
+    OnlyMyDevices,
+}
+impl ReadReceiptsPrivacy {
+    pub fn from_index(index: usize) -> Self {
+        match index {
+            1 => Self::OnlyMyDevices,
+            _ => Self::Everyone,
+        }
+    }
+    pub fn to_index(self) -> usize {
+        match self {
+            Self::Everyone => 0,
+            Self::OnlyMyDevices => 1,
+        }
+    }
+}
+
+/// How we mark rooms as read.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MarkAsReadBehavior {
+    /// Read receipts are automatically sent for messages that are visible
+    /// once the user has interacted with the timeline (scrolled, clicked, or tapped it).
+    #[default]
+    WhenViewingMessages,
+    /// Read receipts are never sent automatically, the user must manually mark rooms as read.
+    Manual,
+}
+impl MarkAsReadBehavior {
+    pub fn from_index(index: usize) -> Self {
+        match index {
+            1 => Self::Manual,
+            _ => Self::WhenViewingMessages,
+        }
+    }
+    pub fn to_index(self) -> usize {
+        match self {
+            Self::WhenViewingMessages => 0,
+            Self::Manual => 1,
+        }
+    }
+}
+
+/// A way to allow `read_receipts_privacy` to be accessed by all threads.
+static SEND_PUBLIC_READ_RECEIPTS: AtomicBool = AtomicBool::new(true);
+
+/// Returns the user's current preference of read receipt type.
+pub fn preferred_receipt_type() -> ReceiptType {
+    if SEND_PUBLIC_READ_RECEIPTS.load(Ordering::Relaxed) {
+        ReceiptType::Read
+    } else {
+        ReceiptType::ReadPrivate
+    }
+}
+
+fn default_true() -> bool {
     true
 }
 
-fn deserialize_send_on_enter<'de, D>(deserializer: D) -> Result<bool, D::Error>
+fn deserialize_or_true<'de, D>(deserializer: D) -> Result<bool, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let value = serde_json::Value::deserialize(deserializer)?;
-    Ok(serde_json::from_value(value).unwrap_or_else(|_| default_send_on_enter()))
+    Ok(serde_json::from_value(value).unwrap_or(true))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

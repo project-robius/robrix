@@ -23,8 +23,25 @@ enum UserProfileCacheEntry {
     /// The profile has been successfully loaded from the server.
     Loaded {
         user_profile: UserProfile,
-        rooms: BTreeMap<OwnedRoomId, RoomMember>,
+        rooms: BTreeMap<OwnedRoomId, RoomMemberEntry>,
     },
+}
+
+/// An entry in a loaded profile's map of per-room member info.
+pub enum RoomMemberEntry {
+    /// A request has been issued and we're waiting for it to complete.
+    Requested,
+    /// The room member info has been successfully loaded from the server.
+    Loaded(RoomMember),
+}
+impl RoomMemberEntry {
+    /// Returns the loaded room member info, if any.
+    pub fn loaded(&self) -> Option<&RoomMember> {
+        match self {
+            RoomMemberEntry::Loaded(member) => Some(member),
+            RoomMemberEntry::Requested => None,
+        }
+    }
 }
 
 /// Removes all `Requested` entries from the cache, allowing them to be re-fetched.
@@ -36,6 +53,11 @@ enum UserProfileCacheEntry {
 pub fn clear_all_pending_requests() {
     USER_PROFILE_CACHE.with_borrow_mut(|cache| {
         cache.retain(|_, entry| !matches!(entry, UserProfileCacheEntry::Requested));
+        for entry in cache.values_mut() {
+            if let UserProfileCacheEntry::Loaded { rooms, .. } = entry {
+                rooms.retain(|_, member| matches!(member, RoomMemberEntry::Loaded(_)));
+            }
+        }
     });
 }
 
@@ -87,14 +109,14 @@ impl UserProfileUpdate {
                                 user_profile: new_profile,
                                 rooms: {
                                     let mut room_members_map = BTreeMap::new();
-                                    room_members_map.insert(room_id, room_member);
+                                    room_members_map.insert(room_id, RoomMemberEntry::Loaded(room_member));
                                     room_members_map
                                 },
                             };
                         }
                         UserProfileCacheEntry::Loaded { user_profile, rooms } => {
                             *user_profile = new_profile;
-                            rooms.insert(room_id, room_member);
+                            rooms.insert(room_id, RoomMemberEntry::Loaded(room_member));
                         }
                     }
                     Entry::Vacant(entry) => {
@@ -102,7 +124,7 @@ impl UserProfileUpdate {
                             user_profile: new_profile,
                             rooms: {
                                 let mut room_members_map = BTreeMap::new();
-                                room_members_map.insert(room_id, room_member);
+                                room_members_map.insert(room_id, RoomMemberEntry::Loaded(room_member));
                                 room_members_map
                             },
                         });
@@ -123,13 +145,13 @@ impl UserProfileUpdate {
                                 },
                                 rooms: {
                                     let mut room_members_map = BTreeMap::new();
-                                    room_members_map.insert(room_id, room_member);
+                                    room_members_map.insert(room_id, RoomMemberEntry::Loaded(room_member));
                                     room_members_map
                                 },
                             };
                         }
                         UserProfileCacheEntry::Loaded { rooms, .. } => {
-                            rooms.insert(room_id, room_member);
+                            rooms.insert(room_id, RoomMemberEntry::Loaded(room_member));
                         }
                     }
                     Entry::Vacant(entry) => {
@@ -143,7 +165,7 @@ impl UserProfileUpdate {
                             },
                             rooms: {
                                 let mut room_members_map = BTreeMap::new();
-                                room_members_map.insert(room_id, room_member);
+                                room_members_map.insert(room_id, RoomMemberEntry::Loaded(room_member));
                                 room_members_map
                             },
                         });
@@ -203,24 +225,30 @@ pub fn with_user_profile<F, R>(
     f: F,
 ) -> Option<R>
 where
-    F: FnOnce(&UserProfile, &BTreeMap<OwnedRoomId, RoomMember>) -> R,
+    F: FnOnce(&UserProfile, &BTreeMap<OwnedRoomId, RoomMemberEntry>) -> R,
 {
     USER_PROFILE_CACHE.with_borrow_mut(|cache|
         match cache.entry(user_id) {
-            Entry::Occupied(entry) => match entry.get() {
-                UserProfileCacheEntry::Loaded { user_profile, rooms } => {
-                    if room_id.is_some_and(|id| !rooms.contains_key(id)) {
-                        submit_async_request(MatrixRequest::GetUserProfile {
-                            user_id: entry.key().clone(),
-                            room_id: room_id.cloned(),
-                            local_only: false,
-                        });
+            Entry::Occupied(mut entry) => {
+                let user_id = entry.key().clone();
+                match entry.get_mut() {
+                    UserProfileCacheEntry::Loaded { user_profile, rooms } => {
+                        if let Some(id) = room_id.filter(|_| fetch_if_missing) {
+                            if let Entry::Vacant(room_entry) = rooms.entry(id.clone()) {
+                                room_entry.insert(RoomMemberEntry::Requested);
+                                submit_async_request(MatrixRequest::GetUserProfile {
+                                    user_id,
+                                    room_id: Some(id.clone()),
+                                    local_only: false,
+                                });
+                            }
+                        }
+                        Some(f(user_profile, rooms))
                     }
-                    Some(f(user_profile, rooms))
-                }
-                UserProfileCacheEntry::Requested => {
-                    // log!("User {} profile request is already in flight....", entry.key());
-                    None
+                    UserProfileCacheEntry::Requested => {
+                        // log!("User {} profile request is already in flight....", entry.key());
+                        None
+                    }
                 }
             }
             Entry::Vacant(entry) => {
@@ -258,7 +286,7 @@ pub fn get_user_display_name_for_room(
     fetch_if_missing: bool,
 ) -> CachedName {
     let opt = with_user_profile(cx, user_id, room_id, fetch_if_missing, |profile, rooms| {
-        room_id.and_then(|id| rooms.get(id)).map_or_else(
+        room_id.and_then(|id| rooms.get(id)).and_then(RoomMemberEntry::loaded).map_or_else(
             || CachedName::FoundInProfile(profile.username.clone()),
             |rm| CachedName::FoundInRoom(rm.display_name().map(|n| n.to_owned())),
         )

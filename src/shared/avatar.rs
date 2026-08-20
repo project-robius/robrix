@@ -313,7 +313,7 @@ impl Avatar {
                 Some(timeline_kind.room_id()),
                 true,
                 |profile, rooms| {
-                    rooms.get(timeline_kind.room_id()).map(|rm| {
+                    rooms.get(timeline_kind.room_id()).and_then(|entry| entry.loaded()).map(|rm| {
                         (
                             rm.display_name().map(|n| n.to_owned()),
                             AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),

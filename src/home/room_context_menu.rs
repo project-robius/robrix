@@ -3,7 +3,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
-use crate::{home::invite_modal::InviteModalAction, shared::{context_menu::{ContextMenuClosed, expected_menu_size}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
+use crate::{home::invite_modal::InviteModalAction, settings::app_preferences::preferred_receipt_type, shared::{context_menu::{ContextMenuClosed, expected_menu_size}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
 
 /// Nothing here is conditionally shown, so keep these matching the DSL below.
 const NUM_BUTTONS: usize = 8;
@@ -83,7 +83,9 @@ pub struct RoomContextMenuDetails {
     pub room_name_id: RoomNameId,
     pub is_favorite: bool,
     pub is_low_priority: bool,
-    pub is_marked_unread: bool,
+    /// Whether the room has any unreads:
+    /// messages, mentions, or the marked-unread state.
+    pub has_unreads: bool,
 }
 
 /// Actions emitted from the RoomContextMenu widget, as they must be handled
@@ -148,12 +150,20 @@ impl WidgetMatchEvent for RoomContextMenu {
         let mut close_menu = false;
         
         if self.button(cx, ids!(mark_unread_button)).clicked(actions) {
-            submit_async_request(MatrixRequest::SetUnreadFlag {
-                room_id: details.room_name_id.room_id().clone(),
-                mark_as_unread: !details.is_marked_unread,
-            });
+            if details.has_unreads {
+                // Send a read receipt for the latest event to clear the unread counts.
+                submit_async_request(MatrixRequest::MarkRoomAsRead {
+                    room_id: details.room_name_id.room_id().clone(),
+                    receipt_type: preferred_receipt_type(),
+                });
+            } else {
+                submit_async_request(MatrixRequest::SetUnreadFlag {
+                    room_id: details.room_name_id.room_id().clone(),
+                    mark_as_unread: true,
+                });
+            }
             close_menu = true;
-        } 
+        }
         else if self.button(cx, ids!(favorite_button)).clicked(actions) {
             submit_async_request(MatrixRequest::SetIsFavorite {
                 room_id: details.room_name_id.room_id().clone(),
@@ -231,7 +241,7 @@ impl RoomContextMenu {
 
     fn update_buttons(&mut self, cx: &mut Cx, details: &RoomContextMenuDetails) {
         let mark_unread_button = self.button(cx, ids!(mark_unread_button));
-        if details.is_marked_unread {
+        if details.has_unreads {
             mark_unread_button.set_text(cx, "Mark as Read");
         } else {
             mark_unread_button.set_text(cx, "Mark as Unread");

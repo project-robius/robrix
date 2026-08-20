@@ -428,7 +428,7 @@ impl Widget for UserProfileSlidingPane {
                     our_info.user_id.clone(),
                     Some(&our_info.room_id),
                     false,
-                    |profile, rooms| (profile.clone(), rooms.get(&our_info.room_id).cloned())
+                    |profile, rooms| (profile.clone(), rooms.get(&our_info.room_id).and_then(|entry| entry.loaded()).cloned())
                 ) {
                     let prev_avatar_state = our_info.avatar_state.clone();
                     our_info.user_profile = new_profile;
@@ -592,7 +592,7 @@ impl UserProfileSlidingPane {
                 info.user_id.clone(),
                 Some(&info.room_id),
                 true,
-                |profile, rooms| (profile.clone(), rooms.get(&info.room_id).cloned())
+                |profile, rooms| (profile.clone(), rooms.get(&info.room_id).and_then(|entry| entry.loaded()).cloned())
             ) {
                 log!("Found user {} room member info in cache", info.user_id);
                 // Update avatar state, preferring that of the room member info.

@@ -9,7 +9,7 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI, WidgetUid};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    config::RequestConfig, encryption::{identities::Device, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, RelationsOptions, RoomMember}, ruma::{
+    config::RequestConfig, encryption::{identities::Device, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, Receipts, RelationsOptions, RoomMember}, ruma::{
         api::{Direction, client::{authenticated_media::get_media_preview, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}}, events::{
             relation::RelationType,
             room::{
@@ -562,6 +562,15 @@ pub enum MatrixRequest {
         /// If `false`, marks the room as read.
         mark_as_unread: bool,
     },
+    /// Request to mark the given room as fully read.
+    ///
+    /// This sends a read receipt for the latest-seen event,
+    /// moves the fully-read marker to right after that event,
+    /// and clears the unread flag for the given room.
+    MarkRoomAsRead {
+        room_id: OwnedRoomId,
+        receipt_type: ReceiptType,
+    },
     /// Request to set the favorite flag for the given room.
     SetIsFavorite {
         room_id: OwnedRoomId,
@@ -679,10 +688,10 @@ pub enum MatrixRequest {
     },
     /// Subscribe to changes in the read receipts of our own user.
     ///
-    /// This request does not immediately return a response or notify the UI thread,
-    /// but it will send updates to the UI via the timeline's update sender.
+    /// This is only valid for the main room timeline, not for thread-focused timelines.
+    /// Updates are sent to the UI via the timeline's update sender.
     SubscribeToOwnUserReadReceiptsChanged {
-        timeline_kind: TimelineKind,
+        room_id: OwnedRoomId,
         /// Whether to subscribe or unsubscribe.
         subscribe: bool,
     },
@@ -811,8 +820,8 @@ async fn matrix_worker_task(
 ) -> Result<()> {
     log!("Started matrix_worker_task.");
 
-    // The async tasks that are spawned to subscribe to changes in our own user's read receipts for each timeline.
-    let mut subscribers_own_user_read_receipts: HashMap<TimelineKind, JoinHandle<()>> = HashMap::new();
+    // The async tasks that are spawned to subscribe to changes in our own user's read receipts for each room.
+    let mut subscribers_own_user_read_receipts: HashMap<OwnedRoomId, JoinHandle<()>> = HashMap::new();
     // The async tasks that are spawned to subscribe to changes in the pinned events for each room.
     let mut subscribers_pinned_events: HashMap<OwnedRoomId, JoinHandle<()>> = HashMap::new();
     // The async tasks spawned to handle media downloads, keyed by MxcUri.
@@ -1370,6 +1379,8 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::GetNumberUnreadMessages { timeline_kind } => {
+                // The SDK only tracks unread counts per room, not per thread.
+                let TimelineKind::MainRoom { .. } = &timeline_kind else { continue };
                 let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
                     log!("Skipping get number of unread messages request for {timeline_kind}");
                     continue;
@@ -1385,7 +1396,7 @@ async fn matrix_worker_task(
                     if let TimelineKind::MainRoom { room_id } = timeline_kind {
                         enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
                             room_id,
-                            is_marked_unread: timeline.room().is_marked_unread(),
+                            is_marked_unread: None,
                             unread_messages: UnreadMessageCount::Known(timeline.room().num_unread_messages()),
                             unread_mentions: timeline.room().num_unread_mentions(),
                         });
@@ -1401,8 +1412,56 @@ async fn matrix_worker_task(
                 let _set_unread_task = Handle::current().spawn(async move {
                     let result = main_timeline.room().set_unread_flag(mark_as_unread).await;
                     match result {
-                        Ok(_) => log!("Set unread flag to {} for room {}", mark_as_unread, room_id),
+                        Ok(_) => {
+                            log!("Set unread flag to {} for room {}", mark_as_unread, room_id);
+                            enqueue_rooms_list_update(RoomsListUpdate::UpdateMarkedUnread {
+                                room_id,
+                                is_marked_unread: mark_as_unread,
+                            });
+                        }
                         Err(e) => error!("Failed to set unread flag to {} for room {}: {:?}", mark_as_unread, room_id, e),
+                    }
+                });
+            }
+
+            MatrixRequest::MarkRoomAsRead { room_id, receipt_type } => {
+                let Some(main_timeline) = get_room_timeline(&room_id) else {
+                    log!("BUG: skipping mark-as-read request for not-yet-known room {room_id}");
+                    continue;
+                };
+                let _mark_read_task = Handle::current().spawn(async move {
+                    let Some(latest_event_id) = main_timeline.latest_event_id().await else {
+                        if main_timeline.room().num_unread_messages() > 0 {
+                            warning!("Room {room_id} has unread messages but no timeline events, so we can only clear its unread flag.");
+                        }
+                        // If we can't get the latest event, just mark it as read.
+                        match main_timeline.room().set_unread_flag(false).await {
+                            Ok(_) => enqueue_rooms_list_update(RoomsListUpdate::UpdateMarkedUnread {
+                                room_id,
+                                is_marked_unread: false,
+                            }),
+                            Err(e) => error!("Failed to clear unread flag for empty room {room_id}: {e:?}"),
+                        }
+                        return;
+                    };
+
+                    let receipts = Receipts::new().fully_read_marker(latest_event_id.clone());
+                    let receipts = if matches!(receipt_type, ReceiptType::ReadPrivate) {
+                        receipts.private_read_receipt(latest_event_id)
+                    } else {
+                        receipts.public_read_receipt(latest_event_id)
+                    };
+                    match main_timeline.send_multiple_receipts(receipts).await {
+                        Ok(()) => {
+                            log!("Marked room {room_id} as fully read");
+                            enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
+                                room_id,
+                                is_marked_unread: Some(false),
+                                unread_messages: UnreadMessageCount::Known(0),
+                                unread_mentions: 0,
+                            });
+                        }
+                        Err(e) => error!("Failed to mark room {room_id} as fully read: {e:?}"),
                     }
                 });
             }
@@ -1640,57 +1699,44 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { timeline_kind, subscribe } => {
+            MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id, subscribe } => {
                 if !subscribe {
-                    if let Some(task_handler) = subscribers_own_user_read_receipts.remove(&timeline_kind) {
+                    if let Some(task_handler) = subscribers_own_user_read_receipts.remove(&room_id) {
                         task_handler.abort();
                     }
                     continue;
                 }
+                let timeline_kind = TimelineKind::MainRoom { room_id: room_id.clone() };
                 let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
-                    log!("BUG: skipping subscribe to own user read receipts changed request for {timeline_kind}");
+                    log!("BUG: skipping subscribe to own user read receipts changed request for room {room_id}");
                     continue;
                 };
 
-                let timeline_kind_clone = timeline_kind.clone();
+                let task_room_id = room_id.clone();
                 let subscribe_own_read_receipt_task = Handle::current().spawn(async move {
                     let update_receiver = timeline.subscribe_own_user_read_receipts_changed().await;
                     pin_mut!(update_receiver);
-                    if let Some(client_user_id) = current_user_id() {
-                        if let Some((event_id, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
-                            log!("Received own user read receipt for {timeline_kind}: {receipt:?}, event ID: {event_id:?}");
-                            if sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)).is_err() {
-                                error!("Failed to send own user read receipt to UI.");
-                            }
-                        }
 
-                        while update_receiver.next().await.is_some() {
-                            if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
-                                if sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)).is_err() {
-                                    error!("Failed to send own user read receipt to UI.");
-                                }
-                                // When read receipts change (from other devices), update unread count
-                                let unread_count = timeline.room().num_unread_messages();
-                                let unread_mentions = timeline.room().num_unread_mentions();
-                                if sender.send(TimelineUpdate::NewUnreadMessagesCount(
-                                    UnreadMessageCount::Known(unread_count)
-                                )).is_err() {
-                                    error!("Failed to send unread message count update to UI.");
-                                }
-                                if let TimelineKind::MainRoom { room_id } = &timeline_kind {
-                                    // Update the rooms list with new unread counts
-                                    enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
-                                        room_id: room_id.clone(),
-                                        is_marked_unread: timeline.room().is_marked_unread(),
-                                        unread_messages: UnreadMessageCount::Known(unread_count),
-                                        unread_mentions,
-                                    });
-                                }
-                            }
+                    while update_receiver.next().await.is_some() {
+                        let unread_count = timeline.room().num_unread_messages();
+                        let unread_mentions = timeline.room().num_unread_mentions();
+                        match sender.send(TimelineUpdate::NewUnreadMessagesCount(
+                            UnreadMessageCount::Known(unread_count)
+                        )) {
+                            Ok(_) => SignalToUI::set_ui_signal(),
+                            Err(_) => error!("Failed to send unread message count update to timeline UI."),
                         }
+                        enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
+                            room_id: task_room_id.clone(),
+                            is_marked_unread: None,
+                            unread_messages: UnreadMessageCount::Known(unread_count),
+                            unread_mentions,
+                        });
                     }
                 });
-                subscribers_own_user_read_receipts.insert(timeline_kind_clone, subscribe_own_read_receipt_task);
+                if let Some(old) = subscribers_own_user_read_receipts.insert(room_id, subscribe_own_read_receipt_task) {
+                    old.abort();
+                }
             }
 
             MatrixRequest::SubscribeToPinnedEvents { room_id, subscribe } => {
@@ -2058,24 +2104,23 @@ async fn matrix_worker_task(
                 });
             }
             MatrixRequest::ReadReceipt { timeline_kind, event_id, receipt_type } => {
-                let Some(timeline) = get_timeline(&timeline_kind) else {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
                     log!("BUG: {timeline_kind} not found when sending read receipt, {event_id}");
                     continue;
                 };
 
+                // Unread counts get refreshed by the own_user_read_receipts subscriber,
+                // so we don't need to send any updates to the UI here.
                 let _send_rr_task = Handle::current().spawn(async move {
                     match timeline.send_single_receipt(receipt_type.clone(), event_id.clone()).await {
                         Ok(sent) => log!("{} {receipt_type} read receipt to {timeline_kind} for event {event_id}", if sent { "Sent" } else { "Already sent" }),
-                        Err(_e) => error!("Failed to send {receipt_type} read receipt to {timeline_kind} for event {event_id}; error: {_e:?}"),
-                    }
-                    if let TimelineKind::MainRoom { room_id } = timeline_kind {
-                        // Also update the number of unread messages in the room.
-                        enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
-                            room_id,
-                            is_marked_unread: timeline.room().is_marked_unread(),
-                            unread_messages: UnreadMessageCount::Known(timeline.room().num_unread_messages()),
-                            unread_mentions: timeline.room().num_unread_mentions()
-                        });
+                        Err(_e) => {
+                            error!("Failed to send {receipt_type} read receipt to {timeline_kind} for event {event_id}; error: {_e:?}");
+                            // Tell the RoomScreen to forget that it sent this read receipt so it can retry later.
+                            if sender.send(TimelineUpdate::ReadReceiptSendFailed { receipt_type, event_id }).is_ok() {
+                                SignalToUI::set_ui_signal();
+                            }
+                        }
                     }
                 });
             },
@@ -3491,7 +3536,7 @@ async fn update_room(
                 );
                 enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
                     room_id: new_room_id.clone(),
-                    is_marked_unread: new_room.is_marked_unread,
+                    is_marked_unread: Some(new_room.is_marked_unread),
                     unread_messages: UnreadMessageCount::Known(new_room.num_unread_messages),
                     unread_mentions: new_room.num_unread_mentions,
                 });

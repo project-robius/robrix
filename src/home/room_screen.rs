@@ -40,6 +40,7 @@ use crate::{
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
+use crate::settings::app_preferences::{AppPreferencesGlobal, MarkAsReadBehavior, preferred_receipt_type};
 
 use rangemap::RangeSet;
 
@@ -59,6 +60,9 @@ const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 100;
 /// result is inherently blurry. A 32×32 decode is ~240x faster than 500×500
 /// while being visually indistinguishable when scaled up.
 const BLURHASH_IMAGE_MAX_SIZE: u32 = 32;
+
+/// How long after scrolling/interaction stops before we send read receipts.
+const READ_RECEIPT_SEND_DELAY: f64 = 0.5;
 
 static UNNAMED_ROOM: &str = "Unnamed Room";
 
@@ -741,6 +745,88 @@ script_mod! {
     }
 }
 
+/// Tracks when the user has seen a timeline event, for sending read receipts.
+///
+/// A short timer starts upon direct user interaction with the timeline.
+/// When the timer fires, receipts are sent for the visible events,
+/// unless the user was scrolling up towards earlier/older messages.
+#[derive(Default)]
+struct ReadReceiptState {
+    timer: Timer,
+    /// Whether the pending timer came from direct user input (`true`)
+    /// or programmatic movement (`false`). We only send read receipts if true.
+    from_user_input: bool,
+    /// The timeline's `user_scroll_travel` when the timer was started.
+    user_scroll_travel_at_timer_start: f64,
+    /// The timeline's `user_scroll_travel` when we last sampled it.
+    last_user_scroll_travel: f64,
+}
+
+impl ReadReceiptState {
+    /// Starts the read receipt timer for a direct user interaction.
+    fn start_timer(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
+        if !self.timer.is_empty() && self.from_user_input {
+            return;
+        }
+        cx.stop_timer(self.timer);
+        self.timer = cx.start_timeout(READ_RECEIPT_SEND_DELAY);
+        self.from_user_input = true;
+        self.user_scroll_travel_at_timer_start = portal_list.user_scroll_travel();
+    }
+
+    /// Cancels any pending read receipt send.
+    fn cancel_timer(&mut self, cx: &mut Cx) {
+        cx.stop_timer(self.timer);
+        self.clear();
+    }
+
+    /// Forgets a pending read receipt send, but doesn't stop the timer.
+    fn clear(&mut self) {
+        self.timer = Timer::empty();
+        self.from_user_input = false;
+    }
+
+    /// Reacts to the timeline having scrolled, based on whether the user
+    /// caused the movement and in which direction.
+    fn handle_scroll(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
+        let user_travel = portal_list.user_scroll_travel();
+        let did_scroll_up = user_travel > self.last_user_scroll_travel;
+        let did_scroll_down = user_travel < self.last_user_scroll_travel;
+        self.last_user_scroll_travel = user_travel;
+        if did_scroll_up {
+            // Scrolling up to earlier messages doesn't mean the user read them!
+            // they might've just been scrolling up to find an old message quickly.
+            self.cancel_timer(cx);
+        }
+        else if did_scroll_down {
+            self.start_timer(cx, portal_list);
+        }
+        // If this movement wasn't from a user interaction, restart the timer
+        // unless we're at the bottom of a room where new messages are being appended.
+        else if !self.timer.is_empty() && !portal_list.is_at_end() {
+            cx.stop_timer(self.timer);
+            self.timer = cx.start_timeout(READ_RECEIPT_SEND_DELAY);
+        }
+    }
+
+    /// If this is a timer event, clears the pending send and returns whether
+    /// read receipts should actually be sent for the currently-visible events.
+    fn should_send_on_timer_event(&mut self, event: &Event, portal_list: &PortalListRef) -> bool {
+        if self.timer.is_event(event).is_none() {
+            return false;
+        }
+        let from_user_input = self.from_user_input;
+        let did_scroll_up = portal_list.user_scroll_travel() > self.user_scroll_travel_at_timer_start;
+        self.clear();
+        from_user_input && !did_scroll_up
+    }
+
+    /// Reads the last user scroll travel when a new timeline is first shown.
+    fn on_timeline_shown(&mut self, portal_list: &PortalListRef) {
+        self.last_user_scroll_travel = portal_list.user_scroll_travel();
+    }
+}
+
 /// The main widget that displays a single Matrix room.
 #[derive(Script, Widget)]
 pub struct RoomScreen {
@@ -765,6 +851,8 @@ pub struct RoomScreen {
     #[rust] relayout_last_first_id: usize,
     #[rust] relayout_last_scroll: f64,
     #[rust] cached_refs: Option<RoomScreenWidgetRefs>,
+    /// Decides when to send read receipts; see [`ReadReceiptState`].
+    #[rust] read_receipt_state: ReadReceiptState,
 }
 
 /// Cached references to RoomScreen child widgets used in every event handler.
@@ -817,6 +905,33 @@ impl Widget for RoomScreen {
             loading_pane,
             room_input_popup_menu,
         } = self.cached_widget_refs(cx);
+
+        // Only direct interaction with the timeline itself can send a read receipt;
+        // the direction of any scrolling gets checked later via `user_scroll_travel()`.
+        let interaction_pos = match event {
+            Event::MouseDown(e) => Some(e.abs),
+            Event::Scroll(e) if e.scroll.y != 0.0 => Some(e.abs),
+            Event::TouchUpdate(e) => e.touches.first()
+                .filter(|t| matches!(t.state, TouchState::Start))
+                .map(|t| t.abs),
+            _ => None,
+        };
+        if interaction_pos.is_some_and(|pos| portal_list.area().rect(cx).contains(pos))
+            // Interactions aimed at an overlaying pane don't count.
+            && !room_input_popup_menu.is_open()
+            && !loading_pane.is_currently_shown(cx)
+            && !user_profile_sliding_pane.is_currently_shown(cx)
+        {
+            self.read_receipt_state.start_timer(cx, &portal_list);
+        }
+        // we wanna make sure to check that direct user input occurred to avoid
+        // sending read receipts for auto-tailed messages that appeared on screen
+        // but that the user may not have necessarily seen.
+        if self.read_receipt_state.should_send_on_timer_event(event, &portal_list)
+            && !loading_pane.is_currently_shown(cx)
+        {
+            self.send_read_receipts_for_visible_events(cx, &portal_list);
+        }
 
         // Handle actions here before processing timeline updates.
         // Normally (in most other widgets), the order of event handling doesn't matter much.
@@ -1017,8 +1132,12 @@ impl Widget for RoomScreen {
 
             // Back paginate the timeline when the start of the timeline comes into view.
             self.send_pagination_request_on_reached_start(cx, actions, &portal_list);
-            // Handle sending any read receipts for the current logged-in user.
-            self.send_user_read_receipts_based_on_scroll_pos(cx, actions, &portal_list);
+
+            // Once scrolling stops, the read receipt timer determines which events are
+            // actually visible and sends read receipts for them.
+            if portal_list.scrolled(actions) {
+                self.read_receipt_state.handle_scroll(cx, &portal_list);
+            }
 
             // Handle the jump to bottom button: update its visibility, and handle clicks.
             self.jump_to_bottom_button(cx, ids!(jump_to_bottom_button)).update_from_actions(
@@ -1583,9 +1702,6 @@ impl RoomScreen {
                         if curr_item_idx != new_item_idx {
                             log!("process_timeline_updates(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
                             portal_list.set_first_id_and_scroll(new_item_idx, new_item_scroll);
-                            tl.prev_first_index = Some(new_item_idx);
-                            // Set scrolled_past_read_marker false when we jump to a new event
-                            tl.scrolled_past_read_marker = false;
                             // Hide the tooltip when the timeline jumps, as a hover-out event won't occur.
                             cx.widget_action(ui,  RoomScreenTooltipActions::HoverOut);
                         }
@@ -1855,9 +1971,6 @@ impl RoomScreen {
                     tl.content_drawn_since_last_update.clear();
                     tl.profile_drawn_since_last_update.clear();
                 }
-                TimelineUpdate::OwnUserReadReceipt(receipt) => {
-                    tl.latest_own_user_receipt = Some(receipt);
-                }
                 TimelineUpdate::Tombstoned(successor_room_details) => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .update_tombstone_footer(cx, tl.kind.room_id(), Some(&successor_room_details));
@@ -1867,6 +1980,17 @@ impl RoomScreen {
                     tl.is_encrypted = true;
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .update_encryption_state(cx, true);
+                }
+                TimelineUpdate::ReadReceiptSendFailed { receipt_type, event_id } => {
+                    let last_sent = if matches!(receipt_type, ReceiptType::FullyRead) {
+                        &mut tl.last_sent_fully_read
+                    } else {
+                        &mut tl.last_sent_read_receipt
+                    };
+                    // Only clear it if a newer receipt hasn't replaced it already.
+                    if last_sent.as_deref() == Some(&event_id) {
+                        *last_sent = None; // allow this receipt to be re-sent later
+                    }
                 }
                 TimelineUpdate::LinkPreviewFetched => {
                     // fall through to this item being redrawn
@@ -2668,9 +2792,8 @@ impl RoomScreen {
                     saved_state: SavedState::default(),
                     message_highlight_animation_state: MessageHighlightAnimationState::default(),
                     pending_reached_start: false,
-                    prev_first_index: None,
-                    scrolled_past_read_marker: false,
-                    latest_own_user_receipt: None,
+                    last_sent_read_receipt: None,
+                    last_sent_fully_read: None,
                     tombstone_info,
                     pending_downloads: SmallVec::new(),
                     expanded_reply_previews: HashSet::new(),
@@ -2730,8 +2853,8 @@ impl RoomScreen {
         // 1. Get the current user's power levels for this room so that we can
         //    show/hide UI elements based on the user's permissions.
         // 2. Get the list of members in this room (from the SDK's local cache).
-        // 3. Subscribe to our own user's read receipts so that we can update the
-        //    read marker and properly send read receipts while scrolling through the timeline.
+        // 3. Subscribe to our own user's read receipts so that unread counts
+        //    refresh when our read position advances (from any device).
         // 4. Subscribe to typing notices again, now that the room is being shown.
         if self.is_loaded {
             submit_async_request(MatrixRequest::GetRoomPowerLevels {
@@ -2744,12 +2867,13 @@ impl RoomScreen {
                 // the room members from the homeserver above.
                 local_only: true,
             });
-            submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
-                timeline_kind: tl_state.kind.clone(),
-                subscribe: true,
-            });
-            // Only main room timelines can subscribe to typing notices and pinned events.
+            // Only main room timelines can subscribe to typing notices, pinned events,
+            // and read receipt changes (the SDK has no per-thread unread counts).
             if matches!(tl_state.kind, TimelineKind::MainRoom { .. }) {
+                submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
+                    room_id: room_id.clone(),
+                    subscribe: true,
+                });
                 submit_async_request(MatrixRequest::SubscribeToTypingNotices {
                     room_id: room_id.clone(),
                     subscribe: true,
@@ -2758,6 +2882,13 @@ impl RoomScreen {
                     room_id: room_id.clone(),
                     subscribe: true,
                 });
+                // The matrix spec says that opening a room should clear the marked-as-unread flag.
+                if cx.global::<AppPreferencesGlobal>().0.mark_as_read_behavior != MarkAsReadBehavior::Manual {
+                    submit_async_request(MatrixRequest::SetUnreadFlag {
+                        room_id: room_id.clone(),
+                        mark_as_unread: false,
+                    });
+                }
             }
         }
 
@@ -2773,9 +2904,12 @@ impl RoomScreen {
             tl.request_sender.send_if_modified(|req| !std::mem::replace(&mut req.is_timeline_open, true));
         }
 
+        let list = self.portal_list(cx, ids!(list));
+        self.read_receipt_state.on_timeline_shown(&list);
+
         // Now that we have restored the TimelineUiState into this RoomScreen widget,
         // we can proceed to processing pending background updates.
-        self.process_timeline_updates(cx, &self.portal_list(cx, ids!(list)));
+        self.process_timeline_updates(cx, &list);
 
         self.redraw(cx);
     }
@@ -2786,6 +2920,9 @@ impl RoomScreen {
         if self.tl_state.is_none() {
             return;
         }
+
+        // Don't send read receipts if we're hiding the timeline.
+        self.read_receipt_state.clear();
 
         // Tell the background subscriber that this timeline is now closed.
         if let Some(tl) = self.tl_state.as_ref() {
@@ -2809,11 +2946,11 @@ impl RoomScreen {
                 room_id: timeline_kind.room_id().clone(),
                 subscribe: false,
             });
+            submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
+                room_id: timeline_kind.room_id().clone(),
+                subscribe: false,
+            });
         }
-        submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
-            timeline_kind,
-            subscribe: false,
-        });
     }
 
     /// Removes the current room's visual UI state from this widget
@@ -2943,79 +3080,105 @@ impl RoomScreen {
         self.redraw(cx);
     }
 
-    /// Sends read receipts based on the current scroll position of the timeline.
-    fn send_user_read_receipts_based_on_scroll_pos(
+    /// Sends read receipts for the events the user has seen in the timeline.
+    ///
+    /// This should only be called if a user's direct timeline interaction has finished.
+    fn send_read_receipts_for_visible_events(
         &mut self,
-        _cx: &mut Cx,
-        actions: &ActionsBuf,
+        cx: &mut Cx,
         portal_list: &PortalListRef,
     ) {
-        //stopped scrolling
-        if portal_list.scrolled(actions) {
+        if cx.global::<AppPreferencesGlobal>().0.mark_as_read_behavior == MarkAsReadBehavior::Manual {
             return;
         }
-        let first_index = portal_list.first_id();
         let Some(tl_state) = self.tl_state.as_mut() else { return };
+        if tl_state.items.is_empty() { return; }
 
-        if let Some(ref mut index) = tl_state.prev_first_index {
-            // to detect change of scroll when scroll ends
-            if *index != first_index {
-                if first_index >= *index {
-                    // Get event_id and timestamp for the last visible event
-                    let Some((last_event_id, last_timestamp)) = tl_state
-                        .items
-                        .get(std::cmp::min(
-                            first_index + portal_list.visible_items(),
-                            tl_state.items.len().saturating_sub(1)
-                        ))
-                        .and_then(|f| f.as_event())
-                        .and_then(|f| f.event_id().map(|e| (e, f.timestamp())))
-                    else {
-                        *index = first_index;
-                        return;
-                    };
-                    submit_async_request(MatrixRequest::ReadReceipt {
-                        timeline_kind: tl_state.kind.clone(),
-                        event_id: last_event_id.to_owned(),
-                        receipt_type: ReceiptType::Read,
-                    });
-                    if tl_state.scrolled_past_read_marker {
-                        submit_async_request(MatrixRequest::ReadReceipt {
-                            timeline_kind: tl_state.kind.clone(),
-                            event_id: last_event_id.to_owned(),
-                            receipt_type: ReceiptType::FullyRead,
-                        });
-                    } else {
-                        if let Some(own_user_receipt_timestamp) = tl_state.latest_own_user_receipt
-                            .as_ref().and_then(|receipt| receipt.ts)
-                        {
-                            let Some((_first_event_id, first_timestamp)) = tl_state
-                                .items
-                                .get(first_index)
-                                .and_then(|f| f.as_event())
-                                .and_then(|f| f.event_id().map(|e| (e, f.timestamp())))
-                                else {
-                                    *index = first_index;
-                                    return;
-                                };
-                            if own_user_receipt_timestamp >= first_timestamp
-                                && own_user_receipt_timestamp <= last_timestamp
-                            {
-                                tl_state.scrolled_past_read_marker = true;
-                                submit_async_request(MatrixRequest::ReadReceipt {
-                                    timeline_kind: tl_state.kind.clone(),
-                                    event_id: last_event_id.to_owned(),
-                                    receipt_type: ReceiptType::FullyRead,
-                                });
-                            }
-
-                        }
-                    }
-                }
-                *index = first_index;
-            }
+        // If we're at the very bottom of the timeline, mark everything as read.
+        let index_of_last_seen = if portal_list.is_at_end() {
+            Some(tl_state.items.len() - 1)
         } else {
-            tl_state.prev_first_index = Some(first_index);
+            let visible_count = portal_list.visible_items();
+            if visible_count == 0 { return; }
+            let first_index = portal_list.first_id();
+            let list_rect = portal_list.area().rect(cx);
+            if list_rect.size.y <= 0.0 { return; }
+            // A small tolerance so an item flush with the bottom edge counts as seen.
+            let viewport_bottom = list_rect.pos.y + list_rect.size.y + 1.0;
+            let last_drawn = std::cmp::min(
+                first_index + visible_count.saturating_sub(1),
+                tl_state.items.len() - 1,
+            );
+            // A message counts as seen once its bottom edge is fully within the portallist viewport.
+            let mut found = None;
+            for index in (first_index ..= last_drawn).rev() {
+                let Some((_, item_widget)) = portal_list.get_item(index) else { continue };
+                let rect = item_widget.area().rect(cx);
+                if rect.size.y <= 0.0 { continue; }
+                if rect.pos.y + rect.size.y <= viewport_bottom {
+                    found = Some(index);
+                    break;
+                }
+            }
+            found
+        };
+        let Some(index_of_last_seen) = index_of_last_seen else { return };
+
+        // The read receipt target is the nearest *real* event at or above that item
+        // (we ignore virtual items like day dividers, the read marker, and local echoes).
+        let target_event_id = (0 ..= index_of_last_seen).rev().find_map(|index|
+            tl_state.items
+                .get(index)
+                .and_then(|item| item.as_event())
+                .and_then(|ev| ev.event_id())
+                .map(|ev_id| ev_id.to_owned())
+        );
+        let Some(target_event_id) = target_event_id else { return };
+
+        if tl_state.last_sent_read_receipt.as_deref() != Some(&target_event_id) {
+            tl_state.last_sent_read_receipt = Some(target_event_id.clone());
+            submit_async_request(MatrixRequest::ReadReceipt {
+                timeline_kind: tl_state.kind.clone(),
+                event_id: target_event_id.clone(),
+                receipt_type: preferred_receipt_type(),
+            });
+        }
+
+        // FullyRead moves the room-wide read marker; do NOT send it from a thread.
+        if !matches!(tl_state.kind, TimelineKind::MainRoom { .. }) { return; }
+        // A "New Messages" marker still below what we've seen means there are
+        // unread messages further down, so don't claim to have read past it.
+        // (No marker at all just means the fully-read event isn't loaded.)
+        let num_items_below_view = tl_state.items.len() - 1 - index_of_last_seen;
+        let is_marker_below_view = tl_state.items
+            .iter()
+            .rev()
+            .take(num_items_below_view)
+            .any(|item| matches!(item.kind(), TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker)));
+        if is_marker_below_view { return; }
+
+        // Never move the marker backwards past a FullyRead we already sent.
+        // Look backwards from the end to find the last-sent FullyRead event.
+        let mut advances = true;
+        if let Some(last_sent_id) = tl_state.last_sent_fully_read.as_deref() {
+            for item in tl_state.items.iter().rev() {
+                let Some(ev_id) = item.as_event().and_then(|ev| ev.event_id()) else { continue };
+                if ev_id == last_sent_id {
+                    advances = false;
+                    break;
+                }
+                if ev_id == target_event_id {
+                    break;
+                }
+            }
+        }
+        if advances {
+            tl_state.last_sent_fully_read = Some(target_event_id.clone());
+            submit_async_request(MatrixRequest::ReadReceipt {
+                timeline_kind: tl_state.kind.clone(),
+                event_id: target_event_id,
+                receipt_type: ReceiptType::FullyRead,
+            });
         }
     }
 
@@ -3200,8 +3363,11 @@ pub enum TimelineUpdate {
     /// A notice that this room has been changed to use encryption.
     /// It's only possible to go from unencrypted --> encrypted, not the other way.
     RoomEncrypted,
-    /// An update to the currently logged-in user's own read receipt for this room.
-    OwnUserReadReceipt(Receipt),
+    /// A read receipt failed to send, so the UI should allow retrying it.
+    ReadReceiptSendFailed {
+        receipt_type: ReceiptType,
+        event_id: OwnedEventId,
+    },
     /// A notice that the given room has been tombstoned (closed)
     /// and replaced by the given successor room.
     Tombstoned(SuccessorRoomDetails),
@@ -3463,24 +3629,10 @@ struct TimelineUiState {
     /// pagination request was already in flight.
     pending_reached_start: bool,
 
-    /// The index of the first item shown in the timeline's PortalList from *before* the last "jump".
-    ///
-    /// This index is saved before the timeline undergoes any jumps, e.g.,
-    /// receiving new items, major scroll changes, or other timeline view jumps.
-    prev_first_index: Option<usize>,
-
-    /// Whether the user has scrolled past their latest read marker.
-    ///
-    /// This is used to determine whether we should send a fully-read receipt
-    /// after the user scrolls past their "read marker", i.e., their latest fully-read receipt.
-    /// Its value is determined by comparing the fully-read event's timestamp with the
-    /// first and last timestamp of displayed events in the timeline.
-    /// When scrolling down, if the value is true, we send a fully-read receipt
-    /// for the last visible event in the timeline.
-    ///
-    /// When new message come in, this value is reset to `false`.
-    scrolled_past_read_marker: bool,
-    latest_own_user_receipt: Option<Receipt>,
+    /// The last event we sent a `Read`/`ReadPrivate` receipt for (to avoid re-sending).
+    last_sent_read_receipt: Option<OwnedEventId>,
+    /// The last event we sent a `FullyRead` receipt for (to avoid re-sending).
+    last_sent_fully_read: Option<OwnedEventId>,
 
     /// If `Some`, this room has been tombstoned and the details of its successor room
     /// are contained within. If `None`, the room has not been tombstoned.

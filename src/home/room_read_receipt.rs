@@ -1,12 +1,13 @@
 use crate::home::room_screen::RoomScreenTooltipActions;
 use crate::profile::user_profile_cache::get_user_display_name_for_room;
+use crate::settings::app_preferences::AppPreferencesGlobal;
 use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt};
 use crate::sliding_sync::TimelineKind;
 use crate::utils::human_readable_list;
 use indexmap::IndexMap;
 use makepad_widgets::*;
 use crate::{LivePtr, widget_ref_from_live_ptr};
-use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, OwnedRoomId};
+use matrix_sdk::ruma::{events::receipt::Receipt, OwnedUserId, OwnedRoomId};
 use matrix_sdk_ui::timeline::EventTimelineItem;
 
 use std::cmp;
@@ -78,11 +79,12 @@ pub struct AvatarRow {
     #[area]
     #[rust]
     area: Area,
-    /// The read receipts for this row
-    ///
-    /// Contains a map of user id required to render its tooltip
+    /// The read receipts for this row, keyed by user id.
     #[rust]
     read_receipts: Option<indexmap::IndexMap<matrix_sdk::ruma::OwnedUserId, Receipt>>,
+    /// The timeline these read receipts belong to.
+    #[rust]
+    timeline_kind: Option<TimelineKind>,
 }
 
 impl Widget for AvatarRow {
@@ -128,16 +130,23 @@ impl Widget for AvatarRow {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let Some(read_receipts) = self.read_receipts.as_ref().filter(|r| !r.is_empty()) else {
+        if !cx.global::<AppPreferencesGlobal>().0.show_read_receipts {
+            self.area = Area::Empty;
+            return DrawStep::done();
+        }
+        if self.read_receipts.as_ref().is_none_or(|r| r.is_empty()) {
             // If we drew nothing, clear the widget's area
             self.area = Area::Empty;
             return DrawStep::done();
-        };
+        }
+        // Avatars show a text placeholder while being fetched,
+        // keep retrying them until their image arrives.
+        self.update_undrawn_avatars(cx);
         cx.begin_turtle(walk, Layout::default());
         for (avatar_ref, _) in self.buttons.iter_mut() {
             let _ = avatar_ref.draw(cx, scope);
         }
-        if read_receipts.len() > MAX_VISIBLE_AVATARS_IN_READ_RECEIPT {
+        if self.read_receipts.as_ref().is_some_and(|r| r.len() > MAX_VISIBLE_AVATARS_IN_READ_RECEIPT) {
             if let Some(label) = &mut self.label {
                 let _ = label.draw(cx, scope);
             }
@@ -159,7 +168,6 @@ impl AvatarRow {
         &mut self,
         cx: &mut Cx,
         timeline_kind: &TimelineKind,
-        event_id: Option<&EventId>,
         receipts_map: &IndexMap<OwnedUserId, Receipt>,
     ) {
         // Rebuild the list of avatars if anything visible changes.
@@ -187,8 +195,19 @@ impl AvatarRow {
             self.label = Some(label);
             self.read_receipts = Some(receipts_map.clone());
         }
+        self.timeline_kind = Some(timeline_kind.clone());
+        self.update_undrawn_avatars(cx);
+    }
+
+    /// Populates avatars that haven't been drawn.
+    ///
+    /// An avatar stays marked un-drawn while its image is being fetched
+    /// (showing a text placeholder), so this gets retried on each draw.
+    fn update_undrawn_avatars(&mut self, cx: &mut Cx) {
+        let Some(read_receipts) = self.read_receipts.as_ref() else { return };
+        let Some(timeline_kind) = self.timeline_kind.as_ref() else { return };
         for ((avatar_ref, drawn), (user_id, _)) in
-            self.buttons.iter_mut().zip(receipts_map.iter().rev())
+            self.buttons.iter_mut().zip(read_receipts.iter().rev())
         {
             if !*drawn {
                 let (_, drawn_status) = avatar_ref.set_avatar_and_get_username(
@@ -196,7 +215,7 @@ impl AvatarRow {
                     timeline_kind,
                     user_id,
                     None,
-                    event_id,
+                    None,
                     true,
                 );
                 *drawn = drawn_status;
@@ -226,11 +245,10 @@ impl AvatarRowRef {
         &mut self,
         cx: &mut Cx,
         timeline_kind: &TimelineKind,
-        event_id: Option<&EventId>,
         receipts_map: &IndexMap<OwnedUserId, Receipt>,
     ) {
         if let Some(ref mut inner) = self.borrow_mut() {
-            inner.set_avatar_row(cx, timeline_kind, event_id, receipts_map);
+            inner.set_avatar_row(cx, timeline_kind, receipts_map);
         }
     }
 }
@@ -250,7 +268,6 @@ pub fn populate_read_receipts(
     item.avatar_row(cx, ids!(avatar_row)).set_avatar_row(
         cx,
         timeline_kind,
-        event_tl_item.event_id(),
         event_tl_item.read_receipts(),
     );
 }

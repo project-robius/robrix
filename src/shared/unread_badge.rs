@@ -3,6 +3,8 @@
 
 use makepad_widgets::*;
 
+use crate::shared::styles::{COLOR_UNREAD_BADGE_MARKED, COLOR_UNREAD_BADGE_MESSAGES};
+
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -154,7 +156,28 @@ impl Widget for UnreadBadge {
             });
             self.visible = true;
         }
-        // If there are no unread mentions but this is marked as unread, show the badge as a dot.
+        // If there are no unread mentions but there are unread messages, show the number
+        // of unread messages, in the marked-unread color if the room is also marked unread.
+        else if self.unread_messages > 0 {
+            let (border_size, plus_sign) = format_border_and_truncation(self.unread_messages);
+            let badge_color = if self.is_marked_unread {
+                COLOR_UNREAD_BADGE_MARKED
+            } else {
+                COLOR_UNREAD_BADGE_MESSAGES
+            };
+            self.label(cx, ids!(label_count))
+                .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(self.unread_messages, 99)));
+            let mut rounded_view = self.view(cx, ids!(rounded_view));
+            script_apply_eval!(cx, rounded_view, {
+                draw_bg +: {
+                    border_size: #(border_size),
+                    badge_color: #(badge_color),
+                    soft: 0.0
+                }
+            });
+            self.visible = true;
+        }
+        // If this room is only marked as unread, show the badge as a dot.
         else if self.is_marked_unread {
             self.label(cx, ids!(label_count)).set_text(cx, "");
             let mut rounded_view = self.view(cx, ids!(rounded_view));
@@ -162,21 +185,6 @@ impl Widget for UnreadBadge {
                 draw_bg +: {
                     border_size: 6.0, // larger value = smaller badge size
                     badge_color: mod.widgets.COLOR_UNREAD_BADGE_MARKED,
-                    soft: 0.0
-                }
-            });
-            self.visible = true;
-        }
-        // If there are no unread mentions but there are unread messages, show gray badge and the number of unread messages
-        else if self.unread_messages > 0 {
-            let (border_size, plus_sign) = format_border_and_truncation(self.unread_messages);
-            self.label(cx, ids!(label_count))
-                .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(self.unread_messages, 99)));
-            let mut rounded_view = self.view(cx, ids!(rounded_view));
-            script_apply_eval!(cx, rounded_view, {
-                draw_bg +: {
-                    border_size: #(border_size),
-                    badge_color: mod.widgets.COLOR_UNREAD_BADGE_MESSAGES,
                     soft: 0.0
                 }
             });

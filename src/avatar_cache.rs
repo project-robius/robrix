@@ -39,10 +39,9 @@ fn enqueue_avatar_update(update: AvatarUpdate) {
 
 /// Processes all pending avatar updates in the queue.
 ///
-/// This function requires passing in a reference to `Cx`,
-/// which isn't used, but acts as a guarantee that this function
-/// must only be called by the main UI thread.
-pub fn process_avatar_updates(_cx: &mut Cx) {
+/// Triggers a redraw if any updates arrived.
+pub fn process_avatar_updates(cx: &mut Cx) {
+    let mut should_redraw = false;
     AVATAR_NEW_CACHE.with_borrow_mut(|cache| {
         while let Some(update) = PENDING_AVATAR_UPDATES.pop() {
             cache.insert(
@@ -52,8 +51,12 @@ pub fn process_avatar_updates(_cx: &mut Cx) {
                     Err(_e) => AvatarCacheEntry::Failed,
                 },
             );
+            should_redraw = true;
         }
     });
+    if should_redraw {
+        cx.redraw_all();
+    }
 }
 
 /// Returns the cached avatar for the given Matrix URI if it exists,
