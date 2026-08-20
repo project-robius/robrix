@@ -155,6 +155,7 @@ pub(crate) fn base_client_builder(db_path: &Path, passphrase: &str) -> matrix_sd
 }
 
 /// Build a new client.
+#[allow(clippy::result_large_err)]
 async fn build_client(
     cli: &Cli,
     data_dir: &Path,
