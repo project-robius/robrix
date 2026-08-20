@@ -119,6 +119,12 @@ impl Widget for RoomInputPopupMenu {
             return;
         }
 
+        // Any user interaction outside of this menu dismisses it.
+        if self.should_dismiss_for_outside_event(cx, event) {
+            self.close(cx);
+            return;
+        }
+
         self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
     }
@@ -172,20 +178,7 @@ impl RoomInputPopupMenu {
         self.button(cx, ids!(send_location_button)).reset_hover(cx);
     }
 
-    pub fn is_event_within_popup_menu(&self, cx: &mut Cx, event: &Event) -> bool {
-        let main_rect = self.view(cx, ids!(main_content)).area().rect(cx);
-        match event {
-            Event::MouseDown(e) => main_rect.contains(e.abs),
-            Event::MouseUp(e) => main_rect.contains(e.abs),
-            Event::MouseMove(e) => main_rect.contains(e.abs),
-            Event::Scroll(e) => main_rect.contains(e.abs),
-            Event::LongPress(e) => main_rect.contains(e.abs),
-            Event::TouchUpdate(e) => e.touches.iter().any(|touch| main_rect.contains(touch.abs)),
-            _ => false,
-        }
-    }
-
-    pub fn should_dismiss_for_outside_event(&self, cx: &mut Cx, event: &Event) -> bool {
+    fn should_dismiss_for_outside_event(&self, cx: &mut Cx, event: &Event) -> bool {
         let main_rect = self.view(cx, ids!(main_content)).area().rect(cx);
         match event {
             Event::MouseDown(e) => !main_rect.contains(e.abs),
@@ -212,16 +205,6 @@ impl RoomInputPopupMenuRef {
     pub fn show(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.show(cx);
-    }
-
-    pub fn is_event_within_popup_menu(&self, cx: &mut Cx, event: &Event) -> bool {
-        let Some(inner) = self.borrow() else { return false };
-        inner.is_event_within_popup_menu(cx, event)
-    }
-
-    pub fn should_dismiss_for_outside_event(&self, cx: &mut Cx, event: &Event) -> bool {
-        let Some(inner) = self.borrow() else { return false };
-        inner.should_dismiss_for_outside_event(cx, event)
     }
 
     pub fn selected(&self, actions: &Actions) -> Option<RoomInputPopupMenuAction> {
