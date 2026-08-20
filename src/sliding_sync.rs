@@ -564,7 +564,7 @@ pub enum MatrixRequest {
     },
     /// Request to mark the given room as fully read.
     ///
-    /// This will sends a read receipt for the latest-seen event,
+    /// This sends a read receipt for the latest-seen event,
     /// moves the fully-read marker to right after that event,
     /// and clears the unread flag for the given room.
     MarkRoomAsRead {
@@ -1431,6 +1431,9 @@ async fn matrix_worker_task(
                 };
                 let _mark_read_task = Handle::current().spawn(async move {
                     let Some(latest_event_id) = main_timeline.latest_event_id().await else {
+                        if main_timeline.room().num_unread_messages() > 0 {
+                            warning!("Room {room_id} has unread messages but no timeline events, so we can only clear its unread flag.");
+                        }
                         // If we can't get the latest event, just mark it as read.
                         match main_timeline.room().set_unread_flag(false).await {
                             Ok(_) => enqueue_rooms_list_update(RoomsListUpdate::UpdateMarkedUnread {
@@ -2113,7 +2116,7 @@ async fn matrix_worker_task(
                         Ok(sent) => log!("{} {receipt_type} read receipt to {timeline_kind} for event {event_id}", if sent { "Sent" } else { "Already sent" }),
                         Err(_e) => {
                             error!("Failed to send {receipt_type} read receipt to {timeline_kind} for event {event_id}; error: {_e:?}");
-                            // Tell the RoomScreen to forget that it send this read receipt so it can retry later.
+                            // Tell the RoomScreen to forget that it sent this read receipt so it can retry later.
                             if sender.send(TimelineUpdate::ReadReceiptSendFailed { receipt_type, event_id }).is_ok() {
                                 SignalToUI::set_ui_signal();
                             }

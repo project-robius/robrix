@@ -745,6 +745,88 @@ script_mod! {
     }
 }
 
+/// Tracks when the user has seen a timeline event, for sending read receipts.
+///
+/// A short timer starts upon direct user interaction with the timeline.
+/// When the timer fires, receipts are sent for the visible events,
+/// unless the user was scrolling up towards earlier/older messages.
+#[derive(Default)]
+struct ReadReceiptState {
+    timer: Timer,
+    /// Whether the pending timer came from direct user input (`true`)
+    /// or programmatic movement (`false`). We only send read receipts if true.
+    from_user_input: bool,
+    /// The timeline's `user_scroll_travel` when the timer was started.
+    user_scroll_travel_at_timer_start: f64,
+    /// The timeline's `user_scroll_travel` when we last sampled it.
+    last_user_scroll_travel: f64,
+}
+
+impl ReadReceiptState {
+    /// Starts the read receipt timer for a direct user interaction.
+    fn start_timer(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
+        if !self.timer.is_empty() && self.from_user_input {
+            return;
+        }
+        cx.stop_timer(self.timer);
+        self.timer = cx.start_timeout(READ_RECEIPT_SEND_DELAY);
+        self.from_user_input = true;
+        self.user_scroll_travel_at_timer_start = portal_list.user_scroll_travel();
+    }
+
+    /// Cancels any pending read receipt send.
+    fn cancel_timer(&mut self, cx: &mut Cx) {
+        cx.stop_timer(self.timer);
+        self.clear();
+    }
+
+    /// Forgets a pending read receipt send, but doesn't stop the timer.
+    fn clear(&mut self) {
+        self.timer = Timer::empty();
+        self.from_user_input = false;
+    }
+
+    /// Reacts to the timeline having scrolled, based on whether the user
+    /// caused the movement and in which direction.
+    fn handle_scroll(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
+        let user_travel = portal_list.user_scroll_travel();
+        let did_scroll_up = user_travel > self.last_user_scroll_travel;
+        let did_scroll_down = user_travel < self.last_user_scroll_travel;
+        self.last_user_scroll_travel = user_travel;
+        if did_scroll_up {
+            // Scrolling up to earlier messages doesn't mean the user read them!
+            // they might've just been scrolling up to find an old message quickly.
+            self.cancel_timer(cx);
+        }
+        else if did_scroll_down {
+            self.start_timer(cx, portal_list);
+        }
+        // If this movement wasn't from a user interaction, restart the timer
+        // unless we're at the bottom of a room where new messages are being appended.
+        else if !self.timer.is_empty() && !portal_list.is_at_end() {
+            cx.stop_timer(self.timer);
+            self.timer = cx.start_timeout(READ_RECEIPT_SEND_DELAY);
+        }
+    }
+
+    /// If this is a timer event, clears the pending send and returns whether
+    /// read receipts should actually be sent for the currently-visible events.
+    fn should_send_on_timer_event(&mut self, event: &Event, portal_list: &PortalListRef) -> bool {
+        if self.timer.is_event(event).is_none() {
+            return false;
+        }
+        let from_user_input = self.from_user_input;
+        let did_scroll_up = portal_list.user_scroll_travel() > self.user_scroll_travel_at_timer_start;
+        self.clear();
+        from_user_input && !did_scroll_up
+    }
+
+    /// Reads the last user scroll travel when a new timeline is first shown.
+    fn on_timeline_shown(&mut self, portal_list: &PortalListRef) {
+        self.last_user_scroll_travel = portal_list.user_scroll_travel();
+    }
+}
+
 /// The main widget that displays a single Matrix room.
 #[derive(Script, Widget)]
 pub struct RoomScreen {
@@ -769,13 +851,8 @@ pub struct RoomScreen {
     #[rust] relayout_last_first_id: usize,
     #[rust] relayout_last_scroll: f64,
     #[rust] cached_refs: Option<RoomScreenWidgetRefs>,
-    /// A timer that fires shortly after scrolling/interaction stops, to send read receipts.
-    #[rust] read_receipt_timer: Timer,
-    /// Whether the read receipt timer came from direct user input (`true`)
-    /// or programmatic movement (`false`). We only send read receips if true.
-    #[rust] read_receipt_timer_armed_by_input: bool,
-    /// The previous touch position, used to tell which way a drag-scroll is moving.
-    #[rust] last_touch_y: Option<f64>,
+    /// Decides when to send read receipts; see [`ReadReceiptState`].
+    #[rust] read_receipt_state: ReadReceiptState,
 }
 
 /// Cached references to RoomScreen child widgets used in every event handler.
@@ -829,35 +906,15 @@ impl Widget for RoomScreen {
             room_input_popup_menu,
         } = self.cached_widget_refs(cx);
 
-        // Only direct interaction with the timeline itself can send a read receipt.
+        // Only direct interaction with the timeline itself can send a read receipt;
+        // the direction of any scrolling gets checked later via `user_scroll_travel()`.
         let interaction_pos = match event {
             Event::MouseDown(e) => Some(e.abs),
-            Event::Scroll(e) => Some(e.abs),
-            Event::TouchUpdate(e) => e.touches.first().map(|t| t.abs),
+            Event::Scroll(e) if e.scroll.y != 0.0 => Some(e.abs),
+            Event::TouchUpdate(e) => e.touches.first()
+                .filter(|t| matches!(t.state, TouchState::Start))
+                .map(|t| t.abs),
             _ => None,
-        };
-        // Scrolling up to earlier messages shouldn't be treated as the user
-        // actually seeing those messages, they might just be trying to find
-        // an old message without marking things between them as "read".
-        //
-        // Scrolling up is either a negative delta or a downward-moving finger.
-        let was_scrolling_up = match event {
-            Event::Scroll(e) => e.scroll.y < 0.0,
-            Event::TouchUpdate(e) => {
-                let mut moved_towards_earlier = false;
-                if let Some(touch) = e.touches.first() {
-                    if matches!(touch.state, TouchState::Move) {
-                        moved_towards_earlier = self.last_touch_y
-                            .is_some_and(|previous_y| touch.abs.y > previous_y);
-                    }
-                    self.last_touch_y = match touch.state {
-                        TouchState::Stop => None,
-                        _ => Some(touch.abs.y),
-                    };
-                }
-                moved_towards_earlier
-            }
-            _ => false,
         };
         if interaction_pos.is_some_and(|pos| portal_list.area().rect(cx).contains(pos))
             // Interactions aimed at an overlaying pane don't count.
@@ -865,25 +922,15 @@ impl Widget for RoomScreen {
             && !loading_pane.is_currently_shown(cx)
             && !user_profile_sliding_pane.is_currently_shown(cx)
         {
-            cx.stop_timer(self.read_receipt_timer);
-            if was_scrolling_up {
-                self.read_receipt_timer = Timer::empty();
-                self.read_receipt_timer_armed_by_input = false;
-            } else {
-                self.read_receipt_timer = cx.start_timeout(READ_RECEIPT_SEND_DELAY);
-                self.read_receipt_timer_armed_by_input = true;
-            }
+            self.read_receipt_state.start_timer(cx, &portal_list);
         }
-        if self.read_receipt_timer.is_event(event).is_some() {
-            let was_from_user_input = self.read_receipt_timer_armed_by_input;
-            self.read_receipt_timer = Timer::empty();
-            self.read_receipt_timer_armed_by_input = false;
-            // we wanna make sure to check that direct user input occurred to avoid
-            // sending read receipts for auto-tailed messages that appeared on screen
-            // but that the user may not have necessarily seen.
-            if was_from_user_input {
-                self.send_read_receipts_for_visible_events(cx, &portal_list);
-            }
+        // we wanna make sure to check that direct user input occurred to avoid
+        // sending read receipts for auto-tailed messages that appeared on screen
+        // but that the user may not have necessarily seen.
+        if self.read_receipt_state.should_send_on_timer_event(event, &portal_list)
+            && !loading_pane.is_currently_shown(cx)
+        {
+            self.send_read_receipts_for_visible_events(cx, &portal_list);
         }
 
         // Handle actions here before processing timeline updates.
@@ -1089,12 +1136,7 @@ impl Widget for RoomScreen {
             // Once scrolling stops, the read receipt timer determines which events are
             // actually visible and sends read receipts for them.
             if portal_list.scrolled(actions) {
-                let was_pending = !self.read_receipt_timer.is_empty();
-                if !(was_pending && portal_list.is_at_end()) {
-                    cx.stop_timer(self.read_receipt_timer);
-                    self.read_receipt_timer = cx.start_timeout(READ_RECEIPT_SEND_DELAY);
-                    self.read_receipt_timer_armed_by_input &= was_pending;
-                }
+                self.read_receipt_state.handle_scroll(cx, &portal_list);
             }
 
             // Handle the jump to bottom button: update its visibility, and handle clicks.
@@ -2862,9 +2904,12 @@ impl RoomScreen {
             tl.request_sender.send_if_modified(|req| !std::mem::replace(&mut req.is_timeline_open, true));
         }
 
+        let list = self.portal_list(cx, ids!(list));
+        self.read_receipt_state.on_timeline_shown(&list);
+
         // Now that we have restored the TimelineUiState into this RoomScreen widget,
         // we can proceed to processing pending background updates.
-        self.process_timeline_updates(cx, &self.portal_list(cx, ids!(list)));
+        self.process_timeline_updates(cx, &list);
 
         self.redraw(cx);
     }
@@ -2877,8 +2922,7 @@ impl RoomScreen {
         }
 
         // Don't send read receipts if we're hiding the timeline.
-        self.read_receipt_timer = Timer::empty();
-        self.read_receipt_timer_armed_by_input = false;
+        self.read_receipt_state.clear();
 
         // Tell the background subscriber that this timeline is now closed.
         if let Some(tl) = self.tl_state.as_ref() {

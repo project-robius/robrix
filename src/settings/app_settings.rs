@@ -70,7 +70,6 @@ script_mod! {
         padding: 0,
         font_size: 11,
         font_color: #666,
-        draw_text +: { color: #666 }
         text_style_normal: MESSAGE_TEXT_STYLE { font_size: 11 },
     }
 
@@ -338,7 +337,7 @@ script_mod! {
 
         send_shortcut_soft_keyboard_warning := mod.widgets.SettingsSectionDescription {
             visible: false // shown only on iOS/Android, see `populate_safe()``
-            draw_text +: { color: (COLOR_TEXT_WARNING_NOT_FOUND) }
+            font_color: (COLOR_TEXT_WARNING_NOT_FOUND)
             body: "<ul><li>Note: this only applies to physical (hardware) keyboards.</li></ul>"
         }
 

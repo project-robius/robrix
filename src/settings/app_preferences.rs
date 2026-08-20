@@ -278,7 +278,7 @@ impl ReadReceiptsPrivacy {
     }
 }
 
-/// How we mark rooms at read.
+/// How we mark rooms as read.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MarkAsReadBehavior {
     /// Read receipts are automatically sent for messages that are visible
