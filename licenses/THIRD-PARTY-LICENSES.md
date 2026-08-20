@@ -12,7 +12,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 
 | Crates | License | SPDX |
 |-------:|---------|------|
-| 543 | MIT License | `MIT` |
+| 572 | MIT License | `MIT` |
 | 21 | Apache License 2.0 | `Apache-2.0` |
 | 19 | Unicode License v3 | `Unicode-3.0` |
 | 12 | Mozilla Public License 2.0 | `MPL-2.0` |
@@ -53,11 +53,19 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `as_variant` | 1.3.0 | MPL-2.0 |
 | `ash` | 0.38.0+1.3.281 | MIT OR Apache-2.0 |
 | `assign` | 1.1.1 | MIT |
+| `async-broadcast` | 0.7.2 | MIT OR Apache-2.0 |
 | `async-channel` | 2.5.0 | Apache-2.0 OR MIT |
 | `async-compression` | 0.4.31 | MIT OR Apache-2.0 |
+| `async-executor` | 1.14.0 | Apache-2.0 OR MIT |
+| `async-io` | 2.6.0 | Apache-2.0 OR MIT |
+| `async-lock` | 3.4.1 | Apache-2.0 OR MIT |
+| `async-process` | 2.5.0 | Apache-2.0 OR MIT |
+| `async-recursion` | 1.1.1 | MIT OR Apache-2.0 |
 | `async-rx` | 0.2.1 | MPL-2.0 |
+| `async-signal` | 0.2.14 | Apache-2.0 OR MIT |
 | `async-stream` | 0.3.6 | MIT |
 | `async-stream-impl` | 0.3.6 | MIT |
+| `async-task` | 4.7.1 | Apache-2.0 OR MIT |
 | `async-trait` | 0.1.89 | MIT OR Apache-2.0 |
 | `async_cell` | 0.2.3 | MIT |
 | `atomic-waker` | 1.1.2 | Apache-2.0 OR MIT |
@@ -79,6 +87,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `block-buffer` | 0.10.4 | MIT OR Apache-2.0 |
 | `block-padding` | 0.3.3 | MIT OR Apache-2.0 |
 | `block2` | 0.6.1 | MIT |
+| `blocking` | 1.6.2 | Apache-2.0 OR MIT |
 | `blurhash` | 0.2.3 | Apache-2.0 OR MIT |
 | `bs58` | 0.5.1 | MIT OR Apache-2.0 |
 | `bumpalo` | 3.19.0 | MIT OR Apache-2.0 |
@@ -145,6 +154,9 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `ed25519-dalek` | 2.2.0 | BSD-3-Clause |
 | `either` | 1.15.0 | MIT OR Apache-2.0 |
 | `emojis` | 0.8.0 | MIT OR Apache-2.0 |
+| `endi` | 1.1.1 | MIT |
+| `enumflags2` | 0.7.12 | MIT OR Apache-2.0 |
+| `enumflags2_derive` | 0.7.12 | MIT OR Apache-2.0 |
 | `equivalent` | 1.0.2 | Apache-2.0 OR MIT |
 | `equivalent` | 1.0.2 | Apache-2.0 OR MIT |
 | `errno` | 0.3.14 | MIT OR Apache-2.0 |
@@ -170,6 +182,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `futures-core` | 0.3.31 | MIT OR Apache-2.0 |
 | `futures-executor` | 0.3.31 | MIT OR Apache-2.0 |
 | `futures-io` | 0.3.31 | MIT OR Apache-2.0 |
+| `futures-lite` | 2.6.1 | Apache-2.0 OR MIT |
 | `futures-macro` | 0.3.31 | MIT OR Apache-2.0 |
 | `futures-sink` | 0.3.31 | MIT OR Apache-2.0 |
 | `futures-task` | 0.3.31 | MIT OR Apache-2.0 |
@@ -191,6 +204,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `hashlink` | 0.10.0 | MIT OR Apache-2.0 |
 | `heck` | 0.5.0 | MIT OR Apache-2.0 |
 | `hermit-abi` | 0.5.2 | MIT OR Apache-2.0 |
+| `hex` | 0.4.3 | MIT OR Apache-2.0 |
 | `hexf-parse` | 0.2.1 | CC0-1.0 |
 | `hilog-sys` | 0.1.8 | Apache-2.0 |
 | `hkdf` | 0.12.4 | MIT OR Apache-2.0 |
@@ -259,6 +273,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `makepad-derive-widget` | 2.0.0 | MIT OR Apache-2.0 |
 | `makepad-draw` | 2.0.0 | MIT OR Apache-2.0 |
 | `makepad-error-log` | 1.0.0 | MIT OR Apache-2.0 |
+| `makepad-fast-inflate` | 0.1.0 | Unknown |
 | `makepad-filesystem-watcher` | 0.1.0 | MIT OR Apache-2.0 |
 | `makepad-futures` | 1.0.0 | MIT OR Apache-2.0 |
 | `makepad-futures-legacy` | 1.0.0 | MIT OR Apache-2.0 |
@@ -285,6 +300,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `makepad-studio-protocol` | 0.1.0 | MIT OR Apache-2.0 |
 | `makepad-svg` | 1.0.0 | MIT OR Apache-2.0 |
 | `makepad-tsdf` | 0.1.0 | MIT OR Apache-2.0 |
+| `makepad-video` | 1.0.0 | MIT OR Apache-2.0 |
 | `makepad-wasm-bridge` | 1.0.0 | MIT OR Apache-2.0 |
 | `makepad-webp` | 0.2.4 | MIT OR Apache-2.0 |
 | `makepad-widgets` | 2.0.0 | MIT OR Apache-2.0 |
@@ -309,6 +325,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `matrix-sdk-ui` | 0.18.0 | Apache-2.0 |
 | `memchr` | 2.7.6 | Unlicense OR MIT |
 | `memchr` | 2.7.6 | Unlicense OR MIT |
+| `memoffset` | 0.9.1 | MIT |
 | `mime` | 0.3.17 | MIT OR Apache-2.0 |
 | `mime2ext` | 0.1.54 | MIT |
 | `mime_guess` | 2.0.5 | MIT |
@@ -348,6 +365,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `opaque-debug` | 0.3.1 | MIT OR Apache-2.0 |
 | `openssl-probe` | 0.2.1 | MIT OR Apache-2.0 |
 | `option-ext` | 0.2.0 | MPL-2.0 |
+| `ordered-stream` | 0.2.0 | MIT OR Apache-2.0 |
 | `parking` | 2.2.1 | Apache-2.0 OR MIT |
 | `parking_lot` | 0.12.4 | MIT OR Apache-2.0 |
 | `parking_lot_core` | 0.9.11 | MIT OR Apache-2.0 |
@@ -365,8 +383,10 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `phf_shared` | 0.13.1 | MIT |
 | `pin-project-lite` | 0.2.16 | Apache-2.0 OR MIT |
 | `pin-utils` | 0.1.0 | MIT OR Apache-2.0 |
+| `piper` | 0.2.5 | MIT OR Apache-2.0 |
 | `pkg-config` | 0.3.32 | MIT OR Apache-2.0 |
 | `pkg-config` | 0.3.32 | MIT OR Apache-2.0 |
+| `polling` | 3.11.0 | Apache-2.0 OR MIT |
 | `pollster` | 0.4.0 | Apache-2.0 OR MIT |
 | `poly1305` | 0.8.0 | Apache-2.0 OR MIT |
 | `potential_utf` | 0.1.3 | Unicode-3.0 |
@@ -409,14 +429,14 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `rmp` | 0.8.14 | MIT |
 | `rmp-serde` | 1.3.0 | MIT |
 | `robius-android-env` | 0.2.0 | MIT |
-| `robius-common` | 0.3.0 | MIT |
-| `robius-directories` | 6.0.0 | MIT OR Apache-2.0 |
-| `robius-file-picker` | 0.3.0 | MIT |
-| `robius-location` | 0.3.0 | MIT |
-| `robius-open` | 0.3.0 | MIT |
-| `robius-share` | 0.3.0 | MIT |
+| `robius-common` | 0.3.1 | MIT |
+| `robius-directories` | 6.0.1 | MIT OR Apache-2.0 |
+| `robius-file-picker` | 0.3.1 | MIT |
+| `robius-location` | 0.3.1 | MIT |
+| `robius-open` | 0.3.1 | MIT |
+| `robius-share` | 0.3.1 | MIT |
 | `robius-use-makepad` | 0.1.1 | MIT |
-| `robius-web-auth-session` | 0.3.0 | MIT |
+| `robius-web-auth-session` | 0.3.1 | MIT |
 | `robrix` | 1.0.0-alpha.2 | MIT |
 | `ruma` | 0.16.0 | MIT |
 | `ruma-client-api` | 0.24.0 | MIT |
@@ -456,11 +476,13 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `serde_html_form` | 0.4.0 | MIT |
 | `serde_json` | 1.0.149 | MIT OR Apache-2.0 |
 | `serde_path_to_error` | 0.1.20 | MIT OR Apache-2.0 |
+| `serde_repr` | 0.1.21 | MIT OR Apache-2.0 |
 | `serde_spanned` | 1.1.1 | MIT OR Apache-2.0 |
 | `serde_urlencoded` | 0.7.1 | MIT OR Apache-2.0 |
 | `sha2` | 0.10.9 | MIT OR Apache-2.0 |
 | `sharded-slab` | 0.1.7 | MIT |
 | `shlex` | 1.3.0 | MIT OR Apache-2.0 |
+| `signal-hook-registry` | 1.4.6 | Apache-2.0 OR MIT |
 | `signature` | 2.2.0 | Apache-2.0 OR MIT |
 | `simd-adler32` | 0.3.9 | MIT |
 | `siphasher` | 1.0.1 | MIT OR Apache-2.0 |
@@ -475,6 +497,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `strsim` | 0.11.1 | MIT |
 | `subtle` | 2.6.1 | BSD-3-Clause |
 | `syn` | 2.0.106 | MIT OR Apache-2.0 |
+| `syn` | 3.0.3 | MIT OR Apache-2.0 |
 | `sync_wrapper` | 1.0.2 | Apache-2.0 |
 | `synstructure` | 0.13.2 | MIT |
 | `tempfile` | 3.23.0 | MIT OR Apache-2.0 |
@@ -515,6 +538,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `ttf-parser` | 0.24.1 | MIT OR Apache-2.0 |
 | `typenum` | 1.18.0 | MIT OR Apache-2.0 |
 | `typewit` | 1.14.2 | Zlib |
+| `uds_windows` | 1.2.1 | MIT |
 | `ulid` | 1.2.1 | MIT |
 | `unicase` | 2.8.1 | MIT OR Apache-2.0 |
 | `unicase` | 2.9.0 | MIT OR Apache-2.0 |
@@ -587,7 +611,6 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `windows-strings` | 0.4.2 | MIT OR Apache-2.0 |
 | `windows-strings` | 0.5.1 | MIT OR Apache-2.0 |
 | `windows-sys` | 0.45.0 | MIT OR Apache-2.0 |
-| `windows-sys` | 0.48.0 | MIT OR Apache-2.0 |
 | `windows-sys` | 0.52.0 | MIT OR Apache-2.0 |
 | `windows-sys` | 0.59.0 | MIT OR Apache-2.0 |
 | `windows-sys` | 0.60.2 | MIT OR Apache-2.0 |
@@ -637,6 +660,10 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `xxhash-rust` | 0.8.15 | BSL-1.0 |
 | `yoke` | 0.8.0 | Unicode-3.0 |
 | `yoke-derive` | 0.8.0 | Unicode-3.0 |
+| `zbus` | 5.19.0 | MIT |
+| `zbus_macros` | 5.19.0 | MIT |
+| `zbus_names` | 4.3.4 | MIT |
+| `zcheapstr` | 1.1.0 | MIT |
 | `zerocopy` | 0.8.27 | BSD-2-Clause OR Apache-2.0 OR MIT |
 | `zerocopy` | 0.8.39 | BSD-2-Clause OR Apache-2.0 OR MIT |
 | `zerofrom` | 0.1.6 | Unicode-3.0 |
@@ -647,3 +674,6 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `zerovec` | 0.11.4 | Unicode-3.0 |
 | `zerovec-derive` | 0.11.1 | Unicode-3.0 |
 | `zmij` | 1.0.14 | MIT |
+| `zvariant` | 5.14.0 | MIT |
+| `zvariant_derive` | 5.14.0 | MIT |
+| `zvariant_utils` | 4.0.0 | MIT |
