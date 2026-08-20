@@ -335,7 +335,7 @@ impl VerificationModal {
         let we_started = request.we_started();
         let prompt_text = if we_started {
             Cow::from("We just sent a verification request to your other logged-in devices.\n\n\
-                Accept the request to continue verifying this device.")
+                Accept the request on another device to continue…")
         } else if request.is_self_verification() {
             Cow::from("Do you wish to verify your own device?")
         } else if let Some(room_id) = request.room_id() {
