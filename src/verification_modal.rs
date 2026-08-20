@@ -140,21 +140,20 @@ impl WidgetMatchEvent for VerificationModal {
             if self.is_final {
                 cx.action(VerificationModalAction::Close);
                 self.reset_state();
-            } else {
-                if let Some(state) = self.state.as_ref() {
-                    let _ = state.response_sender.send(VerificationUserResponse::Accept);
-                }
+            } else if let Some(state) = self.state.as_ref() {
+                let _ = state.response_sender.send(VerificationUserResponse::Accept);
+                accept_button.set_enabled(cx, false);
             }
         }
 
         let mut needs_redraw = false;
         for action in actions {
             // `VerificationAction`s come from a background thread, so they are NOT widget actions.
-            // Therefore, we cannot use `as_widget_action().cast()` to match them.
             if let Some(verification_action) = action.downcast_ref::<VerificationAction>() {
-                // Outgoing verification requests start with the accept button hidden
-                // since we're still in the waiting state then, so show it now
-                accept_button.set_visible(cx, true);
+                // `RequestReceived` is handled by the top-level app.
+                if matches!(verification_action, VerificationAction::RequestReceived(_)) {
+                    continue;
+                }
                 // The emoji grid is hidden by default and only shown during emoji verification.
                 self.view.view(cx, ids!(emojis_view)).set_visible(cx, false);
                 match verification_action {
@@ -163,37 +162,27 @@ impl WidgetMatchEvent for VerificationModal {
                             cx,
                             &format!("Verification request was cancelled: {}", cancel_info.reason())
                         );
-                        accept_button.set_enabled(cx, true);
-                        accept_button.set_text(cx, "Ok");
-                        cancel_button.set_visible(cx, false);
-                        self.is_final = true;
+                        self.transition_to_final_state(cx, &accept_button, &cancel_button);
                     }
 
                     VerificationAction::RequestAccepted => {
                         self.label(cx, ids!(body)).set_text(
                             cx,
                             "You successfully accepted the verification request.\n\n\
-                            Waiting for the other device to agree on verification methods..."
+                            Waiting for the other device to agree on verification methods…"
                         );
-                        accept_button.set_enabled(cx, false);
-                        accept_button.set_text(cx, "Waiting...");
-                        cancel_button.set_text(cx, "Cancel");
-                        cancel_button.set_enabled(cx, true);
-                        cancel_button.set_visible(cx, true);
+                        Self::transition_to_waiting_state(cx, &accept_button, &cancel_button);
                     }
 
                     VerificationAction::RequestAcceptError(error) => {
-                        self.label(cx, ids!(body)).set_text(cx, 
+                        self.label(cx, ids!(body)).set_text(cx,
                             &format!(
                                 "Error accepting verification request: {}\n\n\
                                 Please try the verification process again.",
                                 error,
                             ),
                         );
-                        accept_button.set_enabled(cx, true);
-                        accept_button.set_text(cx, "Ok");
-                        cancel_button.set_visible(cx, false);
-                        self.is_final = true;
+                        self.transition_to_final_state(cx, &accept_button, &cancel_button);
                     }
 
                     VerificationAction::RequestCancelError(error) => {
@@ -201,10 +190,7 @@ impl WidgetMatchEvent for VerificationModal {
                             cx,
                             &format!("Error cancelling verification request: {}.", error)
                         );
-                        accept_button.set_enabled(cx, true);
-                        accept_button.set_text(cx, "Ok");
-                        cancel_button.set_visible(cx, false);
-                        self.is_final = true;
+                        self.transition_to_final_state(cx, &accept_button, &cancel_button);
                     }
 
                     VerificationAction::RequestTransitionedToUnsupportedMethod(method) => {
@@ -219,23 +205,16 @@ impl WidgetMatchEvent for VerificationModal {
                                 },
                             )
                         );
-                        accept_button.set_enabled(cx, true);
-                        accept_button.set_text(cx, "Ok");
-                        cancel_button.set_visible(cx, false);
-                        self.is_final = true;
+                        self.transition_to_final_state(cx, &accept_button, &cancel_button);
                     }
 
                     VerificationAction::SasAccepted(_accepted_protocols) => {
                         self.label(cx, ids!(body)).set_text(
                             cx,
                             "Both sides have accepted the same verification method(s).\n\n\
-                            Waiting for both devices to exchange keys..."
+                            Waiting for both devices to exchange keys…"
                         );
-                        accept_button.set_enabled(cx, false);
-                        accept_button.set_text(cx, "Waiting...");
-                        cancel_button.set_text(cx, "Cancel");
-                        cancel_button.set_enabled(cx, true);
-                        cancel_button.set_visible(cx, true);
+                        Self::transition_to_waiting_state(cx, &accept_button, &cancel_button);
                     }
 
                     VerificationAction::KeysExchanged { emojis, decimals } => {
@@ -270,6 +249,7 @@ impl WidgetMatchEvent for VerificationModal {
                             );
                             self.label(cx, ids!(body)).set_text(cx, &text);
                         }
+                        accept_button.set_visible(cx, true);
                         accept_button.set_enabled(cx, true);
                         accept_button.set_text(cx, "Yes");
                         cancel_button.set_text(cx, "No");
@@ -281,13 +261,9 @@ impl WidgetMatchEvent for VerificationModal {
                         self.label(cx, ids!(body)).set_text(
                             cx,
                             "You successfully confirmed the Short Auth String keys.\n\n\
-                            Waiting for the other device to confirm..."
+                            Waiting for the other device to confirm…"
                         );
-                        accept_button.set_enabled(cx, false);
-                        accept_button.set_text(cx, "Waiting...");
-                        cancel_button.set_text(cx, "Cancel");
-                        cancel_button.set_enabled(cx, true);
-                        cancel_button.set_visible(cx, true);
+                        Self::transition_to_waiting_state(cx, &accept_button, &cancel_button);
                     }
 
                     VerificationAction::SasConfirmationError(error) => {
@@ -295,10 +271,7 @@ impl WidgetMatchEvent for VerificationModal {
                             cx,
                             &format!("Error confirming keys: {}\n\nPlease retry the verification process.", error)
                         );
-                        accept_button.set_text(cx, "Ok");
-                        accept_button.set_enabled(cx, true);
-                        cancel_button.set_visible(cx, false);
-                        self.is_final = true;
+                        self.transition_to_final_state(cx, &accept_button, &cancel_button);
                     }
 
                     VerificationAction::RequestCompleted => {
@@ -308,12 +281,12 @@ impl WidgetMatchEvent for VerificationModal {
                             Now you can send and receive encrypted messages,\
                             and everyone you chat with can trust this device is yours.",
                         );
-                        accept_button.set_text(cx, "Ok");
-                        accept_button.set_enabled(cx, true);
-                        cancel_button.set_visible(cx, false);
-                        self.is_final = true;
+                        self.transition_to_final_state(cx, &accept_button, &cancel_button);
                     }
-                    _ => { }
+
+                    // Skipped above. Listed explicitly instead of a `_` catch-all so that a
+                    // new action variant is a compile error here rather than a silent no-op.
+                    VerificationAction::RequestReceived(_) => { }
                 }
                 // If we received a `VerificationAction`, we need to redraw the modal content.
                 needs_redraw = true;
@@ -332,6 +305,24 @@ impl VerificationModal {
         self.is_final = false;
     }
 
+    /// The verification flow is waiting on another device.
+    fn transition_to_waiting_state(cx: &mut Cx, accept_button: &ButtonRef, cancel_button: &ButtonRef) {
+        accept_button.set_enabled(cx, false);
+        accept_button.set_text(cx, "Waiting…");
+        cancel_button.set_text(cx, "Cancel");
+        cancel_button.set_enabled(cx, true);
+        cancel_button.set_visible(cx, true);
+    }
+
+    /// The verification flow is in its final state.
+    fn transition_to_final_state(&mut self, cx: &mut Cx, accept_button: &ButtonRef, cancel_button: &ButtonRef) {
+        accept_button.set_visible(cx, true);
+        accept_button.set_enabled(cx, true);
+        accept_button.set_text(cx, "Okay");
+        cancel_button.set_visible(cx, false);
+        self.is_final = true;
+    }
+
     fn initialize_with_data(
         &mut self,
         cx: &mut Cx,
@@ -343,8 +334,8 @@ impl VerificationModal {
         // to accept it, but rather just wait for another device to accept & respond.
         let we_started = request.we_started();
         let prompt_text = if we_started {
-            Cow::from("Send a verification request to your other logged-in devices.\n\n\
-                Accept it on one of those devices to continue verifying this device.")
+            Cow::from("We just sent a verification request to your other logged-in devices.\n\n\
+                Accept the request to continue verifying this device.")
         } else if request.is_self_verification() {
             Cow::from("Do you wish to verify your own device?")
         } else if let Some(room_id) = request.room_id() {
