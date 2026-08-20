@@ -8,7 +8,6 @@ use chrono::{DateTime, Local};
 use makepad_widgets::{
     event::TouchUpdateEvent,
     image_cache::{decode_image_from_data, looks_like_svg, ImageBuffer, ImageError},
-    makepad_platform::event::finger::TouchState,
     *,
 };
 use matrix_sdk_ui::timeline::EventTimelineItem;
@@ -582,13 +581,6 @@ impl Widget for ImageViewer {
         }
         if let Event::TouchUpdate(touch_event) = event {
             self.handle_pinch_to_zoom(cx, touch_event);
-            // makepad doesn't mark a second touch on our already-captured area as "handled",
-            // so we do it ourselves to ensure widgets behind us don't capture and handle it.
-            for t in &touch_event.touches {
-                if matches!(t.state, TouchState::Start) && t.handled.get().is_empty() {
-                    t.handled.set(self.view.area());
-                }
-            }
         }
 
         if let (Event::Signal, Some((_background_task_id, receiver))) = (event, &mut self.receiver) {
