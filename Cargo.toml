@@ -278,11 +278,14 @@ resources = [
 ## We use the `robius-packaging-commands` tool to build the entire Robrix app project,
 ## which properly configures the release build settings for each target platform
 ## (e.g., it sets the `MAKEPAD`/`MAKEPAD_PACKAGE_DIR` env vars to the appropriate value).
+## Note: `geoclue-2.0` has to be declared by hand. It's a D-Bus service that `robius-location`
+## talks to over a socket, so there's no linked library or dlopen'd soname for the tool to find.
 before-each-package-command = """
 robius-packaging-commands before-each-package \
     --force-makepad \
     --binary-name robrix \
-    --path-to-binary ./target/release/robrix
+    --path-to-binary ./target/release/robrix \
+    --add-deb-dep geoclue-2.0
 """
 
 deep_link_protocols = [
