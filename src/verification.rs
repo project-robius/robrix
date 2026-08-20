@@ -1,4 +1,5 @@
 use std::fmt::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use futures_util::StreamExt;
 use makepad_widgets::{error, log, Cx};
@@ -16,6 +17,26 @@ use matrix_sdk::{
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}};
 
 use crate::shared::popup_list::{enqueue_popup_notification, PopupKind};
+
+/// Whether a verification flow is currently in progress. See [`VerificationInProgress`].
+static VERIFICATION_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
+/// A guard type to prevent multiple simultaneous verifications.
+struct VerificationInProgress;
+impl VerificationInProgress {
+    /// Returns `None` if another verification flow is already in progress.
+    fn start() -> Option<Self> {
+        VERIFICATION_IN_PROGRESS
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+            .then_some(Self)
+    }
+}
+impl Drop for VerificationInProgress {
+    fn drop(&mut self) {
+        VERIFICATION_IN_PROGRESS.store(false, Ordering::Release);
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub enum VerificationStateAction {
@@ -100,6 +121,7 @@ async fn sas_verification_handler(
     client: Client,
     sas: SasVerification,
     response_receiver: UnboundedReceiver<VerificationUserResponse>,
+    _in_progress: VerificationInProgress,
 ) {
     log!(
         "Starting verification with {} {}",
@@ -192,12 +214,20 @@ async fn sas_verification_handler(
 
 async fn request_verification_handler(client: Client, request: VerificationRequest) {
     log!("Received a verification request in room {:?}: {:?}", request.room_id(), request.state());
+    let Some(in_progress) = VerificationInProgress::start() else {
+        log!("Declining verification request: another verification is already in progress.");
+        let _ = request.cancel().await;
+        return;
+    };
     let (sender, mut response_receiver) = tokio::sync::mpsc::unbounded_channel::<VerificationUserResponse>();
     Cx::post_action(
         VerificationAction::RequestReceived(
             VerificationRequestActionState {
                 request: request.clone(),
-                response_sender: sender.clone(),
+                // Moved, not cloned: the modal dropping its copy is how we find out that the
+                // user walked away from this request, which wakes the `recv()` below with
+                // `None` so we can cancel. Keeping a copy alive here would park us forever.
+                response_sender: sender,
             }
         )
     );
@@ -235,7 +265,7 @@ async fn request_verification_handler(client: Client, request: VerificationReque
                 // We only support SAS verification.
                 Verification::SasV1(sas) => {
                     log!("Verification request transitioned to SAS V1.");
-                    Handle::current().spawn(sas_verification_handler(client, sas, response_receiver));
+                    Handle::current().spawn(sas_verification_handler(client, sas, response_receiver, in_progress));
                     return;
                 }
                 unsupported => {
@@ -260,6 +290,14 @@ async fn request_verification_handler(client: Client, request: VerificationReque
 
 /// Sends a self-verification request to the user's other logged-in sessions,
 pub async fn request_self_verification_handler(client: Client) {
+    let Some(in_progress) = VerificationInProgress::start() else {
+        enqueue_popup_notification(
+            "A verification request is already in progress. Finish or cancel it first.",
+            PopupKind::Error,
+            Some(6.0),
+        );
+        return;
+    };
     let Some(user_id) = client.user_id() else {
         enqueue_popup_notification("Can't verify this device: you are not logged in.", PopupKind::Error, Some(5.0));
         return;
@@ -349,12 +387,12 @@ pub async fn request_self_verification_handler(client: Client) {
         }
     };
 
-    sas_verification_handler(client, sas, response_receiver).await;
+    sas_verification_handler(client, sas, response_receiver, in_progress).await;
 }
 
 
 /// Actions related to verification that should be handled by the top-level app context.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub enum VerificationAction {
     /// Informs the main UI thread that a verification request has been received.
     RequestReceived(VerificationRequestActionState),
@@ -390,8 +428,6 @@ pub enum VerificationAction {
     SasConfirmationError(Arc<matrix_sdk::Error>),
     /// Informs the main UI thread that a verification request has been fully completed.
     RequestCompleted,
-    #[default]
-    None,
 }
 
 /// The state included in a verification request action.

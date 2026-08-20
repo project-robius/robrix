@@ -177,9 +177,14 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
         if cancel_clicked ||
             actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
         {
-            // Inform other widgets that this modal has been closed.
-            cx.action(JoinLeaveRoomModalAction::Close { successful: false, was_internal: cancel_clicked });
-            self.reset_state();
+            if self.kind.is_some() {
+                // Inform other widgets that this modal has been closed.
+                cx.action(JoinLeaveRoomModalAction::Close {
+                    successful: self.final_success.unwrap_or(false),
+                    was_internal: cancel_clicked,
+                });
+                self.reset_state();
+            }
             return;
         }
 

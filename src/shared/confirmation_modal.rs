@@ -173,6 +173,8 @@ impl WidgetMatchEvent for ConfirmationModal {
 
         // If the accept button was clicked, emit the action and call the on_accept callback.
         if accept_button.clicked(actions) {
+            // The user made their choice, so the cancel callback must never run ever again.
+            self.content.on_cancel_clicked = None;
             if let Some(on_accept_clicked) = self.content.on_accept_clicked.take() {
                 on_accept_clicked(cx);
             }

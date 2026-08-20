@@ -2,7 +2,7 @@
 use makepad_widgets::*;
 use tsp_sdk::AsyncSecureStore;
 
-use crate::{sliding_sync::current_user_id, tsp::{submit_tsp_request, TspRequest, TspVerificationDetails}};
+use crate::{shared::styles::apply_positive_button_style, sliding_sync::current_user_id, tsp::{submit_tsp_request, TspRequest, TspVerificationDetails}};
 
 script_mod! {
     link tsp_enabled
@@ -108,12 +108,13 @@ impl WidgetMatchEvent for TspVerificationModal {
             .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
 
         if cancel_button_clicked || modal_dismissed {
-            match &self.state {
+            // Take the state now to avoid declining/dismissing this modal twice.
+            match std::mem::take(&mut self.state) {
                 TspVerificationModalState::ReceivedRequest { details, wallet_db }
                 | TspVerificationModalState::RequestAccepted { details, wallet_db } => {
                     submit_tsp_request(TspRequest::RespondToDidAssociationRequest {
-                        details: details.clone(),
-                        wallet_db: wallet_db.clone(),
+                        details,
+                        wallet_db,
                         accepted: false,
                     });
                 }
@@ -271,8 +272,9 @@ impl TspVerificationModal {
         );
         self.label(cx, ids!(body)).set_text(cx, &prompt_text);
 
-        let accept_button = self.button(cx, ids!(accept_button));
+        let mut accept_button = self.button(cx, ids!(accept_button));
         let cancel_button = self.button(cx, ids!(cancel_button));
+        apply_positive_button_style(cx, &mut accept_button);
         accept_button.set_text(cx, "Accept Request");
         accept_button.set_enabled(cx, true);
         accept_button.set_visible(cx, true);
