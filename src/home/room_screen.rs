@@ -774,6 +774,8 @@ pub struct RoomScreen {
     /// Whether the read receipt timer came from direct user input (`true`)
     /// or programmatic movement (`false`). We only send read receips if true.
     #[rust] read_receipt_timer_armed_by_input: bool,
+    /// The previous touch position, used to tell which way a drag-scroll is moving.
+    #[rust] last_touch_y: Option<f64>,
 }
 
 /// Cached references to RoomScreen child widgets used in every event handler.
@@ -834,6 +836,29 @@ impl Widget for RoomScreen {
             Event::TouchUpdate(e) => e.touches.first().map(|t| t.abs),
             _ => None,
         };
+        // Scrolling up to earlier messages shouldn't be treated as the user
+        // actually seeing those messages, they might just be trying to find
+        // an old message without marking things between them as "read".
+        //
+        // Scrolling up is either a negative delta or a downward-moving finger.
+        let was_scrolling_up = match event {
+            Event::Scroll(e) => e.scroll.y < 0.0,
+            Event::TouchUpdate(e) => {
+                let mut moved_towards_earlier = false;
+                if let Some(touch) = e.touches.first() {
+                    if matches!(touch.state, TouchState::Move) {
+                        moved_towards_earlier = self.last_touch_y
+                            .is_some_and(|previous_y| touch.abs.y > previous_y);
+                    }
+                    self.last_touch_y = match touch.state {
+                        TouchState::Stop => None,
+                        _ => Some(touch.abs.y),
+                    };
+                }
+                moved_towards_earlier
+            }
+            _ => false,
+        };
         if interaction_pos.is_some_and(|pos| portal_list.area().rect(cx).contains(pos))
             // Interactions aimed at an overlaying pane don't count.
             && !room_input_popup_menu.is_open()
@@ -841,8 +866,13 @@ impl Widget for RoomScreen {
             && !user_profile_sliding_pane.is_currently_shown(cx)
         {
             cx.stop_timer(self.read_receipt_timer);
-            self.read_receipt_timer = cx.start_timeout(READ_RECEIPT_SEND_DELAY);
-            self.read_receipt_timer_armed_by_input = true;
+            if was_scrolling_up {
+                self.read_receipt_timer = Timer::empty();
+                self.read_receipt_timer_armed_by_input = false;
+            } else {
+                self.read_receipt_timer = cx.start_timeout(READ_RECEIPT_SEND_DELAY);
+                self.read_receipt_timer_armed_by_input = true;
+            }
         }
         if self.read_receipt_timer.is_event(event).is_some() {
             let was_from_user_input = self.read_receipt_timer_armed_by_input;
