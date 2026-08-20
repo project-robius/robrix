@@ -2497,7 +2497,7 @@ impl JoinedRoomDetails {
     fn all_timeline_update_senders(&self) -> Vec<crossbeam_channel::Sender<TimelineUpdate>> {
         std::iter::once(&self.main_timeline)
             .chain(self.thread_timelines.values())
-            .map(|ptd| ptd.timeline_update_sender.clone())
+            .map(|d| d.timeline_update_sender.clone())
             .collect()
     }
 }
