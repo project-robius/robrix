@@ -1379,6 +1379,8 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::GetNumberUnreadMessages { timeline_kind } => {
+                // The SDK only tracks unread counts per room, not per thread.
+                let TimelineKind::MainRoom { .. } = &timeline_kind else { continue };
                 let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
                     log!("Skipping get number of unread messages request for {timeline_kind}");
                     continue;
