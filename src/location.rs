@@ -103,7 +103,7 @@ pub fn init_location_subscriber(cx: &mut Cx) -> Result<(), robius_location::Erro
         return Ok(());
     }
 
-    let new_manager = Manager::new(LocationHandler)?;
+    let new_manager = Manager::new_with_desktop_id(LocationHandler, "robrix")?;
     new_manager.request_authorization(Access::Foreground, Accuracy::Precise)?;
     let _ = new_manager.update_once();
     lm.0 = Some(new_manager);
