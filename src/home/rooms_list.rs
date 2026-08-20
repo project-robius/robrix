@@ -176,6 +176,11 @@ pub enum RoomsListUpdate {
         unread_messages: UnreadMessageCount,
         unread_mentions: u64,
     },
+    /// Update only the mark-as-unread flag without affecting unread counts.
+    UpdateMarkedUnread {
+        room_id: OwnedRoomId,
+        is_marked_unread: bool,
+    },
     /// Update the displayable name for the given room.
     UpdateRoomName {
         new_room_name: RoomNameId,
@@ -742,6 +747,13 @@ impl RoomsList {
                         }
                     } else {
                         warning!("Warning: couldn't find room {} to update unread messages count", room_id);
+                    }
+                }
+                RoomsListUpdate::UpdateMarkedUnread { room_id, is_marked_unread } => {
+                    if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
+                        room.is_marked_unread = is_marked_unread;
+                    } else {
+                        warning!("Warning: couldn't find room {} to update marked-unread flag", room_id);
                     }
                 }
                 RoomsListUpdate::UpdateRoomName { new_room_name } => {
@@ -1416,7 +1428,9 @@ impl Widget for RoomsList {
                     room_name_id: jr.room_name_id.clone(),
                     is_favorite: jr.tags.contains_key(&TagName::Favorite),
                     is_low_priority: jr.tags.contains_key(&TagName::LowPriority),
-                    is_marked_unread: jr.is_marked_unread,
+                    has_unreads: jr.is_marked_unread
+                        || jr.num_unread_mentions > 0
+                        || jr.num_unread_messages > 0,
                 };
                 cx.widget_action(
                     self.widget_uid(), 

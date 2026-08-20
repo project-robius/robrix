@@ -9,7 +9,7 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI, WidgetUid};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    config::RequestConfig, encryption::{identities::Device, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, RelationsOptions, RoomMember}, ruma::{
+    config::RequestConfig, encryption::{identities::Device, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, Receipts, RelationsOptions, RoomMember}, ruma::{
         api::{Direction, client::{authenticated_media::get_media_preview, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}}, events::{
             relation::RelationType,
             room::{
@@ -561,6 +561,15 @@ pub enum MatrixRequest {
         /// If `true`, marks the room as unread.
         /// If `false`, marks the room as read.
         mark_as_unread: bool,
+    },
+    /// Request to mark the given room as fully read.
+    ///
+    /// This will sends a read receipt for the latest-seen event,
+    /// moves the fully-read marker to right after that event,
+    /// and clears the unread flag for the given room.
+    MarkRoomAsRead {
+        room_id: OwnedRoomId,
+        receipt_type: ReceiptType,
     },
     /// Request to set the favorite flag for the given room.
     SetIsFavorite {
@@ -1401,8 +1410,53 @@ async fn matrix_worker_task(
                 let _set_unread_task = Handle::current().spawn(async move {
                     let result = main_timeline.room().set_unread_flag(mark_as_unread).await;
                     match result {
-                        Ok(_) => log!("Set unread flag to {} for room {}", mark_as_unread, room_id),
+                        Ok(_) => {
+                            log!("Set unread flag to {} for room {}", mark_as_unread, room_id);
+                            enqueue_rooms_list_update(RoomsListUpdate::UpdateMarkedUnread {
+                                room_id,
+                                is_marked_unread: mark_as_unread,
+                            });
+                        }
                         Err(e) => error!("Failed to set unread flag to {} for room {}: {:?}", mark_as_unread, room_id, e),
+                    }
+                });
+            }
+
+            MatrixRequest::MarkRoomAsRead { room_id, receipt_type } => {
+                let Some(main_timeline) = get_room_timeline(&room_id) else {
+                    log!("BUG: skipping mark-as-read request for not-yet-known room {room_id}");
+                    continue;
+                };
+                let _mark_read_task = Handle::current().spawn(async move {
+                    let Some(latest_event_id) = main_timeline.latest_event_id().await else {
+                        // If we can't get the latest event, just mark it as read.
+                        match main_timeline.room().set_unread_flag(false).await {
+                            Ok(_) => enqueue_rooms_list_update(RoomsListUpdate::UpdateMarkedUnread {
+                                room_id,
+                                is_marked_unread: false,
+                            }),
+                            Err(e) => error!("Failed to clear unread flag for empty room {room_id}: {e:?}"),
+                        }
+                        return;
+                    };
+
+                    let receipts = Receipts::new().fully_read_marker(latest_event_id.clone());
+                    let receipts = if matches!(receipt_type, ReceiptType::ReadPrivate) {
+                        receipts.private_read_receipt(latest_event_id)
+                    } else {
+                        receipts.public_read_receipt(latest_event_id)
+                    };
+                    match main_timeline.send_multiple_receipts(receipts).await {
+                        Ok(()) => {
+                            log!("Marked room {room_id} as fully read");
+                            enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
+                                room_id,
+                                is_marked_unread: Some(false),
+                                unread_messages: UnreadMessageCount::Known(0),
+                                unread_mentions: 0,
+                            });
+                        }
+                        Err(e) => error!("Failed to mark room {room_id} as fully read: {e:?}"),
                     }
                 });
             }
