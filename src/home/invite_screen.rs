@@ -8,7 +8,7 @@ use std::ops::Deref;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
+use crate::{app::AppStateAction, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::AvatarWidgetRefExt, bouncing_dots::BouncingDotsWidgetExt, popup_list::{enqueue_popup_notification, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
 
 use super::rooms_list::{InviteState, InviterInfo};
 
@@ -165,9 +165,40 @@ script_mod! {
             accept_button := RobrixPositiveIconButton {
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
-                draw_icon.svg: (ICON_CHECKMARK)
+                draw_icon.svg: (ICON_JOIN_ROOM)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                 text: "Join Room"
+            }
+
+            // Shown in place of the `accept_button` while a join is in progress.
+            // A spinner inside a frame that mimics the disabled button's appearance.
+            joining_view := RoundedView {
+                visible: false
+                width: Fit, height: Fit
+                align: Align{x: 0.5, y: 0.5}
+                padding: 15,
+                spacing: 10,
+                flow: Right
+
+                show_bg: true
+                draw_bg +: {
+                    color: (COLOR_BG_DISABLED)
+                    border_radius: 4.0
+                }
+
+                Label {
+                    align: Align{x: 0.5, y: 0.5}
+                    draw_text +: {
+                        color: (COLOR_FG_DISABLED)
+                        text_style: REGULAR_TEXT {font_size: 10}
+                    }
+                    text: "Joining..."
+                }
+
+                joining_spinner := BouncingDots {
+                    margin: Inset{top: 1.0}
+                    draw_bg.color: (COLOR_FG_DISABLED)
+                }
             }
         }
 
@@ -454,35 +485,57 @@ impl Widget for InviteScreen {
 
         // Third, set the buttons' text based on the invite state.
         let cancel_button = self.view.button(cx, ids!(cancel_button));
-        let accept_button = self.view.button(cx, ids!(accept_button));
+        let mut accept_button = self.view.button(cx, ids!(accept_button));
+        let joining_view = self.view.view(cx, ids!(joining_view));
+        let joining_spinner = self.view.bouncing_dots(cx, ids!(joining_spinner));
         match self.invite_state {
             InviteState::WaitingOnUserInput => {
                 cancel_button.set_enabled(cx, true);
                 accept_button.set_enabled(cx, true);
+                accept_button.set_visible(cx, true);
+                joining_view.set_visible(cx, false);
+                joining_spinner.stop_animation(cx);
                 cancel_button.set_text(cx, "Reject Invite");
                 accept_button.set_text(cx, "Join Room");
+                script_apply_eval!(cx, accept_button, {
+                    draw_icon.svg: mod.widgets.ICON_JOIN_ROOM,
+                });
             }
             InviteState::WaitingForJoinResult => {
                 cancel_button.set_enabled(cx, false);
-                accept_button.set_enabled(cx, false);
                 cancel_button.set_text(cx, "Reject Invite");
-                accept_button.set_text(cx, "Joining...");
+                // Hide the join button and show the spinner in its place.
+                accept_button.set_visible(cx, false);
+                joining_view.set_visible(cx, true);
+                joining_spinner.start_animation(cx);
             }
             InviteState::WaitingForLeaveResult => {
                 cancel_button.set_enabled(cx, false);
                 accept_button.set_enabled(cx, false);
+                accept_button.set_visible(cx, true);
+                joining_view.set_visible(cx, false);
+                joining_spinner.stop_animation(cx);
                 cancel_button.set_text(cx, "Rejecting...");
                 accept_button.set_text(cx, "Join Room");
             }
             InviteState::WaitingForJoinedRoom => {
                 cancel_button.set_enabled(cx, false);
                 accept_button.set_enabled(cx, false);
+                accept_button.set_visible(cx, true);
+                joining_view.set_visible(cx, false);
+                joining_spinner.stop_animation(cx);
                 cancel_button.set_text(cx, "Reject Invite");
-                accept_button.set_text(cx, "Joined!");
+                accept_button.set_text(cx, "✅ Joined!");
+                script_apply_eval!(cx, accept_button, {
+                    draw_icon.svg: mod.widgets.ICON_CHECKMARK,
+                    draw_icon.color: (COLOR_FG_ACCEPT_GREEN),
+                });
             }
             InviteState::RoomLeft => {
                 cancel_button.set_visible(cx, false);
                 accept_button.set_visible(cx, false);
+                joining_view.set_visible(cx, false);
+                joining_spinner.stop_animation(cx);
                 self.view.label(cx, ids!(completion_label)).set_text(
                     cx,
                     "Invite successfully rejected. You may close this invite.",
