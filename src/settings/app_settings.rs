@@ -336,7 +336,6 @@ script_mod! {
         }
 
         send_shortcut_soft_keyboard_warning := mod.widgets.SettingsSectionDescription {
-            visible: false // shown only on iOS/Android, see `populate_safe()``
             font_color: (COLOR_TEXT_WARNING_NOT_FOUND)
             body: "<ul><li>Note: this only applies to physical (hardware) keyboards.</li></ul>"
         }

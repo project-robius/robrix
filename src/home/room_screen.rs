@@ -884,6 +884,13 @@ impl ScriptHook for RoomScreen {
                 // Clear the timeline's drawn items caches and redraw it.
                 tl_state.content_drawn_since_last_update.clear();
                 tl_state.profile_drawn_since_last_update.clear();
+                // The reapply also resets the RoomInputBar, so we need to re-update its state.
+                self.view.room_input_bar(cx, ids!(room_input_bar)).update_room_state(
+                    cx,
+                    tl_state.kind.room_id(),
+                    tl_state.tombstone_info.as_ref(),
+                    tl_state.user_power,
+                );
                 self.view.redraw(cx);
             }
         });
@@ -1965,16 +1972,16 @@ impl RoomScreen {
                 TimelineUpdate::UserPowerLevels(user_power_levels) => {
                     tl.user_power = user_power_levels;
                     self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .update_user_power_levels(cx, user_power_levels);
+                        .update_room_state(cx, tl.kind.room_id(), tl.tombstone_info.as_ref(), user_power_levels);
                     // We need to redraw all events in order to reflect the new power levels,
                     // e.g., for the message context menu to be correctly populated.
                     tl.content_drawn_since_last_update.clear();
                     tl.profile_drawn_since_last_update.clear();
                 }
                 TimelineUpdate::Tombstoned(successor_room_details) => {
-                    self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .update_tombstone_footer(cx, tl.kind.room_id(), Some(&successor_room_details));
                     tl.tombstone_info = Some(successor_room_details);
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .update_room_state(cx, tl.kind.room_id(), tl.tombstone_info.as_ref(), tl.user_power);
                 }
                 TimelineUpdate::RoomEncrypted => {
                     tl.is_encrypted = true;

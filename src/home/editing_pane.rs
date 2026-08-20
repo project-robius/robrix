@@ -662,6 +662,9 @@ impl EditingPaneRef {
     /// This function *DOES NOT* emit an [`EditingPaneAction::Hidden`] action.
     pub fn force_reset_hide(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
+        if inner.visible {
+            cx.revert_key_focus();
+        }
         inner.visible = false;
         inner.animator_cut(cx, ids!(panel.hide));
         inner.is_animating_out = false;

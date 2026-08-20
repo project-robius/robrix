@@ -1247,14 +1247,14 @@ async fn matrix_worker_task(
 
             MatrixRequest::GetSuccessorRoomDetails { tombstoned_room_id } => {
                 let Some(client) = get_client() else { continue };
-                let (sender, successor_room) = {
+                let (senders, successor_room) = {
                     let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get(&tombstoned_room_id) else {
                         error!("BUG: tombstoned room {tombstoned_room_id} info not found for get successor room details request");
                         continue;
                     };
                     (
-                        room_info.main_timeline.timeline_update_sender.clone(),
+                        room_info.all_timeline_update_senders(),
                         room_info.main_timeline.timeline.room().successor_room(),
                     )
                 };
@@ -1262,7 +1262,7 @@ async fn matrix_worker_task(
                     client,
                     successor_room,
                     tombstoned_room_id,
-                    sender,
+                    senders,
                 );
             }
 
@@ -2492,6 +2492,15 @@ impl Drop for JoinedRoomDetails {
         drop(self.pinned_events_subscriber.take());
     }
 }
+impl JoinedRoomDetails {
+    /// Returns the update senders for this room's main timeline and all of its thread timelines.
+    fn all_timeline_update_senders(&self) -> Vec<crossbeam_channel::Sender<TimelineUpdate>> {
+        std::iter::once(&self.main_timeline)
+            .chain(self.thread_timelines.values())
+            .map(|ptd| ptd.timeline_update_sender.clone())
+            .collect()
+    }
+}
 
 
 /// A const-compatible hasher, used for `static` items containing `HashMap`s or `HashSet`s.
@@ -3555,26 +3564,26 @@ async fn update_room(
                 });
             }
 
-            let mut __timeline_update_sender_opt = None;
-            let mut get_timeline_update_sender = |room_id| {
-                if __timeline_update_sender_opt.is_none() {
-                    if let Some(jrd) = ALL_JOINED_ROOMS.lock().unwrap().get(room_id) {
-                        __timeline_update_sender_opt = Some(jrd.main_timeline.timeline_update_sender.clone());
-                    }
-                }
-                __timeline_update_sender_opt.clone()
+            let mut __timeline_update_senders_opt = None;
+            let mut get_timeline_update_senders = |room_id: &RoomId| -> Vec<crossbeam_channel::Sender<TimelineUpdate>> {
+                __timeline_update_senders_opt.get_or_insert_with(||
+                    ALL_JOINED_ROOMS.lock().unwrap().get(room_id)
+                        .map(JoinedRoomDetails::all_timeline_update_senders)
+                        .unwrap_or_default()
+                ).clone()
             };
 
             if !old_room.is_tombstoned && new_room.is_tombstoned {
                 let successor_room = new_room.room.successor_room();
                 log!("Updating room {new_room_id} to be tombstoned, {successor_room:?}");
                 enqueue_rooms_list_update(RoomsListUpdate::TombstonedRoom { room_id: new_room_id.clone() });
-                if let Some(timeline_update_sender) = get_timeline_update_sender(&new_room_id) {
+                let timeline_update_senders = get_timeline_update_senders(&new_room_id);
+                if !timeline_update_senders.is_empty() {
                     spawn_fetch_successor_room_preview(
                         room_list_service.client().clone(),
                         successor_room,
                         new_room_id.clone(),
-                        timeline_update_sender,
+                        timeline_update_senders,
                     );
                 } else {
                     error!("BUG: could not find JoinedRoomDetails for newly-tombstoned room {new_room_id}");
@@ -3584,24 +3593,26 @@ async fn update_room(
             if let Some(nupl) = new_room.user_power_levels
                 && old_room.user_power_levels.is_none_or(|oupl| oupl != nupl)
             {
-                if let Some(timeline_update_sender) = get_timeline_update_sender(&new_room_id) {
+                let timeline_update_senders = get_timeline_update_senders(&new_room_id);
+                if !timeline_update_senders.is_empty() {
                     log!("Updating room {new_room_id} user power levels.");
-                    match timeline_update_sender.send(TimelineUpdate::UserPowerLevels(nupl)) {
-                        Ok(_) => SignalToUI::set_ui_signal(),
-                        Err(_) => error!("Failed to send the UserPowerLevels update to room {new_room_id}"),
+                    for sender in &timeline_update_senders {
+                        let _ = sender.send(TimelineUpdate::UserPowerLevels(nupl));
                     }
+                    SignalToUI::set_ui_signal();
                 } else {
                     error!("BUG: could not find JoinedRoomDetails for room {new_room_id} where power levels changed.");
                 }
             }
 
             if !old_room.is_encrypted && new_room.is_encrypted {
-                if let Some(timeline_update_sender) = get_timeline_update_sender(&new_room_id) {
+                let timeline_update_senders = get_timeline_update_senders(&new_room_id);
+                if !timeline_update_senders.is_empty() {
                     log!("Room {new_room_id} is now encrypted.");
-                    match timeline_update_sender.send(TimelineUpdate::RoomEncrypted) {
-                        Ok(_) => SignalToUI::set_ui_signal(),
-                        Err(_) => error!("Failed to send the RoomEncrypted update to room {new_room_id}"),
+                    for sender in &timeline_update_senders {
+                        let _ = sender.send(TimelineUpdate::RoomEncrypted);
                     }
+                    SignalToUI::set_ui_signal();
                 } else {
                     error!("BUG: could not find JoinedRoomDetails for room {new_room_id} that became encrypted.");
                 }
@@ -4020,7 +4031,7 @@ fn spawn_fetch_successor_room_preview(
     client: Client,
     successor_room: Option<SuccessorRoom>,
     tombstoned_room_id: OwnedRoomId,
-    timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
+    timeline_update_senders: Vec<crossbeam_channel::Sender<TimelineUpdate>>,
 ) {
     Handle::current().spawn(async move {
         log!("Updating room {tombstoned_room_id} to be tombstoned, {successor_room:?}");
@@ -4041,10 +4052,10 @@ fn spawn_fetch_successor_room_preview(
             SuccessorRoomDetails::None
         };
 
-        match timeline_update_sender.send(TimelineUpdate::Tombstoned(srd)) {
-            Ok(_) => SignalToUI::set_ui_signal(),
-            Err(_) => error!("Failed to send the Tombstoned update to room {tombstoned_room_id}"),
+        for sender in &timeline_update_senders {
+            let _ = sender.send(TimelineUpdate::Tombstoned(srd.clone()));
         }
+        SignalToUI::set_ui_signal();
     });
 }
 
