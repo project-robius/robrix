@@ -24,7 +24,7 @@ use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FileUploadModalAction, FileUploadAttemptId, PreviewPayload, load_file_metadata}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 use crate::room::reply_preview::CollapsiblePreviewWidgetRefExt;
 
 script_mod! {
@@ -160,7 +160,23 @@ script_mod! {
     }
 }
 
-/// Main component for message input with @mention support
+/// Which view the `RoomInputBar` should show, based on room state.
+enum RoomInputBarMode<'a> {
+    /// The user can send messages, so show the regular message input bar.
+    Input,
+    /// The user cannot send messages, so show a notice saying so.
+    CannotSend,
+    /// This room was replaced, so show the tombstone footer.
+    Tombstoned {
+        room_id: &'a OwnedRoomId,
+        successor: &'a SuccessorRoomDetails,
+    },
+}
+
+/// The input bar at the bottom of a RoomScreen that allows the user to send messages, upload files, etc.
+///
+/// It also shows the tombstone footer for rooms that have been tombstoned,
+/// or a notice that the user cannot send messages to this room.
 #[derive(Script, Widget)]
 pub struct RoomInputBar {
     #[source] source: ScriptObjectRef,
@@ -178,10 +194,6 @@ pub struct RoomInputBar {
     #[rust] is_encrypted: bool,
     /// Whether the send button is currently enabled (the message input is non-empty).
     #[rust] is_send_enabled: bool,
-    /// Whether the user has permission to send messages to the current room.
-    #[rust] can_send_message: bool,
-    /// Whether the current room has been tombstoned (replaced by a successor room).
-    #[rust] is_tombstoned: bool,
     /// The room or thread that this RoomInputBar is currently within.
     #[rust] timeline_kind: Option<TimelineKind>,
     /// The widget UID of the RoomScreen containing this RoomInputBar.
@@ -363,11 +375,16 @@ impl RoomInputBar {
             }
         }
 
+        // Keyboard events still reach a hidden input bar (like the send msg shortcut),
+        // so we have to ignore them unless the user is allowed to send a message.
+        let can_post = self.view.view(cx, ids!(input_bar)).visible();
+
         // Handle the send message button being clicked, or a `Returned` action
         // from the message text input, which already respects the user's app setting.
-        if self.button(cx, ids!(send_message_button)).clicked(actions)
+        if can_post && (
+            self.button(cx, ids!(send_message_button)).clicked(actions)
             || text_input.returned(actions).is_some()
-        {
+        ) {
             let entered_text = mentionable_text_input.text().trim().to_string();
             if !entered_text.is_empty() {
                 let message = mentionable_text_input.create_message_with_mentions(&entered_text);
@@ -411,10 +428,12 @@ impl RoomInputBar {
         // send a typing notice to the room and update the send_message_button state.
         let is_text_input_empty = if let Some(new_text) = text_input.changed(actions) {
             let is_empty = new_text.is_empty();
-            submit_async_request(MatrixRequest::SendTypingNotice {
-                room_id: timeline_kind.room_id().clone(),
-                typing: !is_empty,
-            });
+            if can_post {
+                submit_async_request(MatrixRequest::SendTypingNotice {
+                    room_id: timeline_kind.room_id().clone(),
+                    typing: !is_empty,
+                });
+            }
             is_empty
         } else {
             text_input.text().is_empty()
@@ -428,7 +447,7 @@ impl RoomInputBar {
 
         // Handle the user pressing the up arrow in an empty message input box
         // to edit their latest sent message.
-        if is_text_input_empty {
+        if can_post && is_text_input_empty {
             if let Some(KeyEvent {
                 key_code: KeyCode::ArrowUp,
                 modifiers: KeyModifiers { shift: false, control: false, alt: false, logo: false },
@@ -572,31 +591,45 @@ impl RoomInputBar {
         // because it has already been hidden by the time this function gets called.
     } 
 
-    /// Updates (populates and shows or hides) this room's tombstone footer
-    /// based on the given successor room details.
-    fn update_tombstone_footer(
+    /// Updates the room state to set which mode and views are shown in the RoomInputBar.
+    fn update_room_state(
         &mut self,
         cx: &mut Cx,
-        tombstoned_room_id: &OwnedRoomId,
-        successor_room_details: Option<&SuccessorRoomDetails>,
+        room_id: &OwnedRoomId,
+        tombstone_info: Option<&SuccessorRoomDetails>,
+        user_power_levels: UserPowerLevels,
     ) {
+        // If the room is tombstoned, that takes precedence over anything else.
+        let mode = match tombstone_info {
+            Some(successor) => RoomInputBarMode::Tombstoned { room_id, successor },
+            None if user_power_levels.can_send_message() => RoomInputBarMode::Input,
+            None => RoomInputBarMode::CannotSend,
+        };
+        self.view.view(cx, ids!(input_bar))
+            .set_visible(cx, matches!(mode, RoomInputBarMode::Input));
+        self.view.view(cx, ids!(can_not_send_message_notice))
+            .set_visible(cx, matches!(mode, RoomInputBarMode::CannotSend));
+
         let tombstone_footer = self.tombstone_footer(cx, ids!(tombstone_footer));
-        if let Some(srd) = successor_room_details {
-            tombstone_footer.show(cx, tombstoned_room_id, srd);
+        if let RoomInputBarMode::Tombstoned { room_id, successor } = mode {
+            tombstone_footer.show(cx, room_id, successor);
         } else {
             tombstone_footer.hide(cx);
         }
-        self.is_tombstoned = successor_room_details.is_some();
-        self.update_input_bar_visibility(cx);
-    }
 
-    /// Shows either the `input_bar` or the `can_not_send_message_notice`,
-    /// or neither of them if the tombstone footer is covering them both.
-    fn update_input_bar_visibility(&mut self, cx: &mut Cx) {
-        let can_send = !self.is_tombstoned && self.can_send_message;
-        let cannot_send = !self.is_tombstoned && !self.can_send_message;
-        self.view.view(cx, ids!(input_bar)).set_visible(cx, can_send);
-        self.view.view(cx, ids!(can_not_send_message_notice)).set_visible(cx, cannot_send);
+        // The user can't post here anymore, so cancel any in-progress edit, reply, input, etc.
+        if !matches!(mode, RoomInputBarMode::Input) {
+            self.editing_pane(cx, ids!(editing_pane)).force_reset_hide(cx);
+            self.was_replying_preview_visible = false;
+            self.clear_replying_to(cx);
+            self.view.location_preview(cx, ids!(location_preview)).clear();
+        }
+
+        let can_notify = user_power_levels.can_notify_room();
+        self.mentionable_text_input(cx, ids!(mentionable_text_input))
+            .set_can_notify_room(cx, can_notify);
+        self.mentionable_text_input(cx, ids!(editing_pane.editing_content.edit_text_input))
+            .set_can_notify_room(cx, can_notify);
     }
 
     /// Enables or disables (grays out) the send_message_button.
@@ -617,25 +650,6 @@ impl RoomInputBar {
             draw_icon.color: #(fg_color),
             draw_bg.color: #(bg_color),
         });
-    }
-
-    /// Updates the visibility of select views based on the user's new power levels.
-    ///
-    /// This will show/hide the `input_bar` and the `can_not_send_message_notice` views.
-    fn update_user_power_levels(
-        &mut self,
-        cx: &mut Cx,
-        user_power_levels: UserPowerLevels,
-    ) {
-        self.can_send_message = user_power_levels.can_send_message();
-        self.update_input_bar_visibility(cx);
-
-        // Forward the updated power levels to the two mentionable text inputs within this widget.
-        let can_notify = user_power_levels.can_notify_room();
-        self.mentionable_text_input(cx, ids!(mentionable_text_input))
-            .set_can_notify_room(cx, can_notify);
-        self.mentionable_text_input(cx, ids!(editing_pane.editing_content.edit_text_input))
-            .set_can_notify_room(cx, can_notify);
     }
 
     /// Updates the send button (icon + color style) and empty message text
@@ -692,7 +706,7 @@ impl RoomInputBar {
         }
 
         let on_picked = self.upload_picker_callback(cx, timeline_kind);
-        Self::handle_picker_launch_result(
+        handle_picker_launch_errors(
             robius_file_picker::FileDialog::new().pick_file(on_picked)
         );
     }
@@ -713,7 +727,7 @@ impl RoomInputBar {
         }
 
         let on_picked = self.upload_picker_callback(cx, timeline_kind);
-        Self::handle_picker_launch_result(
+        handle_picker_launch_errors(
             robius_file_picker::FileDialog::new().pick_image_or_video(on_picked)
         );
     }
@@ -730,66 +744,15 @@ impl RoomInputBar {
         let sign_with_tsp = self.is_tsp_signing_enabled(_cx);
 
         // `robius-file-picker` ensures that this `on_picked` callback runs on a bg thread.
-        move |result: robius_file_picker::Result<Option<robius_file_picker::PickedFile>>| {
-            match result {
-                Ok(Some(picked)) => match picked.into_local_file() {
-                    Ok(local_file) => {
-                        match load_file_metadata(
-                            local_file,
-                            timeline_kind,
-                            in_reply_to,
-                            #[cfg(feature = "tsp")]
-                            sign_with_tsp,
-                        ) {
-                            Ok((upload, preview_source, preview_id)) => {
-                                // Show the preview modal instantly, and then re-use this bg thread
-                                // to read the file and generate the preview.
-                                Cx::post_action(FileUploadModalAction::Show { upload, preview_id });
-                                let preview = preview_source.build();
-                                Cx::post_action(FileUploadModalAction::PreviewReady {
-                                    preview_id,
-                                    preview: PreviewPayload::new(preview),
-                                });
-                            }
-                            Err(e) => enqueue_popup_notification(e, PopupKind::Error, None),
-                        }
-                    }
-                    Err(e) => enqueue_popup_notification(
-                        format!("Failed to read selected file: {e}"),
-                        PopupKind::Error,
-                        None,
-                    ),
-                },
-                // User dismissed the picker, do nothing.
-                Ok(None) => {}
-                Err(err) => enqueue_popup_notification(
-                    format!("Error selecting a file: {err}"),
-                    PopupKind::Error,
-                    None,
-                ),
-            }
-        }
-    }
-
-    fn handle_picker_launch_result(result: robius_file_picker::Result<()>) {
-        match result {
-            Ok(()) => {}
-            Err(robius_file_picker::Error::AlreadyOpen) => {
-                enqueue_popup_notification(
-                    "A file picker is already open.",
-                    PopupKind::Error,
-                    Some(4.0),
-                );
-            }
-            Err(err) => {
-                makepad_widgets::error!("Failed to launch file picker: {err}");
-                enqueue_popup_notification(
-                    format!("Failed to open file picker: {err}"),
-                    PopupKind::Error,
-                    None,
-                );
-            }
-        }
+        move |result| handle_picked_file(result, move |file_data| {
+            Ok(PendingUpload::Attachment(AttachmentUpload {
+                timeline_kind,
+                file_data,
+                in_reply_to,
+                #[cfg(feature = "tsp")]
+                sign_with_tsp,
+            }))
+        })
     }
 }
 
@@ -821,27 +784,16 @@ impl RoomInputBarRef {
         );
     }
 
-    /// Updates the visibility of select views based on the user's new power levels.
-    ///
-    /// This will show/hide the `input_bar` and the `can_not_send_message_notice` views.
-    pub fn update_user_power_levels(
+    /// See [`RoomInputBar::update_room_state()`].
+    pub fn update_room_state(
         &self,
         cx: &mut Cx,
+        room_id: &OwnedRoomId,
+        tombstone_info: Option<&SuccessorRoomDetails>,
         user_power_levels: UserPowerLevels,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.update_user_power_levels(cx, user_power_levels);
-    }
-
-    /// Updates this room's tombstone footer based on the given `tombstone_state`.
-    pub fn update_tombstone_footer(
-        &self,
-        cx: &mut Cx,
-        tombstoned_room_id: &OwnedRoomId,
-        successor_room_details: Option<&SuccessorRoomDetails>,
-    ) {
-        let Some(mut inner) = self.borrow_mut() else { return };
-        inner.update_tombstone_footer(cx, tombstoned_room_id, successor_room_details);
+        inner.update_room_state(cx, room_id, tombstone_info, user_power_levels);
     }
 
     /// Updates the message input's placeholder based on this room's encryption status.
@@ -941,10 +893,7 @@ impl RoomInputBarRef {
 
         // Note: we do *not* restore the location preview state here; see `save_state()`.
 
-        // 0. Update select views based on user power levels from the RoomScreen (the `TimelineUiState`).
-        //    This must happen before we restore the state of the `EditingPane`,
-        //    because the call to `show_editing_pane()` might re-update the `input_bar`'s visibility.
-        inner.update_user_power_levels(cx, user_power_levels);
+        // 0. Apply this room's encryption state.
         inner.update_encryption_state(cx, is_encrypted);
 
         // 1. Restore the state of the MentionableTextInput.
@@ -971,9 +920,8 @@ impl RoomInputBarRef {
             inner.on_editing_pane_hidden(cx);
         }
 
-        // 4. Restore the state of the tombstone footer.
-        //    This depends on the `EditingPane` state, so it must be done after Step 3.
-        inner.update_tombstone_footer(cx, timeline_kind.room_id(), tombstone_info);
+        // 4. Apply this room's tombstone state and the user's power levels.
+        inner.update_room_state(cx, timeline_kind.room_id(), tombstone_info, user_power_levels);
     }
 
     /// Hides the upload progress view for the given upload attempt.

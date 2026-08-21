@@ -32,6 +32,10 @@
             overflow-y: scroll;
             white-space: pre-wrap;
         }
+        /* Having nothing to disclose is the normal case, so don't leave a bare heading. */
+        .undetermined:not(:has(li)) {
+            display: none;
+        }
     </style>
 </head>
 
@@ -44,7 +48,7 @@
     
         <h2>Overview of licenses:</h2>
         <ul class="licenses-overview">
-            <li><a href="#MIT">MIT License</a> (543)</li>
+            <li><a href="#MIT">MIT License</a> (572)</li>
             <li><a href="#Apache-2.0">Apache License 2.0</a> (21)</li>
             <li><a href="#Unicode-3.0">Unicode License v3</a> (19)</li>
             <li><a href="#MPL-2.0">Mozilla Public License 2.0</a> (12)</li>
@@ -58,6 +62,17 @@
             <li><a href="#CDLA-Permissive-2.0">Community Data License Agreement Permissive 2.0</a> (1)</li>
             <li><a href="#OpenSSL">OpenSSL License</a> (1)</li>
         </ul>
+
+        <section class="undetermined">
+            <h2>Crates with no license information:</h2>
+            <p>No <code>license</code> field and no license file could be found for these, so their
+            terms aren't reproduced below. They're listed here rather than dropped silently.</p>
+            <ul>
+                
+                <li><a href=" https://crates.io/crates/makepad-fast-inflate ">makepad-fast-inflate 0.1.0</a></li>
+                
+            </ul>
+        </section>
 
         <h2>All license text:</h2>
         <ul class="licenses-list">
@@ -1790,6 +1805,35 @@ THE SOFTWARE IS PROVIDED &quot;AS IS&quot; AND ISC DISCLAIMS ALL WARRANTIES WITH
                 <h3 id="MIT">MIT License</h3>
                 <h4>Used by:</h4>
                 <ul class="license-used-by">
+                    <li><a href=" https://github.com/haraldh/rust_uds_windows ">uds_windows 1.2.1</a></li>
+                </ul>
+                <pre class="license-text">    MIT License
+
+    Copyright (c) Microsoft Corporation. All rights reserved.
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the &quot;Software&quot;), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE
+</pre>
+            </li>
+            <li class="license">
+                <h3 id="MIT">MIT License</h3>
+                <h4>Used by:</h4>
+                <ul class="license-used-by">
                     <li><a href=" https://github.com/jethrogb/rust-cexpr ">cexpr 0.6.0</a></li>
                 </ul>
                 <pre class="license-text">(C) Copyright 2016 Jethro G. Beekman
@@ -1952,6 +1996,34 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
+</pre>
+            </li>
+            <li class="license">
+                <h3 id="MIT">MIT License</h3>
+                <h4>Used by:</h4>
+                <ul class="license-used-by">
+                    <li><a href=" https://github.com/KokaKiwi/rust-hex ">hex 0.4.3</a></li>
+                </ul>
+                <pre class="license-text">Copyright (c) 2013-2014 The Rust Project Developers.
+Copyright (c) 2015-2020 The rust-hex Developers
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the &quot;Software&quot;), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 </pre>
             </li>
             <li class="license">
@@ -3480,6 +3552,32 @@ DEALINGS IN THE SOFTWARE.
                 <h3 id="MIT">MIT License</h3>
                 <h4>Used by:</h4>
                 <ul class="license-used-by">
+                    <li><a href=" https://github.com/Gilnaa/memoffset ">memoffset 0.9.1</a></li>
+                </ul>
+                <pre class="license-text">Copyright (c) 2017 Gilad Naaman
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the &quot;Software&quot;), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.</pre>
+            </li>
+            <li class="license">
+                <h3 id="MIT">MIT License</h3>
+                <h4>Used by:</h4>
+                <ul class="license-used-by">
                     <li><a href=" https://github.com/mcgoo/vcpkg-rs ">vcpkg 0.2.15</a></li>
                 </ul>
                 <pre class="license-text">Copyright (c) 2017 Jim McGrath
@@ -3508,6 +3606,39 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
+</pre>
+            </li>
+            <li class="license">
+                <h3 id="MIT">MIT License</h3>
+                <h4>Used by:</h4>
+                <ul class="license-used-by">
+                    <li><a href=" https://github.com/meithecatte/enumflags2 ">enumflags2_derive 0.7.12</a></li>
+                </ul>
+                <pre class="license-text">Copyright (c) 2017 Maik Klein
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the &quot;Software&quot;), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
 </pre>
             </li>
             <li class="license">
@@ -3677,6 +3808,72 @@ DEALINGS IN THE SOFTWARE.
                     <li><a href=" https://github.com/rustls/tokio-rustls ">tokio-rustls 0.26.3</a></li>
                 </ul>
                 <pre class="license-text">Copyright (c) 2017 quininer kel
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the &quot;Software&quot;), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+</pre>
+            </li>
+            <li class="license">
+                <h3 id="MIT">MIT License</h3>
+                <h4>Used by:</h4>
+                <ul class="license-used-by">
+                    <li><a href=" https://github.com/vorner/signal-hook ">signal-hook-registry 1.4.6</a></li>
+                </ul>
+                <pre class="license-text">Copyright (c) 2017 tokio-jsonrpc developers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the &quot;Software&quot;), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+</pre>
+            </li>
+            <li class="license">
+                <h3 id="MIT">MIT License</h3>
+                <h4>Used by:</h4>
+                <ul class="license-used-by">
+                    <li><a href=" https://github.com/meithecatte/enumflags2 ">enumflags2 0.7.12</a></li>
+                </ul>
+                <pre class="license-text">Copyright (c) 2017-2023 Maik Klein, Maja Kądziołka
 
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated
@@ -3934,7 +4131,7 @@ THE SOFTWARE.
                 <h3 id="MIT">MIT License</h3>
                 <h4>Used by:</h4>
                 <ul class="license-used-by">
-                    <li><a href=" https://github.com/project-robius/robius ">robius-directories 6.0.0</a></li>
+                    <li><a href=" https://github.com/project-robius/robius ">robius-directories 6.0.1</a></li>
                 </ul>
                 <pre class="license-text">Copyright (c) 2018 directories-rs contributors
 
@@ -5285,6 +5482,76 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
                 <h3 id="MIT">MIT License</h3>
                 <h4>Used by:</h4>
                 <ul class="license-used-by">
+                    <li><a href=" https://github.com/z-galaxy/zbus/ ">zbus 5.19.0</a></li>
+                    <li><a href=" https://github.com/z-galaxy/zbus/ ">zbus_macros 5.19.0</a></li>
+                    <li><a href=" https://github.com/z-galaxy/zbus/ ">zbus_names 4.3.4</a></li>
+                    <li><a href=" https://github.com/z-galaxy/zbus/ ">zvariant 5.14.0</a></li>
+                    <li><a href=" https://github.com/z-galaxy/zbus/ ">zvariant_derive 5.14.0</a></li>
+                </ul>
+                <pre class="license-text">Copyright (c) 2024 Zeeshan Ali Khan &amp; zbus contributors
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the &quot;Software&quot;), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+</pre>
+            </li>
+            <li class="license">
+                <h3 id="MIT">MIT License</h3>
+                <h4>Used by:</h4>
+                <ul class="license-used-by">
+                    <li><a href=" https://github.com/z-galaxy/zcheapstr/ ">zcheapstr 1.1.0</a></li>
+                </ul>
+                <pre class="license-text">Copyright (c) 2026 Zeeshan Ali Khan &amp; zcheapstr contributors
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the &quot;Software&quot;), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+</pre>
+            </li>
+            <li class="license">
+                <h3 id="MIT">MIT License</h3>
+                <h4>Used by:</h4>
+                <ul class="license-used-by">
                     <li><a href=" https://github.com/rust-cli/anstyle.git ">anstream 0.6.20</a></li>
                     <li><a href=" https://github.com/rust-cli/anstyle.git ">anstyle-parse 0.2.7</a></li>
                     <li><a href=" https://github.com/rust-cli/anstyle.git ">anstyle-query 1.1.4</a></li>
@@ -6534,6 +6801,7 @@ SOFTWARE.
                     <li><a href=" https://crates.io/crates/makepad-studio-protocol ">makepad-studio-protocol 0.1.0</a></li>
                     <li><a href=" https://github.com/makepad/makepad/ ">makepad-svg 1.0.0</a></li>
                     <li><a href=" https://crates.io/crates/makepad-tsdf ">makepad-tsdf 0.1.0</a></li>
+                    <li><a href=" https://crates.io/crates/makepad-video ">makepad-video 1.0.0</a></li>
                     <li><a href=" https://github.com/makepad/makepad/ ">makepad-wasm-bridge 1.0.0</a></li>
                     <li><a href=" https://crates.io/crates/makepad-webp ">makepad-webp 0.2.4</a></li>
                     <li><a href=" https://github.com/makepad/makepad/ ">makepad-widgets 2.0.0</a></li>
@@ -6544,12 +6812,12 @@ SOFTWARE.
                     <li><a href=" https://github.com/microsoft/windows-rs ">windows-result 0.4.1</a></li>
                     <li><a href=" https://github.com/microsoft/windows-rs ">windows-strings 0.5.1</a></li>
                     <li><a href=" https://github.com/microsoft/windows-rs ">windows 0.62.2</a></li>
-                    <li><a href=" https://github.com/project-robius/robius ">robius-common 0.3.0</a></li>
-                    <li><a href=" https://github.com/project-robius/robius ">robius-file-picker 0.3.0</a></li>
-                    <li><a href=" https://github.com/project-robius/robius ">robius-location 0.3.0</a></li>
-                    <li><a href=" https://github.com/project-robius/robius ">robius-open 0.3.0</a></li>
-                    <li><a href=" https://github.com/project-robius/robius ">robius-share 0.3.0</a></li>
-                    <li><a href=" https://github.com/project-robius/robius ">robius-web-auth-session 0.3.0</a></li>
+                    <li><a href=" https://github.com/project-robius/robius ">robius-common 0.3.1</a></li>
+                    <li><a href=" https://github.com/project-robius/robius ">robius-file-picker 0.3.1</a></li>
+                    <li><a href=" https://github.com/project-robius/robius ">robius-location 0.3.1</a></li>
+                    <li><a href=" https://github.com/project-robius/robius ">robius-open 0.3.1</a></li>
+                    <li><a href=" https://github.com/project-robius/robius ">robius-share 0.3.1</a></li>
+                    <li><a href=" https://github.com/project-robius/robius ">robius-web-auth-session 0.3.1</a></li>
                     <li><a href=" https://github.com/ruma/ruma ">ruma-client-api 0.24.0</a></li>
                     <li><a href=" https://github.com/ruma/ruma ">ruma-common 0.19.0</a></li>
                     <li><a href=" https://github.com/ruma/ruma ">ruma-events 0.34.0</a></li>
@@ -6609,7 +6877,6 @@ SOFTWARE.
                     <li><a href=" https://github.com/microsoft/windows-rs ">windows-result 0.3.4</a></li>
                     <li><a href=" https://github.com/microsoft/windows-rs ">windows-strings 0.4.2</a></li>
                     <li><a href=" https://github.com/microsoft/windows-rs ">windows-sys 0.45.0</a></li>
-                    <li><a href=" https://github.com/microsoft/windows-rs ">windows-sys 0.48.0</a></li>
                     <li><a href=" https://github.com/microsoft/windows-rs ">windows-sys 0.52.0</a></li>
                     <li><a href=" https://github.com/microsoft/windows-rs ">windows-sys 0.59.0</a></li>
                     <li><a href=" https://github.com/microsoft/windows-rs ">windows-sys 0.60.2</a></li>
@@ -6916,6 +7183,7 @@ SOFTWARE.
                 <h3 id="MIT">MIT License</h3>
                 <h4>Used by:</h4>
                 <ul class="license-used-by">
+                    <li><a href=" https://github.com/dcchut/async-recursion ">async-recursion 1.1.1</a></li>
                     <li><a href=" https://github.com/rust-lang/rustc-hash ">rustc-hash 2.1.1</a></li>
                 </ul>
                 <pre class="license-text">Permission is hereby granted, free of charge, to any
@@ -6954,24 +7222,36 @@ DEALINGS IN THE SOFTWARE.</pre>
                     <li><a href=" https://github.com/oyvindln/adler2 ">adler2 2.0.1</a></li>
                     <li><a href=" https://github.com/dtolnay/anyhow ">anyhow 1.0.100</a></li>
                     <li><a href=" https://github.com/smol-rs/async-channel ">async-channel 2.5.0</a></li>
+                    <li><a href=" https://github.com/smol-rs/async-executor ">async-executor 1.14.0</a></li>
+                    <li><a href=" https://github.com/smol-rs/async-io ">async-io 2.6.0</a></li>
+                    <li><a href=" https://github.com/smol-rs/async-lock ">async-lock 3.4.1</a></li>
+                    <li><a href=" https://github.com/smol-rs/async-process ">async-process 2.5.0</a></li>
+                    <li><a href=" https://github.com/smol-rs/async-signal ">async-signal 0.2.14</a></li>
+                    <li><a href=" https://github.com/smol-rs/async-task ">async-task 4.7.1</a></li>
                     <li><a href=" https://github.com/dtolnay/async-trait ">async-trait 0.1.89</a></li>
                     <li><a href=" https://github.com/smol-rs/atomic-waker ">atomic-waker 1.1.2</a></li>
+                    <li><a href=" https://github.com/smol-rs/blocking ">blocking 1.6.2</a></li>
                     <li><a href=" https://github.com/smol-rs/concurrent-queue ">concurrent-queue 2.5.0</a></li>
                     <li><a href=" https://github.com/Detegr/rust-ctrlc.git ">ctrlc 3.5.2</a></li>
                     <li><a href=" https://github.com/dalek-cryptography/curve25519-dalek ">curve25519-dalek-derive 0.1.1</a></li>
                     <li><a href=" https://github.com/yaahc/displaydoc ">displaydoc 0.2.5</a></li>
+                    <li><a href=" https://github.com/zeenix/endi ">endi 1.1.1</a></li>
                     <li><a href=" https://github.com/smol-rs/event-listener-strategy ">event-listener-strategy 0.5.4</a></li>
                     <li><a href=" https://github.com/smol-rs/event-listener ">event-listener 5.4.1</a></li>
                     <li><a href=" https://github.com/smol-rs/fastrand ">fastrand 2.3.0</a></li>
+                    <li><a href=" https://github.com/smol-rs/futures-lite ">futures-lite 2.6.1</a></li>
                     <li><a href=" https://github.com/hermit-os/hermit-rs ">hermit-abi 0.5.2</a></li>
                     <li><a href=" https://github.com/dtolnay/itoa ">itoa 1.0.15</a></li>
                     <li><a href=" https://github.com/sunfishcode/linux-raw-sys ">linux-raw-sys 0.11.0</a></li>
                     <li><a href=" https://github.com/Alexhuszagh/minimal-lexical ">minimal-lexical 0.2.1</a></li>
                     <li><a href=" https://github.com/matklad/once_cell ">once_cell 1.21.3</a></li>
+                    <li><a href=" https://github.com/danieldg/ordered-stream ">ordered-stream 0.2.0</a></li>
                     <li><a href=" https://github.com/smol-rs/parking ">parking 2.2.1</a></li>
                     <li><a href=" https://github.com/dtolnay/paste ">paste 1.0.15</a></li>
                     <li><a href=" https://github.com/as1100k/pastey ">pastey 0.1.1</a></li>
                     <li><a href=" https://github.com/taiki-e/pin-project-lite ">pin-project-lite 0.2.16</a></li>
+                    <li><a href=" https://github.com/smol-rs/piper ">piper 0.2.5</a></li>
+                    <li><a href=" https://github.com/smol-rs/polling ">polling 3.11.0</a></li>
                     <li><a href=" https://github.com/dtolnay/prettyplease ">prettyplease 0.2.37</a></li>
                     <li><a href=" https://github.com/bkchr/proc-macro-crate ">proc-macro-crate 3.4.0</a></li>
                     <li><a href=" https://github.com/dtolnay/proc-macro2 ">proc-macro2 1.0.101</a></li>
@@ -6986,7 +7266,9 @@ DEALINGS IN THE SOFTWARE.</pre>
                     <li><a href=" https://codeberg.org/jplatte/serde_html_form ">serde_html_form 0.4.0</a></li>
                     <li><a href=" https://github.com/serde-rs/json ">serde_json 1.0.149</a></li>
                     <li><a href=" https://github.com/dtolnay/path-to-error ">serde_path_to_error 0.1.20</a></li>
+                    <li><a href=" https://github.com/dtolnay/serde-repr ">serde_repr 0.1.21</a></li>
                     <li><a href=" https://github.com/dtolnay/syn ">syn 2.0.106</a></li>
+                    <li><a href=" https://github.com/dtolnay/syn ">syn 3.0.3</a></li>
                     <li><a href=" https://github.com/dtolnay/thiserror ">thiserror-impl 1.0.69</a></li>
                     <li><a href=" https://github.com/dtolnay/thiserror ">thiserror-impl 2.0.18</a></li>
                     <li><a href=" https://github.com/dtolnay/thiserror ">thiserror 1.0.69</a></li>
@@ -6999,6 +7281,7 @@ DEALINGS IN THE SOFTWARE.</pre>
                     <li><a href=" https://github.com/bytecodealliance/wit-bindgen ">wit-bindgen 0.46.0</a></li>
                     <li><a href=" https://github.com/bytecodealliance/wit-bindgen ">wit-bindgen 0.51.0</a></li>
                     <li><a href=" https://github.com/dtolnay/zmij ">zmij 1.0.14</a></li>
+                    <li><a href=" https://github.com/z-galaxy/zbus/ ">zvariant_utils 4.0.0</a></li>
                 </ul>
                 <pre class="license-text">Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated
@@ -7750,6 +8033,35 @@ DEALINGS IN THE SOFTWARE.
                 <pre class="license-text">The MIT License (MIT)
 
 Copyright (c) 2020 Yevhenii Reizner
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the &quot;Software&quot;), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+</pre>
+            </li>
+            <li class="license">
+                <h3 id="MIT">MIT License</h3>
+                <h4>Used by:</h4>
+                <ul class="license-used-by">
+                    <li><a href=" https://github.com/smol-rs/async-broadcast ">async-broadcast 0.7.2</a></li>
+                </ul>
+                <pre class="license-text">The MIT License (MIT)
+
+Copyright (c) 2020 Yoshua Wuyts
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the &quot;Software&quot;), to deal

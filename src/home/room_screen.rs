@@ -884,6 +884,13 @@ impl ScriptHook for RoomScreen {
                 // Clear the timeline's drawn items caches and redraw it.
                 tl_state.content_drawn_since_last_update.clear();
                 tl_state.profile_drawn_since_last_update.clear();
+                // The reapply also resets the RoomInputBar, so we need to re-update its state.
+                self.view.room_input_bar(cx, ids!(room_input_bar)).update_room_state(
+                    cx,
+                    tl_state.kind.room_id(),
+                    tl_state.tombstone_info.as_ref(),
+                    tl_state.user_power,
+                );
                 self.view.redraw(cx);
             }
         });
@@ -892,7 +899,7 @@ impl ScriptHook for RoomScreen {
 
 impl Widget for RoomScreen {
     // Handle events and actions for the RoomScreen widget and its inner Timeline view.
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
         // Skip event handling if this RoomScreen is uninitialized (a background dock tab after dock restore).
         if self.tl_state.is_none() && self.room_name_id.is_none() {
             return;
@@ -906,6 +913,10 @@ impl Widget for RoomScreen {
             room_input_popup_menu,
         } = self.cached_widget_refs(cx);
 
+        let is_pane_shown = loading_pane.is_currently_shown(cx)
+            || user_profile_sliding_pane.is_currently_shown(cx);
+        let is_popup_menu_open = room_input_popup_menu.is_open();
+
         // Only direct interaction with the timeline itself can send a read receipt;
         // the direction of any scrolling gets checked later via `user_scroll_travel()`.
         let interaction_pos = match event {
@@ -917,10 +928,11 @@ impl Widget for RoomScreen {
             _ => None,
         };
         if interaction_pos.is_some_and(|pos| portal_list.area().rect(cx).contains(pos))
-            // Interactions aimed at an overlaying pane don't count.
-            && !room_input_popup_menu.is_open()
-            && !loading_pane.is_currently_shown(cx)
-            && !user_profile_sliding_pane.is_currently_shown(cx)
+            // Interactions aimed at one of our own panes don't count, nor do those aimed
+            // at an app-level overlay (modals and menus block scrolling while open).
+            && !is_pane_shown
+            && !is_popup_menu_open
+            && cx.is_scrolling_allowed_within(&portal_list.area())
         {
             self.read_receipt_state.start_timer(cx, &portal_list);
         }
@@ -1184,145 +1196,98 @@ impl Widget for RoomScreen {
             avatar_cache::process_avatar_updates(cx);
         }
 
-        // We only forward "interactive hit" events to the inner timeline view
-        // if none of the various overlay views are visible.
-        // We always forward "non-interactive hit" events to the inner timeline view.
-        // We check which overlay views are visible in the order of those views' z-ordering,
-        // such that the top-most views get a chance to handle the event first.
-        //
-        let is_interactive_hit = utils::is_interactive_hit_event(event);
-        let is_pane_shown: bool;
-        let mut close_room_input_popup_menu_after_forwarding = false;
-        if room_input_popup_menu.is_open() {
-            if event.back_pressed() || matches!(event, Event::KeyUp(KeyEvent { key_code: KeyCode::Escape, .. })) {
-                room_input_popup_menu.close(cx);
-                is_pane_shown = true;
-            }
-            else if is_interactive_hit {
-                if room_input_popup_menu.is_event_within_popup_menu(cx, event) {
-                    is_pane_shown = true;
-                    room_input_popup_menu.handle_event(cx, event, scope);
+        // Forward the event to the inner timeline view, but capture any actions it produces
+        // such that we can handle the ones relevant to only THIS RoomScreen widget right here and now,
+        // ensuring they are not mistakenly handled by other RoomScreen widget instances.
+        // When an overlay pane is shown, all "interactive" user inputs are only forwarded to it.
+        // The popup menu allows events to fall through, but they do dismiss it.
+        let mut actions_generated_within_this_room_screen = cx.capture_actions(|cx| {
+            if is_pane_shown && utils::is_interactive_hit_event(event) {
+                if loading_pane.is_currently_shown(cx) {
+                    loading_pane.handle_event(cx, event, &mut Scope::empty());
                 } else {
-                    // Let outside clicks, hovers, and mouse moves fall through to the underlying UI.
-                    close_room_input_popup_menu_after_forwarding =
-                        room_input_popup_menu.should_dismiss_for_outside_event(cx, event);
-                    is_pane_shown = false;
+                    user_profile_sliding_pane.handle_event(cx, event, &mut Scope::empty());
                 }
+            } else if is_popup_menu_open && room_input_popup_menu.is_event_within_popup_menu(cx, event) {
+                room_input_popup_menu.handle_event(cx, event, &mut Scope::empty());
             } else {
-                is_pane_shown = false;
+                self.view.handle_event(cx, event, &mut Scope::empty());
             }
-        }
-        else if loading_pane.is_currently_shown(cx) {
-            is_pane_shown = true;
-            if is_interactive_hit {
-                loading_pane.handle_event(cx, event, scope);
+        });
+        // Here, we handle and remove any general actions that are relevant to only this RoomScreen.
+        // Removing the handled actions ensures they are not mistakenly handled by other RoomScreen widget instances.
+        actions_generated_within_this_room_screen.retain(|action| {
+            if self.handle_link_clicked(cx, action, &user_profile_sliding_pane) {
+                return false;
             }
-        }
-        else if user_profile_sliding_pane.is_currently_shown(cx) {
-            is_pane_shown = true;
-            if is_interactive_hit {
-                user_profile_sliding_pane.handle_event(cx, event, scope);
-            }
-        }
-        else {
-            is_pane_shown = false;
-        }
 
-        // TODO: once we use the `hits()` API, should be able to remove the above conditionals
-        //       about whether the loading pane or user profile pane are shown, because
-        //       Makepad already delivers most events to all views regardless of visibility,
-        //       so the only thing we'd need here is the conditional below.
-
-        if !is_pane_shown || !is_interactive_hit {
-            // Forward the event to the inner timeline view, but capture any actions it produces
-            // such that we can handle the ones relevant to only THIS RoomScreen widget right here and now,
-            // ensuring they are not mistakenly handled by other RoomScreen widget instances.
-            let mut actions_generated_within_this_room_screen = cx.capture_actions(|cx|
-                self.view.handle_event(cx, event, &mut Scope::empty())
-            );
-            // Here, we handle and remove any general actions that are relevant to only this RoomScreen.
-            // Removing the handled actions ensures they are not mistakenly handled by other RoomScreen widget instances.
-            actions_generated_within_this_room_screen.retain(|action| {
-                if self.handle_link_clicked(cx, action, &user_profile_sliding_pane) {
+            // Handle actions related to the room input popup menu.
+            match action.as_widget_action().cast() {
+                RoomInputPopupMenuAction::None => {}
+                room_popup_menu_action => {
+                    self.handle_room_input_popup_menu_action(cx, room_popup_menu_action);
                     return false;
                 }
-
-                // Handle actions related to the room input popup menu.
-                match action.as_widget_action().cast() {
-                    RoomInputPopupMenuAction::None => {}
-                    room_popup_menu_action => {
-                        self.handle_room_input_popup_menu_action(cx, room_popup_menu_action);
-                        return false;
-                    }
-                }
-
-                // Handle the action that requests to show the user profile sliding pane.
-                if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
-                    self.show_user_profile(
-                        cx,
-                        &user_profile_sliding_pane,
-                        UserProfilePaneInfo {
-                            profile_and_room_id,
-                            room_name: self.room_name_id.as_ref().map_or_else(
-                                || UNNAMED_ROOM.to_string(),
-                                |r| r.to_string(),
-                            ),
-                            room_member: None,
-                        },
-                    );
-                }
-
-                /*
-                match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast() {
-                    MessageAction::ActionBarClose => {
-                        let message_action_bar_popup = self.popup_notification(cx, ids!(message_action_bar_popup));
-                        let message_action_bar = message_action_bar_popup.message_action_bar(cx, ids!(message_action_bar));
-
-                        // close only if the active message is requesting it to avoid double closes.
-                        if let Some(message_widget_uid) = message_action_bar.message_widget_uid() {
-                            if action.as_widget_action().widget_uid_eq(message_widget_uid).is_some() {
-                                message_action_bar_popup.close(cx);
-                            }
-                        }
-                    }
-                    MessageAction::ActionBarOpen { item_id, message_rect } => {
-                        let message_action_bar_popup = self.popup_notification(cx, ids!(message_action_bar_popup));
-                        let message_action_bar = message_action_bar_popup.message_action_bar(cx, ids!(message_action_bar));
-
-                        let margin_x = 50.;
-
-                        let coords = dvec2(
-                            (message_rect.pos.x + message_rect.size.x) - margin_x,
-                            message_rect.pos.y,
-                        );
-
-                        script_apply_eval!(cx, message_action_bar_popup, {
-                            content +: { margin +: { left: #(coords.x), top: #(coords.y) } }
-                        });
-
-                        if let Some(message_widget_uid) = action.as_widget_action().map(|a| a.widget_uid) {
-                            message_action_bar_popup.open(cx);
-                            message_action_bar.initialize_with_data(cx, widget_uid, message_widget_uid, item_id);
-                        }
-                    }
-                    _ => {}
-                }
-                */
-
-                // Keep all unhandled actions so we can add them back to the global action list below.
-                true
-            });
-            // Add back any unhandled actions to the global action list.
-            cx.extend_actions(actions_generated_within_this_room_screen);
-
-            if close_room_input_popup_menu_after_forwarding {
-                let room_input_popup_menu =
-                    self.room_input_popup_menu(cx, ids!(room_input_popup_menu));
-                if room_input_popup_menu.is_open() {
-                    room_input_popup_menu.close(cx);
-                }
             }
-        }
+
+            // Handle the action that requests to show the user profile sliding pane.
+            if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
+                self.show_user_profile(
+                    cx,
+                    &user_profile_sliding_pane,
+                    UserProfilePaneInfo {
+                        profile_and_room_id,
+                        room_name: self.room_name_id.as_ref().map_or_else(
+                            || UNNAMED_ROOM.to_string(),
+                            |r| r.to_string(),
+                        ),
+                        room_member: None,
+                    },
+                );
+            }
+
+            /*
+            match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast() {
+                MessageAction::ActionBarClose => {
+                    let message_action_bar_popup = self.popup_notification(cx, ids!(message_action_bar_popup));
+                    let message_action_bar = message_action_bar_popup.message_action_bar(cx, ids!(message_action_bar));
+
+                    // close only if the active message is requesting it to avoid double closes.
+                    if let Some(message_widget_uid) = message_action_bar.message_widget_uid() {
+                        if action.as_widget_action().widget_uid_eq(message_widget_uid).is_some() {
+                            message_action_bar_popup.close(cx);
+                        }
+                    }
+                }
+                MessageAction::ActionBarOpen { item_id, message_rect } => {
+                    let message_action_bar_popup = self.popup_notification(cx, ids!(message_action_bar_popup));
+                    let message_action_bar = message_action_bar_popup.message_action_bar(cx, ids!(message_action_bar));
+
+                    let margin_x = 50.;
+
+                    let coords = dvec2(
+                        (message_rect.pos.x + message_rect.size.x) - margin_x,
+                        message_rect.pos.y,
+                    );
+
+                    script_apply_eval!(cx, message_action_bar_popup, {
+                        content +: { margin +: { left: #(coords.x), top: #(coords.y) } }
+                    });
+
+                    if let Some(message_widget_uid) = action.as_widget_action().map(|a| a.widget_uid) {
+                        message_action_bar_popup.open(cx);
+                        message_action_bar.initialize_with_data(cx, widget_uid, message_widget_uid, item_id);
+                    }
+                }
+                _ => {}
+            }
+            */
+
+            // Keep all unhandled actions so we can add them back to the global action list below.
+            true
+        });
+        // Add back any unhandled actions to the global action list.
+        cx.extend_actions(actions_generated_within_this_room_screen);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -1965,16 +1930,16 @@ impl RoomScreen {
                 TimelineUpdate::UserPowerLevels(user_power_levels) => {
                     tl.user_power = user_power_levels;
                     self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .update_user_power_levels(cx, user_power_levels);
+                        .update_room_state(cx, tl.kind.room_id(), tl.tombstone_info.as_ref(), user_power_levels);
                     // We need to redraw all events in order to reflect the new power levels,
                     // e.g., for the message context menu to be correctly populated.
                     tl.content_drawn_since_last_update.clear();
                     tl.profile_drawn_since_last_update.clear();
                 }
                 TimelineUpdate::Tombstoned(successor_room_details) => {
-                    self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .update_tombstone_footer(cx, tl.kind.room_id(), Some(&successor_room_details));
                     tl.tombstone_info = Some(successor_room_details);
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .update_room_state(cx, tl.kind.room_id(), tl.tombstone_info.as_ref(), tl.user_power);
                 }
                 TimelineUpdate::RoomEncrypted => {
                     tl.is_encrypted = true;

@@ -97,6 +97,21 @@ pub enum SuccessorRoomDetails {
         reason: Option<String>,
     }
 }
+impl Clone for SuccessorRoomDetails {
+    fn clone(&self) -> Self {
+        match self {
+            Self::None => Self::None,
+            Self::Basic(sr) => Self::Basic(SuccessorRoom {
+                room_id: sr.room_id.clone(),
+                reason: sr.reason.clone(),
+            }),
+            Self::Full { room_preview, reason } => Self::Full {
+                room_preview: room_preview.clone(),
+                reason: reason.clone(),
+            },
+        }
+    }
+}
 
 
 /// A view that shows information about a tombstoned room and its successor.

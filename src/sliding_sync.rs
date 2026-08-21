@@ -41,7 +41,7 @@ use crate::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, shared::{
-        attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId}, jump_to_bottom_button::UnreadMessageCount, mention_popup::{MentionItem, RoomMentionCandidate}, mentionable_text_input::MentionMatches, popup_list::{PopupKind, enqueue_popup_notification}
+        attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, FileUploadMetadata}, jump_to_bottom_button::UnreadMessageCount, mention_popup::{MentionItem, RoomMentionCandidate}, mentionable_text_input::MentionMatches, popup_list::{PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
@@ -610,6 +610,13 @@ pub enum MatrixRequest {
         /// * If `Some`, the avatar will be set to the given MXC URI.
         /// * If `None`, the avatar will be removed.
         avatar_url: Option<OwnedMxcUri>,
+    },
+    /// Request to upload the given image file and set it as the current user's avatar.
+    ///
+    /// The result is delivered as either an [`AccountDataAction::AvatarChanged`] or
+    /// [`AccountDataAction::AvatarChangeFailed`] action.
+    UploadAvatar {
+        file_data: FileUploadMetadata,
     },
     /// Request to set or remove the display name of the current user's account.
     SetDisplayName {
@@ -1247,14 +1254,14 @@ async fn matrix_worker_task(
 
             MatrixRequest::GetSuccessorRoomDetails { tombstoned_room_id } => {
                 let Some(client) = get_client() else { continue };
-                let (sender, successor_room) = {
+                let (senders, successor_room) = {
                     let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_joined_rooms.get(&tombstoned_room_id) else {
                         error!("BUG: tombstoned room {tombstoned_room_id} info not found for get successor room details request");
                         continue;
                     };
                     (
-                        room_info.main_timeline.timeline_update_sender.clone(),
+                        room_info.all_timeline_update_senders(),
                         room_info.main_timeline.timeline.room().successor_room(),
                     )
                 };
@@ -1262,7 +1269,7 @@ async fn matrix_worker_task(
                     client,
                     successor_room,
                     tombstoned_room_id,
-                    sender,
+                    senders,
                 );
             }
 
@@ -1508,6 +1515,39 @@ async fn matrix_worker_task(
                         }
                         Err(e) => {
                             let err_msg = format!("Failed to {} avatar: {e}", if is_removing { "remove" } else { "set" });
+                            Cx::post_action(AccountDataAction::AvatarChangeFailed(err_msg));
+                        }
+                    }
+                });
+            }
+
+            MatrixRequest::UploadAvatar { file_data } => {
+                let Some(client) = get_client() else { continue };
+                let _upload_avatar_task = Handle::current().spawn(async move {
+                    let name = file_data.file_name();
+                    let size = utils::format_decimal_file_size(file_data.size);
+                    log!("Uploading new avatar image {name} ({} bytes)...", file_data.size);
+                    let content_type: Mime = file_data.mime_type.parse()
+                        .unwrap_or(mime::APPLICATION_OCTET_STREAM);
+
+                    let result = match exceeds_upload_limit(file_data.size, "the new avatar").await {
+                        Some(max_size) => Err(format!(
+                            "\"{name}\" is {size}, over your homeserver's {} upload limit. \
+                             Please choose a smaller image.",
+                            utils::format_decimal_file_size(max_size),
+                        )),
+                        None => match tokio::fs::read(file_data.path()).await {
+                            Err(e) => Err(format!("Couldn't read \"{name}\": {e}")),
+                            Ok(data) => client.account().upload_avatar(&content_type, data).await
+                                .map_err(|e| avatar_rejection_message(&e, &size, &file_data.mime_type)),
+                        },
+                    };
+                    match result {
+                        Ok(avatar_url) => {
+                            log!("Successfully uploaded and set new avatar {avatar_url}.");
+                            Cx::post_action(AccountDataAction::AvatarChanged(Some(avatar_url)));
+                        }
+                        Err(err_msg) => {
                             Cx::post_action(AccountDataAction::AvatarChangeFailed(err_msg));
                         }
                     }
@@ -1954,39 +1994,20 @@ async fn matrix_worker_task(
                         });
                         SignalToUI::set_ui_signal();
 
-                        let max_upload_size = match get_client() {
-                            Some(client) => match client.load_or_fetch_max_upload_size().await {
-                                Ok(max_upload_size) => Some(max_upload_size),
-                                Err(e) => {
-                                    warning!("Could not fetch homeserver max upload size for {timeline_kind}: {e:?}; continuing without a local size-limit check.");
-                                    None
-                                }
-                            },
-                            None => {
-                                warning!("Could not fetch homeserver max upload size for {timeline_kind}: client unavailable; continuing without a local size-limit check.");
-                                None
-                            }
-                        };
-                        if let Some(max_upload_size) = max_upload_size {
-                            let exceeds_max_upload_size = matrix_sdk::ruma::UInt::try_from(upload.file_data.size)
-                                .map(|upload_size| upload_size > max_upload_size)
-                                .unwrap_or(true);
-                            if exceeds_max_upload_size {
-                                let max_size: u64 = max_upload_size.into();
-                                let error = format!(
-                                    "file size of ({}) exceeds the homeserver's {} limit.",
-                                    utils::format_decimal_file_size(upload.file_data.size),
-                                    utils::format_decimal_file_size(max_size),
-                                );
-                                let _ = sender_clone.send(TimelineUpdate::FileUploadError {
-                                    upload_id,
-                                    error,
-                                    upload,
-                                    retryable: false,
-                                });
-                                SignalToUI::set_ui_signal();
-                                return;
-                            }
+                        if let Some(max_size) = exceeds_upload_limit(upload.file_data.size, &timeline_kind).await {
+                            let error = format!(
+                                "file size of ({}) exceeds the homeserver's {} limit.",
+                                utils::format_decimal_file_size(upload.file_data.size),
+                                utils::format_decimal_file_size(max_size),
+                            );
+                            let _ = sender_clone.send(TimelineUpdate::FileUploadError {
+                                upload_id,
+                                error,
+                                upload,
+                                retryable: false,
+                            });
+                            SignalToUI::set_ui_signal();
+                            return;
                         }
 
                         let upload_for_error = upload.clone();
@@ -2490,6 +2511,15 @@ impl Drop for JoinedRoomDetails {
         // PerTimelineDetails::Drop, so just tear down the room-level subscriptions here.
         drop(self.typing_notice_subscriber.take());
         drop(self.pinned_events_subscriber.take());
+    }
+}
+impl JoinedRoomDetails {
+    /// Returns the update senders for this room's main timeline and all of its thread timelines.
+    fn all_timeline_update_senders(&self) -> Vec<crossbeam_channel::Sender<TimelineUpdate>> {
+        std::iter::once(&self.main_timeline)
+            .chain(self.thread_timelines.values())
+            .map(|d| d.timeline_update_sender.clone())
+            .collect()
     }
 }
 
@@ -3555,26 +3585,26 @@ async fn update_room(
                 });
             }
 
-            let mut __timeline_update_sender_opt = None;
-            let mut get_timeline_update_sender = |room_id| {
-                if __timeline_update_sender_opt.is_none() {
-                    if let Some(jrd) = ALL_JOINED_ROOMS.lock().unwrap().get(room_id) {
-                        __timeline_update_sender_opt = Some(jrd.main_timeline.timeline_update_sender.clone());
-                    }
-                }
-                __timeline_update_sender_opt.clone()
+            let mut __timeline_update_senders_opt = None;
+            let mut get_timeline_update_senders = |room_id: &RoomId| -> Vec<crossbeam_channel::Sender<TimelineUpdate>> {
+                __timeline_update_senders_opt.get_or_insert_with(||
+                    ALL_JOINED_ROOMS.lock().unwrap().get(room_id)
+                        .map(JoinedRoomDetails::all_timeline_update_senders)
+                        .unwrap_or_default()
+                ).clone()
             };
 
             if !old_room.is_tombstoned && new_room.is_tombstoned {
                 let successor_room = new_room.room.successor_room();
                 log!("Updating room {new_room_id} to be tombstoned, {successor_room:?}");
                 enqueue_rooms_list_update(RoomsListUpdate::TombstonedRoom { room_id: new_room_id.clone() });
-                if let Some(timeline_update_sender) = get_timeline_update_sender(&new_room_id) {
+                let timeline_update_senders = get_timeline_update_senders(&new_room_id);
+                if !timeline_update_senders.is_empty() {
                     spawn_fetch_successor_room_preview(
                         room_list_service.client().clone(),
                         successor_room,
                         new_room_id.clone(),
-                        timeline_update_sender,
+                        timeline_update_senders,
                     );
                 } else {
                     error!("BUG: could not find JoinedRoomDetails for newly-tombstoned room {new_room_id}");
@@ -3584,24 +3614,26 @@ async fn update_room(
             if let Some(nupl) = new_room.user_power_levels
                 && old_room.user_power_levels.is_none_or(|oupl| oupl != nupl)
             {
-                if let Some(timeline_update_sender) = get_timeline_update_sender(&new_room_id) {
+                let timeline_update_senders = get_timeline_update_senders(&new_room_id);
+                if !timeline_update_senders.is_empty() {
                     log!("Updating room {new_room_id} user power levels.");
-                    match timeline_update_sender.send(TimelineUpdate::UserPowerLevels(nupl)) {
-                        Ok(_) => SignalToUI::set_ui_signal(),
-                        Err(_) => error!("Failed to send the UserPowerLevels update to room {new_room_id}"),
+                    for sender in &timeline_update_senders {
+                        let _ = sender.send(TimelineUpdate::UserPowerLevels(nupl));
                     }
+                    SignalToUI::set_ui_signal();
                 } else {
                     error!("BUG: could not find JoinedRoomDetails for room {new_room_id} where power levels changed.");
                 }
             }
 
             if !old_room.is_encrypted && new_room.is_encrypted {
-                if let Some(timeline_update_sender) = get_timeline_update_sender(&new_room_id) {
+                let timeline_update_senders = get_timeline_update_senders(&new_room_id);
+                if !timeline_update_senders.is_empty() {
                     log!("Room {new_room_id} is now encrypted.");
-                    match timeline_update_sender.send(TimelineUpdate::RoomEncrypted) {
-                        Ok(_) => SignalToUI::set_ui_signal(),
-                        Err(_) => error!("Failed to send the RoomEncrypted update to room {new_room_id}"),
+                    for sender in &timeline_update_senders {
+                        let _ = sender.send(TimelineUpdate::RoomEncrypted);
                     }
+                    SignalToUI::set_ui_signal();
                 } else {
                     error!("BUG: could not find JoinedRoomDetails for room {new_room_id} that became encrypted.");
                 }
@@ -4020,7 +4052,7 @@ fn spawn_fetch_successor_room_preview(
     client: Client,
     successor_room: Option<SuccessorRoom>,
     tombstoned_room_id: OwnedRoomId,
-    timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
+    timeline_update_senders: Vec<crossbeam_channel::Sender<TimelineUpdate>>,
 ) {
     Handle::current().spawn(async move {
         log!("Updating room {tombstoned_room_id} to be tombstoned, {successor_room:?}");
@@ -4041,10 +4073,10 @@ fn spawn_fetch_successor_room_preview(
             SuccessorRoomDetails::None
         };
 
-        match timeline_update_sender.send(TimelineUpdate::Tombstoned(srd)) {
-            Ok(_) => SignalToUI::set_ui_signal(),
-            Err(_) => error!("Failed to send the Tombstoned update to room {tombstoned_room_id}"),
+        for sender in &timeline_update_senders {
+            let _ = sender.send(TimelineUpdate::Tombstoned(srd.clone()));
         }
+        SignalToUI::set_ui_signal();
     });
 }
 
@@ -4277,6 +4309,44 @@ async fn update_latest_event(room: &Room) {
     }
 }
 
+
+/// Returns the homeserver's max upload size if `size` exceeds it.
+///
+/// Returns `None` if the file fits, or if we couldn't determine the limit,
+/// in which case we let the homeserver be the judge.
+async fn exceeds_upload_limit(size: u64, context: impl std::fmt::Display) -> Option<u64> {
+    let Some(client) = get_client() else {
+        warning!("Could not fetch homeserver max upload size for {context}: client unavailable; continuing without a local size-limit check.");
+        return None;
+    };
+    let max_upload_size = match client.load_or_fetch_max_upload_size().await {
+        Ok(max_upload_size) => max_upload_size,
+        Err(e) => {
+            warning!("Could not fetch homeserver max upload size for {context}: {e:?}; continuing without a local size-limit check.");
+            return None;
+        }
+    };
+    matrix_sdk::ruma::UInt::try_from(size)
+        .map(|size| size > max_upload_size)
+        .unwrap_or(true)
+        .then(|| max_upload_size.into())
+}
+
+/// Returns human-readable errors explaining why the homeserver refused an avatar upload.
+fn avatar_rejection_message(error: &matrix_sdk::Error, size: &str, mime_type: &str) -> String {
+    let status_code = error.as_client_api_error().map(|e| e.status_code.as_u16());
+    match status_code {
+        Some(403) => format!(
+            "Your homeserver refused this avatar ({size}, {mime_type}). It may be too large, \
+             or your server may not allow that image type. \
+             Try a smaller image file, or a common format like PNG/JPEG."
+        ),
+        Some(413) => format!(
+            "This image ({size}) is too large for your homeserver. Please choose a smaller one."
+        ),
+        _ => format!("Failed to upload avatar: {error}"),
+    }
+}
 
 /// Returns an ordered list of rooms/spaces that the client knows about that match the given `query`.
 ///

@@ -41,7 +41,7 @@ script_mod! {
         height: Fill
         flow: Overlay
         align: Align{x: 0, y: 1}
-        cursor: MouseCursor.Default
+        // No cursor here, since this is a Fill-Fill overlay pane.
 
         show_bg: false
         draw_bg +: {
@@ -119,6 +119,12 @@ impl Widget for RoomInputPopupMenu {
             return;
         }
 
+        // Clicks/taps outside the menu dismiss it, but do fall through to the widgets behind.
+        if self.should_dismiss_for_outside_event(cx, event) {
+            self.close(cx);
+            return;
+        }
+
         self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
     }
@@ -185,7 +191,7 @@ impl RoomInputPopupMenu {
         }
     }
 
-    pub fn should_dismiss_for_outside_event(&self, cx: &mut Cx, event: &Event) -> bool {
+    fn should_dismiss_for_outside_event(&self, cx: &mut Cx, event: &Event) -> bool {
         let main_rect = self.view(cx, ids!(main_content)).area().rect(cx);
         match event {
             Event::MouseDown(e) => !main_rect.contains(e.abs),
@@ -217,11 +223,6 @@ impl RoomInputPopupMenuRef {
     pub fn is_event_within_popup_menu(&self, cx: &mut Cx, event: &Event) -> bool {
         let Some(inner) = self.borrow() else { return false };
         inner.is_event_within_popup_menu(cx, event)
-    }
-
-    pub fn should_dismiss_for_outside_event(&self, cx: &mut Cx, event: &Event) -> bool {
-        let Some(inner) = self.borrow() else { return false };
-        inner.should_dismiss_for_outside_event(cx, event)
     }
 
     pub fn selected(&self, actions: &Actions) -> Option<RoomInputPopupMenuAction> {
