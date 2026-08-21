@@ -60,6 +60,10 @@ enum TspVerificationModalState {
         details: TspVerificationDetails,
         wallet_db: AsyncSecureStore,
     },
+    /// Our accept response has been sent, we're now waiting for it to be acked.
+    ResponseSent {
+        details: TspVerificationDetails,
+    },
     RequestVerified,
     RequestDeclined,
 }
@@ -67,7 +71,8 @@ impl TspVerificationModalState {
     fn details(&self) -> Option<&TspVerificationDetails> {
         match self {
             TspVerificationModalState::ReceivedRequest { details, .. }
-            | TspVerificationModalState::RequestAccepted { details, .. } => Some(details),
+            | TspVerificationModalState::RequestAccepted { details, .. }
+            | TspVerificationModalState::ResponseSent { details } => Some(details),
             _ => None,
         }
     }
@@ -195,15 +200,18 @@ impl WidgetMatchEvent for TspVerificationModal {
                 TspVerificationModalState::RequestAccepted { details, wallet_db } => {
                     submit_tsp_request(TspRequest::RespondToDidAssociationRequest {
                         details: details.clone(),
-                        wallet_db: wallet_db.clone(),
+                        wallet_db,
                         accepted: true,
                     });
                     let prompt_text = "You have confirmed the TSP verification request.\n\nSending a response now...";
                     prompt_label.set_text(cx, prompt_text);
                     accept_button.set_enabled(cx, false);
-                    // stay in this same state until we get an acknowledgment back 
-                    // that we sent the response (the `SentDidAssociationResponse` action).
-                    new_state = TspVerificationModalState::RequestAccepted { details, wallet_db };
+                    cancel_button.set_visible(cx, false);
+                    new_state = TspVerificationModalState::ResponseSent { details };
+                }
+
+                TspVerificationModalState::ResponseSent { details } => {
+                    new_state = TspVerificationModalState::ResponseSent { details };
                 }
 
                 TspVerificationModalState::Initial
