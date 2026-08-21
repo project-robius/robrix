@@ -38,11 +38,9 @@ impl Drop for VerificationInProgress {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub enum VerificationStateAction {
     Update(VerificationState),
-    #[default]
-    None,
 }
 
 
@@ -120,7 +118,7 @@ async fn dump_devices(user_id: &UserId, client: &Client) -> String {
 async fn sas_verification_handler(
     client: Client,
     sas: SasVerification,
-    response_receiver: UnboundedReceiver<VerificationUserResponse>,
+    mut response_receiver: UnboundedReceiver<VerificationUserResponse>,
     _in_progress: VerificationInProgress,
 ) {
     log!(
@@ -138,9 +136,52 @@ async fn sas_verification_handler(
         return;
     }
 
-    // A little trick to allow us to move the response_receiver into the async block below.
-    let mut receiver_opt = Some(response_receiver);
-    while let Some(state) = stream.next().await {
+    // Poll the modal's responses alongside the stream of verification state updates,
+    // so that we can actually handle the user canceling the verification at any point.
+    enum KeyConfirmation {
+        NotYetAsked,
+        WaitingOnUser,
+        UserAnswered,
+    }
+    let mut key_confirmation = KeyConfirmation::NotYetAsked;
+
+    loop {
+        let state = tokio::select! {
+            response = response_receiver.recv() => {
+                match response {
+                    Some(VerificationUserResponse::Accept)
+                        if matches!(key_confirmation, KeyConfirmation::WaitingOnUser) =>
+                    {
+                        key_confirmation = KeyConfirmation::UserAnswered;
+                        log!("User confirmed SAS verification keys");
+                        let sas2 = sas.clone();
+                        Handle::current().spawn(async move {
+                            if let Err(e) = sas2.confirm().await {
+                                log!("Failed to confirm SAS verification keys; error: {:?}", e);
+                                Cx::post_action(VerificationAction::SasConfirmationError(Arc::new(e)));
+                            }
+                        });
+                    }
+                    // An old or duplicate `Accept` shouldn't be treated as us confirming the keys match.
+                    Some(VerificationUserResponse::Accept) => { }
+                    // `None` means the modal was dismissed, meaning that verification was cancelled.
+                    Some(VerificationUserResponse::Cancel) | None => {
+                        log!("User cancelled the SAS verification");
+                        // Don't cancel a verification that already finished successfully.
+                        if !sas.is_done() {
+                            let _ = sas.cancel().await;
+                        }
+                        return;
+                    }
+                }
+                continue;
+            }
+            state = stream.next() => match state {
+                Some(state) => state,
+                None => return,
+            },
+        };
+
         match state {
             SasState::Created { .. }
             | SasState::Started { .. } => { } // we've already passed these states
@@ -149,34 +190,15 @@ async fn sas_verification_handler(
                 VerificationAction::SasAccepted(accepted_protocols)
             ),
 
-            SasState::KeysExchanged { emojis, decimals } => {
-                Cx::post_action(VerificationAction::KeysExchanged { emojis, decimals });
-                if let Some(mut receiver) = receiver_opt.take() {
-                    let sas2 = sas.clone();
-                    Handle::current().spawn(async move {
-                        log!("Waiting for user to confirm SAS verification keys...");
-                        match receiver.recv().await {
-                            Some(VerificationUserResponse::Accept) => {
-                                log!("User confirmed SAS verification keys");
-                                if let Err(e) = sas2.confirm().await {
-                                    log!("Failed to confirm SAS verification keys; error: {:?}", e);
-                                    Cx::post_action(VerificationAction::SasConfirmationError(Arc::new(e)));
-                                }
-                                // If successful, SAS verification will now transition to the Confirmed state,
-                                // which will be sent to the main UI thread in the `SasState::Confirmed` match arm below.
-                            }
-                            Some(VerificationUserResponse::Cancel) | None => {
-                                log!("User did not confirm SAS verification keys");
-                                let _ = sas2.cancel().await;
-                            }
-                        }
-                    });
-                } else {
-                    // Receiving a second `KeysExchanged` state indicates that the other device
-                    // confirmed their keys match the ones we have *before* we confirmed them.
+            SasState::KeysExchanged { emojis, decimals } => match key_confirmation {
+                KeyConfirmation::NotYetAsked => {
+                    Cx::post_action(VerificationAction::KeysExchanged { emojis, decimals });
+                    log!("Waiting for user to confirm SAS verification keys...");
+                    key_confirmation = KeyConfirmation::WaitingOnUser;
+                }
+                KeyConfirmation::WaitingOnUser | KeyConfirmation::UserAnswered => {
                     log!("The other side confirmed that the displayed keys matched.");
-                };
-
+                }
             }
 
             SasState::Confirmed => Cx::post_action(VerificationAction::SasConfirmed),
@@ -224,9 +246,7 @@ async fn request_verification_handler(client: Client, request: VerificationReque
         VerificationAction::RequestReceived(
             VerificationRequestActionState {
                 request: request.clone(),
-                // Moved, not cloned: the modal dropping its copy is how we find out that the
-                // user walked away from this request, which wakes the `recv()` below with
-                // `None` so we can cancel. Keeping a copy alive here would park us forever.
+                // Don't clone this sender, as we rely on it being dropped to wake up the recv side
                 response_sender: sender,
             }
         )
@@ -234,57 +254,76 @@ async fn request_verification_handler(client: Client, request: VerificationReque
 
     let mut stream = request.changes();
 
-    // We currently only support SAS verification.
-    let supported_methods = vec![VerificationMethod::SasV1];
-    match response_receiver.recv().await {
-        Some(VerificationUserResponse::Accept) => match request.accept_with_methods(supported_methods).await {
-            Ok(()) => {
-                Cx::post_action(VerificationAction::RequestAccepted);
-                // Fall through to the stream loop below.
-            }
-            Err(e) => {
-                Cx::post_action(VerificationAction::RequestAcceptError(Arc::new(e)));
-                return;
-            }
-        }
-        Some(VerificationUserResponse::Cancel) | None => match request.cancel().await {
-            Ok(()) => { } // response will be sent in the stream loop below
-            Err(e) => {
-                Cx::post_action(VerificationAction::RequestCancelError(Arc::new(e)));
-                return;
+    let mut accepted = false;
+    // If the other side starts SAS before the user clicks Yes,
+    // that's fine, we just wait til they click Yes locally
+    let mut early_sas = None;
+    let sas = loop {
+        tokio::select! {
+            response = response_receiver.recv() => match response {
+                Some(VerificationUserResponse::Accept) if !accepted => {
+                    // We currently only support SAS verification.
+                    match request.accept_with_methods(vec![VerificationMethod::SasV1]).await {
+                        Ok(()) => {
+                            accepted = true;
+                            Cx::post_action(VerificationAction::RequestAccepted);
+                            if let Some(sas) = early_sas.take() {
+                                break sas;
+                            }
+                        }
+                        Err(e) => {
+                            Cx::post_action(VerificationAction::RequestAcceptError(Arc::new(e)));
+                            return;
+                        }
+                    }
+                }
+                Some(VerificationUserResponse::Accept) => { }
+                // `None` means the modal went away, which we treat as a cancel too.
+                Some(VerificationUserResponse::Cancel) | None => {
+                    log!("User cancelled the verification request.");
+                    if let Err(e) = request.cancel().await {
+                        Cx::post_action(VerificationAction::RequestCancelError(Arc::new(e)));
+                    }
+                    return;
+                }
+            },
+            state = stream.next() => {
+                let Some(state) = state else { return };
+                match state {
+                    VerificationRequestState::Created { .. }
+                    | VerificationRequestState::Requested { .. }
+                    | VerificationRequestState::Ready { .. } => { }
+                    VerificationRequestState::Transitioned { verification } => match verification {
+                        // We only support SAS verification.
+                        Verification::SasV1(sas) => {
+                            log!("Verification request transitioned to SAS V1.");
+                            if accepted {
+                                break sas;
+                            }
+                            early_sas = Some(sas);
+                        }
+                        unsupported => {
+                            log!("Verification request transitioned to unsupported method: {:?}", unsupported);
+                            Cx::post_action(VerificationAction::RequestTransitionedToUnsupportedMethod(unsupported));
+                            return;
+                        }
+                    }
+                    VerificationRequestState::Cancelled(info) => {
+                        log!("Verification request was cancelled, reason: {}", info.reason());
+                        Cx::post_action(VerificationAction::RequestCancelled(info));
+                        return;
+                    }
+                    VerificationRequestState::Done => {
+                        log!("Verification request is done!");
+                        Cx::post_action(VerificationAction::RequestCompleted);
+                        return;
+                    }
+                }
             }
         }
     };
 
-    while let Some(state) = stream.next().await {
-        match state {
-            VerificationRequestState::Created { .. }
-            | VerificationRequestState::Requested { .. }
-            | VerificationRequestState::Ready { .. } => { }
-            VerificationRequestState::Transitioned { verification } => match verification {
-                // We only support SAS verification.
-                Verification::SasV1(sas) => {
-                    log!("Verification request transitioned to SAS V1.");
-                    Handle::current().spawn(sas_verification_handler(client, sas, response_receiver, in_progress));
-                    return;
-                }
-                unsupported => {
-                    log!("Verification request transitioned to unsupported method: {:?}", unsupported);
-                    Cx::post_action(VerificationAction::RequestTransitionedToUnsupportedMethod(unsupported));
-                    return;
-                }
-            }
-            VerificationRequestState::Cancelled(info) => {
-                log!("Verification request was cancelled, reason: {}", info.reason());
-                Cx::post_action(VerificationAction::RequestCancelled(info));
-            }
-            VerificationRequestState::Done => {
-                log!("Verification request is done!");
-                Cx::post_action(VerificationAction::RequestCompleted);
-                return;
-            }
-        }
-    }
+    sas_verification_handler(client, sas, response_receiver, in_progress).await;
 }
 
 
@@ -345,7 +384,7 @@ pub async fn request_self_verification_handler(client: Client) {
     let sas = loop {
         // Use `select` so we can receive a cancel request from the modal
         tokio::select! {
-            // The user canceled from the modal while we were waiting on another session.
+            // The user cancelled from the modal while we were waiting on another session.
             response = response_receiver.recv() => {
                 if !matches!(response, Some(VerificationUserResponse::Accept)) {
                     let _ = request.cancel().await;

@@ -171,7 +171,7 @@ impl WidgetMatchEvent for VerificationModal {
                             "You successfully accepted the verification request.\n\n\
                             Waiting for the other device to agree on verification methods…"
                         );
-                        Self::transition_to_waiting_state(cx, &accept_button, &cancel_button);
+                        self.transition_to_waiting_state(cx, &accept_button, &cancel_button);
                     }
 
                     VerificationAction::RequestAcceptError(error) => {
@@ -214,7 +214,7 @@ impl WidgetMatchEvent for VerificationModal {
                             "Both sides have accepted the same verification method(s).\n\n\
                             Waiting for both devices to exchange keys…"
                         );
-                        Self::transition_to_waiting_state(cx, &accept_button, &cancel_button);
+                        self.transition_to_waiting_state(cx, &accept_button, &cancel_button);
                     }
 
                     VerificationAction::KeysExchanged { emojis, decimals } => {
@@ -249,6 +249,7 @@ impl WidgetMatchEvent for VerificationModal {
                             );
                             self.label(cx, ids!(body)).set_text(cx, &text);
                         }
+                        self.is_final = false;
                         accept_button.set_visible(cx, true);
                         accept_button.set_enabled(cx, true);
                         accept_button.set_text(cx, "Yes");
@@ -263,7 +264,7 @@ impl WidgetMatchEvent for VerificationModal {
                             "You successfully confirmed the Short Auth String keys.\n\n\
                             Waiting for the other device to confirm…"
                         );
-                        Self::transition_to_waiting_state(cx, &accept_button, &cancel_button);
+                        self.transition_to_waiting_state(cx, &accept_button, &cancel_button);
                     }
 
                     VerificationAction::SasConfirmationError(error) => {
@@ -306,7 +307,8 @@ impl VerificationModal {
     }
 
     /// The verification flow is waiting on another device.
-    fn transition_to_waiting_state(cx: &mut Cx, accept_button: &ButtonRef, cancel_button: &ButtonRef) {
+    fn transition_to_waiting_state(&mut self, cx: &mut Cx, accept_button: &ButtonRef, cancel_button: &ButtonRef) {
+        self.is_final = false;
         accept_button.set_enabled(cx, false);
         accept_button.set_text(cx, "Waiting…");
         cancel_button.set_text(cx, "Cancel");

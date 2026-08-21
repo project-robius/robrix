@@ -45,7 +45,15 @@ pub fn save_app_state_bytes(app_state_json: &[u8], user_id: &UserId) -> anyhow::
 
 /// Save the current state of the given window's geometry to persistent storage.
 pub fn save_window_state(window_ref: WindowRef, cx: &Cx) -> anyhow::Result<()> {
-    let inner_size = window_ref.get_inner_size(cx);
+    // take the DPI factor override into account
+    let layout_to_native = window_ref.window_id()
+        .map(|id| {
+            let window = &cx.windows[id];
+            window.effective_dpi_factor() / window.native_dpi_factor()
+        })
+        .unwrap_or(1.0);
+    let inner_size = window_ref.get_inner_size(cx) * layout_to_native;
+    // Position is unaffected by the dpi override, so it's saved as-is.
     let position = window_ref.get_position(cx);
     let window_geom = WindowGeomState {
         inner_size: (inner_size.x, inner_size.y),
