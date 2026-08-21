@@ -343,7 +343,7 @@ jobs:
       ## .deb/.AppImage over anything else in the same group, which would silently drop
       ## the pacman payload. Clearing dist/ between passes keeps each upload to its own
       ## format. Only the built packages are removed, never dist/resources.
-      - name: Clear packaged artifacts before the next pass
+      - name: Clear packaged .deb before the next pass
         if: matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm'
         run: rm -f dist/*.deb
 
@@ -391,16 +391,16 @@ jobs:
           asset_name_template: __APP__-__VERSION__-__ARCH__.__EXT__
           uploadUpdaterJson: false
 
-      - name: Clear packaged artifacts before the next pass
-        if: matrix.os == 'ubuntu-22.04'
+      - name: Clear packaged .AppImage before the next pass
+        if: matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm'
         run: rm -f dist/*.AppImage
 
       ## This tarball isn't installable on its own, it's the payload an Arch PKGBUILD
-      ## unpacks. We turn it into a real package below, and the `robrix-bin` AUR package
-      ## fetches it by cargo-packager's own file name, so `__FILENAME__` keeps that
-      ## stable. Renaming it breaks the AUR package.
+      ## unpacks. We turn it into a real package below, and the AUR package fetches it
+      ## by cargo-packager's own file name, so `__FILENAME__` keeps that stable.
+      ## Renaming it breaks the AUR package.
       - name: Package pacman payload (desktop)
-        if: matrix.os == 'ubuntu-22.04'
+        if: matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm'
         uses: project-robius/makepad-packaging-action@v1.8.0
         env:
           CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
@@ -412,46 +412,60 @@ jobs:
           asset_name_template: __FILENAME__
           uploadUpdaterJson: false
 
-      ## Arch Linux is x86_64-only and `makepkg` only exists on Arch, so we build the
-      ## actual installable package in a container. Without this, an Arch user has no
-      ## one-command install: the payload above can't be fed to `pacman -U` directly.
+      ## `makepkg` only exists on Arch, so we build the actual installable package in
+      ## a container. Official Arch is x86_64-only, so the aarch64 leg uses an Arch
+      ## Linux ARM image, which is the distro that package is for anyway.
+      ##
+      ## No AUR push belongs in here. This job runs while the release is still a
+      ## draft, so its asset URLs 404 for everyone but the token holder. The AUR
+      ## PKGBUILD is pushed by .github/workflows/aur-publish.yml on
+      ## `release: published`, once a human has published this draft.
       - name: Build and upload Arch Linux package
-        if: matrix.os == 'ubuntu-22.04' && needs.create_release.outputs.tag != ''
+        if: (matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm') && needs.create_release.outputs.tag != ''
         env:
           GH_TOKEN: ${{ secrets.ROBRIX_RELEASE }}
           TAG: ${{ needs.create_release.outputs.tag }}
+          ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
 
           srcver="$(awk -F'"' '/^version[[:space:]]*=/ {print $2; exit}' Cargo.toml)"
-          payload="dist/robrix_${srcver}_x86_64.tar.gz"
+          payload="dist/robrix_${srcver}_${ARCH}.tar.gz"
           if [[ ! -f "$payload" ]]; then
             echo "::error::Expected pacman payload at $payload, but it isn't there."
             ls -la dist/ || true
             exit 1
           fi
 
-          ## Drop the first hyphen only, so 1.0.0-alpha.2 becomes 1.0.0alpha.2, which
-          ## vercmp sorts *below* the eventual 1.0.0. Dotting it instead would sort above.
-          pkgver="${srcver/-/}"
-          pkgver="${pkgver//-/.}"
-
           ## mktemp gives us 0700, but the container re-owns this to its own uid, which
           ## would leave the runner unable to read the package back out.
           build_dir="$(mktemp -d)"
           chmod 0755 "$build_dir"
-          cp "$payload" LICENSE-MIT "$build_dir"/
-          sed -e "s|@SRCVER@|${srcver}|g" \
-              -e "s|@PKGVER@|${pkgver}|g" \
-              packaging/arch/PKGBUILD.in > "$build_dir/PKGBUILD"
+          cp "$payload" "$build_dir"/
+
+          ## Same template the AUR package is rendered from, so the two can't drift.
+          ## --mode local means bare filenames and SKIP sums, since nothing is fetched.
+          packaging/aur/render-pkgbuild.sh --mode local \
+            --srcver "$srcver" --arch "$ARCH" --out "$build_dir"
+
+          ## Both runners are native, so neither leg needs qemu.
+          if [[ "$ARCH" == "aarch64" ]]; then
+            image='menci/archlinuxarm:base-devel'
+          else
+            image='archlinux:base-devel'
+          fi
 
           ## makepkg refuses to run as root, hence the unprivileged build user.
           ## --nodeps because it otherwise resolves the runtime deps against the
           ## container, which has the toolchain only, and we're compiling nothing here.
-          docker run --rm -v "$build_dir:/build" -w /build archlinux:base-devel bash -euo pipefail -c '
-            ## These images ship without the pacman lsign key.
-            pacman-key --init && pacman-key --populate archlinux
+          docker run --rm -v "$build_dir:/build" -w /build "$image" bash -euo pipefail -c '
+            ## These images ship without the pacman lsign key. No keyring name, so this
+            ## covers the archlinux and archlinuxarm keyrings alike.
+            pacman-key --init && pacman-key --populate
             pacman -Syu --noconfirm --needed namcap || echo "::warning::namcap unavailable, skipping lint"
+            ## Arch Linux ARM has defaulted to a different PKGEXT before, and we want
+            ## one asset naming scheme across both arches.
+            printf "\nPKGEXT=.pkg.tar.zst\n" >> /etc/makepkg.conf
             useradd --create-home builder
             chown -R builder /build
             ## sudo drops the environment, so PACKAGER has to be passed through here,

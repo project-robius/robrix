@@ -11,12 +11,12 @@
 # `1.0.0_alpha.2` sort above it. The ArchWiki's generic "use an underscore" advice
 # would make the real 1.0.0 look like a downgrade.
 
-pkgname=@PKGNAME@
-pkgver=@PKGVER@
-pkgrel=@PKGREL@
+pkgname=robrix
+pkgver=1.0.0alpha.2
+pkgrel=1
 pkgdesc="A powerful multi-platform Matrix chat client written from scratch in Rust"
-arch=(@ARCH@)
-url="@URL@"
+arch=('x86_64')
+url="https://github.com/project-robius/robrix"
 ## Only the ones with a license file to point at. usr/share/licenses/robrix/copyright
 ## enumerates the rest per file, with full texts, and namcap counts files against
 ## uncommon SPDX ids, so adding an id here means adding a file too.
@@ -44,16 +44,22 @@ optdepends=(
   'xdg-desktop-portal-impl: native file picker, e.g. xdg-desktop-portal-gtk or -kde'
   'zenity: file picker fallback when no portal backend is running'
 )
-provides=(@PROVIDES@)
-conflicts=(@CONFLICTS@)
+provides=("robrix-bin=${pkgver}")
+conflicts=('robrix-bin' 'robrix-git')
 ## Nothing to compile here, and the binary upstream ships is already stripped.
 options=('!strip' '!debug')
 
-@SOURCES@
+## Named by cargo-packager and pinned by `asset_name_template: __FILENAME__`
+## in release.yml, so renaming it there breaks this. The name already carries
+## the version and arch, so it needs no `::` rename to stay unique.
+_srcver=1.0.0-alpha.2
+_baseurl="https://github.com/project-robius/robrix/releases/download/v${_srcver}"
+
+source_x86_64=("${_baseurl}/robrix_${_srcver}_x86_64.tar.gz")
+sha256sums_x86_64=('41bfd50ddfe2027cc94ab683e3bf7d19ae37b88405e5d6b414a744fe78283a07')
 
 package() {
     ## The payload unpacks straight to $srcdir/usr with no top-level directory, and
     ## already carries usr/share/licenses/robrix/{copyright,THIRD-PARTY-NOTICES.html}.
     cp -a "${srcdir}/usr" "${pkgdir}/"
-@LICENSE_DIR_FIXUP@
 }
