@@ -726,10 +726,34 @@ That is what pinning is for.
 
 ### namcap warnings
 
-Expect `dependency-not-needed` for `libglvnd`, `dbus`, `xdg-utils` and
-`ca-certificates`: namcap reads ELF sonames only, so it cannot see
-`dlopen("libEGL.so.1")` from Makepad, `dlopen("libdbus-1.so.3")` from the file picker,
-a spawned `xdg-open`, or `SSL_CTX_set_default_verify_paths()` reading `/etc/ssl/certs`.
+A clean run emits 18 warnings and no `E:`. All 18 are expected, and none should be
+"fixed" by editing `depends`.
+
+Thirteen come from `makepkg --nodeps`, which is deliberate: we compile nothing, so
+installing the runtime deps into the build container would only slow the release job.
+namcap then cannot map soname to package, so it flags the same seven libraries from
+both directions at once:
+
+* `Referenced library ... is an uninstalled dependency` for `libX11.so.6`,
+  `libXcursor.so.1`, `libxkbcommon.so.0`, `libwayland-client.so.0`,
+  `libwayland-egl.so.1`, `libasound.so.2`, `libpulse.so.0`
+* `Dependency included, but may not be needed` for the six packages owning them:
+  `libx11`, `libxcursor`, `libxkbcommon`, `wayland`, `alsa-lib`, `libpulse`
+
+`openssl`, `glibc` and `libgcc` escape this only because `base-devel` already has them
+installed. The `pacman -U` and `ldd` steps right after are what actually prove the
+array is correct.
+
+Four more are the dlopen'd and spawned deps namcap cannot see by design: `libglvnd`
+(`dlopen("libEGL.so.1")` from Makepad), `dbus` (`dlopen("libdbus-1.so.3")` from the
+file picker), `xdg-utils` (a spawned `xdg-open`), and `ca-certificates`
+(`/etc/ssl/certs`, read at runtime).
+
+The last is `Unused shared library '/usr/lib64/ld-linux-x86-64.so.2'`, the dynamic
+linker appearing in its own `DT_NEEDED`.
+
+What would matter is any `E:`, or a `not included as a dependency` naming a library we
+do not depend on. `validate.sh` fails the run on an `E:`.
 Dropping any of them reintroduces the "can't load LibEGL" class of failure.
 
 That list is derived from namcap's rules, **not** from a run against this package,
