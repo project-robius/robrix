@@ -110,6 +110,26 @@ pub fn is_supported_image_mimetype(mimetype: &str) -> bool {
     )
 }
 
+/// File extensions offered by the avatar image picker.
+pub const AVATAR_IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "avif"];
+
+/// Returns true if the given MIME type is a valid Matrix avatar.
+///
+/// The spec doesn't restrict avatar formats, but only certain ones will actually
+/// show up as avatars in the actual room timelines.
+/// SVG is excluded on purpose, since homeservers won't serve it to clients as an avatar.
+pub fn is_supported_avatar_mimetype(mimetype: &str) -> bool {
+    matches!(mimetype,
+        "image/png"
+            | "image/apng"
+            | "image/jpeg"
+            | "image/jpg"
+            | "image/gif"
+            | "image/webp"
+            | "image/avif"
+    )
+}
+
 /// Loads the given fetched avatar into the given `ImageRef`.
 pub fn load_avatar_image(
     img: &ImageRef,

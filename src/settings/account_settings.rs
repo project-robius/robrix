@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use makepad_widgets::{text::selection::Cursor, *};
 use matrix_sdk::encryption::{identities::Device, VerificationState};
 
-use crate::{app::ConfirmDeleteAction, avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, settings::PopulateMode, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{get_client, submit_async_request, AccountDataAction, MatrixRequest}, utils, verification::VerificationStateAction};
+use crate::{app::ConfirmDeleteAction, avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, settings::PopulateMode, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::{FileUploadMetadata, PendingUpload, handle_picked_file, handle_picker_launch_errors}, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{get_client, submit_async_request, AccountDataAction, MatrixRequest}, utils, verification::VerificationStateAction};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -388,8 +388,12 @@ impl MatchEvent for AccountSettings {
         }
         avatar_cache::process_avatar_updates(cx);
 
-        if let Some(profile) = self.own_profile.as_mut() {
-            profile.avatar_state.update_from_cache(cx);
+        let avatar_arrived = self.own_profile.as_mut().is_some_and(|p|
+            // the avatar URI is only set while we're still waiting on the image to arrive.
+            p.avatar_state.uri().is_some() && p.avatar_state.update_from_cache(cx).is_some()
+        );
+        if avatar_arrived {
+            self.populate_avatar_views(cx);
         }
     }
 
@@ -514,20 +518,19 @@ impl MatchEvent for AccountSettings {
         let Some(own_profile) = &self.own_profile else { return };
 
         if upload_avatar_button.clicked(actions) {
-            // TODO: uncomment the below once avatar uploading is implemented
-            // Self::enable_upload_avatar_button(cx, false, &upload_avatar_button);
-            // Self::enable_delete_avatar_button(cx, false, &delete_avatar_button);
-            enqueue_popup_notification(
-                "Avatar uploading is not yet implemented.",
-                PopupKind::Warning,
-                Some(4.0),
+            // Don't disable the buttons yet; wait for the user to confirm the
+            // picked image in the upload modal, which then posts the `AvatarUploadStarted` action.
+            handle_picker_launch_errors(
+                robius_file_picker::FileDialog::new()
+                    .add_filter("Images", utils::AVATAR_IMAGE_EXTENSIONS)
+                    .set_media_representation(robius_file_picker::MediaRepresentation::Compatible)
+                    .pick_image(|result| handle_picked_file(result, validate_avatar_image))
             );
         }
 
         if delete_avatar_button.clicked(actions) {
-            // Don't immediately disable the buttons. Instead, we wait for the user
-            // to confirm the action in the confirmation modal,
-            // and then we disable the buttons in the AvatarDeleteStarted action handler.
+            // Don't immediately disable the buttons. Instead, wait for the user to confirm
+            // in the confirmation modal, and then disable the buttons upon handling `AvatarDeleteStarted`.
             let content = ConfirmationModalContent {
                 title_text: "Delete Avatar".into(),
                 body_text: "Are you sure you want to delete your avatar?".into(),
@@ -864,6 +867,21 @@ impl AccountSettingsRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.restore_after_reapply(cx);
     }
+}
+
+/// Validates that a picked file is an acceptable avatar image format and size.
+fn validate_avatar_image(file_data: FileUploadMetadata) -> Result<PendingUpload, String> {
+    let name = file_data.file_name();
+    if !utils::is_supported_avatar_mimetype(&file_data.mime_type) {
+        return Err(format!(
+            "\"{name}\" isn't an image type that Matrix avatars support. \
+             Please choose a PNG, JPEG, GIF, WebP, or AVIF image."
+        ));
+    }
+    if file_data.size == 0 {
+        return Err(format!("\"{name}\" is empty (0 bytes). Please choose a different image."));
+    }
+    Ok(PendingUpload::Avatar(file_data))
 }
 
 /// Actions that are handled by the AccountSettings widget.

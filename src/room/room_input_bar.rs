@@ -24,7 +24,7 @@ use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FileUploadModalAction, FileUploadAttemptId, PreviewPayload, load_file_metadata}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 use crate::room::reply_preview::CollapsiblePreviewWidgetRefExt;
 
 script_mod! {
@@ -706,7 +706,7 @@ impl RoomInputBar {
         }
 
         let on_picked = self.upload_picker_callback(cx, timeline_kind);
-        Self::handle_picker_launch_result(
+        handle_picker_launch_errors(
             robius_file_picker::FileDialog::new().pick_file(on_picked)
         );
     }
@@ -727,7 +727,7 @@ impl RoomInputBar {
         }
 
         let on_picked = self.upload_picker_callback(cx, timeline_kind);
-        Self::handle_picker_launch_result(
+        handle_picker_launch_errors(
             robius_file_picker::FileDialog::new().pick_image_or_video(on_picked)
         );
     }
@@ -744,66 +744,15 @@ impl RoomInputBar {
         let sign_with_tsp = self.is_tsp_signing_enabled(_cx);
 
         // `robius-file-picker` ensures that this `on_picked` callback runs on a bg thread.
-        move |result: robius_file_picker::Result<Option<robius_file_picker::PickedFile>>| {
-            match result {
-                Ok(Some(picked)) => match picked.into_local_file() {
-                    Ok(local_file) => {
-                        match load_file_metadata(
-                            local_file,
-                            timeline_kind,
-                            in_reply_to,
-                            #[cfg(feature = "tsp")]
-                            sign_with_tsp,
-                        ) {
-                            Ok((upload, preview_source, preview_id)) => {
-                                // Show the preview modal instantly, and then re-use this bg thread
-                                // to read the file and generate the preview.
-                                Cx::post_action(FileUploadModalAction::Show { upload, preview_id });
-                                let preview = preview_source.build();
-                                Cx::post_action(FileUploadModalAction::PreviewReady {
-                                    preview_id,
-                                    preview: PreviewPayload::new(preview),
-                                });
-                            }
-                            Err(e) => enqueue_popup_notification(e, PopupKind::Error, None),
-                        }
-                    }
-                    Err(e) => enqueue_popup_notification(
-                        format!("Failed to read selected file: {e}"),
-                        PopupKind::Error,
-                        None,
-                    ),
-                },
-                // User dismissed the picker, do nothing.
-                Ok(None) => {}
-                Err(err) => enqueue_popup_notification(
-                    format!("Error selecting a file: {err}"),
-                    PopupKind::Error,
-                    None,
-                ),
-            }
-        }
-    }
-
-    fn handle_picker_launch_result(result: robius_file_picker::Result<()>) {
-        match result {
-            Ok(()) => {}
-            Err(robius_file_picker::Error::AlreadyOpen) => {
-                enqueue_popup_notification(
-                    "A file picker is already open.",
-                    PopupKind::Error,
-                    Some(4.0),
-                );
-            }
-            Err(err) => {
-                makepad_widgets::error!("Failed to launch file picker: {err}");
-                enqueue_popup_notification(
-                    format!("Failed to open file picker: {err}"),
-                    PopupKind::Error,
-                    None,
-                );
-            }
-        }
+        move |result| handle_picked_file(result, move |file_data| {
+            Ok(PendingUpload::Attachment(AttachmentUpload {
+                timeline_kind,
+                file_data,
+                in_reply_to,
+                #[cfg(feature = "tsp")]
+                sign_with_tsp,
+            }))
+        })
     }
 }
 
