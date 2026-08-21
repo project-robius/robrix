@@ -41,7 +41,7 @@ script_mod! {
         height: Fill
         flow: Overlay
         align: Align{x: 0, y: 1}
-        cursor: MouseCursor.Default
+        // No cursor here, since this is a Fill-Fill overlay pane.
 
         show_bg: false
         draw_bg +: {
@@ -119,7 +119,7 @@ impl Widget for RoomInputPopupMenu {
             return;
         }
 
-        // Any user interaction outside of this menu dismisses it.
+        // Clicks/taps outside the menu dismiss it, but do fall through to the widgets behind.
         if self.should_dismiss_for_outside_event(cx, event) {
             self.close(cx);
             return;
@@ -178,6 +178,19 @@ impl RoomInputPopupMenu {
         self.button(cx, ids!(send_location_button)).reset_hover(cx);
     }
 
+    pub fn is_event_within_popup_menu(&self, cx: &mut Cx, event: &Event) -> bool {
+        let main_rect = self.view(cx, ids!(main_content)).area().rect(cx);
+        match event {
+            Event::MouseDown(e) => main_rect.contains(e.abs),
+            Event::MouseUp(e) => main_rect.contains(e.abs),
+            Event::MouseMove(e) => main_rect.contains(e.abs),
+            Event::Scroll(e) => main_rect.contains(e.abs),
+            Event::LongPress(e) => main_rect.contains(e.abs),
+            Event::TouchUpdate(e) => e.touches.iter().any(|touch| main_rect.contains(touch.abs)),
+            _ => false,
+        }
+    }
+
     fn should_dismiss_for_outside_event(&self, cx: &mut Cx, event: &Event) -> bool {
         let main_rect = self.view(cx, ids!(main_content)).area().rect(cx);
         match event {
@@ -205,6 +218,11 @@ impl RoomInputPopupMenuRef {
     pub fn show(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.show(cx);
+    }
+
+    pub fn is_event_within_popup_menu(&self, cx: &mut Cx, event: &Event) -> bool {
+        let Some(inner) = self.borrow() else { return false };
+        inner.is_event_within_popup_menu(cx, event)
     }
 
     pub fn selected(&self, actions: &Actions) -> Option<RoomInputPopupMenuAction> {

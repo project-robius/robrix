@@ -913,9 +913,9 @@ impl Widget for RoomScreen {
             room_input_popup_menu,
         } = self.cached_widget_refs(cx);
 
-        let is_pane_shown = room_input_popup_menu.is_open()
-            || loading_pane.is_currently_shown(cx)
+        let is_pane_shown = loading_pane.is_currently_shown(cx)
             || user_profile_sliding_pane.is_currently_shown(cx);
+        let is_popup_menu_open = room_input_popup_menu.is_open();
 
         // Only direct interaction with the timeline itself can send a read receipt;
         // the direction of any scrolling gets checked later via `user_scroll_travel()`.
@@ -931,6 +931,7 @@ impl Widget for RoomScreen {
             // Interactions aimed at one of our own panes don't count, nor do those aimed
             // at an app-level overlay (modals and menus block scrolling while open).
             && !is_pane_shown
+            && !is_popup_menu_open
             && cx.is_scrolling_allowed_within(&portal_list.area())
         {
             self.read_receipt_state.start_timer(cx, &portal_list);
@@ -1199,15 +1200,16 @@ impl Widget for RoomScreen {
         // such that we can handle the ones relevant to only THIS RoomScreen widget right here and now,
         // ensuring they are not mistakenly handled by other RoomScreen widget instances.
         // When an overlay pane is shown, all "interactive" user inputs are only forwarded to it.
+        // The popup menu allows events to fall through, but they do dismiss it.
         let mut actions_generated_within_this_room_screen = cx.capture_actions(|cx| {
             if is_pane_shown && utils::is_interactive_hit_event(event) {
-                if room_input_popup_menu.is_open() {
-                    room_input_popup_menu.handle_event(cx, event, &mut Scope::empty());
-                } else if loading_pane.is_currently_shown(cx) {
+                if loading_pane.is_currently_shown(cx) {
                     loading_pane.handle_event(cx, event, &mut Scope::empty());
                 } else {
                     user_profile_sliding_pane.handle_event(cx, event, &mut Scope::empty());
                 }
+            } else if is_popup_menu_open && room_input_popup_menu.is_event_within_popup_menu(cx, event) {
+                room_input_popup_menu.handle_event(cx, event, &mut Scope::empty());
             } else {
                 self.view.handle_event(cx, event, &mut Scope::empty());
             }
