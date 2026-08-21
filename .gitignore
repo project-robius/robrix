@@ -11,3 +11,7 @@ testflight.sh
 
 ## Filled-in release secrets for upload-release-secrets.sh (never commit)
 /packaging/release-secrets.env
+
+## Rendered by packaging/aur/render-pkgbuild.sh, never committed.
+packaging/aur/PKGBUILD
+packaging/aur/.SRCINFO

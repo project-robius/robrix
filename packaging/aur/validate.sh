@@ -220,18 +220,6 @@ INNER
     fi
     sed 's/^/    /' "$log"
 
-    ## makepkg wrote the authoritative .SRCINFO in there. Only meaningful when the
-    ## render matches the committed PKGBUILD, otherwise we're comparing two tags.
-    srcinfo_bad=''
-    if [[ -f "$out/.SRCINFO" ]] && cmp -s "$render_dir/PKGBUILD" "$SCRIPT_DIR/PKGBUILD"; then
-        if diff -u "$SCRIPT_DIR/.SRCINFO" "$out/.SRCINFO" > "$out/srcinfo.diff"; then
-            say "    ok  .SRCINFO matches packaging/aur/.SRCINFO"
-        else
-            sed 's/^/    /' "$out/srcinfo.diff"
-            srcinfo_bad=1
-        fi
-    fi
-
     problem=''
     saw() { grep -q "$1" "$log"; }
     saw 'CONTAINER-OK'          || problem='the container did not finish'
@@ -240,7 +228,6 @@ INNER
     if saw 'FILES-MISSING';         then problem='an expected installed file is absent'; fi
     if saw 'DLOPEN-MISSING';        then problem='a dlopened or spawned dependency is not installed'; fi
     if saw 'NAMCAP-ERRORS-PRESENT'; then problem='namcap reported an E:'; fi
-    if [[ -n "$srcinfo_bad" ]]; then problem='.SRCINFO does not match what makepkg generates'; fi
     if [[ -n "$problem" ]]; then
         bad "$arch: $problem (see $log)"
     else

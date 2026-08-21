@@ -104,10 +104,9 @@ rejected in favour of disowning, so the advice stands either way.
 | --- | --- |
 | `packaging/arch/PKGBUILD.in` | The **only** copy of the package metadata. Placeholders: `@PKGNAME@ @PKGVER@ @PKGREL@ @ARCH@ @URL@ @PROVIDES@ @CONFLICTS@ @SOURCES@ @LICENSE_DIR_FIXUP@` |
 | `packaging/aur/render-pkgbuild.sh` | Fills them in two ways. `--mode local` for the release build (bare filenames, `SKIP` sums), `--mode aur` for the AUR (release URLs, real sha256). Holds the one-line `PKGNAME` switch. |
-| `packaging/aur/PKGBUILD`, `.SRCINFO` | The rendered pair for the release currently on the AUR, committed so it is reviewable and diffable. Kept current by the `sync` job in `aur-publish.yml`; never hand-edit them. |
+| `packaging/aur/PKGBUILD`, `.SRCINFO` | **Generated, never committed.** `PKGBUILD` comes from the renderer, `.SRCINFO` from `makepkg --printsrcinfo`. Both are gitignored. The AUR repo itself is the canonical published copy. |
 | `packaging/aur/validate.sh` | Renders, builds, lints, installs and `ldd`s the package in an Arch container, both arches. |
 | `.github/workflows/aur-publish.yml` | Renders, test-builds, and pushes to the AUR on `release: published`. |
-| `packaging/aur/release-workflow-changes.md` | The paste-ready `release.yml` edits for dual-arch packaging. |
 
 The dedup requirement is met by construction: there is exactly one template and one
 renderer, and the two renderings differ **only** in the `@SOURCES@` block. Confirm it
@@ -116,7 +115,8 @@ yourself:
 ```sh
 set -euo pipefail
 ./packaging/aur/render-pkgbuild.sh --mode local --srcver 1.0.0-alpha.2 --arch x86_64 --out /tmp/a
-diff /tmp/a/PKGBUILD packaging/aur/PKGBUILD
+./packaging/aur/render-pkgbuild.sh --mode aur --tag v1.0.0-alpha.2 --out /tmp/b
+diff /tmp/a/PKGBUILD /tmp/b/PKGBUILD
 ```
 
 The only hunks are `@SOURCES@`'s three lines. Everything else, `pkgdesc`, `depends`,
@@ -272,9 +272,13 @@ git ls-remote https://aur.archlinux.org/robrix.git   # expect exit 0, zero refs
 git -c init.defaultBranch=master clone ssh://aur@aur.archlinux.org/robrix.git /tmp/aur-robrix
 # "warning: You appear to have cloned an empty repository." is expected.
 
-cp packaging/aur/PKGBUILD packaging/aur/.SRCINFO /tmp/aur-robrix/
+# Render the PKGBUILD, then let makepkg write the .SRCINFO. Never hand-write it.
+./packaging/aur/render-pkgbuild.sh --mode aur --tag v1.0.0-alpha.2 --out /tmp/aur-render
+cp /tmp/aur-render/PKGBUILD /tmp/aur-robrix/
 cp packaging/aur/aur-repo-LICENSE /tmp/aur-robrix/LICENSE
 cd /tmp/aur-robrix
+docker run --rm -v /tmp/aur-robrix:/w -w /w archlinux:base-devel bash -c \
+  'useradd -m b && chown -R b /w && sudo -u b makepkg --printsrcinfo' > .SRCINFO
 
 # Checks the AUR server enforces, done before the push rather than after.
 test -f PKGBUILD && test -f .SRCINFO && test -f LICENSE
@@ -415,14 +419,6 @@ only inside that job, and that job runs no script from the repo, but the workflo
 itself lives on `main`, so anyone who can land a commit there can change what runs
 next to the key. A required reviewer is what turns that into a two-person action, and
 it matches the "publish it by hand" philosophy `release.yml` already uses.
-
-### Optional: `ROBRIX_AUR_SYNC_TOKEN`
-
-The `sync` job commits the rendered `packaging/aur/{PKGBUILD,.SRCINFO}` back to `main`
-so the in-repo copy never goes stale. It tries `GITHUB_TOKEN` first, which a protected
-`main` may reject exactly as it does for `licenses.yml`. If it does, set
-`ROBRIX_AUR_SYNC_TOKEN` to an admin PAT with `contents: write` and the job picks it up.
-The job is `continue-on-error`, so a rejection is a warning, never a failed release.
 
 ---
 
