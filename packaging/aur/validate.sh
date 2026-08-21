@@ -170,7 +170,7 @@ echo "--- namcap PKGBUILD ---"
 namcap PKGBUILD | tee namcap-pkgbuild.txt || true
 
 echo "--- makepkg ---"
-sudo -u builder env PACKAGER="Robrix validate.sh <contact@robius.rs>" \
+sudo -u builder env PACKAGER="Robrix validate.sh <IT@gosim.org>" \
     makepkg --force --noconfirm --nodeps
 
 pkg="$(ls ./*.pkg.tar.zst)"

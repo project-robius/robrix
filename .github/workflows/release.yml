@@ -470,7 +470,7 @@ jobs:
             chown -R builder /build
             ## sudo drops the environment, so PACKAGER has to be passed through here,
             ## otherwise the package records "Unknown Packager".
-            sudo -u builder env PACKAGER="Project Robius <contact@robius.rs>" \
+            sudo -u builder env PACKAGER="Project Robius <IT@gosim.org>" \
               makepkg --force --noconfirm --nodeps
             ## Reports missing or surplus dependencies. Advisory only, so a lint
             ## warning never blocks a release.

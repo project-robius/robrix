@@ -130,7 +130,7 @@ template.
 ### 3.1 A project-owned AUR account
 
 Register at <https://aur.archlinux.org/register> with a **project** identity, not a
-personal one (suggested `projectrobius`, `contact@robius.rs`). Tying the package to an
+personal one (suggested `projectrobius`, `IT@gosim.org`). Tying the package to an
 individual recreates the bus-factor problem `robrix-bin` is stuck in.
 
 Two things to check before planning around any date, both in the unverifiable set:
@@ -283,7 +283,7 @@ find . -mindepth 1 -maxdepth 1 -type d ! -name .git     # must print nothing
 find . -maxdepth 1 -type f -size +250k ! -name '.git*'  # must print nothing
 
 git add PKGBUILD .SRCINFO LICENSE
-git -c user.name='Project Robius' -c user.email='contact@robius.rs' \
+git -c user.name='Project Robius' -c user.email='IT@gosim.org' \
   commit -m 'robrix 1.0.0alpha.2-1: official upstream binary package'
 git push origin master
 ```
@@ -374,7 +374,7 @@ cookie. The slashless form returns 303 to the login page, which is the route wor
 > contacted by email and in a comment on the package page, and is credited as
 > `# Contributor:` in `robrix`.
 >
-> Upstream contact: contact@robius.rs, https://github.com/project-robius/robrix
+> Upstream contact: IT@gosim.org, https://github.com/project-robius/robrix
 
 ---
 

@@ -273,7 +273,7 @@ jobs:
             echo "Nothing staged after the copy. Nothing to push."
             exit 0
           fi
-          git -C aur -c user.name='Project Robius' -c user.email='contact@robius.rs' \
+          git -C aur -c user.name='Project Robius' -c user.email='IT@gosim.org' \
             commit -m "${PKGNAME} ${PKGVER}-${PKGREL} (${TAG})"
           ## Plain push, never --force. A rejection means somebody else pushed, which
           ## needs a human to look rather than an overwrite.
