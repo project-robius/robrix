@@ -9,7 +9,7 @@
 # packaging/aur/render-pkgbuild.sh, which probes the release for the arch payloads
 # it actually has, so aarch64 turns itself on the first release that ships one.
 #
-# AUR account, keys and the first push: packaging/aur/README.md.
+# The AUR package must already exist. This workflow only updates it.
 
 name: Publish AUR package
 
@@ -78,7 +78,7 @@ jobs:
           ## An AUR clone succeeds even for a pkgbase that doesn't exist, so an empty
           ## repo means a typo or that nobody has done the first push yet.
           if [[ ! -f aur/PKGBUILD ]]; then
-            echo "::error::https://aur.archlinux.org/${pkgname}.git has no PKGBUILD. This workflow only updates an existing package; create it with the first manual push in packaging/aur/README.md."
+            echo "::error::https://aur.archlinux.org/${pkgname}.git has no PKGBUILD. This workflow only updates an existing package; create it by cloning ssh://aur@aur.archlinux.org/${pkgname}.git and pushing a rendered PKGBUILD, .SRCINFO and LICENSE by hand."
             exit 1
           fi
           echo "old_pkgver=$(sed -n 's/^pkgver=//p' aur/PKGBUILD | head -n1)" >> "$GITHUB_OUTPUT"
@@ -239,7 +239,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "$KEY" ]]; then
-            echo "::error::ROBRIX_AUR_SSH_KEY is unset. It must hold the passphrase-less private key registered on the project's AUR account. See packaging/aur/README.md."
+            echo "::error::ROBRIX_AUR_SSH_KEY is unset. It must hold the passphrase-less private key registered on the project's AUR account."
             exit 1
           fi
 
@@ -261,7 +261,7 @@ jobs:
 
           export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/aur -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/aur_known_hosts"
           git -c init.defaultBranch=master clone "ssh://aur@aur.archlinux.org/${PKGNAME}.git" aur
-          [[ -f aur/PKGBUILD ]] || { echo "::error::${PKGNAME} has no PKGBUILD over ssh; do the first manual push described in packaging/aur/README.md."; exit 1; }
+          [[ -f aur/PKGBUILD ]] || { echo "::error::${PKGNAME} has no PKGBUILD over ssh; do the first manual push by hand."; exit 1; }
 
           cp work/PKGBUILD work/.SRCINFO work/LICENSE aur/
           ## The AUR hook rejects subdirectories and any root file over 250 KiB.
