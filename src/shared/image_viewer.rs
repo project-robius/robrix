@@ -447,6 +447,8 @@ struct ImageViewer {
 
 impl Widget for ImageViewer {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // Block all scrolling, as the image viewer modal is full-screen.
+        cx.block_scrolling_except_within(Area::Empty);
         self.view.handle_event(cx, event, scope);
         self.match_event(cx, event);
 
