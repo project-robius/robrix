@@ -88,6 +88,8 @@ fi
 [[ "$mode" == 'aur' || "$mode" == 'local' ]] || die "--mode must be aur or local, got '$mode'"
 [[ -n "$out" ]] || die "--out DIR is required"
 [[ -f "$TEMPLATE" ]] || die "template not found at $TEMPLATE"
+grep -q '@SOURCES@' "$TEMPLATE" || die "template lost its @SOURCES@ line"
+grep -q '@LICENSE_DIR_FIXUP@' "$TEMPLATE" || die "template lost its @LICENSE_DIR_FIXUP@ line"
 [[ "$pkgrel" =~ ^[1-9][0-9]*$ ]] || die "--pkgrel must be a positive integer, got '$pkgrel'"
 mkdir -p "$out"
 

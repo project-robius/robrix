@@ -14,6 +14,8 @@
 #
 # Everything lands in one mktemp dir. The only thing touched outside it is the
 # binfmt registration, and only with --with-binfmt.
+#
+# Also: --repo owner/name, --arch 'x86_64 aarch64', --keep (leave the work dir).
 
 set -euo pipefail
 
@@ -73,7 +75,7 @@ work="$(mktemp -d)"
 cleanup() {
     ## makepkg runs as an unprivileged uid inside the container and leaves src/ and
     ## pkg/ owned by it, so hand them back before trying to delete anything.
-    docker run --rm -v "$work:/w" "$(image_for x86_64)" \
+    docker run --rm -v "$work:/w" "$(image_for "${host_arch:-x86_64}")" \
         chown -R "$(id -u):$(id -g)" /w >/dev/null 2>&1 || true
     if (( keep )); then
         printf '\nLeft everything in %s\n' "$work"
@@ -212,7 +214,7 @@ INNER
     chmod +x "$out/run.sh"
 
     log="$out/container.log"
-    if ! docker run --rm "${platform[@]}" -v "$out:/work" -w /work "$image" \
+    if ! docker run --rm ${platform[@]+"${platform[@]}"} -v "$out:/work" -w /work "$image" \
             bash /work/run.sh > "$log" 2>&1; then
         sed 's/^/    /' "$log" | tail -40
         bad "$arch: the container run failed, full log at $log"

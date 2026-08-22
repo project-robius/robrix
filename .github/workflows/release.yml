@@ -247,8 +247,7 @@ jobs:
           set -euo pipefail
           TAG="${{ steps.resolve.outputs.tag }}"
           version="${TAG#v}"
-          pkgver="${version/-/}"
-          pkgver="${pkgver//-/.}"
+          pkgver="$(packaging/aur/render-pkgbuild.sh --print-pkgver --tag "$TAG")"
           notes="docs/RELEASE_NOTES_${TAG}.md"
           body="${RUNNER_TEMP}/release-body.md"
           if [[ -f "$notes" ]]; then

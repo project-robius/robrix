@@ -24,7 +24,8 @@ on:
         type: string
 
 # One push at a time, and never cancel one midway: a half-finished push to the AUR
-# is not something we want to reason about.
+# is not something we want to reason about. GitHub also keeps at most one run
+# queued per group, so a superseded queued release needs a manual re-dispatch.
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
@@ -140,6 +141,8 @@ jobs:
             archlinux:base-devel bash -euo pipefail -c '
             ## These images ship without the pacman lsign key.
             pacman-key --init && pacman-key --populate
+            ## Pin PKGEXT so the *.pkg.tar.zst globs below stay right.
+            printf "\nPKGEXT=.pkg.tar.zst\n" >> /etc/makepkg.conf
             pacman -Syu --noconfirm --needed namcap || echo "::warning::namcap unavailable, skipping lint"
             useradd --create-home builder
             chown -R builder /work
@@ -181,10 +184,12 @@ jobs:
 
       ## The test-build above proves it builds. This installs it for real and runs
       ## ldd, which is the only way a broken depends list shows up before users hit it.
+      ## No binfmt on these runners, so an aarch64 leg is rendered but not installed;
+      ## run validate.sh --with-binfmt locally when a release starts shipping one.
       - name: Validate the package end to end
         env:
           TAG: ${{ steps.tag.outputs.tag }}
-        run: ./packaging/aur/validate.sh --tag "$TAG"
+        run: ./packaging/aur/validate.sh --tag "$TAG" --repo "$GITHUB_REPOSITORY"
 
       - name: Compare against the AUR
         id: compare
@@ -204,6 +209,9 @@ jobs:
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+          ## Snapshot what we compared against, so the push job can detect an AUR
+          ## that moved while the run waited for environment approval.
+          cp aur/PKGBUILD work/PKGBUILD.baseline
           {
             echo "### AUR render"
             echo '```'
@@ -214,8 +222,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: aur-package
+          ## upload-artifact drops dotfiles by default, which would lose .SRCINFO.
+          include-hidden-files: true
           path: |
             work/PKGBUILD
+            work/PKGBUILD.baseline
             work/.SRCINFO
             work/LICENSE
           if-no-files-found: error
@@ -270,6 +281,10 @@ jobs:
           git -c init.defaultBranch=master clone "ssh://aur@aur.archlinux.org/${PKGNAME}.git" aur
           [[ -f aur/PKGBUILD ]] || { echo "::error::${PKGNAME} has no PKGBUILD over ssh; do the first manual push by hand."; exit 1; }
 
+          ## The AUR may have moved while this run sat waiting for approval; pushing
+          ## a render made against the old state would silently revert that work.
+          cmp -s work/PKGBUILD.baseline aur/PKGBUILD \
+            || { echo "::error::the AUR changed since this run rendered. Re-run the workflow against fresh state."; exit 1; }
           cp work/PKGBUILD work/.SRCINFO work/LICENSE aur/
           ## The AUR hook rejects subdirectories and any root file over 250 KiB.
           [[ -z "$(find aur -mindepth 1 -maxdepth 1 -type d ! -name .git)" ]] || { echo "::error::subdirectory in the AUR checkout"; exit 1; }
@@ -285,6 +300,3 @@ jobs:
           ## Plain push, never --force. A rejection means somebody else pushed, which
           ## needs a human to look rather than an overwrite.
           git -C aur push origin master
-
-  # Keeps the reviewable in-repo copy honest. Best effort: a protected main that
-  # rejects GITHUB_TOKEN leaves a warning, not a failed release.
