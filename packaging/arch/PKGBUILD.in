@@ -1,5 +1,4 @@
 # Maintainer: Project Robius <IT@gosim.org>
-# Contributor: Maykel Moya <mmoya at mmoya dot org>
 #
 # Shared template behind both Robrix pacman packages: the .pkg.tar.zst attached to
 # every GitHub release, and the AUR package. Only packaging/aur/render-pkgbuild.sh
