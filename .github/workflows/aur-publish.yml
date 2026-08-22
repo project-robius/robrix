@@ -179,6 +179,13 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           rm -f work/namcap.txt
 
+      ## The test-build above proves it builds. This installs it for real and runs
+      ## ldd, which is the only way a broken depends list shows up before users hit it.
+      - name: Validate the package end to end
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: ./packaging/aur/validate.sh --tag "$TAG"
+
       - name: Compare against the AUR
         id: compare
         env:
