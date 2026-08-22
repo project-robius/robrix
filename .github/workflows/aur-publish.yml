@@ -1,0 +1,302 @@
+# Publishes the official Robrix AUR package.
+#
+# Deliberately not a job in release.yml. That workflow creates every release as a
+# draft, and a draft's asset URLs 404 for everyone but the token holder, so a
+# PKGBUILD pushed from there would point at nothing. This fires the moment a human
+# publishes the draft, which is when those URLs start resolving.
+#
+# The PKGBUILD comes from packaging/arch/PKGBUILD.in via
+# packaging/aur/render-pkgbuild.sh, which probes the release for the arch payloads
+# it actually has, so aarch64 turns itself on the first release that ships one.
+#
+# The AUR package must already exist. This workflow only updates it.
+
+name: Publish AUR package
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Published release tag to push to the AUR (e.g. v1.0.0-alpha.2)'
+        required: true
+        type: string
+
+# One push at a time, and never cancel one midway: a half-finished push to the AUR
+# is not something we want to reason about. GitHub also keeps at most one run
+# queued per group, so a superseded queued release needs a manual re-dispatch.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # No secrets here on purpose. This is the job that runs repo-controlled shell and
+  # a container, so the AUR key must not exist yet while it does.
+  render:
+    name: Render and test-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      pkgname: ${{ steps.render.outputs.pkgname }}
+      pkgver: ${{ steps.render.outputs.pkgver }}
+      pkgrel: ${{ steps.render.outputs.pkgrel }}
+      changed: ${{ steps.compare.outputs.changed }}
+    steps:
+      # ref: main because the template is release tooling, not versioned content.
+      # Pinning it to the tag would mean re-tagging to fix a broken template.
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - name: Resolve tag
+        id: tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="${RELEASE_TAG:-${INPUT_TAG:-}}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Refusing to publish '$tag'. Expected a vMAJOR.MINOR.PATCH[-prerelease] tag."
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      # Read-only over https, so no key is needed to find out where the AUR stands.
+      - name: Read the current AUR package
+        id: current
+        run: |
+          set -euo pipefail
+          pkgname="$(packaging/aur/render-pkgbuild.sh --print-pkgname)"
+          echo "pkgname=$pkgname" >> "$GITHUB_OUTPUT"
+          git clone --depth 1 "https://aur.archlinux.org/${pkgname}.git" aur
+
+          ## An AUR clone succeeds even for a pkgbase that doesn't exist, so an empty
+          ## repo means a typo or that nobody has done the first push yet.
+          if [[ ! -f aur/PKGBUILD ]]; then
+            echo "::error::https://aur.archlinux.org/${pkgname}.git has no PKGBUILD. This workflow only updates an existing package; create it by cloning ssh://aur@aur.archlinux.org/${pkgname}.git and pushing a rendered PKGBUILD, .SRCINFO and LICENSE by hand."
+            exit 1
+          fi
+          echo "old_pkgver=$(sed -n 's/^pkgver=//p' aur/PKGBUILD | head -n1)" >> "$GITHUB_OUTPUT"
+          echo "old_pkgrel=$(sed -n 's/^pkgrel=//p' aur/PKGBUILD | head -n1)" >> "$GITHUB_OUTPUT"
+
+      # pkgrel resets to 1 on a new pkgver and only climbs for a packaging-only fix
+      # at the same pkgver, which is the one case where users would otherwise see
+      # no update at all.
+      - name: Render PKGBUILD
+        id: render
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          OLD_PKGVER: ${{ steps.current.outputs.old_pkgver }}
+          OLD_PKGREL: ${{ steps.current.outputs.old_pkgrel }}
+        run: |
+          set -euo pipefail
+          mkdir -p work
+
+          old_pkgrel="$OLD_PKGREL"
+          [[ "$old_pkgrel" =~ ^[1-9][0-9]*$ ]] || old_pkgrel=1
+          new_pkgver="$(packaging/aur/render-pkgbuild.sh --print-pkgver --tag "$TAG")"
+
+          if [[ "$new_pkgver" == "$OLD_PKGVER" ]]; then
+            pkgrel="$old_pkgrel"
+          else
+            pkgrel=1
+          fi
+
+          render() {
+            packaging/aur/render-pkgbuild.sh --mode aur \
+              --tag "$TAG" --repo "$GITHUB_REPOSITORY" --pkgrel "$1" --out work
+          }
+          render "$pkgrel"
+
+          ## Same app version but different packaging, so bump pkgrel or nobody sees
+          ## it. The payloads are already in work/, so this re-render is text only.
+          if [[ "$new_pkgver" == "$OLD_PKGVER" ]] && ! cmp -s work/PKGBUILD aur/PKGBUILD; then
+            pkgrel=$(( old_pkgrel + 1 ))
+            render "$pkgrel"
+          fi
+
+          ## The AUR wants a package-source license in the repo, separate from
+          ## Robrix's own. Arch's 0BSD text, verbatim.
+          cp packaging/aur/aur-repo-LICENSE work/LICENSE
+
+          echo "pkgname=$(packaging/aur/render-pkgbuild.sh --print-pkgname)" >> "$GITHUB_OUTPUT"
+          echo "pkgver=$new_pkgver" >> "$GITHUB_OUTPUT"
+          echo "pkgrel=$pkgrel" >> "$GITHUB_OUTPUT"
+
+      # .SRCINFO must come from makepkg, never by hand: the AUR serves its version
+      # metadata from that file, and a stale one is the classic AUR maintenance bug.
+      - name: Generate .SRCINFO and test-build
+        env:
+          OLD_PKGVER: ${{ steps.current.outputs.old_pkgver }}
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD/work:/work" -w /work \
+            -e OLD_PKGVER -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+            archlinux:base-devel bash -euo pipefail -c '
+            ## These images ship without the pacman lsign key.
+            pacman-key --init && pacman-key --populate
+            ## Pin PKGEXT so the *.pkg.tar.zst globs below stay right.
+            printf "\nPKGEXT=.pkg.tar.zst\n" >> /etc/makepkg.conf
+            pacman -Syu --noconfirm --needed namcap || echo "::warning::namcap unavailable, skipping lint"
+            useradd --create-home builder
+            chown -R builder /work
+
+            ## One-way ratchet, so an old tag dispatched by mistake cannot downgrade
+            ## the package for everyone who has it installed.
+            new_pkgver="$(sed -n "s/^pkgver=//p" PKGBUILD | head -n1)"
+            if [[ -n "${OLD_PKGVER:-}" ]] && (( $(vercmp "$new_pkgver" "$OLD_PKGVER") < 0 )); then
+              echo "::error::Refusing to publish $new_pkgver over $OLD_PKGVER; vercmp calls that a downgrade."
+              exit 1
+            fi
+
+            ## --printsrcinfo implies --ignorearch, so this emits every declared arch
+            ## even though the container itself is x86_64.
+            sudo -u builder makepkg --printsrcinfo > .SRCINFO
+
+            ## The payloads are already here, so this verifies the checksums and
+            ## package() without re-downloading anything.
+            sudo -u builder makepkg --force --noconfirm --nodeps
+
+            ## Advisory. Expect dependency-not-needed for the dlopened and spawned
+            ## deps, since namcap only reads ELF sonames.
+            if command -v namcap >/dev/null; then
+              namcap PKGBUILD ./*.pkg.tar.zst 2>&1 | tee namcap.txt || true
+            fi
+
+            ## makepkg ran as another uid, so hand the bind mount back or the steps
+            ## after this cannot write in it.
+            chown -R "${HOST_UID}:${HOST_GID}" /work
+          '
+          rm -f work/*.pkg.tar.zst
+          {
+            echo "### namcap"
+            echo '```'
+            cat work/namcap.txt 2>/dev/null || echo "namcap produced no output"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm -f work/namcap.txt
+
+      ## The test-build above proves it builds. This installs it for real and runs
+      ## ldd, which is the only way a broken depends list shows up before users hit it.
+      ## No binfmt on these runners, so an aarch64 leg is rendered but not installed;
+      ## run validate.sh --with-binfmt locally when a release starts shipping one.
+      - name: Validate the package end to end
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: ./packaging/aur/validate.sh --tag "$TAG" --repo "$GITHUB_REPOSITORY"
+
+      - name: Compare against the AUR
+        id: compare
+        env:
+          PKGNAME: ${{ steps.current.outputs.pkgname }}
+        run: |
+          set -euo pipefail
+          grep -qx "pkgbase = ${PKGNAME}" work/.SRCINFO \
+            || { echo "::error::.SRCINFO pkgbase does not match ${PKGNAME}; the AUR would reject this push."; exit 1; }
+
+          ## .SRCINFO is compared too. A matching PKGBUILD next to a stale .SRCINFO
+          ## is exactly the state that leaves every helper showing the old version.
+          if cmp -s work/PKGBUILD aur/PKGBUILD && cmp -s work/.SRCINFO aur/.SRCINFO \
+             && cmp -s work/LICENSE aur/LICENSE; then
+            echo "The AUR already matches. Nothing to push."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+          ## Snapshot what we compared against, so the push job can detect an AUR
+          ## that moved while the run waited for environment approval.
+          cp aur/PKGBUILD work/PKGBUILD.baseline
+          {
+            echo "### AUR render"
+            echo '```'
+            grep -E '^(pkgname|pkgver|pkgrel|arch|source_|sha256sums_)' work/PKGBUILD
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aur-package
+          ## upload-artifact drops dotfiles by default, which would lose .SRCINFO.
+          include-hidden-files: true
+          path: |
+            work/PKGBUILD
+            work/PKGBUILD.baseline
+            work/.SRCINFO
+            work/LICENSE
+          if-no-files-found: error
+
+  # The only job that holds the key, and it runs no repo-controlled script.
+  push:
+    name: Push to the AUR
+    needs: render
+    if: needs.render.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Add a required reviewer here under Settings -> Environments -> aur. An AUR key
+    # grants push to every package the account maintains, so this is worth doing.
+    environment: aur
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: aur-package
+          path: work
+
+      - name: Commit and push
+        env:
+          KEY: ${{ secrets.ROBRIX_AUR_SSH_KEY }}
+          PKGNAME: ${{ needs.render.outputs.pkgname }}
+          TAG: ${{ needs.render.outputs.tag }}
+          PKGVER: ${{ needs.render.outputs.pkgver }}
+          PKGREL: ${{ needs.render.outputs.pkgrel }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$KEY" ]]; then
+            echo "::error::ROBRIX_AUR_SSH_KEY is unset. It must hold the passphrase-less private key registered on the project's AUR account."
+            exit 1
+          fi
+
+          install -d -m 700 ~/.ssh
+          (umask 077; printf '%s\n' "$KEY" > ~/.ssh/aur)
+          ## Fails loudly on a mangled or passphrase-protected secret, and prints the
+          ## public half to /dev/null so nothing lands in the log either way.
+          ssh-keygen -y -P '' -f ~/.ssh/aur > /dev/null
+
+          ## Pinned rather than ssh-keyscan'd at run time, so a poisoned DNS answer
+          ## cannot hand us its own host key. Published at
+          ## https://archlinux.org/news/aur-migration-new-ssh-hostkeys/
+          cat > ~/.ssh/aur_known_hosts <<'EOF'
+          aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN
+          aur.archlinux.org ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBLMiLrP8pVi5BFX2i3vepSUnpedeiewE5XptnUnau+ZoeUOPkpoCgZZuYfpaIQfhhJJI5qgnjJmr4hyJbe/zxow=
+          aur.archlinux.org ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDKF9vAFWdgm9Bi8uc+tYRBmXASBb5cB5iZsB7LOWWFeBrLp3r14w0/9S2vozjgqY5sJLDPONWoTTaVTbhe3vwO8CBKZTEt1AcWxuXNlRnk9FliR1/eNB9uz/7y1R0+c1Md+P98AJJSJWKN12nqIDIhjl2S1vOUvm7FNY43fU2knIhEbHybhwWeg+0wxpKwcAd/JeL5i92Uv03MYftOToUijd1pqyVFdJvQFhqD4v3M157jxS5FTOBrccAEjT+zYmFyD8WvKUa9vUclRddNllmBJdy4NyLB8SvVZULUPrP3QOlmzemeKracTlVOUG1wsDbxknF1BwSCU7CmU6UFP90kpWIyz66bP0bl67QAvlIc52Yix7pKJPbw85+zykvnfl2mdROsaT8p8R9nwCdFsBc9IiD0NhPEHcyHRwB8fokXTajk2QnGhL+zP5KnkmXnyQYOCUYo3EKMXIlVOVbPDgRYYT/XqvBuzq5S9rrU70KoI/S5lDnFfx/+lPLdtcnnEPk=
+          EOF
+          chmod 600 ~/.ssh/aur_known_hosts
+
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/aur -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/aur_known_hosts"
+          git -c init.defaultBranch=master clone "ssh://aur@aur.archlinux.org/${PKGNAME}.git" aur
+          [[ -f aur/PKGBUILD ]] || { echo "::error::${PKGNAME} has no PKGBUILD over ssh; do the first manual push by hand."; exit 1; }
+
+          ## The AUR may have moved while this run sat waiting for approval; pushing
+          ## a render made against the old state would silently revert that work.
+          cmp -s work/PKGBUILD.baseline aur/PKGBUILD \
+            || { echo "::error::the AUR changed since this run rendered. Re-run the workflow against fresh state."; exit 1; }
+          cp work/PKGBUILD work/.SRCINFO work/LICENSE aur/
+          ## The AUR hook rejects subdirectories and any root file over 250 KiB.
+          [[ -z "$(find aur -mindepth 1 -maxdepth 1 -type d ! -name .git)" ]] || { echo "::error::subdirectory in the AUR checkout"; exit 1; }
+          [[ -z "$(find aur -maxdepth 1 -type f -size +250k)" ]] || { echo "::error::a root-level file exceeds 250 KiB"; exit 1; }
+
+          git -C aur add PKGBUILD .SRCINFO LICENSE
+          if git -C aur diff --cached --quiet; then
+            echo "Nothing staged after the copy. Nothing to push."
+            exit 0
+          fi
+          git -C aur -c user.name='Project Robius' -c user.email='it@gosim.org' \
+            commit -m "${PKGNAME} ${PKGVER}-${PKGREL} (${TAG})"
+          ## Plain push, never --force. A rejection means somebody else pushed, which
+          ## needs a human to look rather than an overwrite.
+          git -C aur push origin master

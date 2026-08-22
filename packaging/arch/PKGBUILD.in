@@ -1,25 +1,28 @@
-# Maintainer: Project Robius <contact@robius.rs>
+# Maintainer: Project Robius <it@gosim.org>
 #
-# Template for the pacman package attached to each GitHub release, so Arch users can
-# install Robrix with a single `pacman -U`. The release workflow fills in the two
-# placeholders below and runs `makepkg` against it inside an Arch container.
+# Shared template behind both Robrix pacman packages: the .pkg.tar.zst attached to
+# every GitHub release, and the AUR package. Only packaging/aur/render-pkgbuild.sh
+# fills these placeholders in, and the two renderings differ only in the source
+# block, so send fixes here rather than to a rendered copy.
 #
-# The source version is the raw crate version, which is what the payload tarball is
-# named after. The package version is that with the pre-release hyphen removed, since
-# pacman forbids hyphens in pkgver. It's removed rather than turned into a dot because
-# vercmp sorts `1.0.0alpha.2` below `1.0.0` but `1.0.0.alpha.2` above it, which would
-# make the eventual 1.0.0 release look like a downgrade.
+# pkgver deletes the pre-release hyphen rather than dotting or underscoring it,
+# because vercmp sorts `1.0.0alpha.2` below `1.0.0` while both `1.0.0.alpha.2` and
+# `1.0.0_alpha.2` sort above it. The ArchWiki's generic "use an underscore" advice
+# would make the real 1.0.0 look like a downgrade.
 
-pkgname=robrix
+pkgname=@PKGNAME@
 pkgver=@PKGVER@
-pkgrel=1
-pkgdesc="A multi-platform Matrix chat client written in Rust, using the Makepad UI toolkit and the Robius app dev framework"
-arch=('x86_64')
-url="https://github.com/project-robius/robrix"
-license=('MIT')
+pkgrel=@PKGREL@
+pkgdesc="A powerful multi-platform Matrix chat client written from scratch in Rust"
+arch=(@ARCH@)
+url="@URL@"
+## Only the ones with a license file to point at. usr/share/licenses/robrix/copyright
+## enumerates the rest per file, with full texts, and namcap counts files against
+## uncommon SPDX ids, so adding an id here means adding a file too.
+license=('MIT' 'Apache-2.0' 'OFL-1.1' 'CC-BY-3.0')
 depends=(
   'glibc'
-  'gcc-libs'
+  'libgcc'      ## owns libgcc_s.so.1; gcc-libs is an empty metapackage now
   'libx11'
   'libxcursor'
   'libxkbcommon'
@@ -27,24 +30,29 @@ depends=(
   'alsa-lib'
   'libpulse'
   'openssl'
-  ## The next three are all dlopen'd or spawned rather than linked, so nothing catches
-  ## them automatically. Missing libEGL is what made the .deb install fine and then die
-  ## with "can't load LibEGL"; dbus and xdg-utils fail the same way, just later.
-  'libglvnd'    ## libEGL.so.1, loaded by Makepad at startup
-  'dbus'        ## libdbus-1.so.3, loaded by the file picker
-  'xdg-utils'   ## xdg-open, spawned to open links and attachments
-  'ca-certificates'
+  ## These four are dlopen'd, spawned, or read off disk rather than linked, so no
+  ## tooling finds them and namcap calls them unneeded. Don't drop them.
+  'libglvnd'         ## libEGL.so.1, loaded by Makepad at startup
+  'dbus'             ## libdbus-1.so.3, loaded by the file picker
+  'xdg-utils'        ## xdg-open, spawned to open links and attachments
+  'ca-certificates'  ## /etc/ssl/certs, read at runtime by both TLS stacks
   'hicolor-icon-theme'
 )
-conflicts=('robrix-bin' 'robrix-git')
-## We're packaging an already-built binary, so there's nothing to compile or strip.
+## With neither of these the attach and save-as dialogs never open.
+optdepends=(
+  'xdg-desktop-portal-impl: native file picker, e.g. xdg-desktop-portal-gtk or -kde'
+  'zenity: file picker fallback when no portal backend is running'
+)
+provides=(@PROVIDES@)
+conflicts=(@CONFLICTS@)
+## Nothing to compile here, and the binary upstream ships is already stripped.
 options=('!strip' '!debug')
 
-## Both are copied in next to this file by the release workflow.
-source=("robrix_@SRCVER@_x86_64.tar.gz" "LICENSE-MIT")
-sha256sums=('SKIP' 'SKIP')
+@SOURCES@
 
 package() {
+    ## The payload unpacks straight to $srcdir/usr with no top-level directory, and
+    ## already carries usr/share/licenses/robrix/{copyright,THIRD-PARTY-NOTICES.html}.
     cp -a "${srcdir}/usr" "${pkgdir}/"
-    install -Dm644 "${srcdir}/LICENSE-MIT" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE-MIT"
+@LICENSE_DIR_FIXUP@
 }
