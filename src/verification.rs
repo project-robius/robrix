@@ -51,9 +51,6 @@ pub fn add_verification_event_handlers_and_sync_client(client: Client) -> tokio:
         while let Some(state) = verification_state_subscriber.next().await {
             log!("Received a verification state update: {state:?}");
             Cx::post_action(VerificationStateAction::Update(state));
-            if let VerificationState::Verified = state {
-                break;
-            }
         }
     });
 
@@ -98,8 +95,12 @@ pub fn add_verification_event_handlers_and_sync_client(client: Client) -> tokio:
 
 
 async fn dump_devices(user_id: &UserId, client: &Client) -> String {
+    let our_devices = match client.encryption().get_user_devices(user_id).await {
+        Ok(d) => d,
+        Err(e) => return format!("Couldn't get the list of devices for user {user_id}: {e}"),
+    };
     let mut devices = String::new();
-    for device in client.encryption().get_user_devices(user_id).await.unwrap().devices() {
+    for device in our_devices.devices() {
         let current = client.device_id().is_some_and(|id| id == device.device_id());
         let _ = writeln!(&mut devices,
             "    {:<10} {:<30} {:<}{}",
@@ -164,6 +165,13 @@ async fn sas_verification_handler(
                     }
                     // An old or duplicate `Accept` shouldn't be treated as us confirming the keys match.
                     Some(VerificationUserResponse::Accept) => { }
+                    Some(VerificationUserResponse::Mismatch) => {
+                        log!("User reported that the SAS keys did not match");
+                        if !sas.is_done() {
+                            let _ = sas.mismatch().await;
+                        }
+                        return;
+                    }
                     // `None` means the modal was dismissed, meaning that verification was cancelled.
                     Some(VerificationUserResponse::Cancel) | None => {
                         log!("User cancelled the SAS verification");
@@ -235,7 +243,17 @@ async fn sas_verification_handler(
 }
 
 async fn request_verification_handler(client: Client, request: VerificationRequest) {
-    log!("Received a verification request in room {:?}: {:?}", request.room_id(), request.state());
+    // A self-verification request we just sent can get delivered to us via homeserver sync,
+    // so we must ignore that instead of treating it as a new request.
+    if request.we_started() {
+        return;
+    }
+    let mut stream = request.changes();
+    let state = request.state();
+    log!("Received a verification request; {state:?}, room {:?}", request.room_id());
+    if matches!(state, VerificationRequestState::Cancelled(_) | VerificationRequestState::Done) {
+        return;
+    }
     let Some(in_progress) = VerificationInProgress::start() else {
         log!("Declining verification request: another verification is already in progress.");
         let _ = request.cancel().await;
@@ -251,8 +269,6 @@ async fn request_verification_handler(client: Client, request: VerificationReque
             }
         )
     );
-
-    let mut stream = request.changes();
 
     let mut accepted = false;
     // If the other side starts SAS before the user clicks Yes,
@@ -279,7 +295,7 @@ async fn request_verification_handler(client: Client, request: VerificationReque
                 }
                 Some(VerificationUserResponse::Accept) => { }
                 // `None` means the modal went away, which we treat as a cancel too.
-                Some(VerificationUserResponse::Cancel) | None => {
+                Some(VerificationUserResponse::Cancel | VerificationUserResponse::Mismatch) | None => {
                     log!("User cancelled the verification request.");
                     if let Err(e) = request.cancel().await {
                         Cx::post_action(VerificationAction::RequestCancelError(Arc::new(e)));
@@ -329,20 +345,13 @@ async fn request_verification_handler(client: Client, request: VerificationReque
 
 /// Sends a self-verification request to the user's other logged-in sessions,
 pub async fn request_self_verification_handler(client: Client) {
-    let Some(in_progress) = VerificationInProgress::start() else {
-        enqueue_popup_notification(
-            "A verification request is already in progress. Finish or cancel it first.",
-            PopupKind::Error,
-            Some(6.0),
-        );
-        return;
-    };
     let Some(user_id) = client.user_id() else {
         enqueue_popup_notification("Can't verify this device: you are not logged in.", PopupKind::Error, Some(5.0));
         return;
     };
 
-    let identity = match client.encryption().get_user_identity(user_id).await {
+    // Get a fresh copy of the user's device list, don't rely on a cached one
+    let identity = match client.encryption().request_user_identity(user_id).await {
         Ok(Some(identity)) => identity,
         Ok(None) => {
             enqueue_popup_notification(
@@ -358,6 +367,46 @@ pub async fn request_self_verification_handler(client: Client) {
             enqueue_popup_notification(format!("Couldn't start verification: {e}"), PopupKind::Error, Some(6.0));
             return;
         }
+    };
+
+    // If there's no other signed device to verify against, show an appropriate error or warning.
+    match client.encryption().get_user_devices(user_id).await {
+        Ok(devices) => {
+            let mut other_devices = devices.devices()
+                .filter(|d| Some(d.device_id()) != client.device_id() && !d.is_dehydrated())
+                .peekable();
+            if other_devices.peek().is_none() {
+                enqueue_popup_notification(
+                    "Cannot verify this device because it's the only one logged into this account.\n\n\
+                    Sign in to this account on another device or Matrix client, and then unlock it \
+                    with your recovery key or security phrase, then use that to verify this device.",
+                    PopupKind::Error,
+                    None,
+                );
+                return;
+            }
+            // Signing this device needs cross-signing keys, so only a cross-signed session can do it.
+            if !other_devices.any(|d| d.is_cross_signed_by_owner()) {
+                enqueue_popup_notification(
+                    "You don't have any other devices/sessions with cross-signing keys. \
+                    Verification might succeed, but this device will stay unverified.\n\n\
+                    Unlock another session with your recovery key or security phrase, then try again.",
+                    PopupKind::Warning,
+                    Some(20.0),
+                );
+            }
+        }
+        Err(e) => error!("Couldn't list our own devices before self-verification: {e:?}"),
+    }
+
+    // Now we try to start the verification flow.
+    let Some(in_progress) = VerificationInProgress::start() else {
+        enqueue_popup_notification(
+            "A verification request is already in progress. Finish or cancel it first.",
+            PopupKind::Error,
+            Some(6.0),
+        );
+        return;
     };
 
     let request = match identity.request_verification_with_methods(vec![VerificationMethod::SasV1]).await {
@@ -486,4 +535,5 @@ pub struct VerificationRequestActionState {
 pub enum VerificationUserResponse {
     Accept,
     Cancel,
+    Mismatch,
 }

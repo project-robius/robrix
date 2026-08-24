@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use makepad_widgets::*;
-use matrix_sdk::encryption::verification::Verification;
+use matrix_sdk::{encryption::verification::Verification, ruma::events::key::verification::cancel::CancelCode};
 
 use crate::verification::{VerificationAction, VerificationRequestActionState, VerificationUserResponse};
 
@@ -93,6 +93,9 @@ pub struct VerificationModal {
     /// meaning that the verification process has ended
     /// and that any further interaction with it should close the modal.
     #[rust(false)] is_final: bool,
+    /// Whether the emoji/decimal comparison is currently being shown,
+    /// which deetermines what the cancel button text shows.
+    #[rust(false)] is_comparing_keys: bool,
 }
 
 /// Actions emitted by the `VerificationModal`.
@@ -124,7 +127,14 @@ impl WidgetMatchEvent for VerificationModal {
 
         if cancel_button_clicked || modal_dismissed {
             if let Some(state) = self.state.as_ref() {
-                let _ = state.response_sender.send(VerificationUserResponse::Cancel);
+                // Clicking "no" should send a key mismatch response,
+                // but dismissing the modal should just cancel the verification.
+                let response = if self.is_comparing_keys && cancel_button_clicked {
+                    VerificationUserResponse::Mismatch
+                } else {
+                    VerificationUserResponse::Cancel
+                };
+                let _ = state.response_sender.send(response);
             }
             self.reset_state();
 
@@ -142,6 +152,7 @@ impl WidgetMatchEvent for VerificationModal {
                 self.reset_state();
             } else if let Some(state) = self.state.as_ref() {
                 let _ = state.response_sender.send(VerificationUserResponse::Accept);
+                self.is_comparing_keys = false;
                 accept_button.set_enabled(cx, false);
             }
         }
@@ -158,10 +169,33 @@ impl WidgetMatchEvent for VerificationModal {
                 self.view.view(cx, ids!(emojis_view)).set_visible(cx, false);
                 match verification_action {
                     VerificationAction::RequestCancelled(cancel_info) => {
-                        self.label(cx, ids!(body)).set_text(
-                            cx,
-                            &format!("Verification request was cancelled: {}", cancel_info.reason())
-                        );
+                        let text: Cow<'static, str> = match cancel_info.cancel_code() {
+                            CancelCode::Timeout => Cow::from(
+                                "The verification process timed out.\n\n\
+                                Each step must be completed fairly quickly. Try again."
+                            ),
+                            CancelCode::Accepted => Cow::from(
+                                "You handled this request on a different device."
+                            ),
+                            CancelCode::MismatchedSas => Cow::from(
+                                "The emoji did not match, so nothing was verified.\n\n\
+                                If you're sure you compared them correctly, your connection may be compromised."
+                            ),
+                            CancelCode::User if cancel_info.cancelled_by_us() => Cow::from(
+                                "Verification was cancelled on this device.\n\n\
+                                You might have started another verification request jointly, \
+                                or there was a different Matrix error. Please try again."
+                            ),
+                            CancelCode::User => Cow::from(
+                                "Verification was cancelled on the other device."
+                            ),
+                            _ => Cow::from(format!(
+                                "Verification was cancelled by {}: {}",
+                                if cancel_info.cancelled_by_us() { "this device" } else { "another device" },
+                                cancel_info.reason(),
+                            )),
+                        };
+                        self.label(cx, ids!(body)).set_text(cx, &text);
                         self.transition_to_final_state(cx, &accept_button, &cancel_button);
                     }
 
@@ -250,6 +284,7 @@ impl WidgetMatchEvent for VerificationModal {
                             self.label(cx, ids!(body)).set_text(cx, &text);
                         }
                         self.is_final = false;
+                        self.is_comparing_keys = true;
                         accept_button.set_visible(cx, true);
                         accept_button.set_enabled(cx, true);
                         accept_button.set_text(cx, "Yes");
@@ -279,7 +314,7 @@ impl WidgetMatchEvent for VerificationModal {
                         self.label(cx, ids!(body)).set_text(
                             cx,
                             "Verification completed successfully!\n\n\
-                            Now you can send and receive encrypted messages,\
+                            Now you can send and receive encrypted messages, \
                             and everyone you chat with can trust this device is yours.",
                         );
                         self.transition_to_final_state(cx, &accept_button, &cancel_button);
@@ -304,11 +339,13 @@ impl VerificationModal {
     fn reset_state(&mut self) {
         self.state = None;
         self.is_final = false;
+        self.is_comparing_keys = false;
     }
 
     /// The verification flow is waiting on another device.
     fn transition_to_waiting_state(&mut self, cx: &mut Cx, accept_button: &ButtonRef, cancel_button: &ButtonRef) {
         self.is_final = false;
+        self.is_comparing_keys = false;
         accept_button.set_enabled(cx, false);
         accept_button.set_text(cx, "Waiting…");
         cancel_button.set_text(cx, "Cancel");
@@ -323,6 +360,7 @@ impl VerificationModal {
         accept_button.set_text(cx, "Okay");
         cancel_button.set_visible(cx, false);
         self.is_final = true;
+        self.is_comparing_keys = false;
     }
 
     fn initialize_with_data(
@@ -364,6 +402,7 @@ impl VerificationModal {
 
         self.state = Some(state);
         self.is_final = false;
+        self.is_comparing_keys = false;
     }
 }
 
