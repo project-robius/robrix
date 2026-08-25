@@ -2851,6 +2851,8 @@ struct RoomListServiceRoomInfo {
     num_unread_mentions: u64,
     display_name: Option<RoomDisplayName>,
     room_avatar: Option<OwnedMxcUri>,
+    /// Only ever set for invited rooms.
+    inviter_info: Option<InviterInfo>,
     room: matrix_sdk::Room,
 }
 impl RoomListServiceRoomInfo {
@@ -2861,7 +2863,7 @@ impl RoomListServiceRoomInfo {
     ) -> Self {
         // Parallelize fetching of independent room data.
         // Only joined rooms actually use tags and power levels.
-        let (is_direct, tags, display_name, user_power_levels) = tokio::join!(
+        let (is_direct, tags, display_name, user_power_levels, inviter_info) = tokio::join!(
             room.is_direct(),
             async {
                 if room.state() == RoomState::Joined { room.tags().await } else { Ok(None) }
@@ -2871,6 +2873,18 @@ impl RoomListServiceRoomInfo {
                 if !fetch_power_levels || room.state() != RoomState::Joined { return None; }
                 let Some(user_id) = current_user_id else { return None; };
                 UserPowerLevels::from_room(&room, user_id.deref()).await
+            },
+            async {
+                if room.state() != RoomState::Invited { return None; }
+                let invite = room.invite_details().await
+                    .inspect_err(|e| error!("Couldn't obtain who invited us to room {}: {e}", room.room_id()))
+                    .ok()?;
+                let inviter = invite.inviter;
+                Some(InviterInfo {
+                    display_name: inviter.as_ref().and_then(|m| m.display_name().map(str::to_owned)),
+                    avatar_url: inviter.and_then(|m| m.avatar_url().map(ToOwned::to_owned)),
+                    user_id: invite.inviter_id,
+                })
             }
         );
 
@@ -2888,6 +2902,7 @@ impl RoomListServiceRoomInfo {
             num_unread_mentions: room.num_unread_mentions(),
             display_name: display_name.ok(),
             room_avatar: room.avatar_url(),
+            inviter_info,
             room,
         }
     }
@@ -3608,15 +3623,29 @@ async fn update_room(
         // First, we check for changes to room data that is relevant to any room,
         // including joined, invited, and other rooms.
         // This includes the room name and room avatar.
-        if old_room.room_avatar != new_room.room_avatar {
+        let was_name_changed = old_room.display_name != new_room.display_name;
+        // A room with no avatar image uses a text avatar based on the room name, so we update that too.
+        if old_room.room_avatar != new_room.room_avatar
+            || (was_name_changed && new_room.room_avatar.is_none())
+        {
             log!("Updating room avatar for room {}", new_room_id);
             spawn_fetch_room_avatar(new_room);
         }
-        if old_room.display_name != new_room.display_name {
+        if was_name_changed {
             log!("Updating room {} name: {:?} --> {:?}", new_room_id, old_room.display_name, new_room.display_name);
 
             enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
                 new_room_name: (new_room.display_name.clone(), new_room_id.clone()).into(),
+            });
+        }
+
+        // If we know anything new about the inviter, send it to the rooms list.
+        if old_room.inviter_info != new_room.inviter_info
+            && let Some(inviter_info) = new_room.inviter_info.clone()
+        {
+            enqueue_rooms_list_update(RoomsListUpdate::UpdateInviterInfo {
+                room_id: new_room_id.clone(),
+                inviter_info,
             });
         }
 
@@ -3780,31 +3809,12 @@ async fn add_new_room(
             return Ok(());
         }
         RoomState::Invited => {
-            let invite_details = new_room.room.invite_details().await.ok();
             let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
             // Start with a basic text avatar; the avatar image will be fetched asynchronously below.
             let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar());
-            let inviter_info = if let Some(inviter) = invite_details.and_then(|d| d.inviter) {
-                let avatar = match inviter.avatar_url() {
-                    Some(uri) => inviter
-                        .avatar(AVATAR_THUMBNAIL_FORMAT.into())
-                        .await
-                        .ok()
-                        .flatten()
-                        .map(|data| (uri, data).into()),
-                    None => None,
-                };
-                Some(InviterInfo {
-                    user_id: inviter.user_id().to_owned(),
-                    display_name: inviter.display_name().map(|n| n.to_string()),
-                    avatar,
-                })
-            } else {
-                None
-            };
             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddInvitedRoom(InvitedRoomInfo {
                 room_name_id: room_name_id.clone(),
-                inviter_info,
+                inviter_info: new_room.inviter_info.clone(),
                 room_avatar,
                 canonical_alias: new_room.room.canonical_alias(),
                 alt_aliases: new_room.room.alt_aliases(),
@@ -3818,6 +3828,7 @@ async fn add_new_room(
                 room_name_id,
                 is_invite: true,
             });
+            // Spawn this after the update above, so the rooms list knows about the room first.
             spawn_fetch_room_avatar(new_room);
             return Ok(());
         }
