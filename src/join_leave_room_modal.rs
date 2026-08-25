@@ -8,7 +8,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::{home::invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, room::BasicRoomDetails, shared::{popup_list::{PopupKind, enqueue_popup_notification}, styles::{apply_negative_button_style, apply_neutral_button_style, apply_positive_button_style, apply_primary_button_style}}, sliding_sync::{MatrixRequest, submit_async_request}, space_service_sync::{SpaceRequest, SpaceRoomListAction}, utils::{self, RoomNameId}};
+use crate::{home::{invite_screen::{InviteDetails, JoinRoomResultAction, LeaveRoomResultAction}, rooms_list::{InviteState, set_invite_state}}, room::BasicRoomDetails, shared::{popup_list::{PopupKind, enqueue_popup_notification}, styles::{apply_negative_button_style, apply_neutral_button_style, apply_positive_button_style, apply_primary_button_style}}, sliding_sync::{MatrixRequest, submit_async_request}, space_service_sync::{SpaceRequest, SpaceRoomListAction}, utils::{self, RoomNameId}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -148,9 +148,8 @@ pub enum JoinLeaveRoomModalAction {
     },
     /// The modal requested its parent widget to close.
     Close {
-        /// `True` if the modal was closed after a successful join/leave action.
-        /// `False` if the modal was dismissed or closed after a failure/error.
-        successful: bool,
+        /// The room that the modal was acting upon.
+        room_id: OwnedRoomId,
         /// Whether the modal was dismissed by the user clicking an internal button.
         was_internal: bool,
     },
@@ -177,10 +176,10 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
         if cancel_clicked ||
             actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
         {
-            if self.kind.is_some() {
+            if let Some(kind) = self.kind.as_ref() {
                 // Inform other widgets that this modal has been closed.
                 cx.action(JoinLeaveRoomModalAction::Close {
-                    successful: self.final_success.unwrap_or(false),
+                    room_id: kind.room_id().clone(),
                     was_internal: cancel_clicked,
                 });
                 self.reset_state();
@@ -192,8 +191,11 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
         let mut needs_redraw = false;
 
         if accept_button.clicked(actions) {
-            if let Some(successful) = self.final_success {
-                cx.action(JoinLeaveRoomModalAction::Close { successful, was_internal: true });
+            if self.final_success.is_some() {
+                cx.action(JoinLeaveRoomModalAction::Close {
+                    room_id: kind.room_id().clone(),
+                    was_internal: true,
+                });
                 self.reset_state();
                 return;
             }
@@ -213,6 +215,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         submit_async_request(MatrixRequest::JoinRoom {
                             room_id: invite.room_id().clone(),
                         });
+                        set_invite_state(cx, invite.room_id(), InviteState::WaitingForJoinResult);
                     }
                     JoinLeaveModalKind::RejectInvite(invite) => {
                         title = "Rejecting this invite...".into();
@@ -225,6 +228,7 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                         submit_async_request(MatrixRequest::LeaveRoom {
                             room_id: invite.room_id().clone(),
                         });
+                        set_invite_state(cx, invite.room_id(), InviteState::WaitingForLeaveResult);
                     }
                     JoinLeaveModalKind::JoinRoom { details, is_space } => {
                         title = format!("Joining this {}...", if *is_space { "space" } else { "room" }).into();

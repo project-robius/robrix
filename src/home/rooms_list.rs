@@ -22,11 +22,11 @@ use makepad_widgets::*;
 use matrix_sdk_ui::spaces::room_list::SpaceRoomListPaginationState;
 use ruma::events::tag::TagName;
 use tokio::sync::mpsc::UnboundedSender;
-use matrix_sdk::{RoomState, ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}};
+use matrix_sdk::{RoomState, ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}};
 use crate::{
     app::{AppState, AppStateAction, SelectedRoom},
     home::{
-        navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, room_screen::invalidate_timeline_state, rooms_list_entry::RoomsListEntryAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}
+        invite_screen::{InviteScreenAction, JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, room_screen::invalidate_timeline_state, rooms_list_entry::RoomsListEntryAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}
     },
     logout::logout_confirm_modal::LogoutAction,
     room::{
@@ -34,7 +34,6 @@ use crate::{
         room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn},
     },
     shared::{
-        avatar::AvatarImage,
         collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory},
         jump_to_bottom_button::UnreadMessageCount,
         popup_list::{PopupKind, enqueue_popup_notification},
@@ -74,6 +73,19 @@ pub fn get_invited_rooms(_cx: &mut Cx) -> Rc<RefCell<HashMap<OwnedRoomId, Invite
 pub fn clear_all_invited_rooms(_cx: &mut Cx) {
     ALL_INVITED_ROOMS.with(|rooms| {
        rooms.borrow_mut().clear();
+    });
+}
+
+/// Updates the state of an invited room.
+///
+/// This function requires passing in a reference to `Cx`,
+/// which isn't used, but acts as a guarantee that this function
+/// must only be called by the main UI thread.
+pub fn set_invite_state(_cx: &mut Cx, room_id: &OwnedRoomId, new_state: InviteState) {
+    ALL_INVITED_ROOMS.with(|rooms| {
+        if let Some(invite) = rooms.borrow_mut().get_mut(room_id) {
+            invite.invite_state = new_state;
+        }
     });
 }
 
@@ -189,6 +201,11 @@ pub enum RoomsListUpdate {
     UpdateRoomAvatar {
         room_id: OwnedRoomId,
         room_avatar: FetchedRoomAvatar,
+    },
+    /// Update info about who invited us to the given room.
+    UpdateInviterInfo {
+        room_id: OwnedRoomId,
+        inviter_info: InviterInfo,
     },
     /// Update whether the given room is a direct room.
     UpdateIsDirect {
@@ -343,20 +360,14 @@ pub struct InvitedRoomInfo {
 }
 
 /// Info about the user who invited us to a room.
-#[derive(Clone)]
+///
+/// A homeserver might omit inviter info, only the user ID is guaranteed.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InviterInfo {
     pub user_id: OwnedUserId,
     pub display_name: Option<String>,
-    pub avatar: Option<AvatarImage>,
-}
-impl std::fmt::Debug for InviterInfo {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("InviterInfo")
-            .field("user_id", &self.user_id)
-            .field("display_name", &self.display_name)
-            .field("avatar?", &self.avatar.is_some())
-            .finish()
-    }
+    /// The URI of their avatar; we use the avatar cache for the image itself.
+    pub avatar_url: Option<OwnedMxcUri>,
 }
 
 /// The state of a pending invite.
@@ -712,6 +723,16 @@ impl RoomsList {
                     } else {
                         error!("Error: couldn't find room {room_id} to update avatar");
                     }
+                }
+                RoomsListUpdate::UpdateInviterInfo { room_id, inviter_info } => {
+                    if let Some(room) = self.invited_rooms.borrow_mut().get_mut(&room_id) {
+                        room.inviter_info = Some(inviter_info.clone());
+                    } else {
+                        warning!("Warning: couldn't find invited room {room_id} to update its inviter info");
+                        continue;
+                    }
+                    // Broadcast this to an already-open InviteScreen that might be showing this room.
+                    cx.action(InviteScreenAction::InviterInfoUpdated { room_id, inviter_info });
                 }
                 RoomsListUpdate::UpdateLatestEvent { room_id, timestamp, latest_message_text } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
@@ -1475,6 +1496,32 @@ impl Widget for RoomsList {
                 if let Some(AppStateAction::FocusNone) = action.downcast_ref() {
                     self.set_current_active_room(cx, None);
                     continue;
+                }
+
+                // Watch for updates to join or leave room requests, since an invite screen
+                // might've been closed before we got the result
+                // (and we still want to track the state of that invite here in the rooms list).
+                match action.downcast_ref() {
+                    Some(JoinRoomResultAction::Joined { room_id }) => {
+                        set_invite_state(cx, room_id, InviteState::WaitingForJoinedRoom);
+                        continue;
+                    }
+                    Some(JoinRoomResultAction::Failed { room_id, .. }) => {
+                        set_invite_state(cx, room_id, InviteState::WaitingOnUserInput);
+                        continue;
+                    }
+                    _ => {}
+                }
+                match action.downcast_ref() {
+                    Some(LeaveRoomResultAction::Left { room_id }) => {
+                        set_invite_state(cx, room_id, InviteState::RoomLeft);
+                        continue;
+                    }
+                    Some(LeaveRoomResultAction::Failed { room_id, .. }) => {
+                        set_invite_state(cx, room_id, InviteState::WaitingOnUserInput);
+                        continue;
+                    }
+                    _ => {}
                 }
 
                 // Clear widget state upon logout.
