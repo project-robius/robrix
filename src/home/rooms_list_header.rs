@@ -7,8 +7,10 @@ use std::mem::discriminant;
 
 use makepad_widgets::*;
 use matrix_sdk_ui::sync_service::State;
+use ruma::OwnedRoomId;
 
 use crate::{
+    app::AppStateAction,
     avatar_cache,
     home::navigation_tab_bar::{NavigationBarAction, SelectedTab},
     profile::user_profile_cache,
@@ -93,6 +95,9 @@ pub struct RoomsListHeader {
     #[deref] view: View,
 
     #[rust(State::Idle)] sync_state: State,
+
+    /// Used for updating the name of the currently-selected space.
+    #[rust] displayed_space: Option<OwnedRoomId>,
 }
 
 impl Widget for RoomsListHeader {
@@ -158,9 +163,21 @@ impl Widget for RoomsListHeader {
                     match tab {
                         SelectedTab::Space { space_name_id } => {
                             header_title.set_text(cx, &space_name_id.display());
+                            self.displayed_space = Some(space_name_id.room_id().clone());
                         }
-                        _ => header_title.set_text(cx, "All Rooms"),
+                        _ => {
+                            header_title.set_text(cx, "All Rooms");
+                            self.displayed_space = None;
+                        }
                     }
+                    continue;
+                }
+
+                // If the name of the currently-selected space was changed, update the header title.
+                if let Some(AppStateAction::RoomNameUpdated(new_room_name)) = action.downcast_ref()
+                    && self.displayed_space.as_ref().is_some_and(|id| id == new_room_name.room_id())
+                {
+                    self.view.label(cx, ids!(header_title)).set_text(cx, &new_room_name.display());
                     continue;
                 }
             }

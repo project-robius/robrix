@@ -1054,6 +1054,15 @@ impl Widget for SpaceLobbyScreen {
 
         if let Event::Actions(actions) = event {
             for action in actions {
+                // Just like the rooms list header, handle updates to a space's name.
+                if let Some(AppStateAction::RoomNameUpdated(new_room_name)) = action.downcast_ref()
+                    && self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == new_room_name.room_id())
+                {
+                    self.set_displayed_space(cx, new_room_name);
+                    self.redraw(cx);
+                    continue;
+                }
+
                 match action.downcast_ref() {
                     Some(SpaceRoomListAction::DetailedChildren { space_id, children, .. }) => {
                         self.update_children_in_space(cx, space_id, children);
@@ -1752,9 +1761,9 @@ impl SpaceLobbyScreen {
         let parent_name = self.view.label(cx, ids!(header.parent_space_row.parent_name));
         parent_name.set_text(cx, &space_name);
 
-        // If this space is already being displayed, then the only thing we may need to do
-        // is update its name in the top-level header (already done above).
+        // If this space is already being displayed, then update its name here in case it changed.
         if self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == space_name_id.room_id()) {
+            self.space_name_id = Some(space_name_id.clone());
             return;
         }
 
