@@ -28,7 +28,7 @@ use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, e
 use matrix_sdk_ui::sync_service::State;
 use crate::{
     app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, avatar_cache, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_image_viewer::{fetch_full_image_for_viewer, get_image_name_and_filesize}, rooms_list::{RoomsListAction, RoomsListRef}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
-        user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
+        user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneAction, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
     room::{BasicRoomDetails, reply_preview::{CollapsiblePreviewRef, CollapsiblePreviewWidgetRefExt}, room_input_bar::{RoomInputBarState, RoomInputBarWidgetRefExt}, typing_notice::TypingNoticeWidgetExt},
@@ -63,6 +63,17 @@ const BLURHASH_IMAGE_MAX_SIZE: u32 = 32;
 
 /// How long after scrolling/interaction stops before we send read receipts.
 const READ_RECEIPT_SEND_DELAY: f64 = 0.5;
+
+/// The timeout/delay between pagination finishing and us showing an error.
+const JUMP_SEARCH_NOT_FOUND_DELAY: f64 = 2.0;
+
+/// The error shown when a jumped-to event can't be found.
+/// `noun` is what the search covered, i.e. "room" or "thread".
+fn jump_target_not_found_msg(noun: &str) -> String {
+    format!("Couldn't find that message in this {noun}'s history.\n\n\
+        It may have been deleted, it may be a kind of event that Robrix doesn't display, \
+        or the server may not be able to return it.")
+}
 
 static UNNAMED_ROOM: &str = "Unnamed Room";
 
@@ -827,6 +838,35 @@ impl ReadReceiptState {
     }
 }
 
+
+/// Returns the user's display name in the given room, falling back to their user ID.
+fn display_name_or_user_id(cx: &mut Cx, room_id: &OwnedRoomId, user_id: OwnedUserId) -> String {
+    user_profile_cache::get_user_display_name_for_room(cx, user_id.clone(), Some(room_id), false)
+        .into_option()
+        .unwrap_or_else(|| user_id.to_string())
+}
+
+/// Searches backwards from `max_idx` through at most `limit` items
+/// for the item with the given event ID.
+pub(crate) fn index_of_event(
+    items: &Vector<Arc<TimelineItem>>,
+    event_id: &EventId,
+    max_idx: usize,
+    limit: usize,
+) -> Option<usize> {
+    items
+        .focus()
+        .narrow(..max_idx)
+        .into_iter()
+        .rev()
+        .take(limit)
+        .position(|i| i.as_event()
+            .and_then(|e| e.event_id())
+            .is_some_and(|ev_id| ev_id == event_id)
+        )
+        .map(|position| max_idx.saturating_sub(position).saturating_sub(1))
+}
+
 /// The main widget that displays a single Matrix room.
 #[derive(Script, Widget)]
 pub struct RoomScreen {
@@ -853,6 +893,11 @@ pub struct RoomScreen {
     #[rust] cached_refs: Option<RoomScreenWidgetRefs>,
     /// Decides when to send read receipts; see [`ReadReceiptState`].
     #[rust] read_receipt_state: ReadReceiptState,
+    /// The user whose read receipt we're currently waiting to jump to, if any.
+    /// This lets us ignore a response that arrives after the user gave up on it.
+    #[rust] pending_read_receipt_jump: Option<OwnedUserId>,
+    /// Fires when a background search for a jumped-to event has gone quiet.
+    #[rust] jump_search_timer: Timer,
 }
 
 /// Cached references to RoomScreen child widgets used in every event handler.
@@ -943,6 +988,29 @@ impl Widget for RoomScreen {
             && !loading_pane.is_currently_shown(cx)
         {
             self.send_read_receipts_for_visible_events(cx, &portal_list);
+        }
+
+        // If pagination has completed, we wait for a bit to ensure that the new events get delivered to this timeline.
+        if self.jump_search_timer.is_event(event).is_some() {
+            self.jump_search_timer = Timer::empty();
+            let search_target = loading_pane.searching_for();
+            // Process pending timeline updates, since they might include the event we're looking for.
+            self.process_timeline_updates(cx, &portal_list);
+            // If we didn't find it and nothing else changed, we have to assume the search is over (unsuccessfully).
+            let is_search_over = search_target.is_some()
+                && loading_pane.searching_for() == search_target
+                && self.jump_search_timer.is_empty()
+                && !self.tl_state.as_ref().is_some_and(|tl| tl.is_paginating);
+            if is_search_over && let Some(target_event_id) = search_target {
+                warning!("Couldn't find event {target_event_id} in room {:?}", self.room_id());
+                // Dropping the taken state cancels the search request.
+                drop(loading_pane.take_state());
+                loading_pane.set_state(cx, LoadingPaneState::Error(
+                    jump_target_not_found_msg(
+                        self.tl_state.as_ref().map_or("room", |tl| tl.kind.desc())
+                    )
+                ));
+            }
         }
 
         // Handle actions here before processing timeline updates.
@@ -1252,6 +1320,20 @@ impl Widget for RoomScreen {
                         room_member: None,
                     },
                 );
+            }
+
+            // Handle a request to jump to a given user's latest read receipt (last-seen event).
+            if let UserProfilePaneAction::JumpToReadReceipt(user_id) = action.as_widget_action().cast() {
+                let Some(timeline_kind) = self.tl_state.as_ref().map(|tl| tl.kind.clone()) else {
+                    error!("BUG: can't jump to {user_id}'s read receipt with no timeline kind.");
+                    return false;
+                };
+                submit_async_request(MatrixRequest::GetUserReadReceipt {
+                    timeline_kind,
+                    user_id: user_id.clone(),
+                });
+                self.pending_read_receipt_jump = Some(user_id);
+                return false;
             }
 
             /*
@@ -1594,6 +1676,7 @@ impl RoomScreen {
     fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
         let top_space = self.view(cx, ids!(top_space));
         let jump_to_bottom_button = self.jump_to_bottom_button(cx, ids!(jump_to_bottom_button));
+        let loading_pane = self.view.loading_pane(cx, ids!(loading_pane));
         let curr_first_id = portal_list.first_id();
         let ui = self.widget_uid();
         let Some(tl) = self.tl_state.as_mut() else { return };
@@ -1601,6 +1684,7 @@ impl RoomScreen {
         let mut done_loading = false;
         let mut should_continue_backwards_pagination = false;
         let mut typing_users = None;
+        let mut jump_to_read_receipt = None;
         let mut num_updates = 0;
         while let Ok(update) = tl.update_receiver.try_recv() {
             num_updates += 1;
@@ -1709,23 +1793,14 @@ impl RoomScreen {
 
                     if prior_items_changed {
                         // If this RoomScreen is showing the loading pane and has an ongoing backwards pagination request,
-                        // then we should update the status message in that loading pane
-                        // and then continue paginating backwards until we find the target event.
+                        // then we should update the status message in that loading pane.
                         // Note that we do this here because `clear_cache` will always be true if backwards pagination occurred.
-                        let loading_pane = self.view.loading_pane(cx, ids!(loading_pane));
                         let mut loading_pane_state = loading_pane.take_state();
                         if let LoadingPaneState::BackwardsPaginateUntilEvent {
                             events_paginated, target_event_id, ..
                         } = &mut loading_pane_state {
                             *events_paginated += new_items.len().saturating_sub(tl.items.len());
                             log!("While finding target event {target_event_id}, we have now loaded {events_paginated} messages...");
-                            // Here, we assume that we have not yet found the target event,
-                            // so we need to continue paginating backwards.
-                            // If the target event has already been found, it will be handled
-                            // in the `TargetEventFound` match arm below, which will set
-                            // `should_continue_backwards_pagination` to `false`.
-                            // So either way, it's okay to set this to `true` here.
-                            should_continue_backwards_pagination = true;
                         }
                         loading_pane.set_state(cx, loading_pane_state);
                     }
@@ -1759,11 +1834,13 @@ impl RoomScreen {
                 }
                 TimelineUpdate::TargetEventFound { target_event_id, index } => {
                     // log!("Target event found in room {}: {target_event_id}, index: {index}", tl.kind.room_id());
-                    tl.request_sender.send_if_modified(|req| {
-                        req.backwards_paginate.retain(|r| &r.room_id != tl.kind.room_id());
-                        // no need to notify/wake-up all receivers for a completed request
-                        false
-                    });
+                    // Ignore a target-event-found result if we're no longer waiting on it.
+                    if loading_pane.searching_for().as_ref() != Some(&target_event_id) {
+                        continue;
+                    }
+                    // Stop & reset the timeout timer now that we've found it.
+                    cx.stop_timer(self.jump_search_timer);
+                    self.jump_search_timer = Timer::empty();
 
                     // sanity check: ensure the target event is in the timeline at the given `index`.
                     let item = tl.items.get(index);
@@ -1771,14 +1848,13 @@ impl RoomScreen {
                         item.as_event()
                             .is_some_and(|ev| ev.event_id() == Some(&target_event_id))
                     );
-                    let loading_pane = self.view.loading_pane(cx, ids!(loading_pane));
 
                     // log!("TargetEventFound: is_valid? {is_valid}. room {}, event {target_event_id}, index {index} of {}\n  --> item: {item:?}", tl.kind.room_id(), tl.items.len());
                     if is_valid {
                         // We successfully found the target event, so we can close the loading pane,
                         // reset the loading panestate to `None`, and stop issuing backwards pagination requests.
-                        loading_pane.set_status(cx, "Successfully found replied-to message!");
-                        loading_pane.set_state(cx, LoadingPaneState::None);
+                        loading_pane.set_status(cx, "Successfully found the target message!");
+                        loading_pane.hide(cx);
 
                         // NOTE: this code was copied from the `MessageAction::JumpToRelated` handler;
                         //       we should deduplicate them at some point.
@@ -1796,7 +1872,7 @@ impl RoomScreen {
                         error!("Target event index {index} of {} is out of bounds for room {}", tl.items.len(), tl.kind.room_id());
                         // Show this error in the loading pane, which should already be open.
                         loading_pane.set_state(cx, LoadingPaneState::Error(
-                            String::from("Unable to find related message; it may have been deleted.")
+                            jump_target_not_found_msg(tl.kind.desc())
                         ));
                     }
 
@@ -1810,6 +1886,9 @@ impl RoomScreen {
                         tl.is_paginating = true;
                         top_space.set_visible(cx, true);
                         done_loading = false;
+                        // if we started another round of backwards pagination, reset the timeout timer.
+                        cx.stop_timer(self.jump_search_timer);
+                        self.jump_search_timer = Timer::empty();
                     } else {
                         error!("Unexpected PaginationRunning update in the Forwards direction");
                     }
@@ -1827,6 +1906,10 @@ impl RoomScreen {
                     // really that valuable when the user can just try to scroll again.
                     tl.pending_reached_start = false;
                     done_loading = true;
+                    // Start the timeout timer upon a failure to back-paginate more.
+                    if direction == PaginationDirection::Backwards && loading_pane.is_searching() {
+                        self.jump_search_timer = cx.start_timeout(JUMP_SEARCH_NOT_FOUND_DELAY);
+                    }
                 }
                 TimelineUpdate::PaginationIdle { fully_paginated, direction } => {
                     if direction == PaginationDirection::Backwards {
@@ -1837,9 +1920,21 @@ impl RoomScreen {
                         if fully_paginated {
                             tl.pending_reached_start = false;
                             done_loading = true;
-                        } else if tl.pending_reached_start || portal_list.first_id() <= 2 {
-                            tl.pending_reached_start = false;
-                            should_continue_backwards_pagination = true;
+                            if loading_pane.is_searching() {
+                                self.jump_search_timer = cx.start_timeout(JUMP_SEARCH_NOT_FOUND_DELAY);
+                            }
+                        } else {
+                            if tl.pending_reached_start || portal_list.first_id() <= 2 {
+                                tl.pending_reached_start = false;
+                                should_continue_backwards_pagination = true;
+                            }
+                            // A search keeps paginating wherever the user is scrolled, since a
+                            // round can add no items at all if the timeline filters them all out.
+                            if loading_pane.is_searching() {
+                                should_continue_backwards_pagination = true;
+                                cx.stop_timer(self.jump_search_timer);
+                                self.jump_search_timer = Timer::empty();
+                            }
                         }
                     } else {
                         error!("Unexpected PaginationIdle update in the Forwards direction");
@@ -1965,6 +2060,21 @@ impl RoomScreen {
                         *last_sent = None; // allow this receipt to be re-sent later
                     }
                 }
+                TimelineUpdate::UserReadReceiptFetched { user_id, event_id } => {
+                    if self.pending_read_receipt_jump.take_if(|u| *u == user_id).is_none() {
+                        continue;
+                    }
+                    let name = display_name_or_user_id(cx, tl.kind.room_id(), user_id);
+                    if let Some(event_id) = event_id {
+                        jump_to_read_receipt = Some((event_id, format!("the latest event seen by {name}")));
+                    } else {
+                        enqueue_popup_notification(
+                            format!("Couldn't find the last-seen event of {name} in this {}.", tl.kind.desc()),
+                            PopupKind::Error,
+                            Some(6.0),
+                        );
+                    }
+                }
                 TimelineUpdate::LinkPreviewFetched => {
                     // fall through to this item being redrawn
                 }
@@ -2017,6 +2127,12 @@ impl RoomScreen {
             self.view
                 .typing_notice(cx, ids!(typing_notice))
                 .show_or_hide(cx, &users);
+        }
+
+        if let Some((event_id, searching_for)) = jump_to_read_receipt {
+            // This jump supersedes any search already showing, so close that one out first.
+            loading_pane.hide(cx);
+            self.jump_to_event(cx, &event_id, None, searching_for, portal_list, &loading_pane);
         }
 
         if num_updates > 0 {
@@ -2505,10 +2621,31 @@ impl RoomScreen {
                         );
                         continue;
                     };
+                    // Get the sender of the replied-to event so we can show it in the loading pane.
+                    let replied_to_sender_and_room = self.tl_state.as_ref().and_then(|tl| {
+                        let sender = tl.items.get(details.item_id)
+                            .and_then(|item| item.as_event())
+                            .and_then(|ev| match ev.content() {
+                                TimelineItemContent::MsgLike(msg_like) => msg_like.in_reply_to.as_ref(),
+                                _ => None,
+                            })
+                            .and_then(|reply| match &reply.event {
+                                TimelineDetails::Ready(replied_to) => Some(replied_to.sender.clone()),
+                                _ => None,
+                            })?;
+                        Some((sender, tl.kind.room_id().clone()))
+                    });
+                    let searching_for = match replied_to_sender_and_room {
+                        Some((sender, room_id)) => format!(
+                            "the message from {}", display_name_or_user_id(cx, &room_id, sender),
+                        ),
+                        None => String::from("the replied-to message"),
+                    };
                     self.jump_to_event(
                         cx,
                         related_event_id,
                         Some(details.item_id),
+                        searching_for,
                         portal_list,
                         loading_pane
                     );
@@ -2530,6 +2667,7 @@ impl RoomScreen {
                         cx,
                         event_id,
                         None,
+                        String::from("the message you're replying to"),
                         portal_list,
                         loading_pane
                     );
@@ -2609,6 +2747,7 @@ impl RoomScreen {
         cx: &mut Cx,
         target_event_id: &OwnedEventId,
         max_tl_idx: Option<usize>,
+        searching_for: String,
         portal_list: &PortalListRef,
         loading_pane: &LoadingPaneRef,
     ) {
@@ -2618,20 +2757,7 @@ impl RoomScreen {
         // Attempt to find the index of replied-to message in the timeline.
         // Start from the current item's index (`tl_idx`) and search backwards,
         // since we know the related message must come before the current item.
-        let mut num_items_searched = 0;
-        let related_msg_tl_index = tl.items
-            .focus()
-            .narrow(..max_tl_idx)
-            .into_iter()
-            .rev()
-            .take(MAX_ITEMS_TO_SEARCH_THROUGH)
-            .position(|i| {
-                num_items_searched += 1;
-                i.as_event()
-                    .and_then(|e| e.event_id())
-                    .is_some_and(|ev_id| ev_id == target_event_id)
-            })
-            .map(|position| max_tl_idx.saturating_sub(position).saturating_sub(1));
+        let related_msg_tl_index = index_of_event(&tl.items, target_event_id, max_tl_idx, MAX_ITEMS_TO_SEARCH_THROUGH);
 
         if let Some(index) = related_msg_tl_index {
             // log!("The related message {replied_to_event} was immediately found in room {}, scrolling to from index {reply_message_item_id} --> {index} (first ID {}).", tl.kind.room_id(), portal_list.first_id());
@@ -2643,6 +2769,8 @@ impl RoomScreen {
             };
         } else {
             log!("The related event {target_event_id} wasn't immediately available in room {}, searching for it in the background...", tl.kind.room_id());
+            cx.stop_timer(self.jump_search_timer);
+            self.jump_search_timer = Timer::empty();
             // Here, we set the state of the loading pane and display it to the user.
             // The main logic will be handled in `process_timeline_updates()`, which is the only
             // place where we can receive updates to the timeline from the background tasks.
@@ -2650,6 +2778,7 @@ impl RoomScreen {
                 cx,
                 LoadingPaneState::BackwardsPaginateUntilEvent {
                     target_event_id: target_event_id.clone(),
+                    description: searching_for,
                     events_paginated: 0,
                     request_sender: tl.request_sender.clone(),
                 },
@@ -2666,7 +2795,7 @@ impl RoomScreen {
                         room_id: tl.kind.room_id().clone(),
                         target_event_id: target_event_id.clone(),
                         // avoid re-searching through items we already searched through.
-                        starting_index: max_tl_idx.saturating_sub(num_items_searched),
+                        starting_index: max_tl_idx.saturating_sub(MAX_ITEMS_TO_SEARCH_THROUGH),
                         current_tl_len: tl.items.len(),
                     });
                 }
@@ -2896,6 +3025,9 @@ impl RoomScreen {
 
         // Don't send read receipts if we're hiding the timeline.
         self.read_receipt_state.clear();
+        // Closing/hiding the room should cancel any pending jump/search.
+        self.pending_read_receipt_jump = None;
+        self.jump_search_timer = Timer::empty();
 
         // Tell the background subscriber that this timeline is now closed.
         if let Some(tl) = self.tl_state.as_ref() {
@@ -3044,6 +3176,8 @@ impl RoomScreen {
         if self.tl_state.is_some() {
             self.hide_timeline();
         }
+        // Dropping the loading pane state cancels any in-progress event search.
+        drop(self.loading_pane(cx, ids!(loading_pane)).take_state());
         self.room_name_id = None;
         self.timeline_kind = None;
         self.pinned_events.clear();
@@ -3340,6 +3474,13 @@ pub enum TimelineUpdate {
     ReadReceiptSendFailed {
         receipt_type: ReceiptType,
         event_id: OwnedEventId,
+    },
+    /// The search for the given user's read receipt (last-seen event) finished.
+    UserReadReceiptFetched {
+        user_id: OwnedUserId,
+        /// Their last-seen event ID (which we should now jump to),
+        /// or `None` if we couldn't find it.
+        event_id: Option<OwnedEventId>,
     },
     /// A notice that the given room has been tombstoned (closed)
     /// and replaced by the given successor room.

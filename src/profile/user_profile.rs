@@ -198,7 +198,6 @@ script_mod! {
             }
 
             jump_to_read_receipt_button := RobrixNeutralIconButton {
-                enabled: false, // TODO: support this button
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
                 draw_icon.svg: (ICON_JUMP)
@@ -293,6 +292,15 @@ pub enum ShowUserProfileAction {
     None,
 }
 
+/// Actions emitted by the user profile sliding pane, handled by its parent RoomScreen.
+#[derive(Clone, Default, Debug)]
+pub enum UserProfilePaneAction {
+    /// A request to scroll the timeline to this user's latest read receipt.
+    JumpToReadReceipt(OwnedUserId),
+    #[default]
+    None,
+}
+
 /// Information needed to populate/display the user profile sliding pane.
 #[derive(Clone, Debug)]
 pub struct UserProfilePaneInfo {
@@ -375,7 +383,10 @@ impl Widget for UserProfileSlidingPane {
         if self.is_animating_out && !self.animator.is_track_animating(id!(panel)) {
             self.visible = false;
             self.is_animating_out = false;
-            cx.revert_key_focus();
+            // give up key focus if we still had it
+            if cx.has_key_focus(self.view.area()) {
+                cx.revert_key_focus();
+            }
             self.view(cx, ids!(bg_view)).set_visible(cx, false);
             self.redraw(cx);
             return;
@@ -481,9 +492,19 @@ impl Widget for UserProfileSlidingPane {
                 );
             }
 
-            // TODO: implement the third button: `jump_to_read_receipt_button`,
-            //       which involves calling `Timeline::latest_user_read_receipt()`
-            //       or `Room::load_user_receipt()`, which are async functions.
+            // Handle the jump to read receipt button being clicked, which is mostly handled by the room screen.
+            if !self.is_animating_out && self.button(cx, ids!(jump_to_read_receipt_button)).clicked(actions) {
+                cx.widget_action(
+                    self.widget_uid(),
+                    UserProfilePaneAction::JumpToReadReceipt(info.user_id.clone()),
+                );
+                // Close the sliding pane so it doesn't cover the event we're jumping to.
+                self.is_animating_out = true;
+                cx.revert_key_focus();
+                self.animator_play(cx, ids!(panel.hide));
+                self.redraw(cx);
+                return;
+            }
 
             // The `ignore_user_button` require room membership info.
             if let Some(room_member) = info.room_member.as_ref() {
@@ -547,7 +568,7 @@ impl Widget for UserProfileSlidingPane {
         // * `direct_message_button` is hidden if the user is the same as the account user,
         //    since you cannot direct message yourself.
         // * `copy_link_to_user_button` is always enabled with the same text.
-        // * `jump_to_read_receipt_button` is always enabled with the same text.
+        // * `jump_to_read_receipt_button` is always shown with the same text.
         // * `ignore_user_button` is hidden if the user is not a member of the room,
         //    or if the user is the same as the account user, since you cannot ignore yourself.
         //    * The button text changes to "Unignore" if the user is already ignored.
