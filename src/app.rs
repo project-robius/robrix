@@ -350,6 +350,32 @@ impl MatchEvent for App {
                 continue;
             }
 
+            // Handle room name changes by updating all cached instances.
+            if let Some(
+                AppStateAction::RoomNameUpdated(new_room_name)
+                | AppStateAction::RoomLoadedSuccessfully { room_name_id: new_room_name, .. }
+            ) = action.downcast_ref() {
+                if let Some(selected_room) = self.app_state.selected_room.as_mut() {
+                    selected_room.update_room_name(new_room_name);
+                }
+                for saved in std::iter::once(&mut self.app_state.saved_dock_state_home)
+                    .chain(self.app_state.saved_dock_state_per_space.values_mut())
+                {
+                    for room in saved.selected_room.iter_mut().chain(saved.room_order.iter_mut()) {
+                        room.update_room_name(new_room_name);
+                    }
+                    // The tab's name is what actually gets rendered when a saved dock
+                    // is loaded, so it has to be updated alongside the `SelectedRoom`.
+                    for (tab_id, room) in saved.open_rooms.iter_mut() {
+                        if room.update_room_name(new_room_name)
+                            && let Some(DockItem::Tab { name, .. }) = saved.dock_items.get_mut(tab_id)
+                        {
+                            *name = room.display_name();
+                        }
+                    }
+                }
+            }
+
             // Handle actions that instruct us to update the top-level app state.
             match action.downcast_ref() {
                 Some(AppStateAction::RoomFocused(selected_room)) => {
@@ -1077,6 +1103,23 @@ impl SelectedRoom {
         }
     }
 
+    /// Updates this room's name if it refers to the same room (same room ID).
+    ///
+    /// Returns `true` if the name was replaced.
+    pub fn update_room_name(&mut self, new_room_name: &RoomNameId) -> bool {
+        let (SelectedRoom::JoinedRoom { room_name_id }
+            | SelectedRoom::Thread { room_name_id, .. }
+            | SelectedRoom::InvitedRoom { room_name_id }
+            | SelectedRoom::Space { space_name_id: room_name_id }) = self;
+        if room_name_id.room_id() != new_room_name.room_id()
+            || room_name_id.display_name() == new_room_name.display_name()
+        {
+            return false;
+        }
+        *room_name_id = new_room_name.clone();
+        true
+    }
+
     /// Returns the `LiveId` of the room tab corresponding to this `SelectedRoom`.
     pub fn tab_id(&self) -> LiveId {
         match self {
@@ -1167,6 +1210,10 @@ pub enum AppStateAction {
     /// The given room has successfully been upgraded from being displayed
     /// as an InviteScreen to a RoomScreen.
     UpgradedInviteToJoinedRoom(OwnedRoomId),
+    /// The given room or space has a new name.
+    ///
+    /// This triggers an update to every cached copy of that room/space name.
+    RoomNameUpdated(RoomNameId),
     /// The given app state was loaded from persistent storage
     /// and is ready to be restored.
     RestoreAppStateFromPersistentState(AppState),

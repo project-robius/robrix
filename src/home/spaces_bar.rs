@@ -13,7 +13,7 @@ use matrix_sdk::{RoomDisplayName, RoomState};
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::JoinRuleSummary};
 
 use crate::{
-    home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, logout::logout_confirm_modal::LogoutAction, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, settings::app_preferences::{AppPreferencesAction, ViewModeOverride}, shared::{avatar::AvatarWidgetExt, navigation_bar_button::NavigationBarButton, room_filter_input_bar::MainFilterAction}, utils::{self, RoomNameId}
+    app::AppStateAction, home::navigation_tab_bar::{NavigationBarAction, SelectedTab}, logout::logout_confirm_modal::LogoutAction, room::{FetchedRoomAvatar, room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}}, settings::app_preferences::{AppPreferencesAction, ViewModeOverride}, shared::{avatar::AvatarWidgetExt, navigation_bar_button::NavigationBarButton, room_filter_input_bar::MainFilterAction}, utils::{self, RoomNameId}
 };
 
 script_mod! {
@@ -596,6 +596,7 @@ impl SpacesBar {
                             RoomDisplayName::Named(new_space_name),
                             space_id.clone(),
                         );
+                        cx.action(AppStateAction::RoomNameUpdated(space.space_name_id.clone()));
                         let should_display = (self.display_filter)(space);
                         adjust_displayed_spaces(was_displayed, should_display, space_id, &mut self.displayed_spaces);
                     } else {

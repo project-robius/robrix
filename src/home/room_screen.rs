@@ -1064,6 +1064,14 @@ impl Widget for RoomScreen {
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
             for action in actions {
+                if let Some(AppStateAction::RoomNameUpdated(new_room_name)) = action.downcast_ref()
+                    && let Some(room_name_id) = self.room_name_id.as_mut()
+                    && room_name_id.room_id() == new_room_name.room_id()
+                {
+                    *room_name_id = new_room_name.clone();
+                    continue;
+                }
+
                 // Handle actions related to restoring the previously-saved state of rooms.
                 if let Some(AppStateAction::RoomLoadedSuccessfully { room_name_id, ..}) = action.downcast_ref() {
                     if self.room_name_id.as_ref().is_some_and(|rn| rn.room_id() == room_name_id.room_id()) {

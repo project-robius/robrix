@@ -599,6 +599,26 @@ impl WidgetMatchEvent for MainDesktopUI {
                 RoomsListAction::None => { }
             }
 
+            // Handle potential changes to room names.
+            if let Some(
+                AppStateAction::RoomNameUpdated(new_room_name)
+                | AppStateAction::RoomLoadedSuccessfully { room_name_id: new_room_name, .. }
+            ) = action.downcast_ref() {
+                let dock = self.view.dock(cx, ids!(dock));
+                for (tab_id, room) in self.open_rooms.iter_mut() {
+                    if room.update_room_name(new_room_name) {
+                        dock.set_tab_title(cx, *tab_id, room.display_name());
+                    }
+                }
+                for room in self.most_recently_selected_room
+                    .iter_mut()
+                    .chain(self.room_order.iter_mut())
+                {
+                    room.update_room_name(new_room_name);
+                }
+                continue;
+            }
+
             // Handle our own actions related to dock updates that we have previously emitted.
             match action.downcast_ref() {
                 Some(MainDesktopUiAction::LoadDockFromAppState) => {

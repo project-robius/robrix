@@ -757,10 +757,8 @@ impl RoomsList {
                     }
                 }
                 RoomsListUpdate::UpdateRoomName { new_room_name } => {
-
-                    // TODO: broadcast a new AppState action to ensure that this room's or space's new name
-                    //       gets updated in all of the `SelectedRoom` instances throughout Robrix,
-                    //       e.g., the name of the room in the Dock Tab or the StackNav header.
+                    // Broadcast this room name change to the rest of Robrix's UI elements.
+                    cx.action(AppStateAction::RoomNameUpdated(new_room_name.clone()));
 
                     let room_id = new_room_name.room_id().clone();
                     // Try to update joined room first
@@ -1512,6 +1510,15 @@ impl Widget for RoomsList {
                 if let Some(MainFilterAction::Changed(keywords)) = action.downcast_ref() {
                     self.regenerate_display_filter_and_sort_fn(keywords);
                     self.update_displayed_rooms(cx, true);
+                    continue;
+                }
+
+                // Update the selected space name too, if that's what changed.
+                if let Some(AppStateAction::RoomNameUpdated(new_room_name)) = action.downcast_ref()
+                    && let Some(selected_space) = self.selected_space.as_mut()
+                    && selected_space.room_id() == new_room_name.room_id()
+                {
+                    *selected_space = new_room_name.clone();
                     continue;
                 }
 

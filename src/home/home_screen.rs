@@ -598,6 +598,22 @@ impl Widget for HomeScreen {
                 if let StackNavigationAction::Pop = action.as_widget_action().cast() {
                     self.pop_selected_screen_view(cx, app_state);
                 }
+
+                if let Some(
+                    AppStateAction::RoomNameUpdated(new_room_name)
+                    | AppStateAction::RoomLoadedSuccessfully { room_name_id: new_room_name, .. }
+                ) = action.downcast_ref() {
+                    for room in &mut self.mobile_screen_history {
+                        room.update_room_name(new_room_name);
+                    }
+                    let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
+                    if let Some(view_id) = stack_navigation.destination_view()
+                        && let Some(room) = app_state.selected_room.as_ref()
+                        && room.room_id() == new_room_name.room_id()
+                    {
+                        stack_navigation.set_title(cx, view_id, &room.display_name());
+                    }
+                }
             }
         }
 
