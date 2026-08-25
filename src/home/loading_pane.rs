@@ -91,11 +91,13 @@ script_mod! {
 
 
 /// The state of a LoadingPane: the possible tasks that it may be performing.
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub enum LoadingPaneState {
     /// The room is being backwards paginated until the target event is reached.
     BackwardsPaginateUntilEvent {
         target_event_id: OwnedEventId,
+        /// A human-friendly description of what message/event we're searching for.
+        description: String,
         /// The number of events paginated so far, which is only used to display progress.
         events_paginated: usize,
         /// The sender for timeline requests for the room that is showing this modal.
@@ -109,26 +111,24 @@ pub enum LoadingPaneState {
     #[default]
     None,
 }
+impl Drop for LoadingPaneState {
+    fn drop(&mut self) {
+        // upon drop, tell the background async task to stop looking for the target event,
+        // because the UI side no longer cares about it (the user closed the room, thread, or loading pane).
+        let Self::BackwardsPaginateUntilEvent { target_event_id, request_sender, .. } = self else { return };
+        request_sender.send_if_modified(|req| {
+            let initial_len = req.backwards_paginate.len();
+            req.backwards_paginate.retain(|r| &r.target_event_id != target_event_id);
+            req.backwards_paginate.len() != initial_len
+        });
+    }
+}
 
 
 #[derive(Script, ScriptHook, Widget)]
 pub struct LoadingPane {
     #[deref] view: View,
     #[rust] state: LoadingPaneState,
-}
-impl Drop for LoadingPane {
-    fn drop(&mut self) {
-        if let LoadingPaneState::BackwardsPaginateUntilEvent { target_event_id, request_sender, .. } = &self.state {
-            warning!("Dropping LoadingPane with target_event_id: {}", target_event_id);
-            request_sender.send_if_modified(|req| {
-                let initial_len = req.backwards_paginate.len();
-                req.backwards_paginate.retain(|r| &r.target_event_id != target_event_id);
-                // if we actually cancelled this request, notify the receivers
-                // such that they can stop looking for the target event.
-                req.backwards_paginate.len() != initial_len
-            });
-        }
-    }
 }
 
 
@@ -175,21 +175,7 @@ impl Widget for LoadingPane {
             }
         };
         if close_pane {
-            if let LoadingPaneState::BackwardsPaginateUntilEvent { target_event_id, request_sender, .. } = &self.state {
-                let _did_send = request_sender.send_if_modified(|req| {
-                    let initial_len = req.backwards_paginate.len();
-                    req.backwards_paginate.retain(|r| &r.target_event_id != target_event_id);
-                    // if we actually cancelled this request, notify the receivers
-                    // such that they can stop looking for the target event.
-                    req.backwards_paginate.len() != initial_len
-                });
-                log!("LoadingPane: {} cancel request for target_event_id: {target_event_id}",
-                    if _did_send { "Sent" } else { "Did not send" },
-                );
-            }
-            self.set_state(cx, LoadingPaneState::None);
-            cx.revert_key_focus();
-            self.visible = false;
+            self.hide(cx);
         }
     }
 }
@@ -199,6 +185,16 @@ impl LoadingPane {
     /// Returns `true` if this pane is currently being shown.
     pub fn is_currently_shown(&self, _cx: &mut Cx) -> bool {
         self.visible
+    }
+
+    /// Hides this pane, which also cancels any search it was showing.
+    pub fn hide(&mut self, cx: &mut Cx) {
+        self.set_state(cx, LoadingPaneState::None);
+        // Only give back key focus if we still had it; something else may have taken it.
+        if cx.has_key_focus(self.view.area()) {
+            cx.revert_key_focus();
+        }
+        self.visible = false;
     }
 
     pub fn show(&mut self, cx: &mut Cx) {
@@ -211,13 +207,13 @@ impl LoadingPane {
         let cancel_button = self.button(cx, ids!(cancel_button));
         match &state {
             LoadingPaneState::BackwardsPaginateUntilEvent {
-                target_event_id,
+                description,
                 events_paginated,
                 ..
             } => {
                 self.set_title(cx, "Searching older messages...");
                 self.set_status(cx, &format!(
-                    "Looking for event {target_event_id}\n\n\
+                    "Looking for {description}...\n\n\
                     Fetched {events_paginated} messages so far...",
                 ));
                 cancel_button.set_text(cx, "Cancel");
@@ -254,6 +250,27 @@ impl LoadingPaneRef {
     pub fn show(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.show(cx);
+    }
+
+    /// See [`LoadingPane::hide()`]
+    pub fn hide(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.hide(cx);
+    }
+
+    /// Returns `true` if this pane is currently searching for any event.
+    pub fn is_searching(&self) -> bool {
+        self.borrow().is_some_and(|inner|
+            matches!(inner.state, LoadingPaneState::BackwardsPaginateUntilEvent { .. })
+        )
+    }
+
+    /// Returns the target event ID this pane is currently searching for, if any.
+    pub fn searching_for(&self) -> Option<OwnedEventId> {
+        self.borrow().and_then(|inner| match &inner.state {
+            LoadingPaneState::BackwardsPaginateUntilEvent { target_event_id, .. } => Some(target_event_id.clone()),
+            _ => None,
+        })
     }
 
     pub fn take_state(&self) -> LoadingPaneState {

@@ -11,10 +11,11 @@ use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
     authentication::oauth::error::OAuthDiscoveryError, config::RequestConfig, encryption::{identities::Device, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, Receipts, RelationsOptions, RoomMember}, ruma::{
         api::{Direction, client::{authenticated_media::get_media_preview, discovery::get_authorization_server_metadata::v1::{AccountManagementAction, AccountManagementActionData}, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}}, events::{
+            receipt::{ReceiptThread, ReceiptType as ReceiptEventType},
             relation::RelationType,
             room::{
-                message::{RoomMessageEventContent, TextMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
-            }, MessageLikeEventType, StateEventType
+                encrypted::Relation as EncryptedRelation, message::{RoomMessageEventContent, TextMessageEventContent}, power_levels::RoomPowerLevels, redaction::SyncRoomRedactionEvent, MediaSource
+            }, AnySyncMessageLikeEvent, AnySyncTimelineEvent, MessageLikeEventType, StateEventType
         }, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, uint
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
 };
@@ -36,7 +37,7 @@ use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
     app::AppStateAction, app_data_dir, cache_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
-        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::{InviteResultAction, TimelineUpdate}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
+        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::{InviteResultAction, TimelineUpdate, index_of_event}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
@@ -408,6 +409,13 @@ impl TimelineKind {
             TimelineKind::Thread { thread_root_event_id, .. } => Some(thread_root_event_id),
         }
     }
+    /// What to call this timeline in messages shown to the user.
+    pub fn desc(&self) -> &'static str {
+        match self {
+            TimelineKind::MainRoom { .. } => "room",
+            TimelineKind::Thread { .. } => "thread",
+        }
+    }
 }
 impl std::fmt::Display for TimelineKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -721,6 +729,13 @@ pub enum MatrixRequest {
         timeline_kind: TimelineKind,
         event_id: OwnedEventId,
         receipt_type: ReceiptType,
+    },
+    /// Requests the event ID of the given user's latest read receipt in this timeline.
+    ///
+    /// The response is delivered back to the main UI thread via [`TimelineUpdate::UserReadReceiptFetched`].
+    GetUserReadReceipt {
+        timeline_kind: TimelineKind,
+        user_id: OwnedUserId,
     },
     /// Sends a request to obtain the power levels for this room.
     ///
@@ -2175,6 +2190,51 @@ async fn matrix_worker_task(
                             }
                         }
                     }
+                });
+            },
+
+            MatrixRequest::GetUserReadReceipt { timeline_kind, user_id } => {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+                    error!("BUG: {timeline_kind} not found when getting read receipt of user {user_id}");
+                    enqueue_popup_notification(
+                        format!("Couldn't look up read receipts in this {}.", timeline_kind.desc()),
+                        PopupKind::Error,
+                        Some(5.0),
+                    );
+                    continue;
+                };
+
+                let _get_rr_task = Handle::current().spawn(async move {
+                    let mut event_id = timeline.latest_user_read_receipt_timeline_event_id(&user_id).await;
+                    if event_id.is_none() {
+                        // Some timeline events aren't separately visible, like edits or reactions,
+                        // so we try to find the event that this receipt is shown *on*, e.g., the reacted-to event.
+                        let mut candidates = vec![timeline.latest_user_read_receipt(&user_id).await];
+                        if timeline_kind.thread_root_event_id().is_none() {
+                            let room = timeline.room();
+                            for receipt_type in [ReceiptEventType::Read, ReceiptEventType::ReadPrivate] {
+                                candidates.push(
+                                    room.load_user_receipt(receipt_type, ReceiptThread::Unthreaded, &user_id).await.ok().flatten()
+                                );
+                            }
+                        }
+                        // find the latest (newest) event from the list of candidates
+                        event_id = candidates.into_iter().flatten()
+                            .max_by_key(|(_, receipt)| receipt.ts)
+                            .map(|(ev_id, _)| ev_id);
+
+                        if let Some(ev_id) = event_id {
+                            event_id = Some(resolve_receipt_target(
+                                timeline.room(),
+                                ev_id,
+                                timeline_kind.thread_root_event_id().is_some(),
+                            ).await);
+                        }
+                    }
+                    if sender.send(TimelineUpdate::UserReadReceiptFetched { user_id, event_id }).is_err() {
+                        error!("Failed to send fetched user read receipt to UI for {timeline_kind}");
+                    }
+                    SignalToUI::set_ui_signal();
                 });
             },
 
@@ -4144,6 +4204,44 @@ async fn fetch_room_preview_with_avatar(
     Ok(FetchedRoomPreview::from(room_preview, room_avatar))
 }
 
+/// Resolves a receipt's target to the nearest event the timeline can display,
+/// since receipts can refer to non-visible events like reactions, edits, or redactions.
+async fn resolve_receipt_target(
+    room: &Room,
+    mut event_id: OwnedEventId,
+    is_thread_timeline: bool,
+) -> OwnedEventId {
+    let original = event_id.clone();
+    // we only need to iterate over a few links in the chain of reactions/edits, or threaded replies.
+    // i picked 5 randomly, but typically just 2 or 3 is sufficient.
+    for _ in 0..5 {
+        let Ok(event) = room.load_or_fetch_event(&event_id, None).await else { break };
+        let Ok(AnySyncTimelineEvent::MessageLike(message_like)) = event.raw().deserialize() else { break };
+        let next_target = if let AnySyncMessageLikeEvent::RoomRedaction(SyncRoomRedactionEvent::Original(ev)) = &message_like {
+            ev.content.redacts.clone().or_else(|| ev.redacts.clone())
+        } else {
+            message_like.original_content().and_then(|content| match content.relation() {
+                Some(EncryptedRelation::Annotation(annotation)) => Some(annotation.event_id),
+                Some(EncryptedRelation::Replacement(replacement)) => Some(replacement.event_id),
+                // Things like poll responses and verification steps are hidden as "references".
+                // Call notifications are the same, but we can actually jump to them since we display them as an event.
+                Some(EncryptedRelation::Reference(reference))
+                if !matches!(message_like, AnySyncMessageLikeEvent::RtcNotification(_))
+                    => Some(reference.event_id),
+                // Thread replies are only hidden in the main room timeline.
+                Some(EncryptedRelation::Thread(thread)) if !is_thread_timeline => Some(thread.event_id),
+                _ => None,
+            })
+        };
+        let Some(next) = next_target else { break };
+        event_id = next;
+    }
+    if event_id != original {
+        log!("Resolved read receipt target {original} to displayable event {event_id}");
+    }
+    event_id
+}
+
 /// Fetches key details about the given thread root event.
 ///
 /// Returns a tuple of:
@@ -4568,17 +4666,7 @@ async fn timeline_subscriber_handler(
                     };
                     // log!("Received new request to search for event {new_target_event_id} in room {room_id}, thread {thread_root_event_id:?} starting from index {starting_index} (tl len {}).", timeline_items.len());
                     // Search backwards for the target event in the timeline, starting from the given index.
-                    if let Some(target_event_tl_index) = timeline_items
-                        .focus()
-                        .narrow(..starting_index)
-                        .into_iter()
-                        .rev()
-                        .position(|i| i.as_event()
-                            .and_then(|e| e.event_id())
-                            .is_some_and(|ev_id| ev_id == new_target_event_id)
-                        )
-                        .map(|i| starting_index.saturating_sub(i).saturating_sub(1))
-                    {
+                    if let Some(target_event_tl_index) = index_of_event(&timeline_items, &new_target_event_id, starting_index, usize::MAX) {
                         // log!("Found existing target event {new_target_event_id} in room {room_id}, thread {thread_root_event_id:?} at index {target_event_tl_index}.");
 
                         // Nice! We found the target event in the current timeline items,
@@ -4740,6 +4828,11 @@ async fn timeline_subscriber_handler(
                     }
                     VectorDiff::Reset { values } => {
                         if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id}, thread {thread_root_event_id:?} diff Reset, new length {}", values.len()); }
+                        // Every item is replaced, so any index we already found is stale.
+                        if let Some((_i, ev)) = found_target_event_id.take() {
+                            target_event_id = Some(ev);
+                        }
+                        found_target_event_id = find_target_event(&mut target_event_id, values.iter());
                         clear_cache = true; // we must assume all items have changed.
                         timeline_items = values;
                     }
