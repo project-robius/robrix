@@ -14,8 +14,8 @@ version = "1.0.0-alpha.2"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "stack_nav_destination_view", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "stack_nav_destination_view" }
+makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
 
 robius-directories = { git = "https://github.com/project-robius/robius" }
