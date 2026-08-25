@@ -4,18 +4,31 @@ use url::Url;
 
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
-use makepad_widgets::{Cx, Event, ImageRef, image_cache::{looks_like_svg, ImageError}};
+use makepad_widgets::{error, log, Cx, Event, ImageRef, image_cache::{looks_like_svg, ImageError}};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, RoomId}, RoomDisplayName};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
 use crate::{
     room::FetchedRoomAvatar,
-    shared::avatar::AvatarImage,
+    shared::{avatar::AvatarImage, popup_list::{enqueue_popup_notification, PopupKind}},
     sliding_sync::{submit_async_request, MatrixRequest, TimelineKind},
 };
 
 /// The scheme for GEO links, used for location messages in Matrix.
 pub const GEO_URI_SCHEME: &str = "geo:";
+
+/// Opens the given URL or shows an error popup.
+pub fn open_url(url: &str) {
+    log!("Opening URL \"{}\"", url);
+    if let Err(e) = robius_open::Uri::new(url).open() {
+        error!("Failed to open URL {:?}. Error: {:?}", url, e);
+        enqueue_popup_notification(
+            format!("Could not open URL: {url}"),
+            PopupKind::Error,
+            Some(6.0),
+        );
+    }
+}
 
 
 /// Formats a byte count using decimal units with user-facing byte suffixes, e.g. KB/MB/GB.

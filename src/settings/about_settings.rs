@@ -3,7 +3,7 @@
 //! Shows the app version and a set of external links (e.g., privacy policy).
 
 use makepad_widgets::*;
-use crate::shared::popup_list::{enqueue_popup_notification, PopupKind};
+use crate::{shared::popup_list::{enqueue_popup_notification, PopupKind}, utils::open_url};
 
 const HOMEPAGE_URL: &str = "https://robrix.app";
 const PRIVACY_POLICY_URL: &str = "https://robrix.app/privacy/";
@@ -310,17 +310,5 @@ fn sdk_value_text() -> String {
         format!("v{MATRIX_SDK_VERSION}")
     } else {
         format!("v{MATRIX_SDK_VERSION} ({MATRIX_SDK_GIT_REV})")
-    }
-}
-
-fn open_url(url: &str) {
-    log!("Opening URL \"{}\"", url);
-    if let Err(e) = robius_open::Uri::new(url).open() {
-        error!("Failed to open URL {:?}. Error: {:?}", url, e);
-        enqueue_popup_notification(
-            format!("Could not open URL: {url}"),
-            PopupKind::Error,
-            Some(10.0),
-        );
     }
 }

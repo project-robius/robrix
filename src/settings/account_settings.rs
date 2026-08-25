@@ -2,6 +2,7 @@ use std::cell::RefCell;
 
 use makepad_widgets::{text::selection::Cursor, *};
 use matrix_sdk::encryption::{identities::Device, VerificationState};
+use url::Url;
 
 use crate::{app::ConfirmDeleteAction, avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, settings::PopulateMode, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::{FileUploadMetadata, PendingUpload, handle_picked_file, handle_picker_launch_errors}, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{get_client, submit_async_request, AccountDataAction, MatrixRequest}, utils, verification::VerificationStateAction};
 
@@ -299,6 +300,20 @@ script_mod! {
     }
 }
 
+/// Whether the homeserver has a web page for managing the current account.
+#[derive(Clone, Debug, Default)]
+pub enum AccountManagementUrl {
+    /// Not looked up yet, or the last lookup failed.
+    #[default]
+    Unknown,
+    /// A lookup is pending, and we should open the URL when it's fetched.
+    OpenWhenKnown,
+    /// The homeserver doesn't have an account management page.
+    Unavailable,
+    /// The URL of the homeserver's account management page is known.
+    Known(Url),
+}
+
 /// The view containing all user account-related settings.
 #[derive(Script, Widget)]
 pub struct AccountSettings {
@@ -307,6 +322,7 @@ pub struct AccountSettings {
     #[rust] own_profile: Option<UserProfile>,
     #[rust(VerificationState::Unknown)] verification_state: VerificationState,
     #[rust] own_device: Option<Device>,
+    #[rust] account_management_url: AccountManagementUrl,
 }
 
 impl ScriptHook for AccountSettings {
@@ -411,6 +427,16 @@ impl MatchEvent for AccountSettings {
                 continue;
             }
 
+            // Clear account-specific data upon logout.
+            if let Some(LogoutAction::ClearAppState { .. }) = action.downcast_ref() {
+                self.own_profile = None;
+                self.own_device = None;
+                self.verification_state = VerificationState::Unknown;
+                self.account_management_url = AccountManagementUrl::Unknown;
+                self.update_verification_banner(cx);
+                continue;
+            }
+
             // Handle LogoutAction::InProgress to update button state
             if let Some(LogoutAction::InProgress(is_in_progress)) = action.downcast_ref() {
                 let logout_button = self.view.button(cx, ids!(logout_button));
@@ -493,6 +519,25 @@ impl MatchEvent for AccountSettings {
                 Some(AccountDataAction::OwnDeviceFetched(device)) => {
                     self.own_device = device.as_deref().cloned();
                     self.update_verification_banner(cx);
+                    continue;
+                }
+                Some(AccountDataAction::AccountManagementUrlFetched(url)) => {
+                    let was_waiting = matches!(
+                        self.account_management_url,
+                        AccountManagementUrl::OpenWhenKnown,
+                    );
+                    self.account_management_url = url.clone();
+                    if was_waiting {
+                        match url {
+                            AccountManagementUrl::Known(url) => utils::open_url(url.as_str()),
+                            AccountManagementUrl::Unavailable => Self::notify_no_account_page(),
+                            _ => enqueue_popup_notification(
+                                "Couldn't reach your homeserver to open the account management page.",
+                                PopupKind::Warning,
+                                Some(7.0),
+                            ),
+                        }
+                    }
                     continue;
                 }
                 _ => {}
@@ -597,13 +642,17 @@ impl MatchEvent for AccountSettings {
         }
 
         if self.view.button(cx, ids!(manage_account_button)).clicked(actions) {
-            // TODO: support opening the user's account management page in a browser,
-            //       or perhaps in an in-app pane if that's what is needed for regular UN+PW login.
-            enqueue_popup_notification(
-                "Account management is not yet implemented.",
-                PopupKind::Warning,
-                Some(4.0),
-            );
+            match &self.account_management_url {
+                AccountManagementUrl::Known(url) => utils::open_url(url.as_str()),
+                AccountManagementUrl::Unavailable => Self::notify_no_account_page(),
+                // Already waiting on a lookup, so let that one finish.
+                AccountManagementUrl::OpenWhenKnown => {}
+                // If we don't know the URL, fetch it and open it once we get the result.
+                AccountManagementUrl::Unknown => {
+                    self.account_management_url = AccountManagementUrl::OpenWhenKnown;
+                    submit_async_request(MatrixRequest::GetAccountManagementUrl);
+                }
+            }
         }
 
         if self.view.button(cx, ids!(logout_button)).clicked(actions) {
@@ -716,6 +765,16 @@ impl AccountSettings {
 
         self.populate_avatar_views(cx);
 
+        if matches!(mode, PopulateMode::Initial)
+            && matches!(
+                self.account_management_url,
+                AccountManagementUrl::Unknown | AccountManagementUrl::OpenWhenKnown,
+            )
+        {
+            self.account_management_url = AccountManagementUrl::Unknown;
+            submit_async_request(MatrixRequest::GetAccountManagementUrl);
+        }
+
         self.view.button(cx, ids!(upload_avatar_button)).reset_hover(cx);
         self.view.button(cx, ids!(delete_avatar_button)).reset_hover(cx);
         self.view.button(cx, ids!(accept_display_name_button)).reset_hover(cx);
@@ -725,6 +784,14 @@ impl AccountSettings {
         self.view.button(cx, ids!(manage_account_button)).reset_hover(cx);
         self.view.button(cx, ids!(logout_button)).reset_hover(cx);
         self.view.redraw(cx);
+    }
+
+    fn notify_no_account_page() {
+        enqueue_popup_notification(
+            "Your homeserver does not offer an account management page.",
+            PopupKind::Warning,
+            Some(6.0),
+        );
     }
 
     /// Show verification info based on `self.verification_state`.

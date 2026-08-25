@@ -9,8 +9,8 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI, WidgetUid};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    config::RequestConfig, encryption::{identities::Device, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, Receipts, RelationsOptions, RoomMember}, ruma::{
-        api::{Direction, client::{authenticated_media::get_media_preview, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}}, events::{
+    authentication::oauth::error::OAuthDiscoveryError, config::RequestConfig, encryption::{identities::Device, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, Receipts, RelationsOptions, RoomMember}, ruma::{
+        api::{Direction, client::{authenticated_media::get_media_preview, discovery::get_authorization_server_metadata::v1::{AccountManagementAction, AccountManagementActionData}, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}}, events::{
             relation::RelationType,
             room::{
                 message::{RoomMessageEventContent, TextMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
@@ -40,7 +40,7 @@ use crate::{
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
-    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, shared::{
+    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, settings::account_settings::AccountManagementUrl, shared::{
         attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, FileUploadMetadata}, jump_to_bottom_button::UnreadMessageCount, mention_popup::{MentionItem, RoomMentionCandidate}, mentionable_text_input::MentionMatches, popup_list::{PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
@@ -355,6 +355,8 @@ pub enum AccountDataAction {
     /// Result of [`MatrixRequest::GetOwnDevice`], in a `Box` because `Device` is large.
     /// * `None` if not logged in or the crypto store isn't ready yet.
     OwnDeviceFetched(Option<Box<Device>>),
+    /// Result of [`MatrixRequest::GetAccountManagementUrl`].
+    AccountManagementUrlFetched(AccountManagementUrl),
 }
 
 /// Actions emitted in response to a [`MatrixRequest::OpenOrCreateDirectMessage`].
@@ -627,6 +629,9 @@ pub enum MatrixRequest {
     /// Request to fetch our own [`Device`].
     /// The response is delivered via [`AccountDataAction::OwnDeviceFetched`].
     GetOwnDevice,
+    /// Request to fetch the URL of the homeserver's account management page.
+    /// The response is delivered via [`AccountDataAction::AccountManagementUrlFetched`].
+    GetAccountManagementUrl,
     /// Request to verify this device by sending an outgoing verification request
     /// to the user's other logged-in devices, which'll open the verification modal.
     RequestSelfVerification,
@@ -1587,6 +1592,32 @@ async fn matrix_worker_task(
                         }
                     };
                     Cx::post_action(AccountDataAction::OwnDeviceFetched(device.map(Box::new)));
+                });
+            }
+
+            MatrixRequest::GetAccountManagementUrl => {
+                let Some(client) = get_client() else { continue };
+                let _account_management_url_task = Handle::current().spawn(async move {
+                    // Only homeservers that use oauth have an account management page.
+                    let url = match client.oauth().cached_server_metadata().await {
+                        Ok(md) => {
+                            let url = if md.is_account_management_action_supported(&AccountManagementAction::Profile) {
+                                md.account_management_url_with_action(AccountManagementActionData::Profile)
+                            } else {
+                                md.account_management_uri
+                            };
+                            url.map_or(AccountManagementUrl::Unavailable, AccountManagementUrl::Known)
+                        }
+                        Err(e @ OAuthDiscoveryError::NotSupported) => {
+                            log!("The current homeserver has no account management page: {e}");
+                            AccountManagementUrl::Unavailable
+                        }
+                        Err(e) => {
+                            warning!("Couldn't discover the account management page: {e}");
+                            AccountManagementUrl::Unknown
+                        }
+                    };
+                    Cx::post_action(AccountDataAction::AccountManagementUrlFetched(url));
                 });
             }
 
