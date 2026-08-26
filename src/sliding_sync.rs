@@ -3084,6 +3084,11 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             error!("BUG: unexpectedly replaced an existing client when initializing the matrix client.");
         }
 
+        // Eagerly fetch the homeserver's supported versions such that it gets cached locally.
+        if let Err(e) = client.supported_versions().await {
+            warning!("Couldn't cache the homeserver's supported versions: {e:?}");
+        }
+
         // Track all async tasks so we can nicely clean them up with abort+await.
         // Generally anything that holds a reference to `Client` should be here.
         let mut subscriber_task_handles: Vec<JoinHandle<()>> = Vec::new();

@@ -182,12 +182,14 @@ impl ScriptHook for App {
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
         // only init logging/tracing once.
-        // `matrix_sdk::latest_events` emits a noisy per-room "Timer ... finished"
-        // INFO line on every load; silence it by default. RUST_LOG still wins
-        // when set, so you can re-enable it with `RUST_LOG=matrix_sdk::latest_events=info`.
+        //
+        // We silence a few overly noisy SDK logs:
+        // * `matrix_sdk::latest_events` emits a per-room "Timer ... finished" info log
+        // * the timeline warns about "No avatar changes to update" on every user's display name change.
+        // Note that this can still be overridden by setting RUST_LOG, e.g. `RUST_LOG=matrix_sdk::latest_events=info`
         let filter = tracing_subscriber::EnvFilter::try_from_default_env()
             .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(
-                "info,matrix_sdk::latest_events=warn",
+                "info,matrix_sdk::latest_events=warn,matrix_sdk_ui::timeline::tasks=error",
             ));
         let _ = tracing_subscriber::fmt()
             .with_env_filter(filter)
