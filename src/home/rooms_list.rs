@@ -197,6 +197,12 @@ pub enum RoomsListUpdate {
     UpdateRoomName {
         new_room_name: RoomNameId,
     },
+    /// Update the canonical and alternative aliases for the given room.
+    UpdateAliases {
+        room_id: OwnedRoomId,
+        canonical_alias: Option<OwnedRoomAliasId>,
+        alt_aliases: Vec<OwnedRoomAliasId>,
+    },
     /// Update the avatar for the given room.
     UpdateRoomAvatar {
         room_id: OwnedRoomId,
@@ -345,8 +351,6 @@ pub struct InvitedRoomInfo {
     pub room_avatar: FetchedRoomAvatar,
     /// Info about the user who invited us to this room, if available.
     pub inviter_info: Option<InviterInfo>,
-    /// The timestamp and Html text content of the latest message in this room.
-    pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
     /// The state of how this invite is being handled by the client backend
     /// and what should be shown in the UI.
     ///
@@ -662,7 +666,7 @@ impl RoomsList {
                     let room_id = invited_room.room_name_id.room_id().clone();
                     let should_display = should_display_room!(self, &room_id, &invited_room);
                     let _replaced = self.invited_rooms.borrow_mut().insert(room_id.clone(), invited_room);
-                    if should_display {
+                    if should_display && !self.displayed_invited_rooms.contains(&room_id) {
                         self.displayed_invited_rooms.push(room_id);
                     }
                     self.update_status();
@@ -714,6 +718,50 @@ impl RoomsList {
                     }
                     self.update_status();
                     SignalToUI::set_ui_signal(); // signal the RoomScreen to update itself
+                }
+                RoomsListUpdate::UpdateAliases { room_id, canonical_alias, alt_aliases } => {
+                    // Aliases affect how room display filters work, so update them.
+                    if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
+                        room.canonical_alias = canonical_alias;
+                        room.alt_aliases = alt_aliases;
+                        let is_direct = room.is_direct;
+                        let num_unread_mentions = room.num_unread_mentions;
+                        let num_unread_messages = room.num_unread_messages;
+                        if should_display_room!(self, &room_id, room) {
+                            self.add_displayed_joined_room(
+                                room_id,
+                                is_direct,
+                                num_unread_mentions,
+                                num_unread_messages,
+                            );
+                        } else {
+                            self.remove_displayed_joined_room(
+                                &room_id,
+                                is_direct,
+                                num_unread_mentions,
+                                num_unread_messages,
+                            );
+                        }
+                    }
+                    else {
+                        let mut invited_rooms = self.invited_rooms.borrow_mut();
+                        if let Some(invited_room) = invited_rooms.get_mut(&room_id) {
+                            invited_room.canonical_alias = canonical_alias;
+                            invited_room.alt_aliases = alt_aliases;
+                            let should_display = should_display_room!(self, &room_id, invited_room);
+                            let pos_in_list = self.displayed_invited_rooms.iter()
+                                .position(|r| r == &room_id);
+                            if should_display {
+                                if pos_in_list.is_none() {
+                                    self.displayed_invited_rooms.push(room_id);
+                                }
+                            } else {
+                                pos_in_list.map(|i| self.displayed_invited_rooms.remove(i));
+                            }
+                        } else {
+                            warning!("Warning: couldn't find room {room_id} to update its aliases.");
+                        }
+                    }
                 }
                 RoomsListUpdate::UpdateRoomAvatar { room_id, room_avatar } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
@@ -1196,7 +1244,9 @@ impl RoomsList {
                         push_joined_room(room_id, jr);
                     }
                 } else if let Some(ir) = invited_rooms_ref.get(room_id) {
-                    if should_display_room!(self, room_id, ir) {
+                    if should_display_room!(self, room_id, ir)
+                        && !new_displayed_invited_rooms.contains(room_id)
+                    {
                         new_displayed_invited_rooms.push(room_id.clone());
                     }
                 }

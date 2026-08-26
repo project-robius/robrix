@@ -6,11 +6,11 @@
 
 use std::ops::Deref;
 use makepad_widgets::*;
-use matrix_sdk::ruma::OwnedRoomId;
+use matrix_sdk::{RoomState, ruma::OwnedRoomId};
 
-use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::AvatarWidgetRefExt, popup_list::{enqueue_popup_notification, PopupKind}, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
+use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::AvatarWidgetRefExt, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
 
-use super::rooms_list::{InviteState, InviterInfo, get_invited_rooms, set_invite_state};
+use super::rooms_list::{InviteState, InviterInfo, RoomsListAction, get_invited_rooms, set_invite_state};
 
 
 script_mod! {
@@ -253,11 +253,6 @@ pub struct InviteScreen {
 
     #[rust] invite_state: InviteState,
     #[rust] info: Option<InviteDetails>,
-    /// Whether a JoinLeaveRoomModal dialog has been displayed
-    /// to allow the user to confirm their join/reject action.
-    /// This is used to prevent showing multiple popup notifications
-    /// (one from the JoinLeaveRoomModal, and one from this invite screen).
-    #[rust] has_shown_confirmation: bool,
     /// The name and ID of the invited room.
     #[rust] room_name_id: Option<RoomNameId>,
     #[rust] is_loaded: bool,
@@ -317,13 +312,11 @@ impl Widget for InviteScreen {
                     });
                     self.invite_state = InviteState::WaitingForLeaveResult;
                     set_invite_state(cx, info.room_id(), InviteState::WaitingForLeaveResult);
-                    self.has_shown_confirmation = false;
                 } else {
                     cx.action(JoinLeaveRoomModalAction::Open {
                         kind: JoinLeaveModalKind::RejectInvite(info.clone()),
                         show_tip: true,
                     });
-                    self.has_shown_confirmation = true;
                 }
             }
             if let Some(modifiers) = self.view.button(cx, ids!(accept_button)).clicked_modifiers(actions) {
@@ -333,31 +326,24 @@ impl Widget for InviteScreen {
                     });
                     self.invite_state = InviteState::WaitingForJoinResult;
                     set_invite_state(cx, info.room_id(), InviteState::WaitingForJoinResult);
-                    self.has_shown_confirmation = false;
                 } else {
                     cx.action(JoinLeaveRoomModalAction::Open {
                         kind: JoinLeaveModalKind::AcceptInvite(info.clone()),
                         show_tip: true,
                     });
-                    self.has_shown_confirmation = true;
                 }
             }
 
             for action in actions {
                 match action.downcast_ref() {
+                    // The success/failure popups are shown by the backend task, which is
+                    // more consistent than doing it here since the user may have left this screen already.
                     Some(JoinRoomResultAction::Joined { room_id }) if room_id == info.room_id() => {
                         self.invite_state = InviteState::WaitingForJoinedRoom;
-                        if !self.has_shown_confirmation {
-                            enqueue_popup_notification("Successfully joined room.", PopupKind::Success, Some(5.0));
-                        }
                         continue;
                     }
-                    Some(JoinRoomResultAction::Failed { room_id, error }) if room_id == info.room_id() => {
+                    Some(JoinRoomResultAction::Failed { room_id, .. }) if room_id == info.room_id() => {
                         self.invite_state = InviteState::WaitingOnUserInput;
-                        if !self.has_shown_confirmation {
-                            let msg = utils::stringify_join_leave_error(error, info.room_name_id(), true, true);
-                            enqueue_popup_notification(msg, PopupKind::Error, None);
-                        }
                         continue;
                     }
                     _ => {}
@@ -366,16 +352,10 @@ impl Widget for InviteScreen {
                 match action.downcast_ref() {
                     Some(LeaveRoomResultAction::Left { room_id }) if room_id == info.room_id() => {
                         self.invite_state = InviteState::RoomLeft;
-                        if !self.has_shown_confirmation {
-                            enqueue_popup_notification("Successfully rejected invite.", PopupKind::Success, Some(5.0));
-                        }
                         continue;
                     }
-                    Some(LeaveRoomResultAction::Failed { room_id, error }) if room_id == info.room_id() => {
+                    Some(LeaveRoomResultAction::Failed { room_id, .. }) if room_id == info.room_id() => {
                         self.invite_state = InviteState::WaitingOnUserInput;
-                        if !self.has_shown_confirmation {
-                            enqueue_popup_notification(format!("Failed to reject invite: {error}"), PopupKind::Error, None);
-                        }
                         continue;
                     }
                     _ => {}
@@ -529,10 +509,6 @@ impl Widget for InviteScreen {
 impl InviteScreen {
     /// Sets the ID of the invited room that will be displayed by this screen.
     pub fn set_displayed_invite(&mut self, cx: &mut Cx, room_name_id: &RoomNameId) {
-        // If we re-display the same invite, we should remember whether a confirmation modal
-        // has already been shown for it.
-        let is_same_room = self.room_name_id.as_ref().is_some_and(|r| r.room_id() == room_name_id.room_id());
-
         self.room_name_id = Some(room_name_id.clone());
         if let Some(invite) = get_invited_rooms(cx)
             .borrow()
@@ -546,12 +522,21 @@ impl InviteScreen {
                 inviter: invite.inviter_info.clone(),
             });
             self.invite_state = invite.invite_state;
-            if !is_same_room {
-                self.has_shown_confirmation = false;
-            }
             self.is_loaded = true;
             self.all_rooms_loaded = true;
             self.redraw(cx);
+        }
+        // If this invite has already been accepted (e.g., in another client, or while Robrix was offline),
+        // we need to handle that and upgrade this screen to the corresponding joined room's RoomScreen.
+        else if cx.has_global::<RoomsListRef>()
+            && cx.get_global::<RoomsListRef>().get_room_state(room_name_id.room_id()) == Some(RoomState::Joined)
+        {
+            // Use the joined room's most current name, of course.
+            let room_name_id = cx.get_global::<RoomsListRef>()
+                .get_room_name(room_name_id.room_id())
+                .unwrap_or_else(|| room_name_id.clone());
+            cx.widget_action(self.widget_uid(), RoomsListAction::InviteAccepted { room_name_id });
+            return;
         }
 
         let restore_status_view = self.view.restore_status_view(cx, ids!(restore_status_view));
@@ -578,7 +563,6 @@ impl InviteScreen {
         self.room_name_id = None;
         self.info = None;
         self.invite_state = InviteState::default();
-        self.has_shown_confirmation = false;
         self.is_loaded = false;
         self.all_rooms_loaded = false;
         self.view.restore_status_view(cx, ids!(restore_status_view)).set_visible(cx, false);

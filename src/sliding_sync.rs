@@ -26,7 +26,7 @@ use matrix_sdk_ui::{
 };
 #[cfg(not(target_os = "ios"))]
 use robius_open::Uri;
-use ruma::{OwnedRoomOrAliasId, RoomId, events::tag::Tags};
+use ruma::{OwnedRoomAliasId, OwnedRoomOrAliasId, RoomId, events::tag::Tags};
 use tokio::{
     runtime::Handle,
     sync::{broadcast, mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify, Semaphore}, task::JoinHandle, time::error::Elapsed,
@@ -1173,28 +1173,40 @@ async fn matrix_worker_task(
                 let Some(client) = get_client() else { continue };
                 let _join_room_task = Handle::current().spawn(async move {
                     log!("Sending request to join room {room_id}...");
-                    let result_action = if let Some(room) = client.get_room(&room_id) {
-                        match room.join().await {
-                            Ok(()) => {
-                                log!("Successfully joined known room {room_id}.");
-                                JoinRoomResultAction::Joined { room_id }
-                            }
-                            Err(e) => {
-                                error!("Error joining known room {room_id}: {e:?}");
-                                JoinRoomResultAction::Failed { room_id, error: e }
-                            }
+                    let known_room = client.get_room(&room_id);
+                    let was_invite = known_room.as_ref().is_some_and(|r| r.state() == RoomState::Invited);
+                    let result = match known_room.as_ref() {
+                        Some(room) => room.join().await.map(|_| room.clone()),
+                        None => client.join_room_by_id(&room_id).await,
+                    };
+                    // Show the success/failure popup here in case the UI screen that requested the join action
+                    // has been hidden or navigated away from since then.
+                    let result_action = match result {
+                        Ok(room) => {
+                            log!("Successfully joined room {room_id}.");
+                            let room_name_id = RoomNameId::from_room(&room).await;
+                            enqueue_popup_notification(
+                                format!(
+                                    "Successfully joined {} \"{room_name_id}\".",
+                                    if room.is_space() { "space" } else { "room" },
+                                ),
+                                PopupKind::Success,
+                                Some(4.0),
+                            );
+                            JoinRoomResultAction::Joined { room_id }
                         }
-                    }
-                    else {
-                        match client.join_room_by_id(&room_id).await {
-                            Ok(_room) => {
-                                log!("Successfully joined new unknown room {room_id}.");
-                                JoinRoomResultAction::Joined { room_id }
-                            }
-                            Err(e) => {
-                                error!("Error joining new unknown room {room_id}: {e:?}");
-                                JoinRoomResultAction::Failed { room_id, error: e }
-                            }
+                        Err(e) => {
+                            error!("Error joining room {room_id}: {e:?}");
+                            let room_name_id = match known_room.as_ref() {
+                                Some(room) => RoomNameId::from_room(room).await,
+                                None => RoomNameId::empty(room_id.clone()),
+                            };
+                            enqueue_popup_notification(
+                                utils::stringify_join_leave_error(&e, &room_name_id, true, was_invite),
+                                PopupKind::Error,
+                                None,
+                            );
+                            JoinRoomResultAction::Failed { room_id, error: e }
                         }
                     };
                     Cx::post_action(result_action);
@@ -1205,22 +1217,44 @@ async fn matrix_worker_task(
                 let Some(client) = get_client() else { continue };
                 let _leave_room_task = Handle::current().spawn(async move {
                     log!("Sending request to leave room {room_id}...");
-                    let result_action = if let Some(room) = client.get_room(&room_id) {
-                        match room.leave().await {
-                            Ok(()) => {
-                                log!("Successfully left room {room_id}.");
-                                LeaveRoomResultAction::Left { room_id }
-                            }
-                            Err(e) => {
-                                error!("Error leaving room {room_id}: {e:?}");
-                                LeaveRoomResultAction::Failed { room_id, error: e }
-                            }
-                        }
-                    } else {
+                    let Some(room) = client.get_room(&room_id) else {
                         error!("BUG: client could not get room with ID {room_id}");
-                        LeaveRoomResultAction::Failed {
+                        enqueue_popup_notification(
+                            "Failed to leave room: Robrix couldn't locate it.",
+                            PopupKind::Error,
+                            None,
+                        );
+                        Cx::post_action(LeaveRoomResultAction::Failed {
                             room_id,
                             error: matrix_sdk::Error::UnknownError("Client couldn't locate room to leave it.".into()),
+                        });
+                        return;
+                    };
+                    // Rejecting an invite is the same as leaving a room, but is phrased differently.
+                    let was_invite = room.state() == RoomState::Invited;
+                    let room_name_id = RoomNameId::from_room(&room).await;
+                    let result_action = match room.leave().await {
+                        Ok(()) => {
+                            log!("Successfully left room {room_id}.");
+                            enqueue_popup_notification(
+                                if was_invite {
+                                    format!("Successfully rejected the invite to \"{room_name_id}\".")
+                                } else {
+                                    format!("Successfully left \"{room_name_id}\".")
+                                },
+                                PopupKind::Success,
+                                Some(5.0),
+                            );
+                            LeaveRoomResultAction::Left { room_id }
+                        }
+                        Err(e) => {
+                            error!("Error leaving room {room_id}: {e:?}");
+                            enqueue_popup_notification(
+                                utils::stringify_join_leave_error(&e, &room_name_id, false, was_invite),
+                                PopupKind::Error,
+                                None,
+                            );
+                            LeaveRoomResultAction::Failed { room_id, error: e }
                         }
                     };
                     Cx::post_action(result_action);
@@ -2851,6 +2885,8 @@ struct RoomListServiceRoomInfo {
     num_unread_mentions: u64,
     display_name: Option<RoomDisplayName>,
     room_avatar: Option<OwnedMxcUri>,
+    canonical_alias: Option<OwnedRoomAliasId>,
+    alt_aliases: Vec<OwnedRoomAliasId>,
     /// Only ever set for invited rooms.
     inviter_info: Option<InviterInfo>,
     room: matrix_sdk::Room,
@@ -2902,6 +2938,8 @@ impl RoomListServiceRoomInfo {
             num_unread_mentions: room.num_unread_mentions(),
             display_name: display_name.ok(),
             room_avatar: room.avatar_url(),
+            canonical_alias: room.canonical_alias(),
+            alt_aliases: room.alt_aliases(),
             inviter_info,
             room,
         }
@@ -3153,6 +3191,8 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
 
         let mut room_list_service_task = rt.spawn(room_list_service_loop(room_list_service));
         let mut space_service_task = rt.spawn(space_service_loop(client));
+        // If the space service fails, we shouldn't kill everything, room sync can sill go on.
+        let mut is_space_service_alive = true;
 
         // Now, this task becomes an infinite loop that monitors the state of the
         // three core matrix-related background tasks that we just spawned above.
@@ -3219,18 +3259,16 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                     }
                     break;
                 }
-                result = &mut space_service_task => {
+                result = &mut space_service_task, if is_space_service_alive => {
+                    is_space_service_alive = false;
                     match result {
                         Ok(Ok(())) => {
                             error!("BUG: space service loop task ended unexpectedly!");
                         }
                         Ok(Err(e)) => {
                             error!("Error: space service loop task ended:\n\t{e:?}");
-                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                status: e.to_string(),
-                            });
                             enqueue_popup_notification(
-                                format!("Space service error: {e}"),
+                                format!("Spaces sync service has died. Rooms will still be synced, but spaces won't until you restart Robrix.\n\nError: {e}"),
                                 PopupKind::Error,
                                 None,
                             );
@@ -3239,7 +3277,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                             error!("BUG: failed to join space service loop task: {e:?}");
                         }
                     }
-                    break;
+                    continue;
                 }
             }
         }
@@ -3633,6 +3671,9 @@ async fn update_room(
                 }
                 RoomState::Knocked => {
                     // TODO: handle Knocked rooms (e.g., can you re-knock? or cancel a prior knock?)
+                    //       for now, drop the room instead of leaving it as a stale entry in the rooms list.
+                    log!("Removing Knocked room: {:?} ({new_room_id})", new_room.display_name);
+                    remove_room(new_room);
                     return Ok(());
                 }
             }
@@ -3667,7 +3708,21 @@ async fn update_room(
             });
         }
 
-        // Then, we check for changes to room data that is only relevant to joined rooms:
+        // Check to see if any room aliases have changed.
+        if old_room.canonical_alias != new_room.canonical_alias
+            || old_room.alt_aliases != new_room.alt_aliases
+        {
+            log!("Updating room {} aliases: {:?} --> {:?}",
+                new_room_id, old_room.canonical_alias, new_room.canonical_alias,
+            );
+            enqueue_rooms_list_update(RoomsListUpdate::UpdateAliases {
+                room_id: new_room_id.clone(),
+                canonical_alias: new_room.canonical_alias.clone(),
+                alt_aliases: new_room.alt_aliases.clone(),
+            });
+        }
+
+        // From here on out, we check for changes to room data that is only relevant to joined rooms:
         // including the latest event, tags, unread counts, is_direct, tombstoned state, power levels, etc.
         // Invited or left rooms don't care about these details.
         if matches!(new_room.state, RoomState::Joined) { 
@@ -3825,10 +3880,8 @@ async fn add_new_room(
                 room_name_id: room_name_id.clone(),
                 inviter_info: new_room.inviter_info.clone(),
                 room_avatar,
-                canonical_alias: new_room.room.canonical_alias(),
-                alt_aliases: new_room.room.alt_aliases(),
-                // we don't actually display the latest event for Invited rooms, so don't bother.
-                latest: None,
+                canonical_alias: new_room.canonical_alias.clone(),
+                alt_aliases: new_room.alt_aliases.clone(),
                 invite_state: Default::default(),
                 is_selected: false,
                 is_direct: new_room.is_direct,
@@ -3900,8 +3953,8 @@ async fn add_new_room(
         is_marked_unread: new_room.is_marked_unread,
         room_avatar,
         room_name_id: room_name_id.clone(),
-        canonical_alias: new_room.room.canonical_alias(),
-        alt_aliases: new_room.room.alt_aliases(),
+        canonical_alias: new_room.canonical_alias.clone(),
+        alt_aliases: new_room.alt_aliases.clone(),
         has_been_shown: false,
         is_selected: false,
         is_direct: new_room.is_direct,

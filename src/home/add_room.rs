@@ -496,25 +496,13 @@ impl Widget for AddRoomScreen {
                     }
 
                     match action.downcast_ref() {
+                        // Don't show success/failure popups here, they're shown in the backend task
+                        // which is more consistent than doing it here, as the user may have left the AddRoom screen by then.
                         Some(JoinRoomResultAction::Joined { room_id }) if room_id == frp.room_name_id.room_id() => {
-                            let room_type = match &frp.room_type {
-                                Some(RoomType::Space) => "space",
-                                _ => "room",
-                            };
-                            enqueue_popup_notification(
-                                format!("Successfully joined {room_type} {}.", frp.room_name_id),
-                                PopupKind::Success,
-                                Some(4.0),
-                            );
                             transition_to_joined = true;
                             break;
                         }
-                        Some(JoinRoomResultAction::Failed { room_id, error }) if room_id == frp.room_name_id.room_id() => {
-                            enqueue_popup_notification(
-                                format!("Failed to join room.\n\nError: {error}."),
-                                PopupKind::Error,
-                                None,
-                            );
+                        Some(JoinRoomResultAction::Failed { room_id, .. }) if room_id == frp.room_name_id.room_id() => {
                             break;
                         }
                         _ => {}

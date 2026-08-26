@@ -389,12 +389,26 @@ impl MatchEvent for App {
                     continue;
                 }
                 Some(AppStateAction::UpgradedInviteToJoinedRoom(room_id)) => {
-                    if let Some(selected_room) = self.app_state.selected_room.as_mut() {
-                        let did_upgrade = selected_room.upgrade_invite_to_joined(room_id);
-                        // Updating the AppState's selected room and issuing a redraw
-                        // will cause the MainMobileUI to redraw the newly-joined room.
-                        if did_upgrade {
-                            self.ui.redraw(cx);
+                    if let Some(selected_room) = self.app_state.selected_room.as_mut()
+                        && selected_room.upgrade_invite_to_joined(room_id)
+                    {
+                        self.ui.redraw(cx);
+                    }
+                    // Make sure that saved docks (for other spaces) get updated too.
+                    for saved in std::iter::once(&mut self.app_state.saved_dock_state_home)
+                        .chain(self.app_state.saved_dock_state_per_space.values_mut())
+                    {
+                        for room in saved.selected_room.iter_mut().chain(saved.room_order.iter_mut()) {
+                            room.upgrade_invite_to_joined(room_id);
+                        }
+                        // The tab's kind is what decides which screen gets shown when a saved room is loaded,
+                        // so we have to change that in addition to the selected room itself.
+                        for (tab_id, room) in saved.open_rooms.iter_mut() {
+                            if room.upgrade_invite_to_joined(room_id)
+                                && let Some(DockItem::Tab { kind, .. }) = saved.dock_items.get_mut(tab_id)
+                            {
+                                *kind = room.dock_kind();
+                            }
                         }
                     }
                     continue;

@@ -296,22 +296,20 @@ impl MainDesktopUI {
         room_name_id: &RoomNameId,
     ) {
         let dock = self.view.dock(cx, ids!(dock));
-        let Some((new_widget, true)) = dock.replace_tab(
+        if let Some((new_widget, _)) = dock.replace_tab(
             cx,
             LiveId::from_str(room_name_id.room_id().as_str()),
             id!(room_screen),
             Some(room_name_id.to_string()),
             false,
-        ) else {
-            // Nothing we can really do here except log an error.
-            error!("BUG: failed to replace InviteScreen tab with RoomScreen for {room_name_id}");
-            return;
-        };
+        ) {
+            new_widget
+                .as_room_screen()
+                .set_displayed_room(cx, room_name_id, None);
 
-        // Set the info to be displayed in the newly-replaced RoomScreen..
-        new_widget
-            .as_room_screen()
-            .set_displayed_room(cx, room_name_id, None);
+            // Note: don't return here. Whether or not this invited room is opened in a tab,
+            // we still need to upgrade its SelectedRoom instance, so fall through below.
+        }
 
         // Go through all existing `SelectedRoom` instances and replace the
         // `SelectedRoom::InvitedRoom`s with `SelectedRoom::JoinedRoom`s.
