@@ -3325,6 +3325,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
     ));
 
     let mut all_known_rooms: Vector<RoomListServiceRoomInfo> = Vector::new();
+    let mut subscribed_rooms: HashSet<OwnedRoomId, ConstHasher> = HashSet::default();
     let current_user_id = current_user_id();
 
     pin_mut!(room_diff_stream);
@@ -3358,7 +3359,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                     let new_room_infos: Vec<RoomListServiceRoomInfo> = stream::iter(
                         new_rooms.into_iter().map(|room| async {
                             let room_info = RoomListServiceRoomInfo::from_room(room.into_inner(), &current_user_id, false).await;
-                            if let Err(e) = add_new_room(&room_info, &room_list_service, false).await {
+                            if let Err(e) = add_new_room(&room_info, &room_list_service).await {
                                 error!("Failed to add new room: {:?} ({}); error: {:?}", room_info.display_name, room_info.room_id, e);
                             }
                             room_info
@@ -3366,20 +3367,13 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                     ).buffered(*MAX_CONCURRENCY).collect().await;
 
                     // Send room order update with the new room IDs
-                    let (room_id_refs, room_ids) = {
-                        let mut room_id_refs = Vec::with_capacity(new_room_infos.len());
-                        let mut room_ids = Vec::with_capacity(new_room_infos.len());
-                        for r in &new_room_infos {
-                            room_id_refs.push(r.room_id.as_ref());
-                            room_ids.push(r.room_id.clone());
-                        }
-                        (room_id_refs, room_ids)
-                    };
+                    let room_ids = new_room_infos.iter()
+                        .map(|r| r.room_id.clone())
+                        .collect::<Vec<_>>();
                     if !room_ids.is_empty() {
                         enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
                             VecDiff::Append { values: room_ids }
                         ));
-                        room_list_service.subscribe_to_rooms(&room_id_refs).await;
                         all_known_rooms.extend(new_room_infos);
                     }
                 }
@@ -3394,7 +3388,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushFront"); }
                     let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), &current_user_id, true).await;
                     let room_id = new_room.room_id.clone();
-                    add_new_room(&new_room, &room_list_service, true).await?;
+                    add_new_room(&new_room, &room_list_service).await?;
                     enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
                         VecDiff::PushFront { value: room_id }
                     ));
@@ -3404,7 +3398,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushBack"); }
                     let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), &current_user_id, true).await;
                     let room_id = new_room.room_id.clone();
-                    add_new_room(&new_room, &room_list_service, true).await?;
+                    add_new_room(&new_room, &room_list_service).await?;
                     enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
                         VecDiff::PushBack { value: room_id }
                     ));
@@ -3442,7 +3436,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Insert at {index}"); }
                     let new_room = RoomListServiceRoomInfo::from_room(new_room.into_inner(), &current_user_id, true).await;
                     let room_id = new_room.room_id.clone();
-                    add_new_room(&new_room, &room_list_service, true).await?;
+                    add_new_room(&new_room, &room_list_service).await?;
                     enqueue_rooms_list_update(RoomsListUpdate::RoomOrderUpdate(
                         VecDiff::Insert { index, value: room_id }
                     ));
@@ -3493,6 +3487,25 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                     ));
                 }
             }
+        }
+
+        // `subscribe_to_rooms()` replaces the whole subscription set rather than adding to it,
+        // so hand it every room we still want, but ONLY when that set changes.
+        // We use a set type for comparison, not a list, because rooms continuously get reordered.
+        let is_wanted = |r: &RoomListServiceRoomInfo| matches!(r.state, RoomState::Invited | RoomState::Joined);
+        let mut num_wanted = 0;
+        let mut has_new_room = false;
+        for room in all_known_rooms.iter().filter(|r| is_wanted(r)) {
+            num_wanted += 1;
+            has_new_room |= !subscribed_rooms.contains(&room.room_id);
+        }
+        if has_new_room || num_wanted != subscribed_rooms.len() {
+            subscribed_rooms = all_known_rooms.iter()
+                .filter(|r| is_wanted(r))
+                .map(|r| r.room_id.clone())
+                .collect();
+            let room_id_refs = subscribed_rooms.iter().map(|r| r.as_ref()).collect::<Vec<_>>();
+            room_list_service.subscribe_to_rooms(&room_id_refs).await;
         }
     }
 
@@ -3607,11 +3620,11 @@ async fn update_room(
                 }
                 RoomState::Joined => {
                     log!("update_room(): adding new Joined room: {:?} ({new_room_id})", new_room.display_name);
-                    return add_new_room(new_room, room_list_service, true).await;
+                    return add_new_room(new_room, room_list_service).await;
                 }
                 RoomState::Invited => {
                     log!("update_room(): adding new Invited room: {:?} ({new_room_id})", new_room.display_name);
-                    return add_new_room(new_room, room_list_service, true).await;
+                    return add_new_room(new_room, room_list_service).await;
                 }
                 RoomState::Knocked => {
                     // TODO: handle Knocked rooms (e.g., can you re-knock? or cancel a prior knock?)
@@ -3766,7 +3779,7 @@ async fn update_room(
             old_room.room_id, new_room_id,
         );
         remove_room(old_room);
-        add_new_room(new_room, room_list_service, true).await
+        add_new_room(new_room, room_list_service).await
     }
 }
 
@@ -3787,7 +3800,6 @@ fn remove_room(room: &RoomListServiceRoomInfo) {
 async fn add_new_room(
     new_room: &RoomListServiceRoomInfo,
     room_list_service: &RoomListService,
-    subscribe: bool,
 ) -> Result<()> {
     match new_room.state {
         RoomState::Knocked => {
@@ -3833,12 +3845,6 @@ async fn add_new_room(
             return Ok(());
         }
         RoomState::Joined => { } // Fall through to adding the joined room below.
-    }
-
-    // If we didn't already subscribe to this room, do so now.
-    // This ensures we will properly receive all of its states and latest event.
-    if subscribe {
-        room_list_service.subscribe_to_rooms(&[&new_room.room_id]).await;
     }
 
     let timeline = Arc::new(
