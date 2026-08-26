@@ -202,11 +202,16 @@ impl MediaCache {
 pub(crate) fn error_to_media_cache_entry(error: Error, request: &MediaRequestParameters) -> MediaCacheEntry {
     match error {
         Error::Http(http_error) => {
+            // Sometimes http errors are wrapped in the `Cached` variant.
+            let mut http_error: &HttpError = &http_error;
+            while let HttpError::Cached(cached) = http_error {
+                http_error = cached;
+            }
             if let Some(client_error) = http_error.as_client_api_error() {
                 error!("Error {client_error} for request: {:?}", request);
                 MediaCacheEntry::Failed(client_error.status_code)
             } else {
-                match *http_error {
+                match http_error {
                     HttpError::Reqwest(reqwest_error) => {
                         // Checking if the connection is timeout is not important as Matrix SDK has implemented maximum timeout duration.
                         if !reqwest_error.is_connect() {
