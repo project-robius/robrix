@@ -3666,19 +3666,11 @@ async fn update_room(
         // including the latest event, tags, unread counts, is_direct, tombstoned state, power levels, etc.
         // Invited or left rooms don't care about these details.
         if matches!(new_room.state, RoomState::Joined) { 
-            // For some reason, the latest event API does not reliably catch *all* changes
-            // to the latest event in a given room, such as redactions.
-            // Thus, we have to re-obtain the latest event on *every* update, regardless of timestamp.
-            //
-            let update_latest = match (old_room.latest_event_timestamp, new_room.room.latest_event_timestamp()) {
-                (Some(old_ts), Some(new_ts)) => new_ts >= old_ts,
-                (None, Some(_)) => true,
-                _ => false,
-            };
-            if update_latest {
+            // we can't just assume the latest event timestamp is larger. If a redaction happens,
+            // then the latest event timestamp might go backwards, so we just need to test if they're different.
+            if old_room.latest_event_timestamp != new_room.room.latest_event_timestamp() {
                 update_latest_event(&new_room.room).await;
             }
-
 
             if old_room.tags != new_room.tags {
                 log!("Updating room {} tags from {:?} to {:?}", new_room_id, old_room.tags, new_room.tags);
