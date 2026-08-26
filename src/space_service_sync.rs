@@ -1,7 +1,7 @@
 //! Background tasks that subscribe to the Matrix SpaceService in order to
 //! track changes to the user's joined spaces and send updates the UI.
 
-use std::{collections::{HashMap, HashSet, hash_map::Entry}, iter::Peekable, sync::Arc};
+use std::{collections::{HashMap, HashSet}, iter::Peekable, sync::Arc};
 use eyeball_im::VectorDiff;
 use futures_util::StreamExt;
 use imbl::Vector;
@@ -108,24 +108,28 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
         space_id: &OwnedRoomId,
         parent_chain: &ParentChain,
     | -> UnboundedSender<SpaceRoomListRequest> {
-        match space_room_list_tasks.entry(space_id.clone()) {
-            Entry::Occupied(occ) => occ.get().0.clone(),
-            Entry::Vacant(vac) => {
-                let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<SpaceRoomListRequest>();
-                let space_room_list = space_service.space_room_list(space_id.clone()).await;
-                let join_handle = Handle::current().spawn(
-                    space_room_list_loop(
-                        space_id.clone(),
-                        parent_chain.clone(),
-                        receiver,
-                        space_room_list,
-                        space_request_sender.clone(),
-                    )
-                );
-                vac.insert((sender, join_handle))
-                    .0.clone()
-            }
+        // If a space's room list task died, drop it and respawn a new one.
+        if space_room_list_tasks.get(space_id).is_some_and(|(_, task)| task.is_finished()) {
+            warning!("The space room list task for {space_id} had died; restarting it now.");
+            space_room_list_tasks.remove(space_id);
         }
+        if let Some((sender, _)) = space_room_list_tasks.get(space_id) {
+            return sender.clone();
+        }
+        // Here, we need to spawn a new space room list task for this space.
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<SpaceRoomListRequest>();
+        let space_room_list = space_service.space_room_list(space_id.clone()).await;
+        let join_handle = Handle::current().spawn(
+            space_room_list_loop(
+                space_id.clone(),
+                parent_chain.clone(),
+                receiver,
+                space_room_list,
+                space_request_sender.clone(),
+            )
+        );
+        space_room_list_tasks.insert(space_id.clone(), (sender.clone(), join_handle));
+        sender
     };
 
     // Get the set of top-level (root) spaces that the user has joined.

@@ -279,6 +279,8 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                 self.view.view(cx, ids!(tip_view)).set_visible(cx, false);
                 accept_button.set_text(cx, accept_button_text);
                 accept_button.set_enabled(cx, false);
+                // The request is already on its way, so "Cancel" would be a lie.
+                cancel_button.set_text(cx, "Close");
                 needs_redraw = true;
             }
         }
@@ -287,11 +289,6 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
         for action in actions {
             match action.downcast_ref() {
                 Some(JoinRoomResultAction::Joined { room_id }) if room_id == kind.room_id() => {
-                    enqueue_popup_notification(
-                        "Successfully joined room.",
-                        PopupKind::Success,
-                        Some(3.0),
-                    );
                     self.view.label(cx, ids!(title)).set_text(cx, "Joined room!");
                     self.view.label(cx, ids!(body)).set_text(cx, &format!(
                         "Successfully joined \"{}\".",
@@ -304,11 +301,6 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     let was_invite = matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_));
                     let msg = utils::stringify_join_leave_error(error, kind.room_name(), true, was_invite);
                     self.view.label(cx, ids!(body)).set_text(cx, &msg);
-                    enqueue_popup_notification(
-                        msg,
-                        PopupKind::Error,
-                        None,
-                    );
                     new_final_success = Some(false);
                 }
                 _ => {}
@@ -318,44 +310,36 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                 Some(LeaveRoomResultAction::Left { room_id }) if room_id == kind.room_id() => {
                     let title: &str;
                     let description: String;
-                    let popup_msg: Cow<'static, str>;
                     if matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_)) {
                         title = "Rejected invite!";
                         description = format!(
                             "Successfully rejected invite to \"{}\".",
                             kind.room_name(),
                         );
-                        popup_msg = "Successfully rejected invite.".into();
                     } else {
                         title = "Left room!";
                         description = format!(
                             "Successfully left \"{}\".",
                             kind.room_name(),
                         );
-                        popup_msg = "Successfully left room.".into();
                     }
                     self.view.label(cx, ids!(title)).set_text(cx, title);
                     self.view.label(cx, ids!(body)).set_text(cx, &description);
-                    enqueue_popup_notification(popup_msg, PopupKind::Success, Some(5.0));
                     new_final_success = Some(true);
                 }
                 Some(LeaveRoomResultAction::Failed { room_id, error }) if room_id == kind.room_id() => {
                     let title: &str;
                     let description: String;
-                    let popup_msg: Cow<'static, str>;
                     if matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_)) {
                         title = "Error rejecting invite!";
                         description = utils::stringify_join_leave_error(error, kind.room_name(), false, true);
-                        popup_msg = "Failed to reject invite.".into();
                     } else {
                         title = "Error leaving room!";
                         description = utils::stringify_join_leave_error(error, kind.room_name(), false, false);
-                        popup_msg = "Failed to leave room.".into();
                     }
 
                     self.view.label(cx, ids!(title)).set_text(cx, title);
                     self.view.label(cx, ids!(body)).set_text(cx, &description);
-                    enqueue_popup_notification(popup_msg, PopupKind::Error, None);
                     new_final_success = Some(false);
                 }
                 _ => {}

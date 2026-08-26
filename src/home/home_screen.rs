@@ -15,6 +15,7 @@ use crate::{
     },
     shared::room_filter_input_bar::{MainFilterAction, RoomFilterInputBarWidgetExt},
     shared::mention_popup::MentionablePopupRef,
+    utils::RoomNameId,
 };
 
 script_mod! {
@@ -578,7 +579,9 @@ impl Widget for HomeScreen {
                     RoomsListAction::Selected(selected_room) if !effective_is_desktop(cx) => {
                         self.push_selected_screen_view(cx, app_state, selected_room);
                     }
-                    RoomsListAction::InviteAccepted { room_name_id } => {
+                    // On desktop, `MainDesktopUI` handles this, so we only need to update this in mobile view mode.
+                    RoomsListAction::InviteAccepted { room_name_id } if !effective_is_desktop(cx) => {
+                        self.upgrade_mobile_invite_to_joined(cx, app_state, &room_name_id);
                         cx.action(AppStateAction::UpgradedInviteToJoinedRoom(
                             room_name_id.room_id().clone(),
                         ));
@@ -832,6 +835,34 @@ impl HomeScreen {
         app_state.selected_room = Some(sr);
         stack_navigation.push(cx, view_id);
         self.view.redraw(cx);
+    }
+
+    /// Swaps a room's InviteScreen in mobile view mode for that newly-joined room's RoomScreen.
+    fn upgrade_mobile_invite_to_joined(
+        &mut self,
+        cx: &mut Cx,
+        app_state: &mut AppState,
+        room_name_id: &RoomNameId,
+    ) {
+        let room_id = room_name_id.room_id();
+        let is_this_invite = |sr: &SelectedRoom| matches!(
+            sr, SelectedRoom::InvitedRoom { room_name_id: r } if r.room_id() == room_id
+        );
+        if app_state.selected_room.as_ref().is_some_and(is_this_invite) {
+            self.push_selected_screen_view(
+                cx,
+                app_state,
+                SelectedRoom::JoinedRoom { room_name_id: room_name_id.clone() },
+            );
+            // The invite we replaced was pushed onto the mobile history stack,
+            // so we need to remove it to ensure that it won't show up if the user goes back.
+            if self.mobile_screen_history.last().is_some_and(is_this_invite) {
+                self.mobile_screen_history.pop();
+            }
+        }
+        for room in &mut self.mobile_screen_history {
+            room.upgrade_invite_to_joined(room_id);
+        }
     }
 
     /// Pops the current mobile screen, revealing the previous screen or the room list root.
