@@ -5256,9 +5256,9 @@ fn populate_thread_root_summary(
             if td.is_unavailable()
                 && let Some(thread_root_event_id) = thread_root_event_id.clone()
             {
-                let needs_refresh = fetched_summary
-                    .is_none_or(|fs| fs.latest_reply_preview_text.is_none());
-                if needs_refresh && pending_thread_summary_fetches.insert(thread_root_event_id.clone()) {
+                if fetched_summary.is_none()
+                    && pending_thread_summary_fetches.insert(thread_root_event_id.clone())
+                {
                     submit_async_request(MatrixRequest::FetchThreadSummaryDetails {
                         timeline_kind: timeline_kind.clone(),
                         thread_root_event_id,
