@@ -892,7 +892,9 @@ async fn matrix_worker_task(
                 // Spawn a new async task that will make the actual pagination request.
                 let _paginate_task = Handle::current().spawn(async move {
                     log!("Starting {direction} pagination request for {timeline_kind}...");
-                    sender.send(TimelineUpdate::PaginationRunning(direction)).unwrap();
+                    if sender.send(TimelineUpdate::PaginationRunning(direction)).is_err() {
+                        error!("Failed to send pagination status to UI for {timeline_kind}");
+                    }
                     SignalToUI::set_ui_signal();
 
                     let res = if direction == PaginationDirection::Forwards {
@@ -1013,7 +1015,9 @@ async fn matrix_worker_task(
                     log!("Sending sync room members request for {timeline_kind}...");
                     timeline.fetch_members().await;
                     log!("Completed sync room members request for {timeline_kind}.");
-                    sender.send(TimelineUpdate::RoomMembersSynced).unwrap();
+                    if sender.send(TimelineUpdate::RoomMembersSynced).is_err() {
+                        error!("Failed to send synced room members to UI for {timeline_kind}");
+                    }
                     SignalToUI::set_ui_signal();
                 });
             }
@@ -1271,7 +1275,9 @@ async fn matrix_worker_task(
                 let _get_members_task = Handle::current().spawn(async move {
                     let send_update = |members: Vec<matrix_sdk::room::RoomMember>, source: &str| {
                         log!("{} {} members for {timeline_kind}", source, members.len());
-                        sender.send(TimelineUpdate::RoomMembersListFetched { members }).unwrap();
+                        if sender.send(TimelineUpdate::RoomMembersListFetched { members }).is_err() {
+                            error!("Failed to send fetched room members to UI for {timeline_kind}");
+                        }
                         SignalToUI::set_ui_signal();
                     };
 
@@ -4680,11 +4686,13 @@ async fn timeline_subscriber_handler(
     let (mut timeline_items, mut subscriber) = timeline.subscribe().await;
     log!("Received initial timeline update of {} items for room {room_id}, thread {thread_root_event_id:?}.", timeline_items.len());
 
-    timeline_update_sender.send(TimelineUpdate::FirstUpdate {
+    if timeline_update_sender.send(TimelineUpdate::FirstUpdate {
         initial_items: timeline_items.clone(),
-    }).unwrap_or_else(
-        |_e| panic!("Error: timeline update sender couldn't send first update ({} items) to room {room_id}, thread {thread_root_event_id:?}...!", timeline_items.len())
-    );
+    }).is_err() {
+        log!("Timeline for room {room_id}, thread {thread_root_event_id:?} was closed or recreated \
+            before its first update; ending this subscriber task.");
+        return;
+    }
     SignalToUI::set_ui_signal();
 
     // the event ID to search for while loading previous items into the timeline.
@@ -4755,14 +4763,16 @@ async fn timeline_subscriber_handler(
                         // thus, we can clear the locally-tracked target event ID.
                         target_event_id = None;
                         found_target_event_id = None;
-                        timeline_update_sender.send(
+                        if timeline_update_sender.send(
                             TimelineUpdate::TargetEventFound {
                                 target_event_id: new_target_event_id.clone(),
                                 index: target_event_tl_index,
                             }
-                        ).unwrap_or_else(
-                            |_e| panic!("Error: timeline update sender couldn't send TargetEventFound({new_target_event_id}, {target_event_tl_index}) to room {room_id}, thread {thread_root_event_id:?}!")
-                        );
+                        ).is_err() {
+                            log!("Timeline for room {room_id}, thread {thread_root_event_id:?} was closed \
+                                or recreated; ending this subscriber task.");
+                            return;
+                        }
                         // Send a Makepad-level signal to update this room's timeline UI view.
                         SignalToUI::set_ui_signal();
                     }
@@ -4939,25 +4949,31 @@ async fn timeline_subscriber_handler(
                 // Only send updates to the UI while this timeline is open.
                 // While it's closed, we process the updates locally until it is re-opened again.
                 if is_timeline_open {
-                    timeline_update_sender.send(TimelineUpdate::NewItems {
+                    if timeline_update_sender.send(TimelineUpdate::NewItems {
                         new_items: timeline_items.clone(),
                         changed_indices,
                         clear_cache,
                         is_append,
-                    }).expect("Error: timeline update sender couldn't send update with new items!");
+                    }).is_err() {
+                        log!("Timeline for room {room_id}, thread {thread_root_event_id:?} was closed \
+                            or recreated; ending this subscriber task.");
+                        return;
+                    }
 
                     // We must send this update *after* the actual NewItems update,
                     // otherwise the UI thread (RoomScreen) won't be able to correctly locate the target event.
                     if let Some((index, found_event_id)) = found_target_event_id.take() {
                         target_event_id = None;
-                        timeline_update_sender.send(
+                        if timeline_update_sender.send(
                             TimelineUpdate::TargetEventFound {
                                 target_event_id: found_event_id.clone(),
                                 index,
                             }
-                        ).unwrap_or_else(
-                            |_e| panic!("Error: timeline update sender couldn't send TargetEventFound({found_event_id}, {index}) to room {room_id}, thread {thread_root_event_id:?}!")
-                        );
+                        ).is_err() {
+                            log!("Timeline for room {room_id}, thread {thread_root_event_id:?} was closed \
+                                or recreated; ending this subscriber task.");
+                            return;
+                        }
                     }
 
                     // Send a Makepad-level signal to update this room's timeline UI view.
