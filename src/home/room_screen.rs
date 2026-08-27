@@ -21,9 +21,9 @@ use matrix_sdk::{
     }
 };
 use matrix_sdk_ui::timeline::{
-    self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, LiveLocationState, MemberProfileChange, MembershipChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EmbeddedEvent, EncryptedMessage, EventTimelineItem, InReplyToDetails, LiveLocationState, MemberProfileChange, MsgLikeContent, MsgLikeKind, OtherMessageLike, PollState, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
-use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, events::{AnyRedactionEvent, AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent}};
+use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, events::{AnyRedactionEvent, AnySyncMessageLikeEvent, AnySyncTimelineEvent, StateEventContentChange, SyncMessageLikeEvent, room::member::MembershipState}};
 
 use matrix_sdk_ui::sync_service::State;
 use crate::{
@@ -35,7 +35,7 @@ use crate::{
     shared::{
         attachment_download::{enqueue_already_downloading_notification, DownloadDisplayState, DownloadKind, DownloadableAttachment, PendingDownload, PendingDownloadState, TimelineUpdateSenderOption, TransferKind, media_source_mxc, start_attachment_download, start_attachment_share}, avatar::{AvatarState, AvatarWidgetRefExt}, confirmation_modal::ConfirmationModalContent, context_menu::ContextMenuClosed, file_upload_modal::FileUploadAttemptId, hover_highlight::handle_hover_hit, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, image_viewer::{ImageViewerAction, ImageViewerMetaData, LoadState}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount, SCROLL_TO_BOTTOM_SPEED}, popup_list::{PopupKind, enqueue_popup_notification}, restore_status_view::RestoreStatusViewWidgetExt, room_input_popup_menu::{RoomInputPopupMenuAction, RoomInputPopupMenuRef, RoomInputPopupMenuWidgetExt}, styles::*, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, timestamp::TimestampWidgetRefExt
     },
-    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints}, utils::{self, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
+    sliding_sync::{BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineEndpoints, TimelineKind, TimelineRequestSender, UserPowerLevels, submit_async_request, take_timeline_endpoints, TimelineEndpointsRecreated}, utils::{self, MEDIA_THUMBNAIL_FORMAT, RoomNameId, unix_time_millis_to_datetime}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -1132,6 +1132,15 @@ impl Widget for RoomScreen {
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
             for action in actions {
+                // If the backend sync task rebuilt this room's timeline, our timeline update receiver is dead,
+                // so we need to get a new one.
+                if let Some(TimelineEndpointsRecreated { room_id }) = action.downcast_ref()
+                    && self.timeline_kind.as_ref().is_some_and(|k| k.room_id() == room_id)
+                {
+                    self.reconnect_timeline_endpoints(cx);
+                    continue;
+                }
+
                 if let Some(AppStateAction::RoomNameUpdated(new_room_name)) = action.downcast_ref()
                     && let Some(room_name_id) = self.room_name_id.as_mut()
                     && room_name_id.room_id() == new_room_name.room_id()
@@ -1508,15 +1517,30 @@ impl Widget for RoomScreen {
                                     }
                                 }
                             },
-                            TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(
-                                cx,
-                                list,
-                                item_id,
-                                &tl_state.kind,
-                                event_tl_item,
-                                membership_change,
-                                item_drawn_status,
-                            ),
+                            TimelineItemContent::MembershipChange(membership_change) => {
+                                // Hide timeline entries that show duplicate join/leaves, unless it has a reason.
+                                let should_hide = membership_change.change() == Some(timeline::MembershipChange::None)
+                                    && matches!(
+                                        membership_change.content(),
+                                        StateEventContentChange::Original { content, .. }
+                                            if content.membership == MembershipState::Join
+                                            || (content.membership == MembershipState::Leave
+                                                && content.reason.is_none())
+                                    );
+                                if should_hide {
+                                    (list.item(cx, item_id, id!(Empty)), ItemDrawnStatus::both_drawn())
+                                } else {
+                                    populate_small_state_event(
+                                        cx,
+                                        list,
+                                        item_id,
+                                        &tl_state.kind,
+                                        event_tl_item,
+                                        membership_change,
+                                        item_drawn_status,
+                                    )
+                                }
+                            }
                             TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(
                                 cx,
                                 list,
@@ -1526,18 +1550,37 @@ impl Widget for RoomScreen {
                                 profile_change,
                                 item_drawn_status,
                             ),
-                            TimelineItemContent::OtherState(other) => populate_small_state_event(
-                                cx,
-                                list,
-                                item_id,
-                                &tl_state.kind,
-                                event_tl_item,
-                                other,
-                                item_drawn_status,
-                            ),
-                            unhandled => {
+                            TimelineItemContent::OtherState(other) => {
+                                // Don't shown noisy updates like policy rules, server ACLs, space links, custom state events, etc.
+                                // We could always make this configurable, e.g., some kind of dev mode.
+                                let should_hide = matches!(
+                                    other.content(),
+                                    timeline::AnyOtherStateEventContentChange::PolicyRuleRoom(_)
+                                    | timeline::AnyOtherStateEventContentChange::PolicyRuleServer(_)
+                                    | timeline::AnyOtherStateEventContentChange::PolicyRuleUser(_)
+                                    | timeline::AnyOtherStateEventContentChange::RoomServerAcl(_)
+                                    | timeline::AnyOtherStateEventContentChange::SpaceChild(_)
+                                    | timeline::AnyOtherStateEventContentChange::SpaceParent(_)
+                                    | timeline::AnyOtherStateEventContentChange::_Custom { .. }
+                                );
+                                if should_hide {
+                                    (list.item(cx, item_id, id!(Empty)), ItemDrawnStatus::both_drawn())
+                                } else {
+                                    populate_small_state_event(
+                                        cx,
+                                        list,
+                                        item_id,
+                                        &tl_state.kind,
+                                        event_tl_item,
+                                        other,
+                                        item_drawn_status,
+                                    )
+                                }
+                            }
+                            _unhandled => {
                                 let item = list.item(cx, item_id, id!(SmallStateEvent));
-                                item.label(cx, ids!(content)).set_text(cx, &format!("[Unsupported] {:?}", unhandled));
+                                item.label(cx, ids!(content))
+                                    .set_text(cx, &plaintext_body_of_timeline_item(event_tl_item));
                                 (item, ItemDrawnStatus::both_drawn())
                             }
                         }
@@ -1688,6 +1731,23 @@ impl RoomScreen {
         let mut num_updates = 0;
         while let Ok(update) = tl.update_receiver.try_recv() {
             num_updates += 1;
+            let update = match update {
+                // When an existing timeline is reconnected (new channels/tasks in the backend),
+                // it sends a `FirstUpdate` that includes the new channel endpoints.
+                // We differentiate this from the initial `FirstUpdate` that occurs when the timeline
+                // is first created by checking to see if we have any timeline items.
+                // If we do, we just treat it as a `NewItems` update instead, which maintains the user's scroll anchor.
+                TimelineUpdate::FirstUpdate { initial_items } if !tl.items.is_empty() => {
+                    let len = initial_items.len();
+                    TimelineUpdate::NewItems {
+                        new_items: initial_items,
+                        changed_indices: 0..len,
+                        clear_cache: true,
+                        is_append: false,
+                    }
+                }
+                update => update,
+            };
             match update {
                 TimelineUpdate::FirstUpdate { initial_items } => {
                     tl.content_drawn_since_last_update.clear();
@@ -1741,15 +1801,11 @@ impl RoomScreen {
                     if new_items.len() == tl.items.len() {
                         // log!("process_timeline_updates(): no jump necessary for updated timeline of same length: {}", items.len());
                     }
-                    else if curr_first_id > new_items.len() {
-                        log!("process_timeline_updates(): jumping to bottom: curr_first_id {} is out of bounds for {} new items", curr_first_id, new_items.len());
-                        portal_list.set_first_id_and_scroll(new_items.len().saturating_sub(1), 0.0);
-                        portal_list.set_tail_range(true);
-                        jump_to_bottom_button.update_visibility(cx, true);
-                    }
                     // If the prior items changed, we need to find the new index of an item that was visible
                     // in the timeline viewport so that we can maintain the scroll position of that item,
                     // which ensures that the timeline doesn't jump around unexpectedly and ruin the user's experience.
+                    // This must be attempted before the jump below, because a re-created timeline can be
+                    // shorter than the old scroll index while still containing the anchored event.
                     else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
                         prior_items_changed.then(||
                             find_new_item_matching_current_item(cx, portal_list, curr_first_id, &tl.items, &new_items)
@@ -1762,6 +1818,12 @@ impl RoomScreen {
                             // Hide the tooltip when the timeline jumps, as a hover-out event won't occur.
                             cx.widget_action(ui,  RoomScreenTooltipActions::HoverOut);
                         }
+                    }
+                    else if curr_first_id > new_items.len() {
+                        log!("process_timeline_updates(): jumping to bottom: curr_first_id {} is out of bounds for {} new items", curr_first_id, new_items.len());
+                        portal_list.set_first_id_and_scroll(new_items.len().saturating_sub(1), 0.0);
+                        portal_list.set_tail_range(true);
+                        jump_to_bottom_button.update_visibility(cx, true);
                     }
                     //
                     // TODO: after an (un)ignore user event, all timelines are cleared. Handle that here.
@@ -3011,8 +3073,70 @@ impl RoomScreen {
 
         // Now that we have restored the TimelineUiState into this RoomScreen widget,
         // we can proceed to processing pending background updates.
+        // We first need to check that we have the latest endpoints, to get the latest updates.
+        self.reconnect_timeline_endpoints(cx);
         self.process_timeline_updates(cx, &list);
 
+        self.redraw(cx);
+    }
+
+    /// Sets this timeline's endpoints to the latest one created by the backend task, if it has new ones.
+    ///
+    /// `take_timeline_endpoints()` only returns `Some` when a fresh unclaimed channel exists,
+    /// so it's safe to call this repeatedly as a check.
+    fn reconnect_timeline_endpoints(&mut self, cx: &mut Cx) {
+        let Some(tl) = self.tl_state.as_mut() else { return };
+        // An invalidated state means we destructed the timeline on purpose
+        // (e.g., for a left/banned room or a closed thread),
+        // so don't take the endpoints for it even if they're available.
+        if timeline_state_store::is_invalidated(&tl.kind) {
+            return;
+        }
+        let Some(TimelineEndpoints {
+            update_sender,
+            update_receiver,
+            request_sender,
+            successor_room,
+            is_encrypted,
+        }) = take_timeline_endpoints(&tl.kind) else {
+            // If a room timeline was rebuilt, its thread timelines were also dropped,
+            // so we need to ask the backend to recreate them for us.
+            if let Some(thread_root_event_id) = tl.kind.thread_root_event_id() {
+                submit_async_request(MatrixRequest::CreateThreadTimeline {
+                    room_id: tl.kind.room_id().clone(),
+                    thread_root_event_id: thread_root_event_id.clone(),
+                });
+            }
+            return;
+        };
+
+        log!("Reconnecting timeline {} to its newly-created backend channel.", tl.kind);
+        // Transfer over any pending jump-to-event searches so it isn't silently dropped.
+        let mut pending_searches = Vec::new();
+        tl.request_sender.send_if_modified(|req| {
+            pending_searches = std::mem::take(&mut req.backwards_paginate);
+            false
+        });
+        tl.update_receiver = update_receiver;
+        tl.request_sender = request_sender;
+        if !pending_searches.is_empty() {
+            tl.request_sender.send_if_modified(|req| {
+                req.backwards_paginate = pending_searches;
+                true
+            });
+        }
+        tl.media_cache.set_timeline_update_sender(update_sender.clone());
+        tl.link_preview_cache.set_timeline_update_sender(update_sender);
+        tl.is_encrypted = is_encrypted;
+        if tl.tombstone_info.is_none() && let Some(successor_room) = successor_room {
+            submit_async_request(MatrixRequest::GetSuccessorRoomDetails {
+                tombstoned_room_id: tl.kind.room_id().clone(),
+            });
+            tl.tombstone_info = Some(SuccessorRoomDetails::Basic(successor_room));
+        }
+        // If `tl_state` was Some here, it means the timeline is being shown (it's visible),
+        // so inform the subscribers of that status.
+        tl.request_sender.send_if_modified(|req| !std::mem::replace(&mut req.is_timeline_open, true));
         self.redraw(cx);
     }
 
@@ -3651,6 +3775,14 @@ mod timeline_state_store {
             states.remove(kind);
         });
     }
+
+    /// Returns `true` if the given timeline's state was invalidated while a RoomScreen was still displaying it,
+    /// meaning we deliberately destructed it (and therefore it shouldn't be auto-reconnected to new endpoints).
+    pub(super) fn is_invalidated(kind: &TimelineKind) -> bool {
+        TIMELINE_STATES.with_borrow(|states| {
+            matches!(states.get(kind), Some(StateEntry::Taken { invalidated: true, .. }))
+        })
+    }
 }
 
 /// The UI-side state of a single room's timeline, which is only accessed/updated by the UI thread.
@@ -3855,13 +3987,6 @@ struct FetchedThreadSummary {
     latest_reply_preview_text: Option<String>,
 }
 impl ItemDrawnStatus {
-    /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `false`.
-    const fn new() -> Self {
-        Self {
-            profile_drawn: false,
-            content_drawn: false,
-        }
-    }
     /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `true`.
     const fn both_drawn() -> Self {
         Self {
@@ -5437,24 +5562,19 @@ impl SmallStateEventContent for timeline::OtherState {
     fn populate_item_content(
         &self,
         cx: &mut Cx,
-        list: &mut PortalList,
-        item_id: usize,
+        _list: &mut PortalList,
+        _item_id: usize,
         item: WidgetRef,
         _event_tl_item: &EventTimelineItem,
         username: &str,
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        let item = if let Some(text_preview) = text_preview_of_other_state(self, false) {
-            item.label(cx, ids!(content))
-                .set_text(cx, &text_preview.format_with(username, false));
-            new_drawn_status.content_drawn = true;
-            item
-        } else {
-            let item = list.item(cx, item_id, id!(Empty));
-            new_drawn_status = ItemDrawnStatus::new();
-            item
-        };
+        item.label(cx, ids!(content)).set_text(
+            cx,
+            &text_preview_of_other_state(self, false).format_with(username, false),
+        );
+        new_drawn_status.content_drawn = true;
         (item, new_drawn_status)
     }
 }
@@ -5485,30 +5605,25 @@ impl SmallStateEventContent for RoomMembershipChange {
     fn populate_item_content(
         &self,
         cx: &mut Cx,
-        list: &mut PortalList,
-        item_id: usize,
+        _list: &mut PortalList,
+        _item_id: usize,
         item: WidgetRef,
-        _event_tl_item: &EventTimelineItem,
+        event_tl_item: &EventTimelineItem,
         username: &str,
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        let Some(preview) = text_preview_of_room_membership_change(self, false) else {
-            // Don't actually display anything for nonexistent/unimportant membership changes.
-            return (
-                list.item(cx, item_id, id!(Empty)),
-                ItemDrawnStatus::new(),
-            );
-        };
-
+        let preview = text_preview_of_room_membership_change(self, event_tl_item.sender(), false);
         item.label(cx, ids!(content))
             .set_text(cx, &preview.format_with(username, false));
 
         // The invite_user_button is only used for "Knocked" membership change events.
-        item.button(cx, ids!(invite_user_button)).set_visible(
-            cx,
-            matches!(self.change(), Some(MembershipChange::Knocked)),
-        );
+        let membership = match self.content() {
+            StateEventContentChange::Original { content, .. } => &content.membership,
+            StateEventContentChange::Redacted(content) => &content.membership,
+        };
+        item.button(cx, ids!(invite_user_button))
+            .set_visible(cx, *membership == MembershipState::Knock);
 
         new_drawn_status.content_drawn = true;
         (item, new_drawn_status)

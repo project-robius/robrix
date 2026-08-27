@@ -513,7 +513,7 @@ where
     })
 }
 
-/// The cache for link previews.
+/// The cache for link previews, specific to a given timeline.
 pub struct LinkPreviewCache {
     /// The actual cached data.
     cache: BTreeMap<String, Arc<Mutex<TimestampedCacheEntry>>>,
@@ -531,6 +531,14 @@ impl LinkPreviewCache {
             cache: BTreeMap::new(),
             timeline_update_sender,
         }
+    }
+
+    /// Sets a new timeline update sender, e.g., for when the backend re-created this room's timeline.
+    pub fn set_timeline_update_sender(
+        &mut self,
+        sender: crossbeam_channel::Sender<TimelineUpdate>,
+    ) {
+        self.timeline_update_sender = Some(sender);
     }
 
     /// Fetches the link preview for the specified URL.

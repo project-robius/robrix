@@ -1085,6 +1085,7 @@ async fn matrix_worker_task(
                                     ),
                                 },
                             );
+                            Cx::post_action(TimelineEndpointsRecreated { room_id: room_id.clone() });
                             SignalToUI::set_ui_signal();
                         }
                         Err(error) => {
@@ -2656,6 +2657,15 @@ type ConstHasher = BuildHasherDefault<DefaultHasher>;
 /// We use a `HashMap` for O(1) lookups, as this is accessed frequently (e.g. every timeline update).
 static ALL_JOINED_ROOMS: Mutex<HashMap<OwnedRoomId, JoinedRoomDetails, ConstHasher>> = Mutex::new(HashMap::with_hasher(BuildHasherDefault::new()));
 
+/// Tells any RoomScreen showing this room that its backend timeline was recreated,
+/// so it needs to take and use the new channel endpoints.
+///
+/// This is *NOT* a widget action.
+#[derive(Debug)]
+pub struct TimelineEndpointsRecreated {
+    pub room_id: OwnedRoomId,
+}
+
 /// Returns the timeline and timeline update sender for the given joined room/thread timeline.
 fn get_per_timeline_details<'a>(
     all_joined_rooms: &'a mut HashMap<OwnedRoomId, JoinedRoomDetails, ConstHasher>,
@@ -3937,6 +3947,9 @@ async fn add_new_room(
             pinned_events_subscriber: None,
         },
     );
+    // A visible RoomScreen might still have this room's previous channel endpoints,
+    // which are now dead, so we inform it that there are new endpoints it needs to take & use.
+    Cx::post_action(TimelineEndpointsRecreated { room_id: new_room.room_id.clone() });
 
     let latest = get_latest_event_details(
         &new_room.room.latest_event().await,
@@ -4672,6 +4685,7 @@ async fn timeline_subscriber_handler(
     }).unwrap_or_else(
         |_e| panic!("Error: timeline update sender couldn't send first update ({} items) to room {room_id}, thread {thread_root_event_id:?}...!", timeline_items.len())
     );
+    SignalToUI::set_ui_signal();
 
     // the event ID to search for while loading previous items into the timeline.
     let mut target_event_id = None;
