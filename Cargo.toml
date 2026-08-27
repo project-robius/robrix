@@ -288,12 +288,13 @@ robius-packaging-commands before-each-package \
     --add-deb-dep geoclue-2.0
 """
 
-deep_link_protocols = [
-    { schemes = [
-        "robrix",
-        "matrix",
-    ], role = "viewer" }, ## `name` is left as default
-]
+## This is not yet implemented, so remove it.
+# deep_link_protocols = [
+#     { schemes = [
+#         "robrix",
+#         "matrix",
+#     ], role = "viewer" }, ## `name` is left as default
+# ]
 
 [package.metadata.packager.deb]
 depends = "./dist/depends_deb.txt"
