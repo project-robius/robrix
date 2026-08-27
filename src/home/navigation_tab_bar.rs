@@ -41,7 +41,8 @@ use crate::{
         user_profile::UserProfile,
         user_profile_cache::{self, UserProfileUpdate},
     },
-    settings::app_preferences::{effective_is_desktop, AppPreferencesAction, ViewModeOverride},
+    home::home_screen::effective_is_desktop,
+    settings::app_preferences::{AppPreferencesAction, ViewModeOverride},
     shared::{
         avatar::{AvatarState, AvatarWidgetExt},
         navigation_bar_button::{NavigationBarButton, NavigationBarButtonWidgetExt},

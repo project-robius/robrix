@@ -32,7 +32,7 @@
 
 use makepad_widgets::*;
 
-use crate::settings::app_preferences::effective_is_desktop;
+use crate::home::home_screen::effective_is_desktop;
 
 script_mod! {
     use mod.prelude.widgets.*

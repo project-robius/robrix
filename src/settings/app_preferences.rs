@@ -407,15 +407,3 @@ pub enum AppPreferencesAction {
 /// here via `cx.global::<AppPreferencesGlobal>()`.
 #[derive(Default, Clone)]
 pub struct AppPreferencesGlobal(pub AppPreferences);
-
-/// Returns whether the UI should currently behave as the wide "desktop"
-/// layout, honoring any `ForceWide` / `ForceNarrow` user override.
-pub fn effective_is_desktop(cx: &mut Cx) -> bool {
-    match cx.global::<AppPreferencesGlobal>().0.view_mode {
-        ViewModeOverride::ForceWide => true,
-        ViewModeOverride::ForceNarrow => false,
-        ViewModeOverride::Automatic => {
-            cx.display_context.is_desktop() || !cx.display_context.is_screen_size_known()
-        }
-    }
-}
