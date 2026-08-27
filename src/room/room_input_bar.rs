@@ -24,7 +24,7 @@ use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, location::init_location_subscriber, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::AvatarWidgetRefExt, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, rooms_list::RoomsListRef, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, location::init_location_subscriber, profile::user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, room::BasicRoomDetails, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, slash_commands::{SlashCommandAction, SlashCommandOutcome}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 use crate::room::reply_preview::CollapsiblePreviewWidgetRefExt;
 
 script_mod! {
@@ -387,40 +387,52 @@ impl RoomInputBar {
         ) {
             let entered_text = mentionable_text_input.text().trim().to_string();
             if !entered_text.is_empty() {
-                let message = mentionable_text_input.create_message_with_mentions(&entered_text);
-                let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
-                    event_tl_item.event_id().map(|event_id| {
-                        let enforce_thread = if timeline_kind.thread_root_event_id().is_some() {
-                            EnforceThread::Threaded(ReplyWithinThread::Yes)
-                        } else {
-                            EnforceThread::MaybeThreaded
-                        };
-                        Reply {
-                            event_id: event_id.to_owned(),
-                            enforce_thread,
-                            add_mentions: AddMentions::Yes,
-                        }
-                    })
-                ).or_else(||
-                    timeline_kind.thread_root_event_id().map(|thread_root_event_id|
-                        Reply {
-                            event_id: thread_root_event_id.clone(),
-                            enforce_thread: EnforceThread::Threaded(ReplyWithinThread::No),
-                            add_mentions: AddMentions::No,
-                        }
-                    )
-                );
-                submit_async_request(MatrixRequest::SendMessage {
-                    timeline_kind: timeline_kind.clone(),
-                    message,
-                    replied_to,
-                    #[cfg(feature = "tsp")]
-                    sign_with_tsp: self.is_tsp_signing_enabled(cx),
-                });
+                match mentionable_text_input.parse_input(&entered_text) {
+                    SlashCommandOutcome::Message(message) => {
+                        let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
+                            event_tl_item.event_id().map(|event_id| {
+                                let enforce_thread = if timeline_kind.thread_root_event_id().is_some() {
+                                    EnforceThread::Threaded(ReplyWithinThread::Yes)
+                                } else {
+                                    EnforceThread::MaybeThreaded
+                                };
+                                Reply {
+                                    event_id: event_id.to_owned(),
+                                    enforce_thread,
+                                    add_mentions: AddMentions::Yes,
+                                }
+                            })
+                        ).or_else(||
+                            timeline_kind.thread_root_event_id().map(|thread_root_event_id|
+                                Reply {
+                                    event_id: thread_root_event_id.clone(),
+                                    enforce_thread: EnforceThread::Threaded(ReplyWithinThread::No),
+                                    add_mentions: AddMentions::No,
+                                }
+                            )
+                        );
+                        submit_async_request(MatrixRequest::SendMessage {
+                            timeline_kind: timeline_kind.clone(),
+                            message,
+                            replied_to,
+                            #[cfg(feature = "tsp")]
+                            sign_with_tsp: self.is_tsp_signing_enabled(cx),
+                        });
 
-                self.clear_replying_to(cx);
-                mentionable_text_input.set_text(cx, "");
-                self.enable_send_message_button(cx, false);
+                        self.clear_replying_to(cx);
+                        mentionable_text_input.set_text(cx, "");
+                        self.enable_send_message_button(cx, false);
+                    }
+                    SlashCommandOutcome::Action(action) => {
+                        self.run_slash_command_action(cx, action, timeline_kind.room_id(), room_screen_widget_uid);
+                        mentionable_text_input.set_text(cx, "");
+                        self.enable_send_message_button(cx, false);
+                    }
+                    // Keep the text around so the user can fix the command and try again.
+                    SlashCommandOutcome::Error(error) => {
+                        enqueue_popup_notification(error, PopupKind::Error, Some(8.0));
+                    }
+                }
             }
         }
 
@@ -463,6 +475,69 @@ impl RoomInputBar {
         // When the hide animation fully completes, restore the replying preview.
         if self.view.editing_pane(cx, ids!(editing_pane)).was_hidden(actions) {
             self.on_editing_pane_hidden(cx);
+        }
+    }
+
+    /// Runs the given slash command action within this room.
+    fn run_slash_command_action(
+        &mut self,
+        cx: &mut Cx,
+        action: SlashCommandAction,
+        room_id: &OwnedRoomId,
+        room_screen_widget_uid: WidgetUid,
+    ) {
+        let profile_of = |user_id| UserProfile {
+            user_id,
+            username: None,
+            avatar_state: AvatarState::Unknown,
+        };
+        match action {
+            SlashCommandAction::LeaveRoom => {
+                let room_details = match cx.get_global::<RoomsListRef>().get_room_name(room_id) {
+                    Some(room_name_id) => BasicRoomDetails::Name(room_name_id),
+                    None => BasicRoomDetails::RoomId(utils::RoomNameId::empty(room_id.clone())),
+                };
+                cx.action(JoinLeaveRoomModalAction::Open {
+                    kind: JoinLeaveModalKind::LeaveRoom(room_details),
+                    show_tip: false,
+                });
+            }
+            SlashCommandAction::InviteUser(user_id) => {
+                submit_async_request(MatrixRequest::InviteUser {
+                    room_id: room_id.clone(),
+                    user_id,
+                })
+            }
+            SlashCommandAction::OpenDirectMessage(user_id) => {
+                submit_async_request(MatrixRequest::OpenOrCreateDirectMessage {
+                    user_profile: profile_of(user_id),
+                    // Don't just create a new DM room, we want to first get confirmation
+                    // from the user just like we do for the normal Direct Message button.
+                    allow_create: false,
+                })
+            }
+            SlashCommandAction::ShowUserProfile(user_id) => {
+                // Only the RoomScreen owns the user profile pane, so it has to handle this.
+                cx.widget_action(
+                    room_screen_widget_uid,
+                    ShowUserProfileAction::ShowUserProfile(UserProfileAndRoomId {
+                        user_profile: profile_of(user_id),
+                        room_id: room_id.clone(),
+                    }),
+                )
+            }
+            SlashCommandAction::IgnoreUser { user_id, ignore } => {
+                submit_async_request(MatrixRequest::IgnoreUser {
+                    ignore,
+                    user_id,
+                    room_id: room_id.clone(),
+                })
+            }
+            SlashCommandAction::SetDisplayName(new_display_name) => {
+                submit_async_request(MatrixRequest::SetDisplayName {
+                    new_display_name: Some(new_display_name),
+                })
+            }
         }
     }
 

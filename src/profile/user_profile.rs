@@ -509,13 +509,17 @@ impl Widget for UserProfileSlidingPane {
             // The `ignore_user_button` require room membership info.
             if let Some(room_member) = info.room_member.as_ref() {
                 if self.button(cx, ids!(ignore_user_button)).clicked(actions) {
+                    // `room_member.is_ignored()` doesn't auto-update or sync, it's just a "snapshot",
+                    // so we can't rely on it until a full homeserver sync occurs.
+                    // Thus we just track the ignore state ourselves.
+                    let is_ignored = is_user_ignored(room_member.user_id());
                     submit_async_request(MatrixRequest::IgnoreUser {
-                        ignore: !room_member.is_ignored(),
+                        ignore: !is_ignored,
+                        user_id: info.user_id.clone(),
                         room_id: info.room_id.clone(),
-                        room_member: room_member.clone(),
                     });
                     log!("Submitting request to {}ignore user {}.",
-                        if room_member.is_ignored() { "un" } else { "" },
+                        if is_ignored { "un" } else { "" },
                         info.user_id,
                     );
                 }

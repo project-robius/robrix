@@ -593,7 +593,7 @@ fn build_row(cx: &mut Cx, list: &mut PortalList, index: usize, item: &MentionIte
         }
         MentionItem::Command(cmd) => {
             let new_widget = list.item(cx, index, id!(command_row));
-            new_widget.label(cx, ids!(info.title)).set_text(cx, &format!("/{}", cmd.name));
+            new_widget.label(cx, ids!(info.title)).set_text(cx, cmd.usage);
             new_widget.label(cx, ids!(info.subtitle)).set_text(cx, cmd.description);
             new_widget
         }

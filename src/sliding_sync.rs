@@ -9,7 +9,7 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI, WidgetUid};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    authentication::oauth::error::OAuthDiscoveryError, config::RequestConfig, encryption::{identities::Device, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, Receipts, RelationsOptions, RoomMember}, ruma::{
+    authentication::oauth::error::OAuthDiscoveryError, config::RequestConfig, encryption::{identities::Device, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, Receipts, RelationsOptions}, ruma::{
         api::{Direction, client::{authenticated_media::get_media_preview, discovery::get_authorization_server_metadata::v1::{AccountManagementAction, AccountManagementActionData}, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}}, events::{
             receipt::{ReceiptThread, ReceiptType as ReceiptEventType},
             relation::RelationType,
@@ -409,6 +409,7 @@ impl TimelineKind {
             TimelineKind::Thread { thread_root_event_id, .. } => Some(thread_root_event_id),
         }
     }
+
     /// What to call this timeline in messages shown to the user.
     pub fn desc(&self) -> &'static str {
         match self {
@@ -613,12 +614,10 @@ pub enum MatrixRequest {
     },
     /// Request to ignore/block or unignore/unblock a user.
     IgnoreUser {
+        user_id: OwnedUserId,
         /// Whether to ignore (`true`) or unignore (`false`) the user.
         ignore: bool,
-        /// The room membership info of the user to (un)ignore.
-        room_member: RoomMember,
-        /// The room ID of the room where the user is a member,
-        /// which is only needed because it isn't present in the `RoomMember` object.
+        /// The room that the user was (un)ignored in, so we can re-paginate it.
         room_id: OwnedRoomId,
     },
     /// Request to set or remove the avatar of the current user's account.
@@ -1633,10 +1632,16 @@ async fn matrix_worker_task(
                     match result {
                         Ok(_) => {
                             log!("Successfully {} display name.", if is_removing { "removed" } else { "set" });
+                            enqueue_popup_notification(
+                                format!("Successfully {} display name.", if is_removing { "removed" } else { "updated" }),
+                                PopupKind::Success,
+                                Some(4.0),
+                            );
                             Cx::post_action(AccountDataAction::DisplayNameChanged(new_display_name));
                         }
                         Err(e) => {
                             let err_msg = format!("Failed to {} display name: {e}", if is_removing { "remove" } else { "set" });
+                            enqueue_popup_notification(err_msg.clone(), PopupKind::Error, None);
                             Cx::post_action(AccountDataAction::DisplayNameChangeFailed(err_msg));
                         }
                     }
@@ -1833,34 +1838,39 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::IgnoreUser { ignore, room_member, room_id } => {
+            MatrixRequest::IgnoreUser { ignore, user_id, room_id } => {
                 let Some(client) = get_client() else { continue };
                 let _ignore_task = Handle::current().spawn(async move {
-                    let user_id = room_member.user_id();
                     log!("Sending request to {}ignore user: {user_id}...", if ignore { "" } else { "un" });
                     let ignore_result = if ignore {
-                        room_member.ignore().await
+                        client.account().ignore_user(&user_id).await
                     } else {
-                        room_member.unignore().await
+                        client.account().unignore_user(&user_id).await
                     };
 
-                    log!("{} user {user_id} {}",
-                        if ignore { "Ignoring" } else { "Unignoring" },
-                        if ignore_result.is_ok() { "succeeded." } else { "failed." },
-                    );
-
-                    if ignore_result.is_err() {
+                    if let Err(e) = ignore_result {
+                        error!("Failed to {}ignore user {user_id}: {e:?}", if ignore { "" } else { "un" });
+                        enqueue_popup_notification(
+                            format!("Couldn't {}ignore {user_id}. Error: {e}", if ignore { "" } else { "un" }),
+                            PopupKind::Error,
+                            None,
+                        );
                         return;
                     }
+                    log!("Successfully {}ignored user {user_id}.", if ignore { "" } else { "un" });
+                    enqueue_popup_notification(
+                        format!("{} ignoring {user_id}.", if ignore { "Now" } else { "No longer" }),
+                        PopupKind::Success,
+                        Some(4.0),
+                    );
 
                     // We need to re-acquire the `RoomMember` object now that its state
                     // has changed, i.e., the user has been (un)ignored.
                     // We then need to send an update to replace the cached `RoomMember`
                     // with the now-stale ignored state.
                     if let Some(room) = client.get_room(&room_id) {
-                        if let Ok(Some(new_room_member)) = room.get_member(user_id).await {
-                            log!("Enqueueing user profile update for user {user_id}, who went from {}ignored to {}ignored.",
-                                if room_member.is_ignored() { "" } else { "un" },
+                        if let Ok(Some(new_room_member)) = room.get_member(&user_id).await {
+                            log!("Enqueueing user profile update for user {user_id}, who is now {}ignored.",
                                 if new_room_member.is_ignored() { "" } else { "un" },
                             );
                             enqueue_user_profile_update(UserProfileUpdate::RoomMemberOnly {

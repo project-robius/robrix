@@ -11,13 +11,13 @@ use makepad_widgets::makepad_platform::event::finger::TouchState;
 use matrix_sdk::{
     room::RoomMember,
     ruma::{
-        events::{room::message::RoomMessageEventContent, Mentions},
+        events::Mentions,
         OwnedRoomId, OwnedUserId,
     },
 };
 use crate::{
     home::rooms_list::RoomsListRef,
-    shared::{mention_popup::{MentionItem, MentionablePopupRef}, slash_commands},
+    shared::{mention_popup::{MentionItem, MentionablePopupRef}, slash_commands::{self, SlashCommandOutcome}},
     sliding_sync::{submit_async_request, MatrixRequest},
     utils::{self, MatchQuality},
 };
@@ -30,6 +30,7 @@ script_mod! {
         width: Fill,
         height: Fit
         flow: Down
+        allow_slash_commands: true
 
         text_input := RobrixTextInput {
             is_multiline: true,
@@ -41,6 +42,11 @@ script_mod! {
 pub struct MentionableTextInput {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
+
+    /// Whether typing '/' at the start should offer slash commands.
+    /// Inputs that edit an existing message set this to `false`, since they
+    /// send an edit rather than a new message.
+    #[live] allow_slash_commands: bool,
 
     #[rust] room_id: Option<OwnedRoomId>,
     #[rust] room_members: Option<Arc<Vec<RoomMember>>>,
@@ -201,7 +207,7 @@ impl MentionableTextInput {
         let text = self.text_input_ref().text();
         let cursor = self.text_input_ref().cursor().index;
 
-        match detect_trigger(&text, cursor) {
+        match detect_trigger(&text, cursor, self.allow_slash_commands) {
             Some((kind, start_byte, query)) => {
                 self.active_trigger = Some(ActiveTrigger { kind, start_byte });
                 self.start_matching(cx, kind, &query);
@@ -406,16 +412,18 @@ impl MentionableTextInputRef {
         }
     }
 
-    /// Creates a message from the given entered text, handling slash commands and mentions.
-    pub fn create_message_with_mentions(&self, entered_text: &str) -> RoomMessageEventContent {
-        if let Some(message) = slash_commands::build_message_for_command(entered_text) {
-            return message;
-        }
-
-        let message = RoomMessageEventContent::text_markdown(entered_text);
-        match self.borrow() {
-            Some(inner) => message.add_mentions(inner.real_mentions_in_markdown(entered_text)),
-            None => message,
+    /// Parses the entered text to determine what should happen.
+    ///
+    /// Returns the outcome: send a message, run a command, or show an error.
+    /// If it's a message, it will already contain the mentions present in `entered_text`.
+    pub fn parse_input(&self, entered_text: &str) -> SlashCommandOutcome {
+        let outcome = slash_commands::parse_input(entered_text);
+        let Some(inner) = self.borrow() else { return outcome };
+        match outcome {
+            SlashCommandOutcome::Message(message) => SlashCommandOutcome::Message(
+                message.add_mentions(inner.real_mentions_in_markdown(entered_text))
+            ),
+            other => other,
         }
     }
 
@@ -582,8 +590,8 @@ fn user_match_priority(display_lower: &str, localpart_lower: &str, query_lc: &st
 /// Returns a tuple of: (the detected trigger, the trigger's byte location, the query string).
 ///
 /// We only accept '@' and '#' if there's leading whitespace before it (or they're at the beginning),
-/// and '/' only if it's at the beginning.
-fn detect_trigger(text: &str, cursor_byte: usize) -> Option<(TriggerKind, usize, String)> {
+/// and '/' only if it's the first non-whitespace character and `allow_slash_commands` is set.
+fn detect_trigger(text: &str, cursor_byte: usize, allow_slash_commands: bool) -> Option<(TriggerKind, usize, String)> {
     if cursor_byte == 0 {
         return None;
     }
@@ -601,10 +609,50 @@ fn detect_trigger(text: &str, cursor_byte: usize) -> Option<(TriggerKind, usize,
     // should be treated as part of the query text, not another trigger.
     let trigger_char = text[token_start..cursor_byte].chars().next()?;
     let kind = TriggerKind::from_char(trigger_char)?;
-    if kind == TriggerKind::Command && token_start != 0 {
+    let is_first_word = text[..token_start].trim_start().is_empty();
+    if kind == TriggerKind::Command && (!is_first_word || !allow_slash_commands) {
         return None;
     }
 
     let query = text[token_start + trigger_char.len_utf8()..cursor_byte].to_string();
     Some((kind, token_start, query))
+}
+
+
+#[cfg(test)]
+mod tests_detect_trigger {
+    use super::*;
+
+    /// Detects the trigger with the cursor at the end of `text`, commands allowed.
+    fn detect(text: &str) -> Option<TriggerKind> {
+        detect_trigger(text, text.len(), true).map(|(kind, ..)| kind)
+    }
+
+    #[test]
+    fn command_fires_on_the_first_word_even_after_whitespace() {
+        assert_eq!(detect("/me"), Some(TriggerKind::Command));
+        // The send path trims before parsing, so leading whitespace must still
+        // open the popup, otherwise " /me hi" would send an emote unannounced.
+        assert_eq!(detect("  /me"), Some(TriggerKind::Command));
+        assert_eq!(detect("\n/me"), Some(TriggerKind::Command));
+    }
+
+    #[test]
+    fn command_does_not_fire_mid_message() {
+        assert_eq!(detect("hi /me"), None);
+        assert_eq!(detect("line one\n/me"), None);
+    }
+
+    #[test]
+    fn only_the_command_trigger_is_gated_by_allow_slash_commands() {
+        assert_eq!(detect_trigger("/me", 3, false), None);
+        assert_eq!(detect_trigger("@bo", 3, false).map(|(k, ..)| k), Some(TriggerKind::User));
+        assert_eq!(detect_trigger("#ro", 3, false).map(|(k, ..)| k), Some(TriggerKind::Room));
+    }
+
+    #[test]
+    fn user_and_room_triggers_need_a_word_boundary() {
+        assert_eq!(detect("hi @bo"), Some(TriggerKind::User));
+        assert_eq!(detect("e@mail"), None);
+    }
 }
