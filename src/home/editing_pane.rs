@@ -88,6 +88,8 @@ script_mod! {
             width: Fill
             height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
             margin: Inset{ bottom: 5, top: 5 }
+            // Editing sends an edit rather than a new message, so slash commands don't apply.
+            allow_slash_commands: false
         }
     }
 

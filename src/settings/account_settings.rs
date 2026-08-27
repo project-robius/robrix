@@ -496,24 +496,16 @@ impl MatchEvent for AccountSettings {
                     display_name_input.set_is_read_only(cx, false);
                     display_name_input.set_disabled(cx, false);
                     Self::enable_display_name_buttons(cx, false, &accept_display_name_button, &cancel_display_name_button);
-                    enqueue_popup_notification(
-                        format!("Successfully {} display name.", if new_name.is_some() { "updated" } else { "removed" }),
-                        PopupKind::Success,
-                        Some(4.0),
-                    );
+                    // The result popup is enqueued by the worker task, so we only restore the UI here.
                     continue;
                 }
-                Some(AccountDataAction::DisplayNameChangeFailed(err_msg)) => {
+                Some(AccountDataAction::DisplayNameChangeFailed(_)) => {
                     self.view.widget(cx, ids!(save_name_spinner)).set_visible(cx, false);
                     // Re-enable the buttons and text input so that the user can try again
                     display_name_input.set_is_read_only(cx, false);
                     display_name_input.set_disabled(cx, false);
                     Self::enable_display_name_buttons(cx, true, &accept_display_name_button, &cancel_display_name_button);
-                    enqueue_popup_notification(
-                        err_msg.clone(),
-                        PopupKind::Error,
-                        Some(4.0),
-                    );
+                    // The error popup is enqueued by the worker task, so we only restore the UI here.
                     continue;
                 }
                 Some(AccountDataAction::OwnDeviceFetched(device)) => {
