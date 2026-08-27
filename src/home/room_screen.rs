@@ -9,7 +9,7 @@ use makepad_widgets::{image_cache::ImageBuffer, makepad_platform::event::finger:
 use matrix_sdk::reqwest::StatusCode;
 use matrix_sdk::{
     OwnedServerName, media::{MediaFormat, MediaRequestParameters}, room::RoomMember, ruma::{
-        EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId, events::{
+        EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, RoomId, UserId, events::{
             receipt::Receipt,
             room::{
                 ImageInfo, MediaSource, message::{
@@ -3776,6 +3776,26 @@ mod timeline_state_store {
         });
     }
 
+    /// Invalidates the states of a room's main timeline and all of its thread timelines,
+    /// e.g., for when that room has been left or banned.
+    pub(super) fn invalidate_entire_room(_cx: &mut Cx, room_id: &RoomId) {
+        TIMELINE_STATES.with_borrow_mut(|states| {
+            states.retain(|kind, entry| {
+                if kind.room_id() != room_id {
+                    return true;
+                }
+                // Same as `invalidate()`: keep the shown UI state but flag it
+                // such that `put_back()` drops it when the RoomScreen hides it.
+                if let StateEntry::Taken { invalidated, .. } = entry {
+                    *invalidated = true;
+                    true
+                } else {
+                    false
+                }
+            });
+        });
+    }
+
     /// Returns `true` if the given timeline's state was invalidated while a RoomScreen was still displaying it,
     /// meaning we deliberately destructed it (and therefore it shouldn't be auto-reconnected to new endpoints).
     pub(super) fn is_invalidated(kind: &TimelineKind) -> bool {
@@ -6238,12 +6258,18 @@ pub fn clear_timeline_states(cx: &mut Cx) {
     timeline_state_store::clear_all(cx);
 }
 
-/// Invalidates the UI-side cached state for a timeline whose backend was just closed, so the
-/// next show rebuilds it instead of reusing the stale cache.
+/// Invalidates the UI-side cached state for a single timeline whose backend was just closed,
+/// so the next time it's shown, it'll rebuild it instead of reusing the stale cached data.
 ///
 /// Takes `&mut Cx` (unused) to enforce that it's only called from the main UI thread.
-pub fn invalidate_timeline_state(cx: &mut Cx, kind: &TimelineKind) {
+pub fn invalidate_single_timeline_state(cx: &mut Cx, kind: &TimelineKind) {
     timeline_state_store::invalidate(cx, kind);
+}
+
+/// Invalidates the cached UI states of the given room's main timeline
+/// and all of its thread timelines.
+pub fn invalidate_entire_room_timeline_states(cx: &mut Cx, room_id: &RoomId) {
+    timeline_state_store::invalidate_entire_room(cx, room_id);
 }
 
 /// A pending "Reply In Thread" request to focus a thread's input bar once its RoomScreen is
