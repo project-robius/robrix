@@ -3,7 +3,7 @@
 //! Shows the app version and a set of external links (e.g., privacy policy).
 
 use makepad_widgets::*;
-use crate::{shared::popup_list::{enqueue_popup_notification, PopupKind}, utils::open_url};
+use crate::{app::PositiveConfirmationModalAction, shared::{confirmation_modal::ConfirmationModalContent, popup_list::{enqueue_popup_notification, PopupKind}}, sliding_sync::{MatrixRequest, submit_async_request}, utils::open_url};
 
 const HOMEPAGE_URL: &str = "https://robrix.app";
 const PRIVACY_POLICY_URL: &str = "https://robrix.app/privacy/";
@@ -21,6 +21,13 @@ const MATRIX_SDK_URL: &str = env!("MATRIX_SDK_URL");
 const ROBRIX_PREFIX: &str = "Robrix: ";
 const TESTFLIGHT_PREFIX: &str = "TestFlight build: ";
 const SDK_PREFIX: &str = "Matrix Rust SDK: ";
+
+const TROUBLESHOOTING_DESCRIPTION: &str = "<ul>\
+<li>Clearing the cache discards every room's locally-stored events and re-fetches them from your homeserver. \
+None of your messages are deleted. Try this if a room is stuck and won't show new messages.</li>\
+<li>To gather diagnostics for one specific room, right-click (or long-press) that room \
+in the rooms list and choose 'Copy Room Diagnostics'.</li>\
+</ul>";
 
 
 script_mod! {
@@ -140,6 +147,32 @@ script_mod! {
                 text: "Report an Issue"
             }
         }
+
+
+        SubsectionLabel {
+            text: "Troubleshooting"
+        }
+
+        View {
+            width: Fill, height: Fit
+            flow: Flow.Right{wrap: true},
+            align: Align{y: 0.5},
+            spacing: 10,
+            wrap_spacing: 2
+
+            clear_cache_button := RobrixNegativeIconButton {
+                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
+                padding: Inset{left: 12, right: 15}
+                margin: Inset{left: 5, top: 5, bottom: 5}
+                draw_icon.svg: (ICON_TRASH)
+                icon_walk: Walk{width: 16, height: 16}
+                text: "Clear Cache and Reload"
+            }
+        }
+
+        troubleshooting_description := mod.widgets.SettingsSectionDescription {
+            body: "" // see TROUBLESHOOTING_DESCRIPTION
+        }
     }
 }
 
@@ -218,6 +251,22 @@ impl AboutSettings {
         if self.view.button(cx, ids!(source_button)).clicked(actions) {
             open_url(SOURCE_URL);
         }
+        if self.view.button(cx, ids!(clear_cache_button)).clicked(actions) {
+            cx.action(PositiveConfirmationModalAction::Show(std::cell::RefCell::new(Some(
+                ConfirmationModalContent {
+                    title_text: "Clear Cache and Reload".into(),
+                    body_text: "This clears every room's locally-cached events and re-fetches \
+                        them from your homeserver.\n\n\
+                        Use this if a room seems stuck and isn't showing new messages. \
+                        None of your messages will be deleted.".into(),
+                    accept_button_text: Some("Clear Cache".into()),
+                    on_accept_clicked: Some(Box::new(|_cx| {
+                        submit_async_request(MatrixRequest::ClearEventCache);
+                    })),
+                    ..Default::default()
+                }
+            ))));
+        }
         if self.view.button(cx, ids!(issues_button)).clicked(actions) {
             open_url(NEW_ISSUE_URL);
         }
@@ -228,6 +277,9 @@ impl AboutSettings {
             .set_text(cx, &robrix_html());
         view.html(cx, ids!(sdk_version_html))
             .set_text(cx, &sdk_html());
+
+        view.html(cx, ids!(troubleshooting_description))
+            .set_text(cx, TROUBLESHOOTING_DESCRIPTION);
 
         // Only show the TestFlight row if testflight env var is set.
         let has_testflight = !TESTFLIGHT_BUILD_NUMBER.is_empty();

@@ -67,7 +67,7 @@ script_mod! {
                 width: 120,
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
-                draw_icon +: { svg: (ICON_CLOSE) }
+                draw_icon +: { svg: (ICON_TRASH) }
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
             }
         }
