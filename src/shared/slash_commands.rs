@@ -152,6 +152,7 @@ pub static SLASH_COMMANDS: &[SlashCommand] = &[
 
 /// What the message input should do with the text that the user entered.
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum SlashCommandOutcome {
     /// Send this message.
     Message(RoomMessageEventContent),
