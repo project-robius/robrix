@@ -7,7 +7,7 @@
 
 use std::borrow::Cow;
 
-use matrix_sdk::{ruma::{OwnedUserId, events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType}}, AnyRedactionEvent, AnySyncMessageLikeEvent, AnySyncTimelineEvent, StateEventContentChange, SyncMessageLikeEvent}, serde::Raw, UserId}};
+use matrix_sdk::{ruma::{OwnedUserId, events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, member::MembershipState, message::{MessageFormat, MessageType}}, AnyRedactionEvent, AnySyncMessageLikeEvent, AnySyncTimelineEvent, StateEventContentChange, SyncMessageLikeEvent}, serde::Raw, UserId}};
 use matrix_sdk_base::crypto::types::events::UtdCause;
 use matrix_sdk_ui::timeline::{self, AnyOtherStateEventContentChange, EncryptedMessage, EventTimelineItem, MemberProfileChange, MembershipChange, MsgLikeKind, OtherMessageLike, RoomMembershipChange, TimelineItemContent};
 
@@ -101,23 +101,12 @@ pub fn text_preview_of_timeline_item(
                 MsgLikeKind::Other(oml) => text_preview_of_other_message_like(oml),
             }
         }
-        TimelineItemContent::MembershipChange(membership_change) => {
-            text_preview_of_room_membership_change(membership_change, true)
-                .unwrap_or_else(|| TextPreview::from((
-                    String::from("<i>underwent a membership change</i>"),
-                    BeforeText::UsernameWithoutColon,
-                )))
-        }
-        TimelineItemContent::ProfileChange(profile_change) => {
-            text_preview_of_member_profile_change(profile_change, sender_username, true)
-        }
-        TimelineItemContent::OtherState(other_state) => {
-            text_preview_of_other_state(other_state, true)
-                .unwrap_or_else(|| TextPreview::from((
-                    String::from("<i>initiated another state change</i>"),
-                    BeforeText::UsernameWithoutColon,
-                )))
-        }
+        TimelineItemContent::MembershipChange(membership_change) =>
+            text_preview_of_room_membership_change(membership_change, sender_user_id, true),
+        TimelineItemContent::ProfileChange(profile_change) =>
+            text_preview_of_member_profile_change(profile_change, sender_username, true),
+        TimelineItemContent::OtherState(other_state) =>
+            text_preview_of_other_state(other_state, true),
         TimelineItemContent::FailedToParseMessageLike { event_type, .. } => TextPreview::from((
             format!("[Failed to parse <i>{}</i> message]", htmlize::escape_text(event_type.to_string())),
             BeforeText::UsernameWithColon,
@@ -178,26 +167,16 @@ pub fn plaintext_body_of_timeline_item(
             }
         }
         TimelineItemContent::MembershipChange(membership_change) => {
-            text_preview_of_room_membership_change(membership_change, false)
-                .unwrap_or_else(|| TextPreview::from((
-                    String::from("underwent a membership change."),
-                    BeforeText::UsernameWithoutColon,
-                )))
+            text_preview_of_room_membership_change(membership_change, event_tl_item.sender(), false)
                 .format_with(&utils::get_or_fetch_event_sender(event_tl_item, None), false)
         }
         TimelineItemContent::ProfileChange(profile_change) => {
-            text_preview_of_member_profile_change(
-                profile_change,
-                &utils::get_or_fetch_event_sender(event_tl_item, None),
-                false,
-            ).text
+            let sender = utils::get_or_fetch_event_sender(event_tl_item, None);
+            text_preview_of_member_profile_change(profile_change, &sender, false)
+                .format_with(&sender, false)
         }
         TimelineItemContent::OtherState(other_state) => {
             text_preview_of_other_state(other_state, false)
-                .unwrap_or_else(|| TextPreview::from((
-                    String::from("initiated another state change."),
-                    BeforeText::UsernameWithoutColon,
-                )))
                 .format_with(&utils::get_or_fetch_event_sender(event_tl_item, None), false)
         }
         TimelineItemContent::FailedToParseMessageLike { event_type, error } => {
@@ -451,31 +430,31 @@ pub fn text_preview_of_other_message_like(
 pub fn text_preview_of_other_state(
     other_state: &timeline::OtherState,
     format_as_html: bool,
-) -> Option<TextPreview> {
+) -> TextPreview {
     let text = match other_state.content() {
         AnyOtherStateEventContentChange::RoomAvatar(_) => {
-            Some(String::from("set this room's avatar picture."))
+            String::from("set this room's avatar picture.")
         }
         AnyOtherStateEventContentChange::RoomCanonicalAlias(StateEventContentChange::Original { content, .. }) => {
-            Some(format!("set the main address of this room to {}.",
+            format!("set the main address of this room to {}.",
                 content.alias.as_ref().map(|a| a.as_str()).unwrap_or("none")
-            ))
+            )
         }
         AnyOtherStateEventContentChange::RoomCreate(StateEventContentChange::Original { content, .. }) => {
-            Some(format!("created this room (v{}).", content.room_version.as_str()))
+            format!("created this room (v{}).", content.room_version.as_str())
         }
         AnyOtherStateEventContentChange::RoomEncryption(_) => {
-            Some(String::from("enabled encryption in this room."))
+            String::from("enabled encryption in this room.")
         }
         AnyOtherStateEventContentChange::RoomGuestAccess(StateEventContentChange::Original { content, .. }) => {
-            Some(match &content.guest_access {
+            match &content.guest_access {
                 GuestAccess::CanJoin => String::from("has allowed guests to join this room."),
                 GuestAccess::Forbidden => String::from("has forbidden guests from joining this room."),
                 custom => format!("has set custom guest access rules for this room: {}", custom.as_str()),
-            })
+            }
         }
         AnyOtherStateEventContentChange::RoomHistoryVisibility(StateEventContentChange::Original { content, .. }) => {
-            Some(format!("set this room's history to be visible by {}",
+            format!("set this room's history to be visible by {}",
                 match &content.history_visibility {
                     HistoryVisibility::Invited => "invited users, since they were invited.",
                     HistoryVisibility::Joined => "joined users, since they joined.",
@@ -483,10 +462,10 @@ pub fn text_preview_of_other_state(
                     HistoryVisibility::WorldReadable => "anyone for all time.",
                     custom => custom.as_str(),
                 },
-            ))
+            )
         }
         AnyOtherStateEventContentChange::RoomJoinRules(StateEventContentChange::Original { content, .. }) => {
-            Some(match &content.join_rule {
+            match &content.join_rule {
                 JoinRule::Public => String::from("set this room to be joinable by anyone."),
                 JoinRule::Knock => String::from("set this room to be joinable by invite only or by request."),
                 JoinRule::Private => String::from("set this room to be private."),
@@ -494,10 +473,10 @@ pub fn text_preview_of_other_state(
                 JoinRule::KnockRestricted(_) => String::from("set this room to be joinable by invite only or requestable with restrictions."),
                 JoinRule::Invite  => String::from("set this room to be joinable by invite only."),
                 custom => format!("set custom join rules for this room: {}", custom.as_str()),
-            })
+            }
         }
         AnyOtherStateEventContentChange::RoomPinnedEvents(StateEventContentChange::Original { content, .. }) => {
-            Some(format!("pinned {} events in this room.", content.pinned.len()))
+            format!("pinned {} events in this room.", content.pinned.len())
         }
         AnyOtherStateEventContentChange::RoomName(StateEventContentChange::Original { content, .. }) => {
             let name = if format_as_html {
@@ -505,16 +484,24 @@ pub fn text_preview_of_other_state(
             } else {
                 Cow::Borrowed(content.name.as_str())
             };
-            Some(format!("changed this room's name to \"{name}\"."))
+            format!("changed this room's name to \"{name}\".")
         }
         AnyOtherStateEventContentChange::RoomPowerLevels(_) => {
-            Some(String::from("set the power levels for this room."))
+            String::from("set the power levels for this room.")
         }
         AnyOtherStateEventContentChange::RoomServerAcl(_) => {
-            Some(String::from("set the server access control list for this room."))
+            String::from("set the server access control list for this room.")
+        }
+        AnyOtherStateEventContentChange::RoomThirdPartyInvite(StateEventContentChange::Original { content, .. }) => {
+            let invitee = if format_as_html {
+                htmlize::escape_text(&content.display_name)
+            } else {
+                Cow::Borrowed(content.display_name.as_str())
+            };
+            format!("invited {invitee} to this room.")
         }
         AnyOtherStateEventContentChange::RoomTombstone(StateEventContentChange::Original { content, .. }) => {
-            Some(format!("closed this room and upgraded it to {}", content.replacement_room.matrix_to_uri()))
+            format!("closed this room and upgraded it to {}", content.replacement_room.matrix_to_uri())
         }
         AnyOtherStateEventContentChange::RoomTopic(StateEventContentChange::Original { content, .. }) => {
             let topic = if format_as_html {
@@ -522,7 +509,7 @@ pub fn text_preview_of_other_state(
             } else {
                 Cow::Borrowed(content.topic.as_str())
             };
-            Some(format!("changed this room's topic to \"{topic}\"."))
+            format!("changed this room's topic to \"{topic}\".")
         }
         AnyOtherStateEventContentChange::SpaceParent(_) => {
             let state_key  = if format_as_html {
@@ -530,7 +517,7 @@ pub fn text_preview_of_other_state(
             } else {
                 Cow::Borrowed(other_state.state_key())
             };
-            Some(format!("set this room's parent space to \"{state_key}\"."))
+            format!("set this room's parent space to \"{state_key}\".")
         }
         AnyOtherStateEventContentChange::SpaceChild(_) => {
             let state_key  = if format_as_html {
@@ -538,14 +525,16 @@ pub fn text_preview_of_other_state(
             } else {
                 Cow::Borrowed(other_state.state_key())
             };
-            Some(format!("added a new child to this space: \"{state_key}\"."))
+            format!("added a new child to this space: \"{state_key}\".")
         }
-        _other => {
-            // log!("*** Unhandled: {:?}.", _other);
-            None
+        other => {
+            let event_type = other.event_type().to_string();
+            format!("changed this room's {} state.",
+                if format_as_html { htmlize::escape_text(event_type) } else { event_type.into() },
+            )
         }
     };
-    text.map(|t| TextPreview::from((t, BeforeText::UsernameWithoutColon)))
+    TextPreview::from((text, BeforeText::UsernameWithoutColon))
 }
 
 
@@ -583,6 +572,15 @@ pub fn text_preview_of_member_profile_change(
         String::new()
     };
 
+    if name_text.is_empty() && avatar_text.is_empty() {
+        // When a profile change is redacted, both these fields are cleared,
+        // so just fall back to a generic message.
+        return TextPreview::from((
+            String::from("changed their profile."),
+            BeforeText::UsernameWithoutColon,
+        ));
+    }
+
     TextPreview::from((
         format!("{}{}.", name_text, avatar_text),
         BeforeText::Nothing,
@@ -594,8 +592,9 @@ pub fn text_preview_of_member_profile_change(
 /// as a plaintext or HTML-formatted string.
 pub fn text_preview_of_room_membership_change(
     change: &RoomMembershipChange,
+    sender: &UserId,
     format_as_html: bool,
-) -> Option<TextPreview> {
+) -> TextPreview {
     let dn = change.display_name();
     let change_user_id = dn.as_deref()
         .unwrap_or_else(|| change.user_id().as_str());
@@ -604,42 +603,79 @@ pub fn text_preview_of_room_membership_change(
     } else {
         change_user_id.into()
     };
+    let (membership, prev_membership, reason) = match change.content() {
+        StateEventContentChange::Original { content, prev_content } => (
+            &content.membership,
+            prev_content.as_ref().map(|prev| &prev.membership),
+            content.reason.as_deref(),
+        ),
+        StateEventContentChange::Redacted(content) => (&content.membership, None, None),
+    };
+    let end = match reason.map(|r| r.trim_end_matches('.')) {
+        Some(r) if format_as_html => format!(": {}.", htmlize::escape_text(r)),
+        Some(r) => format!(": {r}."),
+        None => String::from("."),
+    };
     let text = match change.change() {
-        None
-        | Some(MembershipChange::NotImplemented)
-        | Some(MembershipChange::None)
-        | Some(MembershipChange::Error) => {
-            // Don't actually display anything for nonexistent/unimportant membership changes.
-            return None;
-        }
         Some(MembershipChange::Joined) =>
             String::from("joined this room."),
         Some(MembershipChange::Left) =>
-            String::from("left this room."),
+            format!("left this room{end}"),
         Some(MembershipChange::Banned) =>
-            format!("banned {} from this room.", change_user_id),
+            format!("banned {change_user_id} from this room{end}"),
         Some(MembershipChange::Unbanned) =>
-            format!("unbanned {} from this room.", change_user_id),
+            format!("unbanned {change_user_id} from this room."),
         Some(MembershipChange::Kicked) =>
-            format!("kicked {} from this room.", change_user_id),
+            format!("kicked {change_user_id} from this room{end}"),
         Some(MembershipChange::Invited) =>
-            format!("invited {} to this room.", change_user_id),
+            format!("invited {change_user_id} to this room."),
         Some(MembershipChange::KickedAndBanned) =>
-            format!("kicked and banned {} from this room.", change_user_id),
+            format!("kicked and banned {change_user_id} from this room{end}"),
         Some(MembershipChange::InvitationAccepted) =>
             String::from("accepted an invitation to this room."),
         Some(MembershipChange::InvitationRejected) =>
-            String::from("rejected an invitation to this room."),
+            format!("rejected an invitation to this room{end}"),
         Some(MembershipChange::InvitationRevoked) =>
-            format!("revoked {}'s invitation to this room.", change_user_id),
+            format!("revoked {change_user_id}'s invitation to this room{end}"),
         Some(MembershipChange::Knocked) =>
-            String::from("requested to join this room."),
+            format!("requested to join this room{end}"),
         Some(MembershipChange::KnockAccepted) =>
-            format!("accepted {}'s request to join this room.", change_user_id),
+            format!("accepted {change_user_id}'s request to join this room."),
         Some(MembershipChange::KnockRetracted) =>
             String::from("retracted their request to join this room."),
         Some(MembershipChange::KnockDenied) =>
-            format!("denied {}'s request to join this room.", change_user_id),
+            format!("denied {change_user_id}'s request to join this room{end}"),
+        // Anything else will be reported by ruma as one of the variants below,
+        // so we treat them all the same and just check the new membership state.
+        None
+        | Some(MembershipChange::NotImplemented)
+        | Some(MembershipChange::None)
+        | Some(MembershipChange::Error) => match membership {
+            MembershipState::Invite =>
+                format!("invited {change_user_id} to this room."),
+            MembershipState::Knock =>
+                format!("requested to join this room{end}"),
+            MembershipState::Ban =>
+                format!("banned {change_user_id} from this room{end}"),
+            MembershipState::Leave if sender == change.user_id() =>
+                format!("left this room{end}"),
+            MembershipState::Leave =>
+                format!("removed {change_user_id} from this room{end}"),
+            // A join re-send is a no-op; the timeline hides it, so this string
+            // only shows up in text-preview contexts.
+            MembershipState::Join if prev_membership == Some(&MembershipState::Join) =>
+                String::from("made no changes to their membership."),
+            MembershipState::Join =>
+                String::from("joined this room."),
+            custom => {
+                let custom = if format_as_html {
+                    htmlize::escape_text(custom.as_str())
+                } else {
+                    custom.as_str().into()
+                };
+                format!("set {change_user_id}'s membership to \"{custom}\".")
+            }
+        }
     };
-    Some(TextPreview::from((text, BeforeText::UsernameWithoutColon)))
+    TextPreview::from((text, BeforeText::UsernameWithoutColon))
 }

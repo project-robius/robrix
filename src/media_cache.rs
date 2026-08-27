@@ -70,6 +70,14 @@ impl MediaCache {
         self.timeline_update_sender.as_ref()
     }
 
+    /// Sets a new timeline update sender for this media cache's timeline.
+    pub fn set_timeline_update_sender(
+        &mut self,
+        sender: crossbeam_channel::Sender<TimelineUpdate>,
+    ) {
+        self.timeline_update_sender = Some(sender);
+    }
+
     /// Tries to get the media from the cache, or submits an async request to fetch it.
     ///
     /// This method *does not* block or wait for the media to be fetched,
