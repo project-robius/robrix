@@ -10,7 +10,7 @@ use crate::{
         space_lobby::SpaceLobbyScreenWidgetRefExt,
     },
     settings::{
-        app_preferences::{effective_is_desktop, AppPreferencesAction, ViewModeOverride},
+        app_preferences::{AppPreferencesGlobal, AppPreferencesAction, ViewModeOverride},
         settings_screen::SettingsScreenWidgetRefExt,
     },
     shared::room_filter_input_bar::{MainFilterAction, RoomFilterInputBarWidgetExt},
@@ -462,7 +462,26 @@ impl SpacesBarWrapperRef {
 }
 
 
-#[derive(Script, ScriptHook, Widget)]
+/// The variant that the main `AdaptiveView` last selected.
+///
+/// Don't query this directly, instead call [`effective_is_desktop()`].
+///
+/// The inner value should only be modified by [`HomeScreen::apply_view_mode()`].
+pub struct MainViewIsDesktop(bool);
+impl Default for MainViewIsDesktop {
+    fn default() -> Self {
+        // same default that makepad assumes
+        Self(true)
+    }
+}
+
+/// Returns whether the UI is currently showing the wide "desktop" layout.
+pub fn effective_is_desktop(cx: &mut Cx) -> bool {
+    cx.global::<MainViewIsDesktop>().0
+}
+
+
+#[derive(Script, Widget)]
 pub struct HomeScreen {
     #[deref] view: View,
 
@@ -486,6 +505,16 @@ pub struct HomeScreen {
 
     /// The last effective AdaptiveView mode we observed. `Some(true)` means desktop mode.
     #[rust] last_effective_is_desktop: Option<bool>,
+}
+
+impl ScriptHook for HomeScreen {
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        self.reapply_view_mode(vm);
+    }
+
+    fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        self.reapply_view_mode(vm);
+    }
 }
 
 impl Widget for HomeScreen {
@@ -566,11 +595,6 @@ impl Widget for HomeScreen {
                         self.apply_view_mode(cx, *new_mode);
                         self.view.redraw(cx);
                     }
-                    self.sync_effective_view_mode(cx, app_state);
-                }
-
-                if let WindowAction::WindowGeomChange(_) = action.as_widget_action().cast() {
-                    self.sync_effective_view_mode(cx, app_state);
                 }
 
                 // Handle room selections. Desktop owns tab creation in MainDesktopUI,
@@ -621,6 +645,13 @@ impl Widget for HomeScreen {
         }
 
         self.view.handle_event(cx, event, scope);
+
+        // Now that we've forwarded the event (above) to our children, the AdaptiveView instance
+        // has properly updated its view mode, so we can now query and sync it across robrix.
+        if let Event::Actions(_) = event {
+            let app_state = scope.data.get_mut::<AppState>().unwrap();
+            self.sync_effective_view_mode(cx, app_state);
+        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -637,13 +668,26 @@ impl Widget for HomeScreen {
 
 impl HomeScreen {
     /// Installs a variant selector on the main `AdaptiveView` that honors the
-    /// current [`ViewModeOverride`] preference. `Automatic` falls back to the
-    /// default width-based selector.
+    /// current [`ViewModeOverride`] preference, and publishes each choice so
+    /// that `effective_is_desktop()` always matches that same view mode.
     fn apply_view_mode(&mut self, cx: &mut Cx, mode: ViewModeOverride) {
+        let mut select_variant = mode.variant_selector();
         self.view
             .adaptive_view(cx, ids!(main_adaptive_view))
-            .set_variant_selector(mode.variant_selector());
+            .set_variant_selector(move |cx, parent_size| {
+                let variant = select_variant(cx, parent_size);
+                cx.global::<MainViewIsDesktop>().0 = variant == live_id!(Desktop);
+                variant
+            });
         self.applied_view_mode = mode;
+    }
+
+    /// Reinstalls the AdaptiveView variant selector based on the current user preference.
+    fn reapply_view_mode(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            let mode = cx.global::<AppPreferencesGlobal>().0.view_mode;
+            self.apply_view_mode(cx, mode);
+        });
     }
 
     fn sync_effective_view_mode(&mut self, cx: &mut Cx, app_state: &mut AppState) {
@@ -809,11 +853,6 @@ impl HomeScreen {
         app_state: &mut AppState,
         sr: SelectedRoom,
     ) {
-        // Ensure the view mode is known.
-        if self.last_effective_is_desktop.is_none() {
-            self.last_effective_is_desktop = Some(effective_is_desktop(cx));
-        }
-
         let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
         if stack_navigation.is_transitioning() {
             return;
