@@ -592,6 +592,12 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         is_low_priority: bool,
     },
+    /// Request to gather diagnostic info about the given room's sync/cache state.
+    GetRoomDiagnostics {
+        room_id: OwnedRoomId,
+    },
+    /// Request to clear the event cache of all rooms, forcing a re-fetch from the homeserver.
+    ClearEventCache,
     /// Request to generate a Matrix link (permalink) for a room or event.
     GenerateMatrixLink {
         /// The ID of the room to generate a link for.
@@ -1684,6 +1690,117 @@ async fn matrix_worker_task(
                 );
             }
 
+            MatrixRequest::GetRoomDiagnostics { room_id } => {
+                let Some(client) = get_client() else { continue };
+                let _diagnostics_task = Handle::current().spawn(async move {
+                    use std::fmt::Write as _;
+                    let mut text = format!("Robrix diagnostics for room {room_id}\n");
+                    let _ = writeln!(text, "Robrix version: {}", env!("CARGO_PKG_VERSION"));
+                    if let Some(sync_service) = get_sync_service() {
+                        let _ = writeln!(text, "Sync service state: {:?}", sync_service.state().get());
+                    }
+
+                    match client.get_room(&room_id) {
+                        Some(room) => {
+                            let _ = writeln!(text, "\n## Room info");
+                            let _ = writeln!(text, "name: {:?}", room.cached_display_name());
+                            let _ = writeln!(text, "topic: {:?}", room.topic());
+                            let _ = writeln!(text, "canonical alias: {:?}, alt aliases: {:?}",
+                                room.canonical_alias(), room.alt_aliases(),
+                            );
+                            let _ = writeln!(text, "state: {:?}, room version: {:?}, type: {:?}",
+                                room.state(), room.version(), room.room_type(),
+                            );
+                            let _ = writeln!(text, "encryption: {:?}, public: {:?}, space: {:?}, direct: {:?}",
+                                room.encryption_state(), room.is_public(), room.is_space(), room.is_direct().await,
+                            );
+                            let _ = writeln!(text, "join rule: {:?}, guest access: {:?}, history visibility: {:?}",
+                                room.join_rule(), room.guest_access(), room.history_visibility(),
+                            );
+                            let _ = writeln!(text, "state fully synced: {}, partially synced: {}",
+                                room.is_state_fully_synced(), room.is_state_partially_or_fully_synced(),
+                            );
+                            let _ = writeln!(text, "members: {:?} active service, {:?} direct targets, heroes: {:?}",
+                                room.active_service_members_count(), room.direct_targets_length(),
+                                room.heroes().iter().map(|h| h.user_id.as_str()).collect::<Vec<_>>(),
+                            );
+                            let _ = writeln!(text, "creators: {:?}, own user: {}", room.creators(), room.own_user_id());
+                            let _ = writeln!(text, "successor (tombstone): {:?}", room.successor_room());
+                            let _ = writeln!(text, "tags: {:?}", room.tags().await);
+                            let _ = writeln!(text, "unread: {} messages, {} mentions, {} notifications, marked unread: {}",
+                                room.num_unread_messages(), room.num_unread_mentions(),
+                                room.num_unread_notifications(), room.is_marked_unread(),
+                            );
+                            let _ = writeln!(text, "latest event timestamp: {:?}, recency stamp: {:?}",
+                                room.latest_event_timestamp(), room.recency_stamp(),
+                            );
+                            let _ = writeln!(text, "fully read event: {:?}", room.fully_read_event_id());
+                            let _ = writeln!(text, "pinned events: {:?}", room.pinned_event_ids());
+                            let _ = writeln!(text, "last prev_batch token: {:?}", room.last_prev_batch());
+                            let _ = writeln!(text, "avatar url: {:?}", room.avatar_url());
+                            let _ = writeln!(text, "latest event: {:?}", room.latest_event().await);
+                        }
+                        None => { let _ = writeln!(text, "\n## Room was NOT found in the client!"); }
+                    }
+
+                    let _ = writeln!(text, "\n## Robrix timeline state");
+                    {
+                        let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                        match all_joined_rooms.get(&room_id) {
+                            Some(details) => {
+                                let _ = writeln!(text, "subscriber running: {}, endpoints taken by UI: {}",
+                                    matches!(details.main_timeline.timeline_subscriber, TimelineSubscriber::Running(_)),
+                                    details.main_timeline.timeline_singleton_endpoints.is_none(),
+                                );
+                                let _ = writeln!(text, "typing notices subscribed: {}, pinned events subscribed: {}",
+                                    details.typing_notice_subscriber.is_some(),
+                                    details.pinned_events_subscriber.is_some(),
+                                );
+                                let _ = writeln!(text, "thread timelines: {:?}, pending: {:?}",
+                                    details.thread_timelines.keys().collect::<Vec<_>>(),
+                                    details.pending_thread_timelines,
+                                );
+                            }
+                            None => { let _ = writeln!(text, "Room is NOT in the list of all joined rooms!"); }
+                        }
+                    }
+
+                    let _ = writeln!(text, "\n## Event cache");
+                    match client.event_cache().room(&room_id).await {
+                        Ok((room_cache, _drop_handles)) => {
+                            match room_cache.events().await {
+                                Ok(events) => { let _ = writeln!(text, "loaded events: {}", events.len()); }
+                                Err(e) => { let _ = writeln!(text, "couldn't load events: {e}"); }
+                            }
+                            for line in room_cache.debug_string().await {
+                                let _ = writeln!(text, "{line}");
+                            }
+                        }
+                        Err(e) => { let _ = writeln!(text, "unavailable: {e}"); }
+                    }
+                    Cx::post_action(RoomDiagnosticsReady { text });
+                });
+            }
+
+            MatrixRequest::ClearEventCache => {
+                let Some(client) = get_client() else { continue };
+                let _clear_cache_task = Handle::current().spawn(async move {
+                    match client.event_cache().clear_all_rooms().await {
+                        Ok(()) => enqueue_popup_notification(
+                            "Cleared all rooms' cached events.\n\n\
+                            Timelines will now be re-fetched from your homeserver.",
+                            PopupKind::Success,
+                            Some(6.0),
+                        ),
+                        Err(e) => enqueue_popup_notification(
+                            format!("Failed to clear the event cache: {e}"),
+                            PopupKind::Error,
+                            None,
+                        ),
+                    }
+                });
+            }
+
             MatrixRequest::GenerateMatrixLink { room_id, event_id, use_matrix_scheme, join_on_click } => {
                 let Some(client) = get_client() else { continue };
                 let _gen_link_task = Handle::current().spawn(async move {
@@ -2662,6 +2779,14 @@ type ConstHasher = BuildHasherDefault<DefaultHasher>;
 /// Information about all joined rooms that our client currently know about.
 /// We use a `HashMap` for O(1) lookups, as this is accessed frequently (e.g. every timeline update).
 static ALL_JOINED_ROOMS: Mutex<HashMap<OwnedRoomId, JoinedRoomDetails, ConstHasher>> = Mutex::new(HashMap::with_hasher(BuildHasherDefault::new()));
+
+/// The diagnostic info gathered upon a [`MatrixRequest::GetRoomDiagnostics`] request.
+///
+/// This is *NOT* a widget action.
+#[derive(Debug)]
+pub struct RoomDiagnosticsReady {
+    pub text: String,
+}
 
 /// Tells any RoomScreen showing this room that its backend timeline was recreated,
 /// so it needs to take and use the new channel endpoints.

@@ -6,8 +6,8 @@ use matrix_sdk::ruma::OwnedRoomId;
 use crate::{home::invite_modal::InviteModalAction, settings::app_preferences::preferred_receipt_type, shared::{context_menu::{ContextMenuClosed, expected_menu_size}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
 
 /// Nothing here is conditionally shown, so keep these matching the DSL below.
-const NUM_BUTTONS: usize = 8;
-const NUM_DIVIDERS: usize = 2;
+const NUM_BUTTONS: usize = 9;
+const NUM_DIVIDERS: usize = 3;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -68,6 +68,13 @@ script_mod! {
             }
 
             divider2 := mod.widgets.ContextMenuDivider { }
+
+            diagnostics_button := mod.widgets.ContextMenuButton {
+                draw_icon +: { svg: (ICON_COPY) }
+                text: "Copy Room Diagnostics"
+            }
+
+            divider3 := mod.widgets.ContextMenuDivider { }
 
             leave_button := mod.widgets.ContextMenuDangerButton {
                 draw_icon.svg: (ICON_LOGOUT)
@@ -209,6 +216,12 @@ impl WidgetMatchEvent for RoomContextMenu {
             cx.action(InviteModalAction::Open(details.room_name_id.clone()));
             close_menu = true;
         }
+        else if self.button(cx, ids!(diagnostics_button)).clicked(actions) {
+            submit_async_request(MatrixRequest::GetRoomDiagnostics {
+                room_id: details.room_name_id.room_id().clone(),
+            });
+            close_menu = true;
+        }
         else if self.button(cx, ids!(leave_button)).clicked(actions) {
             use crate::join_leave_room_modal::{JoinLeaveRoomModalAction, JoinLeaveModalKind};
             use crate::room::BasicRoomDetails;
@@ -269,6 +282,7 @@ impl RoomContextMenu {
         self.button(cx, ids!(room_settings_button)).reset_hover(cx);
         self.button(cx, ids!(notifications_button)).reset_hover(cx);
         self.button(cx, ids!(invite_button)).reset_hover(cx);
+        self.button(cx, ids!(diagnostics_button)).reset_hover(cx);
         self.button(cx, ids!(leave_button)).reset_hover(cx);
 
         self.redraw(cx);

@@ -39,7 +39,7 @@ use crate::{
         popup_list::{PopupKind, enqueue_popup_notification},
         room_filter_input_bar::MainFilterAction,
     },
-    sliding_sync::{MatrixLinkAction, MatrixRequest, PaginationDirection, TimelineKind, submit_async_request},
+    sliding_sync::{MatrixLinkAction, MatrixRequest, PaginationDirection, RoomDiagnosticsReady, TimelineKind, submit_async_request},
     space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction}, utils::{RoomNameId, VecDiff},
 };
 
@@ -1679,6 +1679,15 @@ impl Widget for RoomsList {
                         PopupKind::Success,
                         Some(3.0),
                     );
+                }
+                if let Some(RoomDiagnosticsReady { text }) = action.downcast_ref() {
+                    cx.copy_to_clipboard(text);
+                    enqueue_popup_notification(
+                        "Room diagnostics copied to the clipboard.",
+                        PopupKind::Success,
+                        Some(4.0),
+                    );
+                    continue;
                 }
                 match action.downcast_ref() {
                     Some(MatrixLinkAction::MatrixToUri(link)) => {
