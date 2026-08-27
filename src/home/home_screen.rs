@@ -462,22 +462,23 @@ impl SpacesBarWrapperRef {
 }
 
 
-/// The variant that the main `AdaptiveView` last selected.
+/// The variant that the main `AdaptiveView` last selected,
+/// or `None` if it hasn't made its first selection yet.
 ///
 /// Don't query this directly, instead call [`effective_is_desktop()`].
 ///
 /// The inner value should only be modified by [`HomeScreen::apply_view_mode()`].
-pub struct MainViewIsDesktop(bool);
-impl Default for MainViewIsDesktop {
-    fn default() -> Self {
-        // same default that makepad assumes
-        Self(true)
-    }
-}
+#[derive(Default)]
+pub struct MainViewIsDesktop(Option<bool>);
+
+/// An action emitted when the main `AdaptiveView` switches between Desktop and Mobile.
+#[derive(Debug)]
+pub struct MainViewVariantChangedAction;
 
 /// Returns whether the UI is currently showing the wide "desktop" layout.
 pub fn effective_is_desktop(cx: &mut Cx) -> bool {
     cx.global::<MainViewIsDesktop>().0
+        .unwrap_or(true) // Before the first selection, default to desktop mode
 }
 
 
@@ -593,6 +594,15 @@ impl Widget for HomeScreen {
                 if let Some(AppPreferencesAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
                     if *new_mode != self.applied_view_mode {
                         self.apply_view_mode(cx, *new_mode);
+                        // Set & broadcast the new variant now so that the mobile cleanup in
+                        // `sync_effective_view_mode()` can run before the dock reloads.
+                        if !matches!(new_mode, ViewModeOverride::Automatic)
+                            || cx.display_context.is_screen_size_known()
+                        {
+                            // this dummy parent size is only read when the screen size is unknown
+                            let variant = (new_mode.variant_selector())(cx, &Vec2d::default());
+                            cx.global::<MainViewIsDesktop>().0 = Some(variant == live_id!(Desktop));
+                        }
                         self.view.redraw(cx);
                     }
                 }
@@ -676,7 +686,10 @@ impl HomeScreen {
             .adaptive_view(cx, ids!(main_adaptive_view))
             .set_variant_selector(move |cx, parent_size| {
                 let variant = select_variant(cx, parent_size);
-                cx.global::<MainViewIsDesktop>().0 = variant == live_id!(Desktop);
+                let is_desktop = variant == live_id!(Desktop);
+                if cx.global::<MainViewIsDesktop>().0.replace(is_desktop) != Some(is_desktop) {
+                    cx.action(MainViewVariantChangedAction);
+                }
                 variant
             });
         self.applied_view_mode = mode;
@@ -691,7 +704,8 @@ impl HomeScreen {
     }
 
     fn sync_effective_view_mode(&mut self, cx: &mut Cx, app_state: &mut AppState) {
-        let is_desktop = effective_is_desktop(cx);
+        // Do nothing until the AdaptiveView instance has actually selected a variant
+        let Some(is_desktop) = cx.global::<MainViewIsDesktop>().0 else { return };
         let Some(was_desktop) = self.last_effective_is_desktop.replace(is_desktop) else {
             return;
         };
