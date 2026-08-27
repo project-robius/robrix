@@ -1,5 +1,5 @@
 use makepad_widgets::*;
-use matrix_sdk::ruma::OwnedEventId;
+use matrix_sdk::ruma::{EventId, OwnedEventId};
 
 use crate::sliding_sync::TimelineRequestSender;
 
@@ -89,10 +89,18 @@ script_mod! {
 }
 
 
+/// The error shown when a jumped-to event can't be found.
+/// `noun` is what the search covered, i.e. "room" or "thread".
+fn jump_target_not_found_msg(noun: &str) -> String {
+    format!("Couldn't find that message in this {noun}'s history.\n\n\
+        It may have been deleted, it may be a kind of event that Robrix doesn't display, \
+        or the server may not be able to return it.")
+}
+
 
 /// The state of a LoadingPane: the possible tasks that it may be performing.
 #[derive(Default)]
-pub enum LoadingPaneState {
+enum LoadingPaneState {
     /// The room is being backwards paginated until the target event is reached.
     BackwardsPaginateUntilEvent {
         target_event_id: OwnedEventId,
@@ -100,6 +108,8 @@ pub enum LoadingPaneState {
         description: String,
         /// The number of events paginated so far, which is only used to display progress.
         events_paginated: usize,
+        /// "room" or "thread", used when telling the user we couldn't find the event.
+        timeline_noun: &'static str,
         /// The sender for timeline requests for the room that is showing this modal.
         /// This is used to inform the `timeline_subscriber_handler` that the user has
         /// cancelled the request, so that it can stop looking for the target event.
@@ -187,55 +197,120 @@ impl LoadingPane {
         self.visible
     }
 
-    /// Hides this pane, which also cancels any search it was showing.
-    pub fn hide(&mut self, cx: &mut Cx) {
-        self.set_state(cx, LoadingPaneState::None);
-        // Only give back key focus if we still had it; something else may have taken it.
-        if cx.has_key_focus(self.view.area()) {
-            cx.revert_key_focus();
-        }
-        self.visible = false;
+    /// Returns `true` if this pane is currently searching for any event.
+    pub fn is_searching(&self) -> bool {
+        matches!(self.state, LoadingPaneState::BackwardsPaginateUntilEvent { .. })
     }
 
-    pub fn show(&mut self, cx: &mut Cx) {
+    /// Returns the event ID this pane is currently searching for, if any.
+    pub fn searching_for(&self) -> Option<OwnedEventId> {
+        match &self.state {
+            LoadingPaneState::BackwardsPaginateUntilEvent { target_event_id, .. } => Some(target_event_id.clone()),
+            _ => None,
+        }
+    }
+
+    /// Shows this pane and starts searching backwards for the given event.
+    ///
+    /// If another search was in progress, it will be cancelled.
+    pub fn start_search(
+        &mut self,
+        cx: &mut Cx,
+        target_event_id: OwnedEventId,
+        description: String,
+        timeline_noun: &'static str,
+        request_sender: TimelineRequestSender,
+    ) {
+        self.set_state(cx, LoadingPaneState::BackwardsPaginateUntilEvent {
+            target_event_id,
+            description,
+            events_paginated: 0,
+            timeline_noun,
+            request_sender,
+        });
         self.visible = true;
         cx.set_key_focus(self.view.area());
         self.redraw(cx);
     }
 
-    pub fn set_state(&mut self, cx: &mut Cx, state: LoadingPaneState) {
-        let cancel_button = self.button(cx, ids!(cancel_button));
-        match &state {
-            LoadingPaneState::BackwardsPaginateUntilEvent {
-                description,
-                events_paginated,
-                ..
-            } => {
-                self.set_title(cx, "Searching older messages...");
-                self.set_status(cx, &format!(
+    /// Adds `num_events` to the progress shown by an in-progress search.
+    ///
+    /// This is additive, not a replacement.
+    pub fn paginated_more_events(&mut self, cx: &mut Cx, num_events: usize) {
+        let LoadingPaneState::BackwardsPaginateUntilEvent { events_paginated, .. } = &mut self.state else { return };
+        *events_paginated += num_events;
+        self.populate(cx);
+    }
+
+    /// Sets the timeline request sender for this loading pane's current search.
+    ///
+    /// Does nothing if there's no search in progress.
+    ///
+    /// This is useful for when the timeline endpoint channels get re-created,
+    /// and we need to update them so that the loading pane can send requests
+    /// back to the new backend task that's doing the searching.
+    pub fn set_timeline_request_sender(&mut self, request_sender: TimelineRequestSender) {
+        let LoadingPaneState::BackwardsPaginateUntilEvent { request_sender: sender, .. } = &mut self.state else { return };
+        *sender = request_sender;
+    }
+
+    /// Ends the current search and shows an error (we couldn't find the event).
+    pub fn search_failed(&mut self, cx: &mut Cx) {
+        let LoadingPaneState::BackwardsPaginateUntilEvent { timeline_noun, .. } = &self.state else { return };
+        let error_message = jump_target_not_found_msg(timeline_noun);
+        self.set_state(cx, LoadingPaneState::Error(error_message));
+    }
+
+    /// Hides this pane, which also cancels any search it was showing.
+    pub fn hide(&mut self, cx: &mut Cx) {
+        self.set_state(cx, LoadingPaneState::None);
+        // if the pane was actually drawn and had key focus, give it back.
+        let area = self.view.area();
+        if !matches!(area, Area::Empty) && cx.has_key_focus(area) {
+            cx.revert_key_focus();
+        }
+        self.visible = false;
+    }
+
+    /// Returns `true` if this pane is searching for the given target event.
+    pub fn is_searching_for(&self, target_event_id: &EventId) -> bool {
+        matches!(
+            &self.state,
+            LoadingPaneState::BackwardsPaginateUntilEvent { target_event_id: id, .. }
+                if &**id == target_event_id
+        )
+    }
+
+    fn set_state(&mut self, cx: &mut Cx, state: LoadingPaneState) {
+        // This will drop the previous `self.state`, which cancels its background request.
+        self.state = state;
+        self.populate(cx);
+    }
+
+    /// Populates this pane's labels and button from its current state.
+    fn populate(&mut self, cx: &mut Cx) {
+        let ui_text = match &self.state {
+            LoadingPaneState::BackwardsPaginateUntilEvent { description, events_paginated, .. } => Some((
+                "Searching older messages...",
+                format!(
                     "Looking for {description}...\n\n\
                     Fetched {events_paginated} messages so far...",
-                ));
-                cancel_button.set_text(cx, "Cancel");
-            }
-            LoadingPaneState::Error(error_message) => {
-                self.set_title(cx, "Error loading content");
-                self.set_status(cx, error_message);
-                cancel_button.set_text(cx, "Okay");
-            }
-            LoadingPaneState::None => { }
+                ),
+                "Cancel",
+            )),
+            LoadingPaneState::Error(error_message) => Some((
+                "Error loading content",
+                error_message.clone(),
+                "Okay",
+            )),
+            LoadingPaneState::None => None,
+        };
+        if let Some((title_text, status_text, button_text)) = ui_text {
+            self.label(cx, ids!(title)).set_text(cx, title_text);
+            self.label(cx, ids!(status)).set_text(cx, &status_text);
+            self.button(cx, ids!(cancel_button)).set_text(cx, button_text);
         }
-
-        self.state = state;
         self.redraw(cx);
-    }
-
-    pub fn set_status(&mut self, cx: &mut Cx, status: &str) {
-        self.label(cx, ids!(status)).set_text(cx, status);
-    }
-
-    pub fn set_title(&mut self, cx: &mut Cx, title: &str) {
-        self.label(cx, ids!(title)).set_text(cx, title);
     }
 }
 
@@ -246,51 +321,55 @@ impl LoadingPaneRef {
         inner.is_currently_shown(cx)
     }
 
-    /// See [`LoadingPane::show()`]
-    pub fn show(&self, cx: &mut Cx) {
+    /// See [`LoadingPane::is_searching()`]
+    pub fn is_searching(&self) -> bool {
+        self.borrow().is_some_and(|inner| inner.is_searching())
+    }
+
+    /// See [`LoadingPane::is_searching_for()`]
+    pub fn is_searching_for(&self, target_event_id: &EventId) -> bool {
+        self.borrow().is_some_and(|inner| inner.is_searching_for(target_event_id))
+    }
+
+    /// See [`LoadingPane::searching_for()`]
+    pub fn searching_for(&self) -> Option<OwnedEventId> {
+        self.borrow().and_then(|inner| inner.searching_for())
+    }
+
+    /// See [`LoadingPane::start_search()`]
+    pub fn start_search(
+        &self,
+        cx: &mut Cx,
+        target_event_id: OwnedEventId,
+        description: String,
+        timeline_noun: &'static str,
+        request_sender: TimelineRequestSender,
+    ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.show(cx);
+        inner.start_search(cx, target_event_id, description, timeline_noun, request_sender);
+    }
+
+    /// See [`LoadingPane::paginated_more_events()`]
+    pub fn paginated_more_events(&self, cx: &mut Cx, num_events: usize) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.paginated_more_events(cx, num_events);
+    }
+
+    /// See [`LoadingPane::set_timeline_request_sender()`]
+    pub fn set_timeline_request_sender(&self, request_sender: TimelineRequestSender) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_timeline_request_sender(request_sender);
+    }
+
+    /// See [`LoadingPane::search_failed()`]
+    pub fn search_failed(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.search_failed(cx);
     }
 
     /// See [`LoadingPane::hide()`]
     pub fn hide(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.hide(cx);
-    }
-
-    /// Returns `true` if this pane is currently searching for any event.
-    pub fn is_searching(&self) -> bool {
-        self.borrow().is_some_and(|inner|
-            matches!(inner.state, LoadingPaneState::BackwardsPaginateUntilEvent { .. })
-        )
-    }
-
-    /// Returns the target event ID this pane is currently searching for, if any.
-    pub fn searching_for(&self) -> Option<OwnedEventId> {
-        self.borrow().and_then(|inner| match &inner.state {
-            LoadingPaneState::BackwardsPaginateUntilEvent { target_event_id, .. } => Some(target_event_id.clone()),
-            _ => None,
-        })
-    }
-
-    pub fn take_state(&self) -> LoadingPaneState {
-        self.borrow_mut()
-            .map(|mut inner| std::mem::take(&mut inner.state))
-            .unwrap_or(LoadingPaneState::None)
-    }
-
-    pub fn set_state(&self, cx: &mut Cx, state: LoadingPaneState) {
-        let Some(mut inner) = self.borrow_mut() else { return }; 
-        inner.set_state(cx, state);
-    }
-
-    pub fn set_status(&self, cx: &mut Cx, status: &str) {
-        let Some(mut inner) = self.borrow_mut() else { return }; 
-        inner.set_status(cx, status);
-    }
-
-    pub fn set_title(&self, cx: &mut Cx, title: &str) {
-        let Some(mut inner) = self.borrow_mut() else { return }; 
-        inner.set_title(cx, title);
     }
 }
