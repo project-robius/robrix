@@ -3106,7 +3106,21 @@ impl RoomScreen {
         tl.request_sender.send_if_modified(|req| !std::mem::replace(&mut req.is_timeline_open, true));
         // A search shown by the loading pane still points at the old channel, so move it over too.
         let reconnected_sender = tl.request_sender.clone();
-        self.loading_pane(cx, ids!(loading_pane)).set_timeline_request_sender(reconnected_sender);
+        let timeline_kind = tl.kind.clone();
+        let loading_pane = self.loading_pane(cx, ids!(loading_pane));
+        loading_pane.set_timeline_request_sender(reconnected_sender);
+        // A round submitted while the room was being rebuilt was dropped by the backend,
+        // taking with it the update that would have ended the search. Kick off a new one.
+        if loading_pane.is_searching() {
+            if let Some(tl) = self.tl_state.as_mut() {
+                tl.is_paginating = true;
+            }
+            submit_async_request(MatrixRequest::PaginateTimeline {
+                timeline_kind,
+                num_events: 50,
+                direction: PaginationDirection::Backwards,
+            });
+        }
         self.redraw(cx);
     }
 
