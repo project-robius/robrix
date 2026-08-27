@@ -2360,11 +2360,8 @@ impl RoomScreen {
         {
             return Some(event);
         }
-        items.iter()
-            .rev()
-            .take(MAX_ITEMS_TO_SEARCH_THROUGH)
-            .filter_map(|item| item.as_event())
-            .find(|ev| ev.event_id().is_some_and(|id| id == target_event_id))
+        let index = index_of_event(items, target_event_id, items.len(), MAX_ITEMS_TO_SEARCH_THROUGH)?;
+        items.get(index).and_then(|item| item.as_event())
     }
 
     /// Registers a pending download for a media transfer (e.g., download, share)
