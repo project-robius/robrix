@@ -85,7 +85,51 @@ enum SpaceRoomListRequest {
     GetDetailedChildren,
     /// Paginate this space to get info about more of its children.
     Paginate,
+    /// Re-subscribe to this space's subspaces, restarting any backend space sync tasks
+    /// that may have stopped due to another space being left.
+    ResubscribeSubspaces,
+    /// Stop this space's room list task.
     Shutdown,
+}
+
+
+/// A running [`space_room_list_loop`] task, and the sender used to send requests to it.
+struct SpaceRoomListTask {
+    join_handle: JoinHandle<()>,
+    sender: UnboundedSender<SpaceRoomListRequest>,
+    parent_chain: ParentChain,
+}
+
+/// Whether the user is still in the given space, i.e. they haven't left it
+/// and weren't banned from it. Anything else is no longer worth syncing.
+fn is_still_in_space(space: &SpaceRoom) -> bool {
+    !matches!(space.state, Some(RoomState::Left) | Some(RoomState::Banned))
+}
+
+/// Stops the room list task for the given space and any now-unreachable subspaces within it.
+///
+/// Because a subspace can be within multiple parent spaces, we skip any subspace that
+/// is itself a joined space; the rest are restarted by `ResubscribeSubspaces`.
+fn shutdown_space_room_list_tasks(
+    space_room_list_tasks: &mut HashMap<OwnedRoomId, SpaceRoomListTask>,
+    space_id: &OwnedRoomId,
+    all_joined_spaces: &Vector<SpaceRoom>,
+) {
+    let spaces_to_shutdown: Vec<OwnedRoomId> = space_room_list_tasks.iter()
+        .filter(|(id, task)| *id == space_id || (
+            task.parent_chain.contains(space_id)
+                && !all_joined_spaces.iter().any(|s| &s.room_id == *id && is_still_in_space(s))
+        ))
+        .map(|(id, _)| id.clone())
+        .collect();
+    for id in spaces_to_shutdown {
+        let Some(task) = space_room_list_tasks.remove(&id) else { continue };
+        log!("Stopping the space room list task for {id}.");
+        if task.sender.send(SpaceRoomListRequest::Shutdown).is_err() {
+            // If we can't send the clean shutdown request, just abort it.
+            task.join_handle.abort();
+        }
+    }
 }
 
 
@@ -101,20 +145,20 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
 
     // The set of async tasks that are handling room list requests for each top-level joined space,
     // along with a sender to send `SpaceRoomListRequest`s to those tasks.
-    let mut space_room_list_tasks = HashMap::new();
+    let mut space_room_list_tasks: HashMap<OwnedRoomId, SpaceRoomListTask> = HashMap::new();
     // A closure to make it easier to use/spawn a `space_room_list_loop` task.
     let get_or_spawn_space_room_list = async |
-        space_room_list_tasks: &mut HashMap<OwnedRoomId, (UnboundedSender<SpaceRoomListRequest>, JoinHandle<()>)>,
+        space_room_list_tasks: &mut HashMap<OwnedRoomId, SpaceRoomListTask>,
         space_id: &OwnedRoomId,
         parent_chain: &ParentChain,
     | -> UnboundedSender<SpaceRoomListRequest> {
         // If a space's room list task died, drop it and respawn a new one.
-        if space_room_list_tasks.get(space_id).is_some_and(|(_, task)| task.is_finished()) {
+        if space_room_list_tasks.get(space_id).is_some_and(|t| t.join_handle.is_finished()) {
             warning!("The space room list task for {space_id} had died; restarting it now.");
             space_room_list_tasks.remove(space_id);
         }
-        if let Some((sender, _)) = space_room_list_tasks.get(space_id) {
-            return sender.clone();
+        if let Some(task) = space_room_list_tasks.get(space_id) {
+            return task.sender.clone();
         }
         // Here, we need to spawn a new space room list task for this space.
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<SpaceRoomListRequest>();
@@ -128,7 +172,11 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                 space_request_sender.clone(),
             )
         );
-        space_room_list_tasks.insert(space_id.clone(), (sender.clone(), join_handle));
+        space_room_list_tasks.insert(space_id.clone(), SpaceRoomListTask {
+            sender: sender.clone(),
+            join_handle,
+            parent_chain: parent_chain.clone(),
+        });
         sender
     };
 
@@ -139,6 +187,13 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
     }
     let mut all_joined_spaces: Vector<SpaceRoom> = initial_spaces;
     if LOG_SPACE_SERVICE_DIFFS { log!("space_service: initial set: {all_joined_spaces:?}"); }
+
+    // The top-level spaces that the user is still in (after the latest batch of diffs).
+    // We maintain this list to better handle the common `Clear` + `Append` case for space lists.
+    let mut known_space_ids: Vec<OwnedRoomId> = all_joined_spaces.iter()
+        .filter(|s| is_still_in_space(s))
+        .map(|s| s.room_id.clone())
+        .collect();
 
 
     loop { tokio::select! {
@@ -162,25 +217,23 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                     }
                 }
                 SpaceRequest::UnsubscribeFromSpaceRoomList { space_id } => {
-                    if let Some((sender, join_handle)) = space_room_list_tasks.remove(&space_id) {
-                        let _ = sender.send(SpaceRoomListRequest::Shutdown);
-                        join_handle.abort();
-                    }
+                    shutdown_space_room_list_tasks(
+                        &mut space_room_list_tasks,
+                        &space_id,
+                        &all_joined_spaces,
+                    );
                 }
                 SpaceRequest::LeaveSpace { space_name_id } => {
                     match space_service.leave_space(space_name_id.room_id()).await {
                         Ok(leave_handle) => {
                             match leave_handle.leave(|_| true).await {
                                 Ok(()) => {
-                                    if let Some((sender, join_handle)) = space_room_list_tasks.remove(space_name_id.room_id()) {
-                                        match sender.send(SpaceRoomListRequest::Shutdown) {
-                                            // If we successfully sent shutdown message, just let the space room list loop task
-                                            // end gracefully on its own in the background.
-                                            Ok(_) => { }
-                                            // If we failed to send the shutdown message, just abort the space room list loop task.
-                                            Err(_) => join_handle.abort(),
-                                        }
-                                    }
+                                    // Leaving a space leaves its subspaces too, so stop all of their tasks.
+                                    shutdown_space_room_list_tasks(
+                                        &mut space_room_list_tasks,
+                                        space_name_id.room_id(),
+                                        &all_joined_spaces,
+                                    );
                                     Cx::post_action(SpaceRoomListAction::LeaveSpaceResult {
                                         space_name_id,
                                         result: Ok(()),
@@ -224,7 +277,9 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
         batch_opt = spaces_diff_stream.next() => {
             let Some(batch) = batch_opt else { break };
             let mut peekable_diffs = batch.into_iter().peekable();
+            let mut was_last_diff_clear = false;
             while let Some(diff) = peekable_diffs.next() {
+                was_last_diff_clear = matches!(diff, VectorDiff::Clear);
                 match diff {
                     VectorDiff::Append { values: new_spaces } => {
                         if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Append {}", new_spaces.len()); }
@@ -283,6 +338,7 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                             update_space(old_space, &changed_space, &client).await;
                         } else {
                             error!("BUG: space_service diff: Set index {index} was out of bounds.");
+                            continue;
                         }
                         all_joined_spaces.set(index, changed_space);
                     }
@@ -327,6 +383,35 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                 }
             }
             if LOG_SPACE_SERVICE_DIFFS { log!("space_service: after batch diff: {all_joined_spaces:?}"); }
+
+            // The common case is that the SDK issues a Clear + Append,
+            // so if a Clear was the last diff, we wait for the append.
+            if !was_last_diff_clear {
+                let removed = known_space_ids.iter()
+                    .filter(|id| !all_joined_spaces.iter()
+                        .any(|s| &s.room_id == *id && is_still_in_space(s))
+                    )
+                    .cloned()
+                    .collect::<Vec<_>>();
+                for space_id in &removed {
+                    shutdown_space_room_list_tasks(
+                        &mut space_room_list_tasks,
+                        space_id,
+                        &all_joined_spaces,
+                    );
+                }
+                if !removed.is_empty() {
+                    // If we stopped a subspace's task, but that subspace is still in another parent space,
+                    // we tell those parents to resubscribe to their child subspaces for the sake of completeness.
+                    for task in space_room_list_tasks.values() {
+                        let _ = task.sender.send(SpaceRoomListRequest::ResubscribeSubspaces);
+                    }
+                }
+                known_space_ids = all_joined_spaces.iter()
+                    .filter(|s| is_still_in_space(s))
+                    .map(|s| s.room_id.clone())
+                    .collect();
+            }
         }
 
         else => {
@@ -649,6 +734,9 @@ async fn space_room_list_loop(
     let mut cached_hash_sets = space_children_to_hash_sets(&all_rooms_in_space);
 
     loop { tokio::select! {
+        // Handles requests first such that a Shutdown takes priority over other updates.
+        biased;
+
         // Handle new requests.
         request_opt = receiver.recv() => {
             let Some(request) = request_opt else { break };
@@ -672,6 +760,16 @@ async fn space_room_list_loop(
                 }
                 SpaceRoomListRequest::Paginate => {
                     paginate_once().await;
+                }
+                SpaceRoomListRequest::ResubscribeSubspaces => {
+                    known_subspaces.clear();
+                    handle_subspaces(
+                        &space_id,
+                        &parent_chain,
+                        &mut known_subspaces,
+                        all_rooms_in_space.iter(),
+                        &request_sender,
+                    );
                 }
                 SpaceRoomListRequest::Shutdown => return,
             }
