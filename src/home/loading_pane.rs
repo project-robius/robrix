@@ -92,9 +92,8 @@ script_mod! {
 /// The error shown when a jumped-to event can't be found.
 /// `noun` is what the search covered, i.e. "room" or "thread".
 fn jump_target_not_found_msg(noun: &str) -> String {
-    format!("Couldn't find that message in this {noun}'s history.\n\n\
-        It may have been deleted, it may be a kind of event that Robrix doesn't display, \
-        or the server may not be able to return it.")
+    format!("Couldn't find that event in this {noun}'s history.\n\n\
+        It may have been deleted, or the homeserver may not be able to return it.")
 }
 
 
