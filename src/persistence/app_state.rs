@@ -14,7 +14,7 @@ const WINDOW_GEOM_STATE_FILE_NAME: &str = "window_geom_state.json";
 pub struct WindowGeomState {
     /// A tuple containing the window's width and height.
     pub inner_size: (f64, f64),
-    /// A tuple containing the window's x and y position.
+    /// A tuple containing the x and y position of the window's top-left corner.
     pub position: (f64, f64),
     /// Maximise fullscreen if true.
     pub is_fullscreen: bool,
@@ -53,7 +53,8 @@ pub fn save_window_state(window_ref: WindowRef, cx: &Cx) -> anyhow::Result<()> {
         })
         .unwrap_or(1.0);
     let inner_size = window_ref.get_inner_size(cx) * layout_to_native;
-    // Position is unaffected by the dpi override, so it's saved as-is.
+    // `get_position` returns physical screen pixels, the same units expected by `configure_window`,
+    // so we don't need to adjust anything w.r.t. the DPI scale factor.
     let position = window_ref.get_position(cx);
     let window_geom = WindowGeomState {
         inner_size: (inner_size.x, inner_size.y),

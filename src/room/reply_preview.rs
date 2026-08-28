@@ -26,7 +26,7 @@ script_mod! {
             fade_end: uniform(1.0)
             fade_enabled: uniform(0.0)
             pixel: fn() {
-                let c = self.image.sample_rt(self.pos * self.scale + self.shift)
+                let c = self.image.sample(self.pos * self.scale + self.shift)
                 let t = clamp((self.pos.y - self.fade_start) / max(self.fade_end - self.fade_start, 0.0001), 0.0, 1.0)
                 let f = 1.0 - t * t * (3.0 - 2.0 * t)
                 return c * mix(1.0, f, self.fade_enabled)
