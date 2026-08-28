@@ -577,8 +577,12 @@ impl RoomsList {
             return;
         }
 
+        // With a sort function active the list isn't in `all_known_rooms_order` at all,
+        // so we have no slot to compute; append and let the next regeneration place it.
         let order = &self.all_known_rooms_order;
-        let rank = order.iter().position(|r| r == &room_id);
+        let rank = self.sort_fn.is_none()
+            .then(|| order.iter().position(|r| r == &room_id))
+            .flatten();
 
         let (displayed_rooms, unread_mentions, unread_messages) = if is_direct {
             (
