@@ -571,10 +571,14 @@ impl SpacesBar {
                     let space_id = joined_space.space_name_id.room_id().clone();
                     let should_display = (self.display_filter)(&joined_space);
                     let replaced = self.all_joined_spaces.insert(space_id.clone(), joined_space);
-                    if replaced.is_none() {
-                        adjust_displayed_spaces(false, should_display, space_id, &mut self.displayed_spaces);
+                    if let Some(old) = replaced.as_ref() {
+                        warning!("Note: re-added joined space {space_id} that already existed.");
+                        // The re-added space carries fresh data, so whether it should show can
+                        // differ from before. Treat it as an update instead of dropping it.
+                        let was_displayed = (self.display_filter)(old);
+                        adjust_displayed_spaces(was_displayed, should_display, space_id, &mut self.displayed_spaces);
                     } else {
-                        error!("BUG: Added joined space {space_id} that already existed");
+                        adjust_displayed_spaces(false, should_display, space_id, &mut self.displayed_spaces);
                     }
                 }
 
