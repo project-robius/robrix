@@ -3178,6 +3178,7 @@ dependencies = [
  "makepad-zune-qoi",
  "rustybuzz",
  "sdfer",
+ "serde",
  "unicode-bidi 0.3.18 (git+https://github.com/kevinaboos/makepad?branch=windows_backend_robustness)",
  "unicode-linebreak",
  "unicode-segmentation 1.12.0 (git+https://github.com/kevinaboos/makepad?branch=windows_backend_robustness)",
@@ -3258,6 +3259,7 @@ version = "1.0.0"
 source = "git+https://github.com/kevinaboos/makepad?branch=windows_backend_robustness#7070e40dfe6bcc5662367184e5f670afde03bd84"
 dependencies = [
  "makepad-live-id-macros",
+ "serde",
 ]
 
 [[package]]
@@ -3471,6 +3473,7 @@ dependencies = [
  "makepad-html",
  "makepad-latex-math",
  "pulldown-cmark 0.12.2",
+ "serde",
  "ttf-parser",
  "unicode-segmentation 1.12.0 (git+https://github.com/kevinaboos/makepad?branch=windows_backend_robustness)",
 ]
