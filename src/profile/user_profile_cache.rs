@@ -33,13 +33,16 @@ pub enum RoomMemberEntry {
     Requested,
     /// The room member info has been successfully loaded from the server.
     Loaded(RoomMember),
+    /// The request completed without member info, e.g. the user isn't in that room.
+    /// Terminal, so we stop re-requesting until the next offline/online transition.
+    Failed,
 }
 impl RoomMemberEntry {
     /// Returns the loaded room member info, if any.
     pub fn loaded(&self) -> Option<&RoomMember> {
         match self {
             RoomMemberEntry::Loaded(member) => Some(member),
-            RoomMemberEntry::Requested => None,
+            RoomMemberEntry::Requested | RoomMemberEntry::Failed => None,
         }
     }
 }
@@ -86,6 +89,12 @@ pub enum UserProfileUpdate {
     },
     /// An update to the user's profile only, without changes to room membership info.
     UserProfileOnly(UserProfile),
+    /// A room-specific lookup completed without member info, so the pending
+    /// entry for that room can be marked terminal instead of blocking forever.
+    RoomMemberFailed {
+        user_id: OwnedUserId,
+        room_id: OwnedRoomId,
+    },
 }
 impl UserProfileUpdate {
     /// Returns the user ID associated with this update.
@@ -95,6 +104,7 @@ impl UserProfileUpdate {
             UserProfileUpdate::Full { new_profile, .. } => &new_profile.user_id,
             UserProfileUpdate::RoomMemberOnly { room_member, .. } => room_member.user_id(),
             UserProfileUpdate::UserProfileOnly(profile) => &profile.user_id,
+            UserProfileUpdate::RoomMemberFailed { user_id, .. } => user_id,
         }
     }
 
@@ -190,6 +200,15 @@ impl UserProfileUpdate {
                             user_profile: new_profile,
                             rooms: BTreeMap::new(),
                         });
+                    }
+                }
+            }
+            UserProfileUpdate::RoomMemberFailed { user_id, room_id } => {
+                if let Some(UserProfileCacheEntry::Loaded { rooms, .. }) = cache.get_mut(&user_id) {
+                    // Never clobber member info that loaded in the meantime.
+                    let member = rooms.entry(room_id).or_insert(RoomMemberEntry::Failed);
+                    if matches!(member, RoomMemberEntry::Requested) {
+                        *member = RoomMemberEntry::Failed;
                     }
                 }
             }

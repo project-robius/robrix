@@ -914,18 +914,22 @@ async fn matrix_worker_task(
                                 if direction == PaginationDirection::Forwards { "end" } else { "start" },
                                 if fully_paginated { "yes" } else { "no" },
                             );
-                            sender.send(TimelineUpdate::PaginationIdle {
+                            if sender.send(TimelineUpdate::PaginationIdle {
                                 fully_paginated,
                                 direction,
-                            }).unwrap();
+                            }).is_err() {
+                                error!("Failed to send pagination result to UI for {timeline_kind}");
+                            }
                             SignalToUI::set_ui_signal();
                         }
                         Err(error) => {
                             error!("Error sending {direction} pagination request for {timeline_kind}: {error:?}");
-                            sender.send(TimelineUpdate::PaginationError {
+                            if sender.send(TimelineUpdate::PaginationError {
                                 error,
                                 direction,
-                            }).unwrap();
+                            }).is_err() {
+                                error!("Failed to send pagination error to UI for {timeline_kind}");
+                            }
                             SignalToUI::set_ui_signal();
                         }
                     }
@@ -946,10 +950,12 @@ async fn matrix_worker_task(
                         Ok(_) => log!("Successfully edited message {timeline_event_item_id:?} in {timeline_kind}."),
                         Err(ref e) => error!("Error editing message {timeline_event_item_id:?} in {timeline_kind}: {e:?}"),
                     }
-                    sender.send(TimelineUpdate::MessageEdited {
+                    if sender.send(TimelineUpdate::MessageEdited {
                         timeline_event_item_id,
                         result,
-                    }).unwrap();
+                    }).is_err() {
+                        error!("Failed to send edit result to UI for {timeline_kind}");
+                    }
                     SignalToUI::set_ui_signal();
                 });
             }
@@ -1435,11 +1441,24 @@ async fn matrix_worker_task(
                         }
                     }
 
+                    // A room lookup that came back without member info still needs a terminal
+                    // state, otherwise its entry sits at `Requested` and blocks every retry.
+                    let room_member_missing = room_id.clone()
+                        .filter(|_| !local_only)
+                        .filter(|_| !matches!(update, Some(UserProfileUpdate::Full { .. })));
+
                     if let Some(upd) = update {
                         // log!("Successfully completed get user profile request: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");
                         enqueue_user_profile_update(upd);
                     } else {
                         log!("Failed to get user profile: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");
+                    }
+
+                    if let Some(room_id) = room_member_missing {
+                        enqueue_user_profile_update(UserProfileUpdate::RoomMemberFailed {
+                            user_id,
+                            room_id,
+                        });
                     }
                 });
             }
@@ -2022,7 +2041,9 @@ async fn matrix_worker_task(
                         }
                     }
                 });
-                subscribers_pinned_events.insert(room_id, subscribe_pinned_events_task);
+                if let Some(old) = subscribers_pinned_events.insert(room_id, subscribe_pinned_events_task) {
+                    old.abort();
+                }
             }
 
             MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {

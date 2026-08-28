@@ -577,6 +577,9 @@ impl RoomsList {
             return;
         }
 
+        let order = &self.all_known_rooms_order;
+        let rank = order.iter().position(|r| r == &room_id);
+
         let (displayed_rooms, unread_mentions, unread_messages) = if is_direct {
             (
                 &mut self.displayed_direct_rooms,
@@ -590,7 +593,16 @@ impl RoomsList {
                 &mut self.displayed_regular_rooms_unread_messages,
             )
         };
-        displayed_rooms.push(room_id);
+        // Displayed rooms follow `all_known_rooms_order`, so count the shown rooms ahead
+        // of this one to find its slot. Appending would misplace a newly-matching room.
+        let index = match rank {
+            Some(rank) => order.iter()
+                .take(rank)
+                .filter(|id| displayed_rooms.contains(id))
+                .count(),
+            None => displayed_rooms.len(),
+        };
+        displayed_rooms.insert(index, room_id);
         *unread_mentions = unread_mentions.saturating_add(num_unread_mentions);
         *unread_messages = unread_messages.saturating_add(num_unread_messages);
     }
@@ -762,6 +774,7 @@ impl RoomsList {
                             warning!("Warning: couldn't find room {room_id} to update its aliases.");
                         }
                     }
+                    self.update_status();
                 }
                 RoomsListUpdate::UpdateRoomAvatar { room_id, room_avatar } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
@@ -872,6 +885,7 @@ impl RoomsList {
                             warning!("Warning: couldn't find room {new_room_name} to update its name.");
                         }
                     }
+                    self.update_status();
                 }
                 RoomsListUpdate::UpdateIsDirect { room_id, is_direct } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {

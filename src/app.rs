@@ -276,8 +276,14 @@ impl MatchEvent for App {
                 Some(LogoutAction::ClearAppState { on_clear_appstate }) =>  {
                     // Clear user profile cache, invited_rooms timeline states
                     clear_all_app_state(cx);
+                    // A verification flow belongs to the account that started it,
+                    // so don't leave its modal up for whoever logs in next.
+                    self.ui.modal(cx, ids!(verification_modal)).close(cx);
                     // Reset all app state to its default.
                     self.app_state = Default::default();
+                    // Push those defaults out too, otherwise the globals and the
+                    // receipt atomic keep serving the previous account's values.
+                    self.app_state.app_prefs.broadcast_all(cx);
                     on_clear_appstate.notify_one();
                     continue;
                 }

@@ -433,6 +433,13 @@ impl MatchEvent for AccountSettings {
                 self.own_device = None;
                 self.verification_state = VerificationState::Unknown;
                 self.account_management_url = AccountManagementUrl::Unknown;
+                // An operation still in flight for the old account would otherwise
+                // leave its spinner up and its input locked for the next one.
+                self.view.widget(cx, ids!(upload_avatar_spinner)).set_visible(cx, false);
+                self.view.widget(cx, ids!(delete_avatar_spinner)).set_visible(cx, false);
+                self.view.widget(cx, ids!(save_name_spinner)).set_visible(cx, false);
+                display_name_input.set_is_read_only(cx, false);
+                display_name_input.set_disabled(cx, false);
                 self.update_verification_banner(cx);
                 continue;
             }

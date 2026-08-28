@@ -210,8 +210,12 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
           ## Snapshot what we compared against, so the push job can detect an AUR
-          ## that moved while the run waited for environment approval.
-          cp aur/PKGBUILD work/PKGBUILD.baseline
+          ## that moved while the run waited for environment approval. All three
+          ## files get overwritten by the push, so a concurrent change to any of
+          ## them has to invalidate this run, not just a change to the PKGBUILD.
+          for f in PKGBUILD .SRCINFO LICENSE; do
+            if [[ -f "aur/$f" ]]; then cp "aur/$f" "work/${f#.}.baseline"; fi
+          done
           {
             echo "### AUR render"
             echo '```'
@@ -227,6 +231,8 @@ jobs:
           path: |
             work/PKGBUILD
             work/PKGBUILD.baseline
+            work/SRCINFO.baseline
+            work/LICENSE.baseline
             work/.SRCINFO
             work/LICENSE
           if-no-files-found: error
@@ -283,8 +289,13 @@ jobs:
 
           ## The AUR may have moved while this run sat waiting for approval; pushing
           ## a render made against the old state would silently revert that work.
-          cmp -s work/PKGBUILD.baseline aur/PKGBUILD \
-            || { echo "::error::the AUR changed since this run rendered. Re-run the workflow against fresh state."; exit 1; }
+          for f in PKGBUILD .SRCINFO LICENSE; do
+            if [[ -f "work/${f#.}.baseline" || -f "aur/$f" ]] \
+               && ! cmp -s "work/${f#.}.baseline" "aur/$f"; then
+              echo "::error::the AUR's $f changed since this run rendered. Re-run the workflow against fresh state."
+              exit 1
+            fi
+          done
           cp work/PKGBUILD work/.SRCINFO work/LICENSE aur/
           ## The AUR hook rejects subdirectories and any root file over 250 KiB.
           [[ -z "$(find aur -mindepth 1 -maxdepth 1 -type d ! -name .git)" ]] || { echo "::error::subdirectory in the AUR checkout"; exit 1; }
