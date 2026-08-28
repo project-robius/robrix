@@ -2037,6 +2037,13 @@ impl RoomScreen {
                     // log!("process_timeline_updates(): room members fetched for room {}", tl.kind.room_id());
                     // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                    // `show_timeline()` read the local member cache before this sync landed, so it
+                    // only got whatever lazy-loading had delivered. Re-read it now that it's complete.
+                    submit_async_request(MatrixRequest::GetRoomMembers {
+                        timeline_kind: tl.kind.clone(),
+                        memberships: matrix_sdk::RoomMemberships::JOIN,
+                        local_only: true,
+                    });
                 }
                 TimelineUpdate::RoomMembersListFetched { members } => {
                     // Store room members directly in TimelineUiState
