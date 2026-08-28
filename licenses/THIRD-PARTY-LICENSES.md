@@ -12,7 +12,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 
 | Crates | License | SPDX |
 |-------:|---------|------|
-| 564 | MIT License | `MIT` |
+| 572 | MIT License | `MIT` |
 | 21 | Apache License 2.0 | `Apache-2.0` |
 | 19 | Unicode License v3 | `Unicode-3.0` |
 | 12 | Mozilla Public License 2.0 | `MPL-2.0` |
@@ -616,30 +616,38 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `windows-sys` | 0.60.2 | MIT OR Apache-2.0 |
 | `windows-sys` | 0.61.1 | MIT OR Apache-2.0 |
 | `windows-targets` | 0.42.2 | MIT OR Apache-2.0 |
+| `windows-targets` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows-targets` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows-targets` | 0.53.4 | MIT OR Apache-2.0 |
 | `windows-threading` | 0.1.0 | MIT OR Apache-2.0 |
 | `windows_aarch64_gnullvm` | 0.42.2 | MIT OR Apache-2.0 |
+| `windows_aarch64_gnullvm` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_aarch64_gnullvm` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows_aarch64_gnullvm` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_aarch64_msvc` | 0.42.2 | MIT OR Apache-2.0 |
+| `windows_aarch64_msvc` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_aarch64_msvc` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows_aarch64_msvc` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_i686_gnu` | 0.42.2 | MIT OR Apache-2.0 |
+| `windows_i686_gnu` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_i686_gnu` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows_i686_gnu` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_i686_gnullvm` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows_i686_gnullvm` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_i686_msvc` | 0.42.2 | MIT OR Apache-2.0 |
+| `windows_i686_msvc` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_i686_msvc` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows_i686_msvc` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_x86_64_gnu` | 0.42.2 | MIT OR Apache-2.0 |
+| `windows_x86_64_gnu` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_x86_64_gnu` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows_x86_64_gnu` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_x86_64_gnullvm` | 0.42.2 | MIT OR Apache-2.0 |
+| `windows_x86_64_gnullvm` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_x86_64_gnullvm` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows_x86_64_gnullvm` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_x86_64_msvc` | 0.42.2 | MIT OR Apache-2.0 |
+| `windows_x86_64_msvc` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_x86_64_msvc` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows_x86_64_msvc` | 0.53.0 | MIT OR Apache-2.0 |
 | `winnow` | 0.7.13 | MIT |
