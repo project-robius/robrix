@@ -30,12 +30,13 @@ depends=(
   'alsa-lib'
   'libpulse'
   'openssl'
-  ## These four are dlopen'd, spawned, or read off disk rather than linked, so no
+  ## These five are dlopen'd, spawned, or read off disk rather than linked, so no
   ## tooling finds them and namcap calls them unneeded. Don't drop them.
   'libglvnd'         ## libEGL.so.1, loaded by Makepad at startup
   'dbus'             ## libdbus-1.so.3, loaded by the file picker
   'xdg-utils'        ## xdg-open, spawned to open links and attachments
   'ca-certificates'  ## /etc/ssl/certs, read at runtime by both TLS stacks
+  'geoclue'          ## org.freedesktop.GeoClue2, used for sharing your location
   'hicolor-icon-theme'
 )
 ## With neither of these the attach and save-as dialogs never open.

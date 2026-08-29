@@ -2798,6 +2798,8 @@ impl RoomScreen {
         portal_list: &PortalListRef,
         loading_pane: &LoadingPaneRef,
     ) {
+        // Jumping isn't the user reading wherever we land, so drop any pending receipt.
+        self.read_receipt_state.cancel_timer(cx);
         let Some(tl) = self.tl_state.as_mut() else { return };
         let max_tl_idx = max_tl_idx.unwrap_or_else(|| tl.items.len());
 
