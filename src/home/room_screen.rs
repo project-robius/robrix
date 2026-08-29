@@ -925,12 +925,16 @@ impl ScriptHook for RoomScreen {
                 tl_state.content_drawn_since_last_update.clear();
                 tl_state.profile_drawn_since_last_update.clear();
                 // The reapply also resets the RoomInputBar, so we need to re-update its state.
-                self.view.room_input_bar(cx, ids!(room_input_bar)).update_room_state(
+                let room_input_bar = self.view.room_input_bar(cx, ids!(room_input_bar));
+                room_input_bar.update_room_state(
                     cx,
                     tl_state.kind.room_id(),
                     tl_state.tombstone_info.as_ref(),
                     tl_state.user_power,
                 );
+                // That doesn't cover the send button, whose `enabled` flag and colors
+                // were reset to the DSL defaults, so restore those too.
+                room_input_bar.update_encryption_state(cx, tl_state.is_encrypted);
                 self.view.redraw(cx);
             }
         });
@@ -2794,6 +2798,8 @@ impl RoomScreen {
         portal_list: &PortalListRef,
         loading_pane: &LoadingPaneRef,
     ) {
+        // Jumping isn't the user reading wherever we land, so drop any pending receipt.
+        self.read_receipt_state.cancel_timer(cx);
         let Some(tl) = self.tl_state.as_mut() else { return };
         let max_tl_idx = max_tl_idx.unwrap_or_else(|| tl.items.len());
 

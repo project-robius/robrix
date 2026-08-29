@@ -248,6 +248,11 @@ pub fn parse_input(text: &str) -> SlashCommandOutcome {
             arg,
             format!("<span data-mx-spoiler>{}</span>", htmlize::escape_text(arg)),
         ),
+        "rainbow" | "rainbowme" if arg.chars().count() > RAINBOW_MAX_CHARS => {
+            return SlashCommandOutcome::Error(format!(
+                "That message is too long to rainbow; the limit is {RAINBOW_MAX_CHARS} characters."
+            ));
+        }
         "rainbow" => RoomMessageEventContent::text_html(arg, rainbow_html(arg)),
         "rainbowme" => RoomMessageEventContent::emote_html(arg, rainbow_html(arg)),
         "shrug" | "tableflip" | "unflip" | "lenny" => {
@@ -317,10 +322,36 @@ fn html_to_plaintext(html: &str) -> String {
     /// Tags we turn into a line break, so "a<br/>b" doesn't come out as "ab".
     const BREAKING_TAGS: &[&str] = &["br", "p", "li", "div", "tr", "blockquote", "h1", "h2", "h3"];
 
+    /// Consumes everything through the closing tag of a raw-text element.
+    fn skip_raw_text(chars: &mut impl Iterator<Item = char>, tag_name: &str) {
+        let close: Vec<char> = format!("</{tag_name}").chars().collect();
+        let mut matched = 0;
+        for ch in chars.by_ref() {
+            let ch = ch.to_ascii_lowercase();
+            if ch == close[matched] {
+                matched += 1;
+                if matched == close.len() {
+                    break;
+                }
+            } else {
+                matched = usize::from(ch == close[0]);
+            }
+        }
+        for ch in chars {
+            if ch == '>' {
+                break;
+            }
+        }
+    }
+
     let mut out = String::with_capacity(html.len());
     let mut tag_name = String::new();
     let mut in_tag = false;
     let mut in_name = false;
+    let mut is_close_tag = false;
+    // Set once the name reads as `<!--`, since a bare '>' doesn't end a comment.
+    let mut in_comment = false;
+    let mut prev = ['\0', '\0'];
     // Set while we're inside a quoted attribute value, where a '>' doesn't end the tag.
     let mut quote: Option<char> = None;
     let mut chars = html.chars().peekable();
@@ -333,10 +364,21 @@ fn html_to_plaintext(html: &str) -> String {
             if starts_tag {
                 in_tag = true;
                 in_name = true;
+                is_close_tag = chars.peek() == Some(&'/');
+                in_comment = false;
+                prev = ['\0', '\0'];
                 tag_name.clear();
             } else {
                 out.push(c);
             }
+            continue;
+        }
+        // A comment runs all the way to "-->".
+        if in_comment {
+            if c == '>' && prev == ['-', '-'] {
+                in_tag = false;
+            }
+            prev = [prev[1], c];
             continue;
         }
         match c {
@@ -347,6 +389,10 @@ fn html_to_plaintext(html: &str) -> String {
                 if BREAKING_TAGS.contains(&tag_name.as_str()) && !out.ends_with('\n') {
                     out.push('\n');
                 }
+                // These hold JS/CSS rather than markup, so their contents aren't body text.
+                if !is_close_tag && matches!(tag_name.as_str(), "script" | "style") {
+                    skip_raw_text(&mut chars, &tag_name);
+                }
             }
             // The name runs from just after the '<' (or '</') up to the first space.
             _ if quote.is_none() && in_name => {
@@ -354,6 +400,7 @@ fn html_to_plaintext(html: &str) -> String {
                     in_name = false;
                 } else if c != '/' {
                     tag_name.push(c.to_ascii_lowercase());
+                    in_comment = tag_name == "!--";
                 }
             }
             _ => {}
@@ -367,6 +414,10 @@ fn html_to_plaintext(html: &str) -> String {
         false => text,
     }
 }
+
+/// Past this, `rainbow_html`'s ~37 bytes of markup per character would push
+/// `formatted_body` over the 64 KiB event limit and the homeserver would reject it.
+const RAINBOW_MAX_CHARS: usize = 1500;
 
 fn rainbow_html(text: &str) -> String {
     // This is borrowed from Element's CIELAB behavior
@@ -673,6 +724,26 @@ mod tests_slash_commands {
         assert!(matches!(from_link, SlashCommandAction::OpenDirectMessage(u) if u == user_id));
         // A link to something that isn't a user is still rejected.
         assert!(error("/dm [A Room](https://matrix.to/#/%23room:server.org)").contains("user ID"));
+    }
+
+    #[test]
+    fn html_fallback_strips_comments_and_raw_text() {
+        // A '>' inside the comment must not end it early.
+        assert_eq!(message("/html <!-- c > d -->visible").body(), "visible");
+        assert_eq!(message("/html <!-- secret -->ok").body(), "ok");
+        // Script/style hold code, not body text.
+        assert_eq!(message("/html <script>alert(1)</script>hi").body(), "hi");
+        assert_eq!(message("/html <style>a{b:c}</style>hi").body(), "hi");
+        assert_eq!(message("/html a<script>x</script>b").body(), "ab");
+    }
+
+    #[test]
+    fn rainbow_rejects_a_message_past_the_event_limit() {
+        let too_long = "a".repeat(RAINBOW_MAX_CHARS + 1);
+        assert!(error(&format!("/rainbow {too_long}")).contains("too long to rainbow"));
+        assert!(error(&format!("/rainbowme {too_long}")).contains("too long to rainbow"));
+        let at_limit = "a".repeat(RAINBOW_MAX_CHARS);
+        assert_eq!(message(&format!("/rainbow {at_limit}")).body(), at_limit);
     }
 
     #[test]
