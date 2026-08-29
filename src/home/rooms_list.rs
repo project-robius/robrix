@@ -674,6 +674,7 @@ impl RoomsList {
     fn handle_rooms_list_updates(&mut self, cx: &mut Cx, _event: &Event, _scope: &mut Scope) {
         let mut num_updates: usize = 0;
         let mut needs_sort = false;
+        let mut searchable_metadata_changed = false;
         while let Some(update) = PENDING_ROOM_UPDATES.pop() {
             num_updates += 1;
             match update {
@@ -735,6 +736,7 @@ impl RoomsList {
                     SignalToUI::set_ui_signal(); // signal the RoomScreen to update itself
                 }
                 RoomsListUpdate::UpdateAliases { room_id, canonical_alias, alt_aliases } => {
+                    searchable_metadata_changed = true;
                     // Aliases affect how room display filters work, so update them.
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         room.canonical_alias = canonical_alias;
@@ -842,6 +844,7 @@ impl RoomsList {
                     }
                 }
                 RoomsListUpdate::UpdateRoomName { new_room_name } => {
+                    searchable_metadata_changed = true;
                     // Broadcast this room name change to the rest of Robrix's UI elements.
                     cx.action(AppStateAction::RoomNameUpdated(new_room_name.clone()));
 
@@ -1119,11 +1122,10 @@ impl RoomsList {
                 }
             }
         }
-        if needs_sort {
-            // Only re-sort if there's no active sort function
-            if self.sort_fn.is_none() {
-                self.update_displayed_rooms(cx, false);
-            }
+        if (needs_sort && self.sort_fn.is_none())
+            || (searchable_metadata_changed && self.display_filter.is_some())
+        {
+            self.update_displayed_rooms(cx, false);
         }
         if num_updates > 0 {
             self.redraw(cx);

@@ -216,6 +216,9 @@ pub fn parse_input(text: &str) -> SlashCommandOutcome {
 
     // Only the emoticons and /leave still make sense with nothing after them.
     let arg = arg.trim();
+    if command.name == "leave" && !arg.is_empty() {
+        return SlashCommandOutcome::Error(format!("Usage: {}", command.usage));
+    }
     if arg.is_empty() && !matches!(
         command.name,
         "shrug" | "tableflip" | "unflip" | "lenny" | "leave",
@@ -351,6 +354,7 @@ fn html_to_plaintext(html: &str) -> String {
     let mut is_close_tag = false;
     // Set once the name reads as `<!--`, since a bare '>' doesn't end a comment.
     let mut in_comment = false;
+    let mut removed_hidden_content = false;
     let mut prev = ['\0', '\0'];
     // Set while we're inside a quoted attribute value, where a '>' doesn't end the tag.
     let mut quote: Option<char> = None;
@@ -391,6 +395,7 @@ fn html_to_plaintext(html: &str) -> String {
                 }
                 // Exclude javascript or CSS content, which is code, not text
                 if !is_close_tag && matches!(tag_name.as_str(), "script" | "style") {
+                    removed_hidden_content = true;
                     skip_raw_text(&mut chars, &tag_name);
                 }
             }
@@ -401,6 +406,7 @@ fn html_to_plaintext(html: &str) -> String {
                 } else if c != '/' {
                     tag_name.push(c.to_ascii_lowercase());
                     in_comment = tag_name == "!--";
+                    removed_hidden_content |= in_comment;
                 }
             }
             _ => {}
@@ -409,15 +415,16 @@ fn html_to_plaintext(html: &str) -> String {
 
     let text = htmlize::unescape(out.trim()).into_owned();
     // All markup and no text (e.g. a lone <img>) would leave nothing at all to show.
-    match text.is_empty() {
-        true => html.to_owned(),
-        false => text,
+    match (text.is_empty(), removed_hidden_content) {
+        (true, false) => html.to_owned(),
+        _ => text,
     }
 }
 
-/// Generating rainbow-formatted text is heavy (37 bytes per char), so we impose a limit
-/// such that the homeserver doesn't reject it for being over the 64 KiB event size limit.
-const RAINBOW_MAX_CHARS: usize = 1500;
+/// A worst-case JSON-escaped character costs 51 bytes across the plain and formatted bodies.
+/// This keeps the generated content below 60 KiB, reserving 4 KiB below Matrix's 64 KiB
+/// complete-event limit. Later relations, signatures, or encryption can add more bytes.
+const RAINBOW_MAX_CHARS: usize = 1200;
 
 fn rainbow_html(text: &str) -> String {
     // This is borrowed from Element's CIELAB behavior
@@ -609,6 +616,8 @@ mod tests_slash_commands {
         assert_eq!(message("/unflip").body(), "┬──┬ ノ( ゜-゜ノ)");
         assert_eq!(message("/lenny").body(), "( ͡° ͜ʖ ͡°)");
         assert!(matches!(parse_input("/leave"), SlashCommandOutcome::Action(_)));
+        assert_eq!(error("/leave now"), "Usage: /leave");
+        assert_eq!(error("/part now"), "Usage: /leave");
     }
 
     #[test]
@@ -735,15 +744,26 @@ mod tests_slash_commands {
         assert_eq!(message("/html <script>alert(1)</script>hi").body(), "hi");
         assert_eq!(message("/html <style>a{b:c}</style>hi").body(), "hi");
         assert_eq!(message("/html a<script>x</script>b").body(), "ab");
+        assert_eq!(message("/html <!-- secret -->").body(), "");
+        assert_eq!(message("/html <script>alert(1)</script>").body(), "");
+        assert_eq!(message("/html <style>a{b:c}</style>").body(), "");
     }
 
     #[test]
-    fn rainbow_rejects_a_message_past_the_event_limit() {
+    fn rainbow_rejects_a_message_past_the_character_limit() {
         let too_long = "a".repeat(RAINBOW_MAX_CHARS + 1);
         assert!(error(&format!("/rainbow {too_long}")).contains("too long to rainbow"));
         assert!(error(&format!("/rainbowme {too_long}")).contains("too long to rainbow"));
         let at_limit = "a".repeat(RAINBOW_MAX_CHARS);
         assert_eq!(message(&format!("/rainbow {at_limit}")).body(), at_limit);
+
+        for command in ["rainbow", "rainbowme"] {
+            for character in ['&', '"', '\0', '\u{1F600}'] {
+                let text = character.to_string().repeat(RAINBOW_MAX_CHARS);
+                let content = message(&format!("/{command} {text}"));
+                assert!(serde_json::to_vec(&content).unwrap().len() < 60 * 1024);
+            }
+        }
     }
 
     #[test]
