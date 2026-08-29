@@ -33,8 +33,10 @@ pub enum RoomMemberEntry {
     Requested,
     /// The room member info has been successfully loaded from the server.
     Loaded(RoomMember),
-    /// The request completed without member info, e.g. the user isn't in that room.
-    /// Terminal, so we stop re-requesting until the next offline/online transition.
+    /// The request completed but didn't return any member info.
+    /// This means that the user isn't in that room, or the lookup failed.
+    ///
+    /// This won't be retried until the next transition from offline --> online.
     Failed,
 }
 impl RoomMemberEntry {
@@ -89,8 +91,7 @@ pub enum UserProfileUpdate {
     },
     /// An update to the user's profile only, without changes to room membership info.
     UserProfileOnly(UserProfile),
-    /// A room-specific lookup completed without member info, so the pending
-    /// entry for that room can be marked terminal instead of blocking forever.
+    /// A room-specific user profile request failed, meaning the user isn't in that room.
     RoomMemberFailed {
         user_id: OwnedUserId,
         room_id: OwnedRoomId,
@@ -205,7 +206,7 @@ impl UserProfileUpdate {
             }
             UserProfileUpdate::RoomMemberFailed { user_id, room_id } => {
                 if let Some(UserProfileCacheEntry::Loaded { rooms, .. }) = cache.get_mut(&user_id) {
-                    // Never clobber member info that loaded in the meantime.
+                    // Don't overwrite actual member profile data that does exist.
                     let member = rooms.entry(room_id).or_insert(RoomMemberEntry::Failed);
                     if matches!(member, RoomMemberEntry::Requested) {
                         *member = RoomMemberEntry::Failed;

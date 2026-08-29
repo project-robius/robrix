@@ -1441,9 +1441,9 @@ async fn matrix_worker_task(
                         }
                     }
 
-                    // A room lookup that came back without member info still needs a terminal
-                    // state, otherwise its entry sits at `Requested` and blocks every retry.
-                    let room_member_missing = room_id.clone()
+                    // Even if we didn't get room-specific member info, we still need to send an error update
+                    // to ensure that the cache entry transitions from Requested to Failed.
+                    let missing_member_room_id = room_id.clone()
                         .filter(|_| !local_only)
                         .filter(|_| !matches!(update, Some(UserProfileUpdate::Full { .. })));
 
@@ -1454,7 +1454,7 @@ async fn matrix_worker_task(
                         log!("Failed to get user profile: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");
                     }
 
-                    if let Some(room_id) = room_member_missing {
+                    if let Some(room_id) = missing_member_room_id {
                         enqueue_user_profile_update(UserProfileUpdate::RoomMemberFailed {
                             user_id,
                             room_id,

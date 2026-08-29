@@ -577,8 +577,8 @@ impl RoomsList {
             return;
         }
 
-        // With a sort function active the list isn't in `all_known_rooms_order` at all,
-        // so we have no slot to compute; append and let the next regeneration place it.
+        // If the sort fn is active, the list's order is different, so we just append it
+        // and let the next regenerate call fix it and put it in the right spot.
         let order = &self.all_known_rooms_order;
         let rank = self.sort_fn.is_none()
             .then(|| order.iter().position(|r| r == &room_id))
@@ -597,8 +597,7 @@ impl RoomsList {
                 &mut self.displayed_regular_rooms_unread_messages,
             )
         };
-        // Displayed rooms follow `all_known_rooms_order`, so count the shown rooms ahead
-        // of this one to find its slot. Appending would misplace a newly-matching room.
+        // Find the right place to insert this new room in the already-ordered list.
         let index = match rank {
             Some(rank) => order.iter()
                 .take(rank)
