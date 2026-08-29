@@ -138,6 +138,9 @@ impl Drop for LoadingPaneState {
 pub struct LoadingPane {
     #[deref] view: View,
     #[rust] state: LoadingPaneState,
+    /// The area we gave key focus to in `start_search()`, so `hide()` can tell
+    /// whether we still hold that focus and should hand it back.
+    #[rust] key_focus_area: Option<Area>,
 }
 
 
@@ -228,7 +231,11 @@ impl LoadingPane {
             request_sender,
         });
         self.visible = true;
-        cx.set_key_focus(self.view.area());
+        // Remember what we focused. Before this pane's first draw its area is still
+        // empty, and `hide()` has to give focus back either way.
+        let area = self.view.area();
+        self.key_focus_area = Some(area);
+        cx.set_key_focus(area);
         self.redraw(cx);
     }
 
@@ -263,9 +270,10 @@ impl LoadingPane {
     /// Hides this pane, which also cancels any search it was showing.
     pub fn hide(&mut self, cx: &mut Cx) {
         self.set_state(cx, LoadingPaneState::None);
-        // if the pane was actually drawn and had key focus, give it back.
-        let area = self.view.area();
-        if !matches!(area, Area::Empty) && cx.has_key_focus(area) {
+        // Give key focus back, but only if we still hold the focus we took.
+        if let Some(area) = self.key_focus_area.take()
+            && cx.has_key_focus(area)
+        {
             cx.revert_key_focus();
         }
         self.visible = false;
