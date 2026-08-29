@@ -449,10 +449,9 @@ pub struct FileUploadModal {
 
     /// Whether the shown preview is a text excerpt, which the file info line mentions.
     #[rust] is_text_preview: bool,
-
     /// The preview page being shown, so a reapply can restore it.
     #[rust] preview_page: LiveId,
-    /// Whether that preview was truncated, so a reapply can restore its notice too.
+    /// Whether the preview was truncated, also so a reapply can restore it.
     #[rust] preview_truncated: bool,
 }
 
@@ -599,7 +598,6 @@ impl FileUploadModal {
         self.label(cx, ids!(empty_attachment_warning_label))
             .set_visible(cx, size == 0);
         self.page_flip(cx, ids!(preview_flip)).set_active_page(cx, self.preview_page);
-        // `show_preview()` isn't re-run on a reapply, so restore its truncation notice here.
         let truncated = self.preview_truncated;
         self.label(cx, ids!(code_truncated_label))
             .set_visible(cx, truncated && self.preview_page == id!(code_text_page));

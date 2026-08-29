@@ -643,8 +643,6 @@ impl Widget for HomeScreen {
                     for room in &mut self.mobile_screen_history {
                         room.update_room_name(new_room_name);
                     }
-                    // Restored when the user closes Settings, so it'd otherwise put
-                    // the pre-rename name back into the rooms list header.
                     self.previous_selection.update_space_name(new_room_name);
                     let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
                     if let Some(view_id) = stack_navigation.destination_view()
