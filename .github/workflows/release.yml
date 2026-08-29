@@ -247,10 +247,12 @@ jobs:
           set -euo pipefail
           TAG="${{ steps.resolve.outputs.tag }}"
           version="${TAG#v}"
-          pkgver="$(packaging/aur/render-pkgbuild.sh --print-pkgver --tag "$TAG")"
           notes="docs/RELEASE_NOTES_${TAG}.md"
           body="${RUNNER_TEMP}/release-body.md"
           if [[ -f "$notes" ]]; then
+            ## Only needed to substitute into the notes, and it hard-fails on a non-`v` tag,
+            ## so don't compute it when there are no notes to render.
+            pkgver="$(packaging/aur/render-pkgbuild.sh --print-pkgver --tag "$TAG")"
             sed -e "s|@VERSION@|${version}|g" -e "s|@PKGVER@|${pkgver}|g" "$notes" > "$body"
             echo "Rendered $notes ($(wc -l < "$body") lines)"
           else

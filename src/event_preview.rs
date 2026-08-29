@@ -611,7 +611,7 @@ pub fn text_preview_of_room_membership_change(
         ),
         StateEventContentChange::Redacted(content) => (&content.membership, None, None),
     };
-    let end = match reason.map(|r| r.trim_end_matches('.')) {
+    let end = match reason.map(|r| r.trim().trim_end_matches('.')).filter(|r| !r.is_empty()) {
         Some(r) if format_as_html => format!(": {}.", htmlize::escape_text(r)),
         Some(r) => format!(": {r}."),
         None => String::from("."),
