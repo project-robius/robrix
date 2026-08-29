@@ -363,6 +363,7 @@ impl MatchEvent for App {
                 if let Some(selected_room) = self.app_state.selected_room.as_mut() {
                     selected_room.update_room_name(new_room_name);
                 }
+                self.app_state.selected_tab.update_space_name(new_room_name);
                 for saved in std::iter::once(&mut self.app_state.saved_dock_state_home)
                     .chain(self.app_state.saved_dock_state_per_space.values_mut())
                 {
