@@ -535,6 +535,8 @@ impl InviteScreen {
             let room_name_id = cx.get_global::<RoomsListRef>()
                 .get_room_name(room_name_id.room_id())
                 .unwrap_or_else(|| room_name_id.clone());
+
+            self.is_loaded = true;
             cx.widget_action(self.widget_uid(), RoomsListAction::InviteAccepted { room_name_id });
             return;
         }
