@@ -250,7 +250,7 @@ pub fn parse_input(text: &str) -> SlashCommandOutcome {
         ),
         "rainbow" | "rainbowme" if arg.chars().count() > RAINBOW_MAX_CHARS => {
             return SlashCommandOutcome::Error(format!(
-                "That message is too long to rainbow; the limit is {RAINBOW_MAX_CHARS} characters."
+                "Your message is too long to rainbow; the limit is {RAINBOW_MAX_CHARS} characters."
             ));
         }
         "rainbow" => RoomMessageEventContent::text_html(arg, rainbow_html(arg)),
@@ -322,7 +322,7 @@ fn html_to_plaintext(html: &str) -> String {
     /// Tags we turn into a line break, so "a<br/>b" doesn't come out as "ab".
     const BREAKING_TAGS: &[&str] = &["br", "p", "li", "div", "tr", "blockquote", "h1", "h2", "h3"];
 
-    /// Consumes everything through the closing tag of a raw-text element.
+    /// Advances the iterator through the corresponding closing tag.
     fn skip_raw_text(chars: &mut impl Iterator<Item = char>, tag_name: &str) {
         let close: Vec<char> = format!("</{tag_name}").chars().collect();
         let mut matched = 0;
@@ -389,7 +389,7 @@ fn html_to_plaintext(html: &str) -> String {
                 if BREAKING_TAGS.contains(&tag_name.as_str()) && !out.ends_with('\n') {
                     out.push('\n');
                 }
-                // These hold JS/CSS rather than markup, so their contents aren't body text.
+                // Exclude javascript or CSS content, which is code, not text
                 if !is_close_tag && matches!(tag_name.as_str(), "script" | "style") {
                     skip_raw_text(&mut chars, &tag_name);
                 }
@@ -415,8 +415,8 @@ fn html_to_plaintext(html: &str) -> String {
     }
 }
 
-/// Past this, `rainbow_html`'s ~37 bytes of markup per character would push
-/// `formatted_body` over the 64 KiB event limit and the homeserver would reject it.
+/// Generating rainbow-formatted text is heavy (37 bytes per char), so we impose a limit
+/// such that the homeserver doesn't reject it for being over the 64 KiB event size limit.
 const RAINBOW_MAX_CHARS: usize = 1500;
 
 fn rainbow_html(text: &str) -> String {
