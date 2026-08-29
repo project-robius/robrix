@@ -33,13 +33,18 @@ pub enum RoomMemberEntry {
     Requested,
     /// The room member info has been successfully loaded from the server.
     Loaded(RoomMember),
+    /// The request completed but didn't return any member info.
+    /// This means that the user isn't in that room, or the lookup failed.
+    ///
+    /// This won't be retried until the next transition from offline --> online.
+    Failed,
 }
 impl RoomMemberEntry {
     /// Returns the loaded room member info, if any.
     pub fn loaded(&self) -> Option<&RoomMember> {
         match self {
             RoomMemberEntry::Loaded(member) => Some(member),
-            RoomMemberEntry::Requested => None,
+            RoomMemberEntry::Requested | RoomMemberEntry::Failed => None,
         }
     }
 }
@@ -86,6 +91,11 @@ pub enum UserProfileUpdate {
     },
     /// An update to the user's profile only, without changes to room membership info.
     UserProfileOnly(UserProfile),
+    /// A room-specific user profile request failed, meaning the user isn't in that room.
+    RoomMemberFailed {
+        user_id: OwnedUserId,
+        room_id: OwnedRoomId,
+    },
 }
 impl UserProfileUpdate {
     /// Returns the user ID associated with this update.
@@ -95,6 +105,7 @@ impl UserProfileUpdate {
             UserProfileUpdate::Full { new_profile, .. } => &new_profile.user_id,
             UserProfileUpdate::RoomMemberOnly { room_member, .. } => room_member.user_id(),
             UserProfileUpdate::UserProfileOnly(profile) => &profile.user_id,
+            UserProfileUpdate::RoomMemberFailed { user_id, .. } => user_id,
         }
     }
 
@@ -190,6 +201,15 @@ impl UserProfileUpdate {
                             user_profile: new_profile,
                             rooms: BTreeMap::new(),
                         });
+                    }
+                }
+            }
+            UserProfileUpdate::RoomMemberFailed { user_id, room_id } => {
+                if let Some(UserProfileCacheEntry::Loaded { rooms, .. }) = cache.get_mut(&user_id) {
+                    // Don't overwrite actual member profile data that does exist.
+                    let member = rooms.entry(room_id).or_insert(RoomMemberEntry::Failed);
+                    if matches!(member, RoomMemberEntry::Requested) {
+                        *member = RoomMemberEntry::Failed;
                     }
                 }
             }
@@ -340,4 +360,78 @@ pub fn clear_user_profile_cache(_cx: &mut Cx) {
     USER_PROFILE_CACHE.with_borrow_mut(|cache| {
         cache.clear();
     });
+}
+
+
+#[cfg(test)]
+mod tests_room_member_entry {
+    use super::*;
+    use matrix_sdk::ruma::{room_id, user_id};
+
+    fn loaded_entry(rooms: BTreeMap<OwnedRoomId, RoomMemberEntry>) -> UserProfileCacheEntry {
+        UserProfileCacheEntry::Loaded {
+            user_profile: UserProfile {
+                user_id: user_id!("@alice:matrix.org").to_owned(),
+                username: Some("Alice".into()),
+                avatar_state: AvatarState::Unknown,
+            },
+            rooms,
+        }
+    }
+
+    fn apply_failed(cache: &mut BTreeMap<OwnedUserId, UserProfileCacheEntry>) {
+        UserProfileUpdate::RoomMemberFailed {
+            user_id: user_id!("@alice:matrix.org").to_owned(),
+            room_id: room_id!("!room:matrix.org").to_owned(),
+        }.apply_to_cache(cache);
+    }
+
+    fn room_entry(cache: &BTreeMap<OwnedUserId, UserProfileCacheEntry>) -> Option<&RoomMemberEntry> {
+        match cache.get(user_id!("@alice:matrix.org"))? {
+            UserProfileCacheEntry::Loaded { rooms, .. } => rooms.get(room_id!("!room:matrix.org")),
+            UserProfileCacheEntry::Requested => None,
+        }
+    }
+
+    #[test]
+    fn pending_room_entry_becomes_failed() {
+        let mut rooms = BTreeMap::new();
+        rooms.insert(room_id!("!room:matrix.org").to_owned(), RoomMemberEntry::Requested);
+        let mut cache = BTreeMap::new();
+        cache.insert(user_id!("@alice:matrix.org").to_owned(), loaded_entry(rooms));
+
+        apply_failed(&mut cache);
+        assert!(matches!(room_entry(&cache), Some(RoomMemberEntry::Failed)));
+    }
+
+    #[test]
+    fn missing_room_entry_is_inserted_as_failed() {
+        let mut cache = BTreeMap::new();
+        cache.insert(user_id!("@alice:matrix.org").to_owned(), loaded_entry(BTreeMap::new()));
+
+        apply_failed(&mut cache);
+        assert!(matches!(room_entry(&cache), Some(RoomMemberEntry::Failed)));
+    }
+
+    #[test]
+    fn failure_for_an_uncached_user_is_ignored() {
+        let mut cache = BTreeMap::new();
+        apply_failed(&mut cache);
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn a_still_pending_account_wide_entry_is_left_alone() {
+        let mut cache = BTreeMap::new();
+        cache.insert(user_id!("@alice:matrix.org").to_owned(), UserProfileCacheEntry::Requested);
+
+        apply_failed(&mut cache);
+        assert!(matches!(cache.get(user_id!("@alice:matrix.org")), Some(UserProfileCacheEntry::Requested)));
+    }
+
+    #[test]
+    fn failed_is_not_a_loaded_member() {
+        assert!(RoomMemberEntry::Failed.loaded().is_none());
+        assert!(RoomMemberEntry::Requested.loaded().is_none());
+    }
 }

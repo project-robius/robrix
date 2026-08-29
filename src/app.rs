@@ -274,10 +274,13 @@ impl MatchEvent for App {
                     continue;
                 }
                 Some(LogoutAction::ClearAppState { on_clear_appstate }) =>  {
-                    // Clear user profile cache, invited_rooms timeline states
+                    // Clear and reset all app state to its default.
                     clear_all_app_state(cx);
-                    // Reset all app state to its default.
+                    self.ui.modal(cx, ids!(verification_modal)).close(cx);
                     self.app_state = Default::default();
+                    // We also need to broadcast those default values out,
+                    // such that all other widgets can be reset to their default state.
+                    self.app_state.app_prefs.broadcast_all(cx);
                     on_clear_appstate.notify_one();
                     continue;
                 }

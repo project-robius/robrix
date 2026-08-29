@@ -577,6 +577,13 @@ impl RoomsList {
             return;
         }
 
+        // If the sort fn is active, the list's order is different, so we just append it
+        // and let the next regenerate call fix it and put it in the right spot.
+        let order = &self.all_known_rooms_order;
+        let rank = self.sort_fn.is_none()
+            .then(|| order.iter().position(|r| r == &room_id))
+            .flatten();
+
         let (displayed_rooms, unread_mentions, unread_messages) = if is_direct {
             (
                 &mut self.displayed_direct_rooms,
@@ -590,7 +597,15 @@ impl RoomsList {
                 &mut self.displayed_regular_rooms_unread_messages,
             )
         };
-        displayed_rooms.push(room_id);
+        // Find the right place to insert this new room in the already-ordered list.
+        let index = match rank {
+            Some(rank) => order.iter()
+                .take(rank)
+                .filter(|id| displayed_rooms.contains(id))
+                .count(),
+            None => displayed_rooms.len(),
+        };
+        displayed_rooms.insert(index, room_id);
         *unread_mentions = unread_mentions.saturating_add(num_unread_mentions);
         *unread_messages = unread_messages.saturating_add(num_unread_messages);
     }
@@ -762,6 +777,7 @@ impl RoomsList {
                             warning!("Warning: couldn't find room {room_id} to update its aliases.");
                         }
                     }
+                    self.update_status();
                 }
                 RoomsListUpdate::UpdateRoomAvatar { room_id, room_avatar } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
@@ -872,6 +888,7 @@ impl RoomsList {
                             warning!("Warning: couldn't find room {new_room_name} to update its name.");
                         }
                     }
+                    self.update_status();
                 }
                 RoomsListUpdate::UpdateIsDirect { room_id, is_direct } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {

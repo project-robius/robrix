@@ -571,11 +571,10 @@ impl SpacesBar {
                     let space_id = joined_space.space_name_id.room_id().clone();
                     let should_display = (self.display_filter)(&joined_space);
                     let replaced = self.all_joined_spaces.insert(space_id.clone(), joined_space);
-                    if replaced.is_none() {
-                        adjust_displayed_spaces(false, should_display, space_id, &mut self.displayed_spaces);
-                    } else {
-                        error!("BUG: Added joined space {space_id} that already existed");
-                    }
+                    // if we got a new space that has the same ID as one that already existed,
+                    // that just means its data was updated and we need to re-evaluate whether to display it.
+                    let was_displayed = replaced.is_some_and(|old| { (self.display_filter)(&old) });
+                    adjust_displayed_spaces(was_displayed, should_display, space_id, &mut self.displayed_spaces);
                 }
 
                 SpacesListUpdate::UpdateCanonicalAlias { space_id, new_canonical_alias } => {

@@ -767,14 +767,17 @@ struct ReadReceiptState {
 
 impl ReadReceiptState {
     /// Starts the read receipt timer for a direct user interaction.
+    ///
+    /// If a timer was already running, it gets restarted because that means
+    /// the scrolling action has continued.
     fn start_timer(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
-        if !self.timer.is_empty() && self.from_user_input {
-            return;
-        }
+        let was_already_pending = !self.timer.is_empty() && self.from_user_input;
         cx.stop_timer(self.timer);
         self.timer = cx.start_timeout(READ_RECEIPT_SEND_DELAY);
         self.from_user_input = true;
-        self.user_scroll_travel_at_timer_start = portal_list.user_scroll_travel();
+        if !was_already_pending {
+            self.user_scroll_travel_at_timer_start = portal_list.user_scroll_travel();
+        }
     }
 
     /// Cancels any pending read receipt send.
@@ -1123,7 +1126,7 @@ impl Widget for RoomScreen {
                 if let Some(TimelineEndpointsRecreated { room_id }) = action.downcast_ref()
                     && self.timeline_kind.as_ref().is_some_and(|k| k.room_id() == room_id)
                 {
-                    self.reconnect_timeline_endpoints(cx);
+                    self.reconnect_timeline_endpoints(cx, true);
                     continue;
                 }
 
@@ -2011,6 +2014,13 @@ impl RoomScreen {
                 }
                 TimelineUpdate::RoomMembersSynced => {
                     // log!("process_timeline_updates(): room members fetched for room {}", tl.kind.room_id());
+                    // Now that the full room members list has been synced in the background,
+                    // we need to actually get the new list for use in this room screen.
+                    submit_async_request(MatrixRequest::GetRoomMembers {
+                        timeline_kind: tl.kind.clone(),
+                        memberships: matrix_sdk::RoomMemberships::JOIN,
+                        local_only: true,
+                    });
                     // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
@@ -3001,18 +3011,7 @@ impl RoomScreen {
             // Only main room timelines can subscribe to typing notices, pinned events,
             // and read receipt changes (the SDK has no per-thread unread counts).
             if matches!(tl_state.kind, TimelineKind::MainRoom { .. }) {
-                submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
-                    room_id: room_id.clone(),
-                    subscribe: true,
-                });
-                submit_async_request(MatrixRequest::SubscribeToTypingNotices {
-                    room_id: room_id.clone(),
-                    subscribe: true,
-                });
-                submit_async_request(MatrixRequest::SubscribeToPinnedEvents {
-                    room_id: room_id.clone(),
-                    subscribe: true,
-                });
+                subscribe_to_room_updates(&tl_state.kind, true);
                 // The matrix spec says that opening a room should clear the marked-as-unread flag.
                 if cx.global::<AppPreferencesGlobal>().0.mark_as_read_behavior != MarkAsReadBehavior::Manual {
                     submit_async_request(MatrixRequest::SetUnreadFlag {
@@ -3041,17 +3040,18 @@ impl RoomScreen {
         // Now that we have restored the TimelineUiState into this RoomScreen widget,
         // we can proceed to processing pending background updates.
         // We first need to check that we have the latest endpoints, to get the latest updates.
-        self.reconnect_timeline_endpoints(cx);
+        self.reconnect_timeline_endpoints(cx, false);
         self.process_timeline_updates(cx, &list);
 
         self.redraw(cx);
     }
 
-    /// Sets this timeline's endpoints to the latest one created by the backend task, if it has new ones.
+    /// Sets this timeline's endpoints to the latest ones created by the backend task,
+    /// if there are any new ones.
     ///
     /// `take_timeline_endpoints()` only returns `Some` when a fresh unclaimed channel exists,
     /// so it's safe to call this repeatedly as a check.
-    fn reconnect_timeline_endpoints(&mut self, cx: &mut Cx) {
+    fn reconnect_timeline_endpoints(&mut self, cx: &mut Cx, resubscribe: bool) {
         let Some(tl) = self.tl_state.as_mut() else { return };
         // An invalidated state means we destructed the timeline on purpose
         // (e.g., for a left/banned room or a closed thread),
@@ -3106,6 +3106,12 @@ impl RoomScreen {
         tl.request_sender.send_if_modified(|req| !std::mem::replace(&mut req.is_timeline_open, true));
         let reconnected_sender = tl.request_sender.clone();
         let timeline_kind = tl.kind.clone();
+        // Re-subscribe to things needed for this main room timeline to be properly updated
+        // while it's open. The previously-created async tasks for these things are either dead
+        // or still running but with the old channel endpoints, so they're useless either way.
+        if resubscribe {
+            subscribe_to_room_updates(&timeline_kind, true);
+        }
         let loading_pane = self.loading_pane(cx, ids!(loading_pane));
         // Also update the loading pane's timeline request sender.
         loading_pane.set_timeline_request_sender(reconnected_sender);
@@ -3150,20 +3156,7 @@ impl RoomScreen {
         //   when a given room isn't visible.
         // * Unsubscribe from updates to this room's pinned events, for the same reason.
         // * Unsubscribe from updates to our own user's read receipts, for the same reason.
-        if matches!(timeline_kind, TimelineKind::MainRoom { .. }) {
-            submit_async_request(MatrixRequest::SubscribeToTypingNotices {
-                room_id: timeline_kind.room_id().clone(),
-                subscribe: false,
-            });
-            submit_async_request(MatrixRequest::SubscribeToPinnedEvents {
-                room_id: timeline_kind.room_id().clone(),
-                subscribe: false,
-            });
-            submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
-                room_id: timeline_kind.room_id().clone(),
-                subscribe: false,
-            });
-        }
+        subscribe_to_room_updates(&timeline_kind, false);
     }
 
     /// Removes the current room's visual UI state from this widget
@@ -3453,6 +3446,30 @@ impl RoomScreenRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.hide_displayed_room(cx);
     }
+}
+
+
+/// Subscribes to or unsubscribes from room-level updates that are needed
+/// while a main room's timeline is open and being shown.
+///
+/// Does nothing for thread-specific timelines.
+fn subscribe_to_room_updates(timeline_kind: &TimelineKind, subscribe: bool) {
+    if !matches!(timeline_kind, TimelineKind::MainRoom { .. }) {
+        return;
+    }
+    let room_id = timeline_kind.room_id();
+    submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
+        room_id: room_id.clone(),
+        subscribe,
+    });
+    submit_async_request(MatrixRequest::SubscribeToTypingNotices {
+        room_id: room_id.clone(),
+        subscribe,
+    });
+    submit_async_request(MatrixRequest::SubscribeToPinnedEvents {
+        room_id: room_id.clone(),
+        subscribe,
+    });
 }
 
 
