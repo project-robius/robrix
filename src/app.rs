@@ -186,10 +186,11 @@ impl MatchEvent for App {
         // We silence a few overly noisy SDK logs:
         // * `matrix_sdk::latest_events` emits a per-room "Timer ... finished" info log
         // * the timeline warns about "No avatar changes to update" on every user's display name change.
+        // * the event cache warning about "missing target event id from the redaction event".
         // Note that this can still be overridden by setting RUST_LOG, e.g. `RUST_LOG=matrix_sdk::latest_events=info`
         let filter = tracing_subscriber::EnvFilter::try_from_default_env()
             .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(
-                "info,matrix_sdk::latest_events=warn,matrix_sdk_ui::timeline::tasks=error",
+                "info,matrix_sdk::latest_events=warn,matrix_sdk_ui::timeline::tasks=error,matrix_sdk::event_cache::caches::room::state=error",
             ));
         let _ = tracing_subscriber::fmt()
             .with_env_filter(filter)
