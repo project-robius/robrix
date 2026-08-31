@@ -67,6 +67,16 @@ const READ_RECEIPT_SEND_DELAY: f64 = 0.5;
 /// The timeout/delay between pagination finishing and us showing an error.
 const JUMP_SEARCH_NOT_FOUND_DELAY: f64 = 2.0;
 
+/// The limit of automatic back pagination rounds before we give up。
+///
+/// Basically this is needed to avoid getting rate limited by the homeserver,
+/// as the matrix sdk can repeatedly back paginate a bunch of redacted events
+/// that don't actually add any items to our timeline, but we're still scrolled
+/// all the way up to the top of the timeline so we keep endlessly and instantly
+/// requesting more back pagination.
+const MAX_BACKWARDS_PAGINATIONS_WITHOUT_PROGRESS: usize = 5;
+
+
 static UNNAMED_ROOM: &str = "Unnamed Room";
 
 /// #FFF4E5
@@ -1613,6 +1623,7 @@ impl Widget for RoomScreen {
             // until we have enough events items to fill the viewport.
             if !tl_state.fully_paginated
                 && !tl_state.is_paginating
+                && !tl_state.is_backwards_pagination_stalled()
                 && !list.is_filling_viewport()
             {
                 log!("Automatically paginating timeline to fill viewport for room {:?}", self.room_name_id);
@@ -1747,6 +1758,7 @@ impl RoomScreen {
                     // Upon first showing a timeline, assume it's not fully paginated nor currently paginating.
                     tl.fully_paginated = false;
                     tl.is_paginating = false;
+                    tl.num_backwards_pagination_rounds_without_progress = 0;
                     // Set the portal list to the very bottom of the timeline.
                     portal_list.set_first_id_and_scroll(initial_items.len().saturating_sub(1), 0.0);
                     portal_list.set_tail_range(true);
@@ -1860,7 +1872,29 @@ impl RoomScreen {
                         // go ahead and fetch more items proactively so that the user
                         // doesn't have to do some kind of annoying scroll-up gesture again.
                         if has_more_history && portal_list.first_id() <= 2 {
-                            should_continue_backwards_pagination = true;
+                            // If we're searching for an older event, we need to keep paginating.
+                            if loading_pane.is_searching() {
+                                should_continue_backwards_pagination = true;
+                            }
+                            // Otherwise, we should only continue if we're actually getting more events.
+                            // If we're not, we're going to get rate limited if we keep auto-requesting
+                            // more back paginations instantly.
+                            else {
+                                let did_add_older_events = {
+                                    let oldest_before = tl.items.iter().find_map(|i| i.as_event()?.event_id());
+                                    let oldest_after = new_items.iter().find_map(|i| i.as_event()?.event_id());
+                                    oldest_after != oldest_before
+                                };
+                                if did_add_older_events {
+                                    tl.num_backwards_pagination_rounds_without_progress = 0;
+                                    should_continue_backwards_pagination = true;
+                                } else if !tl.is_backwards_pagination_stalled() {
+                                    tl.num_backwards_pagination_rounds_without_progress += 1;
+                                    should_continue_backwards_pagination = true;
+                                } else {
+                                    warning!("Giving up on automatic back-pagination for {}.", tl.kind.room_id());
+                                }
+                            }
                         }
                     } else {
                         tl.content_drawn_since_last_update.remove(changed_indices.clone());
@@ -1947,6 +1981,12 @@ impl RoomScreen {
                     // We could automatically retry here after a failure, but it's not
                     // really that valuable when the user can just try to scroll again.
                     tl.pending_reached_start = false;
+                    // If we got an error from this round of back pagination (and we weren't searching for an older event),
+                    // back off to avoid getting rate limited.
+                    if direction == PaginationDirection::Backwards && !loading_pane.is_searching() {
+                        tl.num_backwards_pagination_rounds_without_progress =
+                            tl.num_backwards_pagination_rounds_without_progress.saturating_add(1);
+                    }
                     done_loading = true;
                     // Start the timeout timer upon a failure to back-paginate more.
                     if direction == PaginationDirection::Backwards && loading_pane.is_searching() {
@@ -1968,7 +2008,9 @@ impl RoomScreen {
                         } else {
                             if tl.pending_reached_start || portal_list.first_id() <= 2 {
                                 tl.pending_reached_start = false;
-                                should_continue_backwards_pagination = true;
+                                if !tl.is_backwards_pagination_stalled() {
+                                    should_continue_backwards_pagination = true;
+                                }
                             }
                             // A search keeps paginating wherever the user is scrolled, since a
                             // round can add no items at all if the timeline filters them all out.
@@ -2938,6 +2980,7 @@ impl RoomScreen {
                     saved_state: SavedState::default(),
                     message_highlight_animation_state: MessageHighlightAnimationState::default(),
                     pending_reached_start: false,
+                    num_backwards_pagination_rounds_without_progress: 0,
                     last_sent_read_receipt: None,
                     last_sent_fully_read: None,
                     tombstone_info,
@@ -3424,6 +3467,8 @@ impl RoomScreen {
             tl.pending_reached_start = true;
             return;
         }
+        // If the user manually scrolled up again, they want back pagination to occur.
+        tl.num_backwards_pagination_rounds_without_progress = 0;
 
         log!("Timeline hit first item, sending back pagination request for room {}", tl.kind);
         tl.is_paginating = true;
@@ -3901,6 +3946,13 @@ struct TimelineUiState {
     /// pagination request was already in flight.
     pending_reached_start: bool,
 
+    /// Consecutive backwards pages that added nothing displayable (see
+    /// [`MAX_BACKWARDS_PAGINATIONS_WITHOUT_PROGRESS`]). Reset on real progress, on a
+    /// timeline rebuild, or when the user scrolls back to the top. We keep it across a
+    /// room hide/show on purpose, so a poisoned room doesn't just re-storm on reopen —
+    /// scrolling back to the top is how you retry.
+    num_backwards_pagination_rounds_without_progress: usize,
+
     /// The last event we sent a `Read`/`ReadPrivate` receipt for (to avoid re-sending).
     last_sent_read_receipt: Option<OwnedEventId>,
     /// The last event we sent a `FullyRead` receipt for (to avoid re-sending).
@@ -3916,6 +3968,15 @@ struct TimelineUiState {
     /// Reply previews the user has eaxpanded that should be shown in full.
     /// Collapsed reply previews (their default state) are absent from this set.
     expanded_reply_previews: HashSet<TimelineEventItemId>,
+}
+
+impl TimelineUiState {
+    /// Whether we've given up automatic back pagination.
+    ///
+    /// This happens after we've done multiple back pagination rounds without getting any new events.
+    fn is_backwards_pagination_stalled(&self) -> bool {
+        self.num_backwards_pagination_rounds_without_progress >= MAX_BACKWARDS_PAGINATIONS_WITHOUT_PROGRESS
+    }
 }
 
 #[derive(Default, Debug)]
