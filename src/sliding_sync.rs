@@ -3047,6 +3047,7 @@ struct RoomListServiceRoomInfo {
     room_id: OwnedRoomId,
     state: RoomState,
     is_direct: bool,
+    is_space: bool,
     is_marked_unread: bool,
     is_tombstoned: bool,
     is_encrypted: bool,
@@ -3085,7 +3086,7 @@ impl RoomListServiceRoomInfo {
             async {
                 if room.state() != RoomState::Invited { return None; }
                 let invite = room.invite_details().await
-                    .inspect_err(|e| error!("Couldn't obtain who invited us to room {}: {e}", room.room_id()))
+                    .inspect_err(|e| warning!("Couldn't obtain who invited us to room {}: {e}", room.room_id()))
                     .ok()?;
                 let inviter = invite.inviter;
                 Some(InviterInfo {
@@ -3100,6 +3101,7 @@ impl RoomListServiceRoomInfo {
             room_id: room.room_id().to_owned(),
             state: room.state(),
             is_direct: is_direct.unwrap_or(false),
+            is_space: room.is_space(),
             is_marked_unread: room.is_marked_unread(),
             is_tombstoned: room.is_tombstoned(),
             is_encrypted: room.encryption_state().is_encrypted(),
@@ -3528,12 +3530,16 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
         all_rooms_list.entries_with_dynamic_adapters(usize::MAX);
 
     // By default, our rooms list should only show rooms that are:
-    // 1. not spaces (those are handled by the SpaceService),
+    // 1. not spaces, except invited ones (joined spaces are handled by the SpaceService,
+    //    which can only ever see spaces we've already joined),
     // 2. not left (clients don't typically show rooms that the user has already left),
     // 3. not outdated (don't show tombstoned rooms whose successor is already joined).
     room_list_dynamic_entries_controller.set_filter(Box::new(
         filters::new_filter_all(vec![
-            Box::new(filters::new_filter_not(Box::new(filters::new_filter_space()))),
+            Box::new(filters::new_filter_any(vec![
+                Box::new(filters::new_filter_not(Box::new(filters::new_filter_space()))),
+                Box::new(filters::new_filter_invite()),
+            ])),
             Box::new(filters::new_filter_non_left()),
             Box::new(filters::new_filter_deduplicate_versions()),
         ])
@@ -3870,6 +3876,15 @@ async fn update_room(
             });
         }
 
+        // An invited room will often arrive before we get its room creation event,
+        // so we can't always know whether it's a space up front; we have to check on every update.
+        if old_room.is_space != new_room.is_space {
+            enqueue_rooms_list_update(RoomsListUpdate::UpdateIsSpace {
+                room_id: new_room_id.clone(),
+                is_space: new_room.is_space,
+            });
+        }
+
         // If we know anything new about the inviter, send it to the rooms list.
         if old_room.inviter_info != new_room.inviter_info
             && let Some(inviter_info) = new_room.inviter_info.clone()
@@ -4015,6 +4030,9 @@ fn remove_room(room: &RoomListServiceRoomInfo) {
         RoomsListUpdate::RemoveRoom {
             room_id: room.room_id.clone(),
             new_state: room.state,
+            // Re-obtain whether this room is a space,
+            // since it may have changed since the last sync.
+            is_space: room.room.is_space(),
         }
     );
 }
@@ -4057,6 +4075,7 @@ async fn add_new_room(
                 invite_state: Default::default(),
                 is_selected: false,
                 is_direct: new_room.is_direct,
+                is_space: new_room.is_space,
             }));
             Cx::post_action(AppStateAction::RoomLoadedSuccessfully {
                 room_name_id,
@@ -4066,6 +4085,8 @@ async fn add_new_room(
             spawn_fetch_room_avatar(new_room);
             return Ok(());
         }
+        // Joined spaces are handled by the SpaceService, so don't handle them here.
+        RoomState::Joined if new_room.is_space => return Ok(()),
         RoomState::Joined => { } // Fall through to adding the joined room below.
     }
 

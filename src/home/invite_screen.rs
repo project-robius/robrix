@@ -10,7 +10,7 @@ use matrix_sdk::{RoomState, ruma::OwnedRoomId};
 
 use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::AvatarWidgetRefExt, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
 
-use super::rooms_list::{InviteState, InviterInfo, RoomsListAction, get_invited_rooms, set_invite_state};
+use super::rooms_list::{AcceptedInviteKind, InviteState, InviterInfo, RoomsListAction, get_invited_rooms, set_invite_state};
 
 
 script_mod! {
@@ -243,6 +243,11 @@ pub enum InviteScreenAction {
         room_id: OwnedRoomId,
         inviter_info: InviterInfo,
     },
+    /// We've determined whether this invite is for a space.
+    IsSpace {
+        room_id: OwnedRoomId,
+        is_space: bool,
+    },
 }
 
 
@@ -257,6 +262,7 @@ pub struct InviteScreen {
     #[rust] room_name_id: Option<RoomNameId>,
     #[rust] is_loaded: bool,
     #[rust] all_rooms_loaded: bool,
+    #[rust] is_space: bool,
 }
 
 impl Widget for InviteScreen {
@@ -297,6 +303,13 @@ impl Widget for InviteScreen {
                         if let Some(info) = self.info.as_mut() {
                             info.inviter = Some(inviter_info.clone());
                         }
+                        self.redraw(cx);
+                    }
+                    continue;
+                }
+                if let Some(InviteScreenAction::IsSpace { room_id, is_space }) = action.downcast_ref() {
+                    if self.room_name_id.as_ref().is_some_and(|r| r.room_id() == room_id) {
+                        self.is_space = *is_space;
                         self.redraw(cx);
                     }
                     continue;
@@ -467,12 +480,13 @@ impl Widget for InviteScreen {
         // Third, set the buttons' text based on the invite state.
         let cancel_button = self.view.button(cx, ids!(cancel_button));
         let accept_button = self.view.button(cx, ids!(accept_button));
+        let join_text = match self.is_space { true => "Join Space", false => "Join Room" };
         match self.invite_state {
             InviteState::WaitingOnUserInput => {
                 cancel_button.set_enabled(cx, true);
                 accept_button.set_enabled(cx, true);
                 cancel_button.set_text(cx, "Reject Invite");
-                accept_button.set_text(cx, "Join Room");
+                accept_button.set_text(cx, join_text);
             }
             InviteState::WaitingForJoinResult => {
                 cancel_button.set_enabled(cx, false);
@@ -484,7 +498,7 @@ impl Widget for InviteScreen {
                 cancel_button.set_enabled(cx, false);
                 accept_button.set_enabled(cx, false);
                 cancel_button.set_text(cx, "Rejecting...");
-                accept_button.set_text(cx, "Join Room");
+                accept_button.set_text(cx, join_text);
             }
             InviteState::WaitingForJoinedRoom => {
                 cancel_button.set_enabled(cx, false);
@@ -522,6 +536,7 @@ impl InviteScreen {
                 inviter: invite.inviter_info.clone(),
             });
             self.invite_state = invite.invite_state;
+            self.is_space = invite.is_space;
             self.is_loaded = true;
             self.all_rooms_loaded = true;
             self.redraw(cx);
@@ -537,7 +552,10 @@ impl InviteScreen {
                 .unwrap_or_else(|| room_name_id.clone());
 
             self.is_loaded = true;
-            cx.widget_action(self.widget_uid(), RoomsListAction::InviteAccepted { room_name_id });
+            cx.widget_action(
+                self.widget_uid(),
+                RoomsListAction::InviteAccepted { room_name_id, kind: AcceptedInviteKind::Room },
+            );
             return;
         }
 
@@ -565,6 +583,7 @@ impl InviteScreen {
         self.room_name_id = None;
         self.info = None;
         self.invite_state = InviteState::default();
+        self.is_space = false;
         self.is_loaded = false;
         self.all_rooms_loaded = false;
         self.view.restore_status_view(cx, ids!(restore_status_view)).set_visible(cx, false);

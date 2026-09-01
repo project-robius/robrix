@@ -26,7 +26,7 @@ use matrix_sdk::{RoomState, ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch
 use crate::{
     app::{AppState, AppStateAction, SelectedRoom},
     home::{
-        invite_screen::{InviteScreenAction, JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, room_screen::invalidate_entire_room_timeline_states, rooms_list_entry::RoomsListEntryAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}
+        invite_screen::{InviteScreenAction, JoinRoomResultAction, LeaveRoomResultAction}, navigation_tab_bar::{NavigationBarAction, SelectedTab}, room_context_menu::RoomContextMenuDetails, room_screen::invalidate_entire_room_timeline_states, rooms_list_entry::RoomsListEntryAction, space_lobby::{SpaceLobbyAction, SpaceLobbyEntryWidgetExt}, spaces_bar::{SpacesListUpdate, enqueue_spaces_list_update}
     },
     logout::logout_confirm_modal::LogoutAction,
     room::{
@@ -218,9 +218,16 @@ pub enum RoomsListUpdate {
         room_id: OwnedRoomId,
         is_direct: bool,
     },
+    /// Update whether the given invited room is a space.
+    UpdateIsSpace {
+        room_id: OwnedRoomId,
+        is_space: bool,
+    },
     /// Remove the given room from the rooms list
     RemoveRoom {
         room_id: OwnedRoomId,
+        /// Whether the removed room is a space, read live at removal time.
+        is_space: bool,
         /// The new state of the room (which caused its removal).
         new_state: RoomState,
     },
@@ -263,16 +270,36 @@ pub fn enqueue_rooms_list_update(update: RoomsListUpdate) {
     SignalToUI::set_ui_signal();
 }
 
+/// What an accepted invite turned into, which decides which screen replaces
+/// its `InviteScreen` and which dock that screen belongs in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AcceptedInviteKind {
+    /// A regular room, which becomes a `RoomScreen` in the current dock.
+    Room,
+    Space {
+        /// Where we should show the SpaceLobbyScreen for this newly-joined space.
+        ///
+        /// * If `Some`, it should be shown in the given space's dock.
+        /// * If `None`, it should be shown in the current dock (usually the main home dock).
+        dock_space: Option<RoomNameId>,
+    },
+}
+impl AcceptedInviteKind {
+    pub fn is_space(&self) -> bool {
+        matches!(self, Self::Space { .. })
+    }
+}
+
 /// Actions related to a single room in the RoomsList widget.
 #[derive(Debug, Clone, Default)]
 pub enum RoomsListAction {
     /// A new room or space was selected.
     Selected(SelectedRoom),
-    /// A new room was joined from an accepted invite,
-    /// meaning that the existing `InviteScreen` should be converted
-    /// to a `RoomScreen` to display the now-joined room.
+    /// A new room/space was joined by accepting an invite, so we should stop showing
+    /// its `InviteScreen` and replace it with the joined room/space screen.
     InviteAccepted {
         room_name_id: RoomNameId,
+        kind: AcceptedInviteKind,
     },
     /// Instructs the top-level app to show the context menu for the given room.
     ///
@@ -361,6 +388,8 @@ pub struct InvitedRoomInfo {
     pub is_selected: bool,
     /// Whether this is an invite to a direct room.
     pub is_direct: bool,
+    /// Whether this is an invite to a space rather than a regular room.
+    pub is_space: bool,
 }
 
 /// Info about the user who invited us to a room.
@@ -675,6 +704,7 @@ impl RoomsList {
         let mut num_updates: usize = 0;
         let mut needs_sort = false;
         let mut searchable_metadata_changed = false;
+        let mut did_invited_rooms_change = false;
         while let Some(update) = PENDING_ROOM_UPDATES.pop() {
             num_updates += 1;
             match update {
@@ -682,6 +712,7 @@ impl RoomsList {
                     let room_id = invited_room.room_name_id.room_id().clone();
                     let should_display = should_display_room!(self, &room_id, &invited_room);
                     let _replaced = self.invited_rooms.borrow_mut().insert(room_id.clone(), invited_room);
+                    did_invited_rooms_change = true;
                     if should_display && !self.displayed_invited_rooms.contains(&room_id) {
                         self.displayed_invited_rooms.push(room_id);
                     }
@@ -719,6 +750,7 @@ impl RoomsList {
                     //    displaying the invite to this room should be converted to a
                     //    RoomScreen displaying the now-joined room.
                     if let Some(_accepted_invite) = self.invited_rooms.borrow_mut().remove(&room_id) {
+                        did_invited_rooms_change = true;
                         log!("Removed room {room_id} from the list of invited rooms");
                         self.displayed_invited_rooms.iter()
                             .position(|r| r == &room_id)
@@ -728,6 +760,7 @@ impl RoomsList {
                                 self.widget_uid(), 
                                 RoomsListAction::InviteAccepted {
                                     room_name_id: room.room_name_id.clone(),
+                                    kind: AcceptedInviteKind::Room,
                                 }
                             );
                         }
@@ -765,6 +798,7 @@ impl RoomsList {
                         if let Some(invited_room) = invited_rooms.get_mut(&room_id) {
                             invited_room.canonical_alias = canonical_alias;
                             invited_room.alt_aliases = alt_aliases;
+                            did_invited_rooms_change = true;
                             let should_display = should_display_room!(self, &room_id, invited_room);
                             let pos_in_list = self.displayed_invited_rooms.iter()
                                 .position(|r| r == &room_id);
@@ -786,6 +820,7 @@ impl RoomsList {
                         room.room_avatar = room_avatar;
                     } else if let Some(room) = self.invited_rooms.borrow_mut().get_mut(&room_id) {
                         room.room_avatar = room_avatar;
+                        did_invited_rooms_change = true;
                     } else {
                         error!("Error: couldn't find room {room_id} to update avatar");
                     }
@@ -877,6 +912,7 @@ impl RoomsList {
                         let mut invited_rooms = self.invited_rooms.borrow_mut();
                         if let Some(invited_room) = invited_rooms.get_mut(&room_id) {
                             invited_room.room_name_id = new_room_name;
+                            did_invited_rooms_change = true;
                             let should_display = should_display_room!(self, &room_id, invited_room);
                             let pos_in_list = self.displayed_invited_rooms.iter()
                                 .position(|r| r == &room_id);
@@ -923,7 +959,17 @@ impl RoomsList {
                         error!("Error: couldn't find room {room_id} to update is_direct");
                     }
                 }
-                RoomsListUpdate::RemoveRoom { room_id, new_state } => {
+                RoomsListUpdate::UpdateIsSpace { room_id, is_space } => {
+                    // Joined spaces are filtered out of the rooms list service,
+                    // so if a space is here, it must be an invite to a space.
+                    if let Some(room) = self.invited_rooms.borrow_mut().get_mut(&room_id) {
+                        room.is_space = is_space;
+                        did_invited_rooms_change = true;
+                        // Broadcast this update to an already-open InviteScreen that might be showing this room.
+                        cx.action(InviteScreenAction::IsSpace { room_id, is_space });
+                    }
+                }
+                RoomsListUpdate::RemoveRoom { room_id, new_state, is_space } => {
                     // TODO: once we have a dedicated LoadingScreen widget, we should emit an action
                     // to replace this room (if it's currently open) with the LoadingScreen widget,
                     // which should show whether it has been left, kicked, or banned,
@@ -938,11 +984,36 @@ impl RoomsList {
                             removed.num_unread_messages,
                         );
                     }
-                    else if let Some(_removed) = self.invited_rooms.borrow_mut().remove(&room_id) {
+                    else if let Some(removed) = self.invited_rooms.borrow_mut().remove(&room_id) {
+                        did_invited_rooms_change = true;
                         log!("Removed room {room_id} from the list of all invited rooms");
                         self.displayed_invited_rooms.iter()
                             .position(|r| r == &room_id)
                             .map(|index| self.displayed_invited_rooms.remove(index));
+
+                        // A joined space never comes back as a joined room, so this is our only
+                        // chance to ask where its SpaceLobbyScreen should be shown.
+                        if (removed.is_space || is_space) && matches!(
+                            removed.invite_state,
+                            InviteState::WaitingForJoinResult | InviteState::WaitingForJoinedRoom,
+                        ) {
+                            let was_sent = self.space_request_sender.as_ref().is_some_and(|sender|
+                                sender.send(SpaceRequest::ResolveJoinedSpaceAncestor {
+                                    space_name_id: removed.room_name_id.clone(),
+                                }).is_ok()
+                            );
+                            if !was_sent {
+                                error!("Couldn't determine where joined space {room_id} should be shown; opening it here.");
+                                cx.widget_action(
+                                    self.widget_uid(),
+                                    RoomsListAction::InviteAccepted {
+                                        room_name_id: removed.room_name_id.clone(),
+                                        kind: AcceptedInviteKind::Space { dock_space: None },
+                                    },
+                                );
+                            }
+                            // if we DID send the request, we wait for the `JoinedSpaceAncestor` response.
+                        }
                     }
 
                     self.hidden_rooms.remove(&room_id);
@@ -966,6 +1037,7 @@ impl RoomsList {
                     self.displayed_joined_room_ids.clear();
                     self.invited_rooms.borrow_mut().clear();
                     self.displayed_invited_rooms.clear();
+                    did_invited_rooms_change = true;
                     self.update_status();
                 }
                 RoomsListUpdate::NotLoaded => {
@@ -1126,6 +1198,9 @@ impl RoomsList {
             || (searchable_metadata_changed && self.display_filter.is_some())
         {
             self.update_displayed_rooms(cx, false);
+        }
+        if did_invited_rooms_change {
+            enqueue_spaces_list_update(SpacesListUpdate::InvitedSpacesChanged);
         }
         if num_updates > 0 {
             self.redraw(cx);
@@ -1447,9 +1522,19 @@ impl RoomsList {
                     );
                 }
             },
+            // we now know the ancestor space (`dock_space`) of a newly-joined space.
+            SpaceRoomListAction::JoinedSpaceAncestor { space_name_id, dock_space } => {
+                cx.widget_action(
+                    self.widget_uid(),
+                    RoomsListAction::InviteAccepted {
+                        room_name_id: space_name_id.clone(),
+                        kind: AcceptedInviteKind::Space { dock_space: dock_space.clone() },
+                    },
+                );
+            }
             // Details-related space actions are handled by SpaceLobbyScreen, not RoomsList.
             SpaceRoomListAction::DetailedChildren { .. }
-            | SpaceRoomListAction::TopLevelSpaceDetails(_) => { }
+            | SpaceRoomListAction::SpaceDetails(_) => { }
         }
     }
 

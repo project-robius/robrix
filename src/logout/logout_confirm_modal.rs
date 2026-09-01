@@ -39,7 +39,7 @@ script_mod! {
                 padding: 12,
                 draw_icon.svg: (ICON_LOGOUT)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
-                text: "Logout Now"
+                text: "Log out now"
             }
         }
     }
@@ -267,7 +267,7 @@ impl LogoutConfirmModal {
         self.final_success = None;
         self.set_message(cx, "Are you sure you want to logout?");
         confirm_button.set_enabled(cx, true);
-        confirm_button.set_text(cx, "Logout Now");
+        confirm_button.set_text(cx, "Log out now");
         cancel_button.set_visible(cx, true);
         cancel_button.set_enabled(cx, true);
         cancel_button.set_text(cx, "Cancel");
