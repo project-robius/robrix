@@ -4,7 +4,7 @@ use tokio::sync::Notify;
 use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, utils::RoomNameId};
-use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
+use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::{AcceptedInviteKind, RoomsListAction}, spaces_bar::SpacesBarAction};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -288,40 +288,63 @@ impl MainDesktopUI {
         cx.action(MainDesktopUiAction::SaveDockIntoAppState);
     }
 
-    /// Replaces an invite with a joined room in the dock.
-    fn replace_invite_with_joined_room(
+    /// Replaces an invite with a joined room or space in the dock.
+    fn replace_invite_with_joined(
         &mut self,
         cx: &mut Cx,
-        _scope: &mut Scope,
         room_name_id: &RoomNameId,
+        is_space: bool,
     ) {
+        let joined = SelectedRoom::to_joined(room_name_id.clone(), is_space);
         let dock = self.view.dock(cx, ids!(dock));
         if let Some((new_widget, _)) = dock.replace_tab(
             cx,
-            LiveId::from_str(room_name_id.room_id().as_str()),
-            id!(room_screen),
-            Some(room_name_id.to_string()),
+            joined.tab_id(),
+            joined.dock_kind(),
+            Some(joined.display_name()),
             false,
         ) {
-            new_widget
-                .as_room_screen()
-                .set_displayed_room(cx, room_name_id, None);
+            match is_space {
+                true => new_widget.as_space_lobby_screen()
+                    .set_displayed_space(cx, room_name_id),
+                false => new_widget.as_room_screen()
+                    .set_displayed_room(cx, room_name_id, None),
+            }
 
             // Note: don't return here. Whether or not this invited room is opened in a tab,
             // we still need to upgrade its SelectedRoom instance, so fall through below.
         }
 
-        // Go through all existing `SelectedRoom` instances and replace the
-        // `SelectedRoom::InvitedRoom`s with `SelectedRoom::JoinedRoom`s.
+        self.upgrade_open_invites(cx, room_name_id, is_space);
+    }
+
+    /// Replaces all invited `SelectedRoom` instances for this room/space with the
+    /// equivalent joined variant for this room/space.
+    ///
+    /// Also emits an action to instruct AppState to update itself accordingly.
+    fn upgrade_open_invites(&mut self, cx: &mut Cx, room_name_id: &RoomNameId, is_space: bool) {
         for selected_room in self.most_recently_selected_room.iter_mut()
             .chain(self.room_order.iter_mut())
             .chain(self.open_rooms.values_mut())
         {
-            selected_room.upgrade_invite_to_joined(room_name_id.room_id());
+            selected_room.upgrade_invite_to_joined(room_name_id.room_id(), is_space);
         }
+        cx.action(AppStateAction::UpgradedInviteToJoinedRoom {
+            room_id: room_name_id.room_id().clone(),
+            is_space,
+        });
+    }
 
-        // Finally, emit an action to update the AppState with the new room.
-        cx.action(AppStateAction::UpgradedInviteToJoinedRoom(room_name_id.room_id().clone()));
+    /// Saves the current dock's state and then loads the given space's dock (or the main dock).
+    fn switch_dock_to_space(
+        &mut self,
+        cx: &mut Cx,
+        app_state: &mut AppState,
+        new_space: Option<OwnedRoomId>,
+    ) {
+        self.save_dock_state_to(cx, app_state);
+        self.selected_space = new_space;
+        self.load_dock_state_from(cx, app_state);
     }
 
     /// Saves a copy of the current UI state of the dock into the given app state,
@@ -417,9 +440,12 @@ impl MainDesktopUI {
         }
 
         // Now that we've loaded the dock content, we can re-select the selected room.
+        // If this dock has no selection, clear the previous dock's selection so that,
+        // for ex, it doesn't mistakenly save a now-closed invite screen as the selected room.
         let selected_room = selected_room.clone();
-        if let Some(selected_room) = selected_room.clone() {
-            self.focus_or_create_tab(cx, selected_room);
+        match selected_room.clone() {
+            Some(selected_room) => self.focus_or_create_tab(cx, selected_room),
+            None => self.most_recently_selected_room = None,
         }
         app_state.selected_room = selected_room;
         self.redraw(cx);
@@ -511,6 +537,19 @@ impl WidgetMatchEvent for MainDesktopUI {
                 continue;
             }
 
+            // An invited space's InviteScreen should be shown in the main home dock.
+            // We switch to that dock directly, here, instead of handling it as a `GoToHome` action,
+            // because it's instant, and then we can create the new InviteScreen tab immediately.
+            if let SpacesBarAction::InvitedSpaceClicked { space_name_id } = widget_action.cast() {
+                if self.selected_space.is_some() {
+                    let app_state = scope.data.get_mut::<AppState>().unwrap();
+                    self.switch_dock_to_space(cx, app_state, None);
+                }
+                cx.action(NavigationBarAction::GoToHome);
+                self.focus_or_create_tab(cx, SelectedRoom::InvitedRoom { room_name_id: space_name_id });
+                continue;
+            }
+
             // If the currently-selected space has been changed, we must handle that
             // by switching the dock to show the layout for another space.
             if let Some(NavigationBarAction::TabSelected(tab)) = action.downcast_ref() {
@@ -524,9 +563,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                     _ => continue,
                 };
                 let app_state = scope.data.get_mut::<AppState>().unwrap();
-                self.save_dock_state_to(cx, app_state);
-                self.selected_space = new_space;
-                self.load_dock_state_from(cx, app_state);
+                self.switch_dock_to_space(cx, app_state, new_space);
                 self.redraw(cx);
                 continue;
             }
@@ -590,8 +627,24 @@ impl WidgetMatchEvent for MainDesktopUI {
                     // a redraw to be happening in order to draw the tab content.
                     self.focus_or_create_tab(cx, selected_room.clone());
                 }
-                RoomsListAction::InviteAccepted { room_name_id } => {
-                    self.replace_invite_with_joined_room(cx, scope, room_name_id);
+                RoomsListAction::InviteAccepted { room_name_id, kind } => {
+                    // A space's SpaceLobbyScreen should be shown in its top-level ancestor space's dock
+                    // (assuming the user is still on that space's InviteScreen).
+                    let space = SelectedRoom::Space { space_name_id: room_name_id.clone() };
+                    if let AcceptedInviteKind::Space { dock_space: Some(dock_space) } = kind
+                        && self.open_rooms.contains_key(&space.tab_id())
+                        && self.most_recently_selected_room.as_ref()
+                            .is_some_and(|sr| sr.room_id() == room_name_id.room_id())
+                    {
+                        self.close_tab(cx, space.tab_id());
+                        self.upgrade_open_invites(cx, room_name_id, true);
+                        let app_state = scope.data.get_mut::<AppState>().unwrap();
+                        self.switch_dock_to_space(cx, app_state, Some(dock_space.room_id().clone()));
+                        cx.action(NavigationBarAction::GoToSpace { space_name_id: dock_space.clone() });
+                        self.focus_or_create_tab(cx, space);
+                    } else {
+                        self.replace_invite_with_joined(cx, room_name_id, kind.is_space());
+                    }
                 }
                 RoomsListAction::OpenRoomContextMenu { .. } => {}
                 RoomsListAction::None => { }

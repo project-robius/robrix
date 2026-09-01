@@ -6,8 +6,9 @@ use crate::{
         invite_screen::InviteScreenWidgetRefExt,
         navigation_tab_bar::{NavigationBarAction, SelectedTab},
         room_screen::RoomScreenWidgetRefExt,
-        rooms_list::RoomsListAction,
+        rooms_list::{AcceptedInviteKind, RoomsListAction},
         space_lobby::SpaceLobbyScreenWidgetRefExt,
+        spaces_bar::SpacesBarAction,
     },
     settings::{
         app_preferences::{AppPreferencesGlobal, AppPreferencesAction, ViewModeOverride},
@@ -533,29 +534,13 @@ impl Widget for HomeScreen {
             for action in actions {
                 match action.downcast_ref() {
                     Some(NavigationBarAction::GoToHome) => {
-                        if !matches!(app_state.selected_tab, SelectedTab::Home) {
-                            self.previous_selection = std::mem::replace(&mut app_state.selected_tab, SelectedTab::Home);
-                            cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
-                            self.update_active_page_from_selection(cx, app_state);
-                            self.view.redraw(cx);
-                        }
+                        self.switch_to_tab(cx, app_state, SelectedTab::Home);
                     }
                     Some(NavigationBarAction::GoToAddRoom) => {
-                        if !matches!(app_state.selected_tab, SelectedTab::AddRoom) {
-                            self.previous_selection = std::mem::replace(&mut app_state.selected_tab, SelectedTab::AddRoom);
-                            cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
-                            self.update_active_page_from_selection(cx, app_state);
-                            self.view.redraw(cx);
-                        }
+                        self.switch_to_tab(cx, app_state, SelectedTab::AddRoom);
                     }
                     Some(NavigationBarAction::GoToSpace { space_name_id }) => {
-                        let new_space_selection = SelectedTab::Space { space_name_id: space_name_id.clone() };
-                        if app_state.selected_tab != new_space_selection {
-                            self.previous_selection = std::mem::replace(&mut app_state.selected_tab, new_space_selection);
-                            cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
-                            self.update_active_page_from_selection(cx, app_state);
-                            self.view.redraw(cx);
-                        }
+                        self.switch_to_tab(cx, app_state, SelectedTab::Space { space_name_id: space_name_id.clone() });
                     }
                     // Only open the settings screen if it is not currently open.
                     Some(NavigationBarAction::OpenSettings) => {
@@ -607,6 +592,23 @@ impl Widget for HomeScreen {
                     }
                 }
 
+                // An invited space's InviteScreen should be shown on the main home screen's dock,
+                // so navigate to that first (un-select any selected space).
+                //
+                // This is to ensure that we don't show a new space invite within an existing
+                // unrelated space's separate dock / rooms list.
+                if let SpacesBarAction::InvitedSpaceClicked { space_name_id } = action.as_widget_action().cast()
+                    && !effective_is_desktop(cx)
+                {
+                    self.switch_to_tab(cx, app_state, SelectedTab::Home);
+                    self.push_selected_screen_view(
+                        cx,
+                        app_state,
+                        SelectedRoom::InvitedRoom { room_name_id: space_name_id },
+                    );
+                    continue;
+                }
+
                 // Handle room selections. Desktop owns tab creation in MainDesktopUI,
                 // while mobile owns StackNavigation screen pushes here.
                 match action.as_widget_action().cast() {
@@ -614,11 +616,13 @@ impl Widget for HomeScreen {
                         self.push_selected_screen_view(cx, app_state, selected_room);
                     }
                     // On desktop, `MainDesktopUI` handles this, so we only need to update this in mobile view mode.
-                    RoomsListAction::InviteAccepted { room_name_id } if !effective_is_desktop(cx) => {
-                        self.upgrade_mobile_invite_to_joined(cx, app_state, &room_name_id);
-                        cx.action(AppStateAction::UpgradedInviteToJoinedRoom(
-                            room_name_id.room_id().clone(),
-                        ));
+                    RoomsListAction::InviteAccepted { room_name_id, kind } if !effective_is_desktop(cx) => {
+                        let is_space = kind.is_space();
+                        self.upgrade_mobile_invite_to_joined(cx, app_state, &room_name_id, kind);
+                        cx.action(AppStateAction::UpgradedInviteToJoinedRoom {
+                            room_id: room_name_id.room_id().clone(),
+                            is_space,
+                        });
                     }
                     _ => {}
                 }
@@ -873,7 +877,13 @@ impl HomeScreen {
             return;
         }
         let has_current_mobile_screen = stack_navigation.current_view().is_some();
-        if has_current_mobile_screen && app_state.selected_room.as_ref().is_some_and(|c| c == &sr) {
+        // If it has the same room ID and the same screen type (invite, joined, etc),
+        // then we actually don't need to do anything. Otherwise we need to change it
+        // to a new screen, e.g., a joined RoomScreen or a joined SpaceLobbyScreen.
+        let is_same_screen = app_state.selected_room.as_ref().is_some_and(|c|
+            c == &sr && std::mem::discriminant(c) == std::mem::discriminant(&sr)
+        );
+        if has_current_mobile_screen && is_same_screen {
             return;
         }
         let Some(view_id) = self.populate_mobile_stack_view(cx, &stack_navigation, &sr) else {
@@ -891,22 +901,39 @@ impl HomeScreen {
         self.view.redraw(cx);
     }
 
-    /// Swaps a room's InviteScreen in mobile view mode for that newly-joined room's RoomScreen.
+    /// Switches to (selects) the given navigation tab, if it isn't already the selected one.
+    fn switch_to_tab(&mut self, cx: &mut Cx, app_state: &mut AppState, new_tab: SelectedTab) {
+        if app_state.selected_tab == new_tab { return }
+        self.previous_selection = std::mem::replace(&mut app_state.selected_tab, new_tab);
+        cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
+        self.update_active_page_from_selection(cx, app_state);
+        self.view.redraw(cx);
+    }
+
+    /// Upgrades a room's or space's InviteScreen that is being shown in mobile view mode
+    /// to that newly-joined RoomScreen or SpaceLobbyScreen.
     fn upgrade_mobile_invite_to_joined(
         &mut self,
         cx: &mut Cx,
         app_state: &mut AppState,
         room_name_id: &RoomNameId,
+        kind: AcceptedInviteKind,
     ) {
+        let is_space = kind.is_space();
         let room_id = room_name_id.room_id();
         let is_this_invite = |sr: &SelectedRoom| matches!(
             sr, SelectedRoom::InvitedRoom { room_name_id: r } if r.room_id() == room_id
         );
         if app_state.selected_room.as_ref().is_some_and(is_this_invite) {
+            // The new SpaceLobbyScreen should be shown within its top-level ancestor space's tab/dock,
+            // so navigate to that, which also sets the rooms list into that space's mode.
+            if let AcceptedInviteKind::Space { dock_space: Some(dock_space) } = &kind {
+                self.switch_to_tab(cx, app_state, SelectedTab::Space { space_name_id: dock_space.clone() });
+            }
             self.push_selected_screen_view(
                 cx,
                 app_state,
-                SelectedRoom::JoinedRoom { room_name_id: room_name_id.clone() },
+                SelectedRoom::to_joined(room_name_id.clone(), is_space),
             );
             // The invite we replaced was pushed onto the mobile history stack,
             // so we need to remove it to ensure that it won't show up if the user goes back.
@@ -915,7 +942,7 @@ impl HomeScreen {
             }
         }
         for room in &mut self.mobile_screen_history {
-            room.upgrade_invite_to_joined(room_id);
+            room.upgrade_invite_to_joined(room_id, is_space);
         }
     }
 

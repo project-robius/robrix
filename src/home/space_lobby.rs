@@ -1068,8 +1068,8 @@ impl Widget for SpaceLobbyScreen {
                         self.update_children_in_space(cx, space_id, children);
                     }
 
-                    // Handle receiving top-level space details (join rule, member count).
-                    Some(SpaceRoomListAction::TopLevelSpaceDetails(sr))
+                    // Handle receiving space details (join rule, member count).
+                    Some(SpaceRoomListAction::SpaceDetails(sr))
                         if self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == &sr.room_id) =>
                     {
                         self.space_avatar_state = AvatarState::Known(sr.avatar_url.clone());
@@ -1764,6 +1764,14 @@ impl SpaceLobbyScreen {
         // If this space is already being displayed, then update its name here in case it changed.
         if self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == space_name_id.room_id()) {
             self.space_name_id = Some(space_name_id.clone());
+            // Only request if the details never arrived (after we previously requested it).
+            if matches!(self.space_avatar_state, AvatarState::Unknown)
+                && let Some(sender) = &self.space_request_sender
+            {
+                let _ = sender.send(SpaceRequest::GetSpaceDetails {
+                    space_id: space_name_id.room_id().clone(),
+                });
+            }
             return;
         }
 
@@ -1779,7 +1787,7 @@ impl SpaceLobbyScreen {
                 space_id: space_name_id.room_id().clone(),
                 parent_chain: parent_chain_opt.unwrap_or_default(),
             });
-            let _ = sender.send(SpaceRequest::GetTopLevelSpaceDetails {
+            let _ = sender.send(SpaceRequest::GetSpaceDetails {
                 space_id: space_name_id.room_id().clone(),
             });
             self.space_request_sender = Some(sender);
@@ -1788,6 +1796,8 @@ impl SpaceLobbyScreen {
         // Clear the main content until we receive the async space info responses.
         self.tree_entries.clear();
         self.view.label(cx, ids!(header.space_info_row.space_info_label)).set_text(cx, "");
+        // Also clear the avatar, so we don't show the previous space's avatar.
+        self.space_avatar_state = AvatarState::Unknown;
         self.is_loading = true;
 
         // Clear the filter bar when switching to a new space.

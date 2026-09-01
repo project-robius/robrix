@@ -67,11 +67,17 @@ pub enum SpaceRequest {
         space_id: OwnedRoomId,
         parent_chain: ParentChain,
     },
-    /// Get full details about a top-level space.
+    /// Get full details about any joined space.
     ///
-    /// This will result in a [`SpaceRoomListAction::TopLevelSpaceDetails`] action being emitted.
-    GetTopLevelSpaceDetails {
+    /// This will result in a [`SpaceRoomListAction::SpaceDetails`] action being emitted.
+    GetSpaceDetails {
         space_id: OwnedRoomId,
+    },
+    /// Determine which top-level space's dock a newly-joined space's lobby belongs in.
+    ///
+    /// This will result in a [`SpaceRoomListAction::JoinedSpaceAncestor`] action being emitted.
+    ResolveJoinedSpaceAncestor {
+        space_name_id: RoomNameId,
     },
 }
 
@@ -141,7 +147,7 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
     enqueue_rooms_list_update(RoomsListUpdate::SpaceRequestSender(space_request_sender.clone()));
 
     // Create the actual space service.
-    let space_service = SpaceService::new(client.clone()).await;
+    let space_service = Arc::new(SpaceService::new(client.clone()).await);
 
     // The set of async tasks that are handling room list requests for each top-level joined space,
     // along with a sender to send `SpaceRoomListRequest`s to those tasks.
@@ -183,7 +189,7 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
     // Get the set of top-level (root) spaces that the user has joined.
     let (initial_spaces, mut spaces_diff_stream) = space_service.subscribe_to_top_level_joined_spaces().await;
     for space in &initial_spaces {
-        add_new_space(space, &client).await;
+        add_new_space(space, &client);
     }
     let mut all_joined_spaces: Vector<SpaceRoom> = initial_spaces;
     if LOG_SPACE_SERVICE_DIFFS { log!("space_service: initial set: {all_joined_spaces:?}"); }
@@ -263,12 +269,54 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                         error!("BUG: failed to send GetDetailedChildren request to space room list loop for space {space_id}");
                     }
                 }
-                SpaceRequest::GetTopLevelSpaceDetails { space_id } => {
-                    if let Some(space) = all_joined_spaces.iter().find(|s| s.room_id == space_id) {
-                        Cx::post_action(SpaceRoomListAction::TopLevelSpaceDetails(space.clone()));
+                SpaceRequest::GetSpaceDetails { space_id } => {
+                    let space_opt = match all_joined_spaces.iter().find(|s| s.room_id == space_id) {
+                        Some(space) => Some(space.clone()),
+                        None => space_service.get_space_room(&space_id).await,
+                    };
+                    if let Some(space) = space_opt {
+                        Cx::post_action(SpaceRoomListAction::SpaceDetails(space));
                     } else {
-                        error!("GetSpaceDetails: space {space_id} not found in all_joined_spaces");
+                        error!("GetSpaceDetails: space {space_id} is unknown to the space service");
                     }
+                }
+                SpaceRequest::ResolveJoinedSpaceAncestor { space_name_id } => {
+                    let space_service = Arc::clone(&space_service);
+                    let client = client.clone();
+                    // this is potentially a long-running operation, so spawn it in a new task.
+                    Handle::current().spawn(async move {
+                        if !client.get_room(space_name_id.room_id())
+                            .is_some_and(|r| r.state() == RoomState::Joined)
+                        {
+                            log!("Space {space_name_id:?} was not actually joined, ignoring it.");
+                            return;
+                        }
+                        // This rebuilds the space graph from scratch, so it works for any space,
+                        // even those that aren't in `all_joined_spaces` yet.
+                        let top_level_spaces = space_service.top_level_joined_spaces().await;
+                        let mut dock_space = None;
+                        let mut current_id = space_name_id.room_id().clone();
+                        let mut visited = HashSet::new();
+                        while visited.insert(current_id.clone()) {
+                            if let Some(ancestor) = top_level_spaces.iter().find(|s| s.room_id == current_id) {
+                                dock_space = Some(RoomNameId::new(
+                                    matrix_sdk::RoomDisplayName::Named(ancestor.display_name.clone()),
+                                    ancestor.room_id.clone(),
+                                ));
+                                break;
+                            }
+                            // A space can have multiple parents, so we just pick the first one.
+                            let Some(parent) = space_service.joined_parents_of_child(&current_id)
+                                .await
+                                .into_iter()
+                                .next()
+                            else {
+                                break;
+                            };
+                            current_id = parent.room_id;
+                        }
+                        Cx::post_action(SpaceRoomListAction::JoinedSpaceAncestor { space_name_id, dock_space });
+                    });
                 }
             }
         }
@@ -284,7 +332,7 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                     VectorDiff::Append { values: new_spaces } => {
                         if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Append {}", new_spaces.len()); }
                         for new_space in new_spaces {
-                            add_new_space(&new_space, &client).await;
+                            add_new_space(&new_space, &client);
                             all_joined_spaces.push_back(new_space);
                         }
                     }
@@ -295,12 +343,12 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                     }
                     VectorDiff::PushFront { value: new_space } => {
                         if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PushFront"); }
-                        add_new_space(&new_space, &client).await;
+                        add_new_space(&new_space, &client);
                         all_joined_spaces.push_front(new_space);
                     }
                     VectorDiff::PushBack { value: new_space } => {
                         if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff PushBack"); }
-                        add_new_space(&new_space, &client).await;
+                        add_new_space(&new_space, &client);
                         all_joined_spaces.push_back(new_space);
                     }
                     remove_diff @ VectorDiff::PopFront => {
@@ -329,7 +377,7 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                     }
                     VectorDiff::Insert { index, value: new_space } => {
                         if LOG_SPACE_SERVICE_DIFFS { log!("space_service: diff Insert at {index}"); }
-                        add_new_space(&new_space, &client).await;
+                        add_new_space(&new_space, &client);
                         all_joined_spaces.insert(index, new_space);
                     }
                     VectorDiff::Set { index, value: changed_space } => {
@@ -376,7 +424,7 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                         }
                         enqueue_spaces_list_update(SpacesListUpdate::ClearSpaces);
                         for new_space in &new_spaces {
-                            add_new_space(new_space, &client).await;
+                            add_new_space(new_space, &client);
                         }
                         all_joined_spaces = new_spaces;
                     }
@@ -423,17 +471,9 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
 }
 
 
-async fn add_new_space(space: &SpaceRoom, client: &Client) {
-    let space_avatar_opt = if let Some(url) = &space.avatar_url {
-        fetch_space_avatar(url.clone(), client)
-            .await
-            .inspect_err(|e| error!("Failed to fetch avatar for new space {:?} ({}): {e}", space.display_name, space.room_id))
-            .ok()
-    } else { None };
-    let space_avatar = space_avatar_opt.unwrap_or_else(
-        || utils::avatar_from_room_name(Some(&space.display_name))
-    );
-
+fn add_new_space(space: &SpaceRoom, client: &Client) {
+    // Start with a text avatar and fetch the real one in the background, just like with rooms.
+    let space_avatar = utils::avatar_from_room_name(Some(&space.display_name));
     let jsi = JoinedSpaceInfo {
         space_name_id: RoomNameId::new(
             matrix_sdk::RoomDisplayName::Named(space.display_name.clone()),
@@ -452,6 +492,23 @@ async fn add_new_space(space: &SpaceRoom, client: &Client) {
     // Robrix might be showing an out-of-date name, so broadcast the new name.
     Cx::post_action(AppStateAction::RoomNameUpdated(jsi.space_name_id.clone()));
     enqueue_spaces_list_update(SpacesListUpdate::AddJoinedSpace(jsi));
+
+    // now that we've enqueued the `AddJoinedSpace` update, we can fetch its avatar.
+    if let Some(url) = space.avatar_url.clone() {
+        // Limit concurrent avatar fetches, just like in other cases.
+        static SPACE_AVATAR_FETCH_LIMIT: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(8);
+        let space_id = space.room_id.clone();
+        let space_display_name = space.display_name.clone();
+        let client2 = client.clone();
+        Handle::current().spawn(async move {
+            let Ok(_permit) = SPACE_AVATAR_FETCH_LIMIT.acquire().await else { return };
+            let Ok(avatar) = fetch_space_avatar(url, &client2)
+                .await
+                .inspect_err(|e| error!("Failed to fetch avatar for new space {space_display_name:?} ({space_id}): {e}"))
+                else { return };
+            enqueue_spaces_list_update(SpacesListUpdate::UpdateSpaceAvatar { space_id, avatar });
+        });
+    }
 }
 
 
@@ -545,12 +602,12 @@ async fn update_space(
                 }
                 Some(RoomState::Joined) => {
                     log!("update_space(): adding new Joined space: {:?} ({new_space_id})", new_space.display_name);
-                    add_new_space(new_space, client).await;
+                    add_new_space(new_space, client);
                     return;
                 }
                 Some(RoomState::Invited) => {
                     log!("update_space(): adding new Invited space: {:?} ({new_space_id})", new_space.display_name);
-                    add_new_space(new_space, client).await;
+                    add_new_space(new_space, client);
                     return;
                 }
                 Some(RoomState::Knocked) => {
@@ -654,7 +711,7 @@ async fn update_space(
             old_space.room_id, new_space_id,
         );
         remove_space(old_space);
-        add_new_space(new_space, client).await;
+        add_new_space(new_space, client);
     }
 }
 
@@ -899,10 +956,19 @@ pub enum SpaceRoomListAction {
         parent_chain: ParentChain,
         children: Vector<SpaceRoom>,
     },
-    /// Summary details about a single top-level space.
+    /// Summary details about a single joined space.
     ///
-    /// This is sent in response to a [`SpaceRequest::GetTopLevelSpaceDetails`] request.
-    TopLevelSpaceDetails(SpaceRoom),
+    /// This is sent in response to a [`SpaceRequest::GetSpaceDetails`] request.
+    SpaceDetails(SpaceRoom),
+    /// Which top-level space's dock a newly-joined space should be shown in
+    ///
+    /// This is sent in response to a [`SpaceRequest::ResolveJoinedSpaceAncestor`] request.
+    JoinedSpaceAncestor {
+        space_name_id: RoomNameId,
+        /// The top-level ancestor whose dock should host the lobby, which is
+        /// `space_name_id` itself when that space is top-level.
+        dock_space: Option<RoomNameId>,
+    },
     /// The result of a [`SpaceRequest::LeaveSpace`].
     LeaveSpaceResult {
         space_name_id: RoomNameId,
@@ -940,9 +1006,15 @@ impl std::fmt::Debug for SpaceRoomListAction {
                     .field("num_children", &children.len())
                     .finish()
             }
-            SpaceRoomListAction::TopLevelSpaceDetails(space) => {
-                f.debug_tuple("SpaceRoomListAction::TopLevelSpaceDetails")
+            SpaceRoomListAction::SpaceDetails(space) => {
+                f.debug_tuple("SpaceRoomListAction::SpaceDetails")
                     .field(space)
+                    .finish()
+            }
+            SpaceRoomListAction::JoinedSpaceAncestor { space_name_id, dock_space } => {
+                f.debug_struct("SpaceRoomListAction::JoinedSpaceAncestor")
+                    .field("space_name_id", space_name_id)
+                    .field("dock_space", dock_space)
                     .finish()
             }
             SpaceRoomListAction::LeaveSpaceResult { space_name_id, result } => {

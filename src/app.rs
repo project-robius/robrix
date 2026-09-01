@@ -392,9 +392,9 @@ impl MatchEvent for App {
                     self.app_state.selected_room = None;
                     continue;
                 }
-                Some(AppStateAction::UpgradedInviteToJoinedRoom(room_id)) => {
+                Some(AppStateAction::UpgradedInviteToJoinedRoom { room_id, is_space }) => {
                     if let Some(selected_room) = self.app_state.selected_room.as_mut()
-                        && selected_room.upgrade_invite_to_joined(room_id)
+                        && selected_room.upgrade_invite_to_joined(room_id, *is_space)
                     {
                         self.ui.redraw(cx);
                     }
@@ -403,15 +403,16 @@ impl MatchEvent for App {
                         .chain(self.app_state.saved_dock_state_per_space.values_mut())
                     {
                         for room in saved.selected_room.iter_mut().chain(saved.room_order.iter_mut()) {
-                            room.upgrade_invite_to_joined(room_id);
+                            room.upgrade_invite_to_joined(room_id, *is_space);
                         }
                         // The tab's kind is what decides which screen gets shown when a saved room is loaded,
                         // so we have to change that in addition to the selected room itself.
                         for (tab_id, room) in saved.open_rooms.iter_mut() {
-                            if room.upgrade_invite_to_joined(room_id)
-                                && let Some(DockItem::Tab { kind, .. }) = saved.dock_items.get_mut(tab_id)
+                            if room.upgrade_invite_to_joined(room_id, *is_space)
+                                && let Some(DockItem::Tab { kind, name, .. }) = saved.dock_items.get_mut(tab_id)
                             {
                                 *kind = room.dock_kind();
+                                *name = room.display_name();
                             }
                         }
                     }
@@ -1104,23 +1105,24 @@ impl SelectedRoom {
         }
     }
 
-    /// Upgrades this room from an invite to a joined room
+    /// Returns the joined variant for the given space/room: `Space` if `is_space`, else `JoinedRoom`.
+    pub fn to_joined(room_name_id: RoomNameId, is_space: bool) -> Self {
+        match is_space {
+            true  => SelectedRoom::Space { space_name_id: room_name_id },
+            false => SelectedRoom::JoinedRoom { room_name_id },
+        }
+    }
+
+    /// Upgrades this room from an invite to a joined room or space
     /// if its `room_id` matches the given `room_id`.
     ///
     /// Returns `true` if the room was an `InvitedRoom` with the same `room_id`
-    /// that was successfully upgraded to a `JoinedRoom`;
-    /// otherwise, returns `false`.
-    pub fn upgrade_invite_to_joined(&mut self, room_id: &RoomId) -> bool {
-        match self {
-            SelectedRoom::InvitedRoom { room_name_id } if room_name_id.room_id() == room_id => {
-                let name = room_name_id.clone();
-                *self = SelectedRoom::JoinedRoom {
-                    room_name_id: name,
-                };
-                true
-            }
-            _ => false,
-        }
+    /// that was successfully upgraded; otherwise, returns `false`.
+    pub fn upgrade_invite_to_joined(&mut self, room_id: &RoomId, is_space: bool) -> bool {
+        let SelectedRoom::InvitedRoom { room_name_id } = self else { return false };
+        if room_name_id.room_id() != room_id { return false }
+        *self = Self::to_joined(room_name_id.clone(), is_space);
+        true
     }
 
     /// Updates this room's name if it refers to the same room (same room ID).
@@ -1227,9 +1229,12 @@ pub enum AppStateAction {
     RoomFocused(SelectedRoom),
     /// Resets the focus to none, meaning that no room is selected.
     FocusNone,
-    /// The given room has successfully been upgraded from being displayed
-    /// as an InviteScreen to a RoomScreen.
-    UpgradedInviteToJoinedRoom(OwnedRoomId),
+    /// The given room or space has successfully been upgraded from being displayed
+    /// as an InviteScreen to a RoomScreen or SpaceLobbyScreen.
+    UpgradedInviteToJoinedRoom {
+        room_id: OwnedRoomId,
+        is_space: bool,
+    },
     /// The given room or space has a new name.
     ///
     /// This triggers an update to every cached copy of that room/space name.

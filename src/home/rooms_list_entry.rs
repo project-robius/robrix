@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 
@@ -441,7 +442,12 @@ impl RoomsListEntryContent {
         cx: &mut Cx,
         room_info: &InvitedRoomInfo,
     ) {
-        self.view.label(cx, ids!(room_name)).set_text(cx, &room_info.room_name_id.display());
+        let name = room_info.room_name_id.display();
+        let name = match room_info.is_space {
+            true => Cow::Owned(format!("[Space] {name}")),
+            false => name,
+        };
+        self.view.label(cx, ids!(room_name)).set_text(cx, &name);
         // Hide the timestamp field, and use the latest message field to show the inviter.
         self.view.label(cx, ids!(timestamp)).set_text(cx, "");
         let inviter_string = match &room_info.inviter_info {
@@ -450,7 +456,8 @@ impl RoomsListEntryContent {
             None => String::from("You were invited"),
         };
         self.view.html_or_plaintext(cx, ids!(latest_message)).show_html(cx, &inviter_string);
-
+        // an invite cannot ever be tombstoned
+        self.view.view(cx, ids!(tombstone_icon)).set_visible(cx, false);
         self.view
             .unread_badge(cx, ids!(unread_badge))
             .update_counts(false, 1, 0);
