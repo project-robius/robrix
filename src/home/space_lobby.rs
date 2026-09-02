@@ -208,6 +208,7 @@ script_mod! {
             level: 0.0
             is_last: 0.0
             parent_mask: 0.0
+            line_color: #888
 
             pixel: fn() {
                 let pos = self.pos * self.rect_size;
@@ -216,48 +217,64 @@ script_mod! {
                 // Derived from: main_entry left padding (8) + expand_icon space (14)
                 // + half avatar width (16) = 38.
                 let half_indent = 38.0;
-                let line_width = 1.0;
-                let half_line = 0.5;
 
-                let mut c = vec4(0.0);
+                // `pos` is in logical points, so one device pixel is 1/dpi of it.
+                let dpi = max(self.draw_pass.dpi_factor, 0.0001);
+                let px = 1.0 / dpi;
+                let hp = px * 0.5;
+                // Line thickness in whole device pixels, never less than one.
+                let lw = max(floor(dpi + 0.5), 1.0);
+
+                // Snap each line onto the device pixel grid, then measure how much of it
+                // covers the sample's footprint. The old `abs(pos - k) < 0.5` test landed
+                // exactly between two sample centers and lit neither whenever a row
+                // started on a whole pixel, which is why these lines came and went.
+
+                // Horizontal arm of the elbow, centered vertically in the row.
+                let ay = floor((self.rect_size.y * 0.5 - 0.5 + self.rect_pos.y) * dpi + 0.5);
+                let arm_top = ay / dpi - self.rect_pos.y;
+                let arm_bot = (ay + lw) / dpi - self.rect_pos.y;
+                let arm_y = clamp((min(arm_bot, pos.y + hp) - max(arm_top, pos.y - hp)) / px, 0.0, 1.0);
+
+                // A last child's stem stops at the arm; everyone else runs off the
+                // bottom edge so it meets the next row's stem with no seam.
+                let stem_bot = mix(self.rect_size.y + px, arm_bot, self.is_last);
+                let stem_y = clamp((min(stem_bot, pos.y + hp) - max(-px, pos.y - hp)) / px, 0.0, 1.0);
+
+                let mut cov = 0.0;
 
                 // Dumb approach, but it works.
                 for i in 0..20 {
                     if f32(i) > self.level { break; }
-                    
+
+                    // This level's vertical line, snapped to the pixel grid.
+                    let vx = floor((f32(i) * indent + half_indent - 0.5 + self.rect_pos.x) * dpi + 0.5);
+                    let stem_l = vx / dpi - self.rect_pos.x;
+                    let stem_r = (vx + lw) / dpi - self.rect_pos.x;
+                    let stem_x = clamp((min(stem_r, pos.x + hp) - max(stem_l, pos.x - hp)) / px, 0.0, 1.0);
+
                     if f32(i) < self.level {
                         // Check mask for parent levels
                         let mask_bit = modf(floor(self.parent_mask / pow(2.0, f32(i))), 2.0);
                         if mask_bit > 0.5 {
-                            // Draw full vertical line
-                            if abs(pos.x - (f32(i) * indent + half_indent)) < half_line && pos.y < self.rect_size.y {
-                                c = #888;
-                                break;
-                            }
+                            // Full-height continuation line
+                            cov = max(cov, stem_x);
                         }
                     } else {
-                        // Current level: connection to self
-                        
-                        // Horizontal line to content.
-                        // Snap hy to the nearest pixel center (floor(y) + 0.5) so the
-                        // strict abs() < 0.5 check always hits exactly one pixel regardless
-                        // of whether rect_size.y is even or odd.
-                        let hy = floor(self.rect_size.y * 0.5) + 0.5;
+                        // Current level: connection to self.
                         // Extend horizontal line to the center of the expand_icon:
                         // spacer_end + left_padding(8) - expand_margin_left(6) + expand_width(16)/2 = +10
-                        if abs(pos.y - hy) < half_line && pos.x > (f32(i) * indent + half_indent) && pos.x < ((f32(i) + 1.0) * indent + 10.0) {
-                            c = #888;
-                            break;
-                        }
-                        
-                        // Vertical line (L shape)
-                        if abs(pos.x - (f32(i) * indent + half_indent)) < half_line && pos.y < (self.rect_size.y * (1.0 - 0.5 * self.is_last)) {
-                            c = #888;
-                            break;
-                        }
+                        let arm_end = (f32(i) + 1.0) * indent + 10.0;
+                        let arm_x = clamp((min(arm_end, pos.x + hp) - max(stem_l, pos.x - hp)) / px, 0.0, 1.0);
+                        // max() rather than first-hit-wins, so the corner pixel doesn't
+                        // get whichever arm we happened to test first.
+                        cov = max(cov, max(stem_x * stem_y, arm_x * arm_y));
                     }
                 }
-                return c;
+
+                // Premultiplied, since the blend is ONE / 1-SRC_ALPHA. cov 0 leaves the
+                // row's hover background alone.
+                return vec4(self.line_color.rgb * cov, cov);
             }
         }
     }
@@ -710,6 +727,7 @@ pub struct DrawTreeLine {
     #[live] level: f32,
     #[live] is_last: f32,
     #[live] parent_mask: f32,
+    #[live] line_color: Vec4f,
 }
 
 #[derive(Script, ScriptHook, Widget)]
