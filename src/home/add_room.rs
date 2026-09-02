@@ -59,9 +59,8 @@ script_mod! {
             flow: Right
 
             room_alias_id_input := RobrixTextInput {
-                align: Align{y: 0.5}
                 margin: Inset{top: 0, left: 5, right: 5, bottom: 0},
-                padding: Inset{left: 12, right: 12, top: 11, bottom: 0}
+                padding: Inset{left: 12, right: 12, top: 0, bottom: 0}
                 width: Fill { max: 400 } // same width as the above `help_info`
                 height: 40
                 empty_text: "Enter alias, ID, or Matrix link..."
