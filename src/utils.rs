@@ -821,10 +821,13 @@ pub fn linkify_get_urls<'t>(
                 .is_some_and(ends_with_href)
         };
 
-        if is_link_within_href_attr
-            || is_link_within_html_tag(&link)
-            || is_mailto_link_within_href_attr(&link)
-        {
+        // The above checks are relevant to real HTML, but plaintext links are just regular text,
+        // not html attributes/tags, so we have to linkify + escap) the URL.
+        if is_html && (
+            is_link_within_href_attr
+                || is_link_within_html_tag(&link)
+                || is_mailto_link_within_href_attr(&link)
+        ) {
             linkified_text.push_str(text.get(last_end_index..link.end()).unwrap_or_default());
             if let Some(links_found) = links_found.as_mut() {
                 if let Ok(url) = Url::parse(link_txt) {
@@ -1303,6 +1306,35 @@ mod tests_linkify {
     fn test_linkify0() {
         let text = "Hello, world!";
         assert_eq!(linkify(text, false).as_ref(), text);
+    }
+
+    /// Plaintext with no links comes back borrowed and unescaped,
+    /// so callers have to escape it themselves.
+    #[test]
+    fn test_linkify_plaintext_no_links_is_borrowed_unescaped() {
+        let text = "a < b & c";
+        let actual = linkify(text, false);
+        assert!(matches!(actual, Cow::Borrowed(_)));
+        assert_eq!(actual.as_ref(), text);
+    }
+
+    /// Plaintext that merely looks like an HTML href attribute must still be
+    /// escaped, otherwise a topic/message could inject its own markup.
+    #[test]
+    fn test_linkify_plaintext_fake_href_is_escaped() {
+        let text = "<b>hi</b> href=\"https://example.com";
+        let actual = linkify(text, false);
+        assert_eq!(
+            actual.as_ref(),
+            "&lt;b&gt;hi&lt;/b&gt; href=\"<a href=\"https://example.com\">https://example.com</a>",
+        );
+    }
+
+    /// The same input as HTML keeps its markup and doesn't re-linkify the href.
+    #[test]
+    fn test_linkify_html_href_is_left_alone() {
+        let text = "<a href=\"https://example.com\">click</a>";
+        assert_eq!(linkify(text, true).as_ref(), text);
     }
 
     #[test]

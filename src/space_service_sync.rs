@@ -777,7 +777,14 @@ async fn space_room_list_loop(
         }),
     };
 
-    // First, we paginate the space once to get at least *some* child rooms.    
+    // First, subscribe to changes in this space's own details (topic, join rule, member count, etc).
+    let mut space_details_stream = space_room_list.subscribe_to_space_updates();
+    let mut latest_space_details = space_room_list.space();
+    if let Some(space) = latest_space_details.clone() {
+        Cx::post_action(SpaceRoomListAction::SpaceDetails(space));
+    }
+
+    // Next, paginate the space once to get at least *some* child rooms.    
     paginate_once().await;
 
     // The set of subspaces within this `space_id` that are already known to us.
@@ -829,6 +836,18 @@ async fn space_room_list_loop(
                     );
                 }
                 SpaceRoomListRequest::Shutdown => return,
+            }
+        }
+
+        // Handle updates to this space's own details
+        space_details_opt = space_details_stream.next() => {
+            let Some(new_space_details) = space_details_opt else { break };
+            // The SDK re-emits on *any* RoomInfo change, so only forward real changes.
+            if let Some(new_details) = new_space_details
+                && latest_space_details.as_ref() != Some(&new_details)
+            {
+                latest_space_details = Some(new_details.clone());
+                Cx::post_action(SpaceRoomListAction::SpaceDetails(new_details));
             }
         }
 

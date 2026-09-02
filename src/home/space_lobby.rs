@@ -6,6 +6,7 @@
 //!    that allows the user to click on it to show the `SpaceLobby`.
 //!
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::fmt::Write as _;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -34,10 +35,11 @@ use crate::{
     room::BasicRoomDetails,
     shared::{
         avatar::{AvatarWidgetExt, AvatarWidgetRefExt},
+        html_or_plaintext::RobrixHtmlLinkAction,
         room_filter_input_bar::RoomFilterInputBarWidgetExt,
     },
     space_service_sync::{SpaceRequest, SpaceRoomExt, SpaceRoomListAction},
-    utils::{self, RoomNameId},
+    utils::{self, RoomNameId, open_url},
 };
 
 
@@ -574,6 +576,29 @@ script_mod! {
                     text: "Invite"
                 }
             }
+
+            // The space's topic is shown using linkified HTML (links in topics are common).
+            // Wrapped in a view so we can hide it.
+            space_topic_view := View {
+                visible: false,
+                width: Fill, height: Fit,
+                margin: Inset{left: 5, top: 8}
+
+                space_topic := MessageHtml {
+                    width: Fill, height: Fit,
+                    margin: 0
+                    max_lines: 2
+                    text_overflow: Ellipsis
+                    font_size: 10
+                    font_color: #737373
+                    text_style_normal      +: { font_size: 10, line_spacing: 1.2 }
+                    text_style_italic      +: { font_size: 10, line_spacing: 1.2 }
+                    text_style_bold        +: { font_size: 10, line_spacing: 1.2 }
+                    text_style_bold_italic +: { font_size: 10, line_spacing: 1.2 }
+                    text_style_fixed       +: { font_size: 10, line_spacing: 1.2 }
+                    body: ""
+                }
+            }
         }
 
         // The hierarchical tree list
@@ -1043,7 +1068,15 @@ impl Drop for SpaceLobbyScreen {
 
 impl Widget for SpaceLobbyScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.view.handle_event(cx, event, scope);
+        // Capture the actions from our child widgets so we can handle clicked links
+        let mut inner_actions = cx.capture_actions(|cx| {
+            self.view.handle_event(cx, event, scope);
+        });
+        inner_actions.retain(|action| {
+            let handled = Self::handle_link_clicked(action);
+            !handled
+        });
+        cx.extend_actions(inner_actions);
 
         // Handle Signal events for avatar cache updates
         if let Event::Signal = event {
@@ -1083,6 +1116,7 @@ impl Widget for SpaceLobbyScreen {
                             sr.num_joined_members,
                             if sr.num_joined_members == 1 { "member" } else { "members" }
                         ));
+                        self.set_space_topic(cx, sr.topic.as_deref());
                         self.redraw(cx);
                     }
 
@@ -1367,7 +1401,7 @@ impl Widget for SpaceLobbyScreen {
                                 let _ = write!(info_text, "  |  ~{} {}", c, if c == 1 { "room" } else { "rooms" });
                             }
 
-                            // Add topic if available (Label handles truncation via flow: Flow.Right{wrap: false})
+                            // Add topic if available (the label truncates it at 2 lines)
                             if let Some(topic) = info.topic.as_deref().filter(|t| !t.is_empty()) {
                                 info_text.push_str("  |  ");
                                 info_text.push_str(topic);
@@ -1756,6 +1790,58 @@ impl SpaceLobbyScreen {
         }
     }
 
+    /// Shows the given topic in the header as linkified HTML, or hides it if there is none.
+    fn set_space_topic(&mut self, cx: &mut Cx, topic: Option<&str>) {
+        let space_topic_view = self.view.view(cx, ids!(header.space_topic_view));
+        match topic.map(str::trim).filter(|t| !t.is_empty()) {
+            Some(topic) => {
+                let one_liner = replace_linebreaks_separators(topic, false);
+                let html = match utils::linkify(&one_liner, false) {
+                    Cow::Borrowed(plaintext) => htmlize::escape_text(plaintext).into_owned(),
+                    Cow::Owned(linkified) => linkified,
+                };
+                self.view.html(cx, ids!(header.space_topic_view.space_topic))
+                    .set_text(cx, &html);
+                space_topic_view.set_visible(cx, true);
+            }
+            None => space_topic_view.set_visible(cx, false),
+        }
+    }
+
+    /// Handles a link click in the space's topic and returns `true` if it was handled.
+    fn handle_link_clicked(action: &Action) -> bool {
+        let url = match action.as_widget_action().cast() {
+            HtmlLinkAction::Clicked { url, .. } => url,
+            // A matrix.to link is drawn as a pill, which emits its own action instead.
+            // TODO: navigate to the room/user in-app, like `RoomScreen` does.
+            _ => match action.as_widget_action().cast() {
+                RobrixHtmlLinkAction::ClickedMatrixLink { url, .. } => url,
+                _ => return false,
+            }
+        };
+        if !url.is_empty() {
+            open_url(&url);
+        }
+        true
+    }
+
+    /// Requests details about the given space.
+    fn send_initial_space_requests(&mut self, cx: &mut Cx, space_name_id: &RoomNameId) {
+        let rooms_list_ref = cx.get_global::<RoomsListRef>();
+        let Some(sender) = rooms_list_ref.get_space_request_sender() else { return };
+        // Request detailed children for this space so we can start populating it,
+        // which also starts the backend space service subscriber so we get notified of any future changes.
+        let parent_chain_opt = rooms_list_ref.get_space_parent_chain(space_name_id.room_id());
+        let _ = sender.send(SpaceRequest::GetDetailedChildren {
+            space_id: space_name_id.room_id().clone(),
+            parent_chain: parent_chain_opt.unwrap_or_default(),
+        });
+        let _ = sender.send(SpaceRequest::GetSpaceDetails {
+            space_id: space_name_id.room_id().clone(),
+        });
+        self.space_request_sender = Some(sender);
+    }
+
     pub fn set_displayed_space(&mut self, cx: &mut Cx, space_name_id: &RoomNameId) {
         let space_name = space_name_id.display();
         let parent_name = self.view.label(cx, ids!(header.parent_space_row.parent_name));
@@ -1764,13 +1850,9 @@ impl SpaceLobbyScreen {
         // If this space is already being displayed, then update its name here in case it changed.
         if self.space_name_id.as_ref().is_some_and(|sni| sni.room_id() == space_name_id.room_id()) {
             self.space_name_id = Some(space_name_id.clone());
-            // Only request if the details never arrived (after we previously requested it).
-            if matches!(self.space_avatar_state, AvatarState::Unknown)
-                && let Some(sender) = &self.space_request_sender
-            {
-                let _ = sender.send(SpaceRequest::GetSpaceDetails {
-                    space_id: space_name_id.room_id().clone(),
-                });
+            // If the space service wasn't running yet, start the subscriber for this space
+            if self.space_request_sender.is_none() {
+                self.send_initial_space_requests(cx, space_name_id);
             }
             return;
         }
@@ -1779,25 +1861,14 @@ impl SpaceLobbyScreen {
         self.save_current_state();
 
         self.space_name_id = Some(space_name_id.clone());
-        let rooms_list_ref = cx.get_global::<RoomsListRef>();
-        if let Some(sender) = rooms_list_ref.get_space_request_sender() {
-            // Request detailed children for this space so we can start populating it.
-            let parent_chain_opt = rooms_list_ref.get_space_parent_chain(space_name_id.room_id());
-            let _ = sender.send(SpaceRequest::GetDetailedChildren {
-                space_id: space_name_id.room_id().clone(),
-                parent_chain: parent_chain_opt.unwrap_or_default(),
-            });
-            let _ = sender.send(SpaceRequest::GetSpaceDetails {
-                space_id: space_name_id.room_id().clone(),
-            });
-            self.space_request_sender = Some(sender);
-        }
+        self.send_initial_space_requests(cx, space_name_id);
 
         // Clear the main content until we receive the async space info responses.
         self.tree_entries.clear();
         self.view.label(cx, ids!(header.space_info_row.space_info_label)).set_text(cx, "");
         // Also clear the avatar, so we don't show the previous space's avatar.
         self.space_avatar_state = AvatarState::Unknown;
+        self.set_space_topic(cx, None);
         self.is_loading = true;
 
         // Clear the filter bar when switching to a new space.
@@ -1833,6 +1904,7 @@ impl SpaceLobbyScreen {
         self.filter_keywords.clear();
         self.view.text_input(cx, ids!(filter_bar.input)).set_text(cx, "");
         self.view.button(cx, ids!(filter_bar.clear_button)).set_visible(cx, false);
+        self.set_space_topic(cx, None);
         self.redraw(cx);
     }
 }
