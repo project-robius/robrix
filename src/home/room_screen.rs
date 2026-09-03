@@ -8,12 +8,12 @@ use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, makepad_platform::event::finger::TouchState, *};
 use matrix_sdk::reqwest::StatusCode;
 use matrix_sdk::{
-    OwnedServerName, media::{MediaFormat, MediaRequestParameters}, room::RoomMember, ruma::{
+    OwnedServerName, media::{MediaFormat, MediaRequestParameters}, room::{RoomMember, reply::{EnforceThread, Reply}}, ruma::{
         EventId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomId, RoomId, UserId, events::{
             receipt::Receipt,
             room::{
                 ImageInfo, MediaSource, message::{
-                    AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
+                    AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, ReplyWithinThread, RoomMessageEventContent, TextMessageEventContent, VideoMessageEventContent
                 }
             },
             sticker::StickerEventContent,
@@ -39,6 +39,7 @@ use crate::{
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
+use crate::home::send_status_indicator::{SendStatusIndicatorAction, SendStatusIndicatorRef, SendStatusIndicatorWidgetExt};
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
 use crate::settings::app_preferences::{AppPreferencesGlobal, MarkAsReadBehavior, preferred_receipt_type};
 
@@ -375,6 +376,7 @@ script_mod! {
                     flow: Right,
                     reaction_list := mod.widgets.ReactionList { }
                     avatar_row := mod.widgets.AvatarRow {}
+                    send_status_indicator := mod.widgets.SendStatusIndicator {}
                 }
                 thread_root_summary := mod.widgets.ThreadRootSummary {}
             }
@@ -421,6 +423,7 @@ script_mod! {
                     flow: Right,
                     reaction_list := mod.widgets.ReactionList { }
                     avatar_row := mod.widgets.AvatarRow {}
+                    send_status_indicator := mod.widgets.SendStatusIndicator {}
                 }
                 thread_root_summary := mod.widgets.ThreadRootSummary {}
             }
@@ -460,6 +463,7 @@ script_mod! {
                     flow: Right,
                     reaction_list := mod.widgets.ReactionList { }
                     avatar_row := mod.widgets.AvatarRow {}
+                    send_status_indicator := mod.widgets.SendStatusIndicator {}
                 }
                 thread_root_summary := mod.widgets.ThreadRootSummary {}
             }
@@ -495,6 +499,7 @@ script_mod! {
                     flow: Right,
                     reaction_list := mod.widgets.ReactionList { }
                     avatar_row := mod.widgets.AvatarRow {}
+                    send_status_indicator := mod.widgets.SendStatusIndicator {}
                 }
                 thread_root_summary := mod.widgets.ThreadRootSummary {}
             }
@@ -2173,9 +2178,34 @@ impl RoomScreen {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .handle_file_upload_started(cx, upload_id, &file_name, in_reply_to.as_ref(), abort_handle);
                 }
-                TimelineUpdate::FileUploadUpdate { upload_id, current, total } => {
+                TimelineUpdate::FileUploadQueuing { upload_id } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .set_upload_progress(cx, upload_id, current, total);
+                        .set_upload_queuing(cx, upload_id);
+                }
+                TimelineUpdate::LocalEchoProgress { new_items } => {
+                    tl.items = new_items;
+                    portal_list.redraw(cx);
+                }
+                TimelineUpdate::SendFailedBeforeQueue { message, replied_to } => {
+                    // A `Threaded(No)` reply is the implicit thread-root reply, not one the user picked.
+                    let visible_reply = replied_to.as_ref()
+                        .filter(|reply| !matches!(reply.enforce_thread, EnforceThread::Threaded(ReplyWithinThread::No)));
+                    let replied_to_item = visible_reply
+                        .and_then(|reply| index_of_event(&tl.items, &reply.event_id, tl.items.len(), MAX_ITEMS_TO_SEARCH_THROUGH))
+                        .and_then(|index| tl.items.get(index)?.as_event().cloned())
+                        .map(|event_tl_item| {
+                            let replied_to_info = EmbeddedEvent::from_timeline_item(&event_tl_item);
+                            (event_tl_item, replied_to_info)
+                        });
+                    if visible_reply.is_some() && replied_to_item.is_none() {
+                        enqueue_popup_notification(
+                            "Your unsent reply was restored, but the message it replied to is no longer loaded, so please pick it again.",
+                            PopupKind::Warning,
+                            Some(8.0),
+                        );
+                    }
+                    self.view.room_input_bar(cx, ids!(room_input_bar))
+                        .restore_unsent_message(cx, &message, replied_to_item, &tl.kind);
                 }
                 TimelineUpdate::FileUploadError { upload_id, error, upload, retryable } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
@@ -2408,7 +2438,11 @@ impl RoomScreen {
         items: &'a Vector<Arc<TimelineItem>>,
         details: &MessageDetails,
     ) -> Option<&'a EventTimelineItem> {
-        let target_event_id = details.event_id()?;
+        let Some(target_event_id) = details.event_id() else {
+            // A local echo has no event ID yet, so its index is all we can match on.
+            return items.get(details.item_id)?.as_event()
+                .filter(|ev| ev.identifier() == details.timeline_event_id);
+        };
         if let Some(event) = items.get(details.item_id)
             .and_then(|item| item.as_event())
             .filter(|ev| ev.event_id().is_some_and(|id| id == target_event_id))
@@ -2778,10 +2812,16 @@ impl RoomScreen {
                     let timeline_event_id = details.timeline_event_id.clone();
                     let timeline_kind = tl.kind.clone();
                     let reason = reason.clone();
+                    // Redacting an unsent local echo just cancels sending it.
+                    let (title_text, body_text, accept_button_text) = if matches!(timeline_event_id, TimelineEventItemId::TransactionId(_)) {
+                        ("Cancel Sending", "This message hasn't been sent yet. Discard it?", "Discard")
+                    } else {
+                        ("Delete Message", "Are you sure you want to delete this message? This cannot be undone.", "Delete")
+                    };
                     let content = ConfirmationModalContent {
-                        title_text: "Delete Message".into(),
-                        body_text: "Are you sure you want to delete this message? This cannot be undone.".into(),
-                        accept_button_text: Some("Delete".into()),
+                        title_text: title_text.into(),
+                        body_text: body_text.into(),
+                        accept_button_text: Some(accept_button_text.into()),
                         on_accept_clicked: Some(Box::new(move |_cx| {
                             submit_async_request(MatrixRequest::RedactMessage {
                                 timeline_kind,
@@ -2792,6 +2832,13 @@ impl RoomScreen {
                         ..Default::default()
                     };
                     cx.action(ConfirmDeleteAction::Show(RefCell::new(Some(content))));
+                }
+                MessageAction::RetrySend(details) => {
+                    let Some(tl) = self.tl_state.as_ref() else { return };
+                    submit_async_request(MatrixRequest::RetrySend {
+                        timeline_kind: tl.kind.clone(),
+                        timeline_event_id: details.timeline_event_id.clone(),
+                    });
                 }
                 // MessageAction::Report(details) => {
                 //     // TODO
@@ -3569,6 +3616,10 @@ pub enum TimelineUpdate {
         /// This supersedes `index_of_first_change` and is used when the entire timeline is being redrawn.
         clear_cache: bool,
     },
+    /// Only local echoes' upload progress changed, so no drawn-item caches need clearing.
+    LocalEchoProgress {
+        new_items: Vector<Arc<TimelineItem>>,
+    },
     /// The updated number of unread messages in the room.
     NewUnreadMessagesCount(UnreadMessageCount),
     /// The target event ID was found at the given `index` in the timeline items vector.
@@ -3669,11 +3720,15 @@ pub enum TimelineUpdate {
         in_reply_to: Option<OwnedEventId>,
         abort_handle: futures_util::future::AbortHandle,
     },
-    /// Progress update for a specific file-upload attempt.
-    FileUploadUpdate {
+    /// The file was read and is being added to the send queue,
+    /// so the input bar can no longer cancel it.
+    FileUploadQueuing {
         upload_id: FileUploadAttemptId,
-        current: u64,
-        total: u64,
+    },
+    /// A message failed before reaching the send queue, so it should go back into the input bar.
+    SendFailedBeforeQueue {
+        message: RoomMessageEventContent,
+        replied_to: Option<Reply>,
     },
     /// An error occurred during a specific file-upload attempt.
     FileUploadError {
@@ -4687,7 +4742,7 @@ fn populate_message_view(
         })
         .unwrap_or_default();
     let is_reply_expanded = expanded_reply_previews.contains(&message_details.timeline_event_id);
-    item.as_message().set_data(cx, message_details, download_info, download_state, is_reply_expanded);
+    item.as_message().set_data(cx, message_details, event_tl_item, download_info, download_state, is_reply_expanded);
 
 
     // If `used_cached_item` is false, we should always redraw the profile, even if profile_drawn is true.
@@ -5193,17 +5248,7 @@ fn populate_location_message_content(
     message_content_widget: &HtmlOrPlaintextRef,
     location: &LocationMessageEventContent,
 ) -> bool {
-    let coords = location.geo_uri
-        .get(utils::GEO_URI_SCHEME.len() ..)
-        .and_then(|s| {
-            let mut iter = s.split(',');
-            if let (Some(lat), Some(long)) = (iter.next(), iter.next()) {
-                Some((lat, long))
-            } else {
-                None
-            }
-        });
-    if let Some((lat, long)) = coords {
+    if let Some((lat, long)) = utils::parse_geo_uri(&location.geo_uri) {
         let short_lat = lat.find('.').and_then(|dot| lat.get(..dot + 7)).unwrap_or(lat);
         let short_long = long.find('.').and_then(|dot| long.get(..dot + 7)).unwrap_or(long);
         let safe_lat = htmlize::escape_attribute(lat);
@@ -5873,6 +5918,8 @@ pub enum MessageAction {
         details: MessageDetails,
         reason: Option<String>,
     },
+    /// The user clicked the "retry sending" button on a message that failed to send.
+    RetrySend(MessageDetails),
 
     // /// The user clicked the "report" button on a message.
     // Report(MessageDetails),
@@ -5937,6 +5984,7 @@ pub struct Message {
     // Belowhere: cached references to child widgets, for efficiency.
     #[rust] replied_to_message_view: Option<CollapsiblePreviewRef>,
     #[rust] thread_root_summary_view: Option<ViewRef>,
+    #[rust] send_status_indicator: Option<SendStatusIndicatorRef>,
 }
 
 impl ScriptHook for Message {
@@ -5944,6 +5992,7 @@ impl ScriptHook for Message {
         // A script reload changes the Message's children; invalidate the ones we cached.
         self.replied_to_message_view = None;
         self.thread_root_summary_view = None;
+        self.send_status_indicator = None;
     }
 }
 
@@ -6177,6 +6226,17 @@ impl Widget for Message {
                     );
                 }
             }
+
+            // Clicking a failed message's status indicator opens its context menu to retry or cancel it.
+            let indicator = self.send_status_indicator(cx);
+            if let SendStatusIndicatorAction::Clicked { abs_pos } = actions.find_widget_action(indicator.widget_uid()).cast() {
+                let details = self.details.as_ref().unwrap(); // guaranteed to be Some()
+                if details.abilities.intersects(MessageAbilities::CanRetrySend | MessageAbilities::CanCancelSend) {
+                    let details = details.clone();
+                    self.animator_play(cx, ids!(bg_hover.on));
+                    self.open_context_menu(cx, room_screen_widget_uid, details, abs_pos);
+                }
+            }
         }
     }
 
@@ -6213,7 +6273,8 @@ impl Message {
             || self.view.widget(cx, ids!(avatar_row)).area().clipped_rect(cx).contains(abs)
             || self.view.widget(cx, ids!(content.download_section)).area().clipped_rect(cx).contains(abs)
             || (is_long_press && (
-                self.view.widget(cx, ids!(timestamp)).area().clipped_rect(cx).contains(abs)
+                self.view.widget(cx, ids!(send_status_indicator)).area().clipped_rect(cx).contains(abs)
+                || self.view.widget(cx, ids!(timestamp)).area().clipped_rect(cx).contains(abs)
                 || self.view.widget(cx, ids!(edited_indicator)).area().clipped_rect(cx).contains(abs)
                 || self.view.widget(cx, ids!(tsp_sign_indicator)).area().clipped_rect(cx).contains(abs)
             ))
@@ -6239,12 +6300,22 @@ impl Message {
         view
     }
 
+    fn send_status_indicator(&mut self, cx: &mut Cx) -> SendStatusIndicatorRef {
+        if let Some(indicator) = &self.send_status_indicator {
+            return indicator.clone();
+        }
+        let indicator = self.view.send_status_indicator(cx, ids!(send_status_indicator));
+        self.send_status_indicator = Some(indicator.clone());
+        indicator
+    }
+
     /// Called every time `populate_message_view` runs, including on cached
     /// items, so all states must be re-set unconditionally.
     fn set_data(
         &mut self,
         cx: &mut Cx,
         details: MessageDetails,
+        event_tl_item: &EventTimelineItem,
         download_info: Option<DownloadableAttachment>,
         download_state: DownloadDisplayState,
         is_reply_expanded: bool,
@@ -6261,6 +6332,7 @@ impl Message {
 
         self.details = Some(details);
         self.download_info = download_info;
+        self.send_status_indicator(cx).set_from_event(cx, event_tl_item);
 
         // Re-apply this every time to ensure a re-used portallist item is still correctly expanded.
         self.view.widget(cx, ids!(replied_to_message)).as_collapsible_preview().set_expanded(is_reply_expanded);
@@ -6309,12 +6381,13 @@ impl MessageRef {
         &self,
         cx: &mut Cx,
         details: MessageDetails,
+        event_tl_item: &EventTimelineItem,
         download_info: Option<DownloadableAttachment>,
         download_state: DownloadDisplayState,
         is_reply_expanded: bool,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_data(cx, details, download_info, download_state, is_reply_expanded);
+        inner.set_data(cx, details, event_tl_item, download_info, download_state, is_reply_expanded);
     }
 }
 

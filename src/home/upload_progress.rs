@@ -7,7 +7,6 @@ use futures_util::future::AbortHandle;
 use crate::shared::file_upload_modal::{AttachmentUpload, FileUploadAttemptId, submit_attachment_upload};
 use crate::shared::progress_bar::ProgressBarWidgetRefExt;
 use crate::shared::styles::COLOR_FG_DANGER_RED;
-use crate::utils::format_decimal_file_size;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -110,8 +109,6 @@ pub struct UploadProgressView {
     #[rust] abort_handle: Option<AbortHandle>,
     /// The upload attempt currently represented by this view.
     #[rust] upload_id: Option<FileUploadAttemptId>,
-    /// Current progress value (0.0 to 1.0).
-    #[rust] progress: f32,
     /// Current state of the upload view.
     #[rust] state: UploadViewState,
 }
@@ -157,18 +154,31 @@ impl UploadProgressView {
         self.upload_id = Some(upload_id);
         self.abort_handle = Some(abort_handle);
         self.state = UploadViewState::Normal;
-        self.progress = 0.0;
 
         self.label(cx, ids!(file_name_label)).set_text(cx, &format!("Sending:  {file_name}"));
-        self.label(cx, ids!(status_label)).set_text(cx, "Starting upload...");
+        self.label(cx, ids!(status_label)).set_text(cx, "Preparing upload...");
         self.reset_status_label_color(cx);
         let retry_button = self.button(cx, ids!(retry_button));
         retry_button.set_visible(cx, false);
         retry_button.reset_hover(cx);
-        self.button(cx, ids!(cancel_button)).reset_hover(cx);
+        let cancel_button = self.button(cx, ids!(cancel_button));
+        cancel_button.set_visible(cx, true);
+        cancel_button.reset_hover(cx);
 
         self.reset_progress_bar(cx);
 
+        self.redraw(cx);
+    }
+
+    /// The file has been read and is being handed to the send queue, so cancelling
+    /// now happens from the message itself rather than from this view.
+    pub fn set_queuing(&mut self, cx: &mut Cx, upload_id: FileUploadAttemptId) {
+        if self.upload_id != Some(upload_id) {
+            return;
+        }
+        self.abort_handle = None;
+        self.button(cx, ids!(cancel_button)).set_visible(cx, false);
+        self.label(cx, ids!(status_label)).set_text(cx, "Adding to the send queue...");
         self.redraw(cx);
     }
 
@@ -190,37 +200,6 @@ impl UploadProgressView {
         self.redraw(cx);
     }
 
-    /// Updates the progress value if it belongs to the given upload attempt.
-    pub fn set_progress(&mut self, cx: &mut Cx, upload_id: FileUploadAttemptId, current: u64, total: u64) {
-        if self.upload_id != Some(upload_id) {
-            return;
-        }
-        if let UploadViewState::Error { .. } = self.state {
-            return
-        }
-        self.progress = if total > 0 {
-            (current as f32 / total as f32).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-
-        self.child_by_path(ids!(progress_bar)).as_progress_bar()
-            .set_progress(cx, self.progress);
-
-        // Update status label
-        let percent = (self.progress * 100.0) as u32;
-        let status = format!(
-            "Uploading... {}% ({} / {})",
-            percent,
-            format_decimal_file_size(current),
-            format_decimal_file_size(total)
-        );
-        self.label(cx, ids!(status_label)).set_text(cx, &status);
-        self.reset_status_label_color(cx);
-
-        self.redraw(cx);
-    }
-
     /// Shows an error state with the given message if it belongs to the given upload attempt.
     pub fn show_error(&mut self, cx: &mut Cx, upload_id: FileUploadAttemptId, error: &str, upload: AttachmentUpload, retryable: bool) {
         if self.upload_id != Some(upload_id) {
@@ -230,6 +209,7 @@ impl UploadProgressView {
         self.state = UploadViewState::Error {
             upload: retryable.then_some(upload),
         };
+        self.button(cx, ids!(cancel_button)).set_visible(cx, true);
 
         // Update UI for error state
         self.label(cx, ids!(status_label))
@@ -240,7 +220,6 @@ impl UploadProgressView {
             retry_button.reset_hover(cx);
         }
 
-        self.progress = 1.0;
         self.set_status_label_color(cx, COLOR_FG_DANGER_RED);
         let progress_bar = self.child_by_path(ids!(progress_bar)).as_progress_bar();
         progress_bar.set_progress_color(cx, COLOR_FG_DANGER_RED);
@@ -284,10 +263,10 @@ impl UploadProgressViewRef {
         }
     }
 
-    /// Updates the progress value if it belongs to the given upload attempt.
-    pub fn set_progress(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, current: u64, total: u64) {
+    /// See [`UploadProgressView::set_queuing()`].
+    pub fn set_queuing(&self, cx: &mut Cx, upload_id: FileUploadAttemptId) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_progress(cx, upload_id, current, total);
+            inner.set_queuing(cx, upload_id);
         }
     }
 

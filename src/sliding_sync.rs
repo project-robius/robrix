@@ -10,34 +10,34 @@ use makepad_widgets::{error, log, warning, Cx, SignalToUI, WidgetUid};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
     authentication::oauth::error::OAuthDiscoveryError, config::RequestConfig, encryption::{identities::Device, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, Receipts, RelationsOptions}, ruma::{
-        api::{Direction, client::{authenticated_media::get_media_preview, discovery::get_authorization_server_metadata::v1::{AccountManagementAction, AccountManagementActionData}, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}}, events::{
+        api::{Direction, client::{authenticated_media::get_media_preview, discovery::get_authorization_server_metadata::v1::{AccountManagementAction, AccountManagementActionData}, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}, error::{ErrorKind, RetryAfter}}, events::{
             receipt::{ReceiptThread, ReceiptType as ReceiptEventType},
             relation::RelationType,
             room::{
-                encrypted::Relation as EncryptedRelation, message::{RoomMessageEventContent, TextMessageEventContent}, power_levels::RoomPowerLevels, redaction::SyncRoomRedactionEvent, MediaSource
-            }, AnySyncMessageLikeEvent, AnySyncTimelineEvent, MessageLikeEventType, StateEventType
-        }, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId, uint
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
+                encrypted::Relation as EncryptedRelation, message::{Relation, RoomMessageEventContent, TextMessageEventContent}, power_levels::RoomPowerLevels, redaction::SyncRoomRedactionEvent, MediaSource
+            }, AnyMessageLikeEventContent, AnySyncMessageLikeEvent, AnySyncTimelineEvent, MessageLikeEventType, StateEventType
+        }, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedTransactionId, OwnedUserId, RoomOrAliasId, UserId, uint
+    }, send_queue::{LocalEchoContent, RoomSendQueueUpdate, SendQueueUpdate}, sliding_sync::VersionBuilder, Client, ClientBuildError, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
 };
 #[cfg(not(target_os = "ios"))]
 use matrix_sdk::Error;
 use matrix_sdk_ui::{
-    RoomListService, Timeline, encryption_sync_service, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{LatestEventValue, RoomExt, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
+    RoomListService, Timeline, encryption_sync_service, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{AttachmentSource, EventSendState, LatestEventValue, RedactError, RoomExt, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
 };
 #[cfg(not(target_os = "ios"))]
 use robius_open::Uri;
 use ruma::{OwnedRoomAliasId, OwnedRoomOrAliasId, RoomId, events::tag::Tags};
 use tokio::{
     runtime::Handle,
-    sync::{broadcast, mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify, Semaphore}, task::JoinHandle, time::error::Elapsed,
+    sync::{broadcast, mpsc::{Sender, UnboundedReceiver, UnboundedSender}, watch, Notify, Semaphore}, task::JoinHandle, time::{Instant, error::Elapsed},
 };
 use url::Url;
-use std::{borrow::Cow, cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, DerefMut, Not}, path::{Path, PathBuf}, sync::{Arc, LazyLock, Mutex, atomic::{AtomicBool, Ordering}}, time::Duration};
+use std::{borrow::Cow, cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, DerefMut, Not}, path::{Path, PathBuf}, sync::{Arc, LazyLock, Mutex, atomic::{AtomicBool, Ordering}}, time::{Duration, SystemTime}};
 use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
     app::AppStateAction, app_data_dir, cache_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
-        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::{InviteResultAction, TimelineUpdate, index_of_event}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails
+        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::{InviteResultAction, TimelineUpdate, index_of_event}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, send_status_indicator::describe_send_error, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
@@ -764,6 +764,11 @@ pub enum MatrixRequest {
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
     },
+    /// Retries sending the given local echo that previously failed to send.
+    RetrySend {
+        timeline_kind: TimelineKind,
+        timeline_event_id: TimelineEventItemId,
+    },
     /// Pin or unpin the given event in the given room.
     #[doc(alias("unpin"))]
     PinEvent {
@@ -947,7 +952,13 @@ async fn matrix_worker_task(
                     log!("Sending request to edit message {timeline_event_item_id:?} in {timeline_kind}...");
                     let result = timeline.edit(&timeline_event_item_id, edited_content).await;
                     match result {
-                        Ok(_) => log!("Successfully edited message {timeline_event_item_id:?} in {timeline_kind}."),
+                        Ok(_) => {
+                            log!("Successfully edited message {timeline_event_item_id:?} in {timeline_kind}.");
+                            // Editing a local echo clears its wedge but leaves the room's queue asleep.
+                            if matches!(timeline_event_item_id, TimelineEventItemId::TransactionId(_)) {
+                                timeline.room().send_queue().set_enabled(true);
+                            }
+                        }
                         Err(ref e) => error!("Error editing message {timeline_event_item_id:?} in {timeline_kind}: {e:?}"),
                     }
                     if sender.send(TimelineUpdate::MessageEdited {
@@ -2090,13 +2101,13 @@ async fn matrix_worker_task(
                 #[cfg(feature = "tsp")]
                 sign_with_tsp,
             } => {
-                // TODO: use this timeline `_sender` once we support sending-message status/operations in the UI.
-                let Some((timeline, _sender)) = get_timeline_and_sender(&timeline_kind) else {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
                     log!("BUG: {timeline_kind} not found for send message request");
                     continue;
                 };
 
                 // Spawn a new async task that will send the actual message.
+                // Any failure before the message reaches the send queue hands it back to the input bar.
                 let _send_message_task = Handle::current().spawn(async move {
                     log!("Sending message to {timeline_kind}: {message:?}...");
                     let message = {
@@ -2124,6 +2135,8 @@ async fn matrix_worker_task(
                                                     PopupKind::Error,
                                                     None,
                                                 );
+                                                let _ = sender.send(TimelineUpdate::SendFailedBeforeQueue { message, replied_to });
+                                                SignalToUI::set_ui_signal();
                                                 return;
                                             }
                                         }
@@ -2135,6 +2148,8 @@ async fn matrix_worker_task(
                                             PopupKind::Error,
                                             None,
                                         );
+                                        let _ = sender.send(TimelineUpdate::SendFailedBeforeQueue { message, replied_to });
+                                        SignalToUI::set_ui_signal();
                                         return;
                                     }
                                 }
@@ -2143,37 +2158,32 @@ async fn matrix_worker_task(
                         }
                     };
 
-                    if let Some(replied_to_info) = replied_to {
-                        let reply_content = match timeline
-                            .room()
-                            .make_reply_event(message.into(), replied_to_info)
-                            .await
-                        {
-                            Ok(content) => content,
+                    let what = if replied_to.is_some() { "reply" } else { "message" };
+                    let content: AnyMessageLikeEventContent = if let Some(reply) = &replied_to {
+                        let reply = Reply {
+                            event_id: reply.event_id.clone(),
+                            enforce_thread: reply.enforce_thread,
+                            add_mentions: reply.add_mentions,
+                        };
+                        match timeline.room().make_reply_event(message.clone().into(), reply).await {
+                            Ok(content) => content.into(),
                             Err(_e) => {
                                 error!("Failed to build reply content to send to {timeline_kind}: {_e:?}");
-                                enqueue_popup_notification(
-                                    format!("Failed to send reply: {_e}"),
-                                    PopupKind::Error,
-                                    None,
-                                );
-                                return;
-                            }
-                        };
-                        match timeline.send(reply_content.into()).await {
-                            Ok(_send_handle) => log!("Sent reply message to {timeline_kind}."),
-                            Err(_e) => {
-                                error!("Failed to send reply message to {timeline_kind}: {_e:?}");
                                 enqueue_popup_notification(format!("Failed to send reply: {_e}"), PopupKind::Error, None);
+                                let _ = sender.send(TimelineUpdate::SendFailedBeforeQueue { message, replied_to });
+                                SignalToUI::set_ui_signal();
+                                return;
                             }
                         }
                     } else {
-                        match timeline.send(message.into()).await {
-                            Ok(_send_handle) => log!("Sent message to {timeline_kind}."),
-                            Err(_e) => {
-                                error!("Failed to send message to {timeline_kind}: {_e:?}");
-                                enqueue_popup_notification(format!("Failed to send message: {_e}"), PopupKind::Error, None);
-                            }
+                        message.clone().into()
+                    };
+                    match timeline.send(content).await {
+                        Ok(_send_handle) => log!("Sent {what} to {timeline_kind}."),
+                        Err(_e) => {
+                            error!("Failed to send {what} to {timeline_kind}: {_e:?}");
+                            enqueue_popup_notification(format!("Failed to send {what}: {_e}"), PopupKind::Error, None);
+                            let _ = sender.send(TimelineUpdate::SendFailedBeforeQueue { message, replied_to });
                         }
                     }
                     SignalToUI::set_ui_signal();
@@ -2209,8 +2219,6 @@ async fn matrix_worker_task(
                 }
 
                 let sender_clone = sender.clone();
-                let progress_sender = sender.clone();
-                let monitor_timeline_kind = timeline_kind.clone();
                 let (abort_handle, abort_registration) = futures_util::future::AbortHandle::new_pair();
                 // Spawn a new async task to send the attachment.
                 let _send_attachment_task = Handle::current().spawn(async move {
@@ -2220,7 +2228,9 @@ async fn matrix_worker_task(
                     };
                     use matrix_sdk_ui::timeline::AttachmentConfig as TimelineAttachmentConfig;
 
-                    let upload_future = async move {
+                    // The input bar's cancel button only covers reading the file;
+                    // once it's queued, the message's own context menu handles cancelling.
+                    let read_future = async {
                         let _ = sender_clone.send(TimelineUpdate::FileUploadStarted {
                             upload_id,
                             file_name: upload.file_data.file_name(),
@@ -2238,126 +2248,122 @@ async fn matrix_worker_task(
                             let _ = sender_clone.send(TimelineUpdate::FileUploadError {
                                 upload_id,
                                 error,
-                                upload,
+                                upload: upload.clone(),
                                 retryable: false,
                             });
                             SignalToUI::set_ui_signal();
-                            return;
+                            return None;
                         }
 
-                        let upload_for_error = upload.clone();
-                        let AttachmentUpload {
-                            file_data,
-                            in_reply_to,
-                            ..
-                        } = upload;
-
-                        log!(
-                            "Sending attachment to {timeline_kind}: {} ({} bytes)...",
-                            file_data.file_name(),
-                            file_data.size,
-                        );
-
-                        // Parse MIME type, falling back to octet-stream for unknown types
-                        let content_type: Mime = file_data.mime_type.parse()
-                            .unwrap_or(mime::APPLICATION_OCTET_STREAM);
-
-                        let image_dimensions: Option<(u32, u32)> = if content_type.type_() == mime::IMAGE {
-                            crate::image_utils::read_image_dimensions(file_data.path())
-                                .map(|(w, h)| (w as u32, h as u32))
-                        } else {
-                            None
-                        };
-                        let matrix_file_size = || matrix_sdk::ruma::UInt::try_from(file_data.size).ok();
-
-                        // Create AttachmentInfo based on the MIME type
-                        let info = match content_type.type_() {
-                            mime::IMAGE => AttachmentInfo::Image(BaseImageInfo {
-                                width: image_dimensions.map(|(width, _height)| width.into()),
-                                height: image_dimensions.map(|(_width, height)| height.into()),
-                                size: matrix_file_size(),
-                                blurhash: None,
-                                is_animated: None,
-                            }),
-                            mime::VIDEO => AttachmentInfo::Video(BaseVideoInfo {
-                                // TODO: Extract actual dimensions and duration from video
-                                width: None,
-                                height: None,
-                                duration: None,
-                                size: matrix_file_size(),
-                                blurhash: None,
-                            }),
-                            mime::AUDIO => AttachmentInfo::Audio(BaseAudioInfo {
-                                // TODO: Extract actual duration from audio
-                                duration: None,
-                                size: matrix_file_size(),
-                                waveform: None,
-                            }),
-                            _ => AttachmentInfo::File(BaseFileInfo {
-                                size: matrix_file_size(),
-                            }),
-                        };
-
-                        let send_request = timeline.send_attachment(
-                            file_data.path().to_path_buf(),
-                            content_type,
-                            TimelineAttachmentConfig {
-                                info: Some(info),
-                                caption: file_data.caption.as_ref().map(TextMessageEventContent::plain),
-                                in_reply_to,
-                                ..Default::default()
-                            },
-                        );
-                        let progress_subscriber = send_request.subscribe_to_send_progress();
-                        // Spawn a task to handle progress updates
-                        Handle::current().spawn(async move {
-                            let mut subscriber = progress_subscriber;
-                            loop {
-                                let progress = subscriber.get();
-                                let current: u64 = progress.current as u64;
-                                let total: u64 = progress.total as u64;
-                                if progress_sender.send(TimelineUpdate::FileUploadUpdate {
-                                    upload_id,
-                                    current,
-                                    total,
-                                }).is_err() {
-                                    break;
-                                }
-                                SignalToUI::set_ui_signal();
-                                // Wait for next update
-                                if subscriber.next().await.is_none() {
-                                    break;
-                                }
-                            }
-                        });
-
-                        match send_request.await {
-                            Ok(()) => {
-                                log!("Successfully sent attachment to {timeline_kind}.");
-                                let _ = sender_clone.send(TimelineUpdate::FileUploadComplete {
-                                    upload_id,
-                                });
-                            }
+                        match tokio::fs::read(upload.file_data.path()).await {
+                            Ok(bytes) => Some(bytes),
                             Err(e) => {
-                                error!("Failed to send attachment to {timeline_kind}: {e:?}");
+                                error!("Failed to read attachment {:?} for {timeline_kind}: {e:?}", upload.file_data.path());
                                 let _ = sender_clone.send(TimelineUpdate::FileUploadError {
                                     upload_id,
-                                    error: format!("{e}"),
-                                    upload: upload_for_error,
+                                    error: format!("couldn't read the file: {e}"),
+                                    upload: upload.clone(),
                                     retryable: true,
                                 });
+                                SignalToUI::set_ui_signal();
+                                None
                             }
                         }
+                    };
+                    let bytes = match Abortable::new(read_future, abort_registration).await {
+                        Ok(Some(bytes)) => bytes,
+                        Ok(None) => return,
+                        Err(_) => {
+                            log!("Attachment upload task {upload_id:?} for {timeline_kind} was aborted.");
+                            return;
+                        }
+                    };
+                    let _ = sender_clone.send(TimelineUpdate::FileUploadQueuing { upload_id });
+                    SignalToUI::set_ui_signal();
 
-                        SignalToUI::set_ui_signal();
+                    let upload_for_error = upload.clone();
+                    let AttachmentUpload {
+                        file_data,
+                        in_reply_to,
+                        ..
+                    } = upload;
+
+                    log!(
+                        "Sending attachment to {timeline_kind}: {} ({} bytes)...",
+                        file_data.file_name(),
+                        file_data.size,
+                    );
+
+                    // Parse MIME type, falling back to octet-stream for unknown types
+                    let content_type: Mime = file_data.mime_type.parse()
+                        .unwrap_or(mime::APPLICATION_OCTET_STREAM);
+
+                    let image_dimensions: Option<(u32, u32)> = if content_type.type_() == mime::IMAGE {
+                        crate::image_utils::read_image_dimensions(file_data.path())
+                            .map(|(w, h)| (w as u32, h as u32))
+                    } else {
+                        None
+                    };
+                    let matrix_file_size = || matrix_sdk::ruma::UInt::try_from(file_data.size).ok();
+
+                    // Create AttachmentInfo based on the MIME type
+                    let info = match content_type.type_() {
+                        mime::IMAGE => AttachmentInfo::Image(BaseImageInfo {
+                            width: image_dimensions.map(|(width, _height)| width.into()),
+                            height: image_dimensions.map(|(_width, height)| height.into()),
+                            size: matrix_file_size(),
+                            blurhash: None,
+                            is_animated: None,
+                        }),
+                        mime::VIDEO => AttachmentInfo::Video(BaseVideoInfo {
+                            // TODO: Extract actual dimensions and duration from video
+                            width: None,
+                            height: None,
+                            duration: None,
+                            size: matrix_file_size(),
+                            blurhash: None,
+                        }),
+                        mime::AUDIO => AttachmentInfo::Audio(BaseAudioInfo {
+                            // TODO: Extract actual duration from audio
+                            duration: None,
+                            size: matrix_file_size(),
+                            waveform: None,
+                        }),
+                        _ => AttachmentInfo::File(BaseFileInfo {
+                            size: matrix_file_size(),
+                        }),
                     };
 
-                    match Abortable::new(upload_future, abort_registration).await {
-                        Ok(()) => {}
-                        Err(_) => {
-                            log!("Attachment upload task {upload_id:?} for {monitor_timeline_kind} was aborted.");
+                    let send_request = timeline.send_attachment(
+                        AttachmentSource::Data { bytes, filename: file_data.file_name() },
+                        content_type,
+                        TimelineAttachmentConfig {
+                            info: Some(info),
+                            caption: file_data.caption.as_ref().map(TextMessageEventContent::plain),
+                            in_reply_to,
+                            ..Default::default()
+                        },
+                    ).use_send_queue();
+
+                    match send_request.await {
+                        Ok(()) => {
+                            log!("Successfully queued attachment to send to {timeline_kind}.");
+                            let _ = sender_clone.send(TimelineUpdate::FileUploadComplete {
+                                upload_id,
+                            });
+                        }
+                        Err(e) => {
+                            error!("Failed to send attachment to {timeline_kind}: {e:?}");
+                            let _ = sender_clone.send(TimelineUpdate::FileUploadError {
+                                upload_id,
+                                error: format!("{e}"),
+                                upload: upload_for_error,
+                                retryable: true,
+                            });
                         }
                     }
+
+                    SignalToUI::set_ui_signal();
                 });
             }
             MatrixRequest::ReadReceipt { timeline_kind, event_id, receipt_type } => {
@@ -2482,13 +2488,48 @@ async fn matrix_worker_task(
                         Ok(()) => log!("Successfully redacted message in {timeline_kind}."),
                         Err(e) => {
                             error!("Failed to redact message in {timeline_kind}; error: {e:?}");
-                            enqueue_popup_notification(
-                                format!("Failed to redact message. Error: {e}"),
-                                PopupKind::Error,
-                                None,
-                            );
+                            let msg = match (&timeline_event_id, &e) {
+                                (TimelineEventItemId::TransactionId(_), matrix_sdk_ui::timeline::Error::RedactError(RedactError::InvalidLocalEchoState)) =>
+                                    "This message was already sent, so it can't be cancelled. You can delete it instead.".to_string(),
+                                (TimelineEventItemId::TransactionId(_), e) => format!("Couldn't cancel sending this message: {e}"),
+                                (_, e) => format!("Failed to redact message. Error: {e}"),
+                            };
+                            enqueue_popup_notification(msg, PopupKind::Error, None);
                         }
                     }
+                });
+            },
+
+            MatrixRequest::RetrySend { timeline_kind, timeline_event_id } => {
+                let Some(timeline) = get_timeline(&timeline_kind) else {
+                    log!("BUG: {timeline_kind} not found for retry send request");
+                    continue;
+                };
+
+                let _retry_task = Handle::current().spawn(async move {
+                    let items = timeline.items().await;
+                    let event_tl_item = items.iter().rev()
+                        .find_map(|item| item.as_event().filter(|ev| ev.identifier() == timeline_event_id));
+                    let send_handle = match event_tl_item.map(|ev| (ev, ev.send_state())) {
+                        Some((ev, Some(EventSendState::SendingFailed { .. }))) => ev.local_echo_send_handle(),
+                        Some((_, Some(EventSendState::NotSentYet { .. }))) => {
+                            enqueue_popup_notification("This message is already being sent.", PopupKind::Info, None);
+                            return;
+                        }
+                        _ => None,
+                    };
+                    let Some(send_handle) = send_handle else {
+                        enqueue_popup_notification("This message was already sent.", PopupKind::Info, None);
+                        return;
+                    };
+                    if let Err(e) = send_handle.unwedge().await {
+                        error!("Failed to retry sending {timeline_event_id:?} in {timeline_kind}: {e:?}");
+                        enqueue_popup_notification(format!("Couldn't retry sending: {e}"), PopupKind::Error, None);
+                        return;
+                    }
+                    // Unwedging doesn't wake a room the SDK disabled after the failure.
+                    timeline.room().send_queue().set_enabled(true);
+                    SignalToUI::set_ui_signal();
                 });
             },
 
@@ -2899,6 +2940,13 @@ static SYNC_SERVICE_LIFECYCLE_LOCK: LazyLock<tokio::sync::Mutex<()>> =
 /// Set to `true` when the access token has been rejected by the homeserver,
 /// signaling the main task to tear down the current session and wait for re-login.
 static TOKEN_EXPIRED: AtomicBool = AtomicBool::new(false);
+/// Whether the sync service currently reports the homeserver as unreachable.
+static IS_OFFLINE: AtomicBool = AtomicBool::new(false);
+
+/// Returns whether the sync service currently reports the homeserver as unreachable.
+pub fn is_offline() -> bool {
+    IS_OFFLINE.load(Ordering::Acquire)
+}
 /// Notifies the main monitoring loop to wake up and check `TOKEN_EXPIRED`.
 static TOKEN_EXPIRED_NOTIFY: LazyLock<Notify> = LazyLock::new(Notify::new);
 
@@ -3362,6 +3410,11 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             error!("BUG: unexpectedly replaced an existing sync service when initializing the matrix client.");
         }
         apply_sync_service_desired_state("initial Matrix sync startup").await;
+
+        // Subscribe before enabling, since enabling respawns rooms with unsent requests from earlier sessions.
+        subscriber_task_handles.push(handle_send_queue_subscriber(client.clone()));
+        client.send_queue().enable_upload_progress(true);
+        client.send_queue().set_enabled(true).await;
 
         let mut room_list_service_task = rt.spawn(room_list_service_loop(room_list_service));
         let mut space_service_task = rt.spawn(space_service_loop(client));
@@ -4302,6 +4355,99 @@ fn handle_session_changes(client: Client) -> JoinHandle<()> {
     })
 }
 
+/// How long we wait after a recoverable send failure before waking the send queue again.
+const SEND_QUEUE_RETRY_DELAY: Duration = Duration::from_secs(5);
+
+/// What a queued request was for, so a failure popup can say what didn't go out.
+enum LocalSendKind {
+    Message,
+    Edit,
+    Reaction { key: String },
+    Redaction,
+}
+
+/// Watches the send queue for failures: recoverable ones re-enable the queue after a delay,
+/// unrecoverable ones show a popup and wake the room so later messages still go out.
+fn handle_send_queue_subscriber(client: Client) -> JoinHandle<()> {
+    let mut updates = client.send_queue().subscribe();
+    Handle::current().spawn(async move {
+        let mut kinds: HashMap<OwnedTransactionId, LocalSendKind> = HashMap::new();
+        let mut reenable_at: Option<Instant> = None;
+        loop { tokio::select! {
+            res = updates.recv() => match res {
+                Ok(SendQueueUpdate { room_id, update }) => match update {
+                    RoomSendQueueUpdate::NewLocalEvent(echo) => {
+                        let kind = match echo.content {
+                            LocalEchoContent::Event { serialized_event, .. } => match serialized_event.deserialize() {
+                                Ok(AnyMessageLikeEventContent::RoomMessage(msg))
+                                    if matches!(msg.relates_to, Some(Relation::Replacement(_))) => LocalSendKind::Edit,
+                                _ => LocalSendKind::Message,
+                            },
+                            LocalEchoContent::React { key, .. } => LocalSendKind::Reaction { key },
+                            LocalEchoContent::Redaction { .. } => LocalSendKind::Redaction,
+                        };
+                        kinds.insert(echo.transaction_id, kind);
+                    }
+                    RoomSendQueueUpdate::SentEvent { transaction_id, .. }
+                    | RoomSendQueueUpdate::CancelledLocalEvent { transaction_id } => {
+                        kinds.remove(&transaction_id);
+                    }
+                    RoomSendQueueUpdate::SendError { transaction_id, error, is_recoverable } => {
+                        if is_recoverable {
+                            // While offline or stopped, the sync state subscriber re-enables the queue on reconnect.
+                            if !is_offline() && sync_service_desired_running() {
+                                let delay = match error.client_api_error_kind() {
+                                    Some(ErrorKind::LimitExceeded(data)) => match data.retry_after {
+                                        Some(RetryAfter::Delay(delay)) => delay,
+                                        Some(RetryAfter::DateTime(time)) => time.duration_since(SystemTime::now()).unwrap_or(SEND_QUEUE_RETRY_DELAY),
+                                        None => SEND_QUEUE_RETRY_DELAY,
+                                    },
+                                    _ => SEND_QUEUE_RETRY_DELAY,
+                                };
+                                warning!("Recoverable send error in room {room_id}, retrying in {delay:?}: {error}");
+                                reenable_at = Some(Instant::now() + delay);
+                            }
+                            continue;
+                        }
+
+                        error!("Unrecoverable send error in room {room_id}: {error:?}");
+                        // The SDK disabled the whole room's queue; wedged requests get skipped, so wake it back up.
+                        let room = client.get_room(&room_id);
+                        if let Some(room) = &room {
+                            room.send_queue().set_enabled(true);
+                        }
+                        let room_name = match &room {
+                            Some(room) => RoomNameId::from_room(room).await,
+                            None => RoomNameId::empty(room_id.clone()),
+                        };
+                        let desc = describe_send_error(&error).description;
+                        let msg = match kinds.get(&transaction_id) {
+                            Some(LocalSendKind::Message) => format!("Couldn't send a message in {room_name}: {desc}\n\nOpen that message's menu to retry or cancel it."),
+                            Some(LocalSendKind::Edit) => format!("Couldn't send your edit in {room_name}: {desc}"),
+                            Some(LocalSendKind::Reaction { key }) => format!("Couldn't send your {key} reaction in {room_name}: {desc}"),
+                            Some(LocalSendKind::Redaction) => format!("Couldn't delete a message in {room_name}: {desc}"),
+                            None => format!("Couldn't send to {room_name}: {desc}"),
+                        };
+                        enqueue_popup_notification(msg, PopupKind::Error, None);
+                    }
+                    _ => {}
+                },
+                Err(broadcast::error::RecvError::Lagged(n)) => {
+                    warning!("Send queue update receiver lagged, missed {n} messages.");
+                    if !is_offline() && sync_service_desired_running() {
+                        reenable_at = Some(Instant::now() + SEND_QUEUE_RETRY_DELAY);
+                    }
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
+            _ = async { tokio::time::sleep_until(reenable_at.unwrap()).await }, if reenable_at.is_some() => {
+                reenable_at = None;
+                client.send_queue().set_enabled(true).await;
+            }
+        } }
+    })
+}
+
 fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service::State>) -> JoinHandle<()> {
     log!("Initial sync service state is {:?}", subscriber.get());
     Handle::current().spawn(async move {
@@ -4347,7 +4493,15 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
                     log!("Ignoring sync service state update after token expiration.");
                     break;
                 }
-                other => Cx::post_action(RoomsListHeaderAction::StateUpdate(other)),
+                other => {
+                    IS_OFFLINE.store(matches!(other, sync_service::State::Offline), Ordering::Release);
+                    let is_now_running = matches!(other, sync_service::State::Running);
+                    Cx::post_action(RoomsListHeaderAction::StateUpdate(other));
+                    // Rooms whose queue was disabled by a failure while offline or stopped get woken here.
+                    if is_now_running && let Some(client) = get_client() {
+                        client.send_queue().set_enabled(true).await;
+                    }
+                }
             }
         }
     })
@@ -4883,6 +5037,8 @@ async fn timeline_subscriber_handler(
     // Whether any update changes have arrived since this timeline was last closed,
     // meaning that we need to send an cumulative update when the timeline gets re-opened.
     let mut has_unsent_changes = false;
+    // The last upload progress tick forwarded to the UI, as (item index, percent).
+    let mut last_progress_sent: Option<(usize, usize)> = None;
 
     loop { tokio::select! {
         // we should check for new requests before handling new timeline updates,
@@ -4989,8 +5145,28 @@ async fn timeline_subscriber_handler(
             let mut clear_cache = false;
             // whether the changes include items being appended to the end of the timeline
             let mut is_append = false;
+            // whether every diff so far is just an upload progress tick on a local echo
+            let mut is_progress_only = true;
+            // the (index, percent) of the last upload progress tick in this batch
+            let mut progress_tick = None;
             for diff in batch {
                 num_updates += 1;
+                is_progress_only &= match &diff {
+                    VectorDiff::Set { index, value } => {
+                        let tick = timeline_items.get(*index)
+                            .and_then(|old| old.as_event()?.transaction_id())
+                            .zip(value.as_event())
+                            .filter(|(old_txn_id, new_ev)| new_ev.transaction_id() == Some(old_txn_id))
+                            .and_then(|(_, new_ev)| match new_ev.send_state() {
+                                Some(EventSendState::NotSentYet { progress: Some(p) }) => Some(p.progress),
+                                _ => None,
+                            })
+                            .map(|p| (*index, if p.total > 0 { p.current * 100 / p.total } else { 0 }));
+                        progress_tick = tick.or(progress_tick);
+                        tick.is_some()
+                    }
+                    _ => false,
+                };
                 match diff {
                     VectorDiff::Append { values } => {
                         let _values_len = values.len();
@@ -5125,13 +5301,26 @@ async fn timeline_subscriber_handler(
                 }
                 // Only send updates to the UI while this timeline is open.
                 // While it's closed, we process the updates locally until it is re-opened again.
-                if is_timeline_open {
-                    if timeline_update_sender.send(TimelineUpdate::NewItems {
-                        new_items: timeline_items.clone(),
-                        changed_indices,
-                        clear_cache,
-                        is_append,
-                    }).is_err() {
+                if !is_timeline_open {
+                    // Closed: our local items are updated above; remember to catch the UI up on reopen.
+                    has_unsent_changes = true;
+                }
+                // Upload progress arrives per chunk; the UI only needs it when the shown percent changes.
+                else if !(is_progress_only && progress_tick == last_progress_sent) {
+                    if is_progress_only {
+                        last_progress_sent = progress_tick;
+                    }
+                    let update = if is_progress_only {
+                        TimelineUpdate::LocalEchoProgress { new_items: timeline_items.clone() }
+                    } else {
+                        TimelineUpdate::NewItems {
+                            new_items: timeline_items.clone(),
+                            changed_indices,
+                            clear_cache,
+                            is_append,
+                        }
+                    };
+                    if timeline_update_sender.send(update).is_err() {
                         log!("Timeline for room {room_id}, thread {thread_root_event_id:?} was closed \
                             or recreated; ending this subscriber task.");
                         return;
@@ -5155,9 +5344,6 @@ async fn timeline_subscriber_handler(
 
                     // Send a Makepad-level signal to update this room's timeline UI view.
                     SignalToUI::set_ui_signal();
-                } else {
-                    // Closed: our local items are updated above; remember to catch the UI up on reopen.
-                    has_unsent_changes = true;
                 }
             }
         }

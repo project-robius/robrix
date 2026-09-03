@@ -24,6 +24,7 @@ use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId};
+use robius_location::Coordinates;
 use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, rooms_list::RoomsListRef, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, location::init_location_subscriber, profile::user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, room::BasicRoomDetails, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, slash_commands::{SlashCommandAction, SlashCommandOutcome}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 use crate::room::reply_preview::CollapsiblePreviewWidgetRefExt;
 
@@ -613,6 +614,57 @@ impl RoomInputBar {
         self.redraw(cx);
     }
 
+    /// Puts a message that failed to send back into the composer so the user can retry it.
+    fn restore_unsent_message(
+        &mut self,
+        cx: &mut Cx,
+        message: &RoomMessageEventContent,
+        replied_to: Option<(EventTimelineItem, EmbeddedEvent)>,
+        timeline_kind: &TimelineKind,
+    ) {
+        match &message.msgtype {
+            MessageType::Location(location) => {
+                let coords = utils::parse_geo_uri(&location.geo_uri)
+                    .and_then(|(lat, lon)| Some(Coordinates {
+                        latitude: lat.parse().ok()?,
+                        longitude: lon.parse().ok()?,
+                    }));
+                match coords {
+                    Some(coords) => self.view.location_preview(cx, ids!(location_preview))
+                        .show_with_coordinates(cx, coords),
+                    None => enqueue_popup_notification(
+                        "Couldn't restore your unsent location message.",
+                        PopupKind::Warning,
+                        Some(8.0),
+                    ),
+                }
+            }
+            msgtype => {
+                let restored = match msgtype {
+                    MessageType::Emote(emote) => format!("/me {}", emote.body),
+                    MessageType::Notice(notice) => format!("/notice {}", notice.body),
+                    // Escape a leading slash so it isn't parsed as a command when re-sent.
+                    MessageType::Text(text) if text.body.starts_with('/') => format!("/{}", text.body),
+                    other => other.body().to_owned(),
+                };
+                let mentionable_text_input = self.mentionable_text_input(cx, ids!(mentionable_text_input));
+                let existing = mentionable_text_input.text();
+                let new_text = if existing.trim().is_empty() {
+                    restored
+                } else {
+                    format!("{existing}\n{restored}")
+                };
+                mentionable_text_input.set_text(cx, &new_text);
+                self.enable_send_message_button(cx, true);
+            }
+        }
+
+        if let Some(replied_to) = replied_to {
+            self.show_replying_to(cx, replied_to, timeline_kind, false);
+        }
+        self.redraw(cx);
+    }
+
     /// Clears (and makes invisible) the preview of the message
     /// that the user is currently replying to.
     fn clear_replying_to(&mut self, cx: &mut Cx) {
@@ -844,6 +896,18 @@ impl RoomInputBarRef {
         inner.show_replying_to(cx, replying_to, timeline_kind, true);
     }
 
+    /// Puts a message that failed to send back into the composer so the user can retry it.
+    pub fn restore_unsent_message(
+        &self,
+        cx: &mut Cx,
+        message: &RoomMessageEventContent,
+        replied_to: Option<(EventTimelineItem, EmbeddedEvent)>,
+        timeline_kind: &TimelineKind,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.restore_unsent_message(cx, message, replied_to, timeline_kind);
+    }
+
     /// Shows the editing pane to allow the user to edit the given event.
     pub fn show_editing_pane(
         &self,
@@ -1007,12 +1071,12 @@ impl RoomInputBarRef {
             .hide(cx, upload_id);
     }
 
-    /// Updates the upload progress.
-    pub fn set_upload_progress(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, current: u64, total: u64) {
+    /// Marks the upload as being added to the send queue, past the point where it can be cancelled here.
+    pub fn set_upload_queuing(&self, cx: &mut Cx, upload_id: FileUploadAttemptId) {
         let Some(inner) = self.borrow() else { return };
         inner.child_by_path(ids!(upload_progress_view))
             .as_upload_progress_view()
-            .set_progress(cx, upload_id, current, total);
+            .set_queuing(cx, upload_id);
     }
 
     /// Shows an upload error with retry option.
