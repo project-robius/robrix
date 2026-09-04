@@ -764,7 +764,8 @@ pub enum MatrixRequest {
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
     },
-    /// Retries sending the given local echo that previously failed to send.
+    /// Retries sending the given local echo of a message,
+    /// typically one that previously failed to send.
     RetrySend {
         timeline_kind: TimelineKind,
         timeline_event_id: TimelineEventItemId,
@@ -954,7 +955,8 @@ async fn matrix_worker_task(
                     match result {
                         Ok(_) => {
                             log!("Successfully edited message {timeline_event_item_id:?} in {timeline_kind}.");
-                            // Editing a local echo clears its wedge but leaves the room's queue asleep.
+                            // Re-enable the send queue after editing a message, since a prior failure
+                            // may have disabled the room's send queue.
                             if matches!(timeline_event_item_id, TimelineEventItemId::TransactionId(_)) {
                                 timeline.room().send_queue().set_enabled(true);
                             }
@@ -2107,7 +2109,6 @@ async fn matrix_worker_task(
                 };
 
                 // Spawn a new async task that will send the actual message.
-                // Any failure before the message reaches the send queue hands it back to the input bar.
                 let _send_message_task = Handle::current().spawn(async move {
                     log!("Sending message to {timeline_kind}: {message:?}...");
                     let message = {
@@ -2158,7 +2159,7 @@ async fn matrix_worker_task(
                         }
                     };
 
-                    let what = if replied_to.is_some() { "reply" } else { "message" };
+                    let r_or_m = if replied_to.is_some() { "reply" } else { "message" };
                     let content: AnyMessageLikeEventContent = if let Some(reply) = &replied_to {
                         let reply = Reply {
                             event_id: reply.event_id.clone(),
@@ -2179,10 +2180,10 @@ async fn matrix_worker_task(
                         message.clone().into()
                     };
                     match timeline.send(content).await {
-                        Ok(_send_handle) => log!("Sent {what} to {timeline_kind}."),
+                        Ok(_send_handle) => log!("Sent {r_or_m} to {timeline_kind}."),
                         Err(_e) => {
-                            error!("Failed to send {what} to {timeline_kind}: {_e:?}");
-                            enqueue_popup_notification(format!("Failed to send {what}: {_e}"), PopupKind::Error, None);
+                            error!("Failed to send {r_or_m} to {timeline_kind}: {_e:?}");
+                            enqueue_popup_notification(format!("Failed to send {r_or_m}: {_e}"), PopupKind::Error, None);
                             let _ = sender.send(TimelineUpdate::SendFailedBeforeQueue { message, replied_to });
                         }
                     }
@@ -2228,14 +2229,13 @@ async fn matrix_worker_task(
                     };
                     use matrix_sdk_ui::timeline::AttachmentConfig as TimelineAttachmentConfig;
 
-                    // Our own txn id, so we can follow this upload through the send queue.
+                    // Create a new transaction ID for this so we can track it through the send queue.
                     let txn_id = TransactionId::new();
-                    // Media progress only goes to the room's own channel, not the client-wide one.
                     let queue_updates = timeline.room().send_queue().subscribe().await
                         .map(|(_local_echoes, receiver)| receiver);
 
-                    // Everything up to the message reaching the queue can be cancelled
-                    // from the input bar, since there's no message to discard yet.
+                    // WE allow the upload to be cancelled up until the point where
+                    // the messages has reached the send queue.
                     let queue_future = async {
                         let _ = sender_clone.send(TimelineUpdate::FileUploadStarted {
                             upload_id,
@@ -2355,14 +2355,15 @@ async fn matrix_worker_task(
                         }
                     }
                     log!("Successfully queued attachment to send to {timeline_kind}.");
-                    // The message exists now, so cancelling means discarding it.
+                    // If the user cancels at this point, we have to discard the message via the send queue.
                     let _ = sender_clone.send(TimelineUpdate::FileUploadQueuing {
                         upload_id,
                         transaction_id: txn_id.clone(),
                     });
                     SignalToUI::set_ui_signal();
 
-                    // Nothing uploads until we're back online, and the message says so itself.
+                    // If we're offline we ought to notify the upload modal so the user knows that
+                    // nothing will happen until we're back online.
                     if is_offline() {
                         let _ = sender_clone.send(TimelineUpdate::FileUploadComplete { upload_id });
                         SignalToUI::set_ui_signal();
@@ -2372,14 +2373,14 @@ async fn matrix_worker_task(
                     let mut queue_updates = match queue_updates {
                         Ok(receiver) => receiver,
                         Err(_e) => {
-                            error!("Couldn't watch the send queue of {timeline_kind}: {_e:?}");
+                            error!("Couldn't watch the send queue for {timeline_kind}: {_e:?}");
                             let _ = sender_clone.send(TimelineUpdate::FileUploadComplete { upload_id });
                             SignalToUI::set_ui_signal();
                             return;
                         }
                     };
-                    // Follow this upload until it's sent, cancelled, or gives up,
-                    // so the input bar can show its real progress the whole way.
+                    // Track the progress of this upload until it's sent, cancelled, or gives up,
+                    // since we want to show its progress in the room input bar with as much detail as possible.
                     let mut last_percent = None;
                     loop {
                         let update = match queue_updates.recv().await {
@@ -2401,7 +2402,8 @@ async fn matrix_worker_task(
                                     total: progress.total,
                                 });
                             }
-                            // However it ends, the message's own indicator takes it from here.
+                            // From here on, the upload modal won't be shown,
+                            // only the send status indicator by the message can show its status.
                             RoomSendQueueUpdate::SentEvent { transaction_id, .. }
                             | RoomSendQueueUpdate::CancelledLocalEvent { transaction_id }
                             | RoomSendQueueUpdate::SendError { transaction_id, .. }
@@ -2545,7 +2547,7 @@ async fn matrix_worker_task(
                                 (TimelineEventItemId::TransactionId(_), e) => format!("Couldn't cancel sending this message: {e}"),
                                 (_, e) => format!("Failed to redact message. Error: {e}"),
                             };
-                            enqueue_popup_notification(msg, PopupKind::Error, None);
+                            enqueue_popup_notification(msg, PopupKind::Error, Some(8.0));
                         }
                     }
                 });
@@ -2564,27 +2566,27 @@ async fn matrix_worker_task(
                     let send_handle = match event_tl_item.map(|ev| (ev, ev.send_state())) {
                         Some((ev, Some(EventSendState::SendingFailed { .. }))) => ev.local_echo_send_handle(),
                         Some((_, Some(EventSendState::NotSentYet { .. }))) => {
-                            enqueue_popup_notification("This message is already being sent.", PopupKind::Info, None);
+                            enqueue_popup_notification("This message is already being sent.", PopupKind::Info, Some(5.0));
                             return;
                         }
                         _ => None,
                     };
                     let Some(send_handle) = send_handle else {
-                        enqueue_popup_notification("This message was already sent.", PopupKind::Info, None);
+                        enqueue_popup_notification("This message was already sent.", PopupKind::Info, Some(5.0));
                         return;
                     };
                     if let Err(e) = send_handle.unwedge().await {
-                        error!("Failed to retry sending {timeline_event_id:?} in {timeline_kind}: {e:?}");
-                        enqueue_popup_notification(format!("Couldn't retry sending: {e}"), PopupKind::Error, None);
+                        error!("Failed to retry sending{timeline_event_id:?} in {timeline_kind}: {e:?}");
+                        enqueue_popup_notification(format!("Couldn't retry sending: {e}"), PopupKind::Error, Some(8.0));
                         return;
                     }
-                    // Unwedging doesn't wake a room the SDK disabled after the failure.
+                    // We still need to re-enable the send queue, since `unwedge()` doesn't do that itself
                     timeline.room().send_queue().set_enabled(true);
                     if is_offline() {
                         enqueue_popup_notification(
-                            "You're offline. This message will be sent automatically once you're back online.",
+                            "You're offline. This message will be re-sent automatically when you're back online.",
                             PopupKind::Warning,
-                            Some(6.0),
+                            Some(7.0),
                         );
                     }
                     SignalToUI::set_ui_signal();
@@ -2998,6 +3000,7 @@ static SYNC_SERVICE_LIFECYCLE_LOCK: LazyLock<tokio::sync::Mutex<()>> =
 /// Set to `true` when the access token has been rejected by the homeserver,
 /// signaling the main task to tear down the current session and wait for re-login.
 static TOKEN_EXPIRED: AtomicBool = AtomicBool::new(false);
+
 /// Whether the sync service currently reports the homeserver as unreachable.
 static IS_OFFLINE: AtomicBool = AtomicBool::new(false);
 
@@ -3469,14 +3472,15 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         }
         apply_sync_service_desired_state("initial Matrix sync startup").await;
 
-        // Subscribe before enabling, since enabling respawns rooms with unsent requests from earlier sessions.
+        // Subscribe before enabling the send queue so we get ALL the updates possible,
+        // especially for pending messages that were not yet sent.
         subscriber_task_handles.push(handle_send_queue_subscriber(client.clone()));
         client.send_queue().enable_upload_progress(true);
         client.send_queue().set_enabled(true).await;
 
         let mut room_list_service_task = rt.spawn(room_list_service_loop(room_list_service));
         let mut space_service_task = rt.spawn(space_service_loop(client));
-        // If the space service fails, we shouldn't kill everything, room sync can sill go on.
+        // If the space service fails, we shouldn't kill everything, room sync can still happen.
         let mut is_space_service_alive = true;
 
         // Now, this task becomes an infinite loop that monitors the state of the
@@ -4413,10 +4417,9 @@ fn handle_session_changes(client: Client) -> JoinHandle<()> {
     })
 }
 
-/// How long we wait after a recoverable send failure before waking the send queue again.
 const SEND_QUEUE_RETRY_DELAY: Duration = Duration::from_secs(5);
 
-/// What a queued request was for, so a failure popup can say what didn't go out.
+/// What a queued send request was for.
 enum LocalSendKind {
     Message,
     Attachment,
@@ -4425,110 +4428,118 @@ enum LocalSendKind {
     Redaction,
 }
 
-/// Watches the send queue for failures: recoverable ones re-enable the queue after a delay,
-/// unrecoverable ones show a popup and wake the room so later messages still go out.
+/// Watches the send queue for any failures and handles them appropriately.
+///
+/// Recoverable errors will re-enable the send queue after a delay so messages
+/// can be auto-retried, while unrecoverable errors show a popup notification
+/// and wake up the room so future messages can still be sent.
 fn handle_send_queue_subscriber(client: Client) -> JoinHandle<()> {
     let mut updates = client.send_queue().subscribe();
     Handle::current().spawn(async move {
         let mut kinds: HashMap<OwnedTransactionId, LocalSendKind> = HashMap::new();
-        // When each room's queue should be woken again after a recoverable failure.
+        // The time when a room's queue should be woken up after a recoverable failure.
         let mut reenable_at: HashMap<OwnedRoomId, Instant> = HashMap::new();
-        // Set when we miss updates and so don't know which rooms are affected.
+        // If we missed updates and don't know which rooms they're for, we set this
+        // to ensure that all rooms' queues get re-enabled.
         let mut reenable_all_at: Option<Instant> = None;
+
         loop {
-        let next_wakeup = reenable_at.values().copied().min().into_iter().chain(reenable_all_at).min();
-        tokio::select! {
-            res = updates.recv() => match res {
-                Ok(SendQueueUpdate { room_id, update }) => match update {
-                    RoomSendQueueUpdate::NewLocalEvent(echo) => {
-                        let kind = match echo.content {
-                            LocalEchoContent::Event { serialized_event, .. } => match serialized_event.deserialize() {
-                                Ok(AnyMessageLikeEventContent::RoomMessage(msg)) => match msg.msgtype {
-                                    _ if matches!(msg.relates_to, Some(Relation::Replacement(_))) => LocalSendKind::Edit,
-                                    MessageType::Image(_) | MessageType::Video(_)
-                                    | MessageType::File(_) | MessageType::Audio(_) => LocalSendKind::Attachment,
+            let next_wakeup = reenable_at.values().copied().min().into_iter().chain(reenable_all_at).min();
+            tokio::select! {
+                res = updates.recv() => match res {
+                    Ok(SendQueueUpdate { room_id, update }) => match update {
+                        RoomSendQueueUpdate::NewLocalEvent(echo) => {
+                            let kind = match echo.content {
+                                LocalEchoContent::Event { serialized_event, .. } => match serialized_event.deserialize() {
+                                    Ok(AnyMessageLikeEventContent::RoomMessage(msg)) => match msg.msgtype {
+                                        _ if matches!(msg.relates_to, Some(Relation::Replacement(_))) => LocalSendKind::Edit,
+                                        MessageType::Image(_) | MessageType::Video(_)
+                                        | MessageType::File(_) | MessageType::Audio(_) => LocalSendKind::Attachment,
+                                        _ => LocalSendKind::Message,
+                                    },
                                     _ => LocalSendKind::Message,
                                 },
-                                _ => LocalSendKind::Message,
-                            },
-                            LocalEchoContent::React { key, .. } => LocalSendKind::Reaction { key },
-                            LocalEchoContent::Redaction { .. } => LocalSendKind::Redaction,
-                        };
-                        kinds.insert(echo.transaction_id, kind);
-                    }
-                    RoomSendQueueUpdate::SentEvent { transaction_id, .. }
-                    | RoomSendQueueUpdate::CancelledLocalEvent { transaction_id } => {
-                        kinds.remove(&transaction_id);
-                    }
-                    RoomSendQueueUpdate::SendError { transaction_id, error, is_recoverable } => {
-                        if is_recoverable {
-                            // While offline or stopped, the sync state subscriber re-enables the queue on reconnect.
-                            if !is_offline() && sync_service_desired_running() {
-                                let delay = match error.client_api_error_kind() {
-                                    Some(ErrorKind::LimitExceeded(data)) => match data.retry_after {
-                                        Some(RetryAfter::Delay(delay)) => delay,
-                                        Some(RetryAfter::DateTime(time)) => time.duration_since(SystemTime::now()).unwrap_or(SEND_QUEUE_RETRY_DELAY),
-                                        None => SEND_QUEUE_RETRY_DELAY,
-                                    },
-                                    _ => SEND_QUEUE_RETRY_DELAY,
-                                };
-                                warning!("Recoverable send error in room {room_id}, retrying in {delay:?}: {error}");
-                                reenable_at.insert(room_id, Instant::now() + delay);
-                            }
-                            continue;
+                                LocalEchoContent::React { key, .. } => LocalSendKind::Reaction { key },
+                                LocalEchoContent::Redaction { .. } => LocalSendKind::Redaction,
+                            };
+                            kinds.insert(echo.transaction_id, kind);
                         }
+                        RoomSendQueueUpdate::SentEvent { transaction_id, .. }
+                        | RoomSendQueueUpdate::CancelledLocalEvent { transaction_id } => {
+                            kinds.remove(&transaction_id);
+                        }
+                        RoomSendQueueUpdate::SendError { transaction_id, error, is_recoverable } => {
+                            if is_recoverable {
+                                // If we're offline, the sync state subscriber will re-enable the send queue upon reconnect.
+                                if !is_offline() && sync_service_desired_running() {
+                                    let delay = match error.client_api_error_kind() {
+                                        Some(ErrorKind::LimitExceeded(data)) => match data.retry_after {
+                                            Some(RetryAfter::Delay(delay)) => delay,
+                                            Some(RetryAfter::DateTime(time)) => time.duration_since(SystemTime::now()).unwrap_or(SEND_QUEUE_RETRY_DELAY),
+                                            None => SEND_QUEUE_RETRY_DELAY,
+                                        },
+                                        _ => SEND_QUEUE_RETRY_DELAY,
+                                    };
+                                    warning!("Recoverable send error in room {room_id}, retrying in {delay:?}: {error}");
+                                    reenable_at.insert(room_id, Instant::now() + delay);
+                                }
+                                continue;
+                            }
 
-                        error!("Unrecoverable send error in room {room_id}: {error:?}");
-                        // The SDK disabled the whole room's queue; wedged requests get skipped, so wake it back up.
-                        let room = client.get_room(&room_id);
-                        if let Some(room) = &room {
+                            error!("Unrecoverable send error in room {room_id}: {error:?}");
+                            // The SDK disabled the whole room's queue, so we have to re-enable it.
+                            let room = client.get_room(&room_id);
+                            if let Some(room) = &room {
+                                room.send_queue().set_enabled(true);
+                            }
+                            let room_name = match &room {
+                                Some(room) => RoomNameId::from_room(room).await,
+                                None => RoomNameId::empty(room_id.clone()),
+                            };
+                            let desc = describe_send_error(&error);
+                            let msg = match kinds.get(&transaction_id) {
+                                Some(LocalSendKind::Message) => format!("Couldn't send a message in {room_name}: {desc}\n\nOpen the message's menu to edit, retry, or cancel it."),
+                                Some(LocalSendKind::Attachment) => format!("Couldn't send an attachment in {room_name}: {desc}\n\nOpen the message's menu to retry or cancel it."),
+                                Some(LocalSendKind::Edit) => format!("Couldn't send your edit in {room_name}: {desc}"),
+                                Some(LocalSendKind::Reaction { key }) => format!("Couldn't send your {key} reaction in {room_name}: {desc}"),
+                                Some(LocalSendKind::Redaction) => format!("Couldn't delete a message in {room_name}: {desc}"),
+                                None => format!("Couldn't send to {room_name}: {desc}"),
+                            };
+                            enqueue_popup_notification(msg, PopupKind::Error, Some(8.0));
+                        }
+                        _ => {}
+                    },
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        warning!("Send queue update receiver lagged and we missed {n} messages.");
+                        if !is_offline() && sync_service_desired_running() {
+                            reenable_all_at = Some(Instant::now() + SEND_QUEUE_RETRY_DELAY);
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                },
+                _ = async { tokio::time::sleep_until(next_wakeup.unwrap()).await},
+                    if next_wakeup.is_some() =>
+                {
+                    let now = Instant::now();
+                    if reenable_all_at.is_some_and(|at| at <= now) {
+                        reenable_all_at = None;
+                        reenable_at.clear();
+                        client.send_queue().set_enabled(true).await;
+                        continue;
+                    }
+                    let due: Vec<OwnedRoomId> = reenable_at.iter()
+                        .filter(|(_, at)| **at <= now)
+                        .map(|(room_id, _)| room_id.clone())
+                        .collect();
+                    for room_id in due {
+                        reenable_at.remove(&room_id);
+                        if let Some(room) = client.get_room(&room_id) {
                             room.send_queue().set_enabled(true);
                         }
-                        let room_name = match &room {
-                            Some(room) => RoomNameId::from_room(room).await,
-                            None => RoomNameId::empty(room_id.clone()),
-                        };
-                        let desc = describe_send_error(&error);
-                        let msg = match kinds.get(&transaction_id) {
-                            Some(LocalSendKind::Message) => format!("Couldn't send a message in {room_name}: {desc}\n\nOpen the message's menu to edit, retry, or cancel it."),
-                            Some(LocalSendKind::Attachment) => format!("Couldn't send an attachment in {room_name}: {desc}\n\nOpen the message's menu to retry or cancel it."),
-                            Some(LocalSendKind::Edit) => format!("Couldn't send your edit in {room_name}: {desc}"),
-                            Some(LocalSendKind::Reaction { key }) => format!("Couldn't send your {key} reaction in {room_name}: {desc}"),
-                            Some(LocalSendKind::Redaction) => format!("Couldn't delete a message in {room_name}: {desc}"),
-                            None => format!("Couldn't send to {room_name}: {desc}"),
-                        };
-                        enqueue_popup_notification(msg, PopupKind::Error, Some(7.0));
-                    }
-                    _ => {}
-                },
-                Err(broadcast::error::RecvError::Lagged(n)) => {
-                    warning!("Send queue update receiver lagged, missed {n} messages.");
-                    if !is_offline() && sync_service_desired_running() {
-                        reenable_all_at = Some(Instant::now() + SEND_QUEUE_RETRY_DELAY);
-                    }
-                }
-                Err(broadcast::error::RecvError::Closed) => break,
-            },
-            _ = async { tokio::time::sleep_until(next_wakeup.unwrap()).await }, if next_wakeup.is_some() => {
-                let now = Instant::now();
-                if reenable_all_at.is_some_and(|at| at <= now) {
-                    reenable_all_at = None;
-                    reenable_at.clear();
-                    client.send_queue().set_enabled(true).await;
-                    continue;
-                }
-                let due: Vec<OwnedRoomId> = reenable_at.iter()
-                    .filter(|(_, at)| **at <= now)
-                    .map(|(room_id, _)| room_id.clone())
-                    .collect();
-                for room_id in due {
-                    reenable_at.remove(&room_id);
-                    if let Some(room) = client.get_room(&room_id) {
-                        room.send_queue().set_enabled(true);
                     }
                 }
             }
-        } }
+        }
     })
 }
 
@@ -4581,7 +4592,6 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
                     IS_OFFLINE.store(matches!(other, sync_service::State::Offline), Ordering::Release);
                     let is_now_running = matches!(other, sync_service::State::Running);
                     Cx::post_action(RoomsListHeaderAction::StateUpdate(other));
-                    // Rooms whose queue was disabled by a failure while offline or stopped get woken here.
                     if is_now_running && let Some(client) = get_client() {
                         client.send_queue().set_enabled(true).await;
                     }
@@ -5121,8 +5131,8 @@ async fn timeline_subscriber_handler(
     // Whether any update changes have arrived since this timeline was last closed,
     // meaning that we need to send an cumulative update when the timeline gets re-opened.
     let mut has_unsent_changes = false;
-    // The last upload progress tick forwarded to the UI, as (item index, percent).
-    let mut last_progress_sent: Option<(usize, usize)> = None;
+    // The latest upload progress that was sent to the UI: `(item index, percent)`.
+    let mut latest_progress_update: Option<(usize, usize)> = None;
 
     loop { tokio::select! {
         // we should check for new requests before handling new timeline updates,
@@ -5229,28 +5239,12 @@ async fn timeline_subscriber_handler(
             let mut clear_cache = false;
             // whether the changes include items being appended to the end of the timeline
             let mut is_append = false;
-            // whether every diff so far is just an upload progress tick on a local echo
-            let mut is_progress_only = true;
             // the (index, percent) of the last upload progress tick in this batch
-            let mut progress_tick = None;
+            let mut latest_progress_updates = None;
+            let mut num_progress_updates = 0;
+
             for diff in batch {
                 num_updates += 1;
-                is_progress_only &= match &diff {
-                    VectorDiff::Set { index, value } => {
-                        let tick = timeline_items.get(*index)
-                            .and_then(|old| old.as_event()?.transaction_id())
-                            .zip(value.as_event())
-                            .filter(|(old_txn_id, new_ev)| new_ev.transaction_id() == Some(old_txn_id))
-                            .and_then(|(_, new_ev)| match new_ev.send_state() {
-                                Some(EventSendState::NotSentYet { progress: Some(p) }) => Some(p.progress),
-                                _ => None,
-                            })
-                            .map(|p| (*index, if p.total > 0 { p.current * 100 / p.total } else { 0 }));
-                        progress_tick = tick.or(progress_tick);
-                        tick.is_some()
-                    }
-                    _ => false,
-                };
                 match diff {
                     VectorDiff::Append { values } => {
                         let _values_len = values.len();
@@ -5323,6 +5317,21 @@ async fn timeline_subscriber_handler(
                         if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id}, thread {thread_root_event_id:?} diff Insert at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
                     }
                     VectorDiff::Set { index, value } => {
+                        // The way that the sdk provides progress updates for an upload/message being sent
+                        // is by delivering a `Set` diff here, which replaces the local echo with an updated
+                        // version of itself. When that happens, we only need to update the progress value in the UI.
+                        if let Some(old_txn_id) = timeline_items.get(index).and_then(|old| old.as_event()?.transaction_id())
+                            && let Some(new_event) = value.as_event()
+                            && new_event.transaction_id() == Some(old_txn_id)
+                            && let Some(EventSendState::NotSentYet { progress: Some(p) }) = new_event.send_state()
+                        {
+                            let percent = (p.progress.total > 0)
+                                .then(|| p.progress.current * 100 / p.progress.total)
+                                .unwrap_or(0);
+                            latest_progress_updates = Some((index, percent));
+                            num_progress_updates += 1;
+                        }
+
                         index_of_first_change = min(index_of_first_change, index);
                         index_of_last_change  = max(index_of_last_change, index.saturating_add(1));
                         timeline_items.set(index, value);
@@ -5366,7 +5375,7 @@ async fn timeline_subscriber_handler(
                     }
                 }
             }
-
+            let is_progress_only = num_progress_updates == num_updates;
 
             if num_updates > 0 {
                 // Handle the case where back pagination inserts items at the beginning of the timeline
@@ -5385,49 +5394,48 @@ async fn timeline_subscriber_handler(
                 }
                 // Only send updates to the UI while this timeline is open.
                 // While it's closed, we process the updates locally until it is re-opened again.
-                if !is_timeline_open {
-                    // Closed: our local items are updated above; remember to catch the UI up on reopen.
-                    has_unsent_changes = true;
-                }
-                // Upload progress arrives per chunk; the UI only needs it when the shown percent changes.
-                else if !(is_progress_only && progress_tick == last_progress_sent) {
-                    if is_progress_only {
-                        last_progress_sent = progress_tick;
-                    }
-                    let update = if is_progress_only {
-                        TimelineUpdate::LocalEchoProgress { new_items: timeline_items.clone() }
-                    } else {
-                        TimelineUpdate::NewItems {
-                            new_items: timeline_items.clone(),
-                            changed_indices,
-                            clear_cache,
-                            is_append,
-                        }
-                    };
-                    if timeline_update_sender.send(update).is_err() {
-                        log!("Timeline for room {room_id}, thread {thread_root_event_id:?} was closed \
-                            or recreated; ending this subscriber task.");
-                        return;
-                    }
-
-                    // We must send this update *after* the actual NewItems update,
-                    // otherwise the UI thread (RoomScreen) won't be able to correctly locate the target event.
-                    if let Some((index, found_event_id)) = found_target_event_id.take() {
-                        target_event_id = None;
-                        if timeline_update_sender.send(
-                            TimelineUpdate::TargetEventFound {
-                                target_event_id: found_event_id.clone(),
-                                index,
+                if is_timeline_open {
+                    // Only send a progress-change update if it's actually different than before.
+                    let ui_needs_update = !is_progress_only
+                        || latest_progress_updates != latest_progress_update;
+                    if ui_needs_update {
+                        let update = if is_progress_only {
+                            latest_progress_update = latest_progress_updates;
+                            TimelineUpdate::LocalEchoProgress { new_items: timeline_items.clone() }
+                        } else {
+                            TimelineUpdate::NewItems {
+                                new_items: timeline_items.clone(),
+                                changed_indices,
+                                clear_cache,
+                                is_append,
                             }
-                        ).is_err() {
+                        };
+                        if timeline_update_sender.send(update).is_err() {
                             log!("Timeline for room {room_id}, thread {thread_root_event_id:?} was closed \
                                 or recreated; ending this subscriber task.");
                             return;
                         }
-                    }
 
-                    // Send a Makepad-level signal to update this room's timeline UI view.
-                    SignalToUI::set_ui_signal();
+                        // We must send this update *after* the actual NewItems update,
+                        // otherwise the RoomSCreen UI won't be able to correctly locate the target event.
+                        if let Some((index, found_event_id)) = found_target_event_id.take() {
+                            target_event_id = None;
+                            if timeline_update_sender.send(
+                                TimelineUpdate::TargetEventFound {
+                                    target_event_id: found_event_id.clone(),
+                                    index,
+                                }
+                            ).is_err() {
+                                log!("Timeline for room {room_id}, thread {thread_root_event_id:?} was closed \
+                                    or recreated; ending this subscriber task.");
+                                return;
+                            }
+                        }
+                        SignalToUI::set_ui_signal();
+                    }
+                } else {
+                    // Closed: our local items are updated above; remember to catch the UI up on reopen.
+                    has_unsent_changes = true;
                 }
             }
         }

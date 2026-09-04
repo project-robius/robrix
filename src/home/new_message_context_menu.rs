@@ -201,7 +201,7 @@ impl MessageAbilities {
     ) -> Self {
         let mut abilities = Self::empty();
         let is_local_echo = event_tl_item.is_local_echo();
-        // The SDK can't edit a queued upload yet (only its caption).
+        // The SDK doesn't support editing a queued file upload, only its caption
         let is_unsent_upload = is_local_echo && matches!(
             &message.kind,
             MsgLikeKind::Message(msg) if matches!(
@@ -211,7 +211,7 @@ impl MessageAbilities {
         );
         abilities.set(Self::CanEdit, event_tl_item.is_editable() && !is_unsent_upload);
         // Currently we only support deleting one's own messages.
-        // An unsent message gets "Cancel Sending" instead of "Delete".
+        // But for unsent messages, we show "Cancel Sending" instead of "Delete".
         if event_tl_item.is_own() && !is_local_echo {
             abilities.set(Self::CanDelete, user_power_levels.can_redact_own());
         }
@@ -237,6 +237,7 @@ impl MessageAbilities {
         }
         abilities.set(
             Self::CanReact,
+            // don't let the user react to unsent messages, that doesn't make sense
             user_power_levels.can_send_reaction() && event_tl_item.event_id().is_some(),
         );
         abilities.set(Self::HasHtml, has_html);
