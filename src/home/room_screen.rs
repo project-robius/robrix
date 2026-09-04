@@ -1070,8 +1070,7 @@ impl Widget for RoomScreen {
                 // Handle a hover-out action on the reaction list or avatar row.
                 let avatar_row_ref = wr.avatar_row(cx, ids!(avatar_row));
                 if (reaction_list.hovered_out(actions) || avatar_row_ref.hover_out(actions))
-                    // We relay this a batch later than it happened, so it would cancel a
-                    // tooltip that another widget (e.g. the send status icon) just claimed.
+                    // Don't hover out if any current actions are about to hover in and show the tooltip.
                     && !actions.iter().any(|a| matches!(
                         a.as_widget_action().and_then(|wa| wa.action.downcast_ref::<TooltipAction>()),
                         Some(TooltipAction::HoverIn { .. })
@@ -2190,33 +2189,36 @@ impl RoomScreen {
                 }
                 TimelineUpdate::FileUploadQueuing { upload_id, transaction_id } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .set_upload_queuing(cx, upload_id, transaction_id, tl.is_encrypted);
+                        .set_upload_as_queued(cx, upload_id, transaction_id, tl.is_encrypted);
                 }
-                TimelineUpdate::FileUploadProgress { upload_id, current, total } => {
+                TimelineUpdate::FileUploadProgress { upload_id, current_bytes: current, total_bytes: total } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .set_upload_progress(cx, upload_id, current, total);
                 }
                 TimelineUpdate::LocalEchoProgress { new_items } => {
-                    // Progress only ever lands on an unsent echo, so `index_of_last_own_sent` still holds.
+                    // we don't have to do anything except update the timeline items and redraw.
                     tl.items = new_items;
                     portal_list.redraw(cx);
                 }
-                TimelineUpdate::SendFailedBeforeQueue { message, replied_to } => {
-                    // A `Threaded(No)` reply is the implicit thread-root reply, not one the user picked.
-                    let visible_reply = replied_to.as_ref()
-                        .filter(|reply| !matches!(reply.enforce_thread, EnforceThread::Threaded(ReplyWithinThread::No)));
-                    let replied_to_item = visible_reply
+                TimelineUpdate::SendFailedBeforeBeingQueued { message, replied_to } => {
+                    // Every message in a separate thread also has a `replied_to` field,
+                    // which is just there to indicate that its part of a threaded reply to the thread room message.
+                    // Obviously those shouldn't be treated as a "reply" to restore as the replying_preview.
+                    let real_reply = replied_to.as_ref().filter(
+                        |reply| !matches!(reply.enforce_thread, EnforceThread::Threaded(ReplyWithinThread::No))
+                    );
+                    let replied_to_item = real_reply
                         .and_then(|reply| index_of_event(&tl.items, &reply.event_id, tl.items.len(), MAX_ITEMS_TO_SEARCH_THROUGH))
                         .and_then(|index| tl.items.get(index)?.as_event().cloned())
                         .map(|event_tl_item| {
                             let replied_to_info = EmbeddedEvent::from_timeline_item(&event_tl_item);
                             (event_tl_item, replied_to_info)
                         });
-                    if visible_reply.is_some() && replied_to_item.is_none() {
+                    if real_reply.is_some() && replied_to_item.is_none() {
                         enqueue_popup_notification(
-                            "Your unsent reply was restored, but the message it replied to is no longer loaded, so please pick it again.",
+                            "Your unsent reply was restored, but the message you were replying to is no longer loaded. Please reply to it again.",
                             PopupKind::Warning,
-                            Some(8.0),
+                            Some(10.0),
                         );
                     }
                     self.view.room_input_bar(cx, ids!(room_input_bar))
@@ -2454,7 +2456,7 @@ impl RoomScreen {
         details: &MessageDetails,
     ) -> Option<&'a EventTimelineItem> {
         let Some(target_event_id) = details.event_id() else {
-            // A local echo has no event ID yet, so its index is all we can match on.
+            // A local echo doesn't have an event ID yet, so we can only find it via its index.
             return items.get(details.item_id)?.as_event()
                 .filter(|ev| ev.identifier() == details.timeline_event_id);
         };
@@ -2827,7 +2829,8 @@ impl RoomScreen {
                     let timeline_event_id = details.timeline_event_id.clone();
                     let timeline_kind = tl.kind.clone();
                     let reason = reason.clone();
-                    // An unsent message hasn't gone anywhere yet, so discard it right away.
+                    // An unsent message should just be immediately discarded without confirmation,
+                    // as the user might be rushing to quickly cancel it before it actually sends.
                     if matches!(timeline_event_id, TimelineEventItemId::TransactionId(_)) {
                         submit_async_request(MatrixRequest::RedactMessage {
                             timeline_kind,
@@ -3635,7 +3638,7 @@ pub enum TimelineUpdate {
         /// This supersedes `index_of_first_change` and is used when the entire timeline is being redrawn.
         clear_cache: bool,
     },
-    /// Only local echoes' upload progress changed, so no drawn-item caches need clearing.
+    /// Only the upload progress of local echoes (pending message) changed.
     LocalEchoProgress {
         new_items: Vector<Arc<TimelineItem>>,
     },
@@ -3739,20 +3742,21 @@ pub enum TimelineUpdate {
         in_reply_to: Option<OwnedEventId>,
         abort_handle: futures_util::future::AbortHandle,
     },
-    /// The file was read and handed to the send queue, so cancelling it
-    /// now means discarding the local echo.
+    /// The file being uploaded was read from storage and handed to the send queue.
+    /// This means that we have to discard the local echo message if we cancel it.
     FileUploadQueuing {
         upload_id: FileUploadAttemptId,
         transaction_id: OwnedTransactionId,
     },
-    /// Progress update for a specific file-upload attempt, in bytes.
+    /// There's an update on the progress for a specific file upload attempt.
     FileUploadProgress {
         upload_id: FileUploadAttemptId,
-        current: usize,
-        total: usize,
+        current_bytes: usize,
+        total_bytes: usize,
     },
-    /// A message failed before reaching the send queue, so it should go back into the input bar.
-    SendFailedBeforeQueue {
+    /// A message failed before it even reached the send queue,
+    /// so we should restore/redisplay it in the room input bar.
+    SendFailedBeforeBeingQueued {
         message: RoomMessageEventContent,
         replied_to: Option<Reply>,
     },
@@ -3763,8 +3767,10 @@ pub enum TimelineUpdate {
         upload: crate::shared::file_upload_modal::AttachmentUpload,
         retryable: bool,
     },
-    /// The input bar is done with this upload, however it ended.
-    /// The message's own send status owns it from there.
+    /// The room input bar is done showing this upload's status (either success or failure).
+    ///
+    /// At this point, the upload status view can be hidden, as the
+    /// message's send indicator will show its status from here on out.
     FileUploadComplete {
         upload_id: FileUploadAttemptId,
     },
@@ -3970,8 +3976,8 @@ struct TimelineUiState {
     /// The list of items (events) in this room's timeline that our client currently knows about.
     items: Vector<Arc<TimelineItem>>,
 
-    /// Index into `items` of the newest of our own fully-sent messages, the only one
-    /// that shows a "sent" checkmark. Recomputed wherever `items` is replaced.
+    /// The index (in `items`) of our newest fully-sent message,
+    /// which is the only message that should show a "Sent" status icon.
     index_of_last_own_sent: Option<usize>,
 
     /// The range of items (indices in the above `items` list) whose event **contents** have been drawn
@@ -4169,8 +4175,7 @@ impl ItemDrawnStatus {
     }
 }
 
-/// Searches backwards for the newest of our own messages that has fully sent.
-/// The predicate has to match what the draw loop renders, or the checkmark goes missing.
+/// Searches backwards for the latest message of our own that has been fully sent.
 fn index_of_last_own_sent(
     items: &Vector<Arc<TimelineItem>>,
     is_main_timeline: bool,
@@ -4793,7 +4798,16 @@ fn populate_message_view(
         })
         .unwrap_or_default();
     let is_reply_expanded = expanded_reply_previews.contains(&message_details.timeline_event_id);
-    item.as_message().set_data(cx, message_details, event_tl_item, download_info, download_state, is_reply_expanded, is_newest_sent, is_room_encrypted);
+    item.as_message().set_data(
+        cx,
+        message_details,
+        event_tl_item,
+        download_info,
+        download_state,
+        is_reply_expanded,
+        is_newest_sent,
+        is_room_encrypted,
+    );
 
 
     // If `used_cached_item` is false, we should always redraw the profile, even if profile_drawn is true.

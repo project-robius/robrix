@@ -613,7 +613,7 @@ impl RoomInputBar {
         self.redraw(cx);
     }
 
-    /// Puts a message that failed to send back into the composer so the user can retry it.
+    /// Fills the input bar with the content of a message that failed to send (so the user can retry it).
     fn restore_unsent_message(
         &mut self,
         cx: &mut Cx,
@@ -622,13 +622,13 @@ impl RoomInputBar {
         timeline_kind: &TimelineKind,
     ) {
         match &message.msgtype {
-            // A location isn't a draft, same as when the room gets closed and reopened.
+            // don't do this for locations, which might already be outdates
             MessageType::Location(_) => { }
             msgtype => {
                 let restored = match msgtype {
                     MessageType::Emote(emote) => format!("/me {}", emote.body),
                     MessageType::Notice(notice) => format!("/notice {}", notice.body),
-                    // Escape a leading slash so it isn't parsed as a command when re-sent.
+                    // Escape a leading slash so it isn't treated as a command
                     MessageType::Text(text) if text.body.starts_with('/') => format!("/{}", text.body),
                     other => other.body().to_owned(),
                 };
@@ -881,7 +881,7 @@ impl RoomInputBarRef {
         inner.show_replying_to(cx, replying_to, timeline_kind, true);
     }
 
-    /// Puts a message that failed to send back into the composer so the user can retry it.
+    /// Fills the input bar with the content of a message that failed to send (so the user can retry it).
     pub fn restore_unsent_message(
         &self,
         cx: &mut Cx,
@@ -1061,7 +1061,7 @@ impl RoomInputBarRef {
     }
 
     /// Marks the given upload as having been added to the send queue.
-    pub fn set_upload_queuing(
+    pub fn set_upload_as_queued(
         &self,
         cx: &mut Cx,
         upload_id: FileUploadAttemptId,
@@ -1071,7 +1071,7 @@ impl RoomInputBarRef {
         let Some(inner) = self.borrow() else { return };
         inner.child_by_path(ids!(upload_progress_view))
             .as_upload_progress_view()
-            .set_queuing(cx, upload_id, transaction_id, is_encrypted);
+            .set_as_queued(cx, upload_id, transaction_id, is_encrypted);
     }
 
     /// Updates the upload progress bar for the given upload attempt.

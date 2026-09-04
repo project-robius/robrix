@@ -104,11 +104,11 @@ pub enum UploadViewState {
     },
 }
 
-/// How the cancel button stops the upload, which differs once it reaches the send queue.
-enum UploadCancel {
-    /// Still reading the file, so the task can just be aborted.
+/// How the cancel button should actually stop the upload.
+enum HowToCancel {
+    /// We're still reading the file, so just abort the task.
     Reading(AbortHandle),
-    /// Queued, so cancelling means discarding the local echo.
+    /// The upload has been queued, so we have to discard the local message echo.
     Queued(OwnedTransactionId),
 }
 
@@ -118,9 +118,8 @@ pub struct UploadProgressView {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
 
-    /// How to stop the upload this view is showing.
-    #[rust] cancel: Option<UploadCancel>,
-    /// The room this upload belongs to, so another room's input bar doesn't show it.
+    #[rust] cancel: Option<HowToCancel>,
+    /// The room/thread timeline that this upload belongs to.
     #[rust] timeline_kind: Option<TimelineKind>,
     /// The upload attempt currently represented by this view.
     #[rust] upload_id: Option<FileUploadAttemptId>,
@@ -135,8 +134,8 @@ impl Widget for UploadProgressView {
             if self.button(cx, ids!(cancel_button)).clicked(actions) {
                 log!("Upload cancel requested for {:?}.", self.upload_id);
                 match self.cancel.take() {
-                    Some(UploadCancel::Reading(handle)) => handle.abort(),
-                    Some(UploadCancel::Queued(transaction_id)) => {
+                    Some(HowToCancel::Reading(handle)) => handle.abort(),
+                    Some(HowToCancel::Queued(transaction_id)) => {
                         if let Some(timeline_kind) = self.timeline_kind.clone() {
                             submit_async_request(MatrixRequest::RedactMessage {
                                 timeline_kind,
@@ -182,7 +181,7 @@ impl UploadProgressView {
         self.set_visible(cx, true);
         self.upload_id = Some(upload_id);
         self.timeline_kind = Some(timeline_kind);
-        self.cancel = Some(UploadCancel::Reading(abort_handle));
+        self.cancel = Some(HowToCancel::Reading(abort_handle));
         self.state = UploadViewState::Normal;
 
         self.label(cx, ids!(file_name_label)).set_text(cx, &format!("Sending:  {file_name}"));
@@ -202,7 +201,7 @@ impl UploadProgressView {
 
     /// The file has been read and handed to the send queue, so the cancel button
     /// now discards the local echo instead of aborting the read.
-    pub fn set_queuing(
+    pub fn set_as_queued(
         &mut self,
         cx: &mut Cx,
         upload_id: FileUploadAttemptId,
@@ -212,19 +211,15 @@ impl UploadProgressView {
         if self.upload_id != Some(upload_id) {
             return;
         }
-        self.cancel = Some(UploadCancel::Queued(transaction_id));
-        // Nothing's uploading yet: the queue reads the file back out of the media
-        // store, then encrypts all of it if the room is encrypted.
-        self.label(cx, ids!(status_label)).set_text(cx, if is_encrypted {
-            "Encrypting..."
-        } else {
-            "Starting upload..."
-        });
+        self.cancel = Some(HowToCancel::Queued(transaction_id));
+        self.label(cx, ids!(status_label)).set_text(
+            cx,
+            if is_encrypted { "Encrypting..." } else { "Starting upload..." },
+        );
         self.redraw(cx);
     }
 
-    /// Hides the view while a different room is being shown, since the upload
-    /// belongs to the room it was started in.
+    /// Hides the upload progress view while a different room is being shown.
     pub fn hide_if_other_room(&mut self, cx: &mut Cx, timeline_kind: &TimelineKind) {
         if self.timeline_kind.as_ref().is_some_and(|kind| kind != timeline_kind) {
             self.set_visible(cx, false);
@@ -336,8 +331,8 @@ impl UploadProgressViewRef {
         }
     }
 
-    /// See [`UploadProgressView::set_queuing()`].
-    pub fn set_queuing(
+    /// See [`UploadProgressView::set_as_queued()`].
+    pub fn set_as_queued(
         &self,
         cx: &mut Cx,
         upload_id: FileUploadAttemptId,
@@ -345,7 +340,7 @@ impl UploadProgressViewRef {
         is_encrypted: bool,
     ) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_queuing(cx, upload_id, transaction_id, is_encrypted);
+            inner.set_as_queued(cx, upload_id, transaction_id, is_encrypted);
         }
     }
 

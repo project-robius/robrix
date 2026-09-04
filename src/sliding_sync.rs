@@ -2136,7 +2136,7 @@ async fn matrix_worker_task(
                                                     PopupKind::Error,
                                                     None,
                                                 );
-                                                let _ = sender.send(TimelineUpdate::SendFailedBeforeQueue { message, replied_to });
+                                                let _ = sender.send(TimelineUpdate::SendFailedBeforeBeingQueued { message, replied_to });
                                                 SignalToUI::set_ui_signal();
                                                 return;
                                             }
@@ -2149,7 +2149,7 @@ async fn matrix_worker_task(
                                             PopupKind::Error,
                                             None,
                                         );
-                                        let _ = sender.send(TimelineUpdate::SendFailedBeforeQueue { message, replied_to });
+                                        let _ = sender.send(TimelineUpdate::SendFailedBeforeBeingQueued { message, replied_to });
                                         SignalToUI::set_ui_signal();
                                         return;
                                     }
@@ -2171,7 +2171,7 @@ async fn matrix_worker_task(
                             Err(_e) => {
                                 error!("Failed to build reply content to send to {timeline_kind}: {_e:?}");
                                 enqueue_popup_notification(format!("Failed to send reply: {_e}"), PopupKind::Error, None);
-                                let _ = sender.send(TimelineUpdate::SendFailedBeforeQueue { message, replied_to });
+                                let _ = sender.send(TimelineUpdate::SendFailedBeforeBeingQueued { message, replied_to });
                                 SignalToUI::set_ui_signal();
                                 return;
                             }
@@ -2184,7 +2184,7 @@ async fn matrix_worker_task(
                         Err(_e) => {
                             error!("Failed to send {r_or_m} to {timeline_kind}: {_e:?}");
                             enqueue_popup_notification(format!("Failed to send {r_or_m}: {_e}"), PopupKind::Error, None);
-                            let _ = sender.send(TimelineUpdate::SendFailedBeforeQueue { message, replied_to });
+                            let _ = sender.send(TimelineUpdate::SendFailedBeforeBeingQueued { message, replied_to });
                         }
                     }
                     SignalToUI::set_ui_signal();
@@ -2398,8 +2398,8 @@ async fn matrix_worker_task(
                                 last_percent = percent;
                                 let _ = sender_clone.send(TimelineUpdate::FileUploadProgress {
                                     upload_id,
-                                    current: progress.current,
-                                    total: progress.total,
+                                    current_bytes: progress.current,
+                                    total_bytes: progress.total,
                                 });
                             }
                             // From here on, the upload modal won't be shown,
