@@ -23,7 +23,7 @@ use matrix_sdk::room::RoomMember;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
-use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId};
+use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId, OwnedTransactionId};
 use robius_location::Coordinates;
 use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, rooms_list::RoomsListRef, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, location::init_location_subscriber, profile::user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, room::BasicRoomDetails, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, slash_commands::{SlashCommandAction, SlashCommandOutcome}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 use crate::room::reply_preview::CollapsiblePreviewWidgetRefExt;
@@ -1030,6 +1030,10 @@ impl RoomInputBarRef {
             editing_pane_state,
         } = saved_state;
 
+        inner.child_by_path(ids!(upload_progress_view))
+            .as_upload_progress_view()
+            .hide_if_other_room(cx, &timeline_kind);
+
         // Note: we do *not* restore the location preview state here; see `save_state()`.
 
         // 0. Apply this room's encryption state.
@@ -1071,12 +1075,26 @@ impl RoomInputBarRef {
             .hide(cx, upload_id);
     }
 
-    /// Marks the upload as being added to the send queue, past the point where it can be cancelled here.
-    pub fn set_upload_queuing(&self, cx: &mut Cx, upload_id: FileUploadAttemptId) {
+    /// Marks the given upload as having been added to the send queue.
+    pub fn set_upload_queuing(
+        &self,
+        cx: &mut Cx,
+        upload_id: FileUploadAttemptId,
+        transaction_id: OwnedTransactionId,
+        is_encrypted: bool,
+    ) {
         let Some(inner) = self.borrow() else { return };
         inner.child_by_path(ids!(upload_progress_view))
             .as_upload_progress_view()
-            .set_queuing(cx, upload_id);
+            .set_queuing(cx, upload_id, transaction_id, is_encrypted);
+    }
+
+    /// Updates the upload progress bar for the given upload attempt.
+    pub fn set_upload_progress(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, current: usize, total: usize) {
+        let Some(inner) = self.borrow() else { return };
+        inner.child_by_path(ids!(upload_progress_view))
+            .as_upload_progress_view()
+            .set_progress(cx, upload_id, current, total);
     }
 
     /// Shows an upload error with retry option.
@@ -1095,12 +1113,13 @@ impl RoomInputBarRef {
         file_name: &str,
         in_reply_to: Option<&OwnedEventId>,
         abort_handle: futures_util::future::AbortHandle,
+        timeline_kind: TimelineKind,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
 
         inner.child_by_path(ids!(upload_progress_view))
             .as_upload_progress_view()
-            .show(cx, upload_id, file_name, abort_handle);
+            .show(cx, upload_id, file_name, abort_handle, timeline_kind);
 
         if let Some(in_reply_to) = in_reply_to {
             let should_clear_reply = inner

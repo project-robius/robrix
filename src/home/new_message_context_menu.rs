@@ -235,7 +235,10 @@ impl MessageAbilities {
                 abilities.set(Self::CanPin, true);
             }
         }
-        abilities.set(Self::CanReact, user_power_levels.can_send_reaction());
+        abilities.set(
+            Self::CanReact,
+            user_power_levels.can_send_reaction() && event_tl_item.event_id().is_some(),
+        );
         abilities.set(Self::HasHtml, has_html);
         abilities
     }

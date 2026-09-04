@@ -6,7 +6,7 @@ use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
 use futures_util::{future::{Abortable, join_all}, pin_mut, stream, StreamExt};
 use imbl::Vector;
-use makepad_widgets::{error, log, warning, Cx, SignalToUI, WidgetUid};
+use makepad_widgets::{error, image_cache::image_size_by_data, log, warning, Cx, SignalToUI, WidgetUid};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
     authentication::oauth::error::OAuthDiscoveryError, config::RequestConfig, encryption::{identities::Device, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, Receipts, RelationsOptions}, ruma::{
@@ -14,9 +14,9 @@ use matrix_sdk::{
             receipt::{ReceiptThread, ReceiptType as ReceiptEventType},
             relation::RelationType,
             room::{
-                encrypted::Relation as EncryptedRelation, message::{Relation, RoomMessageEventContent, TextMessageEventContent}, power_levels::RoomPowerLevels, redaction::SyncRoomRedactionEvent, MediaSource
+                encrypted::Relation as EncryptedRelation, message::{MessageType, Relation, RoomMessageEventContent, TextMessageEventContent}, power_levels::RoomPowerLevels, redaction::SyncRoomRedactionEvent, MediaSource
             }, AnyMessageLikeEventContent, AnySyncMessageLikeEvent, AnySyncTimelineEvent, MessageLikeEventType, StateEventType
-        }, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedTransactionId, OwnedUserId, RoomOrAliasId, UserId, uint
+        }, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedTransactionId, OwnedUserId, RoomOrAliasId, TransactionId, UserId, uint
     }, send_queue::{LocalEchoContent, RoomSendQueueUpdate, SendQueueUpdate}, sliding_sync::VersionBuilder, Client, ClientBuildError, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
 };
 #[cfg(not(target_os = "ios"))]
@@ -2228,9 +2228,15 @@ async fn matrix_worker_task(
                     };
                     use matrix_sdk_ui::timeline::AttachmentConfig as TimelineAttachmentConfig;
 
-                    // The input bar's cancel button only covers reading the file;
-                    // once it's queued, the message's own context menu handles cancelling.
-                    let read_future = async {
+                    // Our own txn id, so we can follow this upload through the send queue.
+                    let txn_id = TransactionId::new();
+                    // Media progress only goes to the room's own channel, not the client-wide one.
+                    let queue_updates = timeline.room().send_queue().subscribe().await
+                        .map(|(_local_echoes, receiver)| receiver);
+
+                    // Everything up to the message reaching the queue can be cancelled
+                    // from the input bar, since there's no message to discard yet.
+                    let queue_future = async {
                         let _ = sender_clone.send(TimelineUpdate::FileUploadStarted {
                             upload_id,
                             file_name: upload.file_data.file_name(),
@@ -2252,11 +2258,11 @@ async fn matrix_worker_task(
                                 retryable: false,
                             });
                             SignalToUI::set_ui_signal();
-                            return None;
+                            return false;
                         }
 
-                        match tokio::fs::read(upload.file_data.path()).await {
-                            Ok(bytes) => Some(bytes),
+                        let bytes = match tokio::fs::read(upload.file_data.path()).await {
+                            Ok(bytes) => bytes,
                             Err(e) => {
                                 error!("Failed to read attachment {:?} for {timeline_kind}: {e:?}", upload.file_data.path());
                                 let _ = sender_clone.send(TimelineUpdate::FileUploadError {
@@ -2266,104 +2272,149 @@ async fn matrix_worker_task(
                                     retryable: true,
                                 });
                                 SignalToUI::set_ui_signal();
-                                None
+                                return false;
                             }
-                        }
-                    };
-                    let bytes = match Abortable::new(read_future, abort_registration).await {
-                        Ok(Some(bytes)) => bytes,
-                        Ok(None) => return,
-                        Err(_) => {
-                            log!("Attachment upload task {upload_id:?} for {timeline_kind} was aborted.");
-                            return;
-                        }
-                    };
-                    let _ = sender_clone.send(TimelineUpdate::FileUploadQueuing { upload_id });
-                    SignalToUI::set_ui_signal();
+                        };
 
-                    let upload_for_error = upload.clone();
-                    let AttachmentUpload {
-                        file_data,
-                        in_reply_to,
-                        ..
-                    } = upload;
+                        let file_data = &upload.file_data;
+                        log!(
+                            "Sending attachment to {timeline_kind}: {} ({} bytes)...",
+                            file_data.file_name(),
+                            file_data.size,
+                        );
 
-                    log!(
-                        "Sending attachment to {timeline_kind}: {} ({} bytes)...",
-                        file_data.file_name(),
-                        file_data.size,
-                    );
+                        // Parse MIME type, falling back to octet-stream for unknown types
+                        let content_type: Mime = file_data.mime_type.parse()
+                            .unwrap_or(mime::APPLICATION_OCTET_STREAM);
 
-                    // Parse MIME type, falling back to octet-stream for unknown types
-                    let content_type: Mime = file_data.mime_type.parse()
-                        .unwrap_or(mime::APPLICATION_OCTET_STREAM);
+                        let image_dimensions: Option<(u32, u32)> = if content_type.type_() == mime::IMAGE {
+                            image_size_by_data(&bytes, file_data.path()).ok()
+                                .map(|(w, h)| (w as u32, h as u32))
+                        } else {
+                            None
+                        };
+                        let matrix_file_size = || matrix_sdk::ruma::UInt::try_from(file_data.size).ok();
 
-                    let image_dimensions: Option<(u32, u32)> = if content_type.type_() == mime::IMAGE {
-                        crate::image_utils::read_image_dimensions(file_data.path())
-                            .map(|(w, h)| (w as u32, h as u32))
-                    } else {
-                        None
-                    };
-                    let matrix_file_size = || matrix_sdk::ruma::UInt::try_from(file_data.size).ok();
+                        // Create AttachmentInfo based on the MIME type
+                        let info = match content_type.type_() {
+                            mime::IMAGE => AttachmentInfo::Image(BaseImageInfo {
+                                width: image_dimensions.map(|(width, _height)| width.into()),
+                                height: image_dimensions.map(|(_width, height)| height.into()),
+                                size: matrix_file_size(),
+                                blurhash: None,
+                                is_animated: None,
+                            }),
+                            mime::VIDEO => AttachmentInfo::Video(BaseVideoInfo {
+                                // TODO: Extract actual dimensions and duration from video
+                                width: None,
+                                height: None,
+                                duration: None,
+                                size: matrix_file_size(),
+                                blurhash: None,
+                            }),
+                            mime::AUDIO => AttachmentInfo::Audio(BaseAudioInfo {
+                                // TODO: Extract actual duration from audio
+                                duration: None,
+                                size: matrix_file_size(),
+                                waveform: None,
+                            }),
+                            _ => AttachmentInfo::File(BaseFileInfo {
+                                size: matrix_file_size(),
+                            }),
+                        };
 
-                    // Create AttachmentInfo based on the MIME type
-                    let info = match content_type.type_() {
-                        mime::IMAGE => AttachmentInfo::Image(BaseImageInfo {
-                            width: image_dimensions.map(|(width, _height)| width.into()),
-                            height: image_dimensions.map(|(_width, height)| height.into()),
-                            size: matrix_file_size(),
-                            blurhash: None,
-                            is_animated: None,
-                        }),
-                        mime::VIDEO => AttachmentInfo::Video(BaseVideoInfo {
-                            // TODO: Extract actual dimensions and duration from video
-                            width: None,
-                            height: None,
-                            duration: None,
-                            size: matrix_file_size(),
-                            blurhash: None,
-                        }),
-                        mime::AUDIO => AttachmentInfo::Audio(BaseAudioInfo {
-                            // TODO: Extract actual duration from audio
-                            duration: None,
-                            size: matrix_file_size(),
-                            waveform: None,
-                        }),
-                        _ => AttachmentInfo::File(BaseFileInfo {
-                            size: matrix_file_size(),
-                        }),
-                    };
-
-                    let send_request = timeline.send_attachment(
-                        AttachmentSource::Data { bytes, filename: file_data.file_name() },
-                        content_type,
-                        TimelineAttachmentConfig {
-                            info: Some(info),
-                            caption: file_data.caption.as_ref().map(TextMessageEventContent::plain),
-                            in_reply_to,
-                            ..Default::default()
-                        },
-                    ).use_send_queue();
-
-                    match send_request.await {
-                        Ok(()) => {
-                            log!("Successfully queued attachment to send to {timeline_kind}.");
-                            let _ = sender_clone.send(TimelineUpdate::FileUploadComplete {
-                                upload_id,
-                            });
-                        }
-                        Err(e) => {
+                        if let Err(e) = timeline.send_attachment(
+                            AttachmentSource::Data { bytes, filename: file_data.file_name() },
+                            content_type,
+                            TimelineAttachmentConfig {
+                                txn_id: Some(txn_id.clone()),
+                                info: Some(info),
+                                caption: file_data.caption.as_ref().map(TextMessageEventContent::plain),
+                                in_reply_to: upload.in_reply_to.clone(),
+                                ..Default::default()
+                            },
+                        ).use_send_queue().await {
                             error!("Failed to send attachment to {timeline_kind}: {e:?}");
                             let _ = sender_clone.send(TimelineUpdate::FileUploadError {
                                 upload_id,
                                 error: format!("{e}"),
-                                upload: upload_for_error,
+                                upload: upload.clone(),
                                 retryable: true,
                             });
+                            SignalToUI::set_ui_signal();
+                            return false;
+                        }
+                        true
+                    };
+                    match Abortable::new(queue_future, abort_registration).await {
+                        Ok(true) => { }
+                        Ok(false) => return,
+                        Err(_) => {
+                            log!("Attachment upload task {upload_id:?} for {timeline_kind} was aborted.");
+                            return;
                         }
                     }
-
+                    log!("Successfully queued attachment to send to {timeline_kind}.");
+                    // The message exists now, so cancelling means discarding it.
+                    let _ = sender_clone.send(TimelineUpdate::FileUploadQueuing {
+                        upload_id,
+                        transaction_id: txn_id.clone(),
+                    });
                     SignalToUI::set_ui_signal();
+
+                    // Nothing uploads until we're back online, and the message says so itself.
+                    if is_offline() {
+                        let _ = sender_clone.send(TimelineUpdate::FileUploadComplete { upload_id });
+                        SignalToUI::set_ui_signal();
+                        return;
+                    }
+
+                    let mut queue_updates = match queue_updates {
+                        Ok(receiver) => receiver,
+                        Err(_e) => {
+                            error!("Couldn't watch the send queue of {timeline_kind}: {_e:?}");
+                            let _ = sender_clone.send(TimelineUpdate::FileUploadComplete { upload_id });
+                            SignalToUI::set_ui_signal();
+                            return;
+                        }
+                    };
+                    // Follow this upload until it's sent, cancelled, or gives up,
+                    // so the input bar can show its real progress the whole way.
+                    let mut last_percent = None;
+                    loop {
+                        let update = match queue_updates.recv().await {
+                            Ok(update) => update,
+                            Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                            Err(broadcast::error::RecvError::Closed) => break,
+                        };
+                        match update {
+                            RoomSendQueueUpdate::MediaUpload { related_to, progress, .. }
+                                if related_to == txn_id =>
+                            {
+                                let percent = (progress.total > 0)
+                                    .then(|| progress.current * 100 / progress.total);
+                                if last_percent == percent { continue }
+                                last_percent = percent;
+                                let _ = sender_clone.send(TimelineUpdate::FileUploadProgress {
+                                    upload_id,
+                                    current: progress.current,
+                                    total: progress.total,
+                                });
+                            }
+                            // However it ends, the message's own indicator takes it from here.
+                            RoomSendQueueUpdate::SentEvent { transaction_id, .. }
+                            | RoomSendQueueUpdate::CancelledLocalEvent { transaction_id }
+                            | RoomSendQueueUpdate::SendError { transaction_id, .. }
+                                if transaction_id == txn_id =>
+                            {
+                                let _ = sender_clone.send(TimelineUpdate::FileUploadComplete { upload_id });
+                                SignalToUI::set_ui_signal();
+                                break;
+                            }
+                            _ => continue,
+                        }
+                        SignalToUI::set_ui_signal();
+                    }
                 });
             }
             MatrixRequest::ReadReceipt { timeline_kind, event_id, receipt_type } => {
@@ -2529,6 +2580,13 @@ async fn matrix_worker_task(
                     }
                     // Unwedging doesn't wake a room the SDK disabled after the failure.
                     timeline.room().send_queue().set_enabled(true);
+                    if is_offline() {
+                        enqueue_popup_notification(
+                            "You're offline. This message will be sent automatically once you're back online.",
+                            PopupKind::Warning,
+                            Some(6.0),
+                        );
+                    }
                     SignalToUI::set_ui_signal();
                 });
             },
@@ -2943,10 +3001,10 @@ static TOKEN_EXPIRED: AtomicBool = AtomicBool::new(false);
 /// Whether the sync service currently reports the homeserver as unreachable.
 static IS_OFFLINE: AtomicBool = AtomicBool::new(false);
 
-/// Returns whether the sync service currently reports the homeserver as unreachable.
 pub fn is_offline() -> bool {
     IS_OFFLINE.load(Ordering::Acquire)
 }
+
 /// Notifies the main monitoring loop to wake up and check `TOKEN_EXPIRED`.
 static TOKEN_EXPIRED_NOTIFY: LazyLock<Notify> = LazyLock::new(Notify::new);
 
@@ -4361,6 +4419,7 @@ const SEND_QUEUE_RETRY_DELAY: Duration = Duration::from_secs(5);
 /// What a queued request was for, so a failure popup can say what didn't go out.
 enum LocalSendKind {
     Message,
+    Attachment,
     Edit,
     Reaction { key: String },
     Redaction,
@@ -4372,15 +4431,24 @@ fn handle_send_queue_subscriber(client: Client) -> JoinHandle<()> {
     let mut updates = client.send_queue().subscribe();
     Handle::current().spawn(async move {
         let mut kinds: HashMap<OwnedTransactionId, LocalSendKind> = HashMap::new();
-        let mut reenable_at: Option<Instant> = None;
-        loop { tokio::select! {
+        // When each room's queue should be woken again after a recoverable failure.
+        let mut reenable_at: HashMap<OwnedRoomId, Instant> = HashMap::new();
+        // Set when we miss updates and so don't know which rooms are affected.
+        let mut reenable_all_at: Option<Instant> = None;
+        loop {
+        let next_wakeup = reenable_at.values().copied().min().into_iter().chain(reenable_all_at).min();
+        tokio::select! {
             res = updates.recv() => match res {
                 Ok(SendQueueUpdate { room_id, update }) => match update {
                     RoomSendQueueUpdate::NewLocalEvent(echo) => {
                         let kind = match echo.content {
                             LocalEchoContent::Event { serialized_event, .. } => match serialized_event.deserialize() {
-                                Ok(AnyMessageLikeEventContent::RoomMessage(msg))
-                                    if matches!(msg.relates_to, Some(Relation::Replacement(_))) => LocalSendKind::Edit,
+                                Ok(AnyMessageLikeEventContent::RoomMessage(msg)) => match msg.msgtype {
+                                    _ if matches!(msg.relates_to, Some(Relation::Replacement(_))) => LocalSendKind::Edit,
+                                    MessageType::Image(_) | MessageType::Video(_)
+                                    | MessageType::File(_) | MessageType::Audio(_) => LocalSendKind::Attachment,
+                                    _ => LocalSendKind::Message,
+                                },
                                 _ => LocalSendKind::Message,
                             },
                             LocalEchoContent::React { key, .. } => LocalSendKind::Reaction { key },
@@ -4405,7 +4473,7 @@ fn handle_send_queue_subscriber(client: Client) -> JoinHandle<()> {
                                     _ => SEND_QUEUE_RETRY_DELAY,
                                 };
                                 warning!("Recoverable send error in room {room_id}, retrying in {delay:?}: {error}");
-                                reenable_at = Some(Instant::now() + delay);
+                                reenable_at.insert(room_id, Instant::now() + delay);
                             }
                             continue;
                         }
@@ -4420,29 +4488,45 @@ fn handle_send_queue_subscriber(client: Client) -> JoinHandle<()> {
                             Some(room) => RoomNameId::from_room(room).await,
                             None => RoomNameId::empty(room_id.clone()),
                         };
-                        let desc = describe_send_error(&error).description;
+                        let desc = describe_send_error(&error);
                         let msg = match kinds.get(&transaction_id) {
-                            Some(LocalSendKind::Message) => format!("Couldn't send a message in {room_name}: {desc}\n\nOpen that message's menu to retry or cancel it."),
+                            Some(LocalSendKind::Message) => format!("Couldn't send a message in {room_name}: {desc}\n\nOpen the message's menu to edit, retry, or cancel it."),
+                            Some(LocalSendKind::Attachment) => format!("Couldn't send an attachment in {room_name}: {desc}\n\nOpen the message's menu to retry or cancel it."),
                             Some(LocalSendKind::Edit) => format!("Couldn't send your edit in {room_name}: {desc}"),
                             Some(LocalSendKind::Reaction { key }) => format!("Couldn't send your {key} reaction in {room_name}: {desc}"),
                             Some(LocalSendKind::Redaction) => format!("Couldn't delete a message in {room_name}: {desc}"),
                             None => format!("Couldn't send to {room_name}: {desc}"),
                         };
-                        enqueue_popup_notification(msg, PopupKind::Error, None);
+                        enqueue_popup_notification(msg, PopupKind::Error, Some(7.0));
                     }
                     _ => {}
                 },
                 Err(broadcast::error::RecvError::Lagged(n)) => {
                     warning!("Send queue update receiver lagged, missed {n} messages.");
                     if !is_offline() && sync_service_desired_running() {
-                        reenable_at = Some(Instant::now() + SEND_QUEUE_RETRY_DELAY);
+                        reenable_all_at = Some(Instant::now() + SEND_QUEUE_RETRY_DELAY);
                     }
                 }
                 Err(broadcast::error::RecvError::Closed) => break,
             },
-            _ = async { tokio::time::sleep_until(reenable_at.unwrap()).await }, if reenable_at.is_some() => {
-                reenable_at = None;
-                client.send_queue().set_enabled(true).await;
+            _ = async { tokio::time::sleep_until(next_wakeup.unwrap()).await }, if next_wakeup.is_some() => {
+                let now = Instant::now();
+                if reenable_all_at.is_some_and(|at| at <= now) {
+                    reenable_all_at = None;
+                    reenable_at.clear();
+                    client.send_queue().set_enabled(true).await;
+                    continue;
+                }
+                let due: Vec<OwnedRoomId> = reenable_at.iter()
+                    .filter(|(_, at)| **at <= now)
+                    .map(|(room_id, _)| room_id.clone())
+                    .collect();
+                for room_id in due {
+                    reenable_at.remove(&room_id);
+                    if let Some(room) = client.get_room(&room_id) {
+                        room.send_queue().set_enabled(true);
+                    }
+                }
             }
         } }
     })

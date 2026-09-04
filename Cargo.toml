@@ -173,6 +173,11 @@ askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
 [patch."https://github.com/ruma/ruma"]
 ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
 
+## See our PR: <https://github.com/matrix-org/matrix-rust-sdk/pull/6976>
+## Remove this once that PR is merged in.
+[patch."https://github.com/matrix-org/matrix-rust-sdk"]
+matrix-sdk-store-encryption = { git = "https://github.com/project-robius/matrix-rust-sdk.git", branch = "store-cipher-serde-bytes" }
+
 [build-dependencies]
 toml = "1"
 
