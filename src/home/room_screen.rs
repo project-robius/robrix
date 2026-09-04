@@ -5299,7 +5299,7 @@ fn populate_location_message_content(
     message_content_widget: &HtmlOrPlaintextRef,
     location: &LocationMessageEventContent,
 ) -> bool {
-    if let Some((lat, long)) = utils::parse_geo_uri(&location.geo_uri) {
+    if let Some((lat, long)) = location.geo_uri.strip_prefix(utils::GEO_URI_SCHEME).and_then(|s| s.split_once(',')) {
         let short_lat = lat.find('.').and_then(|dot| lat.get(..dot + 7)).unwrap_or(lat);
         let short_long = long.find('.').and_then(|dot| long.get(..dot + 7)).unwrap_or(long);
         let safe_lat = htmlize::escape_attribute(lat);

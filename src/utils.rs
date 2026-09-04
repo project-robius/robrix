@@ -17,11 +17,6 @@ use crate::{
 /// The scheme for GEO links, used for location messages in Matrix.
 pub const GEO_URI_SCHEME: &str = "geo:";
 
-/// Splits a `geo:lat,lon` URI into its latitude and longitude strings.
-pub fn parse_geo_uri(geo_uri: &str) -> Option<(&str, &str)> {
-    geo_uri.strip_prefix(GEO_URI_SCHEME)?.split_once(',')
-}
-
 /// Opens the given URL or shows an error popup.
 pub fn open_url(url: &str) {
     log!("Opening URL \"{}\"", url);

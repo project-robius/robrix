@@ -24,7 +24,6 @@ use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId, OwnedTransactionId};
-use robius_location::Coordinates;
 use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, rooms_list::RoomsListRef, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, location::init_location_subscriber, profile::user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, room::BasicRoomDetails, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, slash_commands::{SlashCommandAction, SlashCommandOutcome}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 use crate::room::reply_preview::CollapsiblePreviewWidgetRefExt;
 
@@ -623,22 +622,8 @@ impl RoomInputBar {
         timeline_kind: &TimelineKind,
     ) {
         match &message.msgtype {
-            MessageType::Location(location) => {
-                let coords = utils::parse_geo_uri(&location.geo_uri)
-                    .and_then(|(lat, lon)| Some(Coordinates {
-                        latitude: lat.parse().ok()?,
-                        longitude: lon.parse().ok()?,
-                    }));
-                match coords {
-                    Some(coords) => self.view.location_preview(cx, ids!(location_preview))
-                        .show_with_coordinates(cx, coords),
-                    None => enqueue_popup_notification(
-                        "Couldn't restore your unsent location message.",
-                        PopupKind::Warning,
-                        Some(8.0),
-                    ),
-                }
-            }
+            // A location isn't a draft, same as when the room gets closed and reopened.
+            MessageType::Location(_) => { }
             msgtype => {
                 let restored = match msgtype {
                     MessageType::Emote(emote) => format!("/me {}", emote.body),

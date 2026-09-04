@@ -185,13 +185,6 @@ impl LocationPreview {
         self.visible = true;
     }
 
-    fn show_with_coordinates(&mut self, cx: &mut Cx, coords: Coordinates) {
-        self.coords = Some(Ok(coords));
-        self.timestamp = None;
-        self.button(cx, ids!(send_location_button)).set_enabled(cx, true);
-        self.visible = true;
-    }
-
     fn clear(&mut self) {
         self.coords = None;
         self.timestamp = None;
@@ -210,13 +203,6 @@ impl LocationPreviewRef {
     pub fn show(&self, cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.show(cx);
-        }
-    }
-
-    /// Shows the preview for an already-known location instead of requesting the current one.
-    pub fn show_with_coordinates(&self, cx: &mut Cx, coords: Coordinates) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.show_with_coordinates(cx, coords);
         }
     }
 
