@@ -11,7 +11,7 @@ use crate::shared::file_upload_modal::{AttachmentUpload, FileUploadAttemptId, su
 use crate::sliding_sync::{MatrixRequest, TimelineKind, submit_async_request};
 use crate::shared::progress_bar::ProgressBarWidgetRefExt;
 use crate::shared::styles::COLOR_FG_DANGER_RED;
-use crate::home::send_status_indicator::upload_status_text;
+use crate::home::send_status_indicator::upload_progress_text;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -261,7 +261,7 @@ impl UploadProgressView {
         }
         let fraction = (current as f32 / total as f32).clamp(0.0, 1.0);
         self.child_by_path(ids!(progress_bar)).as_progress_bar().set_progress(cx, fraction);
-        self.label(cx, ids!(status_label)).set_text(cx, &upload_status_text(current, total));
+        self.label(cx, ids!(status_label)).set_text(cx, &upload_progress_text(current, total));
         self.reset_status_label_color(cx);
         self.redraw(cx);
     }
