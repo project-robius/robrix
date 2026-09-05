@@ -2963,7 +2963,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "windows-targets 0.53.4",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -3798,7 +3798,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-store-encryption"
 version = "0.18.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk#5a0b002aeaf687edf9fb5a2bdd465886c325f48d"
+source = "git+https://github.com/project-robius/matrix-rust-sdk.git?branch=store-cipher-serde-bytes#63c3f472fdca8f57f551b884d99eae07a3715cf6"
 dependencies = [
  "base64",
  "blake3",
@@ -3810,6 +3810,7 @@ dependencies = [
  "rand 0.10.1",
  "rmp-serde",
  "serde",
+ "serde_bytes",
  "serde_json",
  "sha2 0.10.9",
  "thiserror 2.0.18 (registry+https://github.com/rust-lang/crates.io-index)",

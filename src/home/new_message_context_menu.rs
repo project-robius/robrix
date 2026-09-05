@@ -3,10 +3,10 @@
 
 use bitflags::bitflags;
 use makepad_widgets::*;
-use matrix_sdk::ruma::OwnedEventId;
-use matrix_sdk_ui::timeline::{EventTimelineItem, MsgLikeContent, TimelineEventItemId};
+use matrix_sdk::ruma::{OwnedEventId, events::room::message::MessageType};
+use matrix_sdk_ui::timeline::{EventSendState, EventTimelineItem, MsgLikeContent, MsgLikeKind, TimelineEventItemId};
 
-use crate::{shared::context_menu::{BUTTON_HEIGHT, ContextMenuClosed, expected_menu_size}, sliding_sync::UserPowerLevels};
+use crate::{home::send_status_indicator::is_send_error_retryable, shared::context_menu::{BUTTON_HEIGHT, ContextMenuClosed, expected_menu_size}, sliding_sync::UserPowerLevels};
 
 use super::room_screen::MessageAction;
 
@@ -33,6 +33,13 @@ script_mod! {
         }
 
         main_content := mod.widgets.ContextMenuContent {
+            retry_send_button := mod.widgets.ContextMenuButton {
+                draw_icon +: { svg: (ICON_ROTATE_CW) }
+                text: "Retry Sending"
+            }
+
+            divider_after_retry := mod.widgets.ContextMenuDivider { }
+
             // Shows either the "Add Reaction" button or a reaction text input.
             react_view := View {
                 flow: Overlay
@@ -155,7 +162,7 @@ bitflags! {
     ///
     /// This is used to determine which buttons to show in the message context menu.
     #[derive(Copy, Clone, Debug)]
-    pub struct MessageAbilities: u8 {
+    pub struct MessageAbilities: u16 {
         /// Whether the user can react to this message.
         const CanReact = 1 << 0;
         /// Whether the user can reply to this message.
@@ -175,22 +182,47 @@ bitflags! {
         /// Whether the user can reply to this message in a separate thread.
         /// This is false when already viewing a thread timeline.
         const CanReplyInThread = 1 << 7;
+        /// Whether this message failed to send and can be retried.
+        const CanRetrySend = 1 << 8;
+        /// Whether this message hasn't been sent yet, so sending it can be cancelled.
+        const CanCancelSend = 1 << 9;
+        /// Whether this message has a real event ID, i.e., it isn't a local echo.
+        const HasEventId = 1 << 10;
     }
 }
 impl MessageAbilities {
     pub fn from_user_power_and_event(
         user_power_levels: &UserPowerLevels,
         event_tl_item: &EventTimelineItem,
-        _message: &MsgLikeContent,
+        message: &MsgLikeContent,
         pinned_events: &[OwnedEventId],
         has_html: bool,
         is_thread_timeline: bool,
     ) -> Self {
         let mut abilities = Self::empty();
-        abilities.set(Self::CanEdit, event_tl_item.is_editable());
+        let is_local_echo = event_tl_item.is_local_echo();
+        // The SDK doesn't support editing a queued file upload, only its caption
+        let is_unsent_upload = is_local_echo && matches!(
+            &message.kind,
+            MsgLikeKind::Message(msg) if matches!(
+                msg.msgtype(),
+                MessageType::Image(_) | MessageType::Video(_) | MessageType::File(_) | MessageType::Audio(_),
+            )
+        );
+        abilities.set(Self::CanEdit, event_tl_item.is_editable() && !is_unsent_upload);
         // Currently we only support deleting one's own messages.
-        if event_tl_item.is_own() {
+        // But for unsent messages, we show "Cancel Sending" instead of "Delete".
+        if event_tl_item.is_own() && !is_local_echo {
             abilities.set(Self::CanDelete, user_power_levels.can_redact_own());
+        }
+        abilities.set(Self::HasEventId, event_tl_item.event_id().is_some());
+        match event_tl_item.send_state() {
+            Some(EventSendState::SendingFailed { error, .. }) => {
+                abilities.set(Self::CanRetrySend, is_send_error_retryable(error));
+                abilities.set(Self::CanCancelSend, true);
+            }
+            Some(EventSendState::NotSentYet { .. }) => abilities.set(Self::CanCancelSend, true),
+            _ => {}
         }
         let can_reply_to = event_tl_item.can_be_replied_to();
         abilities.set(Self::CanReplyTo, can_reply_to);
@@ -203,7 +235,11 @@ impl MessageAbilities {
                 abilities.set(Self::CanPin, true);
             }
         }
-        abilities.set(Self::CanReact, user_power_levels.can_send_reaction());
+        abilities.set(
+            Self::CanReact,
+            // don't let the user react to unsent messages, that doesn't make sense
+            user_power_levels.can_send_reaction() && event_tl_item.event_id().is_some(),
+        );
         abilities.set(Self::HasHtml, has_html);
         abilities
     }
@@ -331,6 +367,13 @@ impl WidgetMatchEvent for NewMessageContextMenu {
             self.redraw(cx);
             close_menu = false;
         }
+        else if self.button(cx, ids!(retry_send_button)).clicked(actions) {
+            cx.widget_action(
+                details.room_screen_widget_uid,
+                MessageAction::RetrySend(details.clone()),
+            );
+            close_menu = true;
+        }
         else if self.button(cx, ids!(reply_button)).clicked(actions) {
             cx.widget_action(
                 details.room_screen_widget_uid, 
@@ -456,6 +499,7 @@ impl NewMessageContextMenu {
     fn set_button_visibility(&mut self, cx: &mut Cx) -> DVec2 {
         let Some(details) = self.details.as_ref() else { return DVec2::default() };
 
+        let retry_send_button = self.view.button(cx, ids!(retry_send_button));
         let react_button = self.view.button(cx, ids!(react_button));
         let reply_button = self.view.button(cx, ids!(reply_button));
         let reply_in_thread_button = self.view.button(cx, ids!(reply_in_thread_button));
@@ -470,8 +514,9 @@ impl NewMessageContextMenu {
         let delete_button = self.view.button(cx, ids!(delete_button));
 
         // Determine which buttons should be shown.
-        // Note that some buttons are always enabled:
-        // `copy_text_button`, `copy_link_to_message_button`, and `view_source_button`
+        // Note that `copy_text_button` is always enabled.
+        let show_retry = details.abilities.contains(MessageAbilities::CanRetrySend);
+        let show_divider_after_retry = show_retry;
         let show_react = details.abilities.contains(MessageAbilities::CanReact);
         let show_reply_to = details.abilities.contains(MessageAbilities::CanReplyTo);
         let show_reply_in_thread = details.abilities.contains(MessageAbilities::CanReplyInThread);
@@ -480,14 +525,17 @@ impl NewMessageContextMenu {
         let show_pin: bool;
         let show_copy_text = true;
         let show_copy_html = details.abilities.contains(MessageAbilities::HasHtml);
-        let show_copy_link = true;
-        let show_view_source = true;
+        let show_copy_link = details.abilities.contains(MessageAbilities::HasEventId);
+        let show_view_source = details.abilities.contains(MessageAbilities::HasEventId);
         let show_jump_to_related = details.related_event_id.is_some();
         // let show_report = true;
-        let show_delete = details.abilities.contains(MessageAbilities::CanDelete);
+        let show_cancel_send = details.abilities.contains(MessageAbilities::CanCancelSend);
+        let show_delete = show_cancel_send || details.abilities.contains(MessageAbilities::CanDelete);
         let show_divider_before_report_delete = show_delete; // || show_report;
 
         // Actually set the buttons' visibility.
+        retry_send_button.set_visible(cx, show_retry);
+        self.view.view(cx, ids!(divider_after_retry)).set_visible(cx, show_divider_after_retry);
         self.view.view(cx, ids!(react_view)).set_visible(cx, show_react);
         react_button.set_visible(cx, show_react);
         reply_button.set_visible(cx, show_reply_to);
@@ -505,12 +553,16 @@ impl NewMessageContextMenu {
         }
         pin_button.set_visible(cx, show_pin);
         copy_html_button.set_visible(cx, show_copy_html);
+        copy_link_button.set_visible(cx, show_copy_link);
+        view_source_button.set_visible(cx, show_view_source);
         jump_to_related_button.set_visible(cx, show_jump_to_related);
         self.view.view(cx, ids!(divider_before_report_delete)).set_visible(cx, show_divider_before_report_delete);
         // report_button.set_visible(cx, show_report);
+        delete_button.set_text(cx, if show_cancel_send { "Cancel Sending" } else { "Delete" });
         delete_button.set_visible(cx, show_delete);
 
         // Reset the hover state of each button.
+        retry_send_button.reset_hover(cx);
         react_button.reset_hover(cx);
         reply_button.reset_hover(cx);
         reply_in_thread_button.reset_hover(cx);
@@ -531,7 +583,8 @@ impl NewMessageContextMenu {
         self.redraw(cx);
 
         let num_visible_buttons =
-            show_react as usize
+            show_retry as usize
+            + show_react as usize
             + show_reply_to as usize
             + show_reply_in_thread as usize
             + show_edit as usize
@@ -544,7 +597,8 @@ impl NewMessageContextMenu {
             // + show_report as usize
             + show_delete as usize;
         let num_visible_dividers =
-            show_divider_after_react_reply as usize
+            show_divider_after_retry as usize
+            + show_divider_after_react_reply as usize
             + show_divider_before_report_delete as usize;
 
         expected_menu_size(num_visible_buttons, num_visible_dividers)

@@ -14,6 +14,7 @@ pub mod location_preview;
 pub mod main_desktop_ui;
 pub mod room_screen;
 pub mod room_read_receipt;
+pub mod send_status_indicator;
 pub mod rooms_list;
 pub mod rooms_list_entry;
 pub mod rooms_list_header;
@@ -39,6 +40,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     link_preview::script_mod(vm);
     event_reaction_list::script_mod(vm);
     room_read_receipt::script_mod(vm);
+    send_status_indicator::script_mod(vm);
     rooms_list_entry::script_mod(vm);
     rooms_list_header::script_mod(vm);
     rooms_list::script_mod(vm);

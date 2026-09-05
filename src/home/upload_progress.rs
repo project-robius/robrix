@@ -3,11 +3,15 @@
 
 use makepad_widgets::*;
 use futures_util::future::AbortHandle;
+use matrix_sdk::ruma::OwnedTransactionId;
+use matrix_sdk_ui::timeline::TimelineEventItemId;
 
 use crate::shared::file_upload_modal::{AttachmentUpload, FileUploadAttemptId, submit_attachment_upload};
+use crate::sliding_sync::{MatrixRequest, TimelineKind, submit_async_request};
+use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
 use crate::shared::progress_bar::ProgressBarWidgetRefExt;
-use crate::shared::styles::COLOR_FG_DANGER_RED;
-use crate::utils::format_decimal_file_size;
+use crate::shared::styles::{COLOR_FG_DANGER_RED, COLOR_TEXT};
+use crate::home::send_status_indicator::upload_progress_text;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -87,61 +91,86 @@ script_mod! {
     }
 }
 
-/// The current state of the upload view.
-#[derive(Clone, Debug, Default)]
+/// The state of an in-progress upload within a timeline (RoomScreen).
+///
+/// * While that timeline is being shown, it's owned by the `UploadProgressView` widget.
+/// * While that timeline is hidden, it's owned by that timeline's `RoomInputBarState`.
+pub struct UploadState {
+    upload_id: FileUploadAttemptId,
+    file_name: String,
+    /// The timeline that the upload is being sent to.
+    timeline_kind: TimelineKind,
+    phase: UploadPhase,
+}
+
 #[allow(clippy::large_enum_variant)]
-pub enum UploadViewState {
-    /// Normal state - upload in progress or ready.
-    #[default]
-    Normal,
-    /// Error state - upload failed.
-    Error {
-        upload: Option<AttachmentUpload>,
+enum UploadPhase {
+    /// Still reading the file, so cancelling just aborts the task.
+    Reading(AbortHandle),
+    /// The upload has been enqueued on the send queue,
+    /// so cancelling it means discarding the local echo.
+    Queued {
+        transaction_id: OwnedTransactionId,
+        is_encrypted: bool,
+    },
+    /// The upload is currently in progress.
+    Uploading {
+        transaction_id: OwnedTransactionId,
+        current_bytes: usize,
+        total_bytes: usize,
+    },
+    /// There was an error, and it may be possible to retry the upload.
+    Failed {
+        error: String,
+        retry: Option<AttachmentUpload>,
     },
 }
 
 /// A widget showing upload progress with cancel/retry functionality.
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct UploadProgressView {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
 
-    /// Handle to abort the current upload task.
-    #[rust] abort_handle: Option<AbortHandle>,
-    /// The upload attempt currently represented by this view.
-    #[rust] upload_id: Option<FileUploadAttemptId>,
-    /// Current progress value (0.0 to 1.0).
-    #[rust] progress: f32,
-    /// Current state of the upload view.
-    #[rust] state: UploadViewState,
+    #[rust] state: Option<UploadState>,
+}
+
+impl ScriptHook for UploadProgressView {
+    fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| self.populate(cx));
+    }
 }
 
 impl Widget for UploadProgressView {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if let Event::Actions(actions) = event {
-            // Handle cancel button
-            if self.button(cx, ids!(cancel_button)).clicked(actions) {
-                if let Some(handle) = self.abort_handle.take() {
-                    log!("Upload cancel requested for {:?}, aborting upload task.", self.upload_id);
-                    handle.abort();
-                    log!("Upload abort requested for {:?}.", self.upload_id);
-                } else {
-                    log!("Upload cancel requested for {:?}, but no abort handle was available.", self.upload_id);
+        if let Event::Actions(actions) = event && self.state.is_some() {
+            if self.button(cx, ids!(cancel_button)).clicked(actions)
+                && let Some(upload) = self.state.take()
+            {
+                match upload.phase {
+                    UploadPhase::Reading(abort_handle) => abort_handle.abort(),
+                    UploadPhase::Queued { transaction_id, .. }
+                    | UploadPhase::Uploading { transaction_id, .. } => {
+                        submit_async_request(MatrixRequest::RedactMessage {
+                            timeline_kind: upload.timeline_kind,
+                            timeline_event_id: TimelineEventItemId::TransactionId(transaction_id),
+                            reason: None,
+                        });
+                    }
+                    // It never reached the queue, so there's nothing to stop.
+                    UploadPhase::Failed { .. } => {}
                 }
-                self.hide_current(cx);
+                self.populate(cx);
             }
-
-            // Handle retry button
-            if self.button(cx, ids!(retry_button)).clicked(actions) {
-                if let UploadViewState::Error { upload } = &mut self.state
-                    && let Some(upload) = upload.take()
-                {
-                    self.hide_current(cx);
-                    submit_attachment_upload(upload);
-                }
+            if self.button(cx, ids!(retry_button)).clicked(actions)
+                && let Some(UploadState { phase: UploadPhase::Failed { retry, .. }, .. }) = &mut self.state
+                && let Some(attachment) = retry.take()
+            {
+                self.state = None;
+                self.populate(cx);
+                submit_attachment_upload(attachment);
             }
         }
-
         self.view.handle_event(cx, event, scope);
     }
 
@@ -151,150 +180,235 @@ impl Widget for UploadProgressView {
 }
 
 impl UploadProgressView {
-    /// Shows the upload progress view with the given file name.
-    pub fn show(&mut self, cx: &mut Cx, upload_id: FileUploadAttemptId, file_name: &str, abort_handle: AbortHandle) {
-        self.set_visible(cx, true);
-        self.upload_id = Some(upload_id);
-        self.abort_handle = Some(abort_handle);
-        self.state = UploadViewState::Normal;
-        self.progress = 0.0;
-
-        self.label(cx, ids!(file_name_label)).set_text(cx, &format!("Sending:  {file_name}"));
-        self.label(cx, ids!(status_label)).set_text(cx, "Starting upload...");
-        self.reset_status_label_color(cx);
-        let retry_button = self.button(cx, ids!(retry_button));
-        retry_button.set_visible(cx, false);
-        retry_button.reset_hover(cx);
+    /// Shows the progress view for a new upload, which is still being read from disk.
+    pub fn show(
+        &mut self,
+        cx: &mut Cx,
+        upload_id: FileUploadAttemptId,
+        file_name: &str,
+        abort_handle: AbortHandle,
+        timeline_kind: TimelineKind,
+    ) {
+        self.state = Some(UploadState {
+            upload_id,
+            file_name: file_name.to_owned(),
+            timeline_kind,
+            phase: UploadPhase::Reading(abort_handle),
+        });
         self.button(cx, ids!(cancel_button)).reset_hover(cx);
-
-        self.reset_progress_bar(cx);
-
-        self.redraw(cx);
+        self.button(cx, ids!(retry_button)).reset_hover(cx);
+        self.populate(cx);
     }
 
-    /// Hides the upload progress view if it belongs to the given upload attempt.
+    /// The file was handed to the send queue, so cancelling now discards the local echo.
+    pub fn set_as_queued(
+        &mut self,
+        cx: &mut Cx,
+        upload_id: FileUploadAttemptId,
+        transaction_id: OwnedTransactionId,
+        is_encrypted: bool,
+    ) {
+        if let Some(upload) = self.state.as_mut().filter(|u| u.upload_id == upload_id) {
+            upload.phase = UploadPhase::Queued { transaction_id, is_encrypted };
+            self.populate(cx);
+        }
+    }
+
+    pub fn set_progress(
+        &mut self,
+        cx: &mut Cx,
+        upload_id: FileUploadAttemptId,
+        current_bytes: usize,
+        total_bytes: usize
+    ) {
+        if total_bytes > 0
+            && let Some(upload) = self.state.as_mut().filter(|u| u.upload_id == upload_id)
+            && let UploadPhase::Queued { transaction_id, .. }
+                | UploadPhase::Uploading { transaction_id, .. } = &upload.phase
+        {
+            let transaction_id = transaction_id.clone();
+            upload.phase = UploadPhase::Uploading { transaction_id, current_bytes, total_bytes };
+            self.populate(cx);
+        }
+    }
+
+    /// The upload failed before it got to the send queue.
+    ///
+    /// If `retryable_upload` is `Some`, we'll show a retry button that re-submits the upload.
+    pub fn show_error(
+        &mut self,
+        cx: &mut Cx,
+        upload_id: FileUploadAttemptId,
+        error: &str,
+        retryable_upload: Option<AttachmentUpload>,
+    ) {
+        if let Some(state) = self.state.as_mut().filter(|u| u.upload_id == upload_id) {
+            state.phase = UploadPhase::Failed {
+                error: error.to_owned(),
+                retry: retryable_upload,
+            };
+            self.populate(cx);
+        }
+    }
+
+    /// The upload is done (however it ended) and the message's own indicator takes over.
     pub fn hide(&mut self, cx: &mut Cx, upload_id: FileUploadAttemptId) {
-        if self.upload_id == Some(upload_id) {
-            self.hide_current(cx);
+        if self.state.as_ref().is_some_and(|u| u.upload_id == upload_id) {
+            self.state = None;
+            self.populate(cx);
         }
     }
 
-    fn hide_current(&mut self, cx: &mut Cx) {
-        self.set_visible(cx, false);
-        self.upload_id = None;
-        self.abort_handle = None;
-        self.state = UploadViewState::Normal;
-        self.button(cx, ids!(retry_button)).set_visible(cx, false);
-        self.reset_status_label_color(cx);
-        self.reset_progress_bar(cx);
-        self.redraw(cx);
+    /// Called when this room's/thread's timeline was rebuilt, in which case
+    /// the bkgd upload task holds dead channel endpoints so we can't get updates.
+    pub fn on_timeline_reconnected(&mut self, cx: &mut Cx) {
+        let Some(upload) = self.state.take() else { return };
+        match upload.phase {
+            UploadPhase::Reading(abort_handle) => {
+                abort_handle.abort();
+                enqueue_popup_notification(
+                    format!("Sending \"{}\" was interrupted, please try again.", upload.file_name),
+                    PopupKind::Warning,
+                    Some(7.0),
+                );
+            }
+            UploadPhase::Queued { .. } | UploadPhase::Uploading { .. } => { }
+            UploadPhase::Failed { .. } => self.state = Some(upload),
+        }
+        self.populate(cx);
     }
 
-    /// Updates the progress value if it belongs to the given upload attempt.
-    pub fn set_progress(&mut self, cx: &mut Cx, upload_id: FileUploadAttemptId, current: u64, total: u64) {
-        if self.upload_id != Some(upload_id) {
+    /// Takes and returns the upload state to be saved with its room state,
+    /// which also hides this view.
+    pub fn save_state(&mut self) -> Option<UploadState> {
+        self.visible = false;
+        self.state.take()
+    }
+
+    /// Restores the given upload state into this view.
+    pub fn restore_state(&mut self, cx: &mut Cx, upload: Option<UploadState>) {
+        self.state = upload;
+        self.button(cx, ids!(cancel_button)).reset_hover(cx);
+        self.button(cx, ids!(retry_button)).reset_hover(cx);
+        self.populate(cx);
+    }
+
+    /// Populates everything from `self.state` into this view's child widgets.
+    fn populate(&mut self, cx: &mut Cx) {
+        let Some(upload) = &self.state else {
+            self.set_visible(cx, false);
+            self.redraw(cx);
             return;
-        }
-        if let UploadViewState::Error { .. } = self.state {
-            return
-        }
-        self.progress = if total > 0 {
-            (current as f32 / total as f32).clamp(0.0, 1.0)
-        } else {
-            0.0
         };
-
-        self.child_by_path(ids!(progress_bar)).as_progress_bar()
-            .set_progress(cx, self.progress);
-
-        // Update status label
-        let percent = (self.progress * 100.0) as u32;
-        let status = format!(
-            "Uploading... {}% ({} / {})",
-            percent,
-            format_decimal_file_size(current),
-            format_decimal_file_size(total)
-        );
-        self.label(cx, ids!(status_label)).set_text(cx, &status);
-        self.reset_status_label_color(cx);
-
-        self.redraw(cx);
-    }
-
-    /// Shows an error state with the given message if it belongs to the given upload attempt.
-    pub fn show_error(&mut self, cx: &mut Cx, upload_id: FileUploadAttemptId, error: &str, upload: AttachmentUpload, retryable: bool) {
-        if self.upload_id != Some(upload_id) {
-            return;
-        }
-        self.abort_handle = None;
-        self.state = UploadViewState::Error {
-            upload: retryable.then_some(upload),
+        let file_name = format!("Sending:  {}", upload.file_name);
+        let (status, fraction) = match &upload.phase {
+            UploadPhase::Reading(_) => ("Preparing upload...".to_string(), 0.0),
+            UploadPhase::Queued { is_encrypted: true, .. } => ("Encrypting...".to_string(), 0.0),
+            UploadPhase::Queued { is_encrypted: false, .. } => ("Starting upload...".to_string(), 0.0),
+            UploadPhase::Uploading { current_bytes, total_bytes, .. } => (
+                upload_progress_text(*current_bytes, *total_bytes),
+                if *total_bytes > 0 { (*current_bytes as f32 / *total_bytes as f32).clamp(0.0, 1.0) } else { 0.0 },
+            ),
+            UploadPhase::Failed { error, .. } => (format!("Error: {error}"), 1.0),
         };
+        let is_failed = matches!(upload.phase, UploadPhase::Failed { .. });
+        let can_retry = matches!(upload.phase, UploadPhase::Failed { retry: Some(_), .. });
 
-        // Update UI for error state
-        self.label(cx, ids!(status_label))
-            .set_text(cx, &format!("Error: {}", error));
-        let retry_button = self.button(cx, ids!(retry_button));
-        retry_button.set_visible(cx, retryable);
-        if retryable {
-            retry_button.reset_hover(cx);
-        }
-
-        self.progress = 1.0;
-        self.set_status_label_color(cx, COLOR_FG_DANGER_RED);
+        self.set_visible(cx, true);
+        self.label(cx, ids!(file_name_label)).set_text(cx, &file_name);
+        let status_label = self.label(cx, ids!(status_label));
+        status_label.set_text(cx, &status);
+        self.button(cx, ids!(retry_button)).set_visible(cx, can_retry);
         let progress_bar = self.child_by_path(ids!(progress_bar)).as_progress_bar();
-        progress_bar.set_progress_color(cx, COLOR_FG_DANGER_RED);
-        progress_bar.set_progress(cx, 1.0);
-
+        progress_bar.set_progress(cx, fraction);
+        if let Some(mut label) = status_label.borrow_mut() {
+            label.draw_text.color = if is_failed { COLOR_FG_DANGER_RED } else { COLOR_TEXT };
+        }
+        if is_failed {
+            progress_bar.set_progress_color(cx, COLOR_FG_DANGER_RED);
+        } else {
+            progress_bar.reset_progress_color(cx);
+        }
         self.redraw(cx);
-    }
-
-    fn reset_progress_bar(&mut self, cx: &mut Cx) {
-        self.child_by_path(ids!(progress_bar)).as_progress_bar().reset_progress_color(cx);
-        self.child_by_path(ids!(progress_bar)).as_progress_bar().set_progress(cx, 0.0);
-    }
-
-    fn set_status_label_color(&mut self, cx: &mut Cx, color: Vec4) {
-        let mut status_label = self.label(cx, ids!(status_label));
-        script_apply_eval!(cx, status_label, {
-            draw_text +: { color: #(color) }
-        });
-    }
-
-    fn reset_status_label_color(&mut self, cx: &mut Cx) {
-        let mut status_label = self.label(cx, ids!(status_label));
-        script_apply_eval!(cx, status_label, {
-            draw_text +: { color: mod.widgets.COLOR_TEXT }
-        });
     }
 }
 
 impl UploadProgressViewRef {
-    /// Shows the upload progress view with the given file name.
-    pub fn show(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, file_name: &str, abort_handle: AbortHandle) {
+    /// See [`UploadProgressView::show()`].
+    pub fn show(
+        &self,
+        cx: &mut Cx,
+        upload_id: FileUploadAttemptId,
+        file_name: &str,
+        abort_handle: AbortHandle,
+        timeline_kind: TimelineKind,
+    ) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show(cx, upload_id, file_name, abort_handle);
+            inner.show(cx, upload_id, file_name, abort_handle, timeline_kind);
         }
     }
 
-    /// Hides the upload progress view if it belongs to the given upload attempt.
+    /// See [`UploadProgressView::set_as_queued()`].
+    pub fn set_as_queued(
+        &self,
+        cx: &mut Cx,
+        upload_id: FileUploadAttemptId,
+        transaction_id: OwnedTransactionId,
+        is_encrypted: bool,
+    ) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_as_queued(cx, upload_id, transaction_id, is_encrypted);
+        }
+    }
+
+    /// See [`UploadProgressView::set_progress()`].
+    pub fn set_progress(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, current_bytes: usize, total_bytes: usize) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_progress(cx, upload_id, current_bytes, total_bytes);
+        }
+    }
+
+    /// See [`UploadProgressView::show_error()`].
+    pub fn show_error(
+        &self,
+        cx: &mut Cx,
+        upload_id: FileUploadAttemptId,
+        error: &str,
+        retryable_upload: Option<AttachmentUpload>,
+    ) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.show_error(cx, upload_id, error, retryable_upload);
+        }
+    }
+
+    /// See [`UploadProgressView::hide()`].
     pub fn hide(&self, cx: &mut Cx, upload_id: FileUploadAttemptId) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.hide(cx, upload_id);
         }
     }
 
-    /// Updates the progress value if it belongs to the given upload attempt.
-    pub fn set_progress(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, current: u64, total: u64) {
+    /// See [`UploadProgressView::on_timeline_reconnected()`].
+    pub fn on_timeline_reconnected(&self, cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_progress(cx, upload_id, current, total);
+            inner.on_timeline_reconnected(cx);
         }
     }
 
-    /// Shows an error state with the given message if it belongs to the given upload attempt.
-    pub fn show_error(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, error: &str, upload: AttachmentUpload, retryable: bool) {
+    /// See [`UploadProgressView::save_state()`].
+    pub fn save_state(&self) -> Option<UploadState> {
+        self.borrow_mut().and_then(|mut inner| inner.save_state())
+    }
+
+    /// See [`UploadProgressView::restore_state()`].
+    pub fn restore_state(&self, cx: &mut Cx, upload: Option<UploadState>) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_error(cx, upload_id, error, upload, retryable);
+            inner.restore_state(cx, upload);
         }
+    }
+
+    /// Whether this view is showing a current upload in progress.
+    pub fn has_active_upload(&self) -> bool {
+        self.borrow().is_some_and(|inner| inner.state.is_some())
     }
 }
