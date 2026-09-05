@@ -8,6 +8,7 @@ use matrix_sdk_ui::timeline::TimelineEventItemId;
 
 use crate::shared::file_upload_modal::{AttachmentUpload, FileUploadAttemptId, submit_attachment_upload};
 use crate::sliding_sync::{MatrixRequest, TimelineKind, submit_async_request};
+use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
 use crate::shared::progress_bar::ProgressBarWidgetRefExt;
 use crate::shared::styles::{COLOR_FG_DANGER_RED, COLOR_TEXT};
 use crate::home::send_status_indicator::upload_progress_text;
@@ -258,6 +259,25 @@ impl UploadProgressView {
         }
     }
 
+    /// Called when this room's/thread's timeline was rebuilt, in which case
+    /// the bkgd upload task holds dead channel endpoints so we can't get updates.
+    pub fn on_timeline_reconnected(&mut self, cx: &mut Cx) {
+        let Some(upload) = self.state.take() else { return };
+        match upload.phase {
+            UploadPhase::Reading(abort_handle) => {
+                abort_handle.abort();
+                enqueue_popup_notification(
+                    format!("Sending \"{}\" was interrupted, please try again.", upload.file_name),
+                    PopupKind::Warning,
+                    Some(7.0),
+                );
+            }
+            UploadPhase::Queued { .. } | UploadPhase::Uploading { .. } => { }
+            UploadPhase::Failed { .. } => self.state = Some(upload),
+        }
+        self.populate(cx);
+    }
+
     /// Takes and returns the upload state to be saved with its room state,
     /// which also hides this view.
     pub fn save_state(&mut self) -> Option<UploadState> {
@@ -365,6 +385,13 @@ impl UploadProgressViewRef {
     pub fn hide(&self, cx: &mut Cx, upload_id: FileUploadAttemptId) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.hide(cx, upload_id);
+        }
+    }
+
+    /// See [`UploadProgressView::on_timeline_reconnected()`].
+    pub fn on_timeline_reconnected(&self, cx: &mut Cx) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.on_timeline_reconnected(cx);
         }
     }
 

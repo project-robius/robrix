@@ -3245,10 +3245,9 @@ impl RoomScreen {
                 direction: PaginationDirection::Backwards,
             });
         }
-        // If there's an in-progress upload, the bkgd upload task still holds the old channel endpoints,
-        // and there's not much we can do about it, so just clear it and let the already-visible
-        // message's send status indicator handle the progress updates.
-        self.view.room_input_bar(cx, ids!(room_input_bar)).clear_upload(cx);
+        // The bkgd upload task still holds the old channel endpoints, so let the upload
+        // progress view deal with whatever upload it was showing.
+        self.view.room_input_bar(cx, ids!(room_input_bar)).on_timeline_reconnected(cx);
         self.redraw(cx);
     }
 

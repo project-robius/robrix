@@ -1060,12 +1060,12 @@ impl RoomInputBarRef {
         inner.update_room_state(cx, timeline_kind.room_id(), tombstone_info, user_power_levels);
     }
 
-    /// Clears any upload progress that is currently being shown but doesn't cancel anything.
-    pub fn clear_upload(&self, cx: &mut Cx) {
+    /// See [`UploadProgressView::on_timeline_reconnected()`].
+    pub fn on_timeline_reconnected(&self, cx: &mut Cx) {
         let Some(inner) = self.borrow() else { return };
         inner.child_by_path(ids!(upload_progress_view))
             .as_upload_progress_view()
-            .restore_state(cx, None);
+            .on_timeline_reconnected(cx);
     }
 
     /// Hides the upload progress view for the given upload attempt.

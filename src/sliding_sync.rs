@@ -5415,7 +5415,7 @@ async fn timeline_subscriber_handler(
                         }
 
                         // We must send this update *after* the actual NewItems update,
-                        // otherwise the RoomSCreen UI won't be able to correctly locate the target event.
+                        // otherwise the RoomScreen UI won't be able to correctly locate the target event.
                         if let Some((index, found_event_id)) = found_target_event_id.take() {
                             target_event_id = None;
                             if timeline_update_sender.send(
