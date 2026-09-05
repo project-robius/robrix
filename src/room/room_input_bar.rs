@@ -24,7 +24,7 @@ use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId, OwnedTransactionId};
-use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, rooms_list::RoomsListRef, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::UploadProgressViewWidgetRefExt}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, location::init_location_subscriber, profile::user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, room::BasicRoomDetails, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, slash_commands::{SlashCommandAction, SlashCommandOutcome}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, rooms_list::RoomsListRef, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::{UploadProgressViewWidgetRefExt, UploadState}}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, location::init_location_subscriber, profile::user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, room::BasicRoomDetails, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, slash_commands::{SlashCommandAction, SlashCommandOutcome}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 use crate::room::reply_preview::CollapsiblePreviewWidgetRefExt;
 
 script_mod! {
@@ -802,18 +802,28 @@ impl RoomInputBar {
         self.view.check_box(cx, ids!(tsp_sign_checkbox)).active(cx)
     }
 
+    /// Checks and returns whether this room/timeline already has an in-progress upload.
+    ///
+    /// If so, it returns true and shows the user a warning popup.
+    fn check_if_upload_in_progress(&self) -> bool {
+        if !self.view.child_by_path(ids!(upload_progress_view)).as_upload_progress_view().has_active_upload() {
+            return false;
+        }
+        enqueue_popup_notification(
+            "Finish or cancel your current upload before starting another one.",
+            PopupKind::Warning,
+            Some(7.0),
+        );
+        true
+    }
+
     /// Shows the native file picker dialog to select a file to be uploaded.
     fn open_file_picker(
         &mut self,
         cx: &mut Cx,
         timeline_kind: TimelineKind,
     ) {
-        if self.view.view(cx, ids!(upload_progress_view)).visible() {
-            enqueue_popup_notification(
-                "Finish or cancel the current upload before starting another one.",
-                PopupKind::Warning,
-                Some(7.0),
-            );
+        if self.check_if_upload_in_progress() {
             return;
         }
 
@@ -829,12 +839,7 @@ impl RoomInputBar {
         cx: &mut Cx,
         timeline_kind: TimelineKind,
     ) {
-        if self.view.view(cx, ids!(upload_progress_view)).visible() {
-            enqueue_popup_notification(
-                "Finish or cancel the current upload before starting another one.",
-                PopupKind::Warning,
-                Some(7.0),
-            );
+        if self.check_if_upload_in_progress() {
             return;
         }
 
@@ -994,6 +999,7 @@ impl RoomInputBarRef {
             replying_to: inner.replying_to.clone(),
             editing_pane_state: inner.child_by_path(ids!(editing_pane)).as_editing_pane().save_state(),
             mentionable_input_state: inner.child_by_path(ids!(input_bar.mentionable_text_input)).as_mentionable_text_input().save_state(),
+            upload: inner.child_by_path(ids!(upload_progress_view)).as_upload_progress_view().save_state(),
         }
     }
 
@@ -1013,11 +1019,8 @@ impl RoomInputBarRef {
             mentionable_input_state,
             replying_to,
             editing_pane_state,
+            upload,
         } = saved_state;
-
-        inner.child_by_path(ids!(upload_progress_view))
-            .as_upload_progress_view()
-            .hide_if_other_room(cx, &timeline_kind);
 
         // Note: we do *not* restore the location preview state here; see `save_state()`.
 
@@ -1048,8 +1051,21 @@ impl RoomInputBarRef {
             inner.on_editing_pane_hidden(cx);
         }
 
-        // 4. Apply this room's tombstone state and the user's power levels.
+        // 4. Restore the state of the upload progress view.
+        inner.child_by_path(ids!(upload_progress_view))
+            .as_upload_progress_view()
+            .restore_state(cx, upload);
+
+        // 5. Apply this room's tombstone state and the user's power levels.
         inner.update_room_state(cx, timeline_kind.room_id(), tombstone_info, user_power_levels);
+    }
+
+    /// Clears any upload progress that is currently being shown but doesn't cancel anything.
+    pub fn clear_upload(&self, cx: &mut Cx) {
+        let Some(inner) = self.borrow() else { return };
+        inner.child_by_path(ids!(upload_progress_view))
+            .as_upload_progress_view()
+            .restore_state(cx, None);
     }
 
     /// Hides the upload progress view for the given upload attempt.
@@ -1075,19 +1091,31 @@ impl RoomInputBarRef {
     }
 
     /// Updates the upload progress bar for the given upload attempt.
-    pub fn set_upload_progress(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, current: usize, total: usize) {
+    pub fn set_upload_progress(
+        &self,
+        cx: &mut Cx,
+        upload_id: FileUploadAttemptId,
+        current_bytes: usize,
+        total_bytes: usize,
+    ) {
         let Some(inner) = self.borrow() else { return };
         inner.child_by_path(ids!(upload_progress_view))
             .as_upload_progress_view()
-            .set_progress(cx, upload_id, current, total);
+            .set_progress(cx, upload_id, current_bytes, total_bytes);
     }
 
-    /// Shows an upload error with retry option.
-    pub fn show_upload_error(&self, cx: &mut Cx, upload_id: FileUploadAttemptId, error: &str, upload: AttachmentUpload, retryable: bool) {
+    /// Shows an upload error, offering a Retry button if `retryable_upload` is `Some`.
+    pub fn show_upload_error(
+        &self,
+        cx: &mut Cx,
+        upload_id: FileUploadAttemptId,
+        error: &str,
+        retryable_upload: Option<AttachmentUpload>,
+    ) {
         let Some(inner) = self.borrow() else { return };
         inner.child_by_path(ids!(upload_progress_view))
             .as_upload_progress_view()
-            .show_error(cx, upload_id, error, upload, retryable);
+            .show_error(cx, upload_id, error, retryable_upload);
     }
 
     /// Handles a started file upload and clears only the reply captured for this upload.
@@ -1137,6 +1165,9 @@ pub struct RoomInputBarState {
     replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
     /// The state of the `EditingPane`, if any message was being edited.
     editing_pane_state: Option<EditingPaneState>,
+    /// The upload in progress for this room, if any,
+    /// which keeps working in the background even while the room is hidden.
+    upload: Option<UploadState>,
 }
 
 /// Defines what to do when showing the `EditingPane` from the `RoomInputBar`.

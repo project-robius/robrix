@@ -2191,9 +2191,9 @@ impl RoomScreen {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .set_upload_as_queued(cx, upload_id, transaction_id, tl.is_encrypted);
                 }
-                TimelineUpdate::FileUploadProgress { upload_id, current_bytes: current, total_bytes: total } => {
+                TimelineUpdate::FileUploadProgress { upload_id, current_bytes, total_bytes } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .set_upload_progress(cx, upload_id, current, total);
+                        .set_upload_progress(cx, upload_id, current_bytes, total_bytes);
                 }
                 TimelineUpdate::LocalEchoProgress { new_items } => {
                     // we don't have to do anything except update the timeline items and redraw.
@@ -2224,9 +2224,9 @@ impl RoomScreen {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .restore_unsent_message(cx, &message, replied_to_item, &tl.kind);
                 }
-                TimelineUpdate::FileUploadError { upload_id, error, upload, retryable } => {
+                TimelineUpdate::FileUploadError { upload_id, error, retryable_upload } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
-                        .show_upload_error(cx, upload_id, &error, upload, retryable);
+                        .show_upload_error(cx, upload_id, &error, retryable_upload);
                 }
                 TimelineUpdate::FileUploadComplete { upload_id } => {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
@@ -3195,6 +3195,7 @@ impl RoomScreen {
         };
 
         log!("Reconnecting timeline {} to its newly-created backend channel.", tl.kind);
+
         // Transfer over any pending jump-to-event searches so it isn't silently dropped.
         let mut pending_searches = Vec::new();
         tl.request_sender.send_if_modified(|req| {
@@ -3244,6 +3245,10 @@ impl RoomScreen {
                 direction: PaginationDirection::Backwards,
             });
         }
+        // If there's an in-progress upload, the bkgd upload task still holds the old channel endpoints,
+        // and there's not much we can do about it, so just clear it and let the already-visible
+        // message's send status indicator handle the progress updates.
+        self.view.room_input_bar(cx, ids!(room_input_bar)).clear_upload(cx);
         self.redraw(cx);
     }
 
@@ -3764,8 +3769,8 @@ pub enum TimelineUpdate {
     FileUploadError {
         upload_id: FileUploadAttemptId,
         error: String,
-        upload: crate::shared::file_upload_modal::AttachmentUpload,
-        retryable: bool,
+        /// The upload to resubmit if the error was retry-able, otherwise `None`.
+        retryable_upload: Option<crate::shared::file_upload_modal::AttachmentUpload>,
     },
     /// The room input bar is done showing this upload's status (either success or failure).
     ///

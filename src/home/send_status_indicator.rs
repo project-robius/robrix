@@ -443,20 +443,20 @@ impl SendStatusIndicatorRef {
     }
 }
 
-fn upload_percent(current: usize, total: usize) -> u8 {
-    if total > 0 { (current * 100 / total).min(100) as u8 } else { 0 }
+fn upload_percent(current_bytes: usize, total_bytes: usize) -> u8 {
+    (current_bytes * 100).checked_div(total_bytes).unwrap_or(0).min(100) as u8
 }
 
 /// Stringifies an upload's progress, e.g. "Uploading... 40% (2 MB / 5 MB)".
-pub fn upload_progress_text(current: usize, total: usize) -> String {
-    if current >= total {
+pub fn upload_progress_text(current_bytes: usize, total_bytes: usize) -> String {
+    if current_bytes >= total_bytes {
         return "Uploaded, sending...".to_string();
     }
     format!(
         "Uploading... {}% ({} / {})",
-        upload_percent(current, total),
-        format_decimal_file_size(current as u64),
-        format_decimal_file_size(total as u64),
+        upload_percent(current_bytes, total_bytes),
+        format_decimal_file_size(current_bytes as u64),
+        format_decimal_file_size(total_bytes as u64),
     )
 }
 
@@ -471,7 +471,7 @@ pub fn stringify_send_error(error: &matrix_sdk::Error) -> &'static str {
     // Only set when the server answered with a real Matrix errcode.
     if let Some(kind) = error.client_api_error_kind() {
         match kind {
-            ErrorKind::Forbidden { .. } => "you don't have permission to post.",
+            ErrorKind::Forbidden => "you don't have permission to post.",
             ErrorKind::LimitExceeded { .. } => RATE_LIMITED_TEXT,
             ErrorKind::TooLarge => "it's too large to send.",
             ErrorKind::UnknownToken { .. } | ErrorKind::MissingToken => "your session has expired.",
@@ -507,7 +507,7 @@ pub fn stringify_send_error(error: &matrix_sdk::Error) -> &'static str {
             matrix_sdk::Error::Http(http) => match &**http {
                 HttpError::Reqwest(e) if e.is_timeout() => SERVER_SLOW_TEXT,
                 HttpError::Reqwest(_) => "no connection to the server.",
-                // othwerise, just use the raw status send to us by the server.
+                // otherwise, just use the raw status send to us by the server.
                 other => match other.as_client_api_error().map(|e| e.status_code.as_u16()) {
                     Some(429) => RATE_LIMITED_TEXT,
                     Some(code) if code >= 500 => SERVER_PROBLEM_TEXT,

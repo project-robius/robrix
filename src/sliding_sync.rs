@@ -2212,8 +2212,7 @@ async fn matrix_worker_task(
                     let _ = sender.send(TimelineUpdate::FileUploadError {
                         upload_id,
                         error: "TSP-signed attachment uploads are not supported yet.".to_string(),
-                        upload,
-                        retryable: false,
+                        retryable_upload: None,
                     });
                     SignalToUI::set_ui_signal();
                     continue;
@@ -2236,6 +2235,8 @@ async fn matrix_worker_task(
 
                     // WE allow the upload to be cancelled up until the point where
                     // the messages has reached the send queue.
+                    let was_queued = Arc::new(AtomicBool::new(false));
+                    let was_queued2 = Arc::clone(&was_queued);
                     let queue_future = async {
                         let _ = sender_clone.send(TimelineUpdate::FileUploadStarted {
                             upload_id,
@@ -2254,8 +2255,7 @@ async fn matrix_worker_task(
                             let _ = sender_clone.send(TimelineUpdate::FileUploadError {
                                 upload_id,
                                 error,
-                                upload: upload.clone(),
-                                retryable: false,
+                                retryable_upload: None,
                             });
                             SignalToUI::set_ui_signal();
                             return false;
@@ -2268,8 +2268,7 @@ async fn matrix_worker_task(
                                 let _ = sender_clone.send(TimelineUpdate::FileUploadError {
                                     upload_id,
                                     error: format!("couldn't read the file: {e}"),
-                                    upload: upload.clone(),
-                                    retryable: true,
+                                    retryable_upload: Some(upload.clone()),
                                 });
                                 SignalToUI::set_ui_signal();
                                 return false;
@@ -2338,19 +2337,30 @@ async fn matrix_worker_task(
                             let _ = sender_clone.send(TimelineUpdate::FileUploadError {
                                 upload_id,
                                 error: format!("{e}"),
-                                upload: upload.clone(),
-                                retryable: true,
+                                retryable_upload: Some(upload.clone()),
                             });
                             SignalToUI::set_ui_signal();
                             return false;
                         }
+                        was_queued2.store(true, Ordering::Release);
                         true
                     };
-                    match Abortable::new(queue_future, abort_registration).await {
+                    // This `let queue_result` binding is important to ensure that the borrow
+                    // of `timeline` ends before the match branches below.
+                    let queue_result = Abortable::new(queue_future, abort_registration).await;
+                    match queue_result {
                         Ok(true) => { }
                         Ok(false) => return,
                         Err(_) => {
                             log!("Attachment upload task {upload_id:?} for {timeline_kind} was aborted.");
+                            if was_queued.load(Ordering::Acquire)
+                                && let Err(_e) = timeline.redact(
+                                    &TimelineEventItemId::TransactionId(txn_id.clone()),
+                                    None,
+                                ).await
+                            {
+                                error!("Failed to discard the cancelled attachment in {timeline_kind}: {_e:?}");
+                            }
                             return;
                         }
                     }
@@ -5325,8 +5335,8 @@ async fn timeline_subscriber_handler(
                             && new_event.transaction_id() == Some(old_txn_id)
                             && let Some(EventSendState::NotSentYet { progress: Some(p) }) = new_event.send_state()
                         {
-                            let percent = (p.progress.total > 0)
-                                .then(|| p.progress.current * 100 / p.progress.total)
+                            let percent = (p.progress.current * 100)
+                                .checked_div(p.progress.total)
                                 .unwrap_or(0);
                             latest_progress_updates = Some((index, percent));
                             num_progress_updates += 1;

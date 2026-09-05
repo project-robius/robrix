@@ -350,6 +350,8 @@ pub const COLOR_BG_ACCEPT_GREEN:       Vec4 = vec4(0.941, 1.0, 0.941, 1.0);
 pub const COLOR_FG_DISABLED:           Vec4 = vec4(0.7, 0.7, 0.7, 1.0);
 /// #E0E0E0
 pub const COLOR_BG_DISABLED:           Vec4 = vec4(0.878, 0.878, 0.878, 1.0);
+/// #1C274C
+pub const COLOR_TEXT:                  Vec4 = vec4(0.11, 0.153, 0.298, 1.0);
 /// #DC0005
 pub const COLOR_FG_DANGER_RED:         Vec4 = vec4(0.863, 0.0, 0.02, 1.0);
 /// #FFF0F0
