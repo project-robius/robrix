@@ -2235,8 +2235,6 @@ async fn matrix_worker_task(
 
                     // WE allow the upload to be cancelled up until the point where
                     // the messages has reached the send queue.
-                    let was_queued = Arc::new(AtomicBool::new(false));
-                    let was_queued2 = Arc::clone(&was_queued);
                     let queue_future = async {
                         let _ = sender_clone.send(TimelineUpdate::FileUploadStarted {
                             upload_id,
@@ -2342,25 +2340,15 @@ async fn matrix_worker_task(
                             SignalToUI::set_ui_signal();
                             return false;
                         }
-                        was_queued2.store(true, Ordering::Release);
                         true
                     };
-                    // This `let queue_result` binding is important to ensure that the borrow
-                    // of `timeline` ends before the match branches below.
-                    let queue_result = Abortable::new(queue_future, abort_registration).await;
-                    match queue_result {
+                    match Abortable::new(queue_future, abort_registration).await {
+                        // Note: a cancel that lands in the brief window after this future has
+                        // queued the message can't stop it, so the message still gets sent.
                         Ok(true) => { }
                         Ok(false) => return,
                         Err(_) => {
                             log!("Attachment upload task {upload_id:?} for {timeline_kind} was aborted.");
-                            if was_queued.load(Ordering::Acquire)
-                                && let Err(_e) = timeline.redact(
-                                    &TimelineEventItemId::TransactionId(txn_id.clone()),
-                                    None,
-                                ).await
-                            {
-                                error!("Failed to discard the cancelled attachment in {timeline_kind}: {_e:?}");
-                            }
                             return;
                         }
                     }
