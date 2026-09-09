@@ -1,7 +1,7 @@
 
 use makepad_widgets::*;
 
-use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, SelectedTab, get_own_profile}, profile::user_profile::UserProfile, settings::{PopulateMode, account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt}};
+use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, SelectedTab, get_own_profile}, profile::user_profile::UserProfile, settings::{PopulateMode, account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt, privacy_settings::PrivacySettingsWidgetExt}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -58,6 +58,9 @@ script_mod! {
 
                 // The Robrix app settings section.
                 app_settings := AppSettings {}
+
+                // The privacy settings section.
+                privacy_settings := PrivacySettings {}
 
                 // The TSP wallet settings section.
                 tsp_settings_screen := TspSettingsScreen {}
@@ -210,6 +213,7 @@ impl SettingsScreen {
             PopulateMode::Initial => {
                 self.view.account_settings(cx, ids!(account_settings)).populate(cx, profile);
                 self.view.app_settings(cx, ids!(app_settings)).populate(cx, &app_state.app_prefs);
+                self.view.privacy_settings(cx, ids!(privacy_settings)).populate(cx);
             }
             PopulateMode::AfterReapply => {
                 self.view.account_settings(cx, ids!(account_settings)).restore_after_reapply(cx);

@@ -105,16 +105,16 @@ pub static SLASH_COMMANDS: &[SlashCommand] = &[
         usage: "/whois <user-id>",
     },
     SlashCommand {
-        name: "ignore",
-        aliases: &["block"],
-        description: "Hide/block all messages from a user",
-        usage: "/ignore <user-id>",
+        name: "block",
+        aliases: &["ignore"],
+        description: "Hide all messages and invites from a user",
+        usage: "/block <user-id>",
     },
     SlashCommand {
-        name: "unignore",
-        aliases: &["unblock"],
-        description: "Stop hiding/blocking a user's messages",
-        usage: "/unignore <user-id>",
+        name: "unblock",
+        aliases: &["unignore"],
+        description: "Stop hiding a user's messages and invites",
+        usage: "/unblock <user-id>",
     },
     SlashCommand {
         name: "nick",
@@ -175,10 +175,11 @@ pub enum SlashCommandAction {
     OpenDirectMessage(OwnedUserId),
     /// Show the given user's profile pane.
     ShowUserProfile(OwnedUserId),
-    /// Ignore (`true`) or unignore (`false`) the given user.
-    IgnoreUser {
+    /// Block (`true`) or unblock (`false`) the given user.
+    #[doc(alias("ignore", "unignore"))]
+    BlockUser {
         user_id: OwnedUserId,
-        ignore: bool,
+        block: bool,
     },
     /// Set the current user's display name across all rooms.
     SetDisplayName(String),
@@ -227,7 +228,7 @@ pub fn parse_input(text: &str) -> SlashCommandOutcome {
     }
 
     // Commands focused on a single user all take one argument, so parse it once.
-    if let "dm" | "invite" | "whois" | "ignore" | "unignore" = command.name {
+    if let "dm" | "invite" | "whois" | "block" | "unblock" = command.name {
         let Some(user_id) = parse_user_id(arg) else {
             return SlashCommandOutcome::Error(format!(
                 "\"{arg}\" isn't a valid user ID; it should look like @user:server.org"
@@ -237,8 +238,8 @@ pub fn parse_input(text: &str) -> SlashCommandOutcome {
             "dm" => SlashCommandAction::OpenDirectMessage(user_id),
             "invite" => SlashCommandAction::InviteUser(user_id),
             "whois" => SlashCommandAction::ShowUserProfile(user_id),
-            "ignore" => SlashCommandAction::IgnoreUser { user_id, ignore: true },
-            _ => SlashCommandAction::IgnoreUser { user_id, ignore: false },
+            "block" => SlashCommandAction::BlockUser { user_id, block: true },
+            _ => SlashCommandAction::BlockUser { user_id, block: false },
         });
     }
 
@@ -548,12 +549,12 @@ mod tests_slash_commands {
         assert!(matches!(action("/msg @bob:server.org"), SlashCommandAction::OpenDirectMessage(_)));
         assert!(matches!(action("/query @bob:server.org"), SlashCommandAction::OpenDirectMessage(_)));
         assert!(matches!(
-            action("/block @bob:server.org"),
-            SlashCommandAction::IgnoreUser { ignore: true, .. },
+            action("/ignore @bob:server.org"),
+            SlashCommandAction::BlockUser { block: true, .. },
         ));
         assert!(matches!(
-            action("/unblock @bob:server.org"),
-            SlashCommandAction::IgnoreUser { ignore: false, .. },
+            action("/unignore @bob:server.org"),
+            SlashCommandAction::BlockUser { block: false, .. },
         ));
     }
 
@@ -706,18 +707,18 @@ mod tests_slash_commands {
     #[test]
     fn user_commands_require_a_full_user_id() {
         assert!(error("/invite bob").contains("@user:server.org"));
-        assert!(error("/ignore @bob").contains("@user:server.org"));
+        assert!(error("/block @bob").contains("@user:server.org"));
 
         let user_id = UserId::parse("@bob:server.org").unwrap();
         assert!(matches!(action("/invite @bob:server.org"), SlashCommandAction::InviteUser(u) if u == user_id));
         assert!(matches!(action("/whois @bob:server.org"), SlashCommandAction::ShowUserProfile(u) if u == user_id));
         assert!(matches!(
-            action("/ignore @bob:server.org"),
-            SlashCommandAction::IgnoreUser { ignore: true, .. },
+            action("/block @bob:server.org"),
+            SlashCommandAction::BlockUser { block: true, .. },
         ));
         assert!(matches!(
-            action("/unignore @bob:server.org"),
-            SlashCommandAction::IgnoreUser { ignore: false, .. },
+            action("/unblock @bob:server.org"),
+            SlashCommandAction::BlockUser { block: false, .. },
         ));
     }
 

@@ -55,6 +55,8 @@ pub mod profile;
 mod verification_modal;
 /// A modal/dialog popup for joining/leaving rooms, including confirming invite accept/reject.
 mod join_leave_room_modal;
+/// A modal/dialog popup for confirming that a user should be blocked or unblocked.
+pub mod block_user_modal;
 /// Shared UI components.
 pub mod shared;
 /// Generating text previews of timeline events/messages.

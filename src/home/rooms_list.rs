@@ -33,6 +33,7 @@ use crate::{
         FetchedRoomAvatar,
         room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn},
     },
+    sliding_sync::BlockedUsersUpdated,
     shared::{
         collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory},
         jump_to_bottom_button::UnreadMessageCount,
@@ -172,12 +173,10 @@ pub enum RoomsListUpdate {
     AddJoinedRoom(JoinedRoomInfo),
     /// Clear all rooms in the list of all rooms.
     ClearRooms,
-    /// Update the latest event content and timestamp for the given room.
+    /// Update the preview of the latest event for the given room.
     UpdateLatestEvent {
         room_id: OwnedRoomId,
-        timestamp: MilliSecondsSinceUnixEpoch,
-        /// The Html-formatted text preview of the latest message.
-        latest_message_text: String,
+        latest: LatestEventPreview,
     },
     /// Update the number of unread messages and mentions for the given room.
     UpdateNumUnreadMessages {
@@ -321,6 +320,21 @@ impl ActionDefaultRef for RoomsListAction {
 }
 
 
+/// A preview of a room's latest event, as shown in its entry in the rooms list.
+#[derive(Debug)]
+pub struct LatestEventPreview {
+    /// The Html-formatted preview text, which includes the sender's display name.
+    pub text: String,
+    pub sender: Option<OwnedUserId>,
+    pub timestamp: MilliSecondsSinceUnixEpoch,
+}
+impl LatestEventPreview {
+    /// Returns whether this preview was sent by any of the given users.
+    pub fn was_sent_by_any(&self, users: &[OwnedUserId]) -> bool {
+        self.sender.as_ref().is_some_and(|s| users.contains(s))
+    }
+}
+
 /// UI-related info about a joined room.
 ///
 /// This includes info needed display a preview of that room in the RoomsList
@@ -343,8 +357,8 @@ pub struct JoinedRoomInfo {
     /// This includes things like is_favourite, is_low_priority,
     /// whether the room is a server notice room, etc.
     pub tags: Tags,
-    /// The timestamp and Html text content of the latest message in this room.
-    pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
+    /// A preview of the latest message in this room.
+    pub latest: Option<LatestEventPreview>,
     /// The avatar for this room: either an array of bytes holding the avatar image
     /// or a string holding the first Unicode character of the room name.
     pub room_avatar: FetchedRoomAvatar,
@@ -835,9 +849,9 @@ impl RoomsList {
                     // Broadcast this to an already-open InviteScreen that might be showing this room.
                     cx.action(InviteScreenAction::InviterInfoUpdated { room_id, inviter_info });
                 }
-                RoomsListUpdate::UpdateLatestEvent { room_id, timestamp, latest_message_text } => {
+                RoomsListUpdate::UpdateLatestEvent { room_id, latest } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
-                        room.latest = Some((timestamp, latest_message_text));
+                        room.latest = Some(latest);
                     } else {
                         error!("Error: couldn't find room {room_id} to update latest event");
                     }
@@ -1649,6 +1663,17 @@ impl Widget for RoomsList {
 
                 if let Some(AppStateAction::FocusNone) = action.downcast_ref() {
                     self.set_current_active_room(cx, None);
+                    continue;
+                }
+
+                // If we just blocked a user, we don't want to show any message previews from them.
+                if let Some(BlockedUsersUpdated(blocked_users)) = action.downcast_ref() {
+                    for room in self.all_joined_rooms.values_mut() {
+                        if room.latest.as_ref().is_some_and(|l| l.was_sent_by_any(blocked_users)) {
+                            room.latest = None;
+                        }
+                    }
+                    self.redraw(cx);
                     continue;
                 }
 

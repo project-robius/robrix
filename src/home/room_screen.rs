@@ -1843,7 +1843,7 @@ impl RoomScreen {
                         jump_to_bottom_button.update_visibility(cx, true);
                     }
                     //
-                    // TODO: after an (un)ignore user event, all timelines are cleared. Handle that here.
+                    // TODO: after a user is (un)blocked, all timelines are cleared. Handle that here.
                     //
                     else {
                         // warning!("!!! Couldn't find new event with matching ID for ANY event currently visible in the portal list");

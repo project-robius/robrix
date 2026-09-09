@@ -4,7 +4,7 @@ use std::{borrow::Cow, ops::{Deref, DerefMut}};
 use makepad_widgets::*;
 use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId}};
 use crate::{
-    avatar_cache, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, current_user_id, is_user_ignored, submit_async_request}, utils
+    avatar_cache, block_user_modal::{BlockUserModalAction, BlockUserRequest}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, current_user_id, is_user_blocked, submit_async_request}, utils
 };
 use super::user_profile_cache;
 
@@ -205,12 +205,12 @@ script_mod! {
                 text: "Jump to Read Receipt"
             }
 
-            ignore_user_button := RobrixNegativeIconButton {
+            block_user_button := RobrixNegativeIconButton {
                 padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: 0,
                 draw_icon.svg: (ICON_FORBIDDEN)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -0.5} }
-                text: "Ignore (Block) User"
+                text: "Block User"
             }
         }
 
@@ -391,6 +391,9 @@ impl Widget for UserProfileSlidingPane {
             self.redraw(cx);
             return;
         }
+        // While the pane is sliding out, don't handle any events/hits,
+        // as those hits are likely intended for a different widget.
+        if self.is_animating_out { return; }
 
         let area = self.view.area();
 
@@ -506,23 +509,19 @@ impl Widget for UserProfileSlidingPane {
                 return;
             }
 
-            // The `ignore_user_button` require room membership info.
-            if let Some(room_member) = info.room_member.as_ref() {
-                if self.button(cx, ids!(ignore_user_button)).clicked(actions) {
-                    // `room_member.is_ignored()` doesn't auto-update or sync, it's just a "snapshot",
-                    // so we can't rely on it until a full homeserver sync occurs.
-                    // Thus we just track the ignore state ourselves.
-                    let is_ignored = is_user_ignored(room_member.user_id());
-                    submit_async_request(MatrixRequest::IgnoreUser {
-                        ignore: !is_ignored,
-                        user_id: info.user_id.clone(),
-                        room_id: info.room_id.clone(),
-                    });
-                    log!("Submitting request to {}ignore user {}.",
-                        if is_ignored { "un" } else { "" },
-                        info.user_id,
-                    );
-                }
+            if !self.is_animating_out && self.button(cx, ids!(block_user_button)).clicked(actions) {
+                let request = BlockUserRequest {
+                    user_id: info.user_id.clone(),
+                    display_name: info.username.clone(),
+                    block: !is_user_blocked(&info.user_id),
+                    reject_invite_to: None,
+                };
+                // Hide the pane immediately to make room for the confirmation modal
+                self.is_animating_out = true;
+                cx.revert_key_focus();
+                self.animator_play(cx, ids!(panel.hide));
+                cx.action(BlockUserModalAction::Open(request));
+                self.redraw(cx);
             }
         }
     }
@@ -573,24 +572,23 @@ impl Widget for UserProfileSlidingPane {
         //    since you cannot direct message yourself.
         // * `copy_link_to_user_button` is always enabled with the same text.
         // * `jump_to_read_receipt_button` is always shown with the same text.
-        // * `ignore_user_button` is hidden if the user is not a member of the room,
-        //    or if the user is the same as the account user, since you cannot ignore yourself.
-        //    * The button text changes to "Unignore" if the user is already ignored.
+        // * `block_user_button` is hidden if the user is the same as the account user,
+        //    since you cannot block yourself.
+        //    * The button text changes to "Unblock" if the user is already blocked.
         let is_pane_showing_current_account = info.room_member.as_ref()
             .map(|rm| rm.is_account_user())
             .unwrap_or_else(|| current_user_id().is_some_and(|uid| uid == info.user_id));
 
         self.button(cx, ids!(direct_message_button)).set_visible(cx, !is_pane_showing_current_account);
 
-        let ignore_user_button = self.button(cx, ids!(ignore_user_button));
-        ignore_user_button.set_visible(cx, !is_pane_showing_current_account && info.room_member.is_some());
+        let block_user_button = self.button(cx, ids!(block_user_button));
+        block_user_button.set_visible(cx, !is_pane_showing_current_account);
         // Unfortunately the Matrix SDK's RoomMember type does not properly track
-        // the `ignored` state of a user, so we have to maintain it separately.
-        let is_ignored = info.room_member.as_ref()
-            .is_some_and(|rm| is_user_ignored(rm.user_id()));
-        ignore_user_button.set_text(
+        // the blocked state of a user, so we have to maintain it separately.
+        let is_blocked = is_user_blocked(&info.user_id);
+        block_user_button.set_text(
             cx,
-            if is_ignored { "Unignore (Unblock) User" } else { "Ignore (Block) User" }
+            if is_blocked { "Unblock User" } else { "Block User" }
         );
 
         self.view.draw_walk(cx, scope, walk)
@@ -664,7 +662,7 @@ impl UserProfileSlidingPane {
         self.view.button(cx, ids!(direct_message_button)).reset_hover(cx);
         self.view.button(cx, ids!(copy_link_to_user_button)).reset_hover(cx);
         self.view.button(cx, ids!(jump_to_read_receipt_button)).reset_hover(cx);
-        self.view.button(cx, ids!(ignore_user_button)).reset_hover(cx);
+        self.view.button(cx, ids!(block_user_button)).reset_hover(cx);
         self.redraw(cx);
     }
 }

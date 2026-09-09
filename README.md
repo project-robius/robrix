@@ -52,7 +52,6 @@ The following table shows which host systems can currently be used to build Robr
 
 ## Known issues
  - Matrix-specific links (`https://matrix.to/...`) aren't fully handled in-app yet.
- - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled gradually via back pagination, but the viewport position is not maintained.
 
 
 > [!IMPORTANT]
@@ -204,7 +203,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] SSO, other 3rd-party auth providers login screen: https://github.com/project-robius/robrix/issues/114
 - [x] Client logout, with server-side logout and app state reset: https://github.com/project-robius/robrix/pull/432
 - [x] Side panel showing detailed user profile info (click on their Avatar)
-- [x] Ignore and unignore users (see known issues)
+- [x] Ignore (block) and unignore (unblock) users
 - [x] Display read receipts besides messages: https://github.com/project-robius/robrix/pull/162
 - [x] Mention users within a room (or the whole `@room`): https://github.com/project-robius/robrix/issues/452
 - [x] Dedicated view of direct messages (DMs): https://github.com/project-robius/robrix/issues/139
