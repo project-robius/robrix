@@ -17,7 +17,7 @@ use matrix_sdk::{
                 encrypted::Relation as EncryptedRelation, message::{MessageType, Relation, RoomMessageEventContent, TextMessageEventContent}, power_levels::RoomPowerLevels, redaction::SyncRoomRedactionEvent, MediaSource
             }, AnyMessageLikeEventContent, AnySyncMessageLikeEvent, AnySyncTimelineEvent, MessageLikeEventType, StateEventType
         }, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedTransactionId, OwnedUserId, RoomOrAliasId, TransactionId, UserId, uint
-    }, send_queue::{LocalEchoContent, RoomSendQueueUpdate, SendQueueUpdate}, sliding_sync::VersionBuilder, Client, ClientBuildError, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
+    }, send_queue::{LocalEcho, LocalEchoContent, RoomSendQueueUpdate, SendQueueUpdate}, sliding_sync::VersionBuilder, Client, ClientBuildError, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
 };
 #[cfg(not(target_os = "ios"))]
 use matrix_sdk::Error;
@@ -1764,7 +1764,7 @@ async fn matrix_worker_task(
                             );
                             let _ = writeln!(text, "members: {:?} active service, {:?} direct targets, heroes: {:?}",
                                 room.active_service_members_count(), room.direct_targets_length(),
-                                room.heroes().iter().map(|h| h.user_id.as_str()).collect::<Vec<_>>(),
+                                room.heroes().await.iter().map(|h| h.user_id.as_str()).collect::<Vec<_>>(),
                             );
                             let _ = writeln!(text, "creators: {:?}, own user: {}", room.creators(), room.own_user_id());
                             let _ = writeln!(text, "successor (tombstone): {:?}", room.successor_room());
@@ -2438,7 +2438,7 @@ async fn matrix_worker_task(
                             let room = timeline.room();
                             for receipt_type in [ReceiptEventType::Read, ReceiptEventType::ReadPrivate] {
                                 candidates.push(
-                                    room.load_user_receipt(receipt_type, ReceiptThread::Unthreaded, &user_id).await.ok().flatten()
+                                    room.load_user_receipt(receipt_type, &ReceiptThread::Unthreaded, &user_id).await.ok().flatten()
                                 );
                             }
                         }
@@ -2514,7 +2514,7 @@ async fn matrix_worker_task(
 
                 let _redact_task = Handle::current().spawn(async move {
                     match timeline.redact(&timeline_event_id, reason.as_deref()).await {
-                        Ok(()) => log!("Successfully redacted message in {timeline_kind}."),
+                        Ok(()) => log!("Requested redaction of {timeline_event_id:?} in {timeline_kind}."),
                         Err(e) => {
                             error!("Failed to redact message in {timeline_kind}; error: {e:?}");
                             let msg = match (&timeline_event_id, &e) {
@@ -3805,7 +3805,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
             }
         }
 
-        // `subscribe_to_rooms()` replaces the whole subscription set rather than adding to it,
+        // `set_room_subscriptions()` replaces the whole subscription set rather than adding to it,
         // so hand it every room we still want, but ONLY when that set changes.
         // We use a set type for comparison, not a list, because rooms continuously get reordered.
         let is_wanted = |r: &RoomListServiceRoomInfo| matches!(r.state, RoomState::Invited | RoomState::Joined);
@@ -3821,7 +3821,7 @@ async fn room_list_service_loop(room_list_service: Arc<RoomListService>) -> Resu
                 .map(|r| r.room_id.clone())
                 .collect();
             let room_id_refs = subscribed_rooms.iter().map(|r| r.as_ref()).collect::<Vec<_>>();
-            room_list_service.subscribe_to_rooms(&room_id_refs).await;
+            room_list_service.set_room_subscriptions(&room_id_refs).await;
         }
     }
 
@@ -4405,11 +4405,16 @@ enum LocalSendKind {
 /// Watches the send queue for any failures and handles them appropriately.
 ///
 /// Recoverable errors will re-enable the send queue after a delay so messages
-/// can be auto-retried, while unrecoverable errors show a popup notification
-/// and wake up the room so future messages can still be sent.
+/// can be auto-retried. Unrecoverable errors show a popup and re-enable the
+/// room's queue, though the failed request still blocks anything queued after it.
 fn handle_send_queue_subscriber(client: Client) -> JoinHandle<()> {
     let mut updates = client.send_queue().subscribe();
     Handle::current().spawn(async move {
+        // Failed edits, reactions, and deletions from a previous run would block their room's queue.
+        match client.send_queue().local_echoes().await {
+            Ok(echoes) => for (_, echoes) in echoes { cancel_hidden_failed_sends(echoes).await },
+            Err(e) => warning!("Couldn't check for previously failed send requests: {e}"),
+        }
         let mut kinds: HashMap<OwnedTransactionId, LocalSendKind> = HashMap::new();
         // The time when a room's queue should be woken up after a recoverable failure.
         let mut reenable_at: HashMap<OwnedRoomId, Instant> = HashMap::new();
@@ -4461,9 +4466,13 @@ fn handle_send_queue_subscriber(client: Client) -> JoinHandle<()> {
                             }
 
                             error!("Unrecoverable send error in room {room_id}: {error:?}");
-                            // The SDK disabled the whole room's queue, so we have to re-enable it.
                             let room = client.get_room(&room_id);
                             if let Some(room) = &room {
+                                match room.send_queue().subscribe().await {
+                                    Ok((echoes, _)) => cancel_hidden_failed_sends(echoes).await,
+                                    Err(e) => warning!("Couldn't check for failed send requests in room {room_id}: {e}"),
+                                }
+                                // The SDK disabled the whole room's queue, so we have to re-enable it.
                                 room.send_queue().set_enabled(true);
                             }
                             let room_name = match &room {
@@ -4472,9 +4481,9 @@ fn handle_send_queue_subscriber(client: Client) -> JoinHandle<()> {
                             };
                             let desc = stringify_send_error(&error);
                             let msg = match kinds.get(&transaction_id) {
-                                Some(LocalSendKind::Message) => format!("Couldn't send a message in {room_name}: {desc}\n\nOpen the message's menu to edit, retry, or cancel it."),
-                                Some(LocalSendKind::Attachment) => format!("Couldn't send an attachment in {room_name}: {desc}\n\nOpen the message's menu to retry or cancel it."),
-                                Some(LocalSendKind::Edit) => format!("Couldn't send your edit in {room_name}: {desc}"),
+                                Some(LocalSendKind::Message) => format!("Couldn't send a message in {room_name}: {desc}\n\nOpen the message's menu to edit, retry, or cancel it. Future messages won't send until you do."),
+                                Some(LocalSendKind::Attachment) => format!("Couldn't send an attachment in {room_name}: {desc}\n\nOpen the message's menu to retry or cancel it. Future messages won't send until you do."),
+                                Some(LocalSendKind::Edit) => format!("Couldn't send your edit in {room_name}: {desc}\n\nYour edit was discarded."),
                                 Some(LocalSendKind::Reaction { key }) => format!("Couldn't send your {key} reaction in {room_name}: {desc}"),
                                 Some(LocalSendKind::Redaction) => format!("Couldn't delete a message in {room_name}: {desc}"),
                                 None => format!("Couldn't send to {room_name}: {desc}"),
@@ -4515,6 +4524,31 @@ fn handle_send_queue_subscriber(client: Client) -> JoinHandle<()> {
             }
         }
     })
+}
+
+/// Cancels failed requests that user can't retry or cancel (edits, reactions, deletions),
+/// since you can't see them as timeline events, and they'll block everything queued after it.
+async fn cancel_hidden_failed_sends(echoes: Vec<LocalEcho>) {
+    for echo in echoes {
+        let aborted = match echo.content {
+            LocalEchoContent::Redaction { send_handle, send_error: Some(_), .. } => send_handle.abort().await,
+            LocalEchoContent::Event { serialized_event, send_handle, send_error: Some(_) } => {
+                let has_own_item = match serialized_event.deserialize() {
+                    Ok(AnyMessageLikeEventContent::RoomMessage(msg)) => !matches!(msg.relates_to, Some(Relation::Replacement(_))),
+                    Ok(AnyMessageLikeEventContent::Reaction(_)) => false,
+                    _ => true,
+                };
+                if has_own_item { continue }
+                send_handle.abort().await
+            }
+            _ => continue,
+        };
+        match aborted {
+            Ok(true) => log!("Cancelled failed send request {}, which couldn't be retried.", echo.transaction_id),
+            Ok(false) => { }
+            Err(e) => error!("Failed to cancel failed send request {}: {e}", echo.transaction_id),
+        }
+    }
 }
 
 fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service::State>) -> JoinHandle<()> {
@@ -5464,7 +5498,7 @@ async fn room_avatar(room: &Room, room_name_id: &RoomNameId) -> FetchedRoomAvata
         }
     }
     // For rooms without an avatar that have only one hero (i.e., a 2-member DM), use their avatar.
-    if let Ok([one_hero]) = <[_; 1]>::try_from(room.heroes()) {
+    if let Ok([one_hero]) = <[_; 1]>::try_from(room.heroes().await) {
         if let Some(avatar_url) = one_hero.avatar_url {
             let request = MediaRequestParameters {
                 source: MediaSource::Plain(avatar_url.clone()),

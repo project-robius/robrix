@@ -1469,6 +1469,7 @@ impl Widget for RoomScreen {
                                         | MsgLikeKind::Redacted => {
                                             let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
                                             let is_newest_sent = tl_state.index_of_last_own_sent == Some(tl_idx);
+                                            let is_blocked_by_failed_send = tl_state.index_of_first_own_failed.is_some_and(|i| i < tl_idx);
                                             populate_message_view(
                                                 cx,
                                                 list,
@@ -1486,6 +1487,7 @@ impl Widget for RoomScreen {
                                                 &tl_state.pending_downloads,
                                                 &tl_state.expanded_reply_previews,
                                                 is_newest_sent,
+                                                is_blocked_by_failed_send,
                                                 tl_state.is_encrypted,
                                                 item_drawn_status,
                                                 room_screen_widget_uid,
@@ -1740,6 +1742,7 @@ impl RoomScreen {
         let Some(tl) = self.tl_state.as_mut() else { return };
 
         let mut done_loading = false;
+        let mut items_changed = false;
         let mut should_continue_backwards_pagination = false;
         let mut typing_users = None;
         let mut jump_to_read_receipt = None;
@@ -1777,7 +1780,7 @@ impl RoomScreen {
                     jump_to_bottom_button.update_visibility(cx, true);
 
                     tl.items = initial_items;
-                    tl.index_of_last_own_sent = index_of_last_own_sent(&tl.items, tl.kind.thread_root_event_id().is_none());
+                    items_changed = true;
                     done_loading = true;
                 }
                 TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
@@ -1915,7 +1918,7 @@ impl RoomScreen {
                         // log!("process_timeline_updates(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                     }
                     tl.items = new_items;
-                    tl.index_of_last_own_sent = index_of_last_own_sent(&tl.items, tl.kind.thread_root_event_id().is_none());
+                    items_changed = true;
                     done_loading = true;
                 }
                 TimelineUpdate::NewUnreadMessagesCount(unread_messages_count) => {
@@ -2246,6 +2249,11 @@ impl RoomScreen {
                     portal_list.redraw(cx);
                 }
             }
+        }
+
+        if items_changed {
+            (tl.index_of_last_own_sent, tl.index_of_first_own_failed) =
+                own_send_indices(&tl.items, tl.kind.thread_root_event_id().is_none());
         }
 
         if should_continue_backwards_pagination {
@@ -3038,6 +3046,7 @@ impl RoomScreen {
                     is_paginating: false,
                     items: Vector::new(),
                     index_of_last_own_sent: None,
+                    index_of_first_own_failed: None,
                     content_drawn_since_last_update: RangeSet::new(),
                     profile_drawn_since_last_update: RangeSet::new(),
                     update_receiver,
@@ -3980,9 +3989,13 @@ struct TimelineUiState {
     /// The list of items (events) in this room's timeline that our client currently knows about.
     items: Vector<Arc<TimelineItem>>,
 
-    /// The index (in `items`) of our newest fully-sent message,
+    /// The index (in `items`) of our newest fully-sent message that nobody has read yet,
     /// which is the only message that should show a "Sent" status icon.
     index_of_last_own_sent: Option<usize>,
+
+    /// The index (in `items`) of our earliest message that failed to send unrecoverably,
+    /// which blocks every message queued after it until it's retried or cancelled.
+    index_of_first_own_failed: Option<usize>,
 
     /// The range of items (indices in the above `items` list) whose event **contents** have been drawn
     /// since the last update and thus do not need to be re-populated on future draw events.
@@ -4179,21 +4192,32 @@ impl ItemDrawnStatus {
     }
 }
 
-/// Searches backwards for the latest message of our own that has been fully sent.
-fn index_of_last_own_sent(
+/// Searches backwards for our newest fully-sent message that nobody has read yet,
+/// and for our earliest failed send, which blocks everything queued behind it.
+fn own_send_indices(
     items: &Vector<Arc<TimelineItem>>,
     is_main_timeline: bool,
-) -> Option<usize> {
-    items.iter().enumerate().rev().find_map(|(index, item)| {
-        let event = item.as_event()?;
-        let is_sent = event.is_own()
-            && matches!(event.send_state(), None | Some(EventSendState::Sent { .. }))
-            && matches!(event.content(), TimelineItemContent::MsgLike(msg_like)
-                if matches!(msg_like.kind, MsgLikeKind::Message(_) | MsgLikeKind::Sticker(_) | MsgLikeKind::Redacted)
-                    && !(is_main_timeline && msg_like.thread_root.is_some())
-            );
-        is_sent.then_some(index)
-    })
+) -> (Option<usize>, Option<usize>) {
+    let mut first_failed = None;
+    for (index, item) in items.iter().enumerate().rev() {
+        let Some(event) = item.as_event() else { continue };
+        // Anyone who read this has read past everything older, so we can stop here.
+        // Local echoes carry no receipts, so a failed send is always found first.
+        if !event.read_receipts().is_empty() { return (None, first_failed) }
+        if !event.is_own() { continue }
+        match event.send_state() {
+            Some(EventSendState::SendingFailed { is_recoverable: false, .. }) => first_failed = Some(index),
+            None | Some(EventSendState::Sent { .. }) => {
+                let is_message = matches!(event.content(), TimelineItemContent::MsgLike(msg_like)
+                    if matches!(msg_like.kind, MsgLikeKind::Message(_) | MsgLikeKind::Sticker(_) | MsgLikeKind::Redacted)
+                        && !(is_main_timeline && msg_like.thread_root.is_some())
+                );
+                if is_message { return (Some(index), first_failed) }
+            }
+            _ => { }
+        }
+    }
+    (None, first_failed)
 }
 
 /// Creates, populates, and adds a Message liveview widget to the given `PortalList`
@@ -4218,6 +4242,7 @@ fn populate_message_view(
     pending_downloads: &[PendingDownload],
     expanded_reply_previews: &HashSet<TimelineEventItemId>,
     is_newest_sent: bool,
+    is_blocked_by_failed_send: bool,
     is_room_encrypted: bool,
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
@@ -4810,6 +4835,7 @@ fn populate_message_view(
         download_state,
         is_reply_expanded,
         is_newest_sent,
+        is_blocked_by_failed_send,
         is_room_encrypted,
     );
 
@@ -6393,6 +6419,7 @@ impl Message {
         download_state: DownloadDisplayState,
         is_reply_expanded: bool,
         is_newest_sent: bool,
+        is_blocked_by_failed_send: bool,
         is_room_encrypted: bool,
     ) {
         let prev_section_visible = self.download_info.is_some();
@@ -6407,7 +6434,7 @@ impl Message {
 
         self.details = Some(details);
         self.download_info = download_info;
-        self.send_status_indicator(cx).set_from_event(cx, event_tl_item, is_newest_sent, is_room_encrypted);
+        self.send_status_indicator(cx).set_from_event(cx, event_tl_item, is_newest_sent, is_blocked_by_failed_send, is_room_encrypted);
 
         // Re-apply this every time to ensure a re-used portallist item is still correctly expanded.
         self.view.widget(cx, ids!(replied_to_message)).as_collapsible_preview().set_expanded(is_reply_expanded);
@@ -6461,10 +6488,11 @@ impl MessageRef {
         download_state: DownloadDisplayState,
         is_reply_expanded: bool,
         is_newest_sent: bool,
+        is_blocked_by_failed_send: bool,
         is_room_encrypted: bool,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_data(cx, details, event_tl_item, download_info, download_state, is_reply_expanded, is_newest_sent, is_room_encrypted);
+        inner.set_data(cx, details, event_tl_item, download_info, download_state, is_reply_expanded, is_newest_sent, is_blocked_by_failed_send, is_room_encrypted);
     }
 }
 
