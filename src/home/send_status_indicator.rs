@@ -7,7 +7,7 @@ use matrix_sdk::{HttpError, QueueWedgeError, media::MediaError, ruma::{api::erro
 use matrix_sdk_base::crypto::{OlmError, SessionRecipientCollectionError};
 use matrix_sdk_ui::timeline::{EventSendState, EventTimelineItem};
 
-use crate::{LivePtr, settings::app_preferences::AppPreferencesGlobal, shared::styles::{COLOR_FG_ACCEPT_GREEN, COLOR_FG_DANGER_RED}, sliding_sync::is_offline, utils::format_decimal_file_size, widget_ref_from_live_ptr};
+use crate::{LivePtr, shared::styles::{COLOR_FG_ACCEPT_GREEN, COLOR_FG_DANGER_RED}, sliding_sync::is_offline, utils::format_decimal_file_size, widget_ref_from_live_ptr};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -120,6 +120,19 @@ script_mod! {
             }
             text: "Will send when online."
         }
+
+        blocked_label: Label {
+            padding: 0,
+            margin: 0,
+            flow: Flow.Right { wrap: true },
+            max_lines: 2,
+            text_overflow: Ellipsis,
+            draw_text +: {
+                text_style: theme.font_regular { font_size: 9.5 },
+                color: (mod.widgets.SEND_STATUS_ICON_COLOR),
+            }
+            text: "Waiting on an earlier message."
+        }
     }
 }
 
@@ -138,6 +151,7 @@ enum SendStatusIcon {
 enum SendStatusLabel {
     Progress,
     Queued,
+    Blocked,
     Failed,
 }
 
@@ -149,11 +163,11 @@ struct SendStatusInfo {
     upload_percent: Option<u8>,
     /// A queued attachment whose upload hasn't started, meaning it's still being encrypted.
     is_encrypting: bool,
-    /// Only the newest (bottom-most) sent message should show a "Sent" checkmark.
+    /// Queued behind an earlier message that failed to send, so it can't be sent
+    /// until that one is retried or cancelled.
+    is_blocked: bool,
+    /// Only our newest sent message that nobody has read yet shows a "Sent" checkmark.
     is_newest_sent: bool,
-    /// If a message has read receipts (and the user has chosen to enable them),
-    /// then those should be shown instead of this send status.
-    has_read_receipts: bool,
     error: Option<Arc<matrix_sdk::Error>>,
 }
 impl PartialEq for SendStatusInfo {
@@ -161,8 +175,8 @@ impl PartialEq for SendStatusInfo {
         self.icon == other.icon
             && self.upload_percent == other.upload_percent
             && self.is_encrypting == other.is_encrypting
+            && self.is_blocked == other.is_blocked
             && self.is_newest_sent == other.is_newest_sent
-            && self.has_read_receipts == other.has_read_receipts
             && match (&self.error, &other.error) {
                 (None, None) => true,
                 (Some(a), Some(b)) => Arc::ptr_eq(a, b),
@@ -173,6 +187,7 @@ impl PartialEq for SendStatusInfo {
 impl SendStatusInfo {
     fn label(&self) -> Option<SendStatusLabel> {
         match self.icon {
+            SendStatusIcon::Sending if self.is_blocked => Some(SendStatusLabel::Blocked),
             SendStatusIcon::Sending => (self.upload_percent.is_some() || self.is_encrypting)
                 .then_some(SendStatusLabel::Progress),
             SendStatusIcon::Queued => Some(SendStatusLabel::Queued),
@@ -204,6 +219,7 @@ pub struct SendStatusIndicator {
     #[live] progress_label: Option<LivePtr>,
     #[live] failed_label: Option<LivePtr>,
     #[live] queued_label: Option<LivePtr>,
+    #[live] blocked_label: Option<LivePtr>,
 
     /// `None` means this indicator isn't shown by a message.
     #[rust] info: Option<SendStatusInfo>,
@@ -258,10 +274,6 @@ impl Widget for SendStatusIndicator {
             self.area = Area::Empty;
             return DrawStep::done();
         };
-        if info.has_read_receipts && cx.global::<AppPreferencesGlobal>().0.show_read_receipts {
-            self.area = Area::Empty;
-            return DrawStep::done();
-        }
         if info.icon == SendStatusIcon::Sent && !info.is_newest_sent {
             self.area = Area::Empty;
             return DrawStep::done();
@@ -310,6 +322,7 @@ impl SendStatusIndicator {
         cx: &mut Cx,
         event_tl_item: &EventTimelineItem,
         is_newest_sent: bool,
+        is_blocked_by_failed_send: bool,
         is_room_encrypted: bool,
     ) {
         let upload = match event_tl_item.send_state() {
@@ -317,10 +330,13 @@ impl SendStatusIndicator {
                 Some((p.progress.current, p.progress.total)),
             _ => None,
         };
+        let is_blocked = is_blocked_by_failed_send
+            && matches!(event_tl_item.send_state(), Some(EventSendState::NotSentYet { .. }));
         // The send queue will fully encrypt an attachment before starting to upload it,
         // so we want to display that status to the user too since it can take a while.
         let is_encrypting = is_room_encrypted
             && upload.is_none()
+            && !is_blocked
             && matches!(event_tl_item.send_state(), Some(EventSendState::NotSentYet { .. }))
             && event_tl_item.content().as_message().is_some_and(|msg| matches!(
                 msg.msgtype(),
@@ -333,25 +349,25 @@ impl SendStatusIndicator {
                 icon: SendStatusIcon::Sent,
                 upload_percent: None,
                 is_encrypting: false,
+                is_blocked: false,
                 error: None,
                 is_newest_sent,
-                has_read_receipts: !event_tl_item.read_receipts().is_empty(),
             }),
             Some(EventSendState::Sent { .. }) => Some(SendStatusInfo {
                 icon: SendStatusIcon::Sent,
                 upload_percent: None,
                 is_encrypting: false,
+                is_blocked: false,
                 error: None,
                 is_newest_sent,
-                has_read_receipts: false,
             }),
             Some(EventSendState::NotSentYet { .. }) => Some(SendStatusInfo {
-                icon: if upload.is_none() && is_offline() { SendStatusIcon::Queued } else { SendStatusIcon::Sending },
+                icon: if upload.is_none() && is_offline() && !is_blocked { SendStatusIcon::Queued } else { SendStatusIcon::Sending },
                 upload_percent: upload.map(|(current, total)| upload_percent(current, total)),
                 is_encrypting,
+                is_blocked,
                 error: None,
                 is_newest_sent: false,
-                has_read_receipts: false,
             }),
             Some(EventSendState::SendingFailed { error, is_recoverable }) => Some(SendStatusInfo {
                 icon: match (is_recoverable, is_offline()) {
@@ -361,9 +377,9 @@ impl SendStatusIndicator {
                 },
                 upload_percent: None,
                 is_encrypting: false,
+                is_blocked: false,
                 error: Some(error.clone()),
                 is_newest_sent: false,
-                has_read_receipts: false,
             }),
         };
         if new_info == self.info { return }
@@ -379,6 +395,7 @@ impl SendStatusIndicator {
         let error = info.error.as_ref().map(|e| stringify_send_error(e));
         self.has_failed = matches!(info.icon, SendStatusIcon::Retry | SendStatusIcon::Failed);
         self.tooltip_text = match (info.icon, upload, error) {
+            (SendStatusIcon::Sending, _, _) if info.is_blocked => "Waiting for an earlier failed message to be retried or cancelled.".into(),
             (SendStatusIcon::Sending, Some((current, total)), _) => upload_progress_text(current, total),
             (SendStatusIcon::Sending, None, _) if info.is_encrypting => "Encrypting the file...".into(),
             (SendStatusIcon::Sending, None, _) => "Sending...".into(),
@@ -403,6 +420,7 @@ impl SendStatusIndicator {
                     let template = match kind {
                         SendStatusLabel::Progress => self.progress_label,
                         SendStatusLabel::Queued => self.queued_label,
+                        SendStatusLabel::Blocked => self.blocked_label,
                         SendStatusLabel::Failed => self.failed_label,
                     };
                     let label = widget_ref_from_live_ptr(cx, template).as_label();
@@ -421,7 +439,7 @@ impl SendStatusIndicator {
                     _ if info.error.as_deref().is_none_or(is_send_error_retryable) => "Send failed, tap to retry.",
                     _ => "Send failed, tap for options.",
                 }),
-                SendStatusLabel::Queued => { }
+                SendStatusLabel::Queued | SendStatusLabel::Blocked => { }
             }
         }
         self.info = new_info;
@@ -436,10 +454,11 @@ impl SendStatusIndicatorRef {
         cx: &mut Cx,
         event_tl_item: &EventTimelineItem,
         is_newest_sent: bool,
+        is_blocked_by_failed_send: bool,
         is_room_encrypted: bool,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_from_event(cx, event_tl_item, is_newest_sent, is_room_encrypted);
+        inner.set_from_event(cx, event_tl_item, is_newest_sent, is_blocked_by_failed_send, is_room_encrypted);
     }
 }
 
