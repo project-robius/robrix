@@ -418,9 +418,9 @@ impl RoomsListEntryContent {
         self.view.label(cx, ids!(room_name)).set_text(cx, &room_info.room_name_id.display());
         let timestamp = self.view.label(cx, ids!(timestamp));
         let latest_message = self.view.html_or_plaintext(cx, ids!(latest_message));
-        if let Some((ts, msg)) = room_info.latest.as_ref() {
-            timestamp.set_text(cx, relative_format(*ts).as_deref().unwrap_or(""));
-            latest_message.show_html(cx, msg);
+        if let Some(latest) = room_info.latest.as_ref() {
+            timestamp.set_text(cx, relative_format(latest.timestamp).as_deref().unwrap_or(""));
+            latest_message.show_html(cx, &latest.text);
         } else {
             timestamp.set_text(cx, "");
             latest_message.show_plaintext(cx, "[No recent messages]");

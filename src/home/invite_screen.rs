@@ -8,7 +8,7 @@ use std::ops::Deref;
 use makepad_widgets::*;
 use matrix_sdk::{RoomState, ruma::OwnedRoomId};
 
-use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::AvatarWidgetRefExt, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
+use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::AvatarWidgetRefExt, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{is_user_blocked, submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
 
 use super::rooms_list::{AcceptedInviteKind, InviteState, InviterInfo, RoomsListAction, get_invited_rooms, set_invite_state};
 
@@ -169,6 +169,17 @@ script_mod! {
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                 text: "Join Room"
             }
+        }
+
+        // Put this on its own row with a bit of vertical space above it
+        reject_and_block_button := RobrixNegativeIconButton {
+            visible: false,
+            align: Align{x: 0.5, y: 0.5}
+            margin: Inset{top: 25}
+            padding: 15,
+            draw_icon.svg: (ICON_FORBIDDEN)
+            icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
+            text: "Reject & Block Sender"
         }
 
         completion_label := Label {
@@ -332,6 +343,17 @@ impl Widget for InviteScreen {
                     });
                 }
             }
+            // Blocking is a serious action, don't allow bypassing the confirmation modal
+            if let Some(inviter) = info.inviter.as_ref()
+                && self.view.button(cx, ids!(reject_and_block_button)).clicked(actions)
+            {
+                cx.action(BlockUserModalAction::Open(BlockUserRequest {
+                    user_id: inviter.user_id.clone(),
+                    display_name: inviter.display_name.clone(),
+                    block: true,
+                    reject_invite_to: Some(info.room_id().clone()),
+                }));
+            }
             if let Some(modifiers) = self.view.button(cx, ids!(accept_button)).clicked_modifiers(actions) {
                 if modifiers.shift {
                     submit_async_request(MatrixRequest::JoinRoom {
@@ -372,6 +394,13 @@ impl Widget for InviteScreen {
                         continue;
                     }
                     _ => {}
+                }
+
+                if let Some(BlockUserModalAction::Confirmed(request)) = action.downcast_ref() {
+                    if request.reject_invite_to.as_ref() == Some(info.room_id()) {
+                        self.invite_state = InviteState::WaitingForLeaveResult;
+                    }
+                    continue;
                 }
 
                 if let Some(JoinLeaveRoomModalAction::Close { room_id, .. }) = action.downcast_ref() {
@@ -480,35 +509,45 @@ impl Widget for InviteScreen {
         // Third, set the buttons' text based on the invite state.
         let cancel_button = self.view.button(cx, ids!(cancel_button));
         let accept_button = self.view.button(cx, ids!(accept_button));
+        let reject_and_block_button = self.view.button(cx, ids!(reject_and_block_button));
+        reject_and_block_button.set_visible(
+            cx,
+            info.inviter.as_ref().is_some_and(|i| !is_user_blocked(&i.user_id)),
+        );
         let join_text = match self.is_space { true => "Join Space", false => "Join Room" };
         match self.invite_state {
             InviteState::WaitingOnUserInput => {
                 cancel_button.set_enabled(cx, true);
                 accept_button.set_enabled(cx, true);
+                reject_and_block_button.set_enabled(cx, true);
                 cancel_button.set_text(cx, "Reject Invite");
                 accept_button.set_text(cx, join_text);
             }
             InviteState::WaitingForJoinResult => {
                 cancel_button.set_enabled(cx, false);
                 accept_button.set_enabled(cx, false);
+                reject_and_block_button.set_enabled(cx, false);
                 cancel_button.set_text(cx, "Reject Invite");
                 accept_button.set_text(cx, "Joining...");
             }
             InviteState::WaitingForLeaveResult => {
                 cancel_button.set_enabled(cx, false);
                 accept_button.set_enabled(cx, false);
+                reject_and_block_button.set_enabled(cx, false);
                 cancel_button.set_text(cx, "Rejecting...");
                 accept_button.set_text(cx, join_text);
             }
             InviteState::WaitingForJoinedRoom => {
                 cancel_button.set_enabled(cx, false);
                 accept_button.set_enabled(cx, false);
+                reject_and_block_button.set_enabled(cx, false);
                 cancel_button.set_text(cx, "Reject Invite");
                 accept_button.set_text(cx, "Joined!");
             }
             InviteState::RoomLeft => {
                 cancel_button.set_visible(cx, false);
                 accept_button.set_visible(cx, false);
+                reject_and_block_button.set_visible(cx, false);
                 self.view.label(cx, ids!(completion_label)).set_text(
                     cx,
                     "Invite successfully rejected. You may close this invite.",
@@ -579,6 +618,7 @@ impl InviteScreen {
         let accept_button = self.view.button(cx, ids!(accept_button));
         accept_button.set_visible(cx, true);
         accept_button.reset_hover(cx);
+        self.view.button(cx, ids!(reject_and_block_button)).reset_hover(cx);
         self.view.label(cx, ids!(completion_label)).set_text(cx, "");
         self.room_name_id = None;
         self.info = None;

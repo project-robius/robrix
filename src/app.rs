@@ -12,6 +12,7 @@ use makepad_widgets::*;
 use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomId}};
 use serde::{Deserialize, Serialize};
 use crate::{
+    block_user_modal::{BlockUserModalAction, BlockUserModalWidgetRefExt},
     avatar_cache::clear_avatar_cache, room_preview_cache::clear_room_preview_cache, home::{
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
@@ -127,6 +128,11 @@ script_mod! {
                         // A modal to confirm any deletion/removal action.
                         delete_confirmation_modal := Modal {
                             content := NegativeConfirmationModal {}
+                        }
+
+                        // A modal to confirm blocking or unblocking a user.
+                        block_user_modal := Modal {
+                            content := BlockUserModal {}
                         }
 
                         // A modal to preview and confirm file uploads.
@@ -451,6 +457,21 @@ impl MatchEvent for App {
                 _ => {}
             }
 
+            // Handle actions needed to open/close the block user modal.
+            match action.downcast_ref() {
+                Some(BlockUserModalAction::Open(request)) => {
+                    self.ui.block_user_modal(cx, ids!(block_user_modal.content))
+                        .set_info(cx, request.clone());
+                    self.ui.modal(cx, ids!(block_user_modal)).open(cx);
+                    continue;
+                }
+                Some(BlockUserModalAction::Close) => {
+                    self.ui.modal(cx, ids!(block_user_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
+            }
+
             // Handle actions needed to open/close the join/leave room modal.
             match action.downcast_ref() {
                 Some(JoinLeaveRoomModalAction::Open { kind, show_tip }) => {
@@ -697,6 +718,7 @@ impl AppMain for App {
         crate::home::upload_progress::script_mod(vm);
         crate::room::script_mod(vm);
         crate::join_leave_room_modal::script_mod(vm);
+        crate::block_user_modal::script_mod(vm);
         crate::verification_modal::script_mod(vm);
         crate::profile::script_mod(vm);
         crate::home::script_mod(vm);

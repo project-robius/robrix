@@ -37,7 +37,7 @@ use std::io;
 use hashbrown::{HashMap, HashSet};
 use crate::{
     app::AppStateAction, app_data_dir, cache_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
-        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::{InviteResultAction, TimelineUpdate, index_of_event}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, send_status_indicator::stringify_send_error, tombstone_footer::SuccessorRoomDetails
+        add_room::KnockResultAction, invite_screen::{JoinRoomResultAction, LeaveRoomResultAction}, link_preview::LinkPreviewData, room_screen::{InviteResultAction, TimelineUpdate, index_of_event}, rooms_list::{self, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, LatestEventPreview, RoomsListUpdate, enqueue_rooms_list_update}, rooms_list_header::RoomsListHeaderAction, send_status_indicator::stringify_send_error, tombstone_footer::SuccessorRoomDetails
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
@@ -360,6 +360,12 @@ pub enum AccountDataAction {
     AccountManagementUrlFetched(AccountManagementUrl),
 }
 
+/// An action broadcast when the account's list of blocked users changes.
+///
+/// Contains the new list, sorted by user ID.
+#[derive(Clone, Debug)]
+pub struct BlockedUsersUpdated(pub Vec<OwnedUserId>);
+
 /// Actions emitted in response to a [`MatrixRequest::OpenOrCreateDirectMessage`].
 #[derive(Debug)]
 pub enum DirectMessageRoomAction {
@@ -612,13 +618,12 @@ pub enum MatrixRequest {
         /// * If `true` (default is false), the link will include an action hint to join the room.
         join_on_click: bool,
     },
-    /// Request to ignore/block or unignore/unblock a user.
-    IgnoreUser {
+    /// Request to block or unblock a user.
+    #[doc(alias("ignore", "unignore"))]
+    BlockUser {
         user_id: OwnedUserId,
-        /// Whether to ignore (`true`) or unignore (`false`) the user.
-        ignore: bool,
-        /// The room that the user was (un)ignored in, so we can re-paginate it.
-        room_id: OwnedRoomId,
+        /// Whether to block (`true`) or unblock (`false`) the user.
+        block: bool,
     },
     /// Request to set or remove the avatar of the current user's account.
     SetAvatar {
@@ -1870,61 +1875,34 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::IgnoreUser { ignore, user_id, room_id } => {
+            MatrixRequest::BlockUser { block, user_id } => {
                 let Some(client) = get_client() else { continue };
-                let _ignore_task = Handle::current().spawn(async move {
-                    log!("Sending request to {}ignore user: {user_id}...", if ignore { "" } else { "un" });
-                    let ignore_result = if ignore {
+                let _block_task = Handle::current().spawn(async move {
+                    log!("Sending request to {}block user: {user_id}...", if block { "" } else { "un" });
+                    let block_result = if block {
                         client.account().ignore_user(&user_id).await
                     } else {
                         client.account().unignore_user(&user_id).await
                     };
 
-                    if let Err(e) = ignore_result {
-                        error!("Failed to {}ignore user {user_id}: {e:?}", if ignore { "" } else { "un" });
+                    if let Err(e) = block_result {
+                        error!("Failed to {}block user {user_id}: {e:?}", if block { "" } else { "un" });
                         enqueue_popup_notification(
-                            format!("Couldn't {}ignore {user_id}. Error: {e}", if ignore { "" } else { "un" }),
+                            format!("Couldn't {}block {user_id}. Error: {e}", if block { "" } else { "un" }),
                             PopupKind::Error,
                             None,
                         );
                         return;
                     }
-                    log!("Successfully {}ignored user {user_id}.", if ignore { "" } else { "un" });
+                    log!("Successfully {}blocked user {user_id}.", if block { "" } else { "un" });
                     enqueue_popup_notification(
-                        format!("{} ignoring {user_id}.", if ignore { "Now" } else { "No longer" }),
+                        format!("{} blocking {user_id}.", if block { "Now" } else { "No longer" }),
                         PopupKind::Success,
                         Some(4.0),
                     );
-
-                    // We need to re-acquire the `RoomMember` object now that its state
-                    // has changed, i.e., the user has been (un)ignored.
-                    // We then need to send an update to replace the cached `RoomMember`
-                    // with the now-stale ignored state.
-                    if let Some(room) = client.get_room(&room_id) {
-                        if let Ok(Some(new_room_member)) = room.get_member(&user_id).await {
-                            log!("Enqueueing user profile update for user {user_id}, who is now {}ignored.",
-                                if new_room_member.is_ignored() { "" } else { "un" },
-                            );
-                            enqueue_user_profile_update(UserProfileUpdate::RoomMemberOnly {
-                                room_id: room_id.clone(),
-                                room_member: new_room_member,
-                            });
-                        }
-                    }
-
-                    // After successfully (un)ignoring a user, all timelines are fully cleared by the Matrix SDK.
-                    // Therefore, we need to re-fetch all timelines for all rooms,
-                    // and currently the only way to actually accomplish this is via pagination.
-                    // See: <https://github.com/matrix-org/matrix-rust-sdk/issues/1703#issuecomment-2250297923>
-                    //
-                    // Note that here we only proactively re-paginate the *current* room
-                    // (the one being viewed by the user when this ignore request was issued),
-                    // and all other rooms will be re-paginated in `handle_ignore_user_list_subscriber()`.`
-                    submit_async_request(MatrixRequest::PaginateTimeline {
-                        timeline_kind: TimelineKind::MainRoom { room_id },
-                        num_events: 50,
-                        direction: PaginationDirection::Backwards,
-                    });
+                    // Upon the next sync, the blocked user list will be updated, which will cause
+                    // the matrix SDK to clear each timeline, at which point the visible timelines
+                    // will re-paginate themselves.
                 });
             }
 
@@ -3076,19 +3054,23 @@ pub fn stop_sync_service_for_shutdown(timeout: Duration) -> Result<(), Elapsed> 
     result
 }
 
-/// The list of users that the current user has chosen to ignore.
+/// The list of users that the current user has chosen to block.
 /// Ideally we shouldn't have to maintain this list ourselves,
-/// but the Matrix SDK doesn't currently properly maintain the list of ignored users.
-static IGNORED_USERS: Mutex<HashSet<OwnedUserId, ConstHasher>> = Mutex::new(HashSet::with_hasher(BuildHasherDefault::new()));
+/// but the Matrix SDK doesn't currently properly maintain the list of blocked users.
+static BLOCKED_USERS: Mutex<HashSet<OwnedUserId, ConstHasher>> = Mutex::new(HashSet::with_hasher(BuildHasherDefault::new()));
 
-/// Returns a deep clone of the current list of ignored users.
-pub fn get_ignored_users() -> HashSet<OwnedUserId, ConstHasher> {
-    IGNORED_USERS.lock().unwrap().clone()
+/// Returns a sorted list of the currently blocked users.
+#[doc(alias("ignored"))]
+pub fn get_blocked_users() -> Vec<OwnedUserId> {
+    let mut users: Vec<_> = BLOCKED_USERS.lock().unwrap().iter().cloned().collect();
+    users.sort_unstable();
+    users
 }
 
-/// Returns whether the given user ID is currently being ignored.
-pub fn is_user_ignored(user_id: &UserId) -> bool {
-    IGNORED_USERS.lock().unwrap().contains(user_id)
+/// Returns whether the given user ID is currently blocked.
+#[doc(alias("ignored"))]
+pub fn is_user_blocked(user_id: &UserId) -> bool {
+    BLOCKED_USERS.lock().unwrap().contains(user_id)
 }
 
 
@@ -3415,8 +3397,8 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
         // Listen for changes to our verification status and incoming verification requests.
         subscriber_task_handles.push(add_verification_event_handlers_and_sync_client(client.clone()));
 
-        // Listen for updates to the ignored user list.
-        subscriber_task_handles.push(handle_ignore_user_list_subscriber(client.clone()));
+        // Listen for updates to the blocked user list.
+        subscriber_task_handles.push(handle_blocked_user_list_subscriber(client.clone()));
 
         // Listen for session changes, e.g., when the access token becomes invalid.
         subscriber_task_handles.push(handle_session_changes(client.clone()));
@@ -4277,10 +4259,10 @@ async fn add_new_room(
     Ok(())
 }
 
-#[allow(unused)]
-async fn current_ignore_user_list(client: &Client) -> Option<HashSet<OwnedUserId>> {
+/// Reads the account-wide list of blocked users from the account data in the local store.
+async fn current_blocked_user_list(client: &Client) -> Option<HashSet<OwnedUserId, ConstHasher>> {
     use matrix_sdk::ruma::events::ignored_user_list::IgnoredUserListEventContent;
-    let ignored_users = client.account()
+    let blocked_users = client.account()
         .account_data::<IgnoredUserListEventContent>()
         .await
         .ok()??
@@ -4290,45 +4272,39 @@ async fn current_ignore_user_list(client: &Client) -> Option<HashSet<OwnedUserId
         .into_keys()
         .collect();
 
-    Some(ignored_users)
+    Some(blocked_users)
 }
 
+/// Replaces the list of blocked users, emitting a [`BlockedUsersUpdated`] action if it changed.
+fn set_blocked_users(new_list: HashSet<OwnedUserId, ConstHasher>) {
+    let mut blocked_users = BLOCKED_USERS.lock().unwrap();
+    if *blocked_users == new_list {
+        return;
+    }
+    *blocked_users = new_list;
+    drop(blocked_users);
+    Cx::post_action(BlockedUsersUpdated(get_blocked_users()));
+}
+
+/// Listens for changes to the list of blocked users.
+///
 /// This function spawns a task that captures a strong `Client` ref,
 /// so the caller should abort+await it upon logout to ensure the Client gets dropped.
-fn handle_ignore_user_list_subscriber(client: Client) -> JoinHandle<()> {
+fn handle_blocked_user_list_subscriber(client: Client) -> JoinHandle<()> {
     let mut subscriber = client.subscribe_to_ignore_user_list_changes();
-    log!("Initial ignored-user list is: {:?}", subscriber.get());
     Handle::current().spawn(async move {
-        let mut first_update = true;
-        while let Some(ignore_list) = subscriber.next().await {
-            log!("Received an updated ignored-user list: {ignore_list:?}");
-            let ignored_users_new = ignore_list
+        if let Some(initial_list) = current_blocked_user_list(&client).await {
+            log!("Initial blocked-user list is: {initial_list:?}");
+            set_blocked_users(initial_list);
+        }
+
+        while let Some(blocked_list) = subscriber.next().await {
+            log!("Received an updated blocked-user list: {blocked_list:?}");
+            let blocked_users_new = blocked_list
                 .into_iter()
                 .filter_map(|u| OwnedUserId::try_from(u).ok())
                 .collect::<HashSet<_, ConstHasher>>();
-
-            // TODO: when we support persistent state, don't forget to update `IGNORED_USERS` upon app boot.
-            let mut ignored_users_old = IGNORED_USERS.lock().unwrap();
-            let has_changed = *ignored_users_old != ignored_users_new;
-            *ignored_users_old = ignored_users_new;
-
-            if has_changed && !first_update {
-                // After successfully (un)ignoring a user, all timelines are fully cleared by the Matrix SDK.
-                // Therefore, we need to re-fetch all timelines for all rooms,
-                // and currently the only way to actually accomplish this is via pagination.
-                // See: <https://github.com/matrix-org/matrix-rust-sdk/issues/1703#issuecomment-2250297923>
-                for joined_room in client.joined_rooms() {
-                    submit_async_request(MatrixRequest::PaginateTimeline {
-                        timeline_kind: TimelineKind::MainRoom {
-                            room_id: joined_room.room_id().to_owned(),
-                        },
-                        num_events: 50,
-                        direction: PaginationDirection::Backwards,
-                    });
-                }
-            }
-
-            first_update = false;
+            set_blocked_users(blocked_users_new);
         }
     })
 }
@@ -4884,7 +4860,7 @@ async fn text_preview_of_latest_thread_reply(
 async fn get_latest_event_details(
     latest_event_value: &LatestEventValue,
     client: &Client,
-) -> Option<(MilliSecondsSinceUnixEpoch, String)> {
+) -> Option<LatestEventPreview> {
     macro_rules! get_sender_username {
         ($profile:expr, $sender:expr, $is_own:expr) => {{
             match $profile {
@@ -4903,13 +4879,19 @@ async fn get_latest_event_details(
     match latest_event_value {
         LatestEventValue::None => None,
         LatestEventValue::Remote { timestamp, sender, is_own, profile, content } => {
+            // Don't show previews for a message sent by a blocked user.
+            // The SDK usually won't give us these, but a cached latest event instance
+            // could still be in use by the UI, so this is just an extra precaution.
+            if is_user_blocked(sender) {
+                return None;
+            }
             let sender_username = get_sender_username!(profile, sender, *is_own);
-            let latest_message_text = text_preview_of_timeline_item(
+            let text = text_preview_of_timeline_item(
                 content,
                 sender,
                 &sender_username,
             ).format_with(&sender_username, true);
-            Some((*timestamp, latest_message_text))
+            Some(LatestEventPreview { timestamp: *timestamp, text, sender: Some(sender.clone()) })
         }
         LatestEventValue::Local { timestamp, sender, profile, content, state: _ } => {
             // TODO: use the `state` enum to augment the preview text with more details.
@@ -4917,15 +4899,19 @@ async fn get_latest_event_details(
             //                "<span color="red">Failed to send {msg}</span>"
             let is_own = current_user_id().is_some_and(|id| &id == sender);
             let sender_username = get_sender_username!(profile, sender, is_own);
-            let latest_message_text = text_preview_of_timeline_item(
+            let text = text_preview_of_timeline_item(
                 content,
                 sender,
                 &sender_username,
             ).format_with(&sender_username, true);
-            Some((*timestamp, latest_message_text))
+            Some(LatestEventPreview { timestamp: *timestamp, text, sender: Some(sender.clone()) })
         }
         LatestEventValue::RemoteInvite { timestamp, .. } => {
-            Some((*timestamp, String::from("You were invited to this room.")))
+            Some(LatestEventPreview {
+                timestamp: *timestamp,
+                text: String::from("You were invited to this room."),
+                sender: None,
+            })
         }
     }    
 }
@@ -4935,14 +4921,13 @@ async fn get_latest_event_details(
 /// This function sends a `RoomsListUpdate::UpdateLatestEvent`
 /// to update the latest event in the RoomsListEntry for the given room.
 async fn update_latest_event(room: &Room) {
-    if let Some((timestamp, latest_message_text)) = get_latest_event_details(
+    if let Some(latest) = get_latest_event_details(
         &room.latest_event().await,
         &room.client(),
     ).await {
         enqueue_rooms_list_update(RoomsListUpdate::UpdateLatestEvent {
             room_id: room.room_id().to_owned(),
-            timestamp,
-            latest_message_text,
+            latest,
         });
     }
 }
@@ -5908,7 +5893,7 @@ pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
     CLIENT.lock().unwrap().take();
     SYNC_SERVICE.lock().unwrap().take();
     SYNC_SERVICE_ASSUMED_RUNNING.store(false, Ordering::Release);
-    IGNORED_USERS.lock().unwrap().clear();
+    set_blocked_users(HashSet::default());
     ALL_JOINED_ROOMS.lock().unwrap().clear();
     OWN_DISPLAY_NAME.lock().unwrap().take();
     LOGOUT_NOTIFY.notify_one();
