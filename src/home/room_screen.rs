@@ -39,6 +39,7 @@ use crate::{
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
+use crate::home::failed_send_banner::{BlockedSend, FailedSendBannerWidgetExt};
 use crate::home::send_status_indicator::{self, SendStatusIndicatorAction, SendStatusIndicatorRef, SendStatusIndicatorWidgetExt};
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
 use crate::settings::app_preferences::{AppPreferencesGlobal, MarkAsReadBehavior, preferred_receipt_type};
@@ -718,6 +719,9 @@ script_mod! {
 
                 // Below that, display a typing notice when other users in the room are typing.
                 typing_notice := TypingNotice { }
+
+                // Below that, warn about a failed message that is holding up this room's send queue.
+                failed_send_banner := FailedSendBanner { }
 
                 room_input_bar := RoomInputBar { }
             }
@@ -2256,6 +2260,18 @@ impl RoomScreen {
                 own_send_indices(&tl.items, tl.kind.thread_root_event_id().is_none());
         }
 
+        let blocked_send = tl.index_of_first_own_failed
+            .and_then(|i| tl.items.get(i))
+            .and_then(|item| item.as_event())
+            .and_then(|event| match event.send_state() {
+                Some(EventSendState::SendingFailed { error, .. }) => Some(BlockedSend {
+                    timeline_kind: tl.kind.clone(),
+                    timeline_event_id: event.identifier(),
+                    error: error.clone(),
+                }),
+                _ => None,
+            });
+
         if should_continue_backwards_pagination {
             tl.is_paginating = true;
             submit_async_request(MatrixRequest::PaginateTimeline {
@@ -2268,6 +2284,9 @@ impl RoomScreen {
         if done_loading {
             top_space.set_visible(cx, false);
         }
+
+        self.view.failed_send_banner(cx, ids!(failed_send_banner))
+            .show_or_hide(cx, blocked_send);
 
         if let Some(users) = typing_users {
             self.view

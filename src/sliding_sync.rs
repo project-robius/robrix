@@ -4396,6 +4396,7 @@ const SEND_QUEUE_RETRY_DELAY: Duration = Duration::from_secs(5);
 /// What a queued send request was for.
 enum LocalSendKind {
     Message,
+    ThreadMessage,
     Attachment,
     Edit,
     Reaction { key: String },
@@ -4432,6 +4433,7 @@ fn handle_send_queue_subscriber(client: Client) -> JoinHandle<()> {
                                 LocalEchoContent::Event { serialized_event, .. } => match serialized_event.deserialize() {
                                     Ok(AnyMessageLikeEventContent::RoomMessage(msg)) => match msg.msgtype {
                                         _ if matches!(msg.relates_to, Some(Relation::Replacement(_))) => LocalSendKind::Edit,
+                                        _ if matches!(msg.relates_to, Some(Relation::Thread(_))) => LocalSendKind::ThreadMessage,
                                         MessageType::Image(_) | MessageType::Video(_)
                                         | MessageType::File(_) | MessageType::Audio(_) => LocalSendKind::Attachment,
                                         _ => LocalSendKind::Message,
@@ -4482,6 +4484,7 @@ fn handle_send_queue_subscriber(client: Client) -> JoinHandle<()> {
                             let desc = stringify_send_error(&error);
                             let msg = match kinds.get(&transaction_id) {
                                 Some(LocalSendKind::Message) => format!("Couldn't send a message in {room_name}: {desc}\n\nOpen the message's menu to edit, retry, or cancel it. Future messages won't send until you do."),
+                                Some(LocalSendKind::ThreadMessage) => format!("Couldn't send a thread reply in {room_name}: {desc}\n\nOpen that thread to retry or cancel it. Future messages won't send until you do."),
                                 Some(LocalSendKind::Attachment) => format!("Couldn't send an attachment in {room_name}: {desc}\n\nOpen the message's menu to retry or cancel it. Future messages won't send until you do."),
                                 Some(LocalSendKind::Edit) => format!("Couldn't send your edit in {room_name}: {desc}\n\nYour edit was discarded."),
                                 Some(LocalSendKind::Reaction { key }) => format!("Couldn't send your {key} reaction in {room_name}: {desc}"),

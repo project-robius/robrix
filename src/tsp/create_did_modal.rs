@@ -171,7 +171,7 @@ script_mod! {
 
         buttons_view := ModalButtonsRow {
             cancel_button := RobrixNegativeIconButton {
-                width: 100,
+                width: Fit{min: FitBound.Abs(100.0)},
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
                 draw_icon.svg: (ICON_FORBIDDEN)
@@ -180,7 +180,7 @@ script_mod! {
             }
 
             accept_button := RobrixPositiveIconButton {
-                width: 140
+                width: Fit{min: FitBound.Abs(140.0)}
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
                 draw_icon.svg: (ICON_CHECKMARK)

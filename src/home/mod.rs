@@ -4,6 +4,7 @@ pub mod add_room;
 pub mod edited_indicator;
 pub mod editing_pane;
 pub mod event_source_modal;
+pub mod failed_send_banner;
 pub mod home_screen;
 pub mod invite_modal;
 pub mod invite_screen;
@@ -52,6 +53,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     invite_modal::script_mod(vm);
     invite_screen::script_mod(vm);
     tombstone_footer::script_mod(vm);
+    failed_send_banner::script_mod(vm);
     room_screen::script_mod(vm);
     rooms_sidebar::script_mod(vm);
     welcome_screen::script_mod(vm);
