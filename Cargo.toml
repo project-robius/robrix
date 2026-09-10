@@ -14,8 +14,12 @@ version = "1.0.0-beta.1"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
+## Pending upstream merges, stacked in this order: #1221 (custom iOS plist entries),
+## #1224 (TextInput::replace_range, which dictation writes through), #1225 (the macOS
+## development-launcher handshake that packaging/run-macos.sh drives) and #1226
+## (Button honouring grab_key_focus, so the microphone doesn't steal it).
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "button-grab-key-focus", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "button-grab-key-focus" }
 
 
 robius-directories = { git = "https://github.com/project-robius/robius" }
@@ -23,6 +27,7 @@ robius-file-picker = { git = "https://github.com/project-robius/robius" }
 robius-location    = { git = "https://github.com/project-robius/robius" }
 robius-open        = { git = "https://github.com/project-robius/robius" }
 robius-share       = { git = "https://github.com/project-robius/robius" }
+robius-speech      = { git = "https://github.com/project-robius/robius", branch = "speech_to_text" }
 robius-use-makepad = "0.1.1" ## auto-configures all `robius-*` crates to work with Makepad.
 
 
@@ -228,6 +233,10 @@ debug-assertions = false
 ## Specifying "auto" will set it to a format like 'YYYYMMDDHH'.
 version_code = "auto"
 
+## Merge app-specific keys into Makepad's generated iOS Info.plist.
+[package.metadata.makepad.ios]
+info_plist = "packaging/ios/Info.additions.plist"
+
 
 ## Configuration for `cargo packager`
 [package.metadata.packager]
@@ -325,14 +334,14 @@ section = "utils"
 [package.metadata.packager.macos]
 minimum_system_version = "11.0"
 frameworks = []
-info_plist_path = "./packaging/Info.plist"
-entitlements = "./packaging/Entitlements.plist"
+info_plist_path = "./packaging/macos/Info.plist"
+entitlements = "./packaging/macos/Entitlements.plist"
 signing_identity = "Developer ID Application: GOSIM FOUNDATION LTD. (HMX6XGJZ3R)"
 
 
 ## Configuration for `cargo packager`'s generation of a macOS `.dmg`.
 [package.metadata.packager.dmg]
-background = "./packaging/Robrix macOS dmg background.png"
+background = "./packaging/macos/dmg-background.png"
 window_size = { width = 960, height = 540 }
 app_position = { x = 200, y = 250 }
 application_folder_position = { x = 760, y = 250 }

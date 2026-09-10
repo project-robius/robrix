@@ -274,6 +274,7 @@ impl MatchEvent for App {
 
             match action.downcast_ref() {
                 Some(LogoutAction::LogoutSuccess) => {
+                    robius_speech::cancel_all();
                     self.app_state.logged_in = false;
                     self.ui.modal(cx, ids!(logout_confirm_modal)).close(cx);
                     self.update_login_visibility(cx);
@@ -859,6 +860,7 @@ impl App {
                 crate::sliding_sync::set_sync_service_desired_running(true, "app resume");
             }
             Event::Background => {
+                robius_speech::cancel_all();
                 if self.lifecycle.is_foreground {
                     log!("App entered background; persisting state and stopping Matrix sync.");
                     self.lifecycle.is_foreground = false;
@@ -878,7 +880,10 @@ impl App {
                 }
                 crate::sliding_sync::set_sync_service_desired_running(true, "app foreground");
             }
-            Event::Shutdown => self.handle_shutdown(cx),
+            Event::Shutdown => {
+                robius_speech::cancel_all();
+                self.handle_shutdown(cx);
+            }
             _ => {}
         }
     }

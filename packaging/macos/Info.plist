@@ -50,6 +50,10 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright 2023-2026, Project Robius</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Robrix uses your microphone for speech-to-text dictation.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Robrix uses speech recognition to let you dictate messages that you can review before sending.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Robrix needs permission to share your current location to a Matrix room.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

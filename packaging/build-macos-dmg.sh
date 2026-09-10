@@ -50,8 +50,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CARGO_TOML="$PROJECT_DIR/Cargo.toml"
-ENTITLEMENTS="$PROJECT_DIR/packaging/Entitlements.plist"
-BG_IMAGE="$PROJECT_DIR/packaging/Robrix macOS dmg background.png"
+ENTITLEMENTS="$PROJECT_DIR/packaging/macos/Entitlements.plist"
+BG_IMAGE="$PROJECT_DIR/packaging/macos/dmg-background.png"
 
 cd "$PROJECT_DIR"
 
@@ -166,7 +166,7 @@ sed -i.bak 's/^signing_identity[[:space:]]*=/#&/' "$CARGO_TOML"
 
 # cargo-packager copies our custom Info.plist verbatim, so the version keys in it
 # would otherwise stay frozen at whatever was committed. Stamp them from Cargo.toml.
-INFO_PLIST="$PROJECT_DIR/packaging/Info.plist"
+INFO_PLIST="$PROJECT_DIR/packaging/macos/Info.plist"
 cp "$INFO_PLIST" "$INFO_PLIST.bak"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $PRODUCT_VERSION" "$INFO_PLIST"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(date +%Y%m%d.%H%M)" "$INFO_PLIST"

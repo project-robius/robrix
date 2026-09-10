@@ -3,7 +3,16 @@
 [target.'cfg(all())']
 rustflags = ["--cfg", "ruma_identifiers_storage=\"Arc\""]
 
+## This is a little hack that lets `cargo run` on macOS behave like an app bundle,
+## which allows things like speech-to-text and permissions prompts to work.
+## The script uses ad-hoc development codesigning, so no apple developer account
+## is needed.
+## If it fails, the script falls back to running the binary directly as normal.
+[target.'cfg(target_os = "macos")']
+runner = "packaging/run-macos.sh"
+
 ## Override the bundle/package ID that Makepad uses by default with Robrix's ID.
 [env]
 MAKEPAD_BUNDLE_IDENTIFIER = { value = "rs.robius.robrix", force = true }
-
+## The minimum version that Robrix & Makepad support (for speech-to-text and other features).
+MACOSX_DEPLOYMENT_TARGET = "11.0"
