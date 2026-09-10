@@ -20,7 +20,7 @@ script_mod! {
 
         buttons_view := ModalButtonsRow {
             cancel_button := RobrixNeutralIconButton {
-                width: 120,
+                width: Fit{min: FitBound.Abs(120.0)},
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
                 icon_walk: Walk{width: 0, height: 0, margin: 0}
@@ -28,7 +28,7 @@ script_mod! {
             }
 
             accept_button := RobrixPositiveIconButton {
-                width: 120
+                width: Fit{min: FitBound.Abs(120.0)}
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
                 icon_walk: Walk{width: 0, height: 0, margin: 0}
@@ -57,14 +57,14 @@ script_mod! {
     mod.widgets.NegativeConfirmationModal = mod.widgets.ConfirmationModal {
         buttons_view +: {
             cancel_button := RobrixNeutralIconButton {
-                width: 120,
+                width: Fit{min: FitBound.Abs(120.0)},
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
                 draw_icon +: { svg: (ICON_FORBIDDEN) }
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
             }
             accept_button := RobrixNegativeIconButton {
-                width: 120,
+                width: Fit{min: FitBound.Abs(120.0)},
                 align: Align{x: 0.5, y: 0.5}
                 padding: 15,
                 draw_icon +: { svg: (ICON_TRASH) }
