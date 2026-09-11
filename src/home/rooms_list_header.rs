@@ -31,22 +31,115 @@ script_mod! {
         height: Fit,
         padding: Inset{bottom: 4}
         flow: Right,
+        align: Align{y: 0.5}
         spacing: 3,
 
         header_title := Label {
             width: Fill,
             height: Fit,
             padding: 0
-            margin: Inset{left: 5, top: -1}
-            flow: Flow.Right { wrap: true },
-            max_lines: 3,
+            margin: Inset{left: 5}
+            flow: Flow.Right { wrap: false },
+            max_lines: 1,
             text_overflow: Ellipsis,
             text: "All Rooms"
             draw_text +: {
-                color: #x0
-                text_style: TITLE_TEXT {}
+                color: (RBX_FG_PRIMARY)
+                // Regular weight (thinner) — reads as a title via size, not boldness.
+                text_style: REGULAR_TEXT { font_size: 14 }
             }
         },
+
+        // Room directory shortcut. Hidden until a directory screen exists in
+        // this fork; the slot keeps the header's layout identical to robrix2.
+        // Sized rather than Fit so the transparent click area below fills a
+        // real hit target instead of shrink-wrapping the 18px icon.
+        open_directory_button := View {
+            visible: false,
+            width: (RBX_CONTROL_H_SM),
+            height: (RBX_CONTROL_H_SM)
+            margin: Inset{right: 1}
+            flow: Overlay,
+            align: Align{x: 0.5, y: 0.5}
+
+            Icon {
+                draw_icon +: {
+                    svg: (ICON_HIERARCHY)
+                    color: (RBX_FG_SECONDARY)
+                }
+                icon_walk: Walk{width: 18, height: Fit, margin: Inset{bottom: 2}}
+            }
+
+            directory_click_area := Button {
+                width: (RBX_CONTROL_H_SM),
+                height: (RBX_CONTROL_H_SM)
+                padding: Inset{top: 6, bottom: 6, left: 6, right: 6}
+                spacing: 0,
+                text: ""
+                draw_bg +: {
+                    color: #0000
+                    color_hover: #0000
+                    color_down: #0000
+                    border_color: #0000
+                    border_color_hover: #0000
+                    border_color_down: #0000
+                    border_color_focus: #0000
+                    border_size: 0.0
+                    border_radius: 0.0
+                }
+                draw_text +: {
+                    color: #0000
+                    color_hover: #0000
+                    color_down: #0000
+                    color_focus: #0000
+                }
+                icon_walk: Walk{width: 0, height: 0}
+            }
+        }
+
+        // Search: emits `RoomsListHeaderAction::OpenRoomFilterModal` so whoever
+        // hosts the rooms/spaces filter bar can bring it into focus.
+        open_room_filter_modal_button := View {
+            width: (RBX_CONTROL_H_SM),
+            height: (RBX_CONTROL_H_SM)
+            margin: Inset{right: 1}
+            flow: Overlay,
+            align: Align{x: 0.5, y: 0.5}
+
+            Icon {
+                draw_icon +: {
+                    svg: (ICON_SEARCH)
+                    color: (RBX_FG_SECONDARY)
+                }
+                icon_walk: Walk{width: 18, height: Fit, margin: Inset{bottom: 2}}
+            }
+
+            click_area := Button {
+                width: (RBX_CONTROL_H_SM),
+                height: (RBX_CONTROL_H_SM)
+                padding: Inset{top: 6, bottom: 6, left: 6, right: 6}
+                spacing: 0,
+                text: ""
+                draw_bg +: {
+                    color: #0000
+                    color_hover: #0000
+                    color_down: #0000
+                    border_color: #0000
+                    border_color_hover: #0000
+                    border_color_down: #0000
+                    border_color_focus: #0000
+                    border_size: 0.0
+                    border_radius: 0.0
+                }
+                draw_text +: {
+                    color: #0000
+                    color_hover: #0000
+                    color_down: #0000
+                    color_focus: #0000
+                }
+                icon_walk: Walk{width: 0, height: 0}
+            }
+        }
 
         View {
             width: Fit, height: Fit,
@@ -58,7 +151,7 @@ script_mod! {
                 width: 20,
                 height: 20,
                 draw_bg +: {
-                    color: (COLOR_ACTIVE_PRIMARY)
+                    color: (RBX_ACCENT)
                     border_size: 3.0
                 }
             }
@@ -69,7 +162,7 @@ script_mod! {
                 Icon {
                     draw_icon +: {
                         svg: (ICON_CLOUD_OFFLINE),
-                        color: (COLOR_FG_DANGER_RED),
+                        color: (RBX_DANGER_FG),
                     }
                     icon_walk: Walk{width: 25, height: Fit, margin: Inset{left: 1, bottom: 1}}
                 }
@@ -81,7 +174,7 @@ script_mod! {
                 Icon {
                     draw_icon +: {
                         svg: (ICON_CLOUD_CHECKMARK),
-                        color: (COLOR_FG_ACCEPT_GREEN),
+                        color: (RBX_SUCCESS_FG),
                     }
                     icon_walk: Walk{width: 25, height: Fit, margin: Inset{left: 1, bottom: 2}}
                 }
@@ -103,6 +196,10 @@ pub struct RoomsListHeader {
 impl Widget for RoomsListHeader {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
+            if self.view.button(cx, ids!(open_room_filter_modal_button.click_area)).clicked(actions) {
+                cx.action(RoomsListHeaderAction::OpenRoomFilterModal);
+            }
+
             for action in actions {
                 match action.downcast_ref() {
                     Some(RoomsListHeaderAction::SetSyncStatus(is_syncing)) => {
@@ -185,9 +282,9 @@ impl Widget for RoomsListHeader {
 
         // Show tooltips for the sync status icons.
         for (view, text, bg_color) in [
-            (self.view.view(cx, ids!(loading_spinner)), "Syncing...",   vec4(0.059, 0.533, 0.996, 1.0)), // COLOR_ACTIVE_PRIMARY #0f88fe
-            (self.view.view(cx, ids!(offline_icon)),    "Offline",      vec4(0.863, 0.0, 0.020, 1.0)),   // COLOR_FG_DANGER_RED #DC0005
-            (self.view.view(cx, ids!(synced_icon)),     "Fully synced", vec4(0.075, 0.533, 0.031, 1.0)), // COLOR_FG_ACCEPT_GREEN #138808
+            (self.view.view(cx, ids!(loading_spinner)), "Syncing...",   crate::shared::design_tokens::RBX_ACCENT),
+            (self.view.view(cx, ids!(offline_icon)),    "Offline",      crate::shared::design_tokens::RBX_DANGER_FG),
+            (self.view.view(cx, ids!(synced_icon)),     "Fully synced", crate::shared::design_tokens::RBX_SUCCESS_FG),
         ] {
             if !view.visible() {
                 continue;
@@ -226,6 +323,8 @@ impl Widget for RoomsListHeader {
 /// Actions that can be handled by the `RoomsListHeader`.
 #[derive(Debug)]
 pub enum RoomsListHeaderAction {
+    /// The header's search icon was clicked: bring the rooms/spaces filter bar into focus.
+    OpenRoomFilterModal,
     /// An action received by the RoomsListHeader that will show or hide
     /// its sync status indicator (and loading spinner) based on the given boolean.
     SetSyncStatus(bool),

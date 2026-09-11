@@ -16,9 +16,11 @@ script_mod! {
 
         show_bg: true,
         draw_bg +: {
-            color: (COLOR_PRIMARY)
-            border_radius: 4.0
-            border_color: (COLOR_SECONDARY)
+            // Subtle inset surface so the field reads clearly on white headers /
+            // near-white modals as well as on the canvas.
+            color: (RBX_BG_SURFACE_SUBTLE)
+            border_radius: (RBX_RADIUS_XS)
+            border_color: (RBX_STROKE_SOFT)
             border_size: 1.0
         }
 
@@ -30,7 +32,7 @@ script_mod! {
         Icon {
             draw_icon +: {
                 svg: (ICON_SEARCH),
-                color: (COLOR_TEXT_INPUT_IDLE),
+                color: (RBX_FG_TERTIARY),
             }
             icon_walk: Walk{width: 14, height: 14}
         }
@@ -44,9 +46,18 @@ script_mod! {
             empty_text: "Filter rooms & spaces..."
             autocapitalize: None,
             
-            draw_bg.border_size: 0.0
+            // Make the input fill match the container so the whole field reads as
+            // one inset surface (no white patch over the subtle ring).
+            draw_bg +: {
+                border_size: 0.0
+                color: (RBX_BG_SURFACE_SUBTLE)
+                color_hover: (RBX_BG_SURFACE_SUBTLE)
+                color_focus: (RBX_BG_SURFACE_SUBTLE)
+                color_down: (RBX_BG_SURFACE_SUBTLE)
+                color_empty: (RBX_BG_SURFACE_SUBTLE)
+            }
             draw_text +: {
-                text_style: theme.font_regular { font_size: 10 },
+                text_style: REGULAR_TEXT { font_size: 10 },
             }
         }
 
