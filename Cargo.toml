@@ -14,10 +14,9 @@ version = "1.0.0-beta.1"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-## Pending upstream merges, stacked in this order: #1221 (custom iOS plist entries),
-## #1224 (TextInput::replace_range, which dictation writes through), #1225 (the macOS
-## development-launcher handshake that packaging/run-macos.sh drives) and #1226
-## (Button honouring grab_key_focus, so the microphone doesn't steal it).
+# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
+# makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
+
 makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "button-grab-key-focus", features = ["serde"] }
 makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "button-grab-key-focus" }
 
@@ -230,7 +229,8 @@ debug-assertions = false
 ## Specifying "auto" will set it to a format like 'YYYYMMDDHH'.
 version_code = "auto"
 
-## Merge app-specific keys into Makepad's generated iOS Info.plist.
+
+## Robrix has some plist keys that need to be merged into Makepad's generated iOS Info.plist.
 [package.metadata.makepad.ios]
 info_plist = "packaging/ios/Info.additions.plist"
 
