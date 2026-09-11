@@ -3,6 +3,7 @@ use makepad_widgets::*;
 use crate::{
     app::{AppState, AppStateAction, SelectedRoom},
     home::{
+        rooms_list_header::RoomsListHeaderAction,
         invite_screen::InviteScreenWidgetRefExt,
         navigation_tab_bar::{NavigationBarAction, SelectedTab},
         room_screen::RoomScreenWidgetRefExt,
@@ -528,6 +529,13 @@ impl Widget for HomeScreen {
             // other RoomFilterInputBar instances (e.g., SpaceLobbyScreen's).
             if let Some(keywords) = self.view.room_filter_input_bar(cx, ids!(room_filter_input_bar)).changed(actions) {
                 cx.action(MainFilterAction::Changed(keywords));
+            }
+            // The rooms-list header's search icon: on desktop the filter bar lives here.
+            if actions.iter().any(|a| matches!(a.downcast_ref(), Some(RoomsListHeaderAction::OpenRoomFilterModal))) {
+                let input = self.view.text_input(cx, ids!(room_filter_input_bar.input));
+                if !input.is_empty() {
+                    input.set_key_focus(cx);
+                }
             }
 
             let app_state = scope.data.get_mut::<AppState>().unwrap();
