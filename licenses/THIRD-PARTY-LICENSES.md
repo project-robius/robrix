@@ -12,7 +12,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 
 | Crates | License | SPDX |
 |-------:|---------|------|
-| 568 | MIT License | `MIT` |
+| 561 | MIT License | `MIT` |
 | 24 | Apache License 2.0 | `Apache-2.0` |
 | 20 | Unicode License v3 | `Unicode-3.0` |
 | 12 | Mozilla Public License 2.0 | `MPL-2.0` |
@@ -40,8 +40,8 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `anstream` | 0.6.20 | MIT OR Apache-2.0 |
 | `anstyle` | 1.0.11 | MIT OR Apache-2.0 |
 | `anstyle-parse` | 0.2.7 | MIT OR Apache-2.0 |
-| `anstyle-query` | 1.1.4 | MIT OR Apache-2.0 |
-| `anstyle-wincon` | 3.0.10 | MIT OR Apache-2.0 |
+| `anstyle-query` | 1.1.5 | MIT OR Apache-2.0 |
+| `anstyle-wincon` | 3.0.11 | MIT OR Apache-2.0 |
 | `anyhow` | 1.0.100 | MIT OR Apache-2.0 |
 | `anymap2` | 0.13.0 | MIT OR Apache-2.0 |
 | `archery` | 1.2.1 | MPL-2.0 |
@@ -217,7 +217,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `hmac` | 0.13.0 | MIT OR Apache-2.0 |
 | `hpke` | 0.14.1 | MIT OR Apache-2.0 |
 | `html5ever` | 0.39.0 | MIT OR Apache-2.0 |
-| `htmlize` | 1.0.6 | MIT OR Apache-2.0 |
+| `htmlize` | 1.1.0 | MIT OR Apache-2.0 |
 | `http` | 1.5.0 | MIT OR Apache-2.0 |
 | `http-body` | 1.0.1 | MIT |
 | `http-body-util` | 0.1.3 | MIT |
@@ -379,13 +379,9 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `pastey` | 0.1.1 | MIT OR Apache-2.0 |
 | `pbkdf2` | 0.13.0 | MIT OR Apache-2.0 |
 | `percent-encoding` | 2.3.2 | MIT OR Apache-2.0 |
-| `phf` | 0.11.3 | MIT |
 | `phf` | 0.13.1 | MIT |
-| `phf_codegen` | 0.11.3 | MIT |
 | `phf_codegen` | 0.13.1 | MIT |
-| `phf_generator` | 0.11.3 | MIT |
 | `phf_generator` | 0.13.1 | MIT |
-| `phf_shared` | 0.11.3 | MIT |
 | `phf_shared` | 0.13.1 | MIT |
 | `pin-project-lite` | 0.2.17 | Apache-2.0 OR MIT |
 | `pin-utils` | 0.1.0 | MIT OR Apache-2.0 |
@@ -400,7 +396,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `ppv-lite86` | 0.2.21 | MIT OR Apache-2.0 |
 | `precomputed-hash` | 0.1.1 | MIT |
 | `prettyplease` | 0.2.37 | MIT OR Apache-2.0 |
-| `proc-macro-crate` | 3.4.0 | MIT OR Apache-2.0 |
+| `proc-macro-crate` | 3.5.0 | MIT OR Apache-2.0 |
 | `proc-macro2` | 1.0.107 | MIT OR Apache-2.0 |
 | `prost` | 0.14.4 | Apache-2.0 |
 | `prost-derive` | 0.14.4 | Apache-2.0 |
@@ -526,9 +522,8 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `tokio-stream` | 0.1.19 | MIT |
 | `tokio-util` | 0.7.19 | MIT |
 | `toml` | 1.1.2+spec-1.1.0 | MIT OR Apache-2.0 |
-| `toml_datetime` | 0.7.3 | MIT OR Apache-2.0 |
 | `toml_datetime` | 1.1.1+spec-1.1.0 | MIT OR Apache-2.0 |
-| `toml_edit` | 0.23.4 | MIT OR Apache-2.0 |
+| `toml_edit` | 0.25.13+spec-1.1.0 | MIT OR Apache-2.0 |
 | `toml_parser` | 1.1.2+spec-1.1.0 | MIT OR Apache-2.0 |
 | `toml_writer` | 1.1.1+spec-1.1.0 | MIT OR Apache-2.0 |
 | `tower` | 0.5.3 | MIT |
@@ -617,37 +612,35 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `windows-strings` | 0.4.2 | MIT OR Apache-2.0 |
 | `windows-strings` | 0.5.1 | MIT OR Apache-2.0 |
 | `windows-sys` | 0.45.0 | MIT OR Apache-2.0 |
+| `windows-sys` | 0.48.0 | MIT OR Apache-2.0 |
 | `windows-sys` | 0.52.0 | MIT OR Apache-2.0 |
-| `windows-sys` | 0.60.2 | MIT OR Apache-2.0 |
 | `windows-sys` | 0.61.1 | MIT OR Apache-2.0 |
 | `windows-targets` | 0.42.2 | MIT OR Apache-2.0 |
+| `windows-targets` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows-targets` | 0.52.6 | MIT OR Apache-2.0 |
-| `windows-targets` | 0.53.4 | MIT OR Apache-2.0 |
 | `windows-threading` | 0.1.0 | MIT OR Apache-2.0 |
 | `windows_aarch64_gnullvm` | 0.42.2 | MIT OR Apache-2.0 |
+| `windows_aarch64_gnullvm` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_aarch64_gnullvm` | 0.52.6 | MIT OR Apache-2.0 |
-| `windows_aarch64_gnullvm` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_aarch64_msvc` | 0.42.2 | MIT OR Apache-2.0 |
+| `windows_aarch64_msvc` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_aarch64_msvc` | 0.52.6 | MIT OR Apache-2.0 |
-| `windows_aarch64_msvc` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_i686_gnu` | 0.42.2 | MIT OR Apache-2.0 |
+| `windows_i686_gnu` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_i686_gnu` | 0.52.6 | MIT OR Apache-2.0 |
-| `windows_i686_gnu` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_i686_gnullvm` | 0.52.6 | MIT OR Apache-2.0 |
-| `windows_i686_gnullvm` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_i686_msvc` | 0.42.2 | MIT OR Apache-2.0 |
+| `windows_i686_msvc` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_i686_msvc` | 0.52.6 | MIT OR Apache-2.0 |
-| `windows_i686_msvc` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_x86_64_gnu` | 0.42.2 | MIT OR Apache-2.0 |
+| `windows_x86_64_gnu` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_x86_64_gnu` | 0.52.6 | MIT OR Apache-2.0 |
-| `windows_x86_64_gnu` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_x86_64_gnullvm` | 0.42.2 | MIT OR Apache-2.0 |
+| `windows_x86_64_gnullvm` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_x86_64_gnullvm` | 0.52.6 | MIT OR Apache-2.0 |
-| `windows_x86_64_gnullvm` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_x86_64_msvc` | 0.42.2 | MIT OR Apache-2.0 |
+| `windows_x86_64_msvc` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_x86_64_msvc` | 0.52.6 | MIT OR Apache-2.0 |
-| `windows_x86_64_msvc` | 0.53.0 | MIT OR Apache-2.0 |
-| `winnow` | 0.7.13 | MIT |
 | `winnow` | 1.0.1 | MIT |
 | `winresource` | 0.1.31 | MIT |
 | `wit-bindgen` | 0.46.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
