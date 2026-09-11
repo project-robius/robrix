@@ -21,6 +21,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Speech input is optional and asks for microphone access at first use. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
     <!-- Once we support file/image attachments, we can re-enable these.
          Media access for image/video attachments. READ_EXTERNAL_STORAGE only
          applies on pre-Android-13 devices; READ_MEDIA_IMAGES/_VIDEO is the
@@ -65,6 +69,9 @@
     </application>
 
     <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.MAIN" />
         </intent>

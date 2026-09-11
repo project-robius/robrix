@@ -102,6 +102,23 @@ echo "Version $VERSION (from $FULL_VERSION, build $BUILD_NUMBER)"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$PLIST"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$PLIST"
 
+# The privacy strings reach the bundle from packaging/ios/Info.additions.plist, which
+# cargo-makepad merges in during step 1 because Cargo.toml points at it through
+# [package.metadata.makepad.ios]. Nothing fails if that merge stops happening:
+# the build succeeds and the app dies the first time someone taps the
+# microphone. So check the plist we are about to sign, before the ~20 minutes
+# of packaging and uploading that follow.
+for key in NSMicrophoneUsageDescription NSSpeechRecognitionUsageDescription; do
+    # PlistBuddy exits non-zero for a missing key; a key with an empty value
+    # still exits 0, and iOS would show a permission prompt explaining nothing.
+    if ! usage=$(/usr/libexec/PlistBuddy -c "Print :$key" "$PLIST" 2>/dev/null) \
+        || [[ ! $usage =~ [^[:space:]] ]]; then
+        echo "Error: $PLIST has no usable $key, so speech input would fail at runtime." >&2
+        echo "       Check packaging/ios/Info.additions.plist and cargo-makepad's plist merge." >&2
+        exit 1
+    fi
+done
+
 # ---- 4. Extract entitlements from the App Store profile ----
 security cms -D -i "$HOME/Library/MobileDevice/Provisioning Profiles/${PROFILE_UUID}.mobileprovision" \
   > /tmp/profile.plist

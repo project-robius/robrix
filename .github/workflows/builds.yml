@@ -26,6 +26,7 @@ on:
         - packaging/**
         - resources/**
         - src/**
+        - build.rs
         - .github/**
         - .cargo/**
         - Cargo.lock
@@ -42,6 +43,7 @@ on:
         - packaging/**
         - resources/**
         - src/**
+        - build.rs
         - .github/**
         - .cargo/**
         - Cargo.lock

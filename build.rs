@@ -10,6 +10,17 @@ fn main() {
     // We must check the target env at runtime to avoid running this
     // when cross-compiling (e.g., building for Android on a Windows CI runner).
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+
+    // On macOS, we can run Robrix as an ad-hoc codesigned app,
+    // which allows certain system features to work (speech recognition, location, etc).
+    // See also the `.cargo/config.toml` file that overrides what `cargo run` does.
+    if target_os == "macos" {
+        let plist = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+            .join("packaging/macos/Info.plist");
+        println!("cargo:rerun-if-changed=packaging/macos/Info.plist");
+        println!("cargo:rustc-link-arg-bin=robrix=-Wl,-sectcreate,__TEXT,__info_plist,{}", plist.display());
+    }
+
     if target_os == "windows" {
         #[cfg(windows)]
         {

@@ -12,6 +12,8 @@ on:
         - packaging/**
         - resources/**
         - src/**
+        - .cargo/**
+        - build.rs
         - .github/**
         - Cargo.lock
         - Cargo.toml
@@ -25,6 +27,8 @@ on:
         - packaging/**
         - resources/**
         - src/**
+        - .cargo/**
+        - build.rs
         - .github/**
         - Cargo.lock
         - Cargo.toml
@@ -57,7 +61,7 @@ jobs:
         with:
           cache-all-crates: "true"
           cache-on-failure: "true"
-      - run: cargo clippy --workspace --all-features
+      - run: cargo clippy --workspace --all-features --all-targets
 
   typos:
     if: github.event.pull_request.draft == false
