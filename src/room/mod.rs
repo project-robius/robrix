@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 use makepad_widgets::ScriptVm;
-use matrix_sdk::{RoomDisplayName, RoomHero, RoomState, SuccessorRoom, room_preview::RoomPreview};
+use matrix_sdk::{RoomDisplayName, RoomHeroWithProfile, RoomState, SuccessorRoom, room_preview::RoomPreview};
 use ruma::{OwnedRoomAliasId, OwnedRoomId, room::{JoinRuleSummary, RoomType}};
 
 use crate::shared::avatar::AvatarImage;
@@ -129,7 +129,7 @@ pub struct FetchedRoomPreview {
     /// The `m.room.direct` state of the room, if known.
     pub is_direct: Option<bool>,
     /// Room heroes.
-    pub heroes: Option<Vec<RoomHero>>,
+    pub heroes: Option<Vec<RoomHeroWithProfile>>,
 }
 impl FetchedRoomPreview {
     pub fn from(room_preview: RoomPreview, room_avatar: FetchedRoomAvatar) -> Self {

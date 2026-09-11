@@ -14,10 +14,9 @@ version = "1.0.0-beta.1"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-## Pending upstream merges, stacked in this order: #1221 (custom iOS plist entries),
-## #1224 (TextInput::replace_range, which dictation writes through), #1225 (the macOS
-## development-launcher handshake that packaging/run-macos.sh drives) and #1226
-## (Button honouring grab_key_focus, so the microphone doesn't steal it).
+# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
+# makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
+
 makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "button-grab-key-focus", features = ["serde"] }
 makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "button-grab-key-focus" }
 
@@ -40,9 +39,9 @@ clap = { version = "4.0.16", features = ["derive"] }
 crossbeam-channel = "0.5.10"
 crossbeam-queue = "0.3.8"
 eyeball = { version = "0.8.8", features = ["tracing"] } # same as matrix-sdk-ui
-eyeball-im = { version = "0.8.0", features = [ "tracing" ] } # same as matrix-sdk-ui
+eyeball-im = { version = "0.9.0", features = [ "tracing" ] } # same as matrix-sdk-ui
 futures = "0.3"
-imbl = { version = "6.1.0", features = ["serde"] } # same as matrix-sdk-ui
+imbl = { version = "7.0.1", features = ["serde"] } # same as matrix-sdk-ui
 futures-util = "0.3"
 hashbrown = { version = "0.16", features = ["raw-entry"] }
 htmlize = { version = "1.1", features = ["unescape"] }
@@ -59,6 +58,8 @@ matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-fe
     "sqlite",
     "bundled-sqlite",
     "sso-login",
+    ## The SDK no longer registers a rustls crypto provider unless we ask for one.
+    "rustls-aws-lc-rs",
 ] }
 matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false }
 ## Use the same ruma version as what's specified in matrix-sdk's Cargo.toml.
@@ -69,7 +70,7 @@ matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", default
 ## * Note: we need a feature like "compat-unset-display-name" to unset display names, but that doesn't exist yet.
 ##
 ## Note: we actually patch this below to use our `tsp` branch instead.
-ruma = { git = "https://github.com/ruma/ruma", rev = "8beb557b466a43b057c9c155277c77fe8766fadf", features = [
+ruma = { git = "https://github.com/ruma/ruma", rev = "0908aaa9847093ecb32bc6edf0af525f726717fd", features = [
     "compat-optional",
     "compat-unset-avatar",
     "unstable-compat-lax-syncv5-deser",
@@ -146,12 +147,12 @@ log_space_service_diffs = []
 ## This is required to avoid a version conflict on the libsqlite3-sys crate,
 ## which is a native crate that can only exist once in the dependency graph.
 ## The `matrix-sdk` crate's dependencies require a specific version of `libsqlite3-sys`
-## (via rustsqlite which requires libsqlite3-sys 0.35.0),
+## (via rustsqlite which requires libsqlite3-sys 0.38),
 ## whereas the `tsp_sdk` crate depends on `sqlx`, which requires a different version
 ## of `libsqlite3-sys` (via `aries-askar`, which depends on `askar-storage`,
 ## which requires libsqlite3-sys 0.30.0).
 ## So this patch is a custom version of sqlx 0.8.6 that updates the libsqlite3-sys
-## dependency to version 0.35.0, which is compatible with the version required by
+## dependency to version 0.38, which is compatible with the version required by
 ## the matrix-sdk crate.
 ## See <https://github.com/launchbadge/sqlx/pull/3928/files#diff-4f4849707ed063bc5de6d9f6d105f0e7baf62d1085b3c8aee4a547468b89248fR57>
 sqlx = { git = "https://github.com/project-robius/sqlx.git", branch = "update_libsqlite3-sys_version" }
@@ -177,11 +178,6 @@ askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
 ## so we patch the git source, not crates-io.
 [patch."https://github.com/ruma/ruma"]
 ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
-
-## See our PR: <https://github.com/matrix-org/matrix-rust-sdk/pull/6976>
-## Remove this once that PR is merged in.
-[patch."https://github.com/matrix-org/matrix-rust-sdk"]
-matrix-sdk-store-encryption = { git = "https://github.com/project-robius/matrix-rust-sdk.git", branch = "store-cipher-serde-bytes" }
 
 [build-dependencies]
 toml = "1"
@@ -233,7 +229,8 @@ debug-assertions = false
 ## Specifying "auto" will set it to a format like 'YYYYMMDDHH'.
 version_code = "auto"
 
-## Merge app-specific keys into Makepad's generated iOS Info.plist.
+
+## Robrix has some plist keys that need to be merged into Makepad's generated iOS Info.plist.
 [package.metadata.makepad.ios]
 info_plist = "packaging/ios/Info.additions.plist"
 
