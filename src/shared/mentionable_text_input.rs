@@ -352,6 +352,26 @@ impl MentionableTextInputRef {
             .unwrap_or_default()
     }
 
+    /// Inserts `text` at the cursor (replacing any selection) as an ordinary,
+    /// undo-able edit, then focuses the input and re-detects the mention /
+    /// slash-command trigger so a popup opens right away when `text` is one.
+    ///
+    /// This is what the composer's toolbar shortcuts (`@`, `/`, the quick
+    /// emoji row) go through, so they behave exactly like typing.
+    pub fn insert_at_cursor(&self, cx: &mut Cx, text: &str) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        let text_input = inner.text_input_ref();
+        let selection = text_input.selection();
+        let range = selection.start().index..selection.end().index;
+        if let Err(error) = text_input.replace_range(cx, range, text, text_input::UndoGroup::New) {
+            log!("Composer shortcut could not update the draft: {error:?}");
+            return;
+        }
+        text_input.set_key_focus(cx);
+        inner.refresh_popup(cx);
+        inner.redraw(cx);
+    }
+
     /// Updates whether the user can `@room`. Refreshes an open `@` popup so the
     /// "Notify the entire room" entry appears or disappears accordingly.
     pub fn set_can_notify_room(&self, cx: &mut Cx, can_notify: bool) {

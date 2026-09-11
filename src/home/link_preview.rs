@@ -172,8 +172,8 @@ script_mod! {
                             text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
                                 font_size: 12.0,
                             },
-                            color: #x0000EE,
-                            color_hover: (COLOR_LINK_HOVER),
+                            color: (RBX_LINK),
+                            color_hover: (RBX_LINK_HOVER),
                         }
                     }
 

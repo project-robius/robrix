@@ -35,7 +35,7 @@ script_mod! {
 
             show_bg: true,
             draw_bg +: {
-                color: #000
+                color: (RBX_ACCENT_SOFT)
                 border_radius: 6.0
             }
 
@@ -62,7 +62,7 @@ script_mod! {
                 max_lines: 1,
                 text_overflow: Ellipsis,
                 draw_text +: {
-                    color: #f,
+                    color: (RBX_ACCENT),
                     text_style: MESSAGE_TEXT_STYLE { font_size: (MESSAGE_FONT_SIZE), line_spacing: 1.0 },
                 }
                 text: "Unknown",
@@ -77,7 +77,7 @@ script_mod! {
         align: Align{ y: 0.5 },
 
         html_link := HtmlLink {
-            hover_color: (COLOR_LINK_HOVER)
+            hover_color: (RBX_LINK_HOVER)
             grab_key_focus: false,
             padding: Inset{left: 1.0, right: 1.5},
         }
@@ -135,8 +135,8 @@ script_mod! {
         draw_block +: {
             line_color: (MESSAGE_TEXT_COLOR)
             sep_color: (MESSAGE_TEXT_COLOR)
-            code_color: (#EDEDED)
-            quote_bg_color: (#EDEDED)
+            code_color: (RBX_BG_SUNKEN)
+            quote_bg_color: (RBX_BG_SUNKEN)
             quote_fg_color: (MESSAGE_TEXT_COLOR)
         }
 
@@ -411,15 +411,19 @@ impl MatrixLinkPill {
         let is_room_mention = link_text == "@room";
         let is_self_mention = matches!(matrix_id, MatrixId::User(uid) if current_user_id().is_some_and(|u| &u == uid));
 
-        // Reset pill bg to default black, then apply red for mentions.
-        // This prevents stale red from persisting if a cached widget is
-        // reused for a different (non-mention) link after a message edit.
+        // Two tiers drawn from the accent pair: a mention of someone else is a
+        // quiet soft chip, while a mention of *you* (or @room) is filled.
+        // Always reset both tiers so a recycled pill never keeps a stale style
+        // after a message edit.
         {
             let mut pill_bg = self.view(cx, ids!(pill_bg));
+            let mut title = pill_bg.label(cx, ids!(title));
             if is_room_mention || is_self_mention {
-                script_apply_eval!(cx, pill_bg, { draw_bg +: { color: #d91b38 } });
+                script_apply_eval!(cx, pill_bg, { draw_bg +: { color: mod.widgets.RBX_ACCENT } });
+                script_apply_eval!(cx, title, { draw_text +: { color: mod.widgets.RBX_FG_ON_ACCENT } });
             } else {
-                script_apply_eval!(cx, pill_bg, { draw_bg +: { color: #000 } });
+                script_apply_eval!(cx, pill_bg, { draw_bg +: { color: mod.widgets.RBX_ACCENT_SOFT } });
+                script_apply_eval!(cx, title, { draw_text +: { color: mod.widgets.RBX_ACCENT } });
             }
         }
 
