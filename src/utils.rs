@@ -789,12 +789,27 @@ pub fn linkify_get_urls<'t>(
         return Cow::Borrowed(text);
     }
 
-    // A closure to escape text if it's not HTML.
+    // Closure to escape text if it's not HTML.
     let escaped = |text| {
         if is_html {
             Cow::from(text)
         } else {
             htmlize::escape_text(text)
+        }
+    };
+    // Closure to escape attributes if it's not HTML.
+    let escaped_attribute = |text| {
+        if is_html {
+            Cow::from(text)
+        } else {
+            htmlize::escape_attribute(text)
+        }
+    };
+    let parse_url = |text: &str| {
+        if is_html {
+            Url::parse(&htmlize::unescape(text))
+        } else {
+            Url::parse(text)
         }
     };
 
@@ -830,7 +845,7 @@ pub fn linkify_get_urls<'t>(
         ) {
             linkified_text.push_str(text.get(last_end_index..link.end()).unwrap_or_default());
             if let Some(links_found) = links_found.as_mut() {
-                if let Ok(url) = Url::parse(link_txt) {
+                if let Ok(url) = parse_url(link_txt) {
                     links_found.push(url);
                 }
             }
@@ -841,12 +856,12 @@ pub fn linkify_get_urls<'t>(
                         linkified_text,
                         "{}<a href=\"{}\">{}</a>",
                         escaped(text.get(last_end_index..link.start()).unwrap_or_default()),
-                        htmlize::escape_attribute(link_txt),
-                        htmlize::escape_text(link_txt),
+                        escaped_attribute(link_txt),
+                        escaped(link_txt),
                     );
                     did_linkify = true;
                     if let Some(links_found) = links_found.as_mut() {
-                        if let Ok(url) = Url::parse(link_txt) {
+                        if let Ok(url) = parse_url(link_txt) {
                             links_found.push(url);
                         }
                     }
@@ -856,8 +871,8 @@ pub fn linkify_get_urls<'t>(
                         linkified_text,
                         "{}<a href=\"mailto:{}\">{}</a>",
                         escaped(text.get(last_end_index..link.start()).unwrap_or_default()),
-                        htmlize::escape_attribute(link_txt),
-                        htmlize::escape_text(link_txt),
+                        escaped_attribute(link_txt),
+                        escaped(link_txt),
                     );
                     did_linkify = true;
                 }
@@ -1316,6 +1331,47 @@ mod tests_linkify {
         let actual = linkify(text, false);
         assert!(matches!(actual, Cow::Borrowed(_)));
         assert_eq!(actual.as_ref(), text);
+    }
+
+    /// In HTML input a bare link is already-escaped source, so linkifying it
+    /// must not escape it again: `&amp;` in a URL is one `&`, and escaping it
+    /// twice both showed `&amp;` in the rendered text and put the wrong URL
+    /// in the href.
+    #[test]
+    fn test_linkify_html_does_not_double_escape_a_link() {
+        let text = "see http://x.com/?a=1&amp;b=2 now";
+        assert_eq!(
+            linkify(text, true).as_ref(),
+            "see <a href=\"http://x.com/?a=1&amp;b=2\">http://x.com/?a=1&amp;b=2</a> now"
+        );
+        // plaintext is not escaped source, so there it does get escaped
+        assert_eq!(
+            linkify("see http://x.com/?a=1&b=2 now", false).as_ref(),
+            "see <a href=\"http://x.com/?a=1&amp;b=2\">http://x.com/?a=1&amp;b=2</a> now"
+        );
+    }
+
+    /// The URLs handed back to the caller (for link previews) are the ones a
+    /// browser would resolve, with the source's entities decoded.
+    #[test]
+    fn test_linkify_reports_decoded_urls() {
+        let mut links = Vec::new();
+        linkify_get_urls("http://x.com/?a=1&amp;b=2", true, Some(&mut links));
+        assert_eq!(
+            links.iter().map(|u| u.as_str()).collect::<Vec<_>>(),
+            vec!["http://x.com/?a=1&b=2"]
+        );
+        // and one already inside an href is reported the same way
+        let mut links = Vec::new();
+        linkify_get_urls(
+            "<a href=\"http://x.com/?a=1&amp;b=2\">link</a>",
+            true,
+            Some(&mut links),
+        );
+        assert_eq!(
+            links.iter().map(|u| u.as_str()).collect::<Vec<_>>(),
+            vec!["http://x.com/?a=1&b=2"]
+        );
     }
 
     /// Plaintext that merely looks like an HTML href attribute must still be

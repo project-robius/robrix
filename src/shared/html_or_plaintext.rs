@@ -562,7 +562,6 @@ impl ScriptHook for MatrixHtmlSpan {
         if let Some(doc) = scope.props.get::<makepad_html::HtmlDoc>() {
             let mut walker = doc.new_walker_with_index(scope.index + 1);
             while let Some((lc, attr)) = walker.while_attr_lc() {
-                let attr = attr.trim_matches(['"', '\'']);
                 match lc {
                     id!(color)
                     | id!(data-mx-color) => self.fg_color = utils::vec4_from_hex_str(attr),
