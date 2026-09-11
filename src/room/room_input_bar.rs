@@ -27,13 +27,80 @@ use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId, OwnedTransactionId};
-use crate::{block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, rooms_list::RoomsListRef, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::{UploadProgressViewWidgetRefExt, UploadState}}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, location::init_location_subscriber, profile::user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, room::BasicRoomDetails, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, slash_commands::{SlashCommandAction, SlashCommandOutcome}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, rooms_list::RoomsListRef, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::{UploadProgressViewWidgetRefExt, UploadState}}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, location::init_location_subscriber, profile::user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, room::BasicRoomDetails, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, slash_commands::{SlashCommandAction, SlashCommandOutcome}}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 use crate::room::reply_preview::CollapsiblePreviewWidgetRefExt;
+use crate::shared::design_tokens::{RBX_ACCENT, RBX_BG_DISABLED, RBX_FG_DISABLED, RBX_FG_ON_ACCENT};
 
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
+
+    // ---- Composer toolbar building blocks (robrix2's visual language, RBX_* tokens) ----
+    // Ghost icon button for the composer toolbar: transparent fill, subtle
+    // hover/press wash, secondary-grey icon.
+    mod.widgets.ComposerToolButton = mod.widgets.RobrixIconButton {
+        margin: Inset{left: 2, right: 2, top: 2, bottom: 2}
+        padding: Inset{left: 8, right: 8, top: 6, bottom: 6}
+        spacing: 0,
+        draw_icon +: { color: (RBX_FG_SECONDARY) }
+        draw_bg +: {
+            color: #0000
+            color_hover: (RBX_BG_HOVER)
+            color_down: (RBX_BG_PRESSED)
+            border_size: 0.0
+            border_radius: (RBX_RADIUS_SM)
+        }
+        icon_walk: Walk{width: 20, height: 20}
+        text: "",
+    }
+
+    // Same ghost shell, but renders a text glyph (e.g. "@" / "/") instead of an
+    // SVG icon — used for the mention and slash-command shortcuts.
+    mod.widgets.ComposerGlyphButton = mod.widgets.RobrixIconButton {
+        margin: Inset{left: 2, right: 2, top: 2, bottom: 2}
+        padding: Inset{left: 9, right: 9, top: 4, bottom: 4}
+        spacing: 0,
+        align: Align{x: 0.5, y: 0.5}
+        icon_walk: Walk{width: 0, height: 0}
+        draw_bg +: {
+            color: #0000
+            color_hover: (RBX_BG_HOVER)
+            color_down: (RBX_BG_PRESSED)
+            border_size: 0.0
+            border_radius: (RBX_RADIUS_SM)
+        }
+        draw_text +: {
+            color: (RBX_FG_SECONDARY)
+            color_hover: (RBX_FG_SECONDARY)
+            color_down: (RBX_FG_SECONDARY)
+            text_style: MESSAGE_TEXT_STYLE { font_size: 16.0 }
+        }
+        text: "",
+    }
+
+    // One entry of the quick emoji row that the toolbar's emoji button toggles.
+    mod.widgets.ComposerEmojiButton = mod.widgets.RobrixIconButton {
+        spacing: 0
+        text: ""
+        margin: 0
+        padding: Inset{left: 8, right: 8, top: 6, bottom: 6}
+        icon_walk: Walk{width: 0, height: 0}
+        draw_text +: {
+            color: (RBX_FG_PRIMARY)
+            color_hover: (RBX_FG_PRIMARY)
+            color_down: (RBX_FG_PRIMARY)
+            text_style: MESSAGE_TEXT_STYLE { font_size: 15.0 }
+        }
+        draw_bg +: {
+            color: (RBX_BG_SURFACE)
+            color_hover: (RBX_BG_HOVER)
+            color_down: (RBX_BG_PRESSED)
+            border_size: 1.0
+            border_color: (RBX_STROKE_SOFT)
+            border_radius: (RBX_RADIUS_SM)
+        }
+    }
 
     mod.widgets.RoomInputBar = set_type_default() do #(RoomInputBar::register_widget(vm)) {
         ..mod.widgets.RoundedView
@@ -41,22 +108,17 @@ script_mod! {
         width: Fill,
         height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
         flow: Down,
+        clip_x: false,
+        clip_y: false,
         new_batch: true
 
-        // These margins are a hack to make the borders of the RoomInputBar
-        // line up with the boundaries of its parent widgets.
-        // This only works if the border_color is the same as its parents,
-        // which is currently `COLOR_SECONDARY`.
-        margin: Inset{left: -4, right: -4, bottom: -4 }
+        // The composer is a floating card: this wrapper is painted in the page
+        // colour and insets the white `input_bar` card so a gap shows around it.
+        padding: Inset{left: 8, right: 8, top: 4, bottom: 8}
         show_bg: true,
         draw_bg +: {
-            color: (COLOR_PRIMARY)
-            border_radius: 5.0
-            border_color: (COLOR_SECONDARY)
-            border_size: 2.0
-            // shadow_color: #0006
-            // shadow_radius: 0.0
-            // shadow_offset: vec2(0.0,0.0)
+            color: (COLOR_PRIMARY_DARKER)
+            border_size: 0.0
         }
 
         // The top-most element is a preview of the message that the user is replying to, if any.
@@ -78,125 +140,193 @@ script_mod! {
             height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
             flow: Overlay,
 
-            // Below that, display a view that holds the message input bar and send button.
-            input_bar := View {
+            // The white composer card: a toolbar row on top, then the quick
+            // emoji row (hidden until toggled), then the text input + send button.
+            input_bar := RoundedView {
                 width: Fill,
                 height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
-                flow: Right
-                // Bottom-align everything to ensure that buttons always stick to the bottom
-                // even when the mentionable_text_input box is very tall.
-                align: Align{y: 1.0},
+                flow: Down
                 padding: 6,
-
-                open_popup_menu_button := RobrixIconButton {
-                    padding: 9
-                    margin: Inset { top: 4, left: 4, right: 4, bottom: 5}
-                    spacing: 0,
-                    draw_icon +: {
-                        svg: (ICON_ADD)
-                        color: (COLOR_ACTIVE_PRIMARY_DARKER)
-                    },
-                    draw_bg +: {
-                        color: (COLOR_BG_PREVIEW)
-                        color_hover: #xE0E8F0
-                        color_down: #xD0D8E8
-                    }
-                    icon_walk: Walk{width: 21, height: 21}
+                spacing: 4
+                show_bg: true,
+                draw_bg +: {
+                    color: (RBX_BG_SURFACE)
+                    border_radius: (RBX_RADIUS_XS)
+                    border_color: (RBX_STROKE_SOFT)
+                    border_size: 1.0
                 }
 
-                // A checkbox that enables TSP signing for the outgoing message.
-                // If TSP is not enabled, this will be an empty invisible view.
-                tsp_sign_checkbox := TspSignAnycastCheckbox {
-                    margin: Inset{bottom: 9, left: 6, right: 0}
-                }
+                button_row := View {
+                    width: Fill, height: Fit
+                    flow: Right
+                    align: Align{y: 0.5}
 
-                mentionable_text_input := MentionableTextInput {
-                    width: Fill,
-                    flow: Overlay,
-                    margin: Inset {
-                        top: 3, // add some space between the top border of the text input and the top border of the room input bar
-                        bottom: 5.75, // to line up the middle of the text input with the middle of the buttons
-                        left: 3, right: 3 // to give a bit of breathing room between the text input and the buttons on the sides
-                    },
-
-                    text_input := RobrixTextInput {
-                        empty_text: "Write a message (in Markdown) ..."
-                        is_multiline: true,
-                        // Reserve the microphone's gutter so it never overlaps the draft.
-                        padding: Inset{top: 10, bottom: 10, left: 10, right: 48}
+                    // A checkbox that enables TSP signing for the outgoing message.
+                    // If TSP is not enabled, this will be an empty invisible view.
+                    tsp_sign_checkbox := TspSignAnycastCheckbox {
+                        margin: Inset{left: 4, right: 2}
                     }
 
-                    speech_overlay := View {
-                        width: Fill, height: Fill
-                        align: Align{x: 1.0, y: 1.0}
-                        // No vertical padding: the button is nearly as tall as a
-                        // single-line input, so any would push it past the bottom edge.
-                        padding: Inset{top: 0, bottom: 0, left: 4, right: 4}
+                    // Opens the native file picker directly.
+                    send_attachment_button := mod.widgets.ComposerToolButton {
+                        draw_icon +: { svg: (ICON_ADD_ATTACHMENT) }
+                    }
 
-                        // One widget for both states: the icon at rest, a meter while recording.
-                        speech_button := RobrixIconButton {
-                            width: 32, height: 32
-                            padding: 7
-                            spacing: 0
-                            grab_key_focus: false
-                            enable_long_press: false
-                            icon_walk: Walk{width: 18, height: 18}
-                            draw_icon +: {
-                                svg: crate_resource("self://resources/icons/microphone.svg")
-                                color: #333
-                            }
+                    // Inserts an "@" to start a member mention.
+                    at_mention_button := mod.widgets.ComposerGlyphButton {
+                        text: "@",
+                    }
+
+                    // Toggles the quick emoji row above the input.
+                    emoji_picker_button := mod.widgets.ComposerToolButton {
+                        draw_icon +: { svg: (ICON_ADD_REACTION) }
+                    }
+
+                    // Inserts a "/" to open the slash-command popup.
+                    slash_command_button := mod.widgets.ComposerGlyphButton {
+                        text: "/",
+                    }
+
+                    // Opens the popup menu with the other things to send (photos, files, location).
+                    open_popup_menu_button := mod.widgets.ComposerToolButton {
+                        draw_icon +: { svg: (ICON_ADD) }
+                    }
+                }
+
+                emoji_picker_popup := View {
+                    visible: false
+                    width: Fit
+                    height: Fit
+                    flow: Right{wrap: true}
+                    align: Align{x: 0.0, y: 0.5}
+                    margin: Inset{left: 5, top: 1, bottom: 1}
+                    spacing: 6
+
+                    emoji_smile_button := mod.widgets.ComposerEmojiButton { text: "😀" }
+                    emoji_joy_button := mod.widgets.ComposerEmojiButton { text: "😂" }
+                    emoji_thumbsup_button := mod.widgets.ComposerEmojiButton { text: "👍" }
+                    emoji_heart_button := mod.widgets.ComposerEmojiButton { text: "❤️" }
+                    emoji_fire_button := mod.widgets.ComposerEmojiButton { text: "🔥" }
+                    emoji_party_button := mod.widgets.ComposerEmojiButton { text: "🎉" }
+                    emoji_think_button := mod.widgets.ComposerEmojiButton { text: "🤔" }
+                    emoji_clap_button := mod.widgets.ComposerEmojiButton { text: "👏" }
+                }
+
+                // Bottom row: message input (fill) + send button (right). This is the
+                // focused row, so it rides just above the on-screen keyboard.
+                message_row := View {
+                    width: Fill, height: Fit
+                    flow: Right
+                    // Bottom-align everything so the send button sticks to the bottom
+                    // even when the mentionable_text_input box is very tall.
+                    align: Align{y: 1.0},
+
+                    mentionable_text_input := MentionableTextInput {
+                        width: Fill,
+                        flow: Overlay,
+                        margin: Inset{ top: 2, bottom: 2, left: 2, right: 4 },
+
+                        text_input := RobrixTextInput {
+                            empty_text: "Write a message (in Markdown)…"
+                            is_multiline: true,
+                            // Reserve the microphone's gutter so it never overlaps the draft.
+                            padding: Inset{top: 10, bottom: 10, left: 8, right: 48}
+                            // Borderless + transparent: the text sits directly on the
+                            // white composer card.
                             draw_bg +: {
+                                border_size: 0.0
                                 color: #0000
-                                color_hover: #xE0E8F0
-                                color_down: #xD0D8E8
-                                // Set from Rust: 1.0 while recording, plus the three
-                                // most recent microphone levels, each normalized 0..=1.
-                                recording: instance(0.0)
-                                level_0: instance(0.0)
-                                level_1: instance(0.0)
-                                level_2: instance(0.0)
-                                bar_color: instance(vec4(1.0, 1.0, 1.0, 1.0))
-                                pixel: fn() {
-                                    let sdf = Sdf2d.viewport(self.pos * self.rect_size)
-                                    // Same state blend the stock button face uses.
-                                    let face = mix(
-                                        mix(self.color, self.color_hover, self.hover),
-                                        self.color_down,
-                                        self.down
-                                    )
-                                    sdf.box(0.5, 0.5, self.rect_size.x - 1.0, self.rect_size.y - 1.0, self.border_radius)
-                                    sdf.fill(face)
-                                    if self.recording > 0.5 {
-                                        // Three bars, centred in the button by construction.
-                                        let bar = 3.0
-                                        let gap = 3.0
-                                        let x = (self.rect_size.x - (bar * 3.0 + gap * 2.0)) * 0.5
-                                        let middle = self.rect_size.y * 0.5
-                                        let h0 = 4.0 + self.level_0 * 13.0
-                                        let h1 = 4.0 + self.level_1 * 13.0
-                                        let h2 = 4.0 + self.level_2 * 13.0
-                                        sdf.box(x, middle - h0 * 0.5, bar, h0, 1.5)
-                                        sdf.fill(self.bar_color)
-                                        sdf.box(x + bar + gap, middle - h1 * 0.5, bar, h1, 1.5)
-                                        sdf.fill(self.bar_color)
-                                        sdf.box(x + (bar + gap) * 2.0, middle - h2 * 0.5, bar, h2, 1.5)
-                                        sdf.fill(self.bar_color)
+                                color_hover: #0000
+                                color_focus: #0000
+                                color_down: #0000
+                                color_empty: #0000
+                            }
+                        }
+
+                        speech_overlay := View {
+                            width: Fill, height: Fill
+                            align: Align{x: 1.0, y: 1.0}
+                            // No vertical padding: the button is nearly as tall as a
+                            // single-line input, so any would push it past the bottom edge.
+                            padding: Inset{top: 0, bottom: 0, left: 4, right: 4}
+
+                            // One widget for both states: the icon at rest, a meter while recording.
+                            speech_button := RobrixIconButton {
+                                width: 32, height: 32
+                                padding: 7
+                                spacing: 0
+                                grab_key_focus: false
+                                enable_long_press: false
+                                icon_walk: Walk{width: 18, height: 18}
+                                draw_icon +: {
+                                    svg: crate_resource("self://resources/icons/microphone.svg")
+                                    color: #333
+                                }
+                                draw_bg +: {
+                                    color: #0000
+                                    color_hover: #xE0E8F0
+                                    color_down: #xD0D8E8
+                                    // Set from Rust: 1.0 while recording, plus the three
+                                    // most recent microphone levels, each normalized 0..=1.
+                                    recording: instance(0.0)
+                                    level_0: instance(0.0)
+                                    level_1: instance(0.0)
+                                    level_2: instance(0.0)
+                                    bar_color: instance(vec4(1.0, 1.0, 1.0, 1.0))
+                                    pixel: fn() {
+                                        let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                                        // Same state blend the stock button face uses.
+                                        let face = mix(
+                                            mix(self.color, self.color_hover, self.hover),
+                                            self.color_down,
+                                            self.down
+                                        )
+                                        sdf.box(0.5, 0.5, self.rect_size.x - 1.0, self.rect_size.y - 1.0, self.border_radius)
+                                        sdf.fill(face)
+                                        if self.recording > 0.5 {
+                                            // Three bars, centred in the button by construction.
+                                            let bar = 3.0
+                                            let gap = 3.0
+                                            let x = (self.rect_size.x - (bar * 3.0 + gap * 2.0)) * 0.5
+                                            let middle = self.rect_size.y * 0.5
+                                            let h0 = 4.0 + self.level_0 * 13.0
+                                            let h1 = 4.0 + self.level_1 * 13.0
+                                            let h2 = 4.0 + self.level_2 * 13.0
+                                            sdf.box(x, middle - h0 * 0.5, bar, h0, 1.5)
+                                            sdf.fill(self.bar_color)
+                                            sdf.box(x + bar + gap, middle - h1 * 0.5, bar, h1, 1.5)
+                                            sdf.fill(self.bar_color)
+                                            sdf.box(x + (bar + gap) * 2.0, middle - h2 * 0.5, bar, h2, 1.5)
+                                            sdf.fill(self.bar_color)
+                                        }
+                                        return sdf.result
                                     }
-                                    return sdf.result
                                 }
                             }
                         }
                     }
-                }
 
-                send_message_button := RobrixPositiveIconButton {
-                    // Disabled by default; enabled when text is inputted
-                    enabled: false,
-                    padding: 8
-                    margin: Inset { top: 4, left: 4, right: 4, bottom: 5}
-                    spacing: 0,
-                    draw_icon +: { svg: (ICON_SEND) }
-                    icon_walk: Walk{width: 23, height: 23},
+                    // Filled teal send button: a rounded square, white icon, greyed out
+                    // (via `enable_send_message_button`) while the draft is empty.
+                    send_message_button := RobrixIconButton {
+                        enabled: false,
+                        width: 40, height: 40,
+                        align: Align{x: 0.5, y: 0.5}
+                        spacing: 0,
+                        text: "",
+                        margin: Inset{left: 2, right: 2, top: 2, bottom: 2}
+                        padding: 0
+                        draw_bg +: {
+                            color: (RBX_BG_DISABLED)
+                            color_hover: (RBX_ACCENT_HOVER)
+                            color_down: (RBX_ACCENT_PRESSED)
+                            color_disabled: (RBX_BG_DISABLED)
+                            border_size: 0.0
+                            border_radius: (RBX_RADIUS_XS)
+                        }
+                        draw_icon +: { svg: (ICON_SEND), color: (RBX_FG_DISABLED) }
+                        icon_walk: Walk{width: 22, height: 22},
+                    }
                 }
             }
 
@@ -270,6 +400,8 @@ pub struct RoomInputBar {
     #[rust] speech: Option<SpeechInput>,
     /// What the microphone button is currently displaying.
     #[rust] speech_controls: SpeechControls,
+    /// Whether the quick emoji row above the text input is currently shown.
+    #[rust] is_emoji_picker_expanded: bool,
 }
 
 /// The microphone buttons current display state.
@@ -637,6 +769,47 @@ impl RoomInputBar {
                 room_screen_widget_uid,
                 RoomInputPopupMenuAction::Show { button_rect },
             );
+        }
+
+        // The composer toolbar shortcuts. Each one goes through the text input
+        // as an ordinary edit, so `@` and `/` open the same popups typing does.
+        if self.button(cx, ids!(send_attachment_button)).clicked(actions) {
+            self.open_file_picker(cx, timeline_kind.clone());
+        }
+        if self.button(cx, ids!(at_mention_button)).clicked(actions) {
+            mentionable_text_input.insert_at_cursor(cx, "@");
+        }
+        if self.button(cx, ids!(slash_command_button)).clicked(actions) {
+            if timeline_kind.thread_root_event_id().is_some() {
+                enqueue_popup_notification(
+                    "Slash commands are only supported in the main room timeline.",
+                    PopupKind::Warning,
+                    Some(4.0),
+                );
+            } else {
+                mentionable_text_input.insert_at_cursor(cx, "/");
+            }
+        }
+        if self.button(cx, ids!(emoji_picker_button)).clicked(actions) {
+            self.is_emoji_picker_expanded = !self.is_emoji_picker_expanded;
+            self.view.view(cx, ids!(emoji_picker_popup)).set_visible(cx, self.is_emoji_picker_expanded);
+            self.redraw(cx);
+        }
+        if self.is_emoji_picker_expanded {
+            for (button_id, emoji) in [
+                (ids!(emoji_smile_button), "😀"),
+                (ids!(emoji_joy_button), "😂"),
+                (ids!(emoji_thumbsup_button), "👍"),
+                (ids!(emoji_heart_button), "❤️"),
+                (ids!(emoji_fire_button), "🔥"),
+                (ids!(emoji_party_button), "🎉"),
+                (ids!(emoji_think_button), "🤔"),
+                (ids!(emoji_clap_button), "👏"),
+            ] {
+                if self.button(cx, button_id).clicked(actions) {
+                    mentionable_text_input.insert_at_cursor(cx, emoji);
+                }
+            }
         }
 
         // Handle the send location button being clicked.
@@ -1066,12 +1239,13 @@ impl RoomInputBar {
     fn enable_send_message_button(&mut self, cx: &mut Cx, enable: bool) {
         self.is_send_enabled = enable;
         let mut send_message_button = self.view.button(cx, ids!(send_message_button));
-        let (fg_color, bg_color) = if !enable {
-            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
-        } else if self.is_encrypted {
-            (COLOR_PRIMARY, COLOR_ACTIVE_PRIMARY)
+        // The send button is the teal accent whenever there is something to send,
+        // for encrypted and unencrypted rooms alike (the lock badge on the icon
+        // carries the encryption state); greyed out otherwise.
+        let (fg_color, bg_color) = if enable {
+            (RBX_FG_ON_ACCENT, RBX_ACCENT)
         } else {
-            (COLOR_FG_ACCEPT_GREEN, COLOR_BG_ACCEPT_GREEN)
+            (RBX_FG_DISABLED, RBX_BG_DISABLED)
         };
         script_apply_eval!(cx, send_message_button, {
             enabled: #(enable),
@@ -1085,22 +1259,20 @@ impl RoomInputBar {
     fn update_encryption_state(&mut self, cx: &mut Cx, is_encrypted: bool) {
         self.is_encrypted = is_encrypted;
 
-        // The send button is a blue "primary" button with a closed-lock badge when encrypted,
-        // and a "positive" green with an opened-lock badge when not encrypted.
+        // The send button carries a closed-lock badge when encrypted
+        // and an opened-lock badge when not encrypted.
         let mut send_message_button = self.view.button(cx, ids!(send_message_button));
         let empty_text: &str;
         if is_encrypted {
-            apply_primary_button_style(cx, &mut send_message_button);
             script_apply_eval!(cx, send_message_button, {
                 draw_icon.svg: mod.widgets.ICON_SEND_ENCRYPTED,
             });
-            empty_text = "Send encrypted message…";
+            empty_text = "Write an encrypted message (in Markdown)…";
         } else {
-            apply_positive_button_style(cx, &mut send_message_button);
             script_apply_eval!(cx, send_message_button, {
                 draw_icon.svg: mod.widgets.ICON_SEND_UNENCRYPTED,
             });
-            empty_text = "Send unencrypted message…";
+            empty_text = "Write a message (in Markdown)…";
         }
 
         self.text_input(cx, ids!(input_bar.mentionable_text_input.text_input))

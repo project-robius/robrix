@@ -644,7 +644,7 @@ script_mod! {
         align: Align{x: 0.5, y: 0}
         flow: Right,
         show_bg: true,
-        draw_bg.color: #xDAF5E5F0, // mostly opaque light green
+        draw_bg.color: (RBX_HIGHLIGHT_NEW), // mostly opaque light green
 
         label := Label {
             width: Fill,
