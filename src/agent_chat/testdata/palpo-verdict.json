@@ -1,0 +1,19 @@
+{
+  "body": "Approve once",
+  "com.agentchat.approval": {
+    "action": "approve_once",
+    "agent": "wf_codex",
+    "input_digest": "d80f5d8e3980e9e0815fc0f4eff702c7ef9fb8bdcfc98d1f35cf1ff0233b27a9",
+    "kind": "verdict",
+    "project": "robrix2",
+    "project_room_id": "!board:127.0.0.1:8128",
+    "request_id": "approval_1c0d502fb422564bd5f35ff34d6dfbaa",
+    "version": 1
+  },
+  "m.relates_to": {
+    "m.in_reply_to": {
+      "event_id": "$beHFiq3AIRAqZd60zYi7EKb5clojKKZybfHXLR3GKI0"
+    }
+  },
+  "msgtype": "com.agentchat.approval.verdict.v1"
+}

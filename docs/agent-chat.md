@@ -26,6 +26,7 @@ cargo build --release --features agent_chat
 | **Workflow slash commands.** `/create-issue`, `/go`, `/review`, `/status` are offered in the `/` popup when the room contains a `*_coordinator` agent, and are sent as plain text for that agent to interpret. | feature + Settings toggle + coordinator present | `src/agent_chat/workflow.rs`; `src/shared/mentionable_text_input.rs` |
 | **Thread-session slash commands.** `/task @agent …` and `/thread model|mode …` are offered when the room contains any agent puppet; the hagency backend parses them. | feature + Settings toggle + agent present | same |
 | **Agent message presentation.** Messages from `@ac_*` accounts get a badge after the sender name with the agent's workflow role (from its account name) and the message kind the bridge stamped (`📋` request, `↩️` reply, `ℹ️` info). The kind marker and the trailing `🔗 permalink` line are stripped from the body. | feature only | `src/agent_chat/presentation.rs`; hooks in `src/home/room_screen.rs` |
+| **Rooms-list previews.** Approval events are custom msgtypes, so without help they fall through ruma's `_Custom` arm and print `[Custom message]: CustomMessageContent { msgtype: ... }` into the rooms list. The bridge's human-readable `body` is shown instead. | feature only | `src/event_preview.rs` |
 | **Settings toggle.** Settings → Preferences → "Agent-chat (experimental)". Persisted in `AppPreferences::agent_chat_enabled`. | feature only | `src/agent_chat/preferences.rs`, `src/settings/` |
 
 ## Security model
@@ -83,11 +84,55 @@ Verdict (`com.agentchat.approval.verdict.v1`) sent by Robrix:
 
 ## Verifying
 
-Unit tests cover the protocol logic:
+Unit tests cover the protocol logic, including a fixture captured from a real
+Palpo round-trip (`src/agent_chat/testdata/`):
 
 ```bash
 cargo test --lib --features agent_chat agent_chat
 ```
+
+### Driving the real app (`tools/agentchat-probe`)
+
+`tools/agentchat-probe/probe_approval.py` drives a running Robrix against a real
+homeserver through makepad's `--remote` HTTP control surface, which injects input
+through the same path a human click takes. It asserts the card renders, clicks a
+decision button, and then checks the homeserver for the resulting verdict event.
+
+```bash
+MAKEPAD_REMOTE=8099 ./target/debug/robrix <user> <password> <homeserver> &
+python3 tools/agentchat-probe/probe_approval.py \
+    --bridge 8099 --homeserver http://127.0.0.1:8128 \
+    --room '!room:server' --request-id approval_<32hex> \
+    --token <reader-token> --user <localpart>
+```
+
+`MAKEPAD_REMOTE=1` means *port 1*, not "enabled" — pass a real port. The probe
+ends with `/gq` so it never leaves a test window behind.
+
+> **Why not the headless renderer?** `MAKEPAD=headless` does not compile on macOS
+> at the pinned makepad rev `493d23a`: `platform/src/os/cx_shared.rs:762` calls
+> `crate::os::apple::metal::note_input_event()` under `#[cfg(target_vendor =
+> "apple")]`, while `platform/src/os/mod.rs` gates `pub mod apple;` behind
+> `not(headless)` — so the call survives and the module does not (E0433). The
+> correct gate is `all(not(headless), target_vendor = "apple")`. This is an
+> upstream makepad bug, not a robrix one; the remote bridge avoids it entirely.
+
+### Soak results (local Palpo, 2026-09-10)
+
+Against a real Palpo homeserver with real accounts, a bridge account posting a
+genuine 4-action request, and the client driven through the remote bridge:
+
+- **17/17** wire checks on the request/verdict round-trip: every binding field
+  preserved, `m.in_reply_to` intact, both senders stamped by the server.
+- **15/15** end-to-end UI checks: room synced and listed, no debug-text leak in
+  the rooms list, card showing all four buttons plus tool, command preview,
+  Pending badge and the hint; clicking **Approve once** flipped the badge to
+  Decided and put a real `com.agentchat.approval.verdict.v1` on the server,
+  sent by the logged-in owner, echoing the `request_id` and `action`.
+- An expired request rendered as **Expired** with its buttons withdrawn.
+
+Known cosmetic nit: the decided-state receipt uses `✓` (U+2713), which the
+bundled font substitutes with a similar glyph.
 
 Manual checks against a running hagency stack (see hagency's
 `docs/E2E-RUNBOOK-macos.md`):

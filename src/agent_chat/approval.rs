@@ -671,6 +671,40 @@ mod tests {
         assert_eq!(verdict.as_object().unwrap().len(), 4);
     }
 
+
+    /// Bytes captured from a live Palpo homeserver round-trip (soak test): the
+    /// hagency-shaped request the bridge sent, and the verdict this client's
+    /// wire format produced, both exactly as the server stored and returned them.
+    #[test]
+    fn real_palpo_event_bytes_parse_and_round_trip() {
+        let content: serde_json::Value =
+            serde_json::from_str(include_str!("testdata/palpo-request.json")).unwrap();
+        let ApprovalMessage::Request(request) = ApprovalMessage::from_original_content(&content)
+            .expect("real server bytes classify as an approval message")
+        else {
+            panic!("real server bytes must classify as a request");
+        };
+        assert_eq!(request.agent, "wf_codex");
+        assert_eq!(request.runtime, "codex");
+        assert_eq!(request.tool_name, "Bash");
+        assert_eq!(
+            request.actions.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(),
+            ["approve_once", "approve_task", "approve_always", "deny"],
+        );
+        assert_eq!(
+            request.reusable_scope.as_ref().and_then(|s| s.task_id.as_deref()),
+            Some("task_soak_7"),
+        );
+
+        // The verdict we would build must match, field for field, the verdict the
+        // real server accepted, stored, and handed back.
+        let stored: serde_json::Value =
+            serde_json::from_str(include_str!("testdata/palpo-verdict.json")).unwrap();
+        let source = EventId::parse("$beHFiq3AIRAqZd60zYi7EKb5clojKKZybfHXLR3GKI0").unwrap();
+        let built = request.verdict_content(request.action("approve_once").unwrap(), &source);
+        assert_eq!(built, stored);
+    }
+
     #[test]
     fn expiry_and_decision_state_lifecycle() {
         let request = parse_approval_request(&two_action_request(1_000)).unwrap();

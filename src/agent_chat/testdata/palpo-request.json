@@ -1,0 +1,46 @@
+{
+  "body": "Agent wf_codex is asking for approval to run: Bash: cargo test --lib. Use the Approve once or Deny button. Text replies are not approval.",
+  "com.agentchat.approval": {
+    "actions": [
+      {
+        "id": "approve_once",
+        "label": "Approve once",
+        "style": "primary"
+      },
+      {
+        "id": "approve_task",
+        "label": "Allow for this task",
+        "style": "secondary"
+      },
+      {
+        "id": "approve_always",
+        "label": "Always allow this operation",
+        "style": "secondary"
+      },
+      {
+        "id": "deny",
+        "label": "Deny",
+        "style": "danger"
+      }
+    ],
+    "agent": "wf_codex",
+    "description": "May I run the full Rust library tests to complete the review?",
+    "expires_at": 1789087978173,
+    "input_digest": "d80f5d8e3980e9e0815fc0f4eff702c7ef9fb8bdcfc98d1f35cf1ff0233b27a9",
+    "input_preview": "cargo test --lib",
+    "kind": "request",
+    "project": "robrix2",
+    "project_room_id": "!board:127.0.0.1:8128",
+    "request_id": "approval_1c0d502fb422564bd5f35ff34d6dfbaa",
+    "reusable_scope": {
+      "description": "cargo test in this workspace",
+      "task_id": "task_soak_7",
+      "workspace": "/srv/robrix2"
+    },
+    "runtime": "codex",
+    "tool_name": "Bash",
+    "upstream_request_id": "codex-soak-1",
+    "version": 1
+  },
+  "msgtype": "com.agentchat.approval.request.v1"
+}
