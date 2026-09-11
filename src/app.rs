@@ -308,6 +308,7 @@ impl MatchEvent for App {
             if let Some(LoginAction::LoginFailure(_)) = action.downcast_ref() {
                 if self.app_state.logged_in {
                     log!("Received LoginAction::LoginFailure while logged in; showing login screen.");
+                    robius_speech::cancel_all();
                     self.app_state.logged_in = false;
                     self.update_login_visibility(cx);
                     self.ui.redraw(cx);
