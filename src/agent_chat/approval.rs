@@ -294,7 +294,7 @@ pub fn parse_approval_request(content: &serde_json::Value) -> Option<ApprovalReq
     if msgtype != namespace.request_msgtype() {
         return None;
     }
-    let approval = content.get(&namespace.event_key())?;
+    let approval = content.get(namespace.event_key())?;
     if approval.get("version").and_then(|value| value.as_u64()) != Some(1)
         || approval.get("kind").and_then(|value| value.as_str()) != Some("request")
     {
@@ -378,7 +378,7 @@ pub fn custom_message_body(content: &serde_json::Value) -> Option<&str> {
     } else {
         return None;
     };
-    let approval = content.get(&namespace.event_key())?;
+    let approval = content.get(namespace.event_key())?;
     if approval.get("version").and_then(|value| value.as_u64()) != Some(1)
         || approval.get("kind").and_then(|value| value.as_str()) != Some(expected_kind)
     {

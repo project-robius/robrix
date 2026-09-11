@@ -5120,12 +5120,21 @@ fn populate_message_view(
             username_label.set_text(cx, &username);
             #[cfg(feature = "agent_chat")]
             {
-                let badge = item.widget(cx, ids!(content.username_view.agent_badge));
+                let mut badge = item.widget(cx, ids!(content.username_view.agent_badge));
                 match agent_presentation.as_ref() {
                     Some(presentation) => {
                         badge.set_visible(cx, true);
-                        item.label(cx, ids!(content.username_view.agent_badge.agent_badge_label))
-                            .set_text(cx, &presentation.badge_text());
+                        let mut label = item.label(cx, ids!(content.username_view.agent_badge.agent_badge_label));
+                        label.set_text(cx, &presentation.badge_text());
+                        // Workflow roles get the accent pair; a plain agent the neutral one.
+                        // Widgets are recycled, so both branches must set both colours.
+                        if presentation.role.is_some() {
+                            script_apply_eval!(cx, badge, { draw_bg +: { color: (mod.widgets.RBX_ACCENT_SOFT) } });
+                            script_apply_eval!(cx, label, { draw_text +: { color: (mod.widgets.RBX_ACCENT) } });
+                        } else {
+                            script_apply_eval!(cx, badge, { draw_bg +: { color: (mod.widgets.RBX_NEUTRAL_BG) } });
+                            script_apply_eval!(cx, label, { draw_text +: { color: (mod.widgets.RBX_NEUTRAL_FG) } });
+                        }
                     }
                     None => badge.set_visible(cx, false),
                 }

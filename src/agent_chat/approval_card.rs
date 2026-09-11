@@ -18,53 +18,113 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    mod.widgets.COLOR_AGENT_APPROVAL_BG = #FFF4E5
-    mod.widgets.COLOR_AGENT_APPROVAL_BORDER = #E8C99A
-    mod.widgets.COLOR_AGENT_APPROVAL_TITLE = #A35A00
+    // Decision buttons follow robrix2's AgentApproval{Primary,Secondary,Danger}Button
+    // recipes: a tinted surface with a 1px semantic stroke, RBX_CONTROL_H_MD tall.
+    mod.widgets.AgentApprovalPrimaryButton = Button {
+        visible: false
+        width: Fit
+        height: (mod.widgets.RBX_CONTROL_H_MD)
+        spacing: 0
+        padding: Inset{left: 12.0, right: 12.0, top: 7.0, bottom: 7.0}
+        icon_walk: Walk{width: 0, height: 0}
+        draw_bg +: {
+            color: (mod.widgets.RBX_SUCCESS_BG)
+            color_hover: (mod.widgets.RBX_SUCCESS_BG)
+            color_down: (mod.widgets.RBX_BG_PRESSED)
+            color_disabled: (mod.widgets.RBX_BG_DISABLED)
+            border_radius: (mod.widgets.RBX_RADIUS_MD)
+            border_size: 1.0
+            border_color: (mod.widgets.RBX_SUCCESS_FG)
+            border_color_hover: (mod.widgets.RBX_SUCCESS_FG)
+            border_color_down: (mod.widgets.RBX_SUCCESS_FG)
+        }
+        draw_text +: {
+            text_style: (mod.widgets.RBX_TEXT_BODY_STRONG)
+            color: (mod.widgets.RBX_SUCCESS_FG)
+            color_hover: (mod.widgets.RBX_SUCCESS_FG)
+            color_down: (mod.widgets.RBX_SUCCESS_FG)
+            color_disabled: (mod.widgets.RBX_FG_DISABLED)
+        }
+        text: ""
+    }
 
-    // A text-only variant of the Robrix icon buttons: no icon slot, tighter padding.
-    mod.widgets.AgentApprovalPositiveButton = mod.widgets.RobrixPositiveIconButton {
+    mod.widgets.AgentApprovalSecondaryButton = Button {
         visible: false
+        width: Fit
+        height: (mod.widgets.RBX_CONTROL_H_MD)
         spacing: 0
-        padding: Inset{left: 12, right: 12, top: 7, bottom: 7}
+        padding: Inset{left: 12.0, right: 12.0, top: 7.0, bottom: 7.0}
         icon_walk: Walk{width: 0, height: 0}
-        text: ""
-    }
-    mod.widgets.AgentApprovalNeutralButton = mod.widgets.RobrixNeutralIconButton {
-        visible: false
-        spacing: 0
-        padding: Inset{left: 12, right: 12, top: 7, bottom: 7}
-        icon_walk: Walk{width: 0, height: 0}
-        text: ""
-    }
-    mod.widgets.AgentApprovalNegativeButton = mod.widgets.RobrixNegativeIconButton {
-        visible: false
-        spacing: 0
-        padding: Inset{left: 12, right: 12, top: 7, bottom: 7}
-        icon_walk: Walk{width: 0, height: 0}
+        draw_bg +: {
+            color: (mod.widgets.RBX_BG_SURFACE)
+            color_hover: (mod.widgets.RBX_BG_HOVER)
+            color_down: (mod.widgets.RBX_BG_PRESSED)
+            color_disabled: (mod.widgets.RBX_BG_DISABLED)
+            border_radius: (mod.widgets.RBX_RADIUS_MD)
+            border_size: 1.0
+            border_color: (mod.widgets.RBX_STROKE_STRONG)
+            border_color_hover: (mod.widgets.RBX_STROKE_STRONG)
+            border_color_down: (mod.widgets.RBX_STROKE_STRONG)
+        }
+        draw_text +: {
+            text_style: (mod.widgets.RBX_TEXT_BODY_STRONG)
+            color: (mod.widgets.RBX_FG_SECONDARY)
+            color_hover: (mod.widgets.RBX_FG_PRIMARY)
+            color_down: (mod.widgets.RBX_FG_PRIMARY)
+            color_disabled: (mod.widgets.RBX_FG_DISABLED)
+        }
         text: ""
     }
 
-    // The small badge shown after an agent's name: its workflow role and,
-    // when the bridge stamped one, the message kind (`coordinator · request`).
+    mod.widgets.AgentApprovalDangerButton = Button {
+        visible: false
+        width: Fit
+        height: (mod.widgets.RBX_CONTROL_H_MD)
+        spacing: 0
+        padding: Inset{left: 12.0, right: 12.0, top: 7.0, bottom: 7.0}
+        icon_walk: Walk{width: 0, height: 0}
+        draw_bg +: {
+            color: (mod.widgets.RBX_DANGER_BG)
+            color_hover: (mod.widgets.RBX_DANGER_BG)
+            color_down: (mod.widgets.RBX_BG_PRESSED)
+            color_disabled: (mod.widgets.RBX_BG_DISABLED)
+            border_radius: (mod.widgets.RBX_RADIUS_MD)
+            border_size: 1.0
+            border_color: (mod.widgets.RBX_DANGER_FG)
+            border_color_hover: (mod.widgets.RBX_DANGER_FG)
+            border_color_down: (mod.widgets.RBX_DANGER_FG)
+        }
+        draw_text +: {
+            text_style: (mod.widgets.RBX_TEXT_BODY_STRONG)
+            color: (mod.widgets.RBX_DANGER_FG)
+            color_hover: (mod.widgets.RBX_DANGER_FG)
+            color_down: (mod.widgets.RBX_DANGER_FG)
+            color_disabled: (mod.widgets.RBX_FG_DISABLED)
+        }
+        text: ""
+    }
+
+    // The badge after an agent's name, sized exactly like robrix2's bot badge:
+    // 16px tall, 6px side padding, 3px radius. Accent-tinted for workflow roles;
+    // the neutral pair is applied at populate time for agents with no role.
     mod.widgets.AgentBadge = RoundedView {
         visible: false
-        width: Fit, height: Fit
-        margin: Inset{top: 19.0, right: 10.0}
-        padding: Inset{left: 6, right: 6, top: 2, bottom: 2}
+        width: Fit
+        height: 16.0
+        align: Align{x: 0.5, y: 0.5}
+        margin: Inset{top: 20.0, right: 10.0}
+        padding: Inset{left: 6.0, right: 6.0}
         show_bg: true
         draw_bg +: {
-            color: (mod.widgets.COLOR_AGENT_APPROVAL_BG)
+            color: (mod.widgets.RBX_ACCENT_SOFT)
             border_radius: 3.0
-            border_size: 1.0
-            border_color: (mod.widgets.COLOR_AGENT_APPROVAL_BORDER)
         }
         agent_badge_label := Label {
             width: Fit, height: Fit
             padding: 0
             draw_text +: {
-                text_style: mod.widgets.REGULAR_TEXT { font_size: 9 },
-                color: (mod.widgets.COLOR_AGENT_APPROVAL_TITLE)
+                text_style: theme.font_regular { font_size: 8.5, top_drop: -0.08 }
+                color: (mod.widgets.RBX_ACCENT)
             }
             text: ""
         }
@@ -74,22 +134,22 @@ script_mod! {
         visible: false
         width: Fill, height: Fit
         flow: Down
-        spacing: 8
-        margin: Inset{top: 8, right: 10}
-        padding: Inset{left: 14, right: 14, top: 10, bottom: 12}
+        spacing: 8.0
+        margin: Inset{top: 8.0, right: 10.0}
+        padding: Inset{left: 16.0, right: 16.0, top: 12.0, bottom: 16.0}
 
         show_bg: true
         draw_bg +: {
-            color: (mod.widgets.COLOR_AGENT_APPROVAL_BG)
-            border_radius: 6.0
+            color: (mod.widgets.RBX_WARNING_BG)
+            border_radius: (mod.widgets.RBX_RADIUS_SM)
             border_size: 1.0
-            border_color: (mod.widgets.COLOR_AGENT_APPROVAL_BORDER)
+            border_color: (mod.widgets.RBX_WARNING_FG)
         }
 
         header := View {
             width: Fill, height: Fit
             flow: Right
-            spacing: 8
+            spacing: 8.0
             align: Align{y: 0.5}
 
             title_label := Label {
@@ -97,26 +157,26 @@ script_mod! {
                 flow: Flow.Right{wrap: true}
                 padding: 0
                 draw_text +: {
-                    text_style: USERNAME_TEXT_STYLE {},
-                    color: (mod.widgets.COLOR_AGENT_APPROVAL_TITLE)
+                    text_style: (mod.widgets.RBX_TEXT_CARD_TITLE)
+                    color: (mod.widgets.RBX_WARNING_FG)
                 }
                 text: ""
             }
 
             status_badge := RoundedView {
                 width: Fit, height: Fit
-                padding: Inset{left: 8, right: 8, top: 3, bottom: 3}
+                padding: Inset{left: 8.0, right: 8.0, top: 4.0, bottom: 4.0}
                 show_bg: true
                 draw_bg +: {
-                    color: (COLOR_PRIMARY)
-                    border_radius: 8.0
+                    color: (mod.widgets.RBX_BG_SURFACE)
+                    border_radius: (mod.widgets.RBX_RADIUS_PILL)
                 }
                 status_label := Label {
                     width: Fit, height: Fit
                     padding: 0
                     draw_text +: {
-                        text_style: mod.widgets.REGULAR_TEXT { font_size: 9 },
-                        color: (mod.widgets.COLOR_AGENT_APPROVAL_TITLE)
+                        text_style: (mod.widgets.RBX_TEXT_BADGE)
+                        color: (mod.widgets.RBX_WARNING_FG)
                     }
                     text: ""
                 }
@@ -128,8 +188,8 @@ script_mod! {
             flow: Flow.Right{wrap: true}
             padding: 0
             draw_text +: {
-                text_style: mod.widgets.MESSAGE_TEXT_STYLE {},
-                color: (COLOR_TEXT)
+                text_style: (mod.widgets.RBX_TEXT_BODY)
+                color: (mod.widgets.RBX_FG_PRIMARY)
             }
             text: ""
         }
@@ -137,12 +197,12 @@ script_mod! {
         button_row := View {
             width: Fill, height: Fit
             flow: Flow.Right{wrap: true}
-            spacing: 8
+            spacing: 8.0
 
-            approve_once_button := mod.widgets.AgentApprovalPositiveButton {}
-            approve_task_button := mod.widgets.AgentApprovalNeutralButton {}
-            approve_always_button := mod.widgets.AgentApprovalNeutralButton {}
-            deny_button := mod.widgets.AgentApprovalNegativeButton {}
+            approve_once_button := mod.widgets.AgentApprovalPrimaryButton {}
+            approve_task_button := mod.widgets.AgentApprovalSecondaryButton {}
+            approve_always_button := mod.widgets.AgentApprovalSecondaryButton {}
+            deny_button := mod.widgets.AgentApprovalDangerButton {}
         }
 
         hint_label := Label {
@@ -150,8 +210,8 @@ script_mod! {
             flow: Flow.Right{wrap: true}
             padding: 0
             draw_text +: {
-                text_style: mod.widgets.REGULAR_TEXT { font_size: 9 },
-                color: (COLOR_MESSAGE_NOTICE_TEXT)
+                text_style: (mod.widgets.RBX_TEXT_META)
+                color: (mod.widgets.RBX_FG_SECONDARY)
             }
             text: "Text replies are not approval. Only these buttons send a structured verdict, and the agent-chat server makes the final decision."
         }

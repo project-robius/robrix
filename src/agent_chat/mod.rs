@@ -34,6 +34,7 @@ pub mod approval;
 pub mod approval_card;
 pub mod preferences;
 pub mod presentation;
+pub mod tokens;
 pub mod workflow;
 
 use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId};
@@ -78,6 +79,8 @@ pub enum ApprovalVerdictResult {
 
 /// Registers the agent-chat widgets with the script VM.
 pub fn script_mod(vm: &mut ScriptVm) {
+    // Tokens first: every other agent-chat widget references them.
+    tokens::script_mod(vm);
     approval_card::script_mod(vm);
     preferences::script_mod(vm);
 }
