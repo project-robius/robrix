@@ -12,15 +12,14 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 
 | Crates | License | SPDX |
 |-------:|---------|------|
-| 572 | MIT License | `MIT` |
-| 22 | Apache License 2.0 | `Apache-2.0` |
-| 19 | Unicode License v3 | `Unicode-3.0` |
+| 567 | MIT License | `MIT` |
+| 24 | Apache License 2.0 | `Apache-2.0` |
+| 20 | Unicode License v3 | `Unicode-3.0` |
 | 12 | Mozilla Public License 2.0 | `MPL-2.0` |
 | 6 | BSD 3-Clause "New" or "Revised" License | `BSD-3-Clause` |
 | 6 | ISC License | `ISC` |
-| 6 | zlib License | `Zlib` |
+| 5 | zlib License | `Zlib` |
 | 2 | MIT No Attribution | `MIT-0` |
-| 1 | BSD 2-Clause "Simplified" License | `BSD-2-Clause` |
 | 1 | Boost Software License 1.0 | `BSL-1.0` |
 | 1 | Creative Commons Zero v1.0 Universal | `CC0-1.0` |
 | 1 | Community Data License Agreement Permissive 2.0 | `CDLA-Permissive-2.0` |
@@ -32,8 +31,8 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 |-------|---------|---------|
 | `ab_glyph_rasterizer` | 0.1.8 | Apache-2.0 |
 | `adler2` | 2.0.1 | 0BSD OR MIT OR Apache-2.0 |
-| `aead` | 0.5.2 | MIT OR Apache-2.0 |
-| `aes` | 0.8.4 | MIT OR Apache-2.0 |
+| `aead` | 0.6.1 | MIT OR Apache-2.0 |
+| `aes` | 0.9.3 | MIT OR Apache-2.0 |
 | `aho-corasick` | 1.1.3 | Unlicense OR MIT |
 | `allocator-api2` | 0.2.21 | MIT OR Apache-2.0 |
 | `android-build` | 0.1.3 | MIT |
@@ -45,11 +44,9 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `anstyle-wincon` | 3.0.10 | MIT OR Apache-2.0 |
 | `anyhow` | 1.0.100 | MIT OR Apache-2.0 |
 | `anymap2` | 0.13.0 | MIT OR Apache-2.0 |
-| `aquamarine` | 0.6.0 | MIT |
 | `archery` | 1.2.1 | MPL-2.0 |
-| `arrayref` | 0.3.9 | BSD-2-Clause |
 | `arrayvec` | 0.7.6 | MIT OR Apache-2.0 |
-| `arrayvec` | 0.7.6 | MIT OR Apache-2.0 |
+| `arrayvec` | 0.7.8 | MIT OR Apache-2.0 |
 | `as_variant` | 1.3.0 | MPL-2.0 |
 | `ash` | 0.38.0+1.3.281 | MIT OR Apache-2.0 |
 | `assign` | 1.1.1 | MIT |
@@ -66,37 +63,41 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `async-stream` | 0.3.6 | MIT |
 | `async-stream-impl` | 0.3.6 | MIT |
 | `async-task` | 4.7.1 | Apache-2.0 OR MIT |
-| `async-trait` | 0.1.89 | MIT OR Apache-2.0 |
+| `async-trait` | 0.1.92 | MIT OR Apache-2.0 |
 | `async_cell` | 0.2.3 | MIT |
 | `atomic-waker` | 1.1.2 | Apache-2.0 OR MIT |
 | `autocfg` | 1.5.0 | Apache-2.0 OR MIT |
 | `aws-lc-rs` | 1.14.1 | ISC AND (Apache-2.0 OR ISC) |
 | `aws-lc-sys` | 0.32.0 | ISC AND (Apache-2.0 OR ISC) AND OpenSSL |
-| `axum` | 0.8.4 | MIT |
-| `axum-core` | 0.5.2 | MIT |
+| `axum` | 0.8.9 | MIT |
+| `axum-core` | 0.5.6 | MIT |
 | `backon` | 1.6.0 | Apache-2.0 |
+| `base16ct` | 1.0.0 | Apache-2.0 OR MIT |
 | `base64` | 0.22.1 | MIT OR Apache-2.0 |
+| `base64` | 0.23.1 | MIT OR Apache-2.0 |
 | `base64ct` | 1.8.3 | Apache-2.0 OR MIT |
 | `bindgen` | 0.72.1 | BSD-3-Clause |
 | `bit-set` | 0.8.0 | Apache-2.0 OR MIT |
 | `bit-vec` | 0.8.0 | Apache-2.0 OR MIT |
 | `bitflags` | 2.10.0 | MIT OR Apache-2.0 |
-| `bitflags` | 2.10.0 | MIT OR Apache-2.0 |
+| `bitflags` | 2.13.1 | MIT OR Apache-2.0 |
 | `bitmaps` | 3.2.1 | MPL-2.0+ |
-| `blake3` | 1.8.2 | CC0-1.0 OR Apache-2.0 OR Apache-2.0 WITH LLVM-exception |
+| `blake3` | 1.8.7 | CC0-1.0 OR Apache-2.0 OR Apache-2.0 WITH LLVM-exception |
 | `block-buffer` | 0.10.4 | MIT OR Apache-2.0 |
-| `block-padding` | 0.3.3 | MIT OR Apache-2.0 |
+| `block-buffer` | 0.12.1 | MIT OR Apache-2.0 |
+| `block-padding` | 0.4.2 | MIT OR Apache-2.0 |
 | `block2` | 0.6.1 | MIT |
 | `blocking` | 1.6.2 | Apache-2.0 OR MIT |
 | `blurhash` | 0.2.3 | Apache-2.0 OR MIT |
 | `bs58` | 0.5.1 | MIT OR Apache-2.0 |
 | `bumpalo` | 3.19.0 | MIT OR Apache-2.0 |
 | `bytemuck` | 1.25.0 | Zlib OR Apache-2.0 OR MIT |
+| `bytemuck` | 1.25.2 | Zlib OR Apache-2.0 OR MIT |
 | `byteorder` | 1.5.0 | Unlicense OR MIT |
 | `byteorder` | 1.5.0 | Unlicense OR MIT |
-| `bytes` | 1.11.1 | MIT |
-| `bytesize` | 2.3.1 | Apache-2.0 |
-| `cbc` | 0.1.2 | MIT OR Apache-2.0 |
+| `bytes` | 1.12.1 | MIT |
+| `bytesize` | 2.7.0 | Apache-2.0 |
+| `cbc` | 0.2.1 | MIT OR Apache-2.0 |
 | `cc` | 1.2.38 | MIT OR Apache-2.0 |
 | `cesu8` | 1.1.0 | Apache-2.0 OR MIT |
 | `cexpr` | 0.6.0 | Apache-2.0 OR MIT |
@@ -104,27 +105,29 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `cfg-if` | 1.0.4 | MIT OR Apache-2.0 |
 | `cfg_aliases` | 0.2.1 | MIT |
 | `cfg_aliases` | 0.2.1 | MIT |
-| `chacha20` | 0.9.1 | Apache-2.0 OR MIT |
 | `chacha20` | 0.10.0 | MIT OR Apache-2.0 |
-| `chacha20poly1305` | 0.10.1 | Apache-2.0 OR MIT |
-| `chrono` | 0.4.42 | Apache-2.0 OR MIT |
-| `cipher` | 0.4.4 | MIT OR Apache-2.0 |
+| `chacha20poly1305` | 0.11.0 | Apache-2.0 OR MIT |
+| `chrono` | 0.4.45 | Apache-2.0 OR MIT |
+| `cipher` | 0.5.2 | MIT OR Apache-2.0 |
 | `clang-sys` | 1.8.1 | Apache-2.0 |
 | `clap` | 4.5.48 | MIT OR Apache-2.0 |
 | `clap_builder` | 4.5.48 | MIT OR Apache-2.0 |
 | `clap_derive` | 4.5.47 | MIT OR Apache-2.0 |
 | `clap_lex` | 0.7.5 | MIT OR Apache-2.0 |
 | `cmake` | 0.1.54 | MIT OR Apache-2.0 |
+| `cmov` | 0.5.4 | Apache-2.0 OR MIT |
 | `colorchoice` | 1.0.4 | MIT OR Apache-2.0 |
 | `combine` | 4.6.7 | MIT |
 | `compression-codecs` | 0.4.30 | MIT OR Apache-2.0 |
 | `compression-core` | 0.4.29 | MIT OR Apache-2.0 |
 | `concurrent-queue` | 2.5.0 | Apache-2.0 OR MIT |
+| `const-oid` | 0.10.1 | Apache-2.0 OR MIT |
 | `const_panic` | 0.2.15 | Zlib |
-| `constant_time_eq` | 0.3.1 | CC0-1.0 OR MIT-0 OR Apache-2.0 |
+| `constant_time_eq` | 0.4.2 | CC0-1.0 OR MIT-0 OR Apache-2.0 |
 | `convert_case` | 0.6.0 | MIT |
 | `core-foundation` | 0.10.1 | MIT OR Apache-2.0 |
 | `core-foundation-sys` | 0.8.7 | MIT OR Apache-2.0 |
+| `cpubits` | 0.1.1 | MIT OR Apache-2.0 |
 | `cpufeatures` | 0.2.17 | MIT OR Apache-2.0 |
 | `cpufeatures` | 0.3.0 | MIT OR Apache-2.0 |
 | `crc32fast` | 1.5.0 | MIT OR Apache-2.0 |
@@ -133,89 +136,94 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `crossbeam-utils` | 0.8.21 | MIT OR Apache-2.0 |
 | `crunchy` | 0.2.4 | MIT |
 | `crypto-common` | 0.1.6 | MIT OR Apache-2.0 |
+| `crypto-common` | 0.2.2 | MIT OR Apache-2.0 |
 | `ctor` | 0.2.9 | Apache-2.0 OR MIT |
-| `ctr` | 0.9.2 | MIT OR Apache-2.0 |
+| `ctr` | 0.10.1 | MIT OR Apache-2.0 |
 | `ctrlc` | 3.5.2 | MIT OR Apache-2.0 |
-| `curve25519-dalek` | 4.1.3 | BSD-3-Clause |
+| `ctutils` | 0.4.2 | Apache-2.0 OR MIT |
+| `curve25519-dalek` | 5.0.0 | BSD-3-Clause |
 | `curve25519-dalek-derive` | 0.1.1 | MIT OR Apache-2.0 |
 | `date_header` | 1.0.5 | MIT OR Apache-2.0 |
 | `deadpool` | 0.13.0 | MIT OR Apache-2.0 |
 | `deadpool-runtime` | 0.3.1 | MIT OR Apache-2.0 |
 | `deadpool-sync` | 0.2.0 | MIT OR Apache-2.0 |
 | `decancer` | 3.3.3 | MIT |
-| `deranged` | 0.5.3 | MIT OR Apache-2.0 |
+| `deranged` | 0.5.8 | MIT OR Apache-2.0 |
 | `digest` | 0.10.7 | MIT OR Apache-2.0 |
+| `digest` | 0.11.3 | MIT OR Apache-2.0 |
 | `dirs-sys` | 0.5.0 | MIT OR Apache-2.0 |
 | `dispatch2` | 0.3.1 | Zlib OR Apache-2.0 OR MIT |
 | `displaydoc` | 0.2.5 | MIT OR Apache-2.0 |
 | `downcast-rs` | 1.2.1 | MIT OR Apache-2.0 |
 | `dunce` | 1.0.5 | CC0-1.0 OR MIT-0 OR Apache-2.0 |
-| `ed25519` | 2.2.3 | Apache-2.0 OR MIT |
-| `ed25519-dalek` | 2.2.0 | BSD-3-Clause |
+| `ed25519` | 3.0.0 | Apache-2.0 OR MIT |
+| `ed25519-dalek` | 3.0.0 | BSD-3-Clause |
 | `either` | 1.15.0 | MIT OR Apache-2.0 |
-| `emojis` | 0.8.0 | MIT OR Apache-2.0 |
+| `emojis` | 0.9.0 | (MIT OR Apache-2.0) AND Unicode-3.0 |
 | `endi` | 1.1.1 | MIT |
 | `enumflags2` | 0.7.12 | MIT OR Apache-2.0 |
 | `enumflags2_derive` | 0.7.12 | MIT OR Apache-2.0 |
 | `equivalent` | 1.0.2 | Apache-2.0 OR MIT |
 | `equivalent` | 1.0.2 | Apache-2.0 OR MIT |
 | `errno` | 0.3.14 | MIT OR Apache-2.0 |
-| `event-listener` | 5.4.1 | Apache-2.0 OR MIT |
+| `event-listener` | 5.4.2 | Apache-2.0 OR MIT |
 | `event-listener-strategy` | 0.5.4 | Apache-2.0 OR MIT |
 | `eyeball` | 0.8.8 | MPL-2.0 |
-| `eyeball-im` | 0.8.0 | MPL-2.0 |
-| `eyeball-im-util` | 0.10.0 | MPL-2.0 |
+| `eyeball-im` | 0.9.0 | MPL-2.0 |
+| `eyeball-im-util` | 0.11.0 | MPL-2.0 |
 | `fallible-iterator` | 0.3.0 | MIT OR Apache-2.0 |
 | `fallible-streaming-iterator` | 0.1.9 | MIT OR Apache-2.0 |
 | `fastrand` | 2.3.0 | Apache-2.0 OR MIT |
-| `fiat-crypto` | 0.2.9 | MIT OR Apache-2.0 OR BSD-1-Clause |
+| `fiat-crypto` | 0.3.0 | MIT OR Apache-2.0 OR BSD-1-Clause |
 | `find-msvc-tools` | 0.1.2 | MIT OR Apache-2.0 |
 | `flate2` | 1.1.2 | MIT OR Apache-2.0 |
 | `fnv` | 1.0.7 | Apache-2.0  OR  MIT |
-| `foldhash` | 0.1.5 | Zlib |
 | `foldhash` | 0.2.0 | Zlib |
 | `foldhash` | 0.2.0 | Zlib |
 | `form_urlencoded` | 1.2.2 | MIT OR Apache-2.0 |
 | `fs_extra` | 1.3.0 | MIT |
 | `futures` | 0.3.31 | MIT OR Apache-2.0 |
-| `futures-channel` | 0.3.31 | MIT OR Apache-2.0 |
-| `futures-core` | 0.3.31 | MIT OR Apache-2.0 |
-| `futures-executor` | 0.3.31 | MIT OR Apache-2.0 |
-| `futures-io` | 0.3.31 | MIT OR Apache-2.0 |
+| `futures-channel` | 0.3.34 | MIT OR Apache-2.0 |
+| `futures-core` | 0.3.34 | MIT OR Apache-2.0 |
+| `futures-executor` | 0.3.34 | MIT OR Apache-2.0 |
+| `futures-io` | 0.3.34 | MIT OR Apache-2.0 |
 | `futures-lite` | 2.6.1 | Apache-2.0 OR MIT |
-| `futures-macro` | 0.3.31 | MIT OR Apache-2.0 |
-| `futures-sink` | 0.3.31 | MIT OR Apache-2.0 |
-| `futures-task` | 0.3.31 | MIT OR Apache-2.0 |
-| `futures-util` | 0.3.31 | MIT OR Apache-2.0 |
+| `futures-macro` | 0.3.34 | MIT OR Apache-2.0 |
+| `futures-sink` | 0.3.34 | MIT OR Apache-2.0 |
+| `futures-task` | 0.3.34 | MIT OR Apache-2.0 |
+| `futures-util` | 0.3.34 | MIT OR Apache-2.0 |
 | `fuzzy-matcher` | 0.3.7 | MIT |
 | `fxhash` | 0.2.1 | Apache-2.0 OR MIT |
 | `generator` | 0.8.7 | MIT OR Apache-2.0 |
 | `generic-array` | 0.14.7 | MIT |
 | `getrandom` | 0.2.16 | MIT OR Apache-2.0 |
 | `getrandom` | 0.3.3 | MIT OR Apache-2.0 |
-| `getrandom` | 0.4.2 | MIT OR Apache-2.0 |
+| `getrandom` | 0.4.3 | MIT OR Apache-2.0 |
 | `glob` | 0.3.3 | MIT OR Apache-2.0 |
 | `gloo-timers` | 0.3.0 | MIT OR Apache-2.0 |
+| `gloo-timers` | 0.4.0 | MIT OR Apache-2.0 |
 | `growable-bloom-filter` | 2.1.1 | MIT |
 | `h2` | 0.4.12 | MIT |
-| `hashbrown` | 0.15.5 | MIT OR Apache-2.0 |
 | `hashbrown` | 0.16.1 | MIT OR Apache-2.0 |
 | `hashbrown` | 0.16.1 | MIT OR Apache-2.0 |
-| `hashlink` | 0.10.0 | MIT OR Apache-2.0 |
+| `hashbrown` | 0.17.1 | MIT OR Apache-2.0 |
+| `hashlink` | 0.12.2 | MIT OR Apache-2.0 |
 | `heck` | 0.5.0 | MIT OR Apache-2.0 |
 | `hermit-abi` | 0.5.2 | MIT OR Apache-2.0 |
 | `hex` | 0.4.3 | MIT OR Apache-2.0 |
 | `hexf-parse` | 0.2.1 | CC0-1.0 |
 | `hilog-sys` | 0.1.8 | Apache-2.0 |
-| `hkdf` | 0.12.4 | MIT OR Apache-2.0 |
-| `hmac` | 0.12.1 | MIT OR Apache-2.0 |
+| `hkdf` | 0.13.0 | MIT OR Apache-2.0 |
+| `hmac` | 0.13.0 | MIT OR Apache-2.0 |
+| `hpke` | 0.14.1 | MIT OR Apache-2.0 |
 | `html5ever` | 0.39.0 | MIT OR Apache-2.0 |
 | `htmlize` | 1.0.6 | MIT OR Apache-2.0 |
-| `http` | 1.3.1 | MIT OR Apache-2.0 |
+| `http` | 1.5.0 | MIT OR Apache-2.0 |
 | `http-body` | 1.0.1 | MIT |
 | `http-body-util` | 0.1.3 | MIT |
 | `httparse` | 1.10.1 | MIT OR Apache-2.0 |
 | `httpdate` | 1.0.3 | MIT OR Apache-2.0 |
+| `hybrid-array` | 0.4.15 | MIT OR Apache-2.0 |
 | `hyper` | 1.7.0 | MIT |
 | `hyper-rustls` | 0.27.7 | Apache-2.0 OR ISC OR MIT |
 | `hyper-util` | 0.1.17 | MIT |
@@ -230,24 +238,22 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `icu_provider` | 2.0.0 | Unicode-3.0 |
 | `idna` | 1.1.0 | MIT OR Apache-2.0 |
 | `idna_adapter` | 1.2.1 | Apache-2.0 OR MIT |
-| `imbl` | 6.1.0 | MPL-2.0+ |
+| `imbl` | 7.0.1 | MPL-2.0+ |
 | `imbl-sized-chunks` | 0.1.3 | MPL-2.0+ |
-| `include_dir` | 0.7.4 | MIT |
-| `include_dir_macros` | 0.7.4 | MIT |
 | `indexmap` | 2.13.0 | Apache-2.0 OR MIT |
-| `indexmap` | 2.13.0 | Apache-2.0 OR MIT |
-| `inout` | 0.1.4 | MIT OR Apache-2.0 |
+| `indexmap` | 2.14.2 | Apache-2.0 OR MIT |
+| `inout` | 0.2.2 | MIT OR Apache-2.0 |
 | `ipnet` | 2.11.0 | MIT OR Apache-2.0 |
 | `iri-string` | 0.7.8 | MIT OR Apache-2.0 |
 | `is_terminal_polyfill` | 1.70.1 | MIT OR Apache-2.0 |
-| `itertools` | 0.10.5 | MIT OR Apache-2.0 |
 | `itertools` | 0.13.0 | MIT OR Apache-2.0 |
 | `itertools` | 0.14.0 | MIT OR Apache-2.0 |
+| `itertools` | 0.15.0 | MIT OR Apache-2.0 |
 | `itoa` | 1.0.15 | MIT OR Apache-2.0 |
 | `jni` | 0.21.1 | MIT OR Apache-2.0 |
 | `jni-sys` | 0.3.0 | MIT OR Apache-2.0 |
 | `jobserver` | 0.1.34 | MIT OR Apache-2.0 |
-| `js-sys` | 0.3.94 | MIT OR Apache-2.0 |
+| `js-sys` | 0.3.105 | MIT OR Apache-2.0 |
 | `js_int` | 0.2.2 | MIT |
 | `js_option` | 0.2.0 | MIT |
 | `konst` | 0.4.3 | Zlib |
@@ -257,9 +263,9 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `libloading` | 0.8.8 | ISC |
 | `libloading` | 0.8.9 | ISC |
 | `libredox` | 0.1.10 | MIT |
-| `libsqlite3-sys` | 0.35.0 | MIT |
+| `libsqlite3-sys` | 0.38.2 | MIT |
 | `linkify` | 0.10.0 | MIT OR Apache-2.0 |
-| `linux-raw-sys` | 0.11.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
+| `linux-raw-sys` | 0.12.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | `litemap` | 0.8.0 | Unicode-3.0 |
 | `lock_api` | 0.4.13 | MIT OR Apache-2.0 |
 | `log` | 0.4.28 | MIT OR Apache-2.0 |
@@ -315,8 +321,8 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `markup5ever` | 0.39.0 | MIT OR Apache-2.0 |
 | `matchers` | 0.2.0 | MIT |
 | `matchit` | 0.8.4 | MIT AND BSD-3-Clause |
-| `matrix-pickle` | 0.2.1 | MIT |
-| `matrix-pickle-derive` | 0.2.1 | MIT |
+| `matrix-pickle` | 0.2.3 | Apache-2.0 |
+| `matrix-pickle-derive` | 0.2.3 | Apache-2.0 |
 | `matrix-sdk` | 0.18.0 | Apache-2.0 |
 | `matrix-sdk-base` | 0.18.0 | Apache-2.0 |
 | `matrix-sdk-common` | 0.18.0 | Apache-2.0 |
@@ -332,7 +338,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `mime_guess` | 2.0.5 | MIT |
 | `minimal-lexical` | 0.2.1 | MIT OR Apache-2.0 |
 | `miniz_oxide` | 0.8.9 | MIT OR Zlib OR Apache-2.0 |
-| `mio` | 1.0.4 | MIT |
+| `mio` | 1.2.3 | MIT |
 | `naga` | 27.0.3 | MIT OR Apache-2.0 |
 | `napi-derive-backend-ohos` | 0.0.7 | MIT |
 | `napi-derive-ohos` | 0.0.9 | MIT |
@@ -343,7 +349,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `nix` | 0.31.3 | MIT |
 | `nom` | 7.1.3 | MIT |
 | `nu-ansi-term` | 0.50.1 | MIT |
-| `num-conv` | 0.2.0 | MIT OR Apache-2.0 |
+| `num-conv` | 0.2.2 | MIT OR Apache-2.0 |
 | `num-traits` | 0.2.19 | MIT OR Apache-2.0 |
 | `num-traits` | 0.2.20 | MIT OR Apache-2.0 |
 | `num_cpus` | 1.17.0 | MIT OR Apache-2.0 |
@@ -363,7 +369,6 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `once_cell` | 1.21.3 | MIT OR Apache-2.0 |
 | `once_cell` | 1.21.3 | MIT OR Apache-2.0 |
 | `once_cell_polyfill` | 1.70.1 | MIT OR Apache-2.0 |
-| `opaque-debug` | 0.3.1 | MIT OR Apache-2.0 |
 | `openssl-probe` | 0.2.1 | MIT OR Apache-2.0 |
 | `option-ext` | 0.2.0 | MPL-2.0 |
 | `ordered-stream` | 0.2.0 | MIT OR Apache-2.0 |
@@ -372,7 +377,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `parking_lot_core` | 0.9.11 | MIT OR Apache-2.0 |
 | `paste` | 1.0.15 | MIT OR Apache-2.0 |
 | `pastey` | 0.1.1 | MIT OR Apache-2.0 |
-| `pbkdf2` | 0.12.2 | MIT OR Apache-2.0 |
+| `pbkdf2` | 0.13.0 | MIT OR Apache-2.0 |
 | `percent-encoding` | 2.3.2 | MIT OR Apache-2.0 |
 | `phf` | 0.11.3 | MIT |
 | `phf` | 0.13.1 | MIT |
@@ -382,39 +387,35 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `phf_generator` | 0.13.1 | MIT |
 | `phf_shared` | 0.11.3 | MIT |
 | `phf_shared` | 0.13.1 | MIT |
-| `pin-project-lite` | 0.2.16 | Apache-2.0 OR MIT |
+| `pin-project-lite` | 0.2.17 | Apache-2.0 OR MIT |
 | `pin-utils` | 0.1.0 | MIT OR Apache-2.0 |
 | `piper` | 0.2.5 | MIT OR Apache-2.0 |
 | `pkg-config` | 0.3.32 | MIT OR Apache-2.0 |
 | `pkg-config` | 0.3.32 | MIT OR Apache-2.0 |
 | `polling` | 3.11.0 | Apache-2.0 OR MIT |
 | `pollster` | 0.4.0 | Apache-2.0 OR MIT |
-| `poly1305` | 0.8.0 | Apache-2.0 OR MIT |
+| `poly1305` | 0.9.1 | Apache-2.0 OR MIT |
 | `potential_utf` | 0.1.3 | Unicode-3.0 |
 | `powerfmt` | 0.2.0 | MIT OR Apache-2.0 |
 | `ppv-lite86` | 0.2.21 | MIT OR Apache-2.0 |
 | `precomputed-hash` | 0.1.1 | MIT |
 | `prettyplease` | 0.2.37 | MIT OR Apache-2.0 |
 | `proc-macro-crate` | 3.4.0 | MIT OR Apache-2.0 |
-| `proc-macro-error-attr2` | 2.0.0 | MIT OR Apache-2.0 |
-| `proc-macro-error2` | 2.0.1 | MIT OR Apache-2.0 |
-| `proc-macro2` | 1.0.101 | MIT OR Apache-2.0 |
+| `proc-macro2` | 1.0.107 | MIT OR Apache-2.0 |
 | `prost` | 0.14.4 | Apache-2.0 |
 | `prost-derive` | 0.14.4 | Apache-2.0 |
 | `pulldown-cmark` | 0.12.2 | MIT |
 | `pulldown-cmark` | 0.13.0 | MIT |
 | `pulldown-cmark-escape` | 0.11.0 | MIT |
-| `quote` | 1.0.40 | MIT OR Apache-2.0 |
+| `quote` | 1.0.47 | MIT OR Apache-2.0 |
 | `r-efi` | 5.3.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
 | `r-efi` | 6.0.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
 | `rand` | 0.8.5 | MIT OR Apache-2.0 |
-| `rand` | 0.9.2 | MIT OR Apache-2.0 |
-| `rand` | 0.10.1 | MIT OR Apache-2.0 |
+| `rand` | 0.10.2 | MIT OR Apache-2.0 |
 | `rand_chacha` | 0.3.1 | MIT OR Apache-2.0 |
-| `rand_chacha` | 0.9.0 | MIT OR Apache-2.0 |
 | `rand_core` | 0.6.4 | MIT OR Apache-2.0 |
 | `rand_core` | 0.9.3 | MIT OR Apache-2.0 |
-| `rand_core` | 0.10.0 | MIT OR Apache-2.0 |
+| `rand_core` | 0.10.1 | MIT OR Apache-2.0 |
 | `rand_xoshiro` | 0.7.0 | MIT OR Apache-2.0 |
 | `rangemap` | 1.6.0 | MIT OR Apache-2.0 |
 | `raw-window-handle` | 0.6.2 | MIT OR Apache-2.0 OR Zlib |
@@ -422,13 +423,13 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `readlock-tokio` | 0.1.4 | MPL-2.0 |
 | `redox_syscall` | 0.5.17 | MIT |
 | `redox_users` | 0.5.2 | MIT |
-| `regex` | 1.12.2 | MIT OR Apache-2.0 |
-| `regex-automata` | 0.4.13 | MIT OR Apache-2.0 |
-| `regex-syntax` | 0.8.6 | MIT OR Apache-2.0 |
+| `regex` | 1.13.1 | MIT OR Apache-2.0 |
+| `regex-automata` | 0.4.18 | MIT OR Apache-2.0 |
+| `regex-syntax` | 0.8.11 | MIT OR Apache-2.0 |
 | `reqwest` | 0.13.2 | MIT OR Apache-2.0 |
 | `rfd` | 0.17.2 | MIT |
 | `rmp` | 0.8.14 | MIT |
-| `rmp-serde` | 1.3.0 | MIT |
+| `rmp-serde` | 1.3.1 | MIT |
 | `robius-android-env` | 0.2.0 | MIT |
 | `robius-common` | 0.3.1 | MIT |
 | `robius-directories` | 6.0.1 | MIT OR Apache-2.0 |
@@ -446,11 +447,11 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `ruma-html` | 0.8.0 | MIT |
 | `ruma-identifiers-validation` | 0.12.1 | MIT |
 | `ruma-macros` | 0.19.0 | MIT |
-| `rusqlite` | 0.37.0 | MIT |
+| `rusqlite` | 0.40.2 | MIT |
 | `rustc-hash` | 1.1.0 | Apache-2.0 OR MIT |
 | `rustc-hash` | 2.1.1 | Apache-2.0 OR MIT |
 | `rustc_version` | 0.4.1 | MIT OR Apache-2.0 |
-| `rustix` | 1.1.2 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
+| `rustix` | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | `rustls` | 0.23.37 | Apache-2.0 OR MIT OR ISC |
 | `rustls-native-certs` | 0.8.3 | Apache-2.0 OR ISC OR MIT |
 | `rustls-pki-types` | 1.14.0 | MIT OR Apache-2.0 |
@@ -460,6 +461,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `rustversion` | 1.0.22 | MIT OR Apache-2.0 |
 | `rustybuzz` | 0.18.0 | MIT |
 | `ryu` | 1.0.20 | Apache-2.0 OR BSL-1.0 |
+| `safe_arch` | 0.7.4 | Zlib OR Apache-2.0 OR MIT |
 | `same-file` | 1.0.6 | Unlicense OR MIT |
 | `sanitize-filename` | 0.6.0 | MIT |
 | `schannel` | 0.1.28 | MIT |
@@ -470,77 +472,79 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `security-framework` | 3.5.0 | MIT OR Apache-2.0 |
 | `security-framework-sys` | 2.15.0 | MIT OR Apache-2.0 |
 | `semver` | 1.0.27 | MIT OR Apache-2.0 |
-| `serde` | 1.0.228 | MIT OR Apache-2.0 |
-| `serde_bytes` | 0.11.17 | MIT OR Apache-2.0 |
-| `serde_core` | 1.0.228 | MIT OR Apache-2.0 |
-| `serde_derive` | 1.0.228 | MIT OR Apache-2.0 |
-| `serde_html_form` | 0.4.0 | MIT |
-| `serde_json` | 1.0.149 | MIT OR Apache-2.0 |
+| `serde` | 1.0.229 | MIT OR Apache-2.0 |
+| `serde_bytes` | 0.11.19 | MIT OR Apache-2.0 |
+| `serde_core` | 1.0.229 | MIT OR Apache-2.0 |
+| `serde_derive` | 1.0.229 | MIT OR Apache-2.0 |
+| `serde_html_form` | 0.4.1 | MIT |
+| `serde_json` | 1.0.151 | MIT OR Apache-2.0 |
 | `serde_path_to_error` | 0.1.20 | MIT OR Apache-2.0 |
 | `serde_repr` | 0.1.21 | MIT OR Apache-2.0 |
 | `serde_spanned` | 1.1.1 | MIT OR Apache-2.0 |
 | `serde_urlencoded` | 0.7.1 | MIT OR Apache-2.0 |
+| `serdect` | 0.4.3 | Apache-2.0 OR MIT |
 | `sha2` | 0.10.9 | MIT OR Apache-2.0 |
+| `sha2` | 0.11.0 | MIT OR Apache-2.0 |
 | `sharded-slab` | 0.1.7 | MIT |
 | `shlex` | 1.3.0 | MIT OR Apache-2.0 |
 | `signal-hook-registry` | 1.4.6 | Apache-2.0 OR MIT |
-| `signature` | 2.2.0 | Apache-2.0 OR MIT |
+| `signature` | 3.0.0 | Apache-2.0 OR MIT |
 | `simd-adler32` | 0.3.9 | MIT |
 | `siphasher` | 1.0.1 | MIT OR Apache-2.0 |
 | `slab` | 0.4.11 | MIT |
 | `smallvec` | 1.15.1 | MIT OR Apache-2.0 |
 | `smallvec` | 1.15.1 | MIT OR Apache-2.0 |
-| `socket2` | 0.6.0 | MIT OR Apache-2.0 |
+| `socket2` | 0.6.5 | MIT OR Apache-2.0 |
 | `spirv` | 0.3.0+sdk-1.3.268.0 | Apache-2.0 |
 | `stable_deref_trait` | 1.2.0 | MIT OR Apache-2.0 |
 | `string_cache` | 0.9.0 | MIT OR Apache-2.0 |
 | `string_cache_codegen` | 0.6.1 | MIT OR Apache-2.0 |
 | `strsim` | 0.11.1 | MIT |
 | `subtle` | 2.6.1 | BSD-3-Clause |
-| `syn` | 2.0.106 | MIT OR Apache-2.0 |
+| `syn` | 2.0.119 | MIT OR Apache-2.0 |
 | `syn` | 3.0.3 | MIT OR Apache-2.0 |
 | `sync_wrapper` | 1.0.2 | Apache-2.0 |
 | `synstructure` | 0.13.2 | MIT |
-| `tempfile` | 3.23.0 | MIT OR Apache-2.0 |
+| `tempfile` | 3.27.0 | MIT OR Apache-2.0 |
 | `tendril` | 0.5.0 | MIT OR Apache-2.0 |
 | `thiserror` | 1.0.69 | MIT OR Apache-2.0 |
 | `thiserror` | 2.0.18 | MIT OR Apache-2.0 |
-| `thiserror` | 2.0.18 | MIT OR Apache-2.0 |
+| `thiserror` | 2.0.20 | MIT OR Apache-2.0 |
 | `thiserror-impl` | 1.0.69 | MIT OR Apache-2.0 |
 | `thiserror-impl` | 2.0.18 | MIT OR Apache-2.0 |
-| `thiserror-impl` | 2.0.18 | MIT OR Apache-2.0 |
+| `thiserror-impl` | 2.0.20 | MIT OR Apache-2.0 |
 | `thread_local` | 1.1.9 | MIT OR Apache-2.0 |
-| `time` | 0.3.47 | MIT OR Apache-2.0 |
-| `time-core` | 0.1.8 | MIT OR Apache-2.0 |
+| `time` | 0.3.55 | MIT OR Apache-2.0 |
+| `time-core` | 0.1.9 | MIT OR Apache-2.0 |
 | `tinystr` | 0.8.1 | Unicode-3.0 |
 | `tinyvec` | 1.10.0 | Zlib OR Apache-2.0 OR MIT |
 | `tinyvec_macros` | 0.1.1 | MIT OR Apache-2.0 OR Zlib |
-| `tokio` | 1.49.0 | MIT |
-| `tokio-macros` | 2.6.0 | MIT |
+| `tokio` | 1.53.1 | MIT |
+| `tokio-macros` | 2.7.2 | MIT |
 | `tokio-rustls` | 0.26.3 | MIT OR Apache-2.0 |
-| `tokio-stream` | 0.1.17 | MIT |
-| `tokio-util` | 0.7.18 | MIT |
+| `tokio-stream` | 0.1.19 | MIT |
+| `tokio-util` | 0.7.19 | MIT |
 | `toml` | 1.1.2+spec-1.1.0 | MIT OR Apache-2.0 |
 | `toml_datetime` | 0.7.3 | MIT OR Apache-2.0 |
 | `toml_datetime` | 1.1.1+spec-1.1.0 | MIT OR Apache-2.0 |
 | `toml_edit` | 0.23.4 | MIT OR Apache-2.0 |
 | `toml_parser` | 1.1.2+spec-1.1.0 | MIT OR Apache-2.0 |
 | `toml_writer` | 1.1.1+spec-1.1.0 | MIT OR Apache-2.0 |
-| `tower` | 0.5.2 | MIT |
+| `tower` | 0.5.3 | MIT |
 | `tower-http` | 0.6.8 | MIT |
 | `tower-layer` | 0.3.3 | MIT |
 | `tower-service` | 0.3.3 | MIT |
-| `tracing` | 0.1.41 | MIT |
-| `tracing-attributes` | 0.1.30 | MIT |
-| `tracing-core` | 0.1.34 | MIT |
+| `tracing` | 0.1.44 | MIT |
+| `tracing-attributes` | 0.1.31 | MIT |
+| `tracing-core` | 0.1.36 | MIT |
 | `tracing-log` | 0.2.0 | MIT |
-| `tracing-subscriber` | 0.3.20 | MIT |
+| `tracing-subscriber` | 0.3.23 | MIT |
 | `try-lock` | 0.2.5 | MIT |
 | `ttf-parser` | 0.24.1 | MIT OR Apache-2.0 |
-| `typenum` | 1.18.0 | MIT OR Apache-2.0 |
+| `typenum` | 1.20.1 | MIT OR Apache-2.0 |
 | `typewit` | 1.14.2 | Zlib |
 | `uds_windows` | 1.2.1 | MIT |
-| `ulid` | 1.2.1 | MIT |
+| `ulid` | 3.0.0 | MIT |
 | `unicase` | 2.8.1 | MIT OR Apache-2.0 |
 | `unicase` | 2.9.0 | MIT OR Apache-2.0 |
 | `unicode-bidi` | 0.3.18 | MIT OR Apache-2.0 |
@@ -552,15 +556,15 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `unicode-properties` | 0.1.4 | MIT OR Apache-2.0 |
 | `unicode-script` | 0.5.8 | MIT OR Apache-2.0 |
 | `unicode-segmentation` | 1.12.0 | MIT OR Apache-2.0 |
-| `unicode-segmentation` | 1.12.0 | MIT OR Apache-2.0 |
-| `universal-hash` | 0.5.1 | MIT OR Apache-2.0 |
+| `unicode-segmentation` | 1.13.3 | MIT OR Apache-2.0 |
+| `universal-hash` | 0.6.1 | MIT OR Apache-2.0 |
 | `untrusted` | 0.9.0 | ISC |
-| `url` | 2.5.7 | MIT OR Apache-2.0 |
+| `url` | 2.5.8 | MIT OR Apache-2.0 |
 | `urlencoding` | 2.1.3 | MIT |
 | `utf-8` | 0.7.6 | MIT OR Apache-2.0 |
 | `utf8_iter` | 1.0.4 | Apache-2.0 OR MIT |
 | `utf8parse` | 0.2.2 | Apache-2.0 OR MIT |
-| `uuid` | 1.18.1 | Apache-2.0 OR MIT |
+| `uuid` | 1.26.0 | Apache-2.0 OR MIT |
 | `vcpkg` | 0.2.15 | MIT OR Apache-2.0 |
 | `version_check` | 0.9.5 | MIT OR Apache-2.0 |
 | `vodozemac` | 0.10.0 | Apache-2.0 |
@@ -569,23 +573,23 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `wasi` | 0.11.1+wasi-snapshot-preview1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | `wasi` | 0.14.7+wasi-0.2.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | `wasip2` | 1.0.1+wasi-0.2.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| `wasip3` | 0.4.0+wasi-0.3.0-rc-2026-01-06 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| `wasm-bindgen` | 0.2.117 | MIT OR Apache-2.0 |
-| `wasm-bindgen-futures` | 0.4.67 | MIT OR Apache-2.0 |
-| `wasm-bindgen-macro` | 0.2.117 | MIT OR Apache-2.0 |
-| `wasm-bindgen-macro-support` | 0.2.117 | MIT OR Apache-2.0 |
-| `wasm-bindgen-shared` | 0.2.117 | MIT OR Apache-2.0 |
+| `wasm-bindgen` | 0.2.128 | MIT OR Apache-2.0 |
+| `wasm-bindgen-futures` | 0.4.78 | MIT OR Apache-2.0 |
+| `wasm-bindgen-macro` | 0.2.128 | MIT OR Apache-2.0 |
+| `wasm-bindgen-macro-support` | 0.2.128 | MIT OR Apache-2.0 |
+| `wasm-bindgen-shared` | 0.2.128 | MIT OR Apache-2.0 |
 | `wasm-streams` | 0.5.0 | MIT OR Apache-2.0 |
 | `wayland-backend` | 0.3.12 | MIT |
 | `wayland-client` | 0.31.12 | MIT |
 | `wayland-egl` | 0.32.9 | MIT |
 | `wayland-protocols` | 0.32.10 | MIT |
 | `wayland-sys` | 0.31.8 | MIT |
-| `web-sys` | 0.3.94 | MIT OR Apache-2.0 |
+| `web-sys` | 0.3.105 | MIT OR Apache-2.0 |
 | `web-time` | 1.1.0 | MIT OR Apache-2.0 |
 | `web_atoms` | 0.2.3 | MIT OR Apache-2.0 |
 | `webpki-root-certs` | 1.0.6 | CDLA-Permissive-2.0 |
 | `weezl` | 0.1.12 | MIT OR Apache-2.0 |
+| `wide` | 0.7.33 | Zlib OR Apache-2.0 OR MIT |
 | `wildmatch` | 2.6.1 | MIT |
 | `winapi-util` | 0.1.11 | Unlicense OR MIT |
 | `windows` | 0.56.0 | MIT OR Apache-2.0 |
@@ -613,51 +617,41 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `windows-strings` | 0.5.1 | MIT OR Apache-2.0 |
 | `windows-sys` | 0.45.0 | MIT OR Apache-2.0 |
 | `windows-sys` | 0.52.0 | MIT OR Apache-2.0 |
-| `windows-sys` | 0.59.0 | MIT OR Apache-2.0 |
 | `windows-sys` | 0.60.2 | MIT OR Apache-2.0 |
 | `windows-sys` | 0.61.1 | MIT OR Apache-2.0 |
 | `windows-targets` | 0.42.2 | MIT OR Apache-2.0 |
-| `windows-targets` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows-targets` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows-targets` | 0.53.4 | MIT OR Apache-2.0 |
 | `windows-threading` | 0.1.0 | MIT OR Apache-2.0 |
 | `windows_aarch64_gnullvm` | 0.42.2 | MIT OR Apache-2.0 |
-| `windows_aarch64_gnullvm` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_aarch64_gnullvm` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows_aarch64_gnullvm` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_aarch64_msvc` | 0.42.2 | MIT OR Apache-2.0 |
-| `windows_aarch64_msvc` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_aarch64_msvc` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows_aarch64_msvc` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_i686_gnu` | 0.42.2 | MIT OR Apache-2.0 |
-| `windows_i686_gnu` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_i686_gnu` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows_i686_gnu` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_i686_gnullvm` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows_i686_gnullvm` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_i686_msvc` | 0.42.2 | MIT OR Apache-2.0 |
-| `windows_i686_msvc` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_i686_msvc` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows_i686_msvc` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_x86_64_gnu` | 0.42.2 | MIT OR Apache-2.0 |
-| `windows_x86_64_gnu` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_x86_64_gnu` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows_x86_64_gnu` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_x86_64_gnullvm` | 0.42.2 | MIT OR Apache-2.0 |
-| `windows_x86_64_gnullvm` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_x86_64_gnullvm` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows_x86_64_gnullvm` | 0.53.0 | MIT OR Apache-2.0 |
 | `windows_x86_64_msvc` | 0.42.2 | MIT OR Apache-2.0 |
-| `windows_x86_64_msvc` | 0.48.5 | MIT OR Apache-2.0 |
 | `windows_x86_64_msvc` | 0.52.6 | MIT OR Apache-2.0 |
 | `windows_x86_64_msvc` | 0.53.0 | MIT OR Apache-2.0 |
 | `winnow` | 0.7.13 | MIT |
 | `winnow` | 1.0.1 | MIT |
 | `winresource` | 0.1.31 | MIT |
 | `wit-bindgen` | 0.46.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| `wit-bindgen` | 0.51.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | `writeable` | 0.6.1 | Unicode-3.0 |
-| `x25519-dalek` | 2.0.1 | BSD-3-Clause |
+| `x25519-dalek` | 3.0.0 | BSD-3-Clause |
 | `xxhash-rust` | 0.8.15 | BSL-1.0 |
 | `yoke` | 0.8.0 | Unicode-3.0 |
 | `yoke-derive` | 0.8.0 | Unicode-3.0 |
@@ -669,8 +663,8 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `zerocopy` | 0.8.39 | BSD-2-Clause OR Apache-2.0 OR MIT |
 | `zerofrom` | 0.1.6 | Unicode-3.0 |
 | `zerofrom-derive` | 0.1.6 | Unicode-3.0 |
-| `zeroize` | 1.8.2 | Apache-2.0 OR MIT |
-| `zeroize_derive` | 1.4.2 | Apache-2.0 OR MIT |
+| `zeroize` | 1.9.0 | Apache-2.0 OR MIT |
+| `zeroize_derive` | 1.5.0 | Apache-2.0 OR MIT |
 | `zerotrie` | 0.2.2 | Unicode-3.0 |
 | `zerovec` | 0.11.4 | Unicode-3.0 |
 | `zerovec-derive` | 0.11.1 | Unicode-3.0 |
