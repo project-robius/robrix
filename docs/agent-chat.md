@@ -45,6 +45,21 @@ Robrix is a presentation surface only. It never decides authorization:
   binding field, expiry, and single-use consumption. Text replies are not
   approvals; the card says so.
 
+## Wire namespace compatibility
+
+The protocol was designed under `com.agentchat.*`, and that is what upstream
+robrix2 and the hagency master parse. **Deployed forks rename the wire
+namespace**, and a real soak against a live HAFleet deployment (v1.2.0) found it
+emits `com.hafleet.approval.request.v1` with content key `com.hafleet.approval`
+and no `com.agentchat.*` compatibility. A `com.agentchat.*`-only client renders
+nothing against it.
+
+This client is therefore namespace-agnostic (`Namespace` in
+`src/agent_chat/approval.rs`): it accepts `com.agentchat.*`, `com.hafleet.*`, and
+`com.hagency.*` for requests, status and verdicts, and **sends the verdict back
+under the same namespace the request arrived in** — the wire name is the
+bridge's to choose, not the client's.
+
 ## Wire format
 
 Request (`com.agentchat.approval.request.v1`), under the `com.agentchat.approval` key:
@@ -117,7 +132,7 @@ ends with `/gq` so it never leaves a test window behind.
 > correct gate is `all(not(headless), target_vendor = "apple")`. This is an
 > upstream makepad bug, not a robrix one; the remote bridge avoids it entirely.
 
-### Soak results (local Palpo, 2026-09-10)
+### Soak results
 
 Against a real Palpo homeserver with real accounts, a bridge account posting a
 genuine 4-action request, and the client driven through the remote bridge:
@@ -130,6 +145,16 @@ genuine 4-action request, and the client driven through the remote bridge:
   Decided and put a real `com.agentchat.approval.verdict.v1` on the server,
   sent by the logged-in owner, echoing the `request_id` and `action`.
 - An expired request rendered as **Expired** with its buttons withdrawn.
+
+Against the **real HAFleet deployment on the remote mini** (2026-09-11):
+
+- **6/6** server-side checks on the live backend's approval state machine: owner
+  binding, forged-sender verdict rejected (`senderMxid_mismatch`), tampered-digest
+  rejected (`inputDigest_mismatch`), owner verdict approved, replayed verdict
+  rejected (`not_pending`), and verdict without the bridge secret refused (403).
+- The live bridge's `buildOwnerApprovalRequest` emits the `com.hafleet.*`
+  namespace; this client, made namespace-agnostic, renders it and approves it
+  (**3/3** UI checks, verdict returned as `com.hafleet.approval.verdict.v1`).
 
 Known cosmetic nit: the decided-state receipt uses `✓` (U+2713), which the
 bundled font substitutes with a similar glyph.

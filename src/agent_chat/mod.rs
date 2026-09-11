@@ -103,9 +103,11 @@ mod tests {
 
     #[test]
     fn approval_msgtypes_are_recognised_by_the_timeline_filter() {
-        assert!(is_approval_timeline_event(&sync_event(approval::APPROVAL_REQUEST_MSGTYPE)));
-        assert!(is_approval_timeline_event(&sync_event(approval::APPROVAL_STATUS_MSGTYPE)));
-        assert!(is_approval_timeline_event(&sync_event(approval::APPROVAL_VERDICT_MSGTYPE)));
+        for ns in approval::Namespace::ALL {
+            assert!(is_approval_timeline_event(&sync_event(&ns.request_msgtype())));
+            assert!(is_approval_timeline_event(&sync_event(&ns.status_msgtype())));
+            assert!(is_approval_timeline_event(&sync_event(&ns.verdict_msgtype())));
+        }
         // Unrelated custom msgtypes stay subject to the SDK's default filter.
         assert!(!is_approval_timeline_event(&sync_event("com.agentchat.something.else")));
         assert!(!is_approval_timeline_event(&sync_event("m.text")));

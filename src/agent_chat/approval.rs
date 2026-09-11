@@ -25,25 +25,63 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use matrix_sdk::ruma::{EventId, OwnedEventId};
 
-/// The content key holding the structured approval payload.
-pub const APPROVAL_EVENT_KEY: &str = "com.agentchat.approval";
-/// msgtype of an owner approval request (sent by the bridge into the approval room).
-pub const APPROVAL_REQUEST_MSGTYPE: &str = "com.agentchat.approval.request.v1";
-/// msgtype of the redacted public status notice (sent by the agent into the project room).
-pub const APPROVAL_STATUS_MSGTYPE: &str = "com.agentchat.approval.status.v1";
-/// msgtype of the verdict this client sends in reply to a request.
-pub const APPROVAL_VERDICT_MSGTYPE: &str = "com.agentchat.approval.verdict.v1";
+/// The wire namespace an approval event uses.
+///
+/// The protocol was designed under `com.agentchat.*`, but deployed forks rename
+/// it: the HAFleet deployment ships `com.hafleet.*`, and older builds used
+/// `com.hagency.*`. The event key and the three msgtypes are all derived from a
+/// single base, so this client accepts every known base and, crucially, sends a
+/// verdict back under the *same* namespace the request arrived in — the wire
+/// name is the bridge's to choose, not ours. A real soak against a live HAFleet
+/// bridge is what surfaced this: a `com.agentchat.*`-only client renders nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Namespace(&'static str);
+
+impl Namespace {
+    /// Every namespace base this client recognises, in preference order.
+    pub const ALL: [Namespace; 3] = [
+        Namespace("com.agentchat"),
+        Namespace("com.hafleet"),
+        Namespace("com.hagency"),
+    ];
+
+    /// The default namespace for events this client originates unprompted
+    /// (there are none today; verdicts always echo the request's namespace).
+    pub const DEFAULT: Namespace = Namespace("com.agentchat");
+
+    /// The base string, e.g. `com.agentchat`.
+    pub fn base(self) -> &'static str {
+        self.0
+    }
+
+    /// The structured-content key, e.g. `com.agentchat.approval`.
+    pub fn event_key(self) -> String {
+        format!("{}.approval", self.0)
+    }
+
+    /// The request / status / verdict msgtype for this namespace.
+    pub fn request_msgtype(self) -> String { format!("{}.approval.request.v1", self.0) }
+    pub fn status_msgtype(self) -> String { format!("{}.approval.status.v1", self.0) }
+    pub fn verdict_msgtype(self) -> String { format!("{}.approval.verdict.v1", self.0) }
+
+    /// The namespace a request/status/verdict msgtype belongs to, if any.
+    pub fn of_msgtype(msgtype: &str) -> Option<Namespace> {
+        Self::ALL.into_iter().find(|ns| {
+            msgtype == ns.request_msgtype()
+                || msgtype == ns.status_msgtype()
+                || msgtype == ns.verdict_msgtype()
+        })
+    }
+}
 
 /// The most decision buttons a request may carry:
 /// `approve_once`, `approve_task`, `approve_always`, `deny`.
 pub const MAX_APPROVAL_ACTIONS: usize = 4;
 
-/// Returns `true` if `msgtype` is one of the three agent-chat approval msgtypes.
+/// Returns `true` if `msgtype` is an approval request/status/verdict msgtype in
+/// any recognised namespace.
 pub fn is_approval_msgtype(msgtype: &str) -> bool {
-    matches!(
-        msgtype,
-        APPROVAL_REQUEST_MSGTYPE | APPROVAL_STATUS_MSGTYPE | APPROVAL_VERDICT_MSGTYPE
-    )
+    Namespace::of_msgtype(msgtype).is_some()
 }
 
 /// The visual style the bridge asked for on a decision button.
@@ -100,6 +138,8 @@ pub struct ApprovalRequest {
     pub reusable_scope: Option<ReusableScope>,
     /// The decision buttons, in the order the bridge listed them.
     pub actions: Vec<ApprovalAction>,
+    /// The wire namespace this request arrived under; the verdict echoes it.
+    pub namespace: Namespace,
 }
 
 impl ApprovalRequest {
@@ -154,9 +194,9 @@ impl ApprovalRequest {
         source_event_id: &EventId,
     ) -> serde_json::Value {
         serde_json::json!({
-            "msgtype": APPROVAL_VERDICT_MSGTYPE,
+            "msgtype": self.namespace.verdict_msgtype(),
             "body": action.label,
-            APPROVAL_EVENT_KEY: {
+            self.namespace.event_key(): {
                 "version": 1,
                 "kind": "verdict",
                 "agent": self.agent,
@@ -249,10 +289,12 @@ fn parse_reusable_scope(approval: &serde_json::Value) -> Option<ReusableScope> {
 /// `m.room.message` event. Returns `None` for anything that isn't a
 /// well-formed `com.agentchat.approval.request.v1`.
 pub fn parse_approval_request(content: &serde_json::Value) -> Option<ApprovalRequest> {
-    if content.get("msgtype").and_then(|value| value.as_str()) != Some(APPROVAL_REQUEST_MSGTYPE) {
+    let msgtype = content.get("msgtype")?.as_str()?;
+    let namespace = Namespace::of_msgtype(msgtype)?;
+    if msgtype != namespace.request_msgtype() {
         return None;
     }
-    let approval = content.get(APPROVAL_EVENT_KEY)?;
+    let approval = content.get(&namespace.event_key())?;
     if approval.get("version").and_then(|value| value.as_u64()) != Some(1)
         || approval.get("kind").and_then(|value| value.as_str()) != Some("request")
     {
@@ -315,6 +357,7 @@ pub fn parse_approval_request(content: &serde_json::Value) -> Option<ApprovalReq
         expires_at_millis,
         reusable_scope,
         actions,
+        namespace,
     })
 }
 
@@ -325,13 +368,17 @@ pub fn parse_approval_request(content: &serde_json::Value) -> Option<ApprovalReq
 /// a request whose card could not be parsed.
 pub fn custom_message_body(content: &serde_json::Value) -> Option<&str> {
     let msgtype = content.get("msgtype")?.as_str()?;
-    let expected_kind = match msgtype {
-        APPROVAL_REQUEST_MSGTYPE => "request",
-        APPROVAL_STATUS_MSGTYPE => "status",
-        APPROVAL_VERDICT_MSGTYPE => "verdict",
-        _ => return None,
+    let namespace = Namespace::of_msgtype(msgtype)?;
+    let expected_kind = if msgtype == namespace.request_msgtype() {
+        "request"
+    } else if msgtype == namespace.status_msgtype() {
+        "status"
+    } else if msgtype == namespace.verdict_msgtype() {
+        "verdict"
+    } else {
+        return None;
     };
-    let approval = content.get(APPROVAL_EVENT_KEY)?;
+    let approval = content.get(&namespace.event_key())?;
     if approval.get("version").and_then(|value| value.as_u64()) != Some(1)
         || approval.get("kind").and_then(|value| value.as_str()) != Some(expected_kind)
     {
@@ -364,7 +411,9 @@ impl ApprovalMessage {
             .or_else(|| content.get("body")?.as_str())
             .unwrap_or_default()
             .to_owned();
-        if msgtype == APPROVAL_REQUEST_MSGTYPE {
+        let is_request = Namespace::of_msgtype(msgtype)
+            .is_some_and(|ns| msgtype == ns.request_msgtype());
+        if is_request {
             Some(match parse_approval_request(content) {
                 Some(request) => Self::Request(Box::new(request)),
                 None => Self::MalformedRequest { body },
@@ -480,6 +529,11 @@ impl ApprovalUiState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const APPROVAL_EVENT_KEY: &str = "com.agentchat.approval";
+    const APPROVAL_REQUEST_MSGTYPE: &str = "com.agentchat.approval.request.v1";
+    const APPROVAL_STATUS_MSGTYPE: &str = "com.agentchat.approval.status.v1";
+    const APPROVAL_VERDICT_MSGTYPE: &str = "com.agentchat.approval.verdict.v1";
 
     const REQUEST_ID: &str = "approval_0123456789abcdef0123456789abcdef";
     const DIGEST: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -703,6 +757,40 @@ mod tests {
         let source = EventId::parse("$beHFiq3AIRAqZd60zYi7EKb5clojKKZybfHXLR3GKI0").unwrap();
         let built = request.verdict_content(request.action("approve_once").unwrap(), &source);
         assert_eq!(built, stored);
+    }
+
+    #[test]
+    fn accepts_the_hafleet_namespace_and_echoes_it_in_the_verdict() {
+        // The exact shape a live HAFleet bridge emits (com.hafleet.*), captured
+        // from the deployment's own `buildOwnerApprovalRequest`.
+        let content = serde_json::json!({
+            "msgtype": "com.hafleet.approval.request.v1",
+            "body": "Approval required for octos-01",
+            "com.hafleet.approval": {
+                "version": 1, "kind": "request",
+                "agent": "octos-01", "project": "robrix2-soak",
+                "project_room_id": "!soakproj:palpo.test",
+                "request_id": REQUEST_ID, "upstream_request_id": "soak-1ad2fd",
+                "input_digest": DIGEST, "runtime": "claude",
+                "tool_name": "Bash", "description": "Run the library tests",
+                "input_preview": "cargo test --lib", "expires_at": 1_000u64,
+                "actions": [
+                    { "id": "approve_once", "label": "Approve once", "style": "primary" },
+                    { "id": "deny", "label": "Deny", "style": "danger" }
+                ]
+            }
+        });
+        assert!(is_approval_msgtype("com.hafleet.approval.request.v1"));
+        assert!(is_approval_msgtype("com.hagency.approval.status.v1"));
+        let request = parse_approval_request(&content).expect("hafleet request parses");
+        assert_eq!(request.namespace.base(), "com.hafleet");
+        // The verdict MUST go back under the same namespace the request used, or
+        // the HAFleet bridge (which reads only com.hafleet.*) ignores it.
+        let source = EventId::parse("$req:palpo.test").unwrap();
+        let verdict = request.verdict_content(request.action("approve_once").unwrap(), &source);
+        assert_eq!(verdict["msgtype"], "com.hafleet.approval.verdict.v1");
+        assert_eq!(verdict["com.hafleet.approval"]["request_id"], REQUEST_ID);
+        assert!(verdict.get("com.agentchat.approval").is_none());
     }
 
     #[test]
