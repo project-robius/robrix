@@ -33,23 +33,58 @@ script_mod! {
         ..mod.widgets.NavigationBarButton
 
         // `height + (2 * margin)`` must equal NAVIGATION_TAB_BAR_SIZE to avoid clipping
-        width: (NAVIGATION_TAB_BAR_SIZE - 4),
-        height: (NAVIGATION_TAB_BAR_SIZE - 4),
+        width: (NAVIGATION_TAB_BAR_SIZE - 12),
+        height: (NAVIGATION_TAB_BAR_SIZE - 12),
         // Flow.Overlay (rather than Down) so that the invisible `space_name` Label
         // doesn't sit in the avatar's flow column and shift its centering.
         flow: Overlay
-        padding: 4,
-        margin: 2,
+        padding: (SPACE_XS),
+        margin: Inset{top: 3, bottom: 3, left: (SPACE_XS), right: (SPACE_XS)},
         align: Align{x: 0.5, y: 0.5}
         // Don't clip (cut-off) the invite badge's glow
         clip_x: false, clip_y: false
 
+        // Teal selection wash on the navy rail (robrix2 spaces rail): translucent
+        // accent on hover/active, plus a teal bar on the left edge when selected.
+        draw_bg +: {
+            color_hover: (RBX_ACCENT_WASH_HOVER)
+            color_active: (RBX_ACCENT_WASH_ACTIVE)
+            accent_color: instance((RBX_ACCENT))
+            border_radius: (RBX_RADIUS_SM)
+
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                sdf.box(
+                    self.border_inset.x + self.border_size,
+                    self.border_inset.y + self.border_size,
+                    self.rect_size.x - (self.border_inset.x + self.border_inset.z + self.border_size * 2.0),
+                    self.rect_size.y - (self.border_inset.y + self.border_inset.w + self.border_size * 2.0),
+                    max(1.0, self.border_radius)
+                )
+                sdf.fill_keep(self.get_color())
+                if self.border_size > 0.0 {
+                    sdf.stroke(self.border_color, self.border_size)
+                }
+                let bar_inset = 14.0
+                sdf.box(
+                    0.0,
+                    bar_inset,
+                    3.0,
+                    self.rect_size.y - bar_inset * 2.0,
+                    1.5
+                )
+                sdf.fill(mix(vec4(0.0, 0.0, 0.0, 0.0), self.accent_color, self.active))
+                return sdf.result;
+            }
+        }
+
         avatar := Avatar {
             width: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE
             height: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE
-            // If no avatar picture, use white text on a dark background.
+            // If no avatar picture, use white text on the teal identity square
+            // (RBX_IDENTITY_TEAL), which reads well on the dark rail.
             text_view +: {
-                draw_bg.color: (COLOR_FG_DISABLED),
+                draw_bg.color: (RBX_IDENTITY_TEAL),
                 text +: {
                     draw_text +: {
                         text_style: theme.font_regular { font_size: mod.widgets.NAVIGATION_TAB_BAR_AVATAR_FONT_SIZE },
@@ -69,7 +104,7 @@ script_mod! {
             max_lines: 1
             text_overflow: Ellipsis
             draw_text +: {
-                color: (COLOR_NAVIGATION_TAB_FG)
+                color: (RBX_NAV_FG)
                 text_style: REGULAR_TEXT {font_size: 9}
             }
         }
@@ -103,7 +138,8 @@ script_mod! {
             flow: Flow.Right{wrap: true},
             align: Align{ x: 0.5 }
             draw_text +: {
-                color: (MESSAGE_TEXT_COLOR),
+                // Light nav-rail foreground: this label sits on the navy rail.
+                color: (RBX_NAV_FG),
                 text_style: REGULAR_TEXT {font_size: 8, line_spacing: 1.1}
             }
         }
@@ -137,7 +173,10 @@ script_mod! {
         Desktop := View {
             align: Align{x: 0.5, y: 0.5}
             padding: 0,
-            width: (NAVIGATION_TAB_BAR_SIZE), 
+            // Fill the rail's content width; a fixed NAVIGATION_TAB_BAR_SIZE here
+            // overflows the rail's padded area and pushes the avatars off-center
+            // vs the Home/Add buttons.
+            width: Fill,
             height: Fill
 
             CachedWidget {

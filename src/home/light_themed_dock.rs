@@ -103,8 +103,8 @@ script_mod! {
         width: 10.0
         margin: Inset{ right: theme.space_2, left: -1 }
         draw_button +: {
-            color: #0
-            color_hover: #FE8610
+            color: (RBX_FG_SECONDARY)
+            color_hover: (RBX_DANGER_FG)
             color_active: COLOR_PRIMARY
         }
 
@@ -135,28 +135,31 @@ script_mod! {
 
         align: Align{x: 0.0, y: 0.5}
         padding: 9
-        margin: 0
+        // 1px bottom inset so the tab bar's bottom border line runs
+        // continuously beneath every tab (including the active one).
+        margin: Inset{bottom: 1}
 
         close_button: mod.widgets.RobrixTabCloseButton {}
         draw_text +: {
             text_style: theme.font_regular {}
 
-            color: #000
-            color_hover: #fe8610
-            color_active: COLOR_PRIMARY
+            // Unified palette: dark text on the neutral unselected tab, white on the
+            // teal selected tab. (No more orange hover text.)
+            color: (RBX_FG_PRIMARY)
+            color_hover: (RBX_FG_PRIMARY)
+            color_active: (COLOR_PRIMARY)
         }
 
         draw_bg +: {
-            // Light blue-ish color, de-saturated from COLOR_ACTIVE_PRIMARY
-            color: #E1EEFA
-            color_2: #E1EEFA
-            // A slightly darker shade of the tab color for hover visibility
-            color_hover: #C8DDEF
-            color_2_hover: #C8DDEF
-            // Active (selected) tabs are a deeper blue, with a vertical gradient
-            // to a slightly lighter blue.
-            color_active: #0660FE
-            color_2_active: #398CFE
+            // Unselected tabs: subtle neutral surface. Selected tab: the teal
+            // accent (RBX_ACCENT), the unified UI selection color. Flat fills
+            // (no vertical gradient).
+            color: (RBX_BG_SURFACE_SUBTLE)
+            color_2: (RBX_BG_SURFACE_SUBTLE)
+            color_hover: (RBX_BG_HOVER)
+            color_2_hover: (RBX_BG_HOVER)
+            color_active: (RBX_ACCENT)
+            color_2_active: (RBX_ACCENT)
             // Remove the border and rounded corners from the default Tab style
             border_size: 0.0
             border_radius: 3.0
@@ -214,11 +217,33 @@ script_mod! {
             draw_depth: 10
             color: #x0
         }
+        // Both layers are drawn FLAT with a 1px bottom border, replacing the
+        // theme's built-in bottom "shadow". draw_bg covers the whole bar;
+        // draw_fill covers the area after the last tab, so both need the same
+        // fill + border for a seamless bar.
         draw_fill +: {
-            color: COLOR_PRIMARY * 0.96
+            color: (RBX_BG_SURFACE_SUBTLE)
+            border_color: (RBX_STROKE_STRONG)
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                sdf.rect(0., 0., self.rect_size.x, self.rect_size.y)
+                sdf.fill(self.color)
+                sdf.rect(0., self.rect_size.y - 1.0, self.rect_size.x, 1.0)
+                sdf.fill(self.border_color)
+                return sdf.result
+            }
         }
         draw_bg +: {
-            color: COLOR_PRIMARY * 0.96
+            color: (RBX_BG_SURFACE_SUBTLE)
+            border_color: (RBX_STROKE_STRONG)
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                sdf.rect(0., 0., self.rect_size.x, self.rect_size.y)
+                sdf.fill(self.color)
+                sdf.rect(0., self.rect_size.y - 1.0, self.rect_size.x, 1.0)
+                sdf.fill(self.border_color)
+                return sdf.result
+            }
         }
 
         width: Fill
