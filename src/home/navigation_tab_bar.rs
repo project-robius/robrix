@@ -89,9 +89,13 @@ script_mod! {
                     self.rect_size.y - (self.border_inset.y + self.border_inset.w + self.border_size * 2.0),
                     max(1.0, self.border_radius)
                 )
-                sdf.fill_keep(self.get_color())
+                // `fill_keep` leaves the pill in the sdf shape, and `box` unions with it,
+                // so the accent bar below would flood the whole pill. `fill`/`stroke` reset it.
                 if self.border_size > 0.0 {
+                    sdf.fill_keep(self.get_color())
                     sdf.stroke(self.border_color, self.border_size)
+                } else {
+                    sdf.fill(self.get_color())
                 }
                 // Teal selection bar on the left edge, shown only when active.
                 let bar_inset = 12.0
