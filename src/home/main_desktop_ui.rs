@@ -3,7 +3,7 @@ use ruma::OwnedRoomId;
 use tokio::sync::Notify;
 use std::{collections::{HashMap, HashSet}, sync::Arc};
 
-use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, utils::RoomNameId};
+use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, shared::speech_text_input::cancel_all_dictation, utils::RoomNameId};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::{AcceptedInviteKind, RoomsListAction}, spaces_bar::SpacesBarAction};
 
 script_mod! {
@@ -163,6 +163,13 @@ impl MainDesktopUI {
             dock.select_tab(cx, id!(home_tab));
             cx.action(AppStateAction::FocusNone);
             self.most_recently_selected_room = None;
+        }
+    }
+
+    /// Cancels dictation unless `room` is already shown, since showing it hides the current tab.
+    fn cancel_dictation_unless_shown(&self, room: &SelectedRoom) {
+        if self.most_recently_selected_room.as_ref() != Some(room) {
+            cancel_all_dictation();
         }
     }
 
@@ -546,7 +553,9 @@ impl WidgetMatchEvent for MainDesktopUI {
                     self.switch_dock_to_space(cx, app_state, None);
                 }
                 cx.action(NavigationBarAction::GoToHome);
-                self.focus_or_create_tab(cx, SelectedRoom::InvitedRoom { room_name_id: space_name_id });
+                let invite = SelectedRoom::InvitedRoom { room_name_id: space_name_id };
+                self.cancel_dictation_unless_shown(&invite);
+                self.focus_or_create_tab(cx, invite);
                 continue;
             }
 
@@ -572,6 +581,12 @@ impl WidgetMatchEvent for MainDesktopUI {
             match widget_action.cast() {
                 // Whenever a tab (except for the home_tab) is pressed, notify the app state.
                 DockAction::TabWasPressed(tab_id) => {
+                    // Switching tabs hides whatever the user was dictating into.
+                    let current_tab_id = self.most_recently_selected_room.as_ref()
+                        .map_or(id!(home_tab), SelectedRoom::tab_id);
+                    if tab_id != current_tab_id {
+                        cancel_all_dictation();
+                    }
                     if tab_id == id!(home_tab) {
                         self.select_room(cx, None);
                     }
@@ -622,6 +637,7 @@ impl WidgetMatchEvent for MainDesktopUI {
             // Handle RoomsList actions, which are updates from the rooms list.
             match widget_action.cast_ref() {
                 RoomsListAction::Selected(selected_room) => {
+                    self.cancel_dictation_unless_shown(selected_room);
                     // Note that this cannot be performed within draw_walk() as the draw flow prevents from
                     // performing actions that would trigger a redraw, and the Dock internally performs (and expects)
                     // a redraw to be happening in order to draw the tab content.

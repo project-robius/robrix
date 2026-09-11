@@ -20,6 +20,8 @@ pub mod progress_bar;
 pub mod room_filter_input_bar;
 pub mod room_input_popup_menu;
 pub mod slash_commands;
+mod speech_input;
+pub mod speech_text_input;
 pub mod styles;
 pub mod text_or_image;
 pub mod timestamp;
@@ -35,6 +37,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     styles::script_mod(vm);
     helpers::script_mod(vm);
     icon_button::script_mod(vm);
+    speech_text_input::script_mod(vm);
     context_menu::script_mod(vm);
     navigation_bar_button::script_mod(vm);
     expand_arrow::script_mod(vm);

@@ -19,15 +19,13 @@
 
 
 use std::sync::Arc;
-use makepad_widgets::*;
-use robius_speech::{NativeSpeechEvent, NativeSpeechSession, Replacement, SpeechErrorKind};
-use super::speech_input::{SpeechInput, SpeechPhase};
+use makepad_widgets::{text::selection::Cursor, *};
 use matrix_sdk::room::RoomMember;
 use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId, OwnedTransactionId};
-use crate::{block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, rooms_list::RoomsListRef, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::{UploadProgressViewWidgetRefExt, UploadState}}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, location::init_location_subscriber, profile::user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, room::BasicRoomDetails, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, slash_commands::{SlashCommandAction, SlashCommandOutcome}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, rooms_list::RoomsListRef, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::{UploadProgressViewWidgetRefExt, UploadState}}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, location::init_location_subscriber, profile::user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, room::BasicRoomDetails, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, slash_commands::{SlashCommandAction, SlashCommandOutcome}, speech_text_input::{SpeechTextInputWidgetExt, SpeechTextInputWidgetRefExt}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 use crate::room::reply_preview::CollapsiblePreviewWidgetRefExt;
 
 script_mod! {
@@ -112,80 +110,14 @@ script_mod! {
 
                 mentionable_text_input := MentionableTextInput {
                     width: Fill,
-                    flow: Overlay,
                     margin: Inset {
                         top: 3, // add some space between the top border of the text input and the top border of the room input bar
                         bottom: 5.75, // to line up the middle of the text input with the middle of the buttons
                         left: 3, right: 3 // to give a bit of breathing room between the text input and the buttons on the sides
                     },
 
-                    text_input := RobrixTextInput {
-                        empty_text: "Write a message (in Markdown) ..."
-                        is_multiline: true,
-                        // Reserve the microphone's gutter so it never overlaps the draft.
-                        padding: Inset{top: 10, bottom: 10, left: 10, right: 48}
-                    }
-
-                    speech_overlay := View {
-                        width: Fill, height: Fill
-                        align: Align{x: 1.0, y: 1.0}
-                        // No vertical padding: the button is nearly as tall as a
-                        // single-line input, so any would push it past the bottom edge.
-                        padding: Inset{top: 0, bottom: 0, left: 4, right: 4}
-
-                        // One widget for both states: the icon at rest, a meter while recording.
-                        speech_button := RobrixIconButton {
-                            width: 32, height: 32
-                            padding: 7
-                            spacing: 0
-                            grab_key_focus: false
-                            enable_long_press: false
-                            icon_walk: Walk{width: 18, height: 18}
-                            draw_icon +: {
-                                svg: crate_resource("self://resources/icons/microphone.svg")
-                                color: #333
-                            }
-                            draw_bg +: {
-                                color: #0000
-                                color_hover: #xE0E8F0
-                                color_down: #xD0D8E8
-                                // Set from Rust: 1.0 while recording, plus the three
-                                // most recent microphone levels, each normalized 0..=1.
-                                recording: instance(0.0)
-                                level_0: instance(0.0)
-                                level_1: instance(0.0)
-                                level_2: instance(0.0)
-                                bar_color: instance(vec4(1.0, 1.0, 1.0, 1.0))
-                                pixel: fn() {
-                                    let sdf = Sdf2d.viewport(self.pos * self.rect_size)
-                                    // Same state blend the stock button face uses.
-                                    let face = mix(
-                                        mix(self.color, self.color_hover, self.hover),
-                                        self.color_down,
-                                        self.down
-                                    )
-                                    sdf.box(0.5, 0.5, self.rect_size.x - 1.0, self.rect_size.y - 1.0, self.border_radius)
-                                    sdf.fill(face)
-                                    if self.recording > 0.5 {
-                                        // Three bars, centred in the button by construction.
-                                        let bar = 3.0
-                                        let gap = 3.0
-                                        let x = (self.rect_size.x - (bar * 3.0 + gap * 2.0)) * 0.5
-                                        let middle = self.rect_size.y * 0.5
-                                        let h0 = 4.0 + self.level_0 * 13.0
-                                        let h1 = 4.0 + self.level_1 * 13.0
-                                        let h2 = 4.0 + self.level_2 * 13.0
-                                        sdf.box(x, middle - h0 * 0.5, bar, h0, 1.5)
-                                        sdf.fill(self.bar_color)
-                                        sdf.box(x + bar + gap, middle - h1 * 0.5, bar, h1, 1.5)
-                                        sdf.fill(self.bar_color)
-                                        sdf.box(x + (bar + gap) * 2.0, middle - h2 * 0.5, bar, h2, 1.5)
-                                        sdf.fill(self.bar_color)
-                                    }
-                                    return sdf.result
-                                }
-                            }
-                        }
+                    speech_text_input +: {
+                        text_input +: { empty_text: "Write a message (in Markdown) ..." }
                     }
                 }
 
@@ -266,26 +198,6 @@ pub struct RoomInputBar {
     #[rust] timeline_kind: Option<TimelineKind>,
     /// The widget UID of the RoomScreen containing this RoomInputBar.
     #[rust] room_screen_widget_uid: Option<WidgetUid>,
-    /// The currently-running speech-to-text dictation session.
-    #[rust] speech: Option<SpeechInput>,
-    /// What the microphone button is currently displaying.
-    #[rust] speech_controls: SpeechControls,
-}
-
-/// The microphone buttons current display state.
-#[derive(Default, PartialEq)]
-pub(super) struct SpeechControls {
-    /// Whether this platform has STT recognition at all.
-    /// * `Some(true)` if speech input is supported and available.
-    /// * `Some(false)` if speech input is not supported or available.
-    /// * `None` if it's unknown.
-    pub supported: Option<bool>,
-    /// The phase being shown, or `None` when no session is running
-    pub phase: Option<SpeechPhase>,
-    /// The three most recent microphone level samples, oldest first.
-    /// These determine the height/amplitude of the three bars that are drawn
-    /// in place of the microphone icon as a little sound waveform.
-    pub levels: Option<[f32; 3]>,
 }
 
 impl ScriptHook for RoomInputBar {
@@ -295,27 +207,12 @@ impl ScriptHook for RoomInputBar {
             self.mentionable_text_input(cx, ids!(mentionable_text_input))
                 .text_input_ref()
                 .set_submit_on_enter(send_on_enter);
-            self.initialize_speech_controls(cx);
         });
     }
 }
 
 impl Widget for RoomInputBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // Pressing `Escape` will stop speech recording/recognition regardless of key focus.
-        let should_end_speech = matches!(event, Event::KeyDown(KeyEvent { key_code: KeyCode::Escape, .. }))
-            && matches!(self.speech_phase(), Some(SpeechPhase::Listening) | Some(SpeechPhase::Starting));
-        if should_end_speech {
-            match self.speech.as_mut() {
-                Some(speech) if speech.phase == SpeechPhase::Listening => speech.stop(),
-                _ => self.cancel_dictation(cx),
-            }
-            self.update_speech_controls(cx);
-            return;
-        }
-
-        self.handle_speech_event(cx, event);
-
         match event.hits(cx, self.view.widget(cx, ids!(replying_preview.reply_preview_content)).area()) {
             // If the hit occurred on the replying message preview, jump to it.
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
@@ -344,30 +241,6 @@ impl Widget for RoomInputBar {
         }
 
         self.view.handle_event(cx, event, scope);
-
-        // Now that the text in the input bar is up to date (after handling this event),
-        // we can add any dictated words to it.
-        // But we still wait if an IME is composing, or the user is dragging a selection
-        // since we don't want those two things to conflict.
-        if self.speech.is_some() {
-            let input = self.mentionable_text_input(cx, ids!(mentionable_text_input)).text_input_ref();
-            if input.is_composing() || cx.fingers.is_area_captured(input.area()) {
-                if let Some(speech) = self.speech.as_mut() {
-                    speech.dictation.interrupt();
-                }
-            } else {
-                let selection = input.selection();
-                let replacement = self.speech.as_mut().and_then(|speech| {
-                    speech.dictation.settle(&input.text(), selection.start().index..selection.end().index)
-                });
-                if let Some(replacement) = replacement {
-                    self.apply_replacement(cx, replacement);
-                }
-                if self.speech.as_ref().is_some_and(|speech| speech.ended) {
-                    self.cancel_dictation(cx);
-                }
-            }
-        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -415,167 +288,9 @@ impl Widget for RoomInputBar {
 }
 
 impl RoomInputBar {
-    fn initialize_speech_controls(&mut self, cx: &mut Cx) {
-        static IS_SPEECH_SUPPORTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let is_speech_supported = *IS_SPEECH_SUPPORTED.get_or_init(|| {
-            let supported = NativeSpeechSession::is_supported();
-            log!("Native speech-to-text input is {} (engine: {}).",
-                if supported { "available" } else { "unavailable" },
-                robius_speech::engine_name(),
-            );
-            supported
-        });
-        self.apply_speech_support(cx, is_speech_supported);
-    }
-
-    /// Puts a dictated replacement text snippet into the text input.
-    ///
-    /// This goes into the message box as an ordinary series of undo-able text edits.
-    fn apply_replacement(&mut self, cx: &mut Cx, replacement: Replacement) {
-        let mentionable = self.mentionable_text_input(cx, ids!(mentionable_text_input));
-        let undo = if replacement.continues { text_input::UndoGroup::Extend } else { text_input::UndoGroup::New };
-        match mentionable.text_input_ref().replace_range(cx, replacement.range, &replacement.text, undo) {
-            Ok(()) => {
-                if let Some(speech) = self.speech.as_mut() {
-                    speech.dictation.applied();
-                }
-            }
-            // If the text replacement was refused due to a live IME composition or the input filter,
-            // nothing gets lost, so no worries.
-            // The next transcript will still include the same words that weren't applied.
-            Err(error) => log!("Speech input could not update the draft: {error:?}"),
-        }
-        self.redraw(cx);
-    }
-
-    /// Show or hide the microphone button for speech-to-text recognition.
-    fn apply_speech_support(&mut self, cx: &mut Cx, is_speech_supported: bool) {
-        self.speech_controls.supported = Some(is_speech_supported);
-        self.view(cx, ids!(speech_overlay)).set_visible(cx, is_speech_supported);
-        if !is_speech_supported {
-            let mut input = self.mentionable_text_input(cx, ids!(mentionable_text_input)).text_input_ref();
-            script_apply_eval!(cx, input, {padding: 10});
-        }
-    }
-
-    /// Stop and discard any pending speech-to-text callbacks (with recognition text results).
-    ///
-    /// Any already-displayed text will stay in the text input.
+    /// Stops any speech-to-text dictation; words already in the message stay there.
     fn cancel_dictation(&mut self, cx: &mut Cx) {
-        self.speech = None;
-        self.update_speech_controls(cx);
-    }
-
-    /// Returns the phase of the current speech recognition session, if one is running.
-    fn speech_phase(&self) -> Option<SpeechPhase> {
-        self.speech.as_ref().filter(|speech| !speech.ended).map(|speech| speech.phase)
-    }
-
-    fn update_speech_controls(&mut self, cx: &mut Cx) {
-        let new_phase = self.speech_phase();
-        let levels = self.speech.as_ref().map(|speech| speech.levels);
-        // Starting or ending a session completely re-styles the whole button;
-        // a phase change only affects the tooltip, so only that needs redrawing.
-        let is_active = new_phase.is_some();
-        if is_active != self.speech_controls.phase.is_some() {
-            let bg = if is_active { vec4(0.08, 0.08, 0.08, 1.0) } else { vec4(0.0, 0.0, 0.0, 0.0) };
-            let hover = if is_active { vec4(0.25, 0.25, 0.25, 1.0) } else { vec4(0.88, 0.91, 0.94, 1.0) };
-            // The soundwave animation replaces the icon rather than sitting beside it,
-            // so we just hide the microphone icon while recording.
-            let icon = if is_active { vec4(0.0, 0.0, 0.0, 0.0) } else { vec4(0.2, 0.2, 0.2, 1.0) };
-            let recording = if is_active { 1.0 } else { 0.0 };
-            let mut button = self.button(cx, ids!(speech_button));
-            script_apply_eval!(cx, button, {
-                draw_icon +: {color: #(icon)}
-                draw_bg +: {
-                    color: #(bg), color_hover: #(hover), color_down: #(hover),
-                    recording: #(recording)
-                }
-            });
-            self.redraw(cx);
-        }
-        if new_phase != self.speech_controls.phase {
-            self.speech_controls.phase = new_phase;
-            self.redraw(cx);
-        }
-        if levels != self.speech_controls.levels {
-            self.speech_controls.levels = levels;
-            if let Some(levels) = levels {
-                let mut button = self.button(cx, ids!(speech_button));
-                script_apply_eval!(cx, button, {
-                    draw_bg +: {level_0: #(levels[0]), level_1: #(levels[1]), level_2: #(levels[2])}
-                });
-            }
-        }
-    }
-
-    fn handle_speech_event(&mut self, cx: &mut Cx, event: &Event) {
-        // Leaving the room or the app ends dictation. Typing in the message box does not.
-        let switched_tab = if let Event::Actions(actions) = event {
-            actions.iter().any(|action| matches!(action.as_widget_action().cast(), DockAction::TabWasPressed(_)))
-        } else { false };
-        if self.speech.is_some() {
-            if switched_tab || matches!(event, Event::Background | Event::Shutdown) {
-                self.cancel_dictation(cx);
-            } else if let Some(speech) = self.speech.as_mut() {
-                // This event may be about to change the message text, and we read new
-                // speech results below, before it gets there. So hold the words back.
-                speech.dictation.interrupt();
-            }
-        }
-        let events = self.speech.as_mut().map(|speech| speech.poll()).unwrap_or_default();
-        for event in events {
-            match event {
-                NativeSpeechEvent::Transcript { text, is_final } => {
-                    // Returns nothing while held: the keystroke hasn't reached the text
-                    // input yet, so writing now would drag the caret out from under it.
-                    let Some(speech) = self.speech.as_mut() else { break };
-                    if let Some(replacement) = speech.dictation.transcript(&text, is_final) {
-                        self.apply_replacement(cx, replacement);
-                    }
-                }
-                // The session is dropped once this event has been dispatched, so
-                // a final utterance that arrived alongside its end still lands.
-                NativeSpeechEvent::Stopped => {
-                    if let Some(speech) = self.speech.as_mut() { speech.ended = true; }
-                    break;
-                }
-                NativeSpeechEvent::Error(error) => {
-                    if let Some(speech) = self.speech.as_mut() { speech.ended = true; }
-                    // Only hide the microphone once the recognizer is really gone:
-                    // Unavailable can also mean something retryable, like lost network.
-                    if error.kind() == SpeechErrorKind::Unavailable
-                        && !NativeSpeechSession::is_supported()
-                    {
-                        self.apply_speech_support(cx, false);
-                    }
-                    enqueue_popup_notification(format!("Speech input: {error}"), PopupKind::Error, Some(8.0));
-                    break;
-                }
-                _ => {}
-            }
-        }
-        self.update_speech_controls(cx);
-
-        let area = self.button(cx, ids!(speech_button)).area();
-        match event.hits(cx, area) {
-            Hit::FingerHoverIn(_) => {
-                cx.widget_action(self.widget_uid(), TooltipAction::HoverIn {
-                    // Name the shortcut only while it does something, and name what
-                    // it does: while finishing there is nothing left for it to stop.
-                    text: match self.speech_phase() {
-                        Some(SpeechPhase::Listening) => "Stop speech input (Esc)",
-                        Some(SpeechPhase::Starting) => "Cancel speech input (Esc)",
-                        Some(SpeechPhase::Finishing) => "Finishing transcription…",
-                        None => "Dictate a message",
-                    }.into(),
-                    widget_rect: area.rect(cx),
-                    options: CalloutTooltipOptions { position: TooltipPosition::Top, ..Default::default() },
-                });
-            }
-            Hit::FingerHoverOut(_) => cx.widget_action(self.widget_uid(), TooltipAction::HoverOut),
-            _ => {}
-        }
+        self.speech_text_input(cx, ids!(mentionable_text_input.speech_text_input)).cancel_dictation(cx);
     }
 
     fn handle_actions(
@@ -585,26 +300,6 @@ impl RoomInputBar {
     ) {
         let mentionable_text_input = self.mentionable_text_input(cx, ids!(mentionable_text_input));
         let text_input = mentionable_text_input.text_input_ref();
-
-        // Handle a click on the microphone button, which starts or stops speech-to-text dictation.
-        if self.button(cx, ids!(speech_button)).clicked(actions)
-            && self.view(cx, ids!(input_bar)).visible()
-            && !self.editing_pane(cx, ids!(editing_pane)).is_currently_shown(cx)
-            && self.timeline_kind.is_some()
-        {
-            match self.speech_phase() {
-                Some(SpeechPhase::Listening) => self.speech.as_mut().unwrap().stop(),
-                Some(_) => self.cancel_dictation(cx),
-                None => {
-                    text_input.set_key_focus(cx);
-                    match SpeechInput::start(&text_input) {
-                        Ok(speech) => self.speech = Some(speech),
-                        Err(error) => enqueue_popup_notification(format!("Speech input: {error}"), PopupKind::Error, Some(8.0)),
-                    }
-                }
-            }
-            self.update_speech_controls(cx);
-        }
 
         for action in actions {
             // Handle changes to the `send_on_enter` preference.
@@ -947,12 +642,21 @@ impl RoomInputBar {
                 };
                 let mentionable_text_input = self.mentionable_text_input(cx, ids!(mentionable_text_input));
                 let existing = mentionable_text_input.text();
-                let new_text = if existing.trim().is_empty() {
+                let was_draft_blank = existing.trim().is_empty();
+                let new_text = if was_draft_blank {
                     restored
                 } else {
                     format!("{existing}\n{restored}")
                 };
                 mentionable_text_input.set_text(cx, &new_text);
+                // A blank draft leaves the caret at the start, so move it after the restored message.
+                if was_draft_blank {
+                    mentionable_text_input.text_input_ref().set_cursor(
+                        cx,
+                        Cursor { index: new_text.len(), prefer_next_row: false },
+                        false,
+                    );
+                }
                 self.enable_send_message_button(cx, true);
             }
         }
@@ -1319,9 +1023,7 @@ impl RoomInputBarRef {
             mentionable_input_state: inner.child_by_path(ids!(input_bar.mentionable_text_input)).as_mentionable_text_input().save_state(),
             upload: inner.child_by_path(ids!(upload_progress_view)).as_upload_progress_view().save_state(),
         };
-        if let Some(speech) = &inner.speech {
-            speech.cancel();
-        }
+        inner.child_by_path(ids!(mentionable_text_input.speech_text_input)).as_speech_text_input().release_microphone();
         // Clear the location preview. We don't save this state because the
         // current location might change by the next time the user opens this same room.
         inner.child_by_path(ids!(location_preview)).as_location_preview().clear();
