@@ -1,10 +1,11 @@
-//! A local slice of robrix2's `RBX_*` design-token layer, for the agent-chat surfaces.
+//! A local slice of robrix2's `RBX_*` design-token layer.
 //!
 //! robrix2 styles every screen through a semantic token layer
 //! (`src/shared/design_tokens.rs` there, governed by `docs/ui-visual-spec-zh.md`).
 //! Upstream Robrix has no such layer, so the agent-chat card and badges would
 //! otherwise fall back to upstream's older look and hardcoded colours. This
-//! module defines just the tokens those surfaces use, with the values copied
+//! module defines just the tokens the surfaces ported from robrix2 use (the
+//! agent-chat card and badges, and the account menu), with the values copied
 //! verbatim from robrix2, under the same `RBX_*` names — so if the full design
 //! system is ever ported, these definitions are simply deleted and every
 //! reference resolves to the real thing unchanged.
@@ -36,8 +37,10 @@ script_mod! {
     mod.widgets.RBX_ACCENT_PRESSED = #x085460
     mod.widgets.RBX_ACCENT_SOFT    = #xE4F5F7
 
-    // ── Strokes ──────────────────────────────────────────────────────────
+    // ── Strokes & scrims ─────────────────────────────────────────────────
     mod.widgets.RBX_STROKE_STRONG = #xD5DEEA
+    mod.widgets.RBX_DIVIDER       = #x00000010
+    mod.widgets.RBX_SCRIM         = #x16233B80
 
     // ── Semantic status pairs (fg on bg) ─────────────────────────────────
     mod.widgets.RBX_SUCCESS_FG = #x197F45
@@ -54,6 +57,7 @@ script_mod! {
     mod.widgets.RBX_RADIUS_MD    = 6.0
     mod.widgets.RBX_RADIUS_PILL  = 100.0
     mod.widgets.RBX_CONTROL_H_MD = 36.0
+    mod.widgets.RBX_ICON_LG      = 24.0
 
     // ── Typography ───────────────────────────────────────────────────────
     mod.widgets.RBX_TEXT_CARD_TITLE  = theme.font_bold    { font_size: 12.0, line_spacing: 1.3 }

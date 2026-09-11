@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     block_user_modal::{BlockUserModalAction, BlockUserModalWidgetRefExt},
     avatar_cache::clear_avatar_cache, room_preview_cache::clear_room_preview_cache, home::{
+        account_menu::{AccountMenuAction, AccountMenuWidgetRefExt},
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
@@ -85,6 +86,10 @@ script_mod! {
                         // but behind verification modals.
                         new_message_context_menu := NewMessageContextMenu { }
                         room_context_menu := RoomContextMenu { }
+
+                        // The account menu popup, anchored at the desktop rail's
+                        // bottom-left button. Same self-positioning overlay pattern.
+                        account_menu := AccountMenu { }
 
                         // A modal to confirm sending out an invite to a room.
                         invite_confirmation_modal := Modal {
@@ -334,6 +339,27 @@ impl MatchEvent for App {
                 let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
                 let margin = menu_position_margin(rect, abs_pos, expected_dimensions);
                 let mut main_content_view = new_message_context_menu.view(cx, ids!(main_content));
+                script_apply_eval!(cx, main_content_view, {
+                    margin: #(margin)
+                });
+                self.ui.redraw(cx);
+                continue;
+            }
+
+            // Handle an action requesting to open the account menu. Unlike the context
+            // menus, `pos` is the desired BOTTOM-left corner of the card (the button sits
+            // low in the rail), so we subtract the card height to grow it upward.
+            if let Some(AccountMenuAction::Open { pos }) = action.downcast_ref::<AccountMenuAction>() {
+                self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
+                let account_menu = self.ui.account_menu(cx, ids!(account_menu));
+                let expected_dimensions = account_menu.show(cx);
+                let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
+                let pos_x = (pos.x - rect.pos.x).min(rect.size.x - expected_dimensions.x).max(0.0);
+                let pos_y = (pos.y - expected_dimensions.y - rect.pos.y)
+                    .min(rect.size.y - expected_dimensions.y)
+                    .max(0.0);
+                let margin = Inset { left: pos_x, top: pos_y, right: 0.0, bottom: 0.0 };
+                let mut main_content_view = account_menu.view(cx, ids!(main_content));
                 script_apply_eval!(cx, main_content_view, {
                     margin: #(margin)
                 });

@@ -1,5 +1,6 @@
 use makepad_widgets::ScriptVm;
 
+pub mod account_menu;
 pub mod add_room;
 pub mod edited_indicator;
 pub mod editing_pane;
@@ -60,6 +61,8 @@ pub fn script_mod(vm: &mut ScriptVm) {
     light_themed_dock::script_mod(vm);
     main_desktop_ui::script_mod(vm);
     spaces_bar::script_mod(vm);
+    // `account_menu` only depends on base + shared widgets; it must precede the rail.
+    account_menu::script_mod(vm);
     navigation_tab_bar::script_mod(vm);
     upload_progress::script_mod(vm);
     // Keep HomeScreen last, it references many widgets registered above.

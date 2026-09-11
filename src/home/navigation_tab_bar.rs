@@ -34,6 +34,7 @@
 use makepad_widgets::*;
 use serde::{Deserialize, Serialize};
 use crate::{
+    home::account_menu::{is_desktop_layout, AccountMenuAction},
     avatar_cache::{self, AvatarCacheEntry},
     login::login_screen::LoginAction,
     logout::logout_confirm_modal::LogoutAction,
@@ -151,6 +152,26 @@ script_mod! {
         }
     }
 
+    // The bottom rail item that opens the account menu (ported from robrix2). A plain
+    // icon button, NOT a second ProfileIcon: the menu is an action, not the user's
+    // avatar, and this keeps the rail's icon language consistent with Home / "+".
+    // The top avatar keeps opening Settings directly.
+    mod.widgets.AccountSwitcherButton = mod.widgets.NavigationTabButton {
+        tooltip_text: "Account"
+        Icon {
+            margin: 0,
+            icon_walk: Walk {
+                margin: 0,
+                width: (mod.widgets.RBX_ICON_LG),
+                height: (mod.widgets.RBX_ICON_LG)
+            }
+            draw_icon +: {
+                color: (COLOR_NAVIGATION_TAB_FG)
+                svg: (mod.widgets.ICON_PEOPLE)
+            }
+        }
+    }
+
     // Built on `NavigationTabButton` so it shares the size/padding and
     // hover animation. Its toggling is independent of navigation selection,
     // so the parent never calls `set_selected` on it.
@@ -204,6 +225,14 @@ script_mod! {
 
             CachedWidget {
                 root_spaces_bar := mod.widgets.SpacesBar {}
+            }
+
+            mod.widgets.Separator {}
+
+            // Bottom-left account menu button. The spaces bar above is height: Fill,
+            // which pins this to the very bottom of the rail.
+            CachedWidget {
+                account_switcher_button := mod.widgets.AccountSwitcherButton {}
             }
         }
 
@@ -553,6 +582,17 @@ impl Widget for NavigationTabBar {
                     self.apply_selected_tab(cx, Some(SelectedTab::Settings));
                     cx.action(NavigationBarAction::OpenSettings);
                 }
+            }
+
+            // The bottom account button opens the AccountMenu, anchored so the card's
+            // BOTTOM-left sits at the button's bottom-right (the App grows it upward).
+            if is_desktop_layout(cx)
+                && self.view.navigation_bar_button(cx, ids!(account_switcher_button)).clicked(actions)
+            {
+                let rect = self.view.widget(cx, ids!(account_switcher_button)).area().rect(cx);
+                cx.action(AccountMenuAction::Open {
+                    pos: dvec2(rect.pos.x + rect.size.x + 4.0, rect.pos.y + rect.size.y),
+                });
             }
 
             if self.view.navigation_bar_button(cx, ids!(toggle_spaces_bar_button)).clicked(actions) {
