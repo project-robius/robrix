@@ -21,6 +21,7 @@ script_mod! {
     use mod.widgets.*
 
     // ── Surfaces ─────────────────────────────────────────────────────────
+    mod.widgets.RBX_BG_CANVAS    = #xF7F9FC
     mod.widgets.RBX_BG_SURFACE   = #xFFFFFF
     mod.widgets.RBX_BG_HOVER     = #xEFF4FB
     mod.widgets.RBX_BG_PRESSED   = #xE7ECF3
@@ -30,6 +31,7 @@ script_mod! {
     mod.widgets.RBX_FG_PRIMARY   = #x16233B
     mod.widgets.RBX_FG_SECONDARY = #x5A6B86
     mod.widgets.RBX_FG_DISABLED  = #xAEB7C6
+    mod.widgets.RBX_FG_ON_ACCENT = #xFFFFFF
 
     // ── Accent (teal) ────────────────────────────────────────────────────
     mod.widgets.RBX_ACCENT         = #x0D7988
@@ -53,13 +55,21 @@ script_mod! {
     mod.widgets.RBX_NEUTRAL_BG = #xEEF1F6
 
     // ── Shape & size ─────────────────────────────────────────────────────
+    mod.widgets.RBX_RADIUS_XS    = 4.0
     mod.widgets.RBX_RADIUS_SM    = 6.0
     mod.widgets.RBX_RADIUS_MD    = 6.0
     mod.widgets.RBX_RADIUS_PILL  = 100.0
     mod.widgets.RBX_CONTROL_H_MD = 36.0
     mod.widgets.RBX_ICON_LG      = 24.0
 
+    // ── Spacing (robrix2 styles.rs) ──────────────────────────────────────
+    mod.widgets.SPACE_XS = 4
+    mod.widgets.SPACE_SM = 8
+    mod.widgets.SPACE_MD = 12
+    mod.widgets.SETTINGS_CONTENT_PADDING = 16
+
     // ── Typography ───────────────────────────────────────────────────────
+    mod.widgets.RBX_TEXT_PAGE_TITLE  = theme.font_bold    { font_size: 17.0, line_spacing: 1.25 }
     mod.widgets.RBX_TEXT_CARD_TITLE  = theme.font_bold    { font_size: 12.0, line_spacing: 1.3 }
     mod.widgets.RBX_TEXT_BODY        = theme.font_regular { font_size: 11.0, line_spacing: 1.35 }
     mod.widgets.RBX_TEXT_BODY_STRONG = theme.font_bold    { font_size: 11.0, line_spacing: 1.35 }
