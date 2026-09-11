@@ -44,7 +44,7 @@ futures = "0.3"
 imbl = { version = "7.0.1", features = ["serde"] } # same as matrix-sdk-ui
 futures-util = "0.3"
 hashbrown = { version = "0.16", features = ["raw-entry"] }
-htmlize = { version = "1.0.5", features = ["unescape"] }
+htmlize = { version = "1.1", features = ["unescape"] }
 indexmap = "2.6.0"
 libc = "0.2"
 mime = "0.3"
