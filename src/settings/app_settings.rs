@@ -457,6 +457,9 @@ script_mod! {
                 body: "" // set dynamically, see `MARK_AS_READ_DESC_*`
             }
         }
+
+        // Empty in builds without the `agent_chat` feature.
+        agent_chat_preferences := mod.widgets.AgentChatPreferences {}
     }
 }
 
@@ -664,6 +667,22 @@ impl AppSettings {
             }
         }
 
+        #[cfg(feature = "agent_chat")]
+        {
+            let agent_chat_toggle = self.view.check_box(cx, ids!(agent_chat_preferences.agent_chat_toggle));
+            if let Some(enabled) = agent_chat_toggle.changed(actions) {
+                if enabled != app_state.app_prefs.agent_chat_enabled {
+                    app_state.app_prefs.agent_chat_enabled = enabled;
+                    app_state.app_prefs.on_agent_chat_enabled_changed(cx);
+                    enqueue_popup_notification(
+                        if enabled { "Enabled agent-chat workflow commands." } else { "Disabled agent-chat workflow commands." },
+                        PopupKind::Success,
+                        Some(3.0),
+                    );
+                }
+            }
+        }
+
         let show_receipts_toggle = self.view.check_box(cx, ids!(show_read_receipts_toggle));
         if let Some(show) = show_receipts_toggle.changed(actions) {
             if show != app_state.app_prefs.show_read_receipts {
@@ -730,6 +749,9 @@ impl AppSettings {
 
         self.view.check_box(cx, ids!(show_read_receipts_toggle))
             .set_active(cx, prefs.show_read_receipts, Animate::No);
+        #[cfg(feature = "agent_chat")]
+        self.view.check_box(cx, ids!(agent_chat_preferences.agent_chat_toggle))
+            .set_active(cx, prefs.agent_chat_enabled, Animate::No);
 
         let (small, medium, large, custom, custom_text) = match prefs.thumbnail_max_height {
             ThumbnailMaxHeight::Small => (true, false, false, false, String::new()),

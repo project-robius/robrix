@@ -128,6 +128,14 @@ default = []
 ## Enables experimental support for using TSP wallets.
 tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding", "dep:reqwest"]
 
+## Enables experimental support for the agent-chat / hagency control plane
+## (<https://github.com/hagency-org/hagency>): native owner-approval cards for
+## `com.agentchat.approval.*` events, agent puppet presentation, companion
+## bridge-bot invites, and the workflow slash-commands offered in rooms that
+## contain a `*_coordinator` agent. Off by default; even when compiled in, it
+## must also be turned on at runtime via Settings → Preferences.
+agent_chat = []
+
 ## Hides the command prompt console/log window on Windows.
 ## This is enabled automatically for packaged builds via cargo-packager
 ## (see `build.rs`), but you can also enable it manually if desired.

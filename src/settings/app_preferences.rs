@@ -34,6 +34,11 @@ pub struct AppPreferences {
     /// Whether to show other users' read receipts beneath timeline events.
     #[serde(default = "default_true", deserialize_with = "deserialize_or_true")]
     pub show_read_receipts: bool,
+    /// Whether the agent-chat workflow slash commands are offered in rooms
+    /// that contain a coordinator agent. Only present in `agent_chat` builds.
+    #[cfg(feature = "agent_chat")]
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    pub agent_chat_enabled: bool,
 
     // Note: if you add a new preference here, be sure to add a new
     // function `on_<NEW_PREFERENCE>_changed` and update `broadcast_all()`.
@@ -49,6 +54,8 @@ impl Default for AppPreferences {
             read_receipts_privacy: ReadReceiptsPrivacy::default(),
             mark_as_read_behavior: MarkAsReadBehavior::default(),
             show_read_receipts: true,
+            #[cfg(feature = "agent_chat")]
+            agent_chat_enabled: false,
         }
     }
 }
@@ -159,6 +166,12 @@ impl AppPreferences {
         cx.redraw_all();
     }
 
+    /// Applies the current `agent_chat_enabled` value.
+    #[cfg(feature = "agent_chat")]
+    pub fn on_agent_chat_enabled_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.agent_chat_enabled = self.agent_chat_enabled;
+    }
+
     /// Broadcasts every preference to listening widgets.
     ///
     /// Used upon app-state restore so every listener picks up the loaded
@@ -173,6 +186,8 @@ impl AppPreferences {
         self.on_read_receipts_privacy_changed(cx);
         self.on_mark_as_read_behavior_changed(cx);
         self.on_show_read_receipts_changed(cx);
+        #[cfg(feature = "agent_chat")]
+        self.on_agent_chat_enabled_changed(cx);
     }
 }
 

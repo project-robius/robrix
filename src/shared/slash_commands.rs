@@ -309,7 +309,7 @@ fn parse_user_id(arg: &str) -> Option<OwnedUserId> {
     }
 }
 
-fn split_command(text: &str) -> Option<(&str, &str)> {
+pub(crate) fn split_command(text: &str) -> Option<(&str, &str)> {
     let rest = text.strip_prefix('/')?;
     Some(match rest.split_once(char::is_whitespace) {
         Some((name, arg)) => (name, arg),

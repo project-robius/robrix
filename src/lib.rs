@@ -71,6 +71,13 @@ pub mod tsp;
 #[cfg(not(feature = "tsp"))]
 pub mod tsp_dummy;
 
+/// Support for the agent-chat / hagency coding-agent control plane.
+#[cfg(feature = "agent_chat")]
+pub mod agent_chat;
+/// Dummy agent-chat module with placeholder widgets, for builds without agent-chat.
+#[cfg(not(feature = "agent_chat"))]
+pub mod agent_chat_dummy;
+
 
 // Matrix stuff
 pub mod sliding_sync;

@@ -710,6 +710,11 @@ impl AppMain for App {
         #[cfg(not(feature = "tsp"))]
         crate::tsp_dummy::script_mod(vm);
 
+        #[cfg(feature = "agent_chat")]
+        crate::agent_chat::script_mod(vm);
+        #[cfg(not(feature = "agent_chat"))]
+        crate::agent_chat_dummy::script_mod(vm);
+
         crate::settings::script_mod(vm);
         // RoomInputBar depends on these Home widgets; preload them before room::script_mod.
         crate::home::location_preview::script_mod(vm);

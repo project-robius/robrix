@@ -22,7 +22,7 @@ use matrix_sdk::{
 #[cfg(not(target_os = "ios"))]
 use matrix_sdk::Error;
 use matrix_sdk_ui::{
-    RoomListService, Timeline, encryption_sync_service, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{AttachmentSource, EventSendState, LatestEventValue, RedactError, RoomExt, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
+    RoomListService, Timeline, encryption_sync_service, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{AttachmentSource, EventSendState, LatestEventValue, RedactError, RoomExt, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineReadReceiptTracking, TimelineDetails, default_event_filter}
 };
 #[cfg(not(target_os = "ios"))]
 use robius_open::Uri;
@@ -445,6 +445,20 @@ pub enum RoomPreviewResponseMode {
     RoomPreviewCache,
 }
 
+/// The timeline event filter: the SDK's default, plus (with the `agent_chat`
+/// feature) the `com.agentchat.approval.*` msgtypes, which the default filter
+/// would drop as unknown custom message types.
+fn robrix_timeline_event_filter(
+    event: &AnySyncTimelineEvent,
+    rules: &matrix_sdk::ruma::room_version_rules::RoomVersionRules,
+) -> bool {
+    #[cfg(feature = "agent_chat")]
+    if crate::agent_chat::is_approval_timeline_event(event) {
+        return true;
+    }
+    default_event_filter(event, rules)
+}
+
 /// The set of requests for async work that can be made to the worker thread.
 #[allow(clippy::large_enum_variant)]
 pub enum MatrixRequest {
@@ -755,6 +769,21 @@ pub enum MatrixRequest {
     /// in order to be able to send the fetched room member list to a specific timeline UI.
     GetRoomPowerLevels {
         timeline_kind: TimelineKind,
+    },
+    /// Sends an agent-chat approval verdict (`com.agentchat.approval.verdict.v1`)
+    /// in reply to a request shown in the owner's approval room.
+    ///
+    /// Before sending, this refreshes the bridge bot's device keys and rotates
+    /// the room's outbound Megolm session, so a bridge device that registered
+    /// after the session began can still decrypt the verdict.
+    #[cfg(feature = "agent_chat")]
+    SendAgentChatApprovalVerdict {
+        timeline_kind: TimelineKind,
+        content: serde_json::Value,
+        /// The bridge bot that sent the request (the verdict's intended reader).
+        bridge_user_id: OwnedUserId,
+        /// The request event this verdict answers.
+        source_event_id: OwnedEventId,
     },
     /// Toggles the given reaction to the given event in the given room.
     ToggleReaction {
@@ -1072,6 +1101,7 @@ async fn matrix_worker_task(
                     log!("Creating thread-focused timeline for room {room_id}, thread {thread_root_event_id}...");
                     let build_result = main_room_timeline.room()
                         .timeline_builder()
+                        .event_filter(robrix_timeline_event_filter)
                         .with_focus(TimelineFocus::Thread {
                             root_event_id: thread_root_event_id.clone(),
                         })
@@ -1180,7 +1210,19 @@ async fn matrix_worker_task(
                     // not just a joined room.
                     if let Some(room) = client.get_room(&room_id) {
                         log!("Sending request to invite user {user_id} to room {room_id}...");
-                        match room.invite_user_by_id(&user_id).await {
+                        let invite_result = room.invite_user_by_id(&user_id).await;
+                        // Inviting an agent-chat agent also invites its bridge bot(s), which is
+                        // what actually relays the room to the agent. Best-effort: a missing
+                        // bot account just fails its own invite.
+                        #[cfg(feature = "agent_chat")]
+                        if invite_result.is_ok() {
+                            for bot_user_id in crate::agent_chat::agents::companion_bridge_bots(&user_id) {
+                                if let Err(error) = room.invite_user_by_id(&bot_user_id).await {
+                                    warning!("Failed to invite companion agent-chat bridge bot {bot_user_id} to room {room_id}: {error}");
+                                }
+                            }
+                        }
+                        match invite_result {
                             Ok(_) => Cx::post_action(InviteResultAction::Sent {
                                 room_id,
                                 user_id,
@@ -2071,6 +2113,51 @@ async fn matrix_worker_task(
                     // log!("Sending fetch media request for {media_request:?}...");
                     let res = client.media().get_media_content(&media_request, true).await;
                     on_fetched(&destination, media_request, res, update_sender);
+                });
+            }
+
+            #[cfg(feature = "agent_chat")]
+            MatrixRequest::SendAgentChatApprovalVerdict {
+                timeline_kind,
+                content,
+                bridge_user_id,
+                source_event_id,
+            } => {
+                use crate::agent_chat::ApprovalVerdictResult;
+                let Some((timeline, _sender)) = get_timeline_and_sender(&timeline_kind) else {
+                    log!("BUG: {timeline_kind} not found for send agent-chat approval verdict request");
+                    continue;
+                };
+                let room_id = timeline_kind.room_id().to_owned();
+                let _send_verdict_task = Handle::current().spawn(async move {
+                    let room = timeline.room();
+                    let fail = |error: String| {
+                        error!("Failed to send agent-chat approval verdict to {timeline_kind}: {error}");
+                        Cx::post_action(ApprovalVerdictResult::Failed {
+                            room_id: room_id.clone(),
+                            source_event_id: source_event_id.clone(),
+                            error,
+                        });
+                    };
+                    // The bridge may have registered a new device since our outbound session
+                    // began; refresh its keys and rotate the session so it can decrypt this.
+                    if let Err(error) = room.client().encryption().request_user_identity(&bridge_user_id).await {
+                        fail(format!("could not refresh the bridge bot's device keys: {error}"));
+                        return;
+                    }
+                    if let Err(error) = room.discard_room_key().await {
+                        fail(format!("could not rotate the room key: {error}"));
+                        return;
+                    }
+                    // Sent directly (not via the send queue) so no local-echo machinery
+                    // or routing metadata can alter the verdict on its way out.
+                    match room.send_raw("m.room.message", content).await {
+                        Ok(_) => {
+                            log!("Sent agent-chat approval verdict to {timeline_kind}.");
+                            Cx::post_action(ApprovalVerdictResult::Sent { room_id, source_event_id });
+                        }
+                        Err(error) => fail(error.to_string()),
+                    }
                 });
             }
 
@@ -4187,6 +4274,7 @@ async fn add_new_room(
 
     let timeline = Arc::new(
         new_room.room.timeline_builder()
+            .event_filter(robrix_timeline_event_filter)
             .with_focus(TimelineFocus::Live {
                 // we show threads as separate timelines in their own RoomScreen
                 hide_threaded_events: true,
