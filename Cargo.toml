@@ -26,7 +26,7 @@ robius-file-picker = { git = "https://github.com/project-robius/robius" }
 robius-location    = { git = "https://github.com/project-robius/robius" }
 robius-open        = { git = "https://github.com/project-robius/robius" }
 robius-share       = { git = "https://github.com/project-robius/robius" }
-robius-speech      = { git = "https://github.com/project-robius/robius", branch = "speech_to_text" }
+robius-speech      = { git = "https://github.com/project-robius/robius" }
 robius-use-makepad = "0.1.1" ## auto-configures all `robius-*` crates to work with Makepad.
 
 
