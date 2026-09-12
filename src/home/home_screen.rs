@@ -14,7 +14,6 @@ use crate::{
         app_preferences::{AppPreferencesGlobal, AppPreferencesAction, ViewModeOverride},
         settings_screen::SettingsScreenWidgetRefExt,
     },
-    shared::room_filter_input_bar::{MainFilterAction, RoomFilterInputBarWidgetExt},
     shared::mention_popup::MentionablePopupRef,
     shared::speech_text_input::cancel_all_dictation,
     utils::RoomNameId,
@@ -264,7 +263,7 @@ script_mod! {
                             align: Align{y: 0.5}
 
                             CachedWidget {
-                                room_filter_input_bar := RoomFilterInputBar {}
+                                room_filter_input_bar := RoomFilterInputBar { is_main_filter: true }
                             }
 
                             // Hide this until it's implemented.
@@ -533,14 +532,6 @@ impl ScriptHook for HomeScreen {
 impl Widget for HomeScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
-            // On desktop, the RoomFilterInputBar is inside this HomeScreen.
-            // Check if it changed and re-emit as a MainFilterAction so that
-            // RoomsList and SpacesBar can respond without cross-talk from
-            // other RoomFilterInputBar instances (e.g., SpaceLobbyScreen's).
-            if let Some(keywords) = self.view.room_filter_input_bar(cx, ids!(room_filter_input_bar)).changed(actions) {
-                cx.action(MainFilterAction::Changed(keywords));
-            }
-
             let app_state = scope.data.get_mut::<AppState>().unwrap();
             for action in actions {
                 match action.downcast_ref() {

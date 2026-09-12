@@ -84,6 +84,10 @@ script_mod! {
 #[derive(Script, Widget)]
 pub struct RoomFilterInputBar {
     #[deref] view: View,
+
+    /// Whether this is the app's main filter bar that applies to rooms and spaces.
+    /// All other filter bars should set this to false.
+    #[live] is_main_filter: bool,
 }
 
 impl ScriptHook for RoomFilterInputBar {
@@ -189,8 +193,11 @@ impl WidgetMatchEvent for RoomFilterInputBar {
             };
             clear_button.set_visible(cx, !keywords.is_empty());
             clear_button.reset_hover(cx);
+            if self.is_main_filter {
+                cx.action(MainFilterAction::Changed(keywords.clone()));
+            }
             cx.widget_action(
-                self.widget_uid(), 
+                self.widget_uid(),
                 FilterAction::Changed(keywords)
             );
         }
@@ -199,8 +206,11 @@ impl WidgetMatchEvent for RoomFilterInputBar {
             self.speech_text_input(cx, ids!(input)).set_text(cx, "");
             clear_button.set_visible(cx, false);
             input.set_key_focus(cx);
+            if self.is_main_filter {
+                cx.action(MainFilterAction::Changed(String::new()));
+            }
             cx.widget_action(
-                self.widget_uid(), 
+                self.widget_uid(),
                 FilterAction::Changed(String::new())
             );
         }
