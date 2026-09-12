@@ -14,8 +14,8 @@ use crate::{
         app_preferences::{AppPreferencesGlobal, AppPreferencesAction, ViewModeOverride},
         settings_screen::SettingsScreenWidgetRefExt,
     },
-    shared::room_filter_input_bar::{MainFilterAction, RoomFilterInputBarWidgetExt},
     shared::mention_popup::MentionablePopupRef,
+    shared::speech_text_input::cancel_all_dictation,
     utils::RoomNameId,
 };
 
@@ -263,7 +263,7 @@ script_mod! {
                             align: Align{y: 0.5}
 
                             CachedWidget {
-                                room_filter_input_bar := RoomFilterInputBar {}
+                                room_filter_input_bar := RoomFilterInputBar { is_main_filter: true }
                             }
 
                             // Hide this until it's implemented.
@@ -482,6 +482,16 @@ pub fn effective_is_desktop(cx: &mut Cx) -> bool {
         .unwrap_or(true) // Before the first selection, default to desktop mode
 }
 
+/// Returns the id of the page that shows the given navigation tab.
+fn page_for_tab(tab: &SelectedTab) -> LiveId {
+    match tab {
+        SelectedTab::Space { .. }
+        | SelectedTab::Home => id!(home_page),
+        SelectedTab::Settings => id!(settings_page),
+        SelectedTab::AddRoom => id!(add_room_page),
+    }
+}
+
 
 #[derive(Script, Widget)]
 pub struct HomeScreen {
@@ -522,14 +532,6 @@ impl ScriptHook for HomeScreen {
 impl Widget for HomeScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
-            // On desktop, the RoomFilterInputBar is inside this HomeScreen.
-            // Check if it changed and re-emit as a MainFilterAction so that
-            // RoomsList and SpacesBar can respond without cross-talk from
-            // other RoomFilterInputBar instances (e.g., SpaceLobbyScreen's).
-            if let Some(keywords) = self.view.room_filter_input_bar(cx, ids!(room_filter_input_bar)).changed(actions) {
-                cx.action(MainFilterAction::Changed(keywords));
-            }
-
             let app_state = scope.data.get_mut::<AppState>().unwrap();
             for action in actions {
                 match action.downcast_ref() {
@@ -545,6 +547,7 @@ impl Widget for HomeScreen {
                     // Only open the settings screen if it is not currently open.
                     Some(NavigationBarAction::OpenSettings) => {
                         if !matches!(app_state.selected_tab, SelectedTab::Settings) {
+                            self.cancel_dictation_if_page_changes(cx, &app_state.selected_tab, &SelectedTab::Settings);
                             self.previous_selection = std::mem::replace(&mut app_state.selected_tab, SelectedTab::Settings);
                             cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
                             if let Some(settings_page) = self.update_active_page_from_selection(cx, app_state) {
@@ -748,15 +751,16 @@ impl HomeScreen {
     ) -> Option<WidgetRef> {
         self.view
             .page_flip(cx, ids!(home_screen_page_flip))
-            .set_active_page(
-                cx,
-                match app_state.selected_tab {
-                    SelectedTab::Space { .. }
-                    | SelectedTab::Home => id!(home_page),
-                    SelectedTab::Settings => id!(settings_page),
-                    SelectedTab::AddRoom => id!(add_room_page),
-                },
-            )
+            .set_active_page(cx, page_for_tab(&app_state.selected_tab))
+    }
+
+    /// Cancels dictation if showing `new_tab` instead of `old_tab` hides the page the user is looking at.
+    fn cancel_dictation_if_page_changes(&self, cx: &mut Cx, old_tab: &SelectedTab, new_tab: &SelectedTab) {
+        // On mobile, a pushed screen stays in front of whichever page is shown.
+        let is_page_in_front = self.view.stack_navigation(cx, ids!(view_stack)).current_view().is_none();
+        if is_page_in_front && page_for_tab(old_tab) != page_for_tab(new_tab) {
+            cancel_all_dictation();
+        }
     }
 
     /// Populates a `StackNavigationView` with the given room/screen's info.
@@ -897,6 +901,8 @@ impl HomeScreen {
             }
         }
         app_state.selected_room = Some(sr);
+        // The pushed screen covers whatever the user was dictating into.
+        cancel_all_dictation();
         stack_navigation.push(cx, view_id);
         self.view.redraw(cx);
     }
@@ -904,6 +910,7 @@ impl HomeScreen {
     /// Switches to (selects) the given navigation tab, if it isn't already the selected one.
     fn switch_to_tab(&mut self, cx: &mut Cx, app_state: &mut AppState, new_tab: SelectedTab) {
         if app_state.selected_tab == new_tab { return }
+        self.cancel_dictation_if_page_changes(cx, &app_state.selected_tab, &new_tab);
         self.previous_selection = std::mem::replace(&mut app_state.selected_tab, new_tab);
         cx.action(NavigationBarAction::TabSelected(app_state.selected_tab.clone()));
         self.update_active_page_from_selection(cx, app_state);
@@ -952,6 +959,8 @@ impl HomeScreen {
         if stack_nav.is_transitioning() {
             return;
         }
+        // The popped screen is what the user was dictating into.
+        cancel_all_dictation();
         let Some(current_screen) = app_state.selected_room.take() else {
             // If we didn't have a current screen, something's buggy,
             // so the safest option is to clear the mobile stack and start over. nbd.

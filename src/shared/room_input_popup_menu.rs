@@ -4,6 +4,7 @@
 
 use makepad_widgets::*;
 use makepad_widgets::makepad_platform::event::finger::TouchState;
+use crate::shared::speech_text_input::escape_stopped_dictation;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -112,7 +113,9 @@ impl Widget for RoomInputPopupMenu {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if !self.visible { return; }
 
-        if matches!(event, Event::KeyUp(KeyEvent {key_code: KeyCode::Escape, .. }))
+        // An `Escape` that stopped dictation shouldn't also close this menu.
+        if (matches!(event, Event::KeyUp(KeyEvent {key_code: KeyCode::Escape, .. }))
+                && !escape_stopped_dictation())
             || event.back_pressed()
         {
             self.close(cx);

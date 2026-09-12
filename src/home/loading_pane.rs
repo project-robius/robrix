@@ -1,6 +1,7 @@
 use makepad_widgets::*;
 use matrix_sdk::ruma::{EventId, OwnedEventId};
 
+use crate::shared::speech_text_input::escape_stopped_dictation;
 use crate::sliding_sync::TimelineRequestSender;
 
 
@@ -172,7 +173,7 @@ impl Widget for LoadingPane {
             )
             || event.back_pressed()
             || match event.hits_with_capture_overload(cx, area, true) {
-                Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
+                Hit::KeyUp(key) => key.key_code == KeyCode::Escape && !escape_stopped_dictation(),
                 Hit::FingerDown(_fde) => {
                     cx.set_key_focus(area);
                     false

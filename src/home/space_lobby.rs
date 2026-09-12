@@ -552,7 +552,7 @@ script_mod! {
                 // Filter input bar for searching rooms/spaces in this space
                 filter_bar := mod.widgets.RoomFilterInputBar {
                     input +: {
-                        empty_text: "Filter this space..."
+                        text_input +: { empty_text: "Filter this space..." }
                     }
                 }
             }
@@ -1891,8 +1891,7 @@ impl SpaceLobbyScreen {
 
         // Clear the filter bar when switching to a new space.
         self.filter_keywords.clear();
-        self.view.text_input(cx, ids!(filter_bar.input)).set_text(cx, "");
-        self.view.button(cx, ids!(filter_bar.clear_button)).set_visible(cx, false);
+        self.view.room_filter_input_bar(cx, ids!(filter_bar)).clear(cx);
 
         // Restore UI state if we've viewed this space before, otherwise start fresh
         self.expanded_spaces = SPACE_LOBBY_STATES.with_borrow(|states| {
@@ -1920,8 +1919,7 @@ impl SpaceLobbyScreen {
         self.loading_subspaces.clear();
         self.is_loading = false;
         self.filter_keywords.clear();
-        self.view.text_input(cx, ids!(filter_bar.input)).set_text(cx, "");
-        self.view.button(cx, ids!(filter_bar.clear_button)).set_visible(cx, false);
+        self.view.room_filter_input_bar(cx, ids!(filter_bar)).clear(cx);
         self.set_space_topic(cx, None);
         self.redraw(cx);
     }

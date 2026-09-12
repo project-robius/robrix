@@ -11,7 +11,6 @@ use makepad_widgets::*;
 
 use crate::home::rooms_list::RoomsListWidgetExt;
 use crate::settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction, ViewModeOverride};
-use crate::shared::room_filter_input_bar::{MainFilterAction, RoomFilterInputBarWidgetExt};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -109,7 +108,7 @@ script_mod! {
                     align: Align{y: 0.5}
 
                     CachedWidget {
-                        room_filter_input_bar := RoomFilterInputBar {}
+                        room_filter_input_bar := RoomFilterInputBar { is_main_filter: true }
                     }
 
                     // Hide this until it's implemented.
@@ -169,13 +168,7 @@ impl RoomsSideBar {
 
 impl Widget for RoomsSideBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // If the main room filter input bar changed keywords, re-emit that action
-        // as a MainFilterAction so that other widgets can handle it.
         if let Event::Actions(actions) = event {
-            if let Some(keywords) = self.view.room_filter_input_bar(cx, ids!(room_filter_input_bar)).changed(actions) {
-                cx.action(MainFilterAction::Changed(keywords));
-            }
-
             for action in actions {
                 if let Some(AppPreferencesAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
                     if *new_mode != self.applied_view_mode {

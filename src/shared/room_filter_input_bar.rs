@@ -1,7 +1,8 @@
 //! A text input used to filter a list of rooms/spaces
-//! with a search icon and a button to clear the input.
+//! with a search icon, a microphone button for dictation, and a button to clear the input.
 
 use makepad_widgets::*;
+use crate::shared::speech_text_input::SpeechTextInputWidgetExt;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -35,18 +36,33 @@ script_mod! {
             icon_walk: Walk{width: 14, height: 14}
         }
 
-        input := RobrixTextInput {
-            width: Fill,
-            height: Fit,
-            flow: Flow.Right { wrap: false },
-            padding: 5
-            
-            empty_text: "Filter rooms & spaces..."
-            autocapitalize: None,
-            
-            draw_bg.border_size: 0.0
-            draw_text +: {
-                text_style: theme.font_regular { font_size: 10 },
+        input := SpeechTextInput {
+            text_padding: 5
+            mic_gutter: 32
+            mic_tooltip: "Filter by voice"
+            drop_trailing_punctuation: true
+
+            text_input +: {
+                flow: Flow.Right { wrap: false },
+                empty_text: "Filter rooms & spaces..."
+                autocapitalize: None,
+
+                draw_bg.border_size: 0.0
+                draw_text +: {
+                    text_style: theme.font_regular { font_size: 10 },
+                }
+            }
+
+            // A smaller microphone button, centred in the single-line bar.
+            speech_overlay +: {
+                align: Align{x: 1.0, y: 0.5}
+                padding: Inset{top: 0, bottom: 0, left: 2, right: 2}
+                speech_button +: {
+                    margin: 0
+                    width: 26, height: 26
+                    padding: 5
+                    icon_walk: Walk{width: 16, height: 16}
+                }
             }
         }
 
@@ -68,6 +84,10 @@ script_mod! {
 #[derive(Script, Widget)]
 pub struct RoomFilterInputBar {
     #[deref] view: View,
+
+    /// Whether this is the app's main filter bar that applies to rooms and spaces.
+    /// All other filter bars should set this to false.
+    #[live] is_main_filter: bool,
 }
 
 impl ScriptHook for RoomFilterInputBar {
@@ -85,7 +105,7 @@ impl ScriptHook for RoomFilterInputBar {
             return;
         }
         let cx = _vm.cx_mut();
-        let has_text = !self.text_input(cx, ids!(input)).text().is_empty();
+        let has_text = !self.text_input(cx, ids!(input.text_input)).text().is_empty();
         self.button(cx, ids!(clear_button)).set_visible(cx, has_text);
     }
 }
@@ -148,11 +168,18 @@ impl RoomFilterInputBarRef {
     pub fn changed(&self, actions: &Actions) -> Option<String> {
         self.borrow().and_then(|inner| inner.changed(actions))
     }
+
+    /// Clears the filter text (ending any dictation into it) without emitting a `Changed` action.
+    pub fn clear(&self, cx: &mut Cx) {
+        let Some(inner) = self.borrow() else { return };
+        inner.speech_text_input(cx, ids!(input)).set_text(cx, "");
+        inner.button(cx, ids!(clear_button)).set_visible(cx, false);
+    }
 }
 
 impl WidgetMatchEvent for RoomFilterInputBar {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let input = self.text_input(cx, ids!(input));
+        let input = self.text_input(cx, ids!(input.text_input));
         let clear_button = self.button(cx, ids!(clear_button));
 
         // Handle user changing the input text
@@ -166,18 +193,24 @@ impl WidgetMatchEvent for RoomFilterInputBar {
             };
             clear_button.set_visible(cx, !keywords.is_empty());
             clear_button.reset_hover(cx);
+            if self.is_main_filter {
+                cx.action(MainFilterAction::Changed(keywords.clone()));
+            }
             cx.widget_action(
-                self.widget_uid(), 
+                self.widget_uid(),
                 FilterAction::Changed(keywords)
             );
         }
 
         if clear_button.clicked(actions) {
-            input.set_text(cx, "");
+            self.speech_text_input(cx, ids!(input)).set_text(cx, "");
             clear_button.set_visible(cx, false);
             input.set_key_focus(cx);
+            if self.is_main_filter {
+                cx.action(MainFilterAction::Changed(String::new()));
+            }
             cx.widget_action(
-                self.widget_uid(), 
+                self.widget_uid(),
                 FilterAction::Changed(String::new())
             );
         }

@@ -10,7 +10,6 @@ use crate::utils::RoomNameId;
 
 pub mod reply_preview;
 pub mod room_input_bar;
-mod speech_input;
 pub mod room_display_filter;
 pub mod typing_notice;
 

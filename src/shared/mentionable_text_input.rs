@@ -1,4 +1,5 @@
-//! Wrapper around a `TextInput` that shows an auto-complete popup upon trigger characters.
+//! Wrapper around a `TextInput` that shows an auto-complete popup upon trigger characters,
+//! with a microphone button for speech-to-text dictation (see [`SpeechTextInput`](crate::shared::speech_text_input::SpeechTextInput)).
 //!
 //! Currently we use it for:
 //! 1. Showing members in a room (upon pressing '@')
@@ -17,7 +18,7 @@ use matrix_sdk::{
 };
 use crate::{
     home::rooms_list::RoomsListRef,
-    shared::{mention_popup::{MentionItem, MentionablePopupRef}, slash_commands::{self, SlashCommandOutcome}},
+    shared::{mention_popup::{MentionItem, MentionablePopupRef}, slash_commands::{self, SlashCommandOutcome}, speech_text_input::{SpeechTextInputRef, SpeechTextInputWidgetRefExt, escape_stops_dictation}},
     sliding_sync::{submit_async_request, MatrixRequest},
     utils::{self, MatchQuality},
 };
@@ -32,8 +33,9 @@ script_mod! {
         flow: Down
         allow_slash_commands: true
 
-        text_input := RobrixTextInput {
-            is_multiline: true,
+        speech_text_input := SpeechTextInput {
+            mic_tooltip: "Dictate a message"
+            text_input +: { is_multiline: true }
         }
     }
 }
@@ -104,7 +106,8 @@ impl Widget for MentionableTextInput {
                                 return;
                             }
                         }
-                        KeyCode::Escape => {
+                        // Let an `Escape` that stops dictation do only that.
+                        KeyCode::Escape if !escape_stops_dictation(ke) => {
                             self.close_popup(cx);
                             return;
                         }
@@ -168,7 +171,7 @@ impl Widget for MentionableTextInput {
     }
 
     fn set_text(&mut self, cx: &mut Cx, text: &str) {
-        self.text_input_ref().set_text(cx, text);
+        self.speech_text_input_ref().set_text(cx, text);
         if text.trim().is_empty() {
             self.possible_mentions = Mentions::new();
         }
@@ -183,6 +186,10 @@ impl Widget for MentionableTextInput {
 impl MentionableTextInput {
     fn text_input_ref(&self) -> TextInputRef {
         self.child_by_path(ids!(text_input)).as_text_input()
+    }
+
+    fn speech_text_input_ref(&self) -> SpeechTextInputRef {
+        self.child_by_path(ids!(speech_text_input)).as_speech_text_input()
     }
 
     fn popup_ref(&self, cx: &mut Cx) -> MentionablePopupRef {
@@ -340,6 +347,23 @@ impl MentionableTextInputRef {
             .unwrap_or_default()
     }
 
+    /// Returns the inner text input's wrapper, which handles speech-to-text dictation.
+    pub fn speech_text_input_ref(&self) -> SpeechTextInputRef {
+        self.borrow()
+            .map(|inner| inner.speech_text_input_ref())
+            .unwrap_or_default()
+    }
+
+    /// Stops any speech-to-text dictation into this input; words already in the text stay there.
+    pub fn cancel_dictation(&self, cx: &mut Cx) {
+        self.speech_text_input_ref().cancel_dictation(cx);
+    }
+
+    /// See [`SpeechTextInputRef::release_microphone()`].
+    pub fn release_microphone(&self) {
+        self.speech_text_input_ref().release_microphone();
+    }
+
     /// Updates whether the user can `@room`. Refreshes an open `@` popup so the
     /// "Notify the entire room" entry appears or disappears accordingly.
     pub fn set_can_notify_room(&self, cx: &mut Cx, can_notify: bool) {
@@ -401,6 +425,7 @@ impl MentionableTextInputRef {
 
     pub fn restore_state(&self, cx: &mut Cx, state: MentionableTextInputState) {
         let Some(mut inner) = self.borrow_mut() else { return };
+        inner.speech_text_input_ref().cancel_dictation(cx);
         inner.text_input_ref().restore_state(cx, state.text_input_state);
         inner.possible_mentions = state.possible_mentions;
     }
