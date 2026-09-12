@@ -237,7 +237,7 @@ impl Widget for EditingPane {
             if self.button(cx, ids!(cancel_button)).clicked(actions)
                 || edit_text_input.escaped(actions)
             {
-                mentionable_input.speech_text_input_ref().cancel_dictation(cx);
+                mentionable_input.cancel_dictation(cx);
                 self.animator_play(cx, ids!(panel.hide));
                 self.redraw(cx);
                 return;
@@ -249,7 +249,7 @@ impl Widget for EditingPane {
                 || edit_text_input.returned(actions).is_some()
             {
                 // The edit is the text as shown now, so stop adding dictated words to it.
-                mentionable_input.speech_text_input_ref().cancel_dictation(cx);
+                mentionable_input.cancel_dictation(cx);
                 let edited_text = edit_text_input.text().trim().to_string();
                 let edited_content = match info.event_tl_item.content() {
                     TimelineItemContent::MsgLike(msg_like_content) => {
@@ -328,7 +328,7 @@ impl Widget for EditingPane {
                                             PopupKind::Error,
                                             None,
                                         );
-                                        mentionable_input.speech_text_input_ref().cancel_dictation(cx);
+                                        mentionable_input.cancel_dictation(cx);
                                         self.animator_play(cx, ids!(panel.hide));
                                         self.redraw(cx);
                                         return;
@@ -494,7 +494,6 @@ impl EditingPane {
         match edit_result {
             Ok(()) => {
                 self.mentionable_text_input(cx, ids!(editing_content.edit_text_input))
-                    .speech_text_input_ref()
                     .cancel_dictation(cx);
                 self.animator_play(cx, ids!(panel.hide));
             },
@@ -569,7 +568,7 @@ impl EditingPane {
     pub fn save_state(&self) -> Option<EditingPaneState> {
         let info = self.info.as_ref()?;
         let mentionable_input = self.child_by_path(ids!(editing_content.edit_text_input)).as_mentionable_text_input();
-        mentionable_input.speech_text_input_ref().release_microphone();
+        mentionable_input.release_microphone();
         Some(EditingPaneState {
             event_tl_item: info.event_tl_item.clone(),
             mentionable_input_state: mentionable_input.save_state(),
@@ -673,7 +672,6 @@ impl EditingPaneRef {
     pub fn force_reset_hide(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.mentionable_text_input(cx, ids!(editing_content.edit_text_input))
-            .speech_text_input_ref()
             .cancel_dictation(cx);
         if inner.visible {
             cx.revert_key_focus();

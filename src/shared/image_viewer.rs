@@ -17,7 +17,7 @@ use crate::home::room_image_viewer::ImageViewerFetchAction;
 use crate::utils::format_decimal_file_size;
 use thiserror::Error;
 use crate::{
-    shared::{attachment_download::{DownloadableAttachment, save_loaded_attachment, share_loaded_attachment, start_attachment_download, start_attachment_share}, avatar::AvatarWidgetExt, timestamp::TimestampWidgetRefExt},
+    shared::{attachment_download::{DownloadableAttachment, save_loaded_attachment, share_loaded_attachment, start_attachment_download, start_attachment_share}, avatar::AvatarWidgetExt, speech_text_input::escape_stops_dictation, timestamp::TimestampWidgetRefExt},
     sliding_sync::TimelineKind,
 };
 
@@ -641,9 +641,12 @@ impl Widget for ImageViewer {
             self.advance_rotation(cx, ne.time);
         }
 
-        if event.back_pressed()
-            || matches!(event, Event::KeyDown(KeyEvent { key_code: KeyCode::Escape, .. }))
-        {
+        // An `Escape` that stopped speech dictation shouldn't also close the viewer.
+        let escape_closes = match event {
+            Event::KeyDown(key) => key.key_code == KeyCode::Escape && !escape_stops_dictation(key),
+            _ => false,
+        };
+        if event.back_pressed() || escape_closes {
             self.reset(cx);
             cx.action(ImageViewerAction::Hide);
         }

@@ -38,7 +38,7 @@ script_mod! {
 
         input := SpeechTextInput {
             text_padding: 5
-            mic_gutter: 28
+            mic_gutter: 32
             mic_tooltip: "Filter by voice"
             drop_trailing_punctuation: true
 
@@ -58,9 +58,10 @@ script_mod! {
                 align: Align{x: 1.0, y: 0.5}
                 padding: Inset{top: 0, bottom: 0, left: 2, right: 2}
                 speech_button +: {
-                    width: 24, height: 24
+                    margin: 0
+                    width: 26, height: 26
                     padding: 5
-                    icon_walk: Walk{width: 14, height: 14}
+                    icon_walk: Walk{width: 16, height: 16}
                 }
             }
         }

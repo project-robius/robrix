@@ -354,6 +354,16 @@ impl MentionableTextInputRef {
             .unwrap_or_default()
     }
 
+    /// Stops any speech-to-text dictation into this input; words already in the text stay there.
+    pub fn cancel_dictation(&self, cx: &mut Cx) {
+        self.speech_text_input_ref().cancel_dictation(cx);
+    }
+
+    /// See [`SpeechTextInputRef::release_microphone()`].
+    pub fn release_microphone(&self) {
+        self.speech_text_input_ref().release_microphone();
+    }
+
     /// Updates whether the user can `@room`. Refreshes an open `@` popup so the
     /// "Notify the entire room" entry appears or disappears accordingly.
     pub fn set_can_notify_room(&self, cx: &mut Cx, can_notify: bool) {

@@ -25,7 +25,7 @@ use matrix_sdk::room::reply::{EnforceThread, Reply};
 use ruma::events::room::message::AddMentions;
 use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
 use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId, OwnedTransactionId};
-use crate::{block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, rooms_list::RoomsListRef, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::{UploadProgressViewWidgetRefExt, UploadState}}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, location::init_location_subscriber, profile::user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, room::BasicRoomDetails, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, slash_commands::{SlashCommandAction, SlashCommandOutcome}, speech_text_input::{SpeechTextInputWidgetExt, SpeechTextInputWidgetRefExt}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::{block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, rooms_list::RoomsListRef, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::{UploadProgressViewWidgetRefExt, UploadState}}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, location::init_location_subscriber, profile::user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, room::BasicRoomDetails, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, slash_commands::{SlashCommandAction, SlashCommandOutcome}, styles::*}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
 use crate::room::reply_preview::CollapsiblePreviewWidgetRefExt;
 
 script_mod! {
@@ -288,9 +288,12 @@ impl Widget for RoomInputBar {
 }
 
 impl RoomInputBar {
-    /// Stops any speech-to-text dictation; words already in the message stay there.
+    /// Stops any speech-to-text dictation in either the message input or the editing pane.
+    ///
+    /// Any words already in a text input will stay there, they won't be cleared.
     fn cancel_dictation(&mut self, cx: &mut Cx) {
-        self.speech_text_input(cx, ids!(mentionable_text_input.speech_text_input)).cancel_dictation(cx);
+        self.mentionable_text_input(cx, ids!(mentionable_text_input)).cancel_dictation(cx);
+        self.mentionable_text_input(cx, ids!(editing_pane.editing_content.edit_text_input)).cancel_dictation(cx);
     }
 
     fn handle_actions(
@@ -1023,7 +1026,10 @@ impl RoomInputBarRef {
             mentionable_input_state: inner.child_by_path(ids!(input_bar.mentionable_text_input)).as_mentionable_text_input().save_state(),
             upload: inner.child_by_path(ids!(upload_progress_view)).as_upload_progress_view().save_state(),
         };
-        inner.child_by_path(ids!(mentionable_text_input.speech_text_input)).as_speech_text_input().release_microphone();
+
+        inner.child_by_path(ids!(input_bar.mentionable_text_input)).as_mentionable_text_input().release_microphone();
+        // Note: the editing pane's `save_state()` call above already released its microphone.
+
         // Clear the location preview. We don't save this state because the
         // current location might change by the next time the user opens this same room.
         inner.child_by_path(ids!(location_preview)).as_location_preview().clear();

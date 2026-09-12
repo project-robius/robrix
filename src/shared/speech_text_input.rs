@@ -13,13 +13,15 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    // Style the inner input via `text_input +: {..}`, but set its padding with
-    // `text_padding`, which this widget widens on the right to make room for the microphone.
+    // Style the inner input via `text_input +: {..}`, but set its padding with `text_padding`;
+    // while the microphone is shown, `mic_gutter` replaces its right padding to make room for it.
     mod.widgets.SpeechTextInput = #(SpeechTextInput::register_widget(vm)) {
         width: Fill, height: Fit
         flow: Overlay
         text_padding: 10
-        mic_gutter: 38
+        mic_gutter: 40
+        mic_clearance: 36
+        scroll_bar_inset: Inset{top: 3, right: 4, bottom: 3}
         mic_tooltip: "Dictate"
 
         text_input := RobrixTextInput {}
@@ -29,7 +31,7 @@ script_mod! {
             align: Align{x: 1.0, y: 1.0}
             // No vertical padding: the button is nearly as tall as a
             // single-line input, so any would push it past the bottom edge.
-            padding: Inset{top: 0, bottom: 0, left: 4, right: 4}
+            padding: Inset{top: 0, bottom: 0, left: 4, right: 3}
 
             // One widget for both states: the icon at rest, a meter while recording.
             speech_button := RobrixIconButton {
@@ -41,7 +43,7 @@ script_mod! {
                 icon_walk: Walk{width: 18, height: 18}
                 draw_icon +: {
                     svg: crate_resource("self://resources/icons/microphone.svg")
-                    color: #333
+                    color: #555
                 }
                 draw_bg +: {
                     color: #0000
@@ -54,14 +56,16 @@ script_mod! {
                     level_1: instance(0.0)
                     level_2: instance(0.0)
                     bar_color: instance(vec4(1.0, 1.0, 1.0, 1.0))
+                    blend: fn(under: vec4, over: vec4) -> vec4 {
+                        let alpha = over.w + under.w * (1.0 - over.w)
+                        let color = over.xyz * over.w + under.xyz * under.w * (1.0 - over.w)
+                        return vec4(color / max(alpha, 0.0001), alpha)
+                    }
                     pixel: fn() {
                         let sdf = Sdf2d.viewport(self.pos * self.rect_size)
-                        // Same state blend the stock button face uses.
-                        let face = mix(
-                            mix(self.color, self.color_hover, self.hover),
-                            self.color_down,
-                            self.down
-                        )
+                        let hovered = vec4(self.color_hover.xyz, self.color_hover.w * self.hover)
+                        let pressed = vec4(self.color_down.xyz, self.color_down.w * self.down)
+                        let face = self.blend(self.blend(self.color, hovered), pressed)
                         sdf.box(0.5, 0.5, self.rect_size.x - 1.0, self.rect_size.y - 1.0, self.border_radius)
                         sdf.fill(face)
                         if self.recording > 0.5 {
@@ -105,8 +109,17 @@ pub fn cancel_all_dictation() {
 }
 
 /// Whether the given `Escape` key press stops dictation, in which case nothing else should act on it.
+///
+/// This is for key *down* handlers; anything acting on the key's release, or on a text input's
+/// `Escaped` action, should use [`escape_stopped_dictation()`] instead.
 pub fn escape_stops_dictation(key: &KeyEvent) -> bool {
     LISTENER.load(Ordering::Relaxed) != 0 || STOPPING_ESCAPE.load(Ordering::Relaxed) == key.time.to_bits()
+}
+
+/// Whether the `Escape` key press being delivered now is the one that stopped dictation,
+/// so that its release, and the `Escaped` action it produced, should be ignored too.
+pub fn escape_stopped_dictation() -> bool {
+    STOPPING_ESCAPE.load(Ordering::Relaxed) != u64::MAX
 }
 
 /// Whether this platform has native speech recognition, checked once per app run.
@@ -132,8 +145,12 @@ pub struct SpeechTextInput {
 
     /// The inner text input's padding, not counting the microphone's gutter.
     #[live] text_padding: Inset,
-    /// The width reserved on the right of the text for the microphone button.
+    /// The inner text input's right padding while the microphone button is shown.
     #[live] mic_gutter: f64,
+    /// How far above the bottom edge the text input's scroll bar ends while the microphone is shown.
+    #[live] mic_clearance: f64,
+    /// Space between the text input's scroll bar and its borders; the microphone deepens the bottom.
+    #[live] scroll_bar_inset: Inset,
     /// The microphone button's tooltip while no session is running.
     #[live] mic_tooltip: String,
     /// Whether to drop the sentence punctuation that recognizers end each transcript with,
@@ -177,18 +194,19 @@ impl Widget for SpeechTextInput {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // Pressing `Escape` will stop speech recording/recognition regardless of key focus,
         // and the key press is kept from every text input, not just this one.
-        if let Event::KeyDown(key) = event
-            && key.key_code == KeyCode::Escape
-            && escape_stops_dictation(key)
-        {
-            STOPPING_ESCAPE.store(key.time.to_bits(), Ordering::Relaxed);
-            match self.phase() {
-                Some(SpeechPhase::Listening) => self.stop(),
-                Some(SpeechPhase::Starting) => self.cancel(cx),
-                _ => {}
+        if let Event::KeyDown(key) = event && key.key_code == KeyCode::Escape {
+            if escape_stops_dictation(key) {
+                STOPPING_ESCAPE.store(key.time.to_bits(), Ordering::Relaxed);
+                match self.phase() {
+                    Some(SpeechPhase::Listening) => self.stop(),
+                    Some(SpeechPhase::Starting) => self.cancel(cx),
+                    _ => {}
+                }
+                self.update_speech_controls(cx);
+                return;
             }
-            self.update_speech_controls(cx);
-            return;
+            // This press isn't ours, so whatever acts on its release shouldn't ignore it.
+            STOPPING_ESCAPE.store(u64::MAX, Ordering::Relaxed);
         }
 
         self.handle_speech_event(cx, event);
@@ -260,7 +278,9 @@ impl SpeechTextInput {
     fn toggle(&mut self, cx: &mut Cx) {
         match self.phase() {
             Some(SpeechPhase::Listening) => self.stop(),
-            Some(_) => self.cancel(cx),
+            Some(SpeechPhase::Starting) => self.cancel(cx),
+            // Its last words are still on their way, so don't throw them away.
+            Some(SpeechPhase::Finishing) => {}
             None => {
                 let input = self.text_input_ref();
                 input.set_key_focus(cx);
@@ -300,6 +320,18 @@ impl SpeechTextInput {
         self.update_speech_controls(cx);
     }
 
+    /// Marks the session as ended, committing any words held back while the user was editing.
+    fn end_session(&mut self, cx: &mut Cx) {
+        let replacement = self.speech.as_mut().and_then(|speech| {
+            speech.ended = true;
+            speech.dictation.transcript("", true)
+        });
+        if let Some(replacement) = replacement {
+            self.apply_replacement(cx, replacement);
+        }
+        self.clear_finishing();
+    }
+
     fn clear_finishing(&mut self) {
         if std::mem::take(&mut self.holds_finishing) {
             IS_FINISHING.store(false, Ordering::Relaxed);
@@ -328,10 +360,14 @@ impl SpeechTextInput {
     /// Shows or hides the microphone button, and the gutter it needs.
     fn show_mic(&mut self, cx: &mut Cx, show: bool) {
         self.view.view(cx, ids!(speech_overlay)).set_visible(cx, show);
-        let gutter = if show { self.mic_gutter } else { 0.0 };
-        let padding = Inset { right: self.text_padding.right + gutter, ..self.text_padding };
+        let right = if show { self.mic_gutter } else { self.text_padding.right };
+        let padding = Inset { right, ..self.text_padding };
+        let mut scroll_bar_inset = self.scroll_bar_inset;
+        if show {
+            scroll_bar_inset.bottom = self.mic_clearance;
+        }
         let mut input = self.text_input_ref();
-        script_apply_eval!(cx, input, {padding: #(padding)});
+        script_apply_eval!(cx, input, {padding: #(padding), scroll_bar_inset: #(scroll_bar_inset)});
     }
 
     fn update_speech_controls(&mut self, cx: &mut Cx) {
@@ -407,13 +443,11 @@ impl SpeechTextInput {
                 // The session is dropped once this event has been dispatched, so
                 // a final utterance that arrived alongside its end still lands.
                 NativeSpeechEvent::Stopped => {
-                    if let Some(speech) = self.speech.as_mut() { speech.ended = true; }
-                    self.clear_finishing();
+                    self.end_session(cx);
                     break;
                 }
                 NativeSpeechEvent::Error(error) => {
-                    if let Some(speech) = self.speech.as_mut() { speech.ended = true; }
-                    self.clear_finishing();
+                    self.end_session(cx);
                     // Only hide the microphone once the recognizer is really gone:
                     // Unavailable can also mean something retryable, like lost network.
                     if error.kind() == SpeechErrorKind::Unavailable

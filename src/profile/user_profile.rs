@@ -4,7 +4,7 @@ use std::{borrow::Cow, ops::{Deref, DerefMut}};
 use makepad_widgets::*;
 use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId}};
 use crate::{
-    avatar_cache, block_user_modal::{BlockUserModalAction, BlockUserRequest}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, current_user_id, is_user_blocked, submit_async_request}, utils
+    avatar_cache, block_user_modal::{BlockUserModalAction, BlockUserRequest}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}, speech_text_input::escape_stopped_dictation}, sliding_sync::{MatrixRequest, current_user_id, is_user_blocked, submit_async_request}, utils
 };
 use super::user_profile_cache;
 
@@ -410,7 +410,7 @@ impl Widget for UserProfileSlidingPane {
             )
             || event.back_pressed()
             || match event.hits_with_capture_overload(cx, area, true) {
-                Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
+                Hit::KeyUp(key) => key.key_code == KeyCode::Escape && !escape_stopped_dictation(),
                 Hit::FingerDown(_fde) => {
                     cx.set_key_focus(area);
                     false

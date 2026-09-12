@@ -1,7 +1,7 @@
 
 use makepad_widgets::*;
 
-use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, SelectedTab, get_own_profile}, profile::user_profile::UserProfile, settings::{PopulateMode, account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt, privacy_settings::PrivacySettingsWidgetExt}};
+use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, SelectedTab, get_own_profile}, profile::user_profile::UserProfile, shared::speech_text_input::escape_stopped_dictation, settings::{PopulateMode, account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt, privacy_settings::PrivacySettingsWidgetExt}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -127,7 +127,7 @@ impl Widget for SettingsScreen {
                 && event.back_pressed()
             )
             || match event.hits(cx, area) {
-                Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
+                Hit::KeyUp(key) => key.key_code == KeyCode::Escape && !escape_stopped_dictation(),
                 Hit::FingerDown(_fde) => {
                     cx.set_key_focus(area);
                     false
