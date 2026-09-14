@@ -10,6 +10,7 @@
 use makepad_widgets::*;
 
 use crate::home::rooms_list::RoomsListWidgetExt;
+use crate::home::rooms_list_header::RoomsListHeaderAction;
 use crate::settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction, ViewModeOverride};
 
 script_mod! {
@@ -23,7 +24,7 @@ script_mod! {
             flow: Down, spacing: 5
             width: Fill, height: Fill
 
-            draw_bg.color: (COLOR_PRIMARY_DARKER)
+            draw_bg.color: (RBX_BG_SURFACE)
 
             CachedWidget {
                 rooms_list_header := RoomsListHeader {}
@@ -44,10 +45,10 @@ script_mod! {
 
                 show_bg: true
                 draw_bg +: {
-                    color: (COLOR_PRIMARY_DARKER)
+                    color: (RBX_BG_SURFACE)
                     border_radius: 4.0
                     border_size: 0.0
-                    shadow_color: #0005
+                    shadow_color: (RBX_SHADOW)
                     shadow_radius: 12.0
                     shadow_offset: vec2(0.0, 0.0)
 
@@ -170,6 +171,14 @@ impl Widget for RoomsSideBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
             for action in actions {
+                // The header's search icon: on mobile the filter bar lives right
+                // here, so focus it. (Desktop hosts the bar in the HomeScreen.)
+                if let Some(RoomsListHeaderAction::OpenRoomFilterModal) = action.downcast_ref() {
+                    let input = self.view.text_input(cx, ids!(room_filter_input_bar.input.text_input));
+                    if !input.is_empty() {
+                        input.set_key_focus(cx);
+                    }
+                }
                 if let Some(AppPreferencesAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
                     if *new_mode != self.applied_view_mode {
                         self.apply_view_mode(*new_mode);

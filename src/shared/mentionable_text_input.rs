@@ -9,6 +9,8 @@
 use std::{collections::BTreeSet, sync::Arc};
 use makepad_widgets::{text::selection::Cursor, *};
 use makepad_widgets::makepad_platform::event::finger::TouchState;
+#[cfg(feature = "agent_chat")]
+use crate::agent_chat::workflow::EnabledCommandSets;
 use matrix_sdk::{
     room::RoomMember,
     ruma::{
@@ -184,6 +186,16 @@ impl Widget for MentionableTextInput {
 }
 
 impl MentionableTextInput {
+    /// Read the current preference when matching or sending, so settings changes
+    /// also take effect in composers that were opened before the toggle changed.
+    #[cfg(feature = "agent_chat")]
+    fn agent_chat_commands(&self, cx: &mut Cx) -> EnabledCommandSets {
+        crate::agent_chat::workflow::enabled_command_sets(
+            cx,
+            self.room_members.as_deref().map(Vec::as_slice),
+        )
+    }
+
     fn text_input_ref(&self) -> TextInputRef {
         self.child_by_path(ids!(text_input)).as_text_input()
     }
@@ -234,6 +246,12 @@ impl MentionableTextInput {
             TriggerKind::User => self.match_members(cx, &popup_ref, query),
             TriggerKind::Room => self.match_rooms(cx, &popup_ref, query),
             TriggerKind::Command => {
+                #[cfg(feature = "agent_chat")]
+                let items = slash_commands::matching_commands(query)
+                    .chain(self.agent_chat_commands(cx).matching(query))
+                    .map(MentionItem::Command)
+                    .collect();
+                #[cfg(not(feature = "agent_chat"))]
                 let items = slash_commands::matching_commands(query)
                     .map(MentionItem::Command)
                     .collect();
@@ -347,6 +365,26 @@ impl MentionableTextInputRef {
             .unwrap_or_default()
     }
 
+    /// Inserts `text` at the cursor (replacing any selection) as an ordinary,
+    /// undo-able edit, then focuses the input and re-detects the mention /
+    /// slash-command trigger so a popup opens right away when `text` is one.
+    ///
+    /// This is what the composer's toolbar shortcuts (`@`, `/`, the quick
+    /// emoji row) go through, so they behave exactly like typing.
+    pub fn insert_at_cursor(&self, cx: &mut Cx, text: &str) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        let text_input = inner.text_input_ref();
+        let selection = text_input.selection();
+        let range = selection.start().index..selection.end().index;
+        if let Err(error) = text_input.replace_range(cx, range, text, text_input::UndoGroup::New) {
+            log!("Composer shortcut could not update the draft: {error:?}");
+            return;
+        }
+        text_input.set_key_focus(cx);
+        inner.refresh_popup(cx);
+        inner.redraw(cx);
+    }
+
     /// Returns the inner text input's wrapper, which handles speech-to-text dictation.
     pub fn speech_text_input_ref(&self) -> SpeechTextInputRef {
         self.borrow()
@@ -441,9 +479,22 @@ impl MentionableTextInputRef {
     ///
     /// Returns the outcome: send a message, run a command, or show an error.
     /// If it's a message, it will already contain the mentions present in `entered_text`.
-    pub fn parse_input(&self, entered_text: &str) -> SlashCommandOutcome {
+    pub fn parse_input(&self, _cx: &mut Cx, entered_text: &str) -> SlashCommandOutcome {
+        let Some(inner) = self.borrow() else { return slash_commands::parse_input(entered_text) };
+        // Agent-chat workflow commands are not ours to interpret: they go out as
+        // plain text for the coordinator agent, so they bypass the command parser.
+        #[cfg(feature = "agent_chat")]
+        let outcome = if slash_commands::split_command(entered_text)
+            .is_some_and(|(name, _)| inner.agent_chat_commands(_cx).contains(name))
+        {
+            SlashCommandOutcome::Message(
+                matrix_sdk::ruma::events::room::message::RoomMessageEventContent::text_markdown(entered_text)
+            )
+        } else {
+            slash_commands::parse_input(entered_text)
+        };
+        #[cfg(not(feature = "agent_chat"))]
         let outcome = slash_commands::parse_input(entered_text);
-        let Some(inner) = self.borrow() else { return outcome };
         match outcome {
             SlashCommandOutcome::Message(message) => SlashCommandOutcome::Message(
                 message.add_mentions(inner.real_mentions_in_markdown(entered_text))

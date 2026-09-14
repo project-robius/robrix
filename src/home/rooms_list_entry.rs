@@ -6,6 +6,7 @@ use crate::{
     room::FetchedRoomAvatar,
     shared::{
     avatar::AvatarWidgetExt,
+        design_tokens::{RBX_BG_SUNKEN, RBX_FG_PRIMARY, RBX_FG_SECONDARY, RBX_FG_TERTIARY, RBX_LINK},
         context_menu::ContextMenuClosed,
         hover_highlight::handle_hover_hit,
         html_or_plaintext::HtmlOrPlaintextWidgetExt, unread_badge::UnreadBadgeWidgetExt as _,
@@ -42,8 +43,8 @@ script_mod! {
         max_lines: 1
         text_overflow: Ellipsis
         draw_text +: {
-            color: #000,
-            text_style: USERNAME_TEXT_STYLE { font_size: 10. }
+            color: (RBX_FG_PRIMARY),
+            text_style: RBX_TEXT_BODY_STRONG {}
         }
         text: "[Room name unknown]"
     }
@@ -53,8 +54,8 @@ script_mod! {
         width: Fit, height: Fit
         flow: Flow.Right{wrap: false},
         draw_text +: {
-            color: (TIMESTAMP_TEXT_COLOR)
-            text_style: TIMESTAMP_TEXT_STYLE { font_size: 7.5 }
+            color: (RBX_FG_TERTIARY)
+            text_style: RBX_TEXT_META {}
         }
     }
 
@@ -105,7 +106,8 @@ script_mod! {
                     max_lines: 2
                     text_overflow: Ellipsis
                     draw_text +: {
-                        text_style: theme.font_regular { font_size: 9.3, line_spacing: 1.32 },
+                        color: (RBX_FG_SECONDARY),
+                        text_style: REGULAR_TEXT { font_size: 9.3, line_spacing: 1.32 },
                     }
                     text: "[No recent messages]"
                 }
@@ -125,13 +127,16 @@ script_mod! {
         draw_bg +: {
             active: instance(0.0)
             hover: instance(0.0)
+            // Idle rows sit flat on the surface; hover is a faint wash and the
+            // selected room is a soft teal tint — no solid fill, so the text
+            // keeps the same dark ink in every state.
             color: instance(#0000)
-            color_hover: instance(COLOR_LIST_ITEM_BG_HOVER)
-            color_selected: instance(COLOR_ACTIVE_PRIMARY)
-            color_selected_hover: instance(COLOR_ACTIVE_PRIMARY_DARKER)
+            color_hover: instance(RBX_BG_HOVER)
+            color_selected: instance(RBX_BG_SELECTED)
+            color_selected_hover: instance(RBX_BG_PRESSED)
             border_color: instance(#0000)
             border_size: uniform(0.0)
-            border_radius: uniform(4.0)
+            border_radius: uniform(6.0)
             border_inset: uniform(vec4(0.0))
 
             get_color: fn() -> vec4 {
@@ -495,18 +500,10 @@ impl RoomsListEntryContent {
     /// Updates styling of the latest event preview based on whether the room is selected or not.
     pub fn update_latest_event_colors(&mut self, cx: &mut Cx, is_selected: bool) {
         // Link colors must be re-applied on every draw because the HTML's link widgets
-        // get created dynamically during the draw walk.
-        //
-        // * If selected, set link color to None so links inherit the font_color (white)
-        //   for better contrast against the selected background（blue).
-        // * If not selected, restore the default blue link color.
-        self.view.html_or_plaintext(cx, ids!(latest_message)).set_link_color(
-            cx,
-            if is_selected {
-                None
-            } else {
-                Some(HTML_LINK_COLOR)
-            });
+        // get created dynamically during the draw walk. Both states sit on a light
+        // surface (transparent / soft-teal wash), so the token link colour is used
+        // in both cases.
+        self.view.html_or_plaintext(cx, ids!(latest_message)).set_link_color(cx, Some(RBX_LINK));
 
         // Skip redrawing if nothing changed.
         if self.last_selection_drawn == Some(is_selected) {
@@ -514,23 +511,13 @@ impl RoomsListEntryContent {
         }
         self.last_selection_drawn = Some(is_selected);
 
-        let message_text_color;
-        let room_name_color;
-        let timestamp_color;
-        let code_bg_color;
-
-        // TODO: use script-defined theme color instead of redefining constants below
-        if is_selected {
-            message_text_color = vec4(1., 1., 1., 1.); // COLOR_PRIMARY
-            room_name_color = vec4(1., 1., 1., 1.); // COLOR_PRIMARY
-            timestamp_color = vec4(1., 1., 1., 1.); // COLOR_PRIMARY
-            code_bg_color = vec4(0.3, 0.3, 0.3, 1.0); // a darker gray used for the background of code blocks and quote blocks
-        } else {
-            message_text_color = vec4(0.267, 0.267, 0.267, 1.0); // MESSAGE_TEXT_COLOR
-            room_name_color = vec4(0., 0., 0., 1.0);
-            timestamp_color = vec4(0.6, 0.6, 0.6, 1.0);
-            code_bg_color = vec4(0.929, 0.929, 0.929, 1.0); // #EDEDED
-        }
+        // The selected row signals the active room with the soft teal wash alone
+        // (see the draw_bg shader), so the text keeps identical dark ink in both
+        // states and stays fully legible.
+        let message_text_color = RBX_FG_SECONDARY;
+        let room_name_color = RBX_FG_PRIMARY;
+        let timestamp_color = RBX_FG_TERTIARY;
+        let code_bg_color = RBX_BG_SUNKEN;
 
         // Toggle the background color via the animator (handles selected/deselected bg).
         self.animator_toggle(cx, is_selected, Animate::No, ids!(selected.on), ids!(selected.off));

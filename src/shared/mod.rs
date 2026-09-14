@@ -29,12 +29,14 @@ pub mod bouncing_dots;
 pub mod unread_badge;
 pub mod verification_badge;
 pub mod restore_status_view;
+pub mod design_tokens;
 pub mod image_viewer;
 
 
 pub fn script_mod(vm: &mut ScriptVm) {
     // Order matters here, as some widget definitions depend on others.
     styles::script_mod(vm);
+    design_tokens::script_mod(vm);
     helpers::script_mod(vm);
     icon_button::script_mod(vm);
     speech_text_input::script_mod(vm);

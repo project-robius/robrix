@@ -226,6 +226,19 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Offline mode with persistent event cache: https://github.com/project-robius/robrix/pull/445
 
 
+## Optional features
+
+Robrix has a few Cargo features that are off by default:
+
+* `tsp`: experimental support for TSP (Trust Spanning Protocol) wallets and identities.
+* `agent_chat`: support for the [hagency](https://github.com/hagency-org/hagency) / agent-chat
+  coding-agent control plane: native owner-approval cards, agent badges, companion bridge-bot
+  invites, and workflow slash commands. See [docs/agent-chat.md](docs/agent-chat.md).
+
+```sh
+cargo run --features agent_chat
+```
+
 ## Packaging Robrix for Distribution on Desktop Platforms
 
 > [!TIP]

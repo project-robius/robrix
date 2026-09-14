@@ -46,6 +46,13 @@ use crate::settings::app_preferences::{AppPreferencesGlobal, MarkAsReadBehavior,
 
 use rangemap::RangeSet;
 
+#[cfg(feature = "agent_chat")]
+use crate::agent_chat::{
+    approval::{ApprovalAction, ApprovalDecisionState, ApprovalMessage, ApprovalUiState, current_unix_time_millis},
+    approval_card::{AgentApprovalCardWidgetRefExt, ApprovalCardState},
+    presentation::AgentMessagePresentation,
+    ApprovalVerdictResult,
+};
 use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 /// The maximum number of timeline items to search through
@@ -366,9 +373,11 @@ script_mod! {
                         }
                         text: "<Username not available>"
                     }
+                    agent_badge := mod.widgets.AgentBadge {}
                 }
 
                 message := HtmlOrPlaintext { }
+                agent_approval_card := mod.widgets.AgentApprovalCard {}
                 link_preview_view := mod.widgets.LinkPreview {}
                 download_section := mod.widgets.MessageDownloadSection {}
                 View {
@@ -416,6 +425,7 @@ script_mod! {
                 padding: Inset{ left: 10.0 }
 
                 message := HtmlOrPlaintext { }
+                agent_approval_card := mod.widgets.AgentApprovalCard {}
                 link_preview_view := mod.widgets.LinkPreview {}
                 download_section := mod.widgets.MessageDownloadSection {}
                 View {
@@ -634,7 +644,7 @@ script_mod! {
         align: Align{x: 0.5, y: 0}
         flow: Right,
         show_bg: true,
-        draw_bg.color: #xDAF5E5F0, // mostly opaque light green
+        draw_bg.color: (RBX_HIGHLIGHT_NEW), // mostly opaque light green
 
         label := Label {
             width: Fill,
@@ -1024,6 +1034,12 @@ impl Widget for RoomScreen {
             }
         }
 
+        // Redraw agent-chat approval cards whose deadline just passed.
+        #[cfg(feature = "agent_chat")]
+        if self.tl_state.as_ref().is_some_and(|tl| tl.agent_chat_expiry_timer.is_event(event).is_some()) {
+            self.on_agent_chat_expiry_timer(cx);
+        }
+
         // Handle actions here before processing timeline updates.
         // Normally (in most other widgets), the order of event handling doesn't matter much.
         // However, since actions may refer to a specific timeline item's index,
@@ -1174,6 +1190,12 @@ impl Widget for RoomScreen {
                         self.set_displayed_room(cx, room_name_id, thread_root_event_id);
                         return;
                     }
+                }
+
+                // Handle the outcome of sending an agent-chat approval verdict.
+                #[cfg(feature = "agent_chat")]
+                if let Some(result) = action.downcast_ref::<ApprovalVerdictResult>() {
+                    self.handle_agent_chat_verdict_result(cx, result);
                 }
 
                 // Handle InviteResultAction to show popup notifications.
@@ -1490,6 +1512,8 @@ impl Widget for RoomScreen {
                                                 &self.pinned_events,
                                                 &tl_state.pending_downloads,
                                                 &tl_state.expanded_reply_previews,
+                                                #[cfg(feature = "agent_chat")]
+                                                &mut tl_state.agent_chat_approvals,
                                                 is_newest_sent,
                                                 is_blocked_by_failed_send,
                                                 tl_state.is_encrypted,
@@ -1653,6 +1677,10 @@ impl Widget for RoomScreen {
                 });
             }
         }
+
+        // Arm (or re-arm) the timer for the earliest live approval card just drawn.
+        #[cfg(feature = "agent_chat")]
+        self.schedule_agent_chat_expiry(cx);
 
         // If this RoomScreen was just drawn for the first time after being opened for
         // a "Reply In Thread", then then focus on the text input in the RoomInputBar.
@@ -2536,6 +2564,10 @@ impl RoomScreen {
         let room_screen_widget_uid = self.widget_uid();
         for action in actions {
             match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast_ref() {
+                #[cfg(feature = "agent_chat")]
+                MessageAction::AgentChatApprovalDecision { details, action } => {
+                    self.handle_agent_chat_approval_decision(cx, details, action);
+                }
                 MessageAction::React { details, reaction } => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
                     submit_async_request(MatrixRequest::ToggleReaction {
@@ -3083,6 +3115,12 @@ impl RoomScreen {
                     tombstone_info,
                     pending_downloads: SmallVec::new(),
                     expanded_reply_previews: HashSet::new(),
+                    #[cfg(feature = "agent_chat")]
+                    agent_chat_approvals: ApprovalUiState::default(),
+                    #[cfg(feature = "agent_chat")]
+                    agent_chat_expiry_timer: Timer::empty(),
+                    #[cfg(feature = "agent_chat")]
+                    agent_chat_expiry_deadline_millis: None,
                 };
                 timeline_state_store::mark_taken(cx, &tl_state.kind, owner);
                 (tl_state, true)
@@ -3291,6 +3329,12 @@ impl RoomScreen {
         // Closing/hiding the room should cancel any pending jump/search.
         self.pending_read_receipt_jump = None;
         self.jump_search_timer = Timer::empty();
+        // Live approval deadlines are re-tracked when the timeline is shown again.
+        #[cfg(feature = "agent_chat")]
+        if let Some(tl) = self.tl_state.as_mut() {
+            tl.agent_chat_expiry_timer = Timer::empty();
+            tl.agent_chat_expiry_deadline_millis = None;
+        }
 
         // Tell the background subscriber that this timeline is now closed.
         if let Some(tl) = self.tl_state.as_ref() {
@@ -3578,6 +3622,101 @@ impl RoomScreen {
             num_events: 50,
             direction: PaginationDirection::Backwards,
         });
+    }
+}
+
+#[cfg(feature = "agent_chat")]
+impl RoomScreen {
+    /// Handles a click on a decision button of an agent-chat approval card:
+    /// records the decision locally, redraws the card, and sends the verdict.
+    fn handle_agent_chat_approval_decision(
+        &mut self,
+        cx: &mut Cx,
+        details: &MessageDetails,
+        action: &ApprovalAction,
+    ) {
+        let Some(tl) = self.tl_state.as_mut() else { return };
+        let Some(event_tl_item) = Self::find_event_in_timeline(&tl.items, details) else {
+            error!("AgentChatApprovalDecision: couldn't find event {:?} in {}", details.timeline_event_id, tl.kind);
+            return;
+        };
+        let Some(event_id) = event_tl_item.event_id().map(ToOwned::to_owned) else { return };
+        let Some(ApprovalMessage::Request(request)) = crate::agent_chat::approval_message_of(event_tl_item) else {
+            return;
+        };
+        let bridge_user_id = event_tl_item.sender().to_owned();
+        let timeline_kind = tl.kind.clone();
+        let now = current_unix_time_millis();
+        let item_range = details.item_id .. details.item_id + 1;
+        let pending = matches!(
+            tl.agent_chat_approvals.decision_state(&event_id, &request, now),
+            ApprovalDecisionState::Pending,
+        );
+        if !pending {
+            tl.agent_chat_approvals.untrack_live(&event_id);
+            tl.content_drawn_since_last_update.remove(item_range);
+            self.view.portal_list(cx, ids!(timeline.list)).redraw(cx);
+            enqueue_popup_notification(
+                "This approval request has already expired or been decided.",
+                PopupKind::Error,
+                Some(5.0),
+            );
+            return;
+        }
+        let Some(chosen) = request.action(&action.id).cloned() else { return };
+        let content = request.verdict_content(&chosen, &event_id);
+        tl.agent_chat_approvals.mark_sending(&event_id, chosen);
+        tl.content_drawn_since_last_update.remove(item_range);
+        self.view.portal_list(cx, ids!(timeline.list)).redraw(cx);
+        submit_async_request(MatrixRequest::SendAgentChatApprovalVerdict {
+            timeline_kind,
+            content,
+            bridge_user_id,
+            source_event_id: event_id,
+        });
+    }
+
+    /// Applies the outcome of a verdict send to the card that initiated it.
+    fn handle_agent_chat_verdict_result(&mut self, cx: &mut Cx, result: &ApprovalVerdictResult) {
+        let Some(tl) = self.tl_state.as_mut() else { return };
+        if !tl.apply_agent_chat_verdict_result(result) {
+            return;
+        }
+        self.view.portal_list(cx, ids!(timeline.list)).redraw(cx);
+    }
+
+    /// Arms a timer for the earliest live approval deadline, if it changed.
+    fn schedule_agent_chat_expiry(&mut self, cx: &mut Cx) {
+        let Some(tl) = self.tl_state.as_mut() else { return };
+        let next_deadline = tl.agent_chat_approvals.earliest_live_deadline_millis();
+        if next_deadline == tl.agent_chat_expiry_deadline_millis {
+            return;
+        }
+        cx.stop_timer(tl.agent_chat_expiry_timer);
+        tl.agent_chat_expiry_deadline_millis = next_deadline;
+        tl.agent_chat_expiry_timer = next_deadline
+            .map(|deadline| {
+                let millis = deadline.saturating_sub(current_unix_time_millis()).max(1);
+                cx.start_timeout(millis as f64 / 1000.0)
+            })
+            .unwrap_or_else(Timer::empty);
+    }
+
+    /// Redraws every approval card whose deadline has passed, then re-arms the timer.
+    fn on_agent_chat_expiry_timer(&mut self, cx: &mut Cx) {
+        let Some(tl) = self.tl_state.as_mut() else { return };
+        tl.agent_chat_expiry_timer = Timer::empty();
+        tl.agent_chat_expiry_deadline_millis = None;
+        let expired = tl.agent_chat_approvals.expire_live(current_unix_time_millis());
+        for event_id in &expired {
+            if let Some(index) = index_of_event(&tl.items, event_id, tl.items.len(), MAX_ITEMS_TO_SEARCH_THROUGH) {
+                tl.content_drawn_since_last_update.remove(index .. index + 1);
+            }
+        }
+        if !expired.is_empty() {
+            self.view.portal_list(cx, ids!(timeline.list)).redraw(cx);
+        }
+        self.schedule_agent_chat_expiry(cx);
     }
 }
 
@@ -3918,6 +4057,18 @@ mod timeline_state_store {
         });
     }
 
+    /// Send results can arrive while no RoomScreen owns the timeline.
+    #[cfg(feature = "agent_chat")]
+    pub(super) fn apply_approval_verdict_result(result: &ApprovalVerdictResult) {
+        TIMELINE_STATES.with_borrow_mut(|states| {
+            for entry in states.values_mut() {
+                if let StateEntry::Stored(state) = entry {
+                    state.apply_agent_chat_verdict_result(result);
+                }
+            }
+        });
+    }
+
     /// Drops every stored timeline state and `Taken` marker.
     ///
     /// This is used when all timeline UI state is being reset globally, such as
@@ -4096,9 +4247,48 @@ struct TimelineUiState {
     /// Reply previews the user has eaxpanded that should be shown in full.
     /// Collapsed reply previews (their default state) are absent from this set.
     expanded_reply_previews: HashSet<TimelineEventItemId>,
+
+    /// Local decision/expiry state of the agent-chat approval cards in this timeline.
+    #[cfg(feature = "agent_chat")]
+    agent_chat_approvals: ApprovalUiState,
+    /// Fires when the earliest live agent-chat approval card expires.
+    #[cfg(feature = "agent_chat")]
+    agent_chat_expiry_timer: Timer,
+    /// The absolute deadline (ms since epoch) that `agent_chat_expiry_timer` is armed for.
+    #[cfg(feature = "agent_chat")]
+    agent_chat_expiry_deadline_millis: Option<u64>,
 }
 
 impl TimelineUiState {
+    /// Records completion in either a visible or saved timeline, and invalidates
+    /// the card's cached content so it reflects the result when next drawn.
+    #[cfg(feature = "agent_chat")]
+    fn apply_agent_chat_verdict_result(&mut self, result: &ApprovalVerdictResult) -> bool {
+        let (room_id, source_event_id) = match result {
+            ApprovalVerdictResult::Sent { room_id, source_event_id }
+            | ApprovalVerdictResult::Failed { room_id, source_event_id, .. } => (room_id, source_event_id),
+        };
+        if self.kind.room_id() != room_id
+            || !self.agent_chat_approvals.complete_send(
+                source_event_id,
+                matches!(result, ApprovalVerdictResult::Sent { .. }),
+            )
+        {
+            return false;
+        }
+        if let ApprovalVerdictResult::Failed { error, .. } = result {
+            enqueue_popup_notification(
+                format!("Failed to send the approval verdict.\n\nError: {error}"),
+                PopupKind::Error,
+                None,
+            );
+        }
+        if let Some(index) = index_of_event(&self.items, source_event_id, self.items.len(), MAX_ITEMS_TO_SEARCH_THROUGH) {
+            self.content_drawn_since_last_update.remove(index .. index + 1);
+        }
+        true
+    }
+
     /// Whether we've given up automatic back pagination.
     ///
     /// This happens after we've done multiple back pagination rounds without getting any new events.
@@ -4260,6 +4450,8 @@ fn populate_message_view(
     pinned_events: &[OwnedEventId],
     pending_downloads: &[PendingDownload],
     expanded_reply_previews: &HashSet<TimelineEventItemId>,
+    #[cfg(feature = "agent_chat")]
+    agent_chat_approvals: &mut ApprovalUiState,
     is_newest_sent: bool,
     is_blocked_by_failed_send: bool,
     is_room_encrypted: bool,
@@ -4295,6 +4487,10 @@ fn populate_message_view(
     let mut set_username_and_get_avatar_retval = None;
     let mut has_room_mention = false;
     let mut download_info: Option<DownloadableAttachment> = None;
+    #[cfg(feature = "agent_chat")]
+    let mut agent_chat_message: Option<ApprovalMessage> = None;
+    #[cfg(feature = "agent_chat")]
+    let mut agent_presentation = AgentMessagePresentation::for_sender(event_tl_item.sender());
 
     let (item, used_cached_item) = match &msg_like_content.kind {
         MsgLikeKind::Message(msg) => {
@@ -4320,11 +4516,17 @@ fn populate_message_view(
                             item.html_or_plaintext(cx, ids!(content.message));
                         let mut link_preview_ref =
                             item.link_preview(cx, ids!(content.link_preview_view));
+                        let (body, formatted) = present_message_body(
+                            #[cfg(feature = "agent_chat")]
+                            &mut agent_presentation,
+                            body,
+                            formatted.as_ref(),
+                        );
                         new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
                             &html_or_plaintext_ref,
-                            body,
-                            formatted.as_ref(),
+                            &body,
+                            formatted.as_deref(),
                             room_mention_room_id,
                             Some(&mut link_preview_ref),
                             Some(media_cache),
@@ -4367,11 +4569,17 @@ fn populate_message_view(
                         });
                         let mut link_preview_ref =
                             item.link_preview(cx, ids!(content.link_preview_view));
+                        let (body, formatted) = present_message_body(
+                            #[cfg(feature = "agent_chat")]
+                            &mut agent_presentation,
+                            body,
+                            formatted.as_ref(),
+                        );
                         new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
                             &html_or_plaintext_ref,
-                            body,
-                            formatted.as_ref(),
+                            &body,
+                            formatted.as_deref(),
                             room_mention_room_id,
                             Some(&mut link_preview_ref),
                             Some(media_cache),
@@ -4666,9 +4874,39 @@ fn populate_message_view(
                 }
                 _ => {
                     has_html_body = false;
-                    let (item, existed) = list.item_with_existed(cx, item_id, id!(Message));
+                    // Agent-chat approval messages use custom msgtypes. Their
+                    // security-sensitive fields come from the original event, never
+                    // from an edit, and parsing is deferred to this rare branch so
+                    // ordinary messages never deserialize JSON on a draw.
+                    #[cfg(feature = "agent_chat")]
+                    let agent_chat_body: Option<String> = {
+                        agent_chat_message = crate::agent_chat::approval_message_of(event_tl_item);
+                        agent_chat_message.as_ref().map(ApprovalMessage::bubble_text)
+                    };
+                    #[cfg(not(feature = "agent_chat"))]
+                    let agent_chat_body: Option<String> = None;
+                    let template = if agent_chat_body.is_some() && use_compact_view {
+                        id!(CondensedMessage)
+                    } else {
+                        id!(Message)
+                    };
+                    let (item, existed) = list.item_with_existed(cx, item_id, template);
                     if existed && item_drawn_status.content_drawn {
                         (item, true)
+                    } else if let Some(agent_chat_body) = agent_chat_body {
+                        let html_or_plaintext_ref = item.html_or_plaintext(cx, ids!(content.message));
+                        item.link_preview(cx, ids!(content.link_preview_view)).clear(cx);
+                        new_drawn_status.content_drawn = populate_text_message_content(
+                            cx,
+                            &html_or_plaintext_ref,
+                            &agent_chat_body,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                        );
+                        (item, false)
                     } else {
                         item.link_preview(cx, ids!(content.link_preview_view)).clear(cx);
                         item.label(cx, ids!(content.message)).set_text(
@@ -4858,6 +5096,19 @@ fn populate_message_view(
         is_room_encrypted,
     );
 
+    // The approval card must be (re)set on every non-cached populate: a recycled
+    // Message widget may have shown a card for a different message before.
+    #[cfg(feature = "agent_chat")]
+    if !used_cached_item {
+        populate_agent_chat_approval_card(
+            cx,
+            &item,
+            event_tl_item,
+            agent_chat_message.as_ref(),
+            agent_chat_approvals,
+        );
+    }
+
 
     // If `used_cached_item` is false, we should always redraw the profile, even if profile_drawn is true.
     let skip_draw_profile =
@@ -4888,6 +5139,27 @@ fn populate_message_view(
                 });
             }
             username_label.set_text(cx, &username);
+            #[cfg(feature = "agent_chat")]
+            {
+                let mut badge = item.widget(cx, ids!(content.username_view.agent_badge));
+                match agent_presentation.as_ref() {
+                    Some(presentation) => {
+                        badge.set_visible(cx, true);
+                        let mut label = item.label(cx, ids!(content.username_view.agent_badge.agent_badge_label));
+                        label.set_text(cx, &presentation.badge_text());
+                        // Workflow roles get the accent pair; a plain agent the neutral one.
+                        // Widgets are recycled, so both branches must set both colours.
+                        if presentation.role.is_some() {
+                            script_apply_eval!(cx, badge, { draw_bg +: { color: (mod.widgets.RBX_ACCENT_SOFT) } });
+                            script_apply_eval!(cx, label, { draw_text +: { color: (mod.widgets.RBX_ACCENT) } });
+                        } else {
+                            script_apply_eval!(cx, badge, { draw_bg +: { color: (mod.widgets.RBX_NEUTRAL_BG) } });
+                            script_apply_eval!(cx, label, { draw_text +: { color: (mod.widgets.RBX_NEUTRAL_FG) } });
+                        }
+                    }
+                    None => badge.set_visible(cx, false),
+                }
+            }
             new_drawn_status.profile_drawn = profile_drawn;
         }
         else {
@@ -4960,6 +5232,54 @@ fn populate_message_view(
     }
 
     (item, new_drawn_status)
+}
+
+/// Adjusts a text/notice body for display. With the `agent_chat` feature, messages
+/// from agent accounts have the bridge's type marker and trailing permalink stripped
+/// (see `crate::agent_chat::presentation`); everything else is passed through as-is.
+#[cfg(feature = "agent_chat")]
+fn present_message_body<'a>(
+    presentation: &mut Option<AgentMessagePresentation>,
+    body: &'a str,
+    formatted: Option<&'a FormattedBody>,
+) -> (Cow<'a, str>, Option<Cow<'a, FormattedBody>>) {
+    match presentation {
+        Some(presentation) => presentation.present(body, formatted),
+        None => (Cow::Borrowed(body), formatted.map(Cow::Borrowed)),
+    }
+}
+
+/// Adjusts a text/notice body for display; without the `agent_chat` feature this is the identity.
+#[cfg(not(feature = "agent_chat"))]
+fn present_message_body<'a>(
+    body: &'a str,
+    formatted: Option<&'a FormattedBody>,
+) -> (Cow<'a, str>, Option<Cow<'a, FormattedBody>>) {
+    (Cow::Borrowed(body), formatted.map(Cow::Borrowed))
+}
+
+/// Shows (or hides) the agent-chat approval card beneath a message, and keeps the
+/// timeline's approval UI state informed of which cards still have live buttons.
+#[cfg(feature = "agent_chat")]
+fn populate_agent_chat_approval_card(
+    cx: &mut Cx,
+    item: &WidgetRef,
+    event_tl_item: &EventTimelineItem,
+    message: Option<&ApprovalMessage>,
+    approvals: &mut ApprovalUiState,
+) {
+    let card = item.agent_approval_card(cx, ids!(content.agent_approval_card));
+    let (Some(ApprovalMessage::Request(request)), Some(event_id)) = (message, event_tl_item.event_id()) else {
+        card.set_state(cx, None);
+        return;
+    };
+    let decision = approvals.decision_state(event_id, request, current_unix_time_millis());
+    if matches!(decision, ApprovalDecisionState::Pending) {
+        approvals.track_live(event_id, request.expires_at_millis);
+    } else {
+        approvals.untrack_live(event_id);
+    }
+    card.set_state(cx, Some(&ApprovalCardState::new(request, decision)));
 }
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
@@ -6034,6 +6354,12 @@ pub enum MessageAction {
     },
     /// The user clicked the "retry sending" button on a message that failed to send.
     RetrySend(MessageDetails),
+    /// The user clicked a decision button on an agent-chat approval card.
+    #[cfg(feature = "agent_chat")]
+    AgentChatApprovalDecision {
+        details: MessageDetails,
+        action: ApprovalAction,
+    },
 
     // /// The user clicked the "report" button on a message.
     // Report(MessageDetails),
@@ -6305,6 +6631,22 @@ impl Widget for Message {
                 }
             }
 
+            // Handle clicks on an agent-chat approval card's decision buttons.
+            #[cfg(feature = "agent_chat")]
+            if let Some(action) = self.view
+                .widget(cx, ids!(content.agent_approval_card))
+                .as_agent_approval_card()
+                .clicked_action(cx, actions)
+            {
+                cx.widget_action(
+                    room_screen_widget_uid,
+                    MessageAction::AgentChatApprovalDecision {
+                        details: self.details.clone().unwrap(), // guaranteed to be Some()
+                        action,
+                    },
+                );
+            }
+
             // Handle clicks on the reply preview's "show more" or "show less" buttons.
             let reply_expand_button = self.button(cx, ids!(replied_to_message.reply_expand_button));
             let reply_collapse_button = self.button(cx, ids!(replied_to_message.reply_collapse_button));
@@ -6383,7 +6725,13 @@ impl Message {
     /// This currently includes: reactions, download/share buttons, the read receipts row.
     /// On long-presses specifically, it also excludes timestamps, edited indicators, and TSP sign indicators.
     fn is_within_excluded_child(&self, cx: &mut Cx, abs: DVec2, is_long_press: bool) -> bool {
-        self.view.widget(cx, ids!(reaction_list)).as_reaction_list().contains_button(cx, abs)
+        #[cfg(feature = "agent_chat")]
+        let in_approval_card = self.view.widget(cx, ids!(content.agent_approval_card))
+            .area().clipped_rect(cx).contains(abs);
+        #[cfg(not(feature = "agent_chat"))]
+        let in_approval_card = false;
+        in_approval_card
+            || self.view.widget(cx, ids!(reaction_list)).as_reaction_list().contains_button(cx, abs)
             || self.view.widget(cx, ids!(avatar_row)).area().clipped_rect(cx).contains(abs)
             || self.view.widget(cx, ids!(content.download_section)).area().clipped_rect(cx).contains(abs)
             || (is_long_press && (
@@ -6520,6 +6868,12 @@ impl MessageRef {
 /// Takes `&mut Cx` (unused) to enforce that it's only called from the main UI thread.
 pub fn clear_timeline_states(cx: &mut Cx) {
     timeline_state_store::clear_all(cx);
+}
+
+/// Updates approval cards in saved rooms before the result is delivered to visible widgets.
+#[cfg(feature = "agent_chat")]
+pub fn apply_saved_approval_verdict_result(_cx: &mut Cx, result: &ApprovalVerdictResult) {
+    timeline_state_store::apply_approval_verdict_result(result);
 }
 
 /// Invalidates the UI-side cached state for a single timeline whose backend was just closed,

@@ -29,6 +29,7 @@ script_mod! {
     mod.widgets.ICON_JOIN_ROOM        = crate_resource("self://resources/icons/join_room.svg")
     mod.widgets.ICON_JUMP             = crate_resource("self://resources/icons/go_back.svg")
     mod.widgets.ICON_LOCATION_PIN     = crate_resource("self://resources/icons/location-pin.svg")
+    mod.widgets.ICON_PEOPLE = crate_resource("self://resources/icons/people.svg")
     mod.widgets.ICON_LOGOUT           = crate_resource("self://resources/icons/logout.svg")
     mod.widgets.ICON_LINK             = crate_resource("self://resources/icons/link.svg")
     mod.widgets.ICON_PIN              = crate_resource("self://resources/icons/pin.svg")
@@ -51,6 +52,22 @@ script_mod! {
     mod.widgets.ICON_ZOOM_IN          = crate_resource("self://resources/icons/zoom_in.svg")
     mod.widgets.ICON_ZOOM_OUT         = crate_resource("self://resources/icons/zoom_out.svg")
     mod.widgets.ICON_ZOOM_TO_FIT      = crate_resource("self://resources/icons/zoom_to_fit.svg")
+    mod.widgets.ICON_ROTATE_CCW       = crate_resource("self://resources/icons/rotate_left_fa.svg")
+    mod.widgets.ICON_GLOBE            = crate_resource("self://resources/icons/globe.svg")
+    mod.widgets.ICON_LOCK             = crate_resource("self://resources/icons/lock.svg")
+    mod.widgets.ICON_LOCK_FILLED      = crate_resource("self://resources/icons/lock_filled.svg")
+    mod.widgets.ICON_LOCK_OPEN        = crate_resource("self://resources/icons/lock_open.svg")
+    mod.widgets.ICON_THREADS          = crate_resource("self://resources/icons/double_chat.svg")
+    mod.widgets.ICON_ARROW_BACK       = crate_resource("self://resources/icons/arrow_back.svg")
+    mod.widgets.ICON_SHIELD           = crate_resource("self://resources/icons/shield.svg")
+    mod.widgets.ICON_MORE_VERT        = crate_resource("self://resources/icons/more_vert.svg")
+    mod.widgets.ICON_CHEVRON_RIGHT    = crate_resource("self://resources/icons/chevron_right.svg")
+    mod.widgets.ICON_CHEVRON_LEFT     = crate_resource("self://resources/icons/chevron_left.svg")
+    mod.widgets.ICON_CHEVRON_DOWN     = crate_resource("self://resources/icons/chevron_down.svg")
+    mod.widgets.ICON_STAR             = crate_resource("self://resources/icons/star.svg")
+    mod.widgets.ICON_STAR_FILLED      = crate_resource("self://resources/icons/star_filled.svg")
+    mod.widgets.ICON_ROBOT            = crate_resource("self://resources/icons/robot.svg")
+    mod.widgets.ICON_DEVICE           = crate_resource("self://resources/icons/device.svg")
     mod.widgets.ICON_ADD_ATTACHMENT   = crate_resource("self://resources/icons/add_attachment.svg")
     mod.widgets.ICON_FILE             = crate_resource("self://resources/icons/file.svg")
 
@@ -60,6 +77,10 @@ script_mod! {
 
     mod.widgets.REGULAR_TEXT = theme.font_regular {
         font_size: (10),
+    }
+
+    mod.widgets.BOLD_TEXT = theme.font_bold {
+        font_size: (13),
     }
 
     mod.widgets.TEXT_SUB = theme.font_regular {
@@ -127,7 +148,8 @@ script_mod! {
     mod.widgets.COLOR_BG_DANGER_RED = #FFF0F0
     mod.widgets.COLOR_FG_DISABLED = #B3B3B3
     mod.widgets.COLOR_BG_DISABLED = #E0E0E0
-    mod.widgets.COLOR_INFO_BLUE = #0f88fe
+    // Informational accent (mirrors RBX_INFO_FG; RBX_* is registered after this file).
+    mod.widgets.COLOR_INFO_BLUE = #1C67B0
     mod.widgets.COLOR_WARNING_YELLOW = #fcdb03
     mod.widgets.COLOR_TEXT_WARNING_NOT_FOUND = #953800
 
@@ -142,16 +164,19 @@ script_mod! {
 
     mod.widgets.COLOR_PRIMARY = #ffffff
 
-    mod.widgets.COLOR_PRIMARY_DARKER = #fefefe
+    mod.widgets.COLOR_PRIMARY_DARKER = #ffffff
     mod.widgets.COLOR_SECONDARY = #E3E3E3
     mod.widgets.COLOR_SECONDARY_DARKER = #C8C8C8
 
     // What a rooms list entry or timeline message darkens to on hover or press.
     mod.widgets.COLOR_LIST_ITEM_BG_HOVER = #f4f4f4
 
-    mod.widgets.COLOR_ACTIVE_PRIMARY = #0f88fe
+    // The primary/CTA/focus colour: the robrix2 accent teal. Literals mirroring
+    // RBX_ACCENT / RBX_ACCENT_HOVER — this file is registered before
+    // design_tokens.rs, so `RBX_*` is not resolvable here.
+    mod.widgets.COLOR_ACTIVE_PRIMARY = #0D7988
 
-    mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER = #106fcc
+    mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER = #0A6675
 
     mod.widgets.COLOR_BG_PREVIEW = #F0F5FF
 
@@ -162,11 +187,11 @@ script_mod! {
     mod.widgets.COLOR_AVATAR_BG_IDLE = #d8d8d8
 
 
-    mod.widgets.COLOR_UNREAD_BADGE_MENTIONS = #FF0000;
-
-
-    mod.widgets.COLOR_UNREAD_BADGE_MARKED = (mod.widgets.COLOR_ROBRIX_CYAN);
-    mod.widgets.COLOR_UNREAD_BADGE_MESSAGES = #AAAAAA
+    // Unread badge fills, mirroring RBX_DANGER_FG / RBX_ACCENT / RBX_FG_TERTIARY
+    // (RBX_* is registered after this file, so literals are used here).
+    mod.widgets.COLOR_UNREAD_BADGE_MENTIONS = #B93429;
+    mod.widgets.COLOR_UNREAD_BADGE_MARKED = #0D7988;
+    mod.widgets.COLOR_UNREAD_BADGE_MESSAGES = #687283
 
 
     mod.widgets.COLOR_TEXT_IDLE = #d8d8d8
@@ -184,8 +209,9 @@ script_mod! {
 
     // Use an even value for this, not odd, such that it can be divided in half,
     // which is needed when calculating the value of other widgets that scale with this.
-    mod.widgets.NAVIGATION_TAB_BAR_SIZE = 54
-    mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE = 40
+    // This is chosen to nicely fit the 3 window chrome buttons on macOS
+    mod.widgets.NAVIGATION_TAB_BAR_SIZE = 76
+    mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE = (mod.widgets.NAVIGATION_TAB_BAR_SIZE * 0.65)
     mod.widgets.NAVIGATION_TAB_BAR_AVATAR_FONT_SIZE = (mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE * 0.4)
 
 
@@ -200,8 +226,38 @@ script_mod! {
 
     mod.widgets.COLOR_IMAGE_VIEWER_META_BACKGROUND = #E8E8E8
 
+    // Layout spacing constants (4px grid)
+    mod.widgets.SPACE_XS  = 4
+    mod.widgets.SPACE_SM  = 8
+    mod.widgets.SPACE_MD  = 12
+    mod.widgets.SPACE_LG  = 16
+    mod.widgets.SPACE_XL  = 20
+    mod.widgets.SPACE_XXL = 24
+
+    // Border radius constants
+    mod.widgets.RADIUS_SM = 4.0
+    mod.widgets.RADIUS_MD = 6.0
+    mod.widgets.RADIUS_LG = 8.0
+
+    // Settings screen colors
+    mod.widgets.COLOR_DROPDOWN_TEXT = #x333333
+    mod.widgets.COLOR_DROPDOWN_BORDER = #xC8D9F2
+    mod.widgets.COLOR_DROPDOWN_POPUP_BORDER = #xD3E1F6
+    mod.widgets.COLOR_DROPDOWN_ARROW = #x888888
+    mod.widgets.COLOR_INACTIVE_BORDER = #xBBBBBB
+    mod.widgets.COLOR_DESCRIPTION_TEXT = #x7A7A7A
+    mod.widgets.COLOR_FIELD_LABEL = #x555555
+    mod.widgets.COLOR_DISABLED_TEXT = #x999999
+
+    // Settings screen layout
+    mod.widgets.SETTINGS_CONTENT_PADDING = 16
     // Ensure all settings buttons have a consistent height
-    mod.widgets.SETTINGS_BUTTON_HEIGHT = 40
+    mod.widgets.SETTINGS_BUTTON_HEIGHT = 36
+
+    // Text alignment compensation for non-Label widgets (LinkLabel, IconButton)
+    // whose internal rendering origin differs from plain Label.
+    mod.widgets.LINK_LABEL_LEFT_PAD = 6
+    mod.widgets.ICON_BUTTON_LEFT_PAD = 4
 
     // The font size used for regular (non-title, non-subsection) text
     // within any settings screen (e.g., dropdown labels, radio/toggle
@@ -338,10 +394,9 @@ script_mod! {
 
 /// #FFFFFF
 pub const COLOR_PRIMARY:               Vec4 = vec4(1.0, 1.0, 1.0, 1.0);
-/// #0F88FE
-pub const COLOR_ACTIVE_PRIMARY:        Vec4 = vec4(0.059, 0.533, 0.996, 1.0);
-/// #106FCC
-pub const COLOR_ACTIVE_PRIMARY_DARKER: Vec4 = vec4(0.063, 0.435, 0.682, 1.0);
+/// The primary/CTA/focus colour, the accent teal (was the legacy `#0F88FE`).
+pub const COLOR_ACTIVE_PRIMARY:        Vec4 = crate::shared::design_tokens::RBX_ACCENT;
+pub const COLOR_ACTIVE_PRIMARY_DARKER: Vec4 = crate::shared::design_tokens::RBX_ACCENT_HOVER;
 /// #138808
 pub const COLOR_FG_ACCEPT_GREEN:       Vec4 = vec4(0.074, 0.533, 0.031, 1.0);
 /// #F0FFF0
@@ -360,12 +415,12 @@ pub const COLOR_BG_DANGER_RED:         Vec4 = vec4(1.0, 0.941, 0.941, 1.0);
 pub const COLOR_ROBRIX_PURPLE:         Vec4 = vec4(0.341, 0.176, 0.8, 1.0);
 /// #05CDC7
 pub const COLOR_ROBRIX_CYAN:           Vec4 = vec4(0.031, 0.804, 0.78, 1.0);
-/// #FF0000
-pub const COLOR_UNREAD_BADGE_MENTIONS: Vec4 = vec4(1.0, 0.0, 0.0, 1.0);
-/// #572DCC
-pub const COLOR_UNREAD_BADGE_MARKED:   Vec4 = COLOR_ROBRIX_CYAN;
-/// #AAAAAA
-pub const COLOR_UNREAD_BADGE_MESSAGES: Vec4 = vec4(0.667, 0.667, 0.667, 1.0);
+/// #B93429 — mention badge (`RBX_DANGER_FG`).
+pub const COLOR_UNREAD_BADGE_MENTIONS: Vec4 = crate::shared::design_tokens::RBX_DANGER_FG;
+/// #0D7988 — marked-unread badge (`RBX_ACCENT`).
+pub const COLOR_UNREAD_BADGE_MARKED:   Vec4 = crate::shared::design_tokens::RBX_ACCENT;
+/// #687283 — plain unread-count badge (`RBX_FG_TERTIARY`).
+pub const COLOR_UNREAD_BADGE_MESSAGES: Vec4 = crate::shared::design_tokens::RBX_FG_TERTIARY;
 /// #FF6e00
 pub const COLOR_UNKNOWN_ROOM_AVATAR:   Vec4 = vec4(1.0, 0.431, 0.0, 1.0);
 /// #888888

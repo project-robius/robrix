@@ -34,6 +34,7 @@
 use makepad_widgets::*;
 use serde::{Deserialize, Serialize};
 use crate::{
+    home::account_menu::{is_desktop_layout, AccountMenuAction},
     avatar_cache::{self, AvatarCacheEntry},
     login::login_screen::LoginAction,
     logout::logout_confirm_modal::LogoutAction,
@@ -59,13 +60,100 @@ script_mod! {
 
 
     // The base style definition for icon buttons in the NavigationTabBar.
+    //
+    // Dark navy nav-rail item (robrix2 visual spec §5.6 / RBX_NAV_* tokens):
+    // transparent when idle so the navy rail shows through, a navy "pill" on
+    // hover/active, plus a teal accent bar on the left edge of the *active* item
+    // to echo the app-wide teal selection language. The icon itself is recolored
+    // white when selected via the animator below (DrawSvg has no per-state color).
     mod.widgets.NavigationTabButton = mod.widgets.NavigationBarButton {
         width: Fill,
-        height: (NAVIGATION_TAB_BAR_SIZE - 4),
-        padding: 5,
-        margin: 2,
+        height: (NAVIGATION_TAB_BAR_SIZE - 12),
+        padding: (SPACE_XS),
+        margin: Inset{top: 2, bottom: 2, left: (SPACE_XS), right: (SPACE_XS)},
         align: Align{x: 0.5, y: 0.5}
         flow: Down,
+
+        draw_bg +: {
+            color_hover: (RBX_NAV_ITEM_HOVER_BG)
+            color_active: (RBX_NAV_ITEM_ACTIVE_BG)
+            accent_color: instance((RBX_ACCENT))
+            border_radius: (RBX_RADIUS_SM)
+
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                sdf.box(
+                    self.border_inset.x + self.border_size,
+                    self.border_inset.y + self.border_size,
+                    self.rect_size.x - (self.border_inset.x + self.border_inset.z + self.border_size * 2.0),
+                    self.rect_size.y - (self.border_inset.y + self.border_inset.w + self.border_size * 2.0),
+                    max(1.0, self.border_radius)
+                )
+                // `fill_keep` leaves the pill in the sdf shape, and `box` unions with it,
+                // so the accent bar below would flood the whole pill. `fill`/`stroke` reset it.
+                if self.border_size > 0.0 {
+                    sdf.fill_keep(self.get_color())
+                    sdf.stroke(self.border_color, self.border_size)
+                } else {
+                    sdf.fill(self.get_color())
+                }
+                // Teal selection bar on the left edge, shown only when active.
+                let bar_inset = 12.0
+                sdf.box(
+                    0.0,
+                    bar_inset,
+                    3.0,
+                    self.rect_size.y - bar_inset * 2.0,
+                    1.5
+                )
+                sdf.fill(mix(vec4(0.0, 0.0, 0.0, 0.0), self.accent_color, self.active))
+                return sdf.result;
+            }
+        }
+
+        icon := Icon {
+            margin: 0,
+            icon_walk: Walk {
+                margin: 0,
+                width: (RBX_ICON_LG),
+                height: (RBX_ICON_LG)
+            }
+            draw_icon +: {
+                color: (RBX_NAV_FG)
+            }
+        }
+
+        // Same hover/active tracks as the base NavigationBarButton, plus the
+        // icon recolor: white (RBX_NAV_FG_ACTIVE) when selected, muted
+        // RBX_NAV_FG otherwise.
+        animator: Animator {
+            hover: {
+                default: @off
+                off: AnimatorState{
+                    from: {all: Forward {duration: 0.15}}
+                    apply: { draw_bg: {hover: 0.0} }
+                }
+                on: AnimatorState{
+                    from: {all: Snap}
+                    apply: { draw_bg: {hover: 1.0} }
+                }
+                down: AnimatorState{
+                    from: {all: Snap}
+                    apply: { draw_bg: {hover: 1.0} }
+                }
+            }
+            active: {
+                default: @off
+                off: AnimatorState{
+                    from: {all: Snap}
+                    apply: { draw_bg: {active: 0.0} icon: { draw_icon: { color: (RBX_NAV_FG) } } }
+                }
+                on: AnimatorState{
+                    from: {all: Snap}
+                    apply: { draw_bg: {active: 1.0} icon: { draw_icon: { color: (RBX_NAV_FG_ACTIVE) } } }
+                }
+            }
+        }
     }
 
     mod.widgets.ProfileIcon = #(ProfileIcon::register_widget(vm)) {
@@ -77,14 +165,20 @@ script_mod! {
 
         // Use the same size/shape bounds as other buttons in the NavigationTabBar
         width: Fill,
-        height: (NAVIGATION_TAB_BAR_SIZE - 4)
+        height: (NAVIGATION_TAB_BAR_SIZE - 8)
         padding: 0,
-        margin: 2,
+        margin: Inset{top: 2, bottom: 2, left: (SPACE_XS), right: (SPACE_XS)},
         align: Align{ x: 0.5, y: 0.5 }
 
+        draw_bg +: {
+            color_hover: (RBX_NAV_ITEM_HOVER_BG)
+            color_active: (RBX_NAV_ITEM_ACTIVE_BG)
+            border_radius: (RBX_RADIUS_SM)
+        }
+
         avatar_with_badge := View {
-            width: (NAVIGATION_TAB_BAR_SIZE - 4)
-            height: (NAVIGATION_TAB_BAR_SIZE - 4)
+            width: (NAVIGATION_TAB_BAR_SIZE - 12)
+            height: (NAVIGATION_TAB_BAR_SIZE - 12)
             flow: Overlay
             align: Align { x: 0.5, y: 0.5 }
 
@@ -107,8 +201,6 @@ script_mod! {
             // to the top-right corner of the wrapper. Since the wrapper is
             // larger than the avatar, the badge ends up sitting near the
             // avatar's outer top-right corner, half-overlapping the avatar.
-            // The right/top margin nudges the badge a few pixels south-west
-            // so it sits visually centered on the avatar's corner.
             View {
                 width: Fill,
                 height: Fill,
@@ -121,33 +213,26 @@ script_mod! {
 
     mod.widgets.HomeButton = mod.widgets.NavigationTabButton {
         tooltip_text: "All Rooms"
-        Icon {
-            margin: 0,
-            icon_walk: Walk {
-                margin: 0,
-                width: 30,
-                height: 30
-            }
-            draw_icon +: {
-                color: (COLOR_NAVIGATION_TAB_FG)
-                svg: (ICON_HOME)
-            }
+        icon +: {
+            draw_icon +: { svg: (ICON_HOME) }
         }
     }
 
     mod.widgets.AddRoomButton = mod.widgets.NavigationTabButton {
         tooltip_text: "Add/Join Room"
-        Icon {
-            margin: 0,
-            icon_walk: Walk {
-                margin: 0,
-                width: 27,
-                height: 27
-            }
-            draw_icon +: {
-                color: (COLOR_NAVIGATION_TAB_FG)
-                svg: (ICON_ADD)
-            }
+        icon +: {
+            draw_icon +: { svg: (ICON_ADD) }
+        }
+    }
+
+    // The bottom rail item that opens the account menu (ported from robrix2). A plain
+    // icon button, NOT a second ProfileIcon: the menu is an action, not the user's
+    // avatar, and this keeps the rail's icon language consistent with Home / "+".
+    // The top avatar keeps opening Settings directly.
+    mod.widgets.AccountSwitcherButton = mod.widgets.NavigationTabButton {
+        tooltip_text: "Account"
+        icon +: {
+            draw_icon +: { svg: (mod.widgets.ICON_PEOPLE) }
         }
     }
 
@@ -156,39 +241,34 @@ script_mod! {
     // so the parent never calls `set_selected` on it.
     mod.widgets.ToggleSpacesBarButton = mod.widgets.NavigationTabButton {
         tooltip_text: "Toggle Spaces"
-        Icon {
-            margin: 0,
-            icon_walk: Walk {
-                margin: 0,
-                width: 30,
-                height: 30
-            }
-            draw_icon +: {
-                color: (COLOR_NAVIGATION_TAB_FG)
-                svg: (ICON_SQUARES)
-            }
+        icon +: {
+            draw_icon +: { svg: (ICON_SQUARES) }
         }
     }
 
-    mod.widgets.Separator = LineH { margin: 8 }
+    mod.widgets.Separator = LineH {
+        margin: Inset{top: (SPACE_SM), bottom: (SPACE_SM), left: (SPACE_MD), right: (SPACE_MD)}
+        draw_bg.color: (RBX_NAV_DIVIDER)
+    }
 
     mod.widgets.NavigationTabBar = #(NavigationTabBar::register_widget(vm)) {
-        Desktop := RoundedView {
+        // Dark navy anchor rail (robrix2 visual spec §2/§5.6). SolidView fills its
+        // column edge-to-edge (no rounded-SDF anti-aliased border), so the navy is
+        // perfectly flush to the window's left edge AND to the rooms list.
+        Desktop := SolidView {
             new_batch: true,
             flow: Down,
             align: Align{x: 0.5}
             padding: Inset{
-                top: 8.,
-                bottom: (8.0 + mod.widgets.SAFE_INSET_PAD_BOTTOM),
+                top: (SPACE_SM),
+                bottom: (SPACE_SM + mod.widgets.SAFE_INSET_PAD_BOTTOM),
                 left: (mod.widgets.SAFE_INSET_PAD_LEFT),
             }
             width: (mod.widgets.NAVIGATION_TAB_BAR_SIZE + mod.widgets.SAFE_INSET_PAD_LEFT),
             height: Fill
 
-            draw_bg +: {
-                color: (COLOR_SECONDARY)
-                border_radius: 4.0
-            }
+            show_bg: true
+            draw_bg.color: (RBX_NAV_BG)
 
             CachedWidget {
                 profile_icon := mod.widgets.ProfileIcon {}
@@ -205,9 +285,20 @@ script_mod! {
             CachedWidget {
                 root_spaces_bar := mod.widgets.SpacesBar {}
             }
+
+            mod.widgets.Separator {}
+
+            // Bottom-left account menu button. The spaces bar above is height: Fill,
+            // which pins this to the very bottom of the rail.
+            CachedWidget {
+                account_switcher_button := mod.widgets.AccountSwitcherButton {}
+            }
         }
 
-        Mobile := RoundedView {
+        // The mobile bottom bar shares the desktop rail's navy palette so the
+        // same nav-button templates (transparent idle, navy pill, white icon
+        // when selected) read correctly on both.
+        Mobile := SolidView {
             new_batch: true,
             flow: Right
             align: Align{x: 0.5, y: 0.5}
@@ -222,10 +313,8 @@ script_mod! {
                 right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
             }
 
-            draw_bg +: {
-                color: (COLOR_SECONDARY)
-                border_radius: 4.0
-            }
+            show_bg: true
+            draw_bg.color: (RBX_NAV_BG)
 
             CachedWidget {
                 home_button := mod.widgets.HomeButton {}
@@ -430,7 +519,7 @@ impl Widget for ProfileIcon {
         if !drew_avatar {
             our_own_avatar.show_text(
                 cx,
-                Some(COLOR_ROBRIX_PURPLE),
+                Some(crate::shared::design_tokens::RBX_IDENTITY_TEAL),
                 None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
                 own_profile.displayable_name(),
             );
@@ -553,6 +642,17 @@ impl Widget for NavigationTabBar {
                     self.apply_selected_tab(cx, Some(SelectedTab::Settings));
                     cx.action(NavigationBarAction::OpenSettings);
                 }
+            }
+
+            // The bottom account button opens the AccountMenu, anchored so the card's
+            // BOTTOM-left sits at the button's bottom-right (the App grows it upward).
+            if is_desktop_layout(cx)
+                && self.view.navigation_bar_button(cx, ids!(account_switcher_button)).clicked(actions)
+            {
+                let rect = self.view.widget(cx, ids!(account_switcher_button)).area().rect(cx);
+                cx.action(AccountMenuAction::Open {
+                    pos: dvec2(rect.pos.x + rect.size.x + 4.0, rect.pos.y + rect.size.y),
+                });
             }
 
             if self.view.navigation_bar_button(cx, ids!(toggle_spaces_bar_button)).clicked(actions) {

@@ -15,25 +15,20 @@ script_mod! {
             border_radius: uniform(2.25)
 
             pixel: fn() {
-                let corner_round = self.border_radius
-                let sz = self.rect_size.x * 0.3 - corner_round * 0.5
+                let sz = self.rect_size.x * 0.24
                 let c = vec2(self.rect_size.x * 0.5, self.rect_size.y * 0.5)
                 let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                 sdf.clear(vec4(0.0))
 
-                // Triangle pointing up; rotation maps opened to:
-                //   0.0 -> 90deg (right-pointing, collapsed)
-                //   1.0 -> 180deg (down-pointing, expanded)
+                // Open chevron (not a filled triangle). Base shape points up "^";
+                // the rotation maps opened to:
+                //   0.0 -> 90deg  -> right-pointing "›" (collapsed)
+                //   1.0 -> 180deg -> down-pointing  "⌄" (expanded)
                 sdf.rotate(self.opened * 0.5 * PI + 0.5 * PI, c.x, c.y)
-                sdf.move_to(c.x - sz, c.y + sz)
-                sdf.line_to(c.x, c.y - sz)
-                sdf.line_to(c.x + sz, c.y + sz)
-                sdf.close_path()
-
-                // Keep the filled triangle, then slightly expand it with a crisp stroke
-                // to geometrically round sharp corners (no blur).
-                sdf.fill_keep(self.color)
-                return sdf.stroke(self.color, corner_round)
+                sdf.move_to(c.x - sz, c.y + sz * 0.7)
+                sdf.line_to(c.x, c.y - sz * 0.7)
+                sdf.line_to(c.x + sz, c.y + sz * 0.7)
+                return sdf.stroke(self.color, 1.6)
             }
         }
 
@@ -57,7 +52,7 @@ script_mod! {
     }
 }
 
-/// Animated expand/collapse triangle arrow.
+/// Animated expand/collapse chevron arrow.
 #[derive(Script, ScriptHook, Widget, Animator)]
 pub struct ExpandArrow {
     #[uid] uid: WidgetUid,

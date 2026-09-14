@@ -274,10 +274,18 @@ fn text_preview_of_message(
                 htmlize::escape_text(&video.body)
             }
         ),
-        MessageType::_Custom(custom) => format!(
-            "[Custom message]: {:?}",
-            custom,
-        ),
+        MessageType::_Custom(custom) => {
+            // Agent-chat approval events are custom msgtypes, so without this they
+            // would fall through to the Rust debug formatting below and leak
+            // `CustomMessageContent { msgtype: ... }` into the rooms list. The
+            // bridge already writes a human-readable `body`; show that instead.
+            #[cfg(feature = "agent_chat")]
+            let agent_chat_body = crate::agent_chat::approval::is_approval_msgtype(msg.msgtype())
+                .then(|| htmlize::escape_text(msg.body()).to_string());
+            #[cfg(not(feature = "agent_chat"))]
+            let agent_chat_body: Option<String> = None;
+            agent_chat_body.unwrap_or_else(|| format!("[Custom message]: {:?}", custom))
+        }
         other => format!(
             "[Unknown message type]: {}",
             htmlize::escape_text(other.body()),
