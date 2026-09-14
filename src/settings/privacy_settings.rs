@@ -71,7 +71,8 @@ script_mod! {
             width: Fill, height: Fit
             Label {
                 width: Fill, height: Fit
-                margin: Inset{top: 10, bottom: 8, left: 13, right: 10},
+                padding: 0
+                margin: Inset{top: 10, bottom: 0, left: 13, right: 10},
                 flow: Flow.Right{wrap: true},
                 draw_text +: {
                     color: (COLOR_TEXT_WARNING_NOT_FOUND),

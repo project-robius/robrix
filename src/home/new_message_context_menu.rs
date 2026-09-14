@@ -6,7 +6,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedEventId, events::room::message::MessageType};
 use matrix_sdk_ui::timeline::{EventSendState, EventTimelineItem, MsgLikeContent, MsgLikeKind, TimelineEventItemId};
 
-use crate::{home::send_status_indicator::is_send_error_retryable, shared::context_menu::{BUTTON_HEIGHT, ContextMenuClosed, expected_menu_size}, sliding_sync::UserPowerLevels};
+use crate::{home::send_status_indicator::is_send_error_retryable, shared::{context_menu::{BUTTON_HEIGHT, ContextMenuClosed, expected_menu_size}, speech_text_input::escape_stopped_dictation}, sliding_sync::UserPowerLevels};
 
 use super::room_screen::MessageAction;
 
@@ -311,7 +311,8 @@ impl Widget for NewMessageContextMenu {
         let close_menu = {
             event.back_pressed()
             || match event.hits_with_capture_overload(cx, area, true) {
-                Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
+                // An `Escape` that stopped dictation shouldn't also close this menu.
+                Hit::KeyUp(key) => key.key_code == KeyCode::Escape && !escape_stopped_dictation(),
                 Hit::FingerDown(fde) => {
                     let reaction_text_input = self.view.text_input(cx, ids!(reaction_input_view.reaction_text_input));
                     if reaction_text_input.area().rect(cx).contains(fde.abs) {
@@ -355,7 +356,7 @@ impl WidgetMatchEvent for NewMessageContextMenu {
             );
             close_menu = true;
         }
-        else if reaction_text_input.escaped(actions) {
+        else if reaction_text_input.escaped(actions) && !escape_stopped_dictation() {
             close_menu = true;
         }
         else if self.button(cx, ids!(react_button)).clicked(actions) {

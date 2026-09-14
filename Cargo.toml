@@ -17,8 +17,8 @@ metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 # makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
 # makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "button-grab-key-focus", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "button-grab-key-focus" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "text-input-scroll-bar", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "text-input-scroll-bar" }
 
 
 robius-directories = { git = "https://github.com/project-robius/robius" }
@@ -26,7 +26,7 @@ robius-file-picker = { git = "https://github.com/project-robius/robius" }
 robius-location    = { git = "https://github.com/project-robius/robius" }
 robius-open        = { git = "https://github.com/project-robius/robius" }
 robius-share       = { git = "https://github.com/project-robius/robius" }
-robius-speech      = { git = "https://github.com/project-robius/robius", branch = "speech_to_text" }
+robius-speech      = { git = "https://github.com/project-robius/robius" }
 robius-use-makepad = "0.1.1" ## auto-configures all `robius-*` crates to work with Makepad.
 
 
@@ -44,7 +44,7 @@ futures = "0.3"
 imbl = { version = "7.0.1", features = ["serde"] } # same as matrix-sdk-ui
 futures-util = "0.3"
 hashbrown = { version = "0.16", features = ["raw-entry"] }
-htmlize = { version = "1.0.5", features = ["unescape"] }
+htmlize = { version = "1.1", features = ["unescape"] }
 indexmap = "2.6.0"
 libc = "0.2"
 mime = "0.3"

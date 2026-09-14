@@ -1,4 +1,4 @@
-//! A native speech-to-text dictation session, scoped to a single room.
+//! A native speech-to-text dictation session, scoped to a single text input.
 
 use std::cell::{Cell, RefCell};
 use std::sync::{Arc, atomic::{AtomicU32, Ordering}, mpsc::{self, Receiver}};
@@ -36,10 +36,10 @@ pub(super) struct SpeechInput {
     latest_level: Arc<AtomicU32>,
     pub phase: SpeechPhase,
     phase_since: Instant,
-    /// Tracks where dictated words go in the message text, and which ones are already there.
+    /// Tracks where dictated words go in the text input, and which ones are already there.
     pub dictation: Dictation,
     /// True once the recognizer has stopped. We keep the session around until its
-    /// last words have been added to the message text, then drop it.
+    /// last words have been added to the text input, then drop it.
     pub ended: bool,
     pub levels: [f32; 3],
 }
@@ -139,7 +139,7 @@ impl SpeechInput {
         if events.is_empty() && timeout.is_some_and(|timeout| self.phase_since.elapsed() > timeout) {
             return vec![NativeSpeechEvent::Error(SpeechError::new(
                 SpeechErrorKind::Other,
-                "Speech input timed out. Your transcribed draft has been kept; please try again.",
+                "Speech input timed out. Any words already transcribed were kept; please try again.",
             ))];
         }
         events
