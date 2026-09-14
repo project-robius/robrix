@@ -102,6 +102,10 @@ pub struct MainDesktopUI {
     /// * If true, this widget proceeds to draw the desktop UI as normal.
     #[rust]
     drawn_previously: bool,
+
+    /// Held while Back closes the selected thread tab; child overlays take priority.
+    #[rust]
+    cancel_scope: Option<CancelScope>,
 }
 
 impl ScriptHook for MainDesktopUI {
@@ -118,7 +122,10 @@ impl Widget for MainDesktopUI {
 
         // For convenience, we support go-back gestures when viewing a thread's tab
         // to easily go back to the most recent room.
+        // The mouse's back button is treated like the go-back gesture, so any overlay view
+        // will "own" (consume) the go-back event before this code can do so here.
         if let Some(sr @ SelectedRoom::Thread { .. }) = self.most_recently_selected_room.as_ref()
+            && self.cancel_scope.as_ref().is_some_and(|s| cx.owns_cancel(s))
             && (event.back_pressed() || matches!(event, Event::MouseUp(e) if e.button.is_back()))
         {
             self.close_tab(cx, sr.tab_id());
@@ -143,6 +150,16 @@ impl Widget for MainDesktopUI {
 }
 
 impl MainDesktopUI {
+    fn update_cancel_scope(&mut self, cx: &mut Cx) {
+        if matches!(self.most_recently_selected_room, Some(SelectedRoom::Thread { .. })) {
+            if self.cancel_scope.is_none() {
+                self.cancel_scope = Some(self.begin_cancel_scope_for(cx, CancelScopeKind::Back));
+            }
+        } else {
+            self.cancel_scope = None;
+        }
+    }
+
     /// Moves or adds the given room the the end of the `room_order`, the most recent spot.
     fn mark_room_as_recent(&mut self, room: &SelectedRoom) {
         self.room_order.retain(|sr| sr != room);
@@ -164,6 +181,7 @@ impl MainDesktopUI {
             cx.action(AppStateAction::FocusNone);
             self.most_recently_selected_room = None;
         }
+        self.update_cancel_scope(cx);
     }
 
     /// Cancels dictation unless `room` is already shown, since showing it hides the current tab.
@@ -454,6 +472,7 @@ impl MainDesktopUI {
             Some(selected_room) => self.focus_or_create_tab(cx, selected_room),
             None => self.most_recently_selected_room = None,
         }
+        self.update_cancel_scope(cx);
         app_state.selected_room = selected_room;
         self.redraw(cx);
     }

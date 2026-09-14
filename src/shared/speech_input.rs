@@ -1,6 +1,5 @@
 //! A native speech-to-text dictation session, scoped to a single text input.
 
-use std::cell::{Cell, RefCell};
 use std::sync::{Arc, atomic::{AtomicU32, Ordering}, mpsc::{self, Receiver}};
 use std::time::{Duration, Instant};
 use robius_speech::{Dictation, NativeSpeechEvent, NativeSpeechOptions, NativeSpeechSession, SpeechError, SpeechErrorKind};
@@ -28,8 +27,7 @@ pub(super) enum SpeechPhase {
 
 pub(super) struct SpeechInput {
     session: Option<NativeSpeechSession>,
-    receiver: RefCell<Option<Receiver<NativeSpeechEvent>>>,
-    cancelled: Cell<bool>,
+    receiver: Option<Receiver<NativeSpeechEvent>>,
     /// The latest microphone level the recognizer has reported that we haven't drawn yet.
     ///
     /// This is wrapped in an `Arc` so it can be shared with the recognizer's own OS thread.
@@ -49,8 +47,7 @@ impl SpeechInput {
         let selection = input.selection();
         Self {
             session: None,
-            receiver: RefCell::new(receiver),
-            cancelled: Cell::new(false),
+            receiver,
             latest_level: Arc::new(AtomicU32::new(NO_LEVEL)),
             phase,
             phase_since: Instant::now(),
@@ -79,7 +76,7 @@ impl SpeechInput {
                 signal.set();
             }
         })?);
-        *self.receiver.get_mut() = Some(receiver);
+        self.receiver = Some(receiver);
         Ok(())
     }
 
@@ -91,17 +88,8 @@ impl SpeechInput {
         self.phase_since = Instant::now();
     }
 
-    pub fn cancel(&self) {
-        self.cancelled.set(true);
-        self.receiver.borrow_mut().take();
-        if let Some(session) = &self.session {
-            session.cancel();
-        }
-    }
-
     pub fn poll(&mut self) -> Vec<NativeSpeechEvent> {
         if self.ended { return Vec::new(); }
-        if self.cancelled.get() { return vec![NativeSpeechEvent::Stopped]; }
         let reported_level = self.latest_level.swap(NO_LEVEL, Ordering::Relaxed);
         if reported_level != NO_LEVEL {
             let level = f32::from_bits(reported_level);
@@ -110,7 +98,7 @@ impl SpeechInput {
             self.levels = [self.levels[1], self.levels[2], level.max(self.levels[2] * 0.65)];
         }
         let mut events = Vec::new();
-        if let Some(receiver) = self.receiver.get_mut() {
+        if let Some(receiver) = self.receiver.as_mut() {
             loop {
                 match receiver.try_recv() {
                     Ok(event) => events.push(event),

@@ -730,6 +730,16 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        // The mentionable popup needs special top-level handling to close it if needed.
+        if matches!(event, Event::Draw(_) | Event::BackPressed { .. })
+            || matches!(event, Event::KeyDown(key) if key.key_code == KeyCode::Escape)
+        {
+            use crate::shared::mention_popup::MentionablePopupRef;
+            if cx.has_global::<MentionablePopupRef>() {
+                cx.get_global::<MentionablePopupRef>().clone().close_if_input_inactive(cx);
+            }
+        }
+
         if let Event::LiveEdit = event {
             self.app_state.app_prefs.broadcast_all(cx);
         }
@@ -749,7 +759,6 @@ impl AppMain for App {
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
         self.handle_lifecycle_event(cx, event);
-
     }
 }
 

@@ -18,7 +18,7 @@ use matrix_sdk::{
 };
 use crate::{
     home::rooms_list::RoomsListRef,
-    shared::{mention_popup::{MentionItem, MentionablePopupRef}, slash_commands::{self, SlashCommandOutcome}, speech_text_input::{SpeechTextInputRef, SpeechTextInputWidgetRefExt, escape_stops_dictation}},
+    shared::{mention_popup::{MentionItem, MentionablePopupRef}, slash_commands::{self, SlashCommandOutcome}, speech_text_input::{SpeechTextInputRef, SpeechTextInputWidgetRefExt}},
     sliding_sync::{submit_async_request, MatrixRequest},
     utils::{self, MatchQuality},
 };
@@ -70,6 +70,16 @@ impl Widget for MentionableTextInput {
         let uid = self.widget_uid();
 
         let popup_ref = self.popup_ref(cx);
+
+        // The mentionable popup can close on its own (without us explicitly telling it to),
+        // so if that happens we need to clear our state and disconnect from it.
+        if self.active_trigger.is_some() && !popup_ref.is_open_for(uid) {
+            self.active_trigger = None;
+            // Invalidate any in-flight background match, as `close_popup` does.
+            self.request_id = self.request_id.wrapping_add(1);
+            self.redraw(cx);
+        }
+
         // Handle events/actions that are relevant to a currently-open mention popup.
         if popup_ref.is_open_for(uid) {
             // On a window resize, the textinput moved, so re-anchor the popup to the cursor.
@@ -80,7 +90,7 @@ impl Widget for MentionableTextInput {
                 }
             }
 
-            // When the mention popup is open, key presses like arrows, return, and escape should be forwarded
+            // When the mention popup is open, key presses like arrows and return should be forwarded
             // to it so it can handle them (instead of treating them as regular TextInput navigation).
             // Obviously we can't just give key focus to the popup because we still need to let
             // the user type characters into the text input so they can filter the matches in the popup.
@@ -106,11 +116,6 @@ impl Widget for MentionableTextInput {
                                 return;
                             }
                         }
-                        // Let an `Escape` that stops dictation do only that.
-                        KeyCode::Escape if !escape_stops_dictation(ke) => {
-                            self.close_popup(cx);
-                            return;
-                        }
                         _ => {}
                     }
                 }
@@ -121,15 +126,14 @@ impl Widget for MentionableTextInput {
                 !pref.content_rect(cx).contains(loc) && !input_area.rect(cx).contains(loc)
             }
 
-            // Dismiss the mention popup on a click/touch outside it, or upon a go-back gesture.
-            let should_dismiss = event.back_pressed()
-                || match event {
-                    Event::MouseDown(e) => is_outside(cx, &popup_ref, &text_input_area, e.abs),
-                    Event::TouchUpdate(e) => e.touches.iter().any(
-                        |t| t.state == TouchState::Start && is_outside(cx, &popup_ref, &text_input_area, t.abs)
-                    ),
-                    _ => false,
-                };
+            // The popup handles Escape/Back itself; the input also detects outside clicks.
+            let should_dismiss = match event {
+                Event::MouseDown(e) => is_outside(cx, &popup_ref, &text_input_area, e.abs),
+                Event::TouchUpdate(e) => e.touches.iter().any(
+                    |t| t.state == TouchState::Start && is_outside(cx, &popup_ref, &text_input_area, t.abs)
+                ),
+                _ => false,
+            };
             if should_dismiss {
                 self.close_popup(cx);
             }
@@ -171,6 +175,7 @@ impl Widget for MentionableTextInput {
     }
 
     fn set_text(&mut self, cx: &mut Cx, text: &str) {
+        self.close_popup(cx);
         self.speech_text_input_ref().set_text(cx, text);
         if text.trim().is_empty() {
             self.possible_mentions = Mentions::new();
@@ -228,7 +233,7 @@ impl MentionableTextInput {
         let anchor = self.popup_anchor(cx);
         let trigger_start = self.active_trigger.map_or(0, |t| t.start_byte);
         let popup_ref = self.popup_ref(cx);
-        popup_ref.show(cx, uid, anchor, trigger_start, kind.header(), kind.loading_message());
+        popup_ref.show(cx, uid, self.speech_text_input_ref().widget_uid(), anchor, trigger_start, kind.header(), kind.loading_message());
 
         match kind {
             TriggerKind::User => self.match_members(cx, &popup_ref, query),
@@ -359,6 +364,15 @@ impl MentionableTextInputRef {
         self.speech_text_input_ref().cancel_dictation(cx);
     }
 
+    /// Dismisses the mentionable popup tied to this mentionable input.
+    ///
+    /// This is useful for cases where the input was hidden, so the popup also needs to be hidden.
+    pub fn hide_popup(&self, cx: &mut Cx) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.close_popup(cx);
+        }
+    }
+
     /// See [`SpeechTextInputRef::release_microphone()`].
     pub fn release_microphone(&self) {
         self.speech_text_input_ref().release_microphone();
@@ -425,6 +439,7 @@ impl MentionableTextInputRef {
 
     pub fn restore_state(&self, cx: &mut Cx, state: MentionableTextInputState) {
         let Some(mut inner) = self.borrow_mut() else { return };
+        inner.close_popup(cx);
         inner.speech_text_input_ref().cancel_dictation(cx);
         inner.text_input_ref().restore_state(cx, state.text_input_state);
         inner.possible_mentions = state.possible_mentions;

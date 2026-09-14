@@ -237,9 +237,7 @@ impl Widget for EditingPane {
             if self.button(cx, ids!(cancel_button)).clicked(actions)
                 || edit_text_input.escaped(actions)
             {
-                mentionable_input.cancel_dictation(cx);
-                self.animator_play(cx, ids!(panel.hide));
-                self.redraw(cx);
+                self.hide(cx);
                 return;
             }
 
@@ -328,9 +326,7 @@ impl Widget for EditingPane {
                                             PopupKind::Error,
                                             None,
                                         );
-                                        mentionable_input.cancel_dictation(cx);
-                                        self.animator_play(cx, ids!(panel.hide));
-                                        self.redraw(cx);
+                                        self.hide(cx);
                                         return;
                                     },
                                 };
@@ -468,6 +464,15 @@ impl Widget for EditingPane {
 }
 
 impl EditingPane {
+    fn hide(&mut self, cx: &mut Cx) {
+        let input = self.mentionable_text_input(cx, ids!(editing_content.edit_text_input));
+        input.cancel_dictation(cx);
+        input.hide_popup(cx);
+        self.is_animating_out = true;
+        self.animator_play(cx, ids!(panel.hide));
+        self.redraw(cx);
+    }
+
     /// Returns `true` if this pane is currently being shown.
     pub fn is_currently_shown(&self, _cx: &mut Cx) -> bool {
         self.visible
@@ -493,9 +498,7 @@ impl EditingPane {
         }
         match edit_result {
             Ok(()) => {
-                self.mentionable_text_input(cx, ids!(editing_content.edit_text_input))
-                    .cancel_dictation(cx);
-                self.animator_play(cx, ids!(panel.hide));
+                self.hide(cx);
             },
             Err(e) => {
                 enqueue_popup_notification(
@@ -566,6 +569,10 @@ impl EditingPane {
 
     /// Returns the state of this `EditingPane`, if any.
     pub fn save_state(&self) -> Option<EditingPaneState> {
+        // A cancel already took effect even if navigation interrupts its hide animation.
+        if self.is_animating_out {
+            return None;
+        }
         let info = self.info.as_ref()?;
         let mentionable_input = self.child_by_path(ids!(editing_content.edit_text_input)).as_mentionable_text_input();
         mentionable_input.release_microphone();
@@ -673,6 +680,8 @@ impl EditingPaneRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.mentionable_text_input(cx, ids!(editing_content.edit_text_input))
             .cancel_dictation(cx);
+        inner.mentionable_text_input(cx, ids!(editing_content.edit_text_input))
+            .hide_popup(cx);
         if inner.visible {
             cx.revert_key_focus();
         }

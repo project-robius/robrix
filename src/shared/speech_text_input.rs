@@ -3,7 +3,7 @@
 //! Dictated words go into the text as ordinary undo-able edits, and the user can keep
 //! typing, moving the caret, or composing with an IME while dictation is running.
 
-use std::sync::{OnceLock, atomic::{AtomicBool, AtomicU64, Ordering}};
+use std::sync::{OnceLock, atomic::{AtomicBool, Ordering}};
 use makepad_widgets::{thread::SignalToUI, *};
 use robius_speech::{NativeSpeechEvent, NativeSpeechSession, Replacement, SpeechErrorKind};
 use crate::shared::popup_list::{PopupKind, enqueue_popup_notification};
@@ -93,33 +93,16 @@ script_mod! {
     }
 }
 
-// Only one session can run at a time, so these track that session across all `SpeechTextInput`s.
-/// The widget UID of the `SpeechTextInput` whose session is starting or listening, or 0 if none.
-static LISTENER: AtomicU64 = AtomicU64::new(0);
 /// Whether a stopped session is still transcribing its last words.
+///
+/// Only one session can run at a time, so this is shared by all `SpeechTextInput`s.
 static IS_FINISHING: AtomicBool = AtomicBool::new(false);
-/// The time (as `f64` bits) of the `Escape` key press that last stopped dictation.
-static STOPPING_ESCAPE: AtomicU64 = AtomicU64::new(u64::MAX);
 
 /// Cancels all dictation, e.g., when navigation hides the text input being dictated into.
 pub fn cancel_all_dictation() {
     robius_speech::cancel_all();
     // Wake every `SpeechTextInput` up so that it notices its session has ended.
     SignalToUI::set_ui_signal();
-}
-
-/// Whether the given `Escape` key press stops dictation, in which case nothing else should act on it.
-///
-/// This is for key *down* handlers; anything acting on the key's release, or on a text input's
-/// `Escaped` action, should use [`escape_stopped_dictation()`] instead.
-pub fn escape_stops_dictation(key: &KeyEvent) -> bool {
-    LISTENER.load(Ordering::Relaxed) != 0 || STOPPING_ESCAPE.load(Ordering::Relaxed) == key.time.to_bits()
-}
-
-/// Whether the `Escape` key press being delivered now is the one that stopped dictation,
-/// so that its release, and the `Escaped` action it produced, should be ignored too.
-pub fn escape_stopped_dictation() -> bool {
-    STOPPING_ESCAPE.load(Ordering::Relaxed) != u64::MAX
 }
 
 /// Whether this platform has native speech recognition, checked once per app run.
@@ -159,6 +142,8 @@ pub struct SpeechTextInput {
 
     /// The currently-running speech-to-text dictation session.
     #[rust] speech: Option<SpeechInput>,
+    /// Held while a session is running, so an `Escape` will cancel dictation.
+    #[rust] cancel_scope: Option<CancelScope>,
     /// The phase shown by the microphone button, or `None` when no session is running.
     #[rust] shown_phase: Option<SpeechPhase>,
     /// The three most recent microphone levels shown in the button, oldest first.
@@ -186,27 +171,26 @@ impl ScriptHook for SpeechTextInput {
 impl Drop for SpeechTextInput {
     fn drop(&mut self) {
         self.clear_finishing();
-        let _ = LISTENER.compare_exchange(self.widget_uid().0, 0, Ordering::Relaxed, Ordering::Relaxed);
     }
 }
 
 impl Widget for SpeechTextInput {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // Pressing `Escape` will stop speech recording/recognition regardless of key focus,
-        // and the key press is kept from every text input, not just this one.
-        if let Event::KeyDown(key) = event && key.key_code == KeyCode::Escape {
-            if escape_stops_dictation(key) {
-                STOPPING_ESCAPE.store(key.time.to_bits(), Ordering::Relaxed);
-                match self.phase() {
-                    Some(SpeechPhase::Listening) => self.stop(),
-                    Some(SpeechPhase::Starting) => self.cancel(cx),
-                    _ => {}
-                }
-                self.update_speech_controls(cx);
-                return;
+        // Pressing `Escape` stops recording regardless of key focus, but only when
+        // this session is the foreground thing (the latest owner of the cancel scope).
+        if let Event::KeyDown(key) = event
+            && key.key_code == KeyCode::Escape
+            && self.cancel_scope.as_ref().is_some_and(|s| cx.owns_cancel(s))
+        {
+            match self.phase() {
+                Some(SpeechPhase::Listening) => self.stop(),
+                Some(SpeechPhase::Starting) => self.cancel(cx),
+                _ => {}
             }
-            // This press isn't ours, so whatever acts on its release shouldn't ignore it.
-            STOPPING_ESCAPE.store(u64::MAX, Ordering::Relaxed);
+            self.update_speech_controls(cx);
+            // Return here to prevent the inner text input from emitting its `Escaped` action
+            // when we already "consumed" that Escape key press here for stopping dictation.
+            return;
         }
 
         self.handle_speech_event(cx, event);
@@ -372,11 +356,16 @@ impl SpeechTextInput {
 
     fn update_speech_controls(&mut self, cx: &mut Cx) {
         let new_phase = self.phase();
-        let uid = self.widget_uid().0;
+        // We only want to update (re-own) the cancel scope if we've actually just started
+        // a new speech session. We don't want updates (e.g., the phase going from Starting -> Listening)
+        // to re-own the cancel scope, which would surprisingly make the Escape key stop dictation
+        // even if something else had opened in front of the dictation session since it started.
         if matches!(new_phase, Some(SpeechPhase::Starting | SpeechPhase::Listening)) {
-            LISTENER.store(uid, Ordering::Relaxed);
+            if self.cancel_scope.is_none() {
+                self.cancel_scope = Some(self.begin_cancel_scope_for(cx, CancelScopeKind::Escape));
+            }
         } else {
-            let _ = LISTENER.compare_exchange(uid, 0, Ordering::Relaxed, Ordering::Relaxed);
+            self.cancel_scope = None;
         }
         let levels = self.speech.as_ref().map(|speech| speech.levels);
         // Starting or ending a session completely re-styles the whole button;
@@ -501,11 +490,14 @@ impl SpeechTextInputRef {
     }
 
     /// Like [`Self::cancel_dictation()`] for callers without a `Cx`:
-    /// releases the microphone now, and cleans up upon the next event.
+    /// releases the microphone and cancel scope now.
     pub fn release_microphone(&self) {
-        if let Some(speech) = self.borrow().as_ref().and_then(|inner| inner.speech.as_ref()) {
-            speech.cancel();
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.speech = None;
+            inner.cancel_scope = None;
+            inner.clear_finishing();
         }
     }
 
 }
+

@@ -3,7 +3,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
-use crate::{home::invite_modal::InviteModalAction, settings::app_preferences::preferred_receipt_type, shared::{context_menu::{ContextMenuClosed, expected_menu_size}, popup_list::{PopupKind, enqueue_popup_notification}, speech_text_input::escape_stopped_dictation}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
+use crate::{home::invite_modal::InviteModalAction, settings::app_preferences::preferred_receipt_type, shared::{context_menu::{ContextMenuClosed, expected_menu_size}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
 
 /// Nothing here is conditionally shown, so keep these matching the DSL below.
 const NUM_BUTTONS: usize = 9;
@@ -110,6 +110,8 @@ pub struct RoomContextMenu {
     #[deref] view: View,
     #[source] source: ScriptObjectRef,
     #[rust] details: Option<RoomContextMenuDetails>,
+    /// Hold a cancel scope while this context menu is shown, so it receives Escape/Back cancel events.
+    #[rust] cancel_scope: Option<CancelScope>,
 }
 
 impl Widget for RoomContextMenu {
@@ -132,9 +134,13 @@ impl Widget for RoomContextMenu {
         // Close logic similar to NewMessageContextMenu
         let area = self.view.area();
         let close_menu = {
-            event.back_pressed()
+            (self.cancel_scope.as_ref().is_some_and(|s| cx.owns_cancel(s))
+                && (event.back_pressed()
+                    || matches!(event, Event::KeyUp(key) if key.key_code == KeyCode::Escape)
+                    || matches!(event, Event::MouseUp(e) if e.button.is_back())
+                )
+            )
             || match event.hits_with_capture_overload(cx, area, true) {
-                Hit::KeyUp(key) => key.key_code == KeyCode::Escape && !escape_stopped_dictation(),
                 Hit::FingerUp(fue) if fue.is_over => {
                      !self.view(cx, ids!(main_content)).area().rect(cx).contains(fue.abs)
                 }
@@ -248,6 +254,7 @@ impl RoomContextMenu {
         self.update_buttons(cx, &details);
         self.details = Some(details);
         self.visible = true;
+        self.cancel_scope = Some(self.begin_cancel_scope(cx));
         cx.set_key_focus(self.view.area());
         expected_menu_size(NUM_BUTTONS, NUM_DIVIDERS)
     }
@@ -291,6 +298,7 @@ impl RoomContextMenu {
     fn close(&mut self, cx: &mut Cx) {
         self.visible = false;
         self.details = None;
+        self.cancel_scope = None;
         cx.revert_key_focus();
         cx.unblock_scrolling();
         cx.action(ContextMenuClosed);

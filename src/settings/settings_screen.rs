@@ -1,7 +1,7 @@
 
 use makepad_widgets::*;
 
-use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, SelectedTab, get_own_profile}, profile::user_profile::UserProfile, shared::speech_text_input::escape_stopped_dictation, settings::{PopulateMode, account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt, privacy_settings::PrivacySettingsWidgetExt}};
+use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, profile::user_profile::UserProfile, settings::{PopulateMode, account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt, privacy_settings::PrivacySettingsWidgetExt}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -95,6 +95,11 @@ script_mod! {
 #[derive(Script, ScriptHook, Widget)]
 pub struct SettingsScreen {
     #[deref] view: View,
+    /// Held after this widget is populated.
+    ///
+    /// Note that it's never cleared because Makepad itself prevents any widget from
+    /// consuming a cancel gesture while it's hidden (not visible).
+    #[rust] cancel_scope: Option<CancelScope>,
 }
 
 impl Widget for SettingsScreen {
@@ -114,20 +119,25 @@ impl Widget for SettingsScreen {
         // Close the pane if:
         // 1. The close button is clicked,
         // 2. The back navigational gesture/action occurs (e.g., Back on Android),
-        // 3. The escape key is pressed if this pane has key focus,
-        // 4. The back mouse button is clicked while this settings view is actively shown.
+        // 3. The escape key is pressed while this pane owns the gesture,
+        // 4. The back mouse button is clicked while this pane owns the gesture.
         let area = self.view.area();
+        // Ownership decides for every gesture, not key focus. Checked before
+        // `back_pressed()` because that call consumes: only the owner may make it.
         let close_pane = {
             matches!(
                 event,
                 Event::Actions(actions) if self.button(cx, ids!(close_button)).clicked(actions)
             )
-            || (
-                scope.data.get::<AppState>().is_some_and(|a| a.selected_tab == SelectedTab::Settings)
-                && event.back_pressed()
+            || (self.cancel_scope.as_ref().is_some_and(|s| cx.owns_cancel(s))
+                && (event.back_pressed()
+                    || matches!(event, Event::KeyUp(key) if key.key_code == KeyCode::Escape)
+                    // we must match on the raw event instead of hits, because the back button
+                    // needs to work regardless of what widget captured its initial MouseDown event.
+                    || matches!(event, Event::MouseUp(e) if e.button.is_back())
+                )
             )
             || match event.hits(cx, area) {
-                Hit::KeyUp(key) => key.key_code == KeyCode::Escape && !escape_stopped_dictation(),
                 Hit::FingerDown(_fde) => {
                     cx.set_key_focus(area);
                     false
@@ -184,6 +194,9 @@ impl Widget for SettingsScreen {
 impl SettingsScreen {
     /// Fetches the current user's profile and uses it to populate the settings screen.
     pub fn populate(&mut self, cx: &mut Cx, own_profile: Option<UserProfile>, app_state: &AppState) {
+        if self.cancel_scope.is_none() {
+            self.cancel_scope = Some(self.begin_cancel_scope(cx));
+        }
         let Some(profile) = own_profile.or_else(|| get_own_profile(cx)) else {
             error!("Failed to get own profile for settings screen.");
             return;
@@ -229,3 +242,4 @@ impl SettingsScreenRef {
         inner.populate(cx, own_profile, app_state);
     }
 }
+
