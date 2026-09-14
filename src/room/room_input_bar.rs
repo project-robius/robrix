@@ -572,7 +572,7 @@ impl RoomInputBar {
             self.cancel_dictation(cx);
             let entered_text = mentionable_text_input.text().trim().to_string();
             if !entered_text.is_empty() {
-                match mentionable_text_input.parse_input(&entered_text) {
+                match mentionable_text_input.parse_input(cx, &entered_text) {
                     SlashCommandOutcome::Message(message) => {
                         let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
                             event_tl_item.event_id().map(|event_id| {

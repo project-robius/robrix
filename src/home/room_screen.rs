@@ -3678,29 +3678,9 @@ impl RoomScreen {
 
     /// Applies the outcome of a verdict send to the card that initiated it.
     fn handle_agent_chat_verdict_result(&mut self, cx: &mut Cx, result: &ApprovalVerdictResult) {
-        let (room_id, source_event_id) = match result {
-            ApprovalVerdictResult::Sent { room_id, source_event_id }
-            | ApprovalVerdictResult::Failed { room_id, source_event_id, .. } => (room_id, source_event_id),
-        };
-        if self.room_id() != Some(room_id) {
-            return;
-        }
         let Some(tl) = self.tl_state.as_mut() else { return };
-        match result {
-            ApprovalVerdictResult::Sent { .. } => {
-                tl.agent_chat_approvals.mark_sent(source_event_id);
-            }
-            ApprovalVerdictResult::Failed { error, .. } => {
-                tl.agent_chat_approvals.mark_send_failed(source_event_id);
-                enqueue_popup_notification(
-                    format!("Failed to send the approval verdict.\n\nError: {error}"),
-                    PopupKind::Error,
-                    None,
-                );
-            }
-        }
-        if let Some(index) = index_of_event(&tl.items, source_event_id, tl.items.len(), MAX_ITEMS_TO_SEARCH_THROUGH) {
-            tl.content_drawn_since_last_update.remove(index .. index + 1);
+        if !tl.apply_agent_chat_verdict_result(result) {
+            return;
         }
         self.view.portal_list(cx, ids!(timeline.list)).redraw(cx);
     }
@@ -4077,6 +4057,18 @@ mod timeline_state_store {
         });
     }
 
+    /// Send results can arrive while no RoomScreen owns the timeline.
+    #[cfg(feature = "agent_chat")]
+    pub(super) fn apply_approval_verdict_result(result: &ApprovalVerdictResult) {
+        TIMELINE_STATES.with_borrow_mut(|states| {
+            for entry in states.values_mut() {
+                if let StateEntry::Stored(state) = entry {
+                    state.apply_agent_chat_verdict_result(result);
+                }
+            }
+        });
+    }
+
     /// Drops every stored timeline state and `Taken` marker.
     ///
     /// This is used when all timeline UI state is being reset globally, such as
@@ -4268,6 +4260,35 @@ struct TimelineUiState {
 }
 
 impl TimelineUiState {
+    /// Records completion in either a visible or saved timeline, and invalidates
+    /// the card's cached content so it reflects the result when next drawn.
+    #[cfg(feature = "agent_chat")]
+    fn apply_agent_chat_verdict_result(&mut self, result: &ApprovalVerdictResult) -> bool {
+        let (room_id, source_event_id) = match result {
+            ApprovalVerdictResult::Sent { room_id, source_event_id }
+            | ApprovalVerdictResult::Failed { room_id, source_event_id, .. } => (room_id, source_event_id),
+        };
+        if self.kind.room_id() != room_id
+            || !self.agent_chat_approvals.complete_send(
+                source_event_id,
+                matches!(result, ApprovalVerdictResult::Sent { .. }),
+            )
+        {
+            return false;
+        }
+        if let ApprovalVerdictResult::Failed { error, .. } = result {
+            enqueue_popup_notification(
+                format!("Failed to send the approval verdict.\n\nError: {error}"),
+                PopupKind::Error,
+                None,
+            );
+        }
+        if let Some(index) = index_of_event(&self.items, source_event_id, self.items.len(), MAX_ITEMS_TO_SEARCH_THROUGH) {
+            self.content_drawn_since_last_update.remove(index .. index + 1);
+        }
+        true
+    }
+
     /// Whether we've given up automatic back pagination.
     ///
     /// This happens after we've done multiple back pagination rounds without getting any new events.
@@ -6847,6 +6868,12 @@ impl MessageRef {
 /// Takes `&mut Cx` (unused) to enforce that it's only called from the main UI thread.
 pub fn clear_timeline_states(cx: &mut Cx) {
     timeline_state_store::clear_all(cx);
+}
+
+/// Updates approval cards in saved rooms before the result is delivered to visible widgets.
+#[cfg(feature = "agent_chat")]
+pub fn apply_saved_approval_verdict_result(_cx: &mut Cx, result: &ApprovalVerdictResult) {
+    timeline_state_store::apply_approval_verdict_result(result);
 }
 
 /// Invalidates the UI-side cached state for a single timeline whose backend was just closed,

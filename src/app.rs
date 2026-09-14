@@ -261,6 +261,11 @@ impl MatchEvent for App {
         }
 
         for action in actions {
+            #[cfg(feature = "agent_chat")]
+            if let Some(result) = action.downcast_ref::<crate::agent_chat::ApprovalVerdictResult>() {
+                crate::home::room_screen::apply_saved_approval_verdict_result(cx, result);
+            }
+
             match action.downcast_ref() {
                 Some(LogoutConfirmModalAction::Open) => {
                     self.ui.logout_confirm_modal(cx, ids!(logout_confirm_modal.content)).reset_state(cx);

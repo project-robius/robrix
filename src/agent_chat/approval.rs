@@ -511,6 +511,20 @@ impl ApprovalUiState {
         }
     }
 
+    /// Applies a send result only if this state owns the matching in-flight decision.
+    /// Returns whether the card needs to be redrawn, including after reopening a room.
+    pub fn complete_send(&mut self, event_id: &EventId, sent: bool) -> bool {
+        if !matches!(self.decisions.get(event_id), Some(ApprovalDecisionState::Sending(_))) {
+            return false;
+        }
+        if sent {
+            self.mark_sent(event_id);
+        } else {
+            self.mark_send_failed(event_id);
+        }
+        true
+    }
+
     /// Resolves the state to draw for `request` at `now_millis`.
     pub fn decision_state(
         &self,
@@ -825,5 +839,27 @@ mod tests {
         // A late failure notification must not undo a recorded success.
         ui.mark_send_failed(&event_id);
         assert!(matches!(ui.decision(&event_id), Some(ApprovalDecisionState::Sent(_))));
+    }
+
+    #[test]
+    fn send_completion_only_changes_the_matching_in_flight_decision() {
+        let request = parse_approval_request(&two_action_request(1_000)).unwrap();
+        let event_id = EventId::parse("$req:example.org").unwrap();
+        let other_id = EventId::parse("$other:example.org").unwrap();
+        let mut ui = ApprovalUiState::default();
+        let approve = request.action("approve_once").unwrap().clone();
+        ui.mark_sending(&event_id, approve.clone());
+
+        assert!(!ui.complete_send(&other_id, true));
+        assert!(!ui.complete_send(&other_id, false));
+        assert_eq!(ui.decision(&event_id), Some(&ApprovalDecisionState::Sending(approve.clone())));
+        assert!(ui.complete_send(&event_id, false));
+        assert_eq!(ui.decision_state(&event_id, &request, 999), ApprovalDecisionState::Pending);
+
+        ui.mark_sending(&event_id, approve.clone());
+        assert!(ui.complete_send(&event_id, true));
+        assert!(!ui.complete_send(&event_id, true));
+        assert!(!ui.complete_send(&event_id, false));
+        assert_eq!(ui.decision(&event_id), Some(&ApprovalDecisionState::Sent(approve)));
     }
 }

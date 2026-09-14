@@ -132,8 +132,9 @@ tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding", "dep
 ## (<https://github.com/hagency-org/hagency>): native owner-approval cards for
 ## `com.agentchat.approval.*` events, agent puppet presentation, companion
 ## bridge-bot invites, and the workflow slash-commands offered in rooms that
-## contain a `*_coordinator` agent. Off by default; even when compiled in, it
-## must also be turned on at runtime via Settings → Preferences.
+## contain a `*_coordinator` agent. Off by default; the slash commands also
+## require the runtime toggle in Settings → Preferences. Approval cards,
+## agent presentation, and companion bridge invites require only this feature.
 agent_chat = []
 
 ## Hides the command prompt console/log window on Windows.

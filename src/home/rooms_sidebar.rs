@@ -174,7 +174,7 @@ impl Widget for RoomsSideBar {
                 // The header's search icon: on mobile the filter bar lives right
                 // here, so focus it. (Desktop hosts the bar in the HomeScreen.)
                 if let Some(RoomsListHeaderAction::OpenRoomFilterModal) = action.downcast_ref() {
-                    let input = self.view.text_input(cx, ids!(room_filter_input_bar.input));
+                    let input = self.view.text_input(cx, ids!(room_filter_input_bar.input.text_input));
                     if !input.is_empty() {
                         input.set_key_focus(cx);
                     }

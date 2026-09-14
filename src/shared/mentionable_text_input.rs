@@ -57,10 +57,6 @@ pub struct MentionableTextInput {
     /// Cached room display name, refreshed on room change (avoids a per-keystroke lookup).
     #[rust] room_name: String,
     #[rust] can_notify_room: bool,
-    /// Which agent-chat command sets are offered in the current room
-    /// (the runtime toggle is on and the right agents are members).
-    #[cfg(feature = "agent_chat")]
-    #[rust] agent_chat_commands: EnabledCommandSets,
 
     #[rust] active_trigger: Option<ActiveTrigger>,
     #[rust] request_id: u64,
@@ -190,6 +186,16 @@ impl Widget for MentionableTextInput {
 }
 
 impl MentionableTextInput {
+    /// Read the current preference when matching or sending, so settings changes
+    /// also take effect in composers that were opened before the toggle changed.
+    #[cfg(feature = "agent_chat")]
+    fn agent_chat_commands(&self, cx: &mut Cx) -> EnabledCommandSets {
+        crate::agent_chat::workflow::enabled_command_sets(
+            cx,
+            self.room_members.as_deref().map(Vec::as_slice),
+        )
+    }
+
     fn text_input_ref(&self) -> TextInputRef {
         self.child_by_path(ids!(text_input)).as_text_input()
     }
@@ -242,7 +248,7 @@ impl MentionableTextInput {
             TriggerKind::Command => {
                 #[cfg(feature = "agent_chat")]
                 let items = slash_commands::matching_commands(query)
-                    .chain(self.agent_chat_commands.matching(query))
+                    .chain(self.agent_chat_commands(cx).matching(query))
                     .map(MentionItem::Command)
                     .collect();
                 #[cfg(not(feature = "agent_chat"))]
@@ -429,13 +435,6 @@ impl MentionableTextInputRef {
         inner.room_id = Some(room_id);
         let members_arrived = inner.room_members.is_none() && room_members.is_some();
         inner.room_members = room_members;
-        #[cfg(feature = "agent_chat")]
-        {
-            inner.agent_chat_commands = crate::agent_chat::workflow::enabled_command_sets(
-                cx,
-                inner.room_members.as_deref().map(Vec::as_slice),
-            );
-        }
 
         // The input is reused across rooms, so reset @room capability (re-fetched with
         // the new room's power levels) and close a popup left open in the old one.
@@ -480,14 +479,13 @@ impl MentionableTextInputRef {
     ///
     /// Returns the outcome: send a message, run a command, or show an error.
     /// If it's a message, it will already contain the mentions present in `entered_text`.
-    pub fn parse_input(&self, entered_text: &str) -> SlashCommandOutcome {
+    pub fn parse_input(&self, _cx: &mut Cx, entered_text: &str) -> SlashCommandOutcome {
         let Some(inner) = self.borrow() else { return slash_commands::parse_input(entered_text) };
         // Agent-chat workflow commands are not ours to interpret: they go out as
         // plain text for the coordinator agent, so they bypass the command parser.
         #[cfg(feature = "agent_chat")]
-        let outcome = if inner.agent_chat_commands.any()
-            && slash_commands::split_command(entered_text)
-                .is_some_and(|(name, _)| inner.agent_chat_commands.contains(name))
+        let outcome = if slash_commands::split_command(entered_text)
+            .is_some_and(|(name, _)| inner.agent_chat_commands(_cx).contains(name))
         {
             SlashCommandOutcome::Message(
                 matrix_sdk::ruma::events::room::message::RoomMessageEventContent::text_markdown(entered_text)

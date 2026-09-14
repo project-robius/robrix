@@ -2126,6 +2126,11 @@ async fn matrix_worker_task(
                 use crate::agent_chat::ApprovalVerdictResult;
                 let Some((timeline, _sender)) = get_timeline_and_sender(&timeline_kind) else {
                     log!("BUG: {timeline_kind} not found for send agent-chat approval verdict request");
+                    Cx::post_action(ApprovalVerdictResult::Failed {
+                        room_id: timeline_kind.room_id().clone(),
+                        source_event_id,
+                        error: "The room timeline closed before the verdict could be sent.".to_owned(),
+                    });
                     continue;
                 };
                 let room_id = timeline_kind.room_id().to_owned();

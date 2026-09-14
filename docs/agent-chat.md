@@ -27,7 +27,7 @@ cargo build --release --features agent_chat
 | **Thread-session slash commands.** `/task @agent …` and `/thread model|mode …` are offered when the room contains any agent puppet; the hagency backend parses them. | feature + Settings toggle + agent present | same |
 | **Agent message presentation.** Messages from `@ac_*` accounts get a badge after the sender name with the agent's workflow role (from its account name) and the message kind the bridge stamped (`📋` request, `↩️` reply, `ℹ️` info). The kind marker and the trailing `🔗 permalink` line are stripped from the body. | feature only | `src/agent_chat/presentation.rs`; hooks in `src/home/room_screen.rs` |
 | **Rooms-list previews.** Approval events are custom msgtypes, so without help they fall through ruma's `_Custom` arm and print `[Custom message]: CustomMessageContent { msgtype: ... }` into the rooms list. The bridge's human-readable `body` is shown instead. | feature only | `src/event_preview.rs` |
-| **Look and feel.** The card, buttons and badge follow robrix2's `RBX_*` design-token recipes (warning-tinted card, semantic-stroked buttons, accent badge). Upstream has no token layer, so `src/agent_chat/tokens.rs` defines just the tokens these surfaces use, with robrix2's values, under the same names — delete it if the full design system is ever ported. Typography keeps robrix2's sizes and weights on the theme fonts, since robrix2's custom font files are not shipped upstream. | feature only | `src/agent_chat/tokens.rs` |
+| **Look and feel.** Approval cards, buttons and badges use the shared `RBX_*` design tokens (warning-tinted card, bordered buttons, accent badge). The broader UI port adds the Robrix2 palette, navigation rail, rooms sidebar, composer toolbar, account menu and tabbed Settings. Typography uses the theme fonts. | agent surfaces: feature only; shared UI styling: all builds | `src/shared/design_tokens.rs`, `src/shared/styles.rs`, `src/agent_chat/approval_card.rs` |
 | **Settings toggle.** Settings → Preferences → "Agent-chat (experimental)". Persisted in `AppPreferences::agent_chat_enabled`. | feature only | `src/agent_chat/preferences.rs`, `src/settings/` |
 
 ## Security model
@@ -126,7 +126,7 @@ python3 tools/agentchat-probe/probe_approval.py \
 ends with `/gq` so it never leaves a test window behind.
 
 > **Why not the headless renderer?** `MAKEPAD=headless` does not compile on macOS
-> at the pinned makepad rev `493d23a`: `platform/src/os/cx_shared.rs:762` calls
+> at makepad rev `493d23a` used for the recorded soak: `platform/src/os/cx_shared.rs:762` calls
 > `crate::os::apple::metal::note_input_event()` under `#[cfg(target_vendor =
 > "apple")]`, while `platform/src/os/mod.rs` gates `pub mod apple;` behind
 > `not(headless)` — so the call survives and the module does not (E0433). The
