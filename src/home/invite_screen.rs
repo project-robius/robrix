@@ -717,12 +717,13 @@ impl InviteScreen {
     fn update_room_preview(&mut self, cx: &mut Cx) {
         if self.room_preview.is_some() { return; }
         let Some(info) = self.info.as_ref() else { return };
-        // The inviter's homeserver is in the room, so it's a good one to ask about it.
-        let via = info.inviter.as_ref().map(|i| i.user_id.server_name().to_owned());
+        let invited_rooms = get_invited_rooms(cx);
+        let invited_rooms = invited_rooms.borrow();
+        let via = invited_rooms.get(info.room_id()).map_or(&[][..], |invite| invite.via.as_slice());
         if let CachedRoomPreview::Loaded { preview, .. } = room_preview_cache::get_or_fetch_room_preview(
             cx,
             (&**info.room_id()).into(),
-            via.as_slice(),
+            via,
         ) {
             self.room_preview = Some(preview);
             self.redraw(cx);

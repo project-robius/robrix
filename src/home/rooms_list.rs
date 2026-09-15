@@ -22,7 +22,7 @@ use makepad_widgets::*;
 use matrix_sdk_ui::spaces::room_list::SpaceRoomListPaginationState;
 use ruma::events::tag::TagName;
 use tokio::sync::mpsc::UnboundedSender;
-use matrix_sdk::{RoomState, ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}};
+use matrix_sdk::{RoomState, ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedServerName, OwnedUserId}};
 use crate::{
     app::{AppState, AppStateAction, SelectedRoom},
     home::{
@@ -392,6 +392,8 @@ pub struct InvitedRoomInfo {
     pub room_avatar: FetchedRoomAvatar,
     /// Info about the user who invited us to this room, if available.
     pub inviter_info: Option<InviterInfo>,
+    /// Servers to ask about this room, from most to least likely to still be in it.
+    pub via: Vec<OwnedServerName>,
     /// The state of how this invite is being handled by the client backend
     /// and what should be shown in the UI.
     ///
