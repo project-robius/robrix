@@ -17,7 +17,7 @@ use crate::home::room_image_viewer::ImageViewerFetchAction;
 use crate::utils::format_decimal_file_size;
 use thiserror::Error;
 use crate::{
-    shared::{attachment_download::{DownloadableAttachment, save_loaded_attachment, share_loaded_attachment, start_attachment_download, start_attachment_share}, avatar::AvatarWidgetExt, speech_text_input::escape_stops_dictation, timestamp::TimestampWidgetRefExt},
+    shared::{attachment_download::{DownloadableAttachment, save_loaded_attachment, share_loaded_attachment, start_attachment_download, start_attachment_share}, avatar::AvatarWidgetExt, timestamp::TimestampWidgetRefExt},
     sliding_sync::TimelineKind,
 };
 
@@ -641,16 +641,6 @@ impl Widget for ImageViewer {
             self.advance_rotation(cx, ne.time);
         }
 
-        // An `Escape` that stopped speech dictation shouldn't also close the viewer.
-        let escape_closes = match event {
-            Event::KeyDown(key) => key.key_code == KeyCode::Escape && !escape_stops_dictation(key),
-            _ => false,
-        };
-        if event.back_pressed() || escape_closes {
-            self.reset(cx);
-            cx.action(ImageViewerAction::Hide);
-        }
-
         if self.hide_ui_timer.is_event(event).is_some() {
             self.hide_overlay_ui(cx);
         }
@@ -704,6 +694,12 @@ impl Widget for ImageViewer {
 
 impl MatchEvent for ImageViewer {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        // The parent Modal itself owns the Escape/back press handling logic,
+        // so we don't have to do any of that here.
+        // We just have to react to that happening by handling the modal being dismissed.
+        if actions.iter().any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed))) {
+            self.reset(cx);
+        }
         for action in actions {
             // Handle any changes to the window size / rotation orientation.
             if let WindowAction::WindowGeomChange(_) = action.as_widget_action().cast() {

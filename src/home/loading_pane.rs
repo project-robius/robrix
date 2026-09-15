@@ -1,7 +1,6 @@
 use makepad_widgets::*;
 use matrix_sdk::ruma::{EventId, OwnedEventId};
 
-use crate::shared::speech_text_input::escape_stopped_dictation;
 use crate::sliding_sync::TimelineRequestSender;
 
 
@@ -140,6 +139,8 @@ pub struct LoadingPane {
     #[deref] view: View,
     #[rust] state: LoadingPaneState,
     #[rust] orig_key_focus_area: Option<Area>,
+    /// Hold a cancel scope while this pane is shown, so it receives Escape/Back cancel events.
+    #[rust] cancel_scope: Option<CancelScope>,
 }
 
 
@@ -155,25 +156,30 @@ impl Widget for LoadingPane {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if !self.visible { return; }
+        self.visible = !matches!(self.state, LoadingPaneState::None);
+        if !self.visible {
+            self.cancel_scope = None;
+            return;
+        }
         self.view.handle_event(cx, event, scope);
 
         let area = self.view.area();
 
         // Close the pane if:
         // 1. The cancel button is clicked,
-        // 2. The back navigational gesture/action occurs (e.g., Back on Android),
-        // 3. The escape key is pressed if this pane has key focus,
-        // 4. The back mouse button is clicked within this view,
-        // 5. The user clicks/touches outside the main_content view area.
+        // 2. The back navigational gesture/action occurs (e.g., Back on Android)
+        //    or the escape key is pressed while this pane owns the cancel gesture,
+        // 3. The back mouse button is clicked within this view,
+        // 4. The user clicks/touches outside the main_content view area.
         let close_pane = {
             matches!(
                 event,
                 Event::Actions(actions) if self.button(cx, ids!(cancel_button)).clicked(actions)
             )
-            || event.back_pressed()
+            || (self.cancel_scope.as_ref().is_some_and(|s| cx.owns_cancel(s))
+                && (event.back_pressed() || matches!(event, Event::KeyUp(key) if key.key_code == KeyCode::Escape))
+            )
             || match event.hits_with_capture_overload(cx, area, true) {
-                Hit::KeyUp(key) => key.key_code == KeyCode::Escape && !escape_stopped_dictation(),
                 Hit::FingerDown(_fde) => {
                     cx.set_key_focus(area);
                     false
@@ -286,6 +292,14 @@ impl LoadingPane {
     fn set_state(&mut self, cx: &mut Cx, state: LoadingPaneState) {
         // This will drop the previous `self.state`, which cancels its background request.
         self.state = state;
+        self.visible = !matches!(self.state, LoadingPaneState::None);
+        // All state changes go through this function, so we update the cancel scope here
+        // based on that state.
+        if matches!(self.state, LoadingPaneState::None) {
+            self.cancel_scope = None;
+        } else if self.cancel_scope.is_none() {
+            self.cancel_scope = Some(self.begin_cancel_scope(cx));
+        }
         self.populate(cx);
     }
 

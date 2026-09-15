@@ -4,7 +4,6 @@
 
 use makepad_widgets::*;
 use makepad_widgets::makepad_platform::event::finger::TouchState;
-use crate::shared::speech_text_input::escape_stopped_dictation;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -107,16 +106,19 @@ pub enum RoomInputPopupMenuAction {
 pub struct RoomInputPopupMenu {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
+    /// Held while the popup is shown.
+    #[rust] cancel_scope: Option<CancelScope>,
 }
 
 impl Widget for RoomInputPopupMenu {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if !self.visible { return; }
 
-        // An `Escape` that stopped dictation shouldn't also close this menu.
-        if (matches!(event, Event::KeyUp(KeyEvent {key_code: KeyCode::Escape, .. }))
-                && !escape_stopped_dictation())
-            || event.back_pressed()
+        if self.cancel_scope.as_ref().is_some_and(|s| cx.owns_cancel(s))
+            && (event.back_pressed()
+                || matches!(event, Event::KeyUp(KeyEvent {key_code: KeyCode::Escape, .. }))
+                || matches!(event, Event::MouseUp(e) if e.button.is_back())
+            )
         {
             self.close(cx);
             return;
@@ -164,14 +166,18 @@ impl RoomInputPopupMenu {
     pub fn show(&mut self, cx: &mut Cx) {
         self.reset_button_hover(cx);
         self.visible = true;
+        self.cancel_scope = Some(self.begin_cancel_scope(cx));
         cx.set_key_focus(self.view.area());
         self.redraw(cx);
     }
 
     pub fn close(&mut self, cx: &mut Cx) {
+        self.cancel_scope = None;
         if !self.visible { return; }
         self.visible = false;
-        cx.revert_key_focus();
+        if cx.has_key_focus(self.view.area()) {
+            cx.revert_key_focus();
+        }
         self.redraw(cx);
     }
 
@@ -236,3 +242,4 @@ impl RoomInputPopupMenuRef {
     }
 
 }
+

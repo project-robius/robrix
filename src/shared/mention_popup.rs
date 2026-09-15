@@ -183,10 +183,14 @@ pub struct MentionablePopup {
     #[live] color_hover: Vec4f,
 
     #[rust] is_open: bool,
+    /// Held while the popup is open.
+    #[rust] cancel_scope: Option<CancelScope>,
     /// The location of the text input cursor that this popup is positioned near.
     #[rust] anchor_rect: Rect,
     /// The MentionableTextInput widget instance that opened and is controlling this popup.
     #[rust] owner: Option<WidgetUid>,
+    /// The UID of the source widget controlling this (e.g., the TextInput that triggered it).
+    #[rust] source_widget: Option<WidgetUid>,
     /// The starting byte of the trigger token within this text input's content.
     #[rust] trigger_start_byte: Option<usize>,
 
@@ -213,6 +217,16 @@ pub struct MentionablePopup {
 impl Widget for MentionablePopup {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if !self.is_open {
+            return;
+        }
+
+        if self.cancel_scope.as_ref().is_some_and(|s| cx.owns_cancel(s))
+            && (event.back_pressed()
+                || matches!(event, Event::KeyDown(key) if key.key_code == KeyCode::Escape)
+                || matches!(event, Event::MouseUp(e) if e.button.is_back())
+            )
+        {
+            self.close(cx);
             return;
         }
 
@@ -321,6 +335,23 @@ impl Widget for MentionablePopup {
 }
 
 impl MentionablePopup {
+    /// Closes the popup and clears the state tied to the session that opened it.
+    fn close(&mut self, cx: &mut Cx) {
+        if !self.is_open {
+            return;
+        }
+        self.is_open = false;
+        self.cancel_scope = None;
+        self.owner = None;
+        self.source_widget = None;
+        self.trigger_start_byte = None;
+        self.items = Default::default();
+        self.keyboard_focus_index = None;
+        self.pointer_hover_index = None;
+        cx.unblock_scrolling();
+        self.redraw(cx);
+    }
+
     /// Recalculates and updates the position of the `popup_frame`.
     fn position_content(&mut self, cx: &mut Cx2d) {
         let window_size = cx.current_pass_size();
@@ -382,11 +413,24 @@ impl MentionablePopup {
     }
 }
 
+
 impl MentionablePopupRef {
+    /// Closes the popup if its input is hidden, removed, or in an unfocused window.
+    ///
+    /// This must be invoked at the very top level of event handling, i.e., in the
+    /// top-level app's event handler, before any other changes are made to the widget hierarchy.
+    pub fn close_if_input_inactive(&self, cx: &mut Cx) {
+        let source = self.borrow().and_then(|inner| inner.source_widget);
+        if source.is_some_and(|uid| !cx.widget_is_active(uid)) {
+            self.cancel(cx);
+        }
+    }
+
     /// Shows the popup for the given `owner`, anchored near the text cursor.
     ///
     /// ## Arguments
     /// * `owner`: the `MentionableTextInput` that has opened and is controlling this popup.
+    /// * `source_widget`: the speech/text control whose visibility and cancel order this popup shares.
     /// * `anchor_rect`: the cursor rect (current line of text) that the popup is positioned next to.
     /// * `trigger_start_byte`: byte offset of the trigger char within the currently-entered text.
     /// * `header`: the title text shown at the top of the popup.
@@ -395,19 +439,29 @@ impl MentionablePopupRef {
         &self,
         cx: &mut Cx,
         owner: WidgetUid,
+        source_widget: WidgetUid,
         anchor_rect: Rect,
         trigger_start_byte: usize,
         header: &str,
         loading_message: &str,
     ) {
+        if source_widget == WidgetUid(0) {
+            self.cancel(cx);
+            return;
+        }
         {
             let Some(mut inner) = self.borrow_mut() else { return };
             let is_first_anchor = inner.owner != Some(owner)
+                || inner.source_widget != Some(source_widget)
                 || inner.trigger_start_byte != Some(trigger_start_byte);
             inner.owner = Some(owner);
+            inner.source_widget = Some(source_widget);
             if is_first_anchor {
                 inner.anchor_rect = anchor_rect;
                 inner.trigger_start_byte = Some(trigger_start_byte);
+            }
+            if !inner.is_open || is_first_anchor {
+                inner.cancel_scope = Some(cx.begin_widget_cancel_scope(source_widget.0, CancelScopeKind::Both));
             }
             inner.is_open = true;
             inner.view.label(cx, ids!(main_content.header_view.header_label)).set_text(cx, header);
@@ -460,17 +514,7 @@ impl MentionablePopupRef {
     /// Closes the popup and resets its state.
     pub fn cancel(&self, cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {
-            if !inner.is_open {
-                return;
-            }
-            inner.is_open = false;
-            inner.owner = None;
-            inner.trigger_start_byte = None;
-            inner.items = Default::default();
-            inner.keyboard_focus_index = None;
-            inner.pointer_hover_index = None;
-            cx.unblock_scrolling();
-            inner.redraw(cx);
+            inner.close(cx);
         }
     }
 

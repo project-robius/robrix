@@ -6,7 +6,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedEventId, events::room::message::MessageType};
 use matrix_sdk_ui::timeline::{EventSendState, EventTimelineItem, MsgLikeContent, MsgLikeKind, TimelineEventItemId};
 
-use crate::{home::send_status_indicator::is_send_error_retryable, shared::{context_menu::{BUTTON_HEIGHT, ContextMenuClosed, expected_menu_size}, speech_text_input::escape_stopped_dictation}, sliding_sync::UserPowerLevels};
+use crate::{home::send_status_indicator::is_send_error_retryable, shared::context_menu::{BUTTON_HEIGHT, ContextMenuClosed, expected_menu_size}, sliding_sync::UserPowerLevels};
 
 use super::room_screen::MessageAction;
 
@@ -282,6 +282,8 @@ pub struct NewMessageContextMenu {
     #[deref] view: View,
     #[source] source: ScriptObjectRef,
     #[rust] details: Option<MessageDetails>,
+    /// Hold a cancel scope while this context menu is shown, so it receives Escape/Back cancel events.
+    #[rust] cancel_scope: Option<CancelScope>,
 }
 
 impl Widget for NewMessageContextMenu {
@@ -306,13 +308,16 @@ impl Widget for NewMessageContextMenu {
 
         // Close the menu if:
         // 1. The back navigational gesture/action occurs (e.g., Back on Android),
-        // 2. The escape key is pressed if this menu has key focus,
+        // 2. An `Escape` press this menu owns was released,
         // 3. The user clicks/touches outside the main_content view area.
         let close_menu = {
-            event.back_pressed()
+            (self.cancel_scope.as_ref().is_some_and(|s| cx.owns_cancel(s))
+                && (event.back_pressed()
+                    || matches!(event, Event::KeyUp(key) if key.key_code == KeyCode::Escape)
+                    || matches!(event, Event::MouseUp(e) if e.button.is_back())
+                )
+            )
             || match event.hits_with_capture_overload(cx, area, true) {
-                // An `Escape` that stopped dictation shouldn't also close this menu.
-                Hit::KeyUp(key) => key.key_code == KeyCode::Escape && !escape_stopped_dictation(),
                 Hit::FingerDown(fde) => {
                     let reaction_text_input = self.view.text_input(cx, ids!(reaction_input_view.reaction_text_input));
                     if reaction_text_input.area().rect(cx).contains(fde.abs) {
@@ -354,9 +359,6 @@ impl WidgetMatchEvent for NewMessageContextMenu {
                     reaction: reaction_text_input.text(),
                 },
             );
-            close_menu = true;
-        }
-        else if reaction_text_input.escaped(actions) && !escape_stopped_dictation() {
             close_menu = true;
         }
         else if self.button(cx, ids!(react_button)).clicked(actions) {
@@ -488,9 +490,8 @@ impl NewMessageContextMenu {
     pub fn show(&mut self, cx: &mut Cx, details: MessageDetails) -> DVec2 {
         self.details = Some(details);
         self.visible = true;
+        self.cancel_scope = Some(self.begin_cancel_scope(cx));
         cx.set_key_focus(self.view.area());
-
-        // log!("Showing context menu for message: {:?}", self.details);
         self.set_button_visibility(cx)
     }
 
@@ -608,6 +609,7 @@ impl NewMessageContextMenu {
     fn close(&mut self, cx: &mut Cx) {
         self.visible = false;
         self.details = None;
+        self.cancel_scope = None;
         cx.revert_key_focus();
         cx.unblock_scrolling();
         cx.action(ContextMenuClosed);

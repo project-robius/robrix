@@ -4,7 +4,7 @@ use std::{borrow::Cow, ops::{Deref, DerefMut}};
 use makepad_widgets::*;
 use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId}};
 use crate::{
-    avatar_cache, block_user_modal::{BlockUserModalAction, BlockUserRequest}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}, speech_text_input::escape_stopped_dictation}, sliding_sync::{MatrixRequest, current_user_id, is_user_blocked, submit_async_request}, utils
+    avatar_cache, block_user_modal::{BlockUserModalAction, BlockUserRequest}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, current_user_id, is_user_blocked, submit_async_request}, utils
 };
 use super::user_profile_cache;
 
@@ -364,13 +364,19 @@ pub struct UserProfileSlidingPane {
 
     #[rust] info: Option<UserProfilePaneInfo>,
     #[rust] is_animating_out: bool,
+    /// Held while this pane is shown such that `Escape` closes this pane.
+    /// This scope is dropped when the pane starts animating out or is reset.
+    #[rust] cancel_scope: Option<CancelScope>,
 }
 
 impl Widget for UserProfileSlidingPane {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
 
-        if !self.visible { return; }
+        if !self.visible {
+            self.cancel_scope = None;
+            return;
+        }
 
         let animator_action = self.animator_handle_event(cx, event);
         if animator_action.must_redraw() {
@@ -387,30 +393,39 @@ impl Widget for UserProfileSlidingPane {
             if cx.has_key_focus(self.view.area()) {
                 cx.revert_key_focus();
             }
+            self.cancel_scope = None;
             self.view(cx, ids!(bg_view)).set_visible(cx, false);
             self.redraw(cx);
             return;
         }
         // While the pane is sliding out, don't handle any events/hits,
         // as those hits are likely intended for a different widget.
-        if self.is_animating_out { return; }
+        if self.is_animating_out {
+            self.cancel_scope = None;
+            return;
+        }
 
         let area = self.view.area();
 
         // Close the pane if:
         // 1. The close button is clicked,
         // 2. The back navigational gesture/action occurs (e.g., Back on Android),
-        // 3. The escape key is pressed if this pane has key focus,
+        // 3. The escape key is pressed while this pane owns the gesture,
         // 4. The back mouse button is clicked within this view,
         // 5. The user clicks/touches outside the main_content view area.
+        //
+        // Note that we only handle the mouse's back button if it's clicked within this pane
+        // (which covers the whole room screen), so we can differentiate between the back button
+        // being clicked while over this room's pane vs over a different room's pane. 
         let close_pane = {
             matches!(
                 event,
                 Event::Actions(actions) if self.button(cx, ids!(close_button)).clicked(actions)
             )
-            || event.back_pressed()
+            || (self.cancel_scope.as_ref().is_some_and(|s| cx.owns_cancel(s))
+                && (event.back_pressed() || matches!(event, Event::KeyUp(key) if key.key_code == KeyCode::Escape))
+            )
             || match event.hits_with_capture_overload(cx, area, true) {
-                Hit::KeyUp(key) => key.key_code == KeyCode::Escape && !escape_stopped_dictation(),
                 Hit::FingerDown(_fde) => {
                     cx.set_key_focus(area);
                     false
@@ -423,6 +438,7 @@ impl Widget for UserProfileSlidingPane {
             }
         };
         if close_pane {
+            self.cancel_scope = None;
             self.is_animating_out = true;
             self.animator_play(cx, ids!(panel.hide));
             self.redraw(cx);
@@ -502,6 +518,7 @@ impl Widget for UserProfileSlidingPane {
                     UserProfilePaneAction::JumpToReadReceipt(info.user_id.clone()),
                 );
                 // Close the sliding pane so it doesn't cover the event we're jumping to.
+                self.cancel_scope = None;
                 self.is_animating_out = true;
                 cx.revert_key_focus();
                 self.animator_play(cx, ids!(panel.hide));
@@ -517,6 +534,7 @@ impl Widget for UserProfileSlidingPane {
                     reject_invite_to: None,
                 };
                 // Hide the pane immediately to make room for the confirmation modal
+                self.cancel_scope = None;
                 self.is_animating_out = true;
                 cx.revert_key_focus();
                 self.animator_play(cx, ids!(panel.hide));
@@ -529,6 +547,7 @@ impl Widget for UserProfileSlidingPane {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let Some(info) = self.info.as_ref() else {
+            self.cancel_scope = None;
             self.visible = false;
             return self.view.draw_walk(cx, scope, walk);
         };
@@ -653,6 +672,7 @@ impl UserProfileSlidingPane {
 
     pub fn show(&mut self, cx: &mut Cx) {
         self.visible = true;
+        self.cancel_scope = Some(self.begin_cancel_scope(cx));
         self.is_animating_out = false;
         cx.set_key_focus(self.view.area());
         self.animator_play(cx, ids!(panel.show));
@@ -690,6 +710,7 @@ impl UserProfileSlidingPaneRef {
     pub fn reset(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.visible = false;
+        inner.cancel_scope = None;
         inner.animator_cut(cx, ids!(panel.hide));
         inner.is_animating_out = false;
         inner.info = None;
