@@ -40,7 +40,7 @@ use crate::{
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use crate::home::failed_send_banner::{BlockedSend, FailedSendBannerWidgetExt};
-use crate::home::send_status_indicator::{self, SendStatusIndicatorAction, SendStatusIndicatorRef, SendStatusIndicatorWidgetExt};
+use crate::home::send_status_indicator::{SendStatusIndicatorAction, SendStatusIndicatorRef, SendStatusIndicatorWidgetExt};
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
 use crate::settings::app_preferences::{AppPreferencesGlobal, MarkAsReadBehavior, preferred_receipt_type};
 
@@ -6393,11 +6393,7 @@ impl Message {
             || self.view.widget(cx, ids!(avatar_row)).area().clipped_rect(cx).contains(abs)
             || self.view.widget(cx, ids!(content.download_section)).area().clipped_rect(cx).contains(abs)
             || (is_long_press && (
-                Inset::rect_contains_with_inset(
-                    abs,
-                    &self.view.widget(cx, ids!(send_status_indicator)).area().clipped_rect(cx),
-                    &Some(send_status_indicator::HIT_MARGIN),
-                )
+                self.view.send_status_indicator(cx, ids!(send_status_indicator)).has_tooltip_at(cx, abs)
                 || self.view.widget(cx, ids!(timestamp)).area().clipped_rect(cx).contains(abs)
                 || self.view.widget(cx, ids!(edited_indicator)).area().clipped_rect(cx).contains(abs)
                 || self.view.widget(cx, ids!(tsp_sign_indicator)).area().clipped_rect(cx).contains(abs)
