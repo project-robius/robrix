@@ -4161,9 +4161,24 @@ async fn add_new_room(
             let room_name_id = RoomNameId::from((new_room.display_name.clone(), new_room.room_id.clone()));
             // Start with a basic text avatar; the avatar image will be fetched asynchronously below.
             let room_avatar = avatar_from_room_name(room_name_id.name_for_avatar());
+            // get a list of "via" servers for this invited room, in order of usefulness
+            let mut via: Vec<OwnedServerName> = Vec::new();
+            let creators = new_room.room.creators().unwrap_or_default();
+            let candidates = new_room.inviter_info.iter()
+                .map(|i| i.user_id.server_name())
+                .chain(creators.iter().map(|c| c.server_name()))
+                .chain(new_room.room_id.server_name())
+                .chain(new_room.canonical_alias.iter().map(|a| a.server_name()))
+                .chain(new_room.alt_aliases.iter().map(|a| a.server_name()));
+            for server in candidates {
+                if !via.iter().any(|v| v == server) {
+                    via.push(server.to_owned());
+                }
+            }
             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddInvitedRoom(InvitedRoomInfo {
                 room_name_id: room_name_id.clone(),
                 inviter_info: new_room.inviter_info.clone(),
+                via,
                 room_avatar,
                 canonical_alias: new_room.canonical_alias.clone(),
                 alt_aliases: new_room.alt_aliases.clone(),

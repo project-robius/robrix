@@ -449,16 +449,16 @@ impl MatrixLinkPill {
             _ => None,
         };
         if let Some(room_or_alias_id) = room_or_alias_id {
-            if let CachedRoomPreview::Loaded { room_name_id, room_avatar } =
+            if let CachedRoomPreview::Loaded { preview, room_avatar } =
                 room_preview_cache::get_or_fetch_room_preview(cx, room_or_alias_id, via)
             {
                 // `RoomNameId::Display` would print "Room ID !xyz:server" for
                 // empty names; the pill should show just the bare room ID
                 // instead, matching the pre-cache behavior.
-                let resolved_name = if room_name_id.is_empty() {
-                    room_name_id.room_id().as_str().to_owned()
+                let resolved_name = if preview.room_name_id.is_empty() {
+                    preview.room_name_id.room_id().as_str().to_owned()
                 } else {
-                    room_name_id.to_string()
+                    preview.room_name_id.to_string()
                 };
                 // For @room mentions, show "@room" as the title, not the room name.
                 let display_name = if is_room_mention { "@room" } else { resolved_name.as_str() };

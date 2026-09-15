@@ -4,11 +4,11 @@
 //! but it only shows a simple summary of a room the current user has been invited to,
 //! with buttons to accept or decline the invitation.
 
-use std::ops::Deref;
+use std::{ops::Deref, rc::Rc};
 use makepad_widgets::*;
-use matrix_sdk::{RoomState, ruma::OwnedRoomId};
+use matrix_sdk::{RoomState, ruma::{OwnedRoomId, room::JoinRuleSummary}};
 
-use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar}, shared::{avatar::AvatarWidgetRefExt, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{is_user_blocked, submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
+use crate::{app::AppStateAction, avatar_cache::{self, AvatarCacheEntry}, block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::rooms_list::RoomsListRef, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, room::{BasicRoomDetails, FetchedRoomAvatar, FetchedRoomPreview}, room_preview_cache::{self, CachedRoomPreview}, shared::{avatar::AvatarWidgetRefExt, restore_status_view::RestoreStatusViewWidgetExt}, sliding_sync::{is_user_blocked, submit_async_request, MatrixRequest}, utils::{self, RoomNameId}};
 
 use super::rooms_list::{AcceptedInviteKind, InviteState, InviterInfo, RoomsListAction, get_invited_rooms, set_invite_state};
 
@@ -143,6 +143,49 @@ script_mod! {
                     color: #000
                 }
             }
+
+            room_alias := Label {
+                width: Fill, height: Fit,
+                align: Align{x: 0.5, y: 0},
+                margin: Inset{top: -5},
+                flow: Flow.Right{wrap: true},
+                text: ""
+                draw_text +: {
+                    text_style: TITLE_TEXT {
+                        font_size: 11,
+                    },
+                    color: #888
+                }
+            }
+
+            room_details := Label {
+                width: Fill, height: Fit,
+                align: Align{x: 0.5, y: 0},
+                flow: Flow.Right{wrap: true},
+                text: ""
+                draw_text +: {
+                    text_style: REGULAR_TEXT {
+                        font_size: 11,
+                    },
+                    color: #737373
+                }
+            }
+
+            room_topic := Label {
+                width: Fill, height: Fit,
+                align: Align{x: 0.5, y: 0},
+                margin: Inset{top: 5},
+                flow: Flow.Right{wrap: true},
+                max_lines: 3
+                text_overflow: Ellipsis
+                text: ""
+                draw_text +: {
+                    text_style: REGULAR_TEXT {
+                        font_size: 12,
+                    },
+                    color: #444
+                }
+            }
         }
 
         buttons := View {
@@ -274,6 +317,7 @@ pub struct InviteScreen {
     #[rust] is_loaded: bool,
     #[rust] all_rooms_loaded: bool,
     #[rust] is_space: bool,
+    #[rust] room_preview: Option<Rc<FetchedRoomPreview>>,
 }
 
 impl Widget for InviteScreen {
@@ -281,6 +325,9 @@ impl Widget for InviteScreen {
         if let Event::Signal = event {
             // We use the avatar cache to populate the inviter's avatar.
             avatar_cache::process_avatar_updates(cx);
+            // and we use the room preview cache to fetch and display other info about the invited room/space
+            room_preview_cache::process_room_preview_updates(cx);
+            self.update_room_preview(cx);
 
             // Otherwise, a Signal just means that the room might've been received from the homeserver.
             if let (false, Some(room_name_id), true) = (self.is_loaded, self.room_name_id.as_ref(), cx.has_global::<RoomsListRef>()) {
@@ -506,7 +553,40 @@ impl Widget for InviteScreen {
         let invite_room_label = info.room_name_id().to_string();
         room_view.label(cx, ids!(room_name)).set_text(cx, &invite_room_label);
 
-        // Third, set the buttons' text based on the invite state.
+        // Third, show extra details about the room/space from the fetched room preview, if we have it
+        let preview = self.room_preview.as_deref();
+        let alias = preview.and_then(|p| p.canonical_alias.as_ref());
+        let room_alias = room_view.label(cx, ids!(room_alias));
+        room_alias.set_visible(cx, alias.is_some());
+        room_alias.set_text(cx, alias.map_or("", |a| a.as_str()));
+
+        let join_rule = preview.and_then(|p| p.join_rule.as_ref()).map(|rule| match rule {
+            JoinRuleSummary::Public => "🌐  Public",
+            _ => "🔒  Private",
+        });
+        let room_or_space = if self.is_space { "space" } else { "room" };
+        // If there are 0 members, that actually means we don't know how many members there are.
+        let num_members = preview.map(|p| p.num_joined_members).filter(|n| *n > 0);
+        let plural = if num_members == Some(1) { "" } else { "s" };
+        let details = match (join_rule, num_members) {
+            (Some(rule), Some(n)) => format!("{rule} {room_or_space}  ·  {n} member{plural}"),
+            (Some(rule), None) => format!("{rule} {room_or_space}"),
+            (None, Some(n)) => format!("{n} member{plural}"),
+            (None, None) => String::new(),
+        };
+        let room_details = room_view.label(cx, ids!(room_details));
+        room_details.set_visible(cx, !details.is_empty());
+        room_details.set_text(cx, &details);
+
+        let topic = preview.and_then(|p| p.topic.as_deref())
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .map(|t| utils::replace_linebreaks_separators(t, false));
+        let room_topic = room_view.label(cx, ids!(room_topic));
+        room_topic.set_visible(cx, topic.is_some());
+        room_topic.set_text(cx, topic.as_deref().unwrap_or_default());
+
+        // Fourth, set the buttons' text based on the invite state.
         let cancel_button = self.view.button(cx, ids!(cancel_button));
         let accept_button = self.view.button(cx, ids!(accept_button));
         let reject_and_block_button = self.view.button(cx, ids!(reject_and_block_button));
@@ -578,6 +658,8 @@ impl InviteScreen {
             self.is_space = invite.is_space;
             self.is_loaded = true;
             self.all_rooms_loaded = true;
+            self.room_preview = None;
+            self.update_room_preview(cx);
             self.redraw(cx);
         }
         // If this invite has already been accepted (e.g., in another client, or while Robrix was offline),
@@ -622,12 +704,30 @@ impl InviteScreen {
         self.view.label(cx, ids!(completion_label)).set_text(cx, "");
         self.room_name_id = None;
         self.info = None;
+        self.room_preview = None;
         self.invite_state = InviteState::default();
         self.is_space = false;
         self.is_loaded = false;
         self.all_rooms_loaded = false;
         self.view.restore_status_view(cx, ids!(restore_status_view)).set_visible(cx, false);
         self.redraw(cx);
+    }
+
+    /// If the room preview is none, this fetches it from the room preview cache.
+    fn update_room_preview(&mut self, cx: &mut Cx) {
+        if self.room_preview.is_some() { return; }
+        let Some(info) = self.info.as_ref() else { return };
+        let invited_rooms = get_invited_rooms(cx);
+        let invited_rooms = invited_rooms.borrow();
+        let via = invited_rooms.get(info.room_id()).map_or(&[][..], |invite| invite.via.as_slice());
+        if let CachedRoomPreview::Loaded { preview, .. } = room_preview_cache::get_or_fetch_room_preview(
+            cx,
+            (&**info.room_id()).into(),
+            via,
+        ) {
+            self.room_preview = Some(preview);
+            self.redraw(cx);
+        }
     }
 }
 

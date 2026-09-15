@@ -14,6 +14,7 @@ use matrix_sdk::OwnedServerName;
 use ruma::{OwnedRoomOrAliasId, RoomOrAliasId};
 use std::{
     cell::RefCell,
+    rc::Rc,
     time::{Duration, Instant},
 };
 
@@ -21,7 +22,6 @@ use crate::{
     room::{FetchedRoomAvatar, FetchedRoomPreview},
     shared::avatar::AvatarState,
     sliding_sync::{submit_async_request, MatrixRequest, RoomPreviewResponseMode},
-    utils::RoomNameId,
 };
 
 const CACHE_ENTRY_LIFETIME: Duration = Duration::from_secs(24 * 60 * 60);
@@ -45,7 +45,7 @@ enum CacheEntryState {
     Requested,
     /// The room preview has been successfully loaded.
     Loaded {
-        room_name_id: RoomNameId,
+        preview: Rc<FetchedRoomPreview>,
         room_avatar: AvatarState,
     },
 }
@@ -55,7 +55,7 @@ enum CacheEntryState {
 pub enum CachedRoomPreview {
     /// The preview is loaded and ready to display.
     Loaded {
-        room_name_id: RoomNameId,
+        preview: Rc<FetchedRoomPreview>,
         room_avatar: AvatarState,
     },
     /// A fetch is in flight; show a fallback while waiting.
@@ -93,8 +93,8 @@ pub fn process_room_preview_updates(_cx: &mut Cx) {
                 room_or_alias_id,
                 CacheEntry {
                     state: CacheEntryState::Loaded {
-                        room_name_id: fetched.room_name_id,
-                        room_avatar: fetched_room_avatar_to_avatar_state(fetched.room_avatar),
+                        room_avatar: fetched_room_avatar_to_avatar_state(&fetched.room_avatar),
+                        preview: Rc::new(fetched),
                     },
                     loaded_at: Instant::now(),
                 },
@@ -109,9 +109,9 @@ pub fn process_room_preview_updates(_cx: &mut Cx) {
 /// `Image(bytes)` becomes `Loaded(bytes)`. `Text(_)` becomes `Known(None)`:
 /// at this layer we don't distinguish "no avatar set" from "avatar fetch
 /// failed", since the consuming widget renders the same text fallback either way.
-fn fetched_room_avatar_to_avatar_state(avatar: FetchedRoomAvatar) -> AvatarState {
+fn fetched_room_avatar_to_avatar_state(avatar: &FetchedRoomAvatar) -> AvatarState {
     match avatar {
-        FetchedRoomAvatar::Image(bytes) => AvatarState::Loaded(bytes),
+        FetchedRoomAvatar::Image(bytes) => AvatarState::Loaded(bytes.clone()),
         FetchedRoomAvatar::Text(_) => AvatarState::Known(None),
     }
 }
@@ -138,10 +138,10 @@ pub fn get_or_fetch_room_preview(
         match cache.raw_entry_mut().from_key(room_or_alias_id) {
             RawEntryMut::Occupied(mut occupied) => {
                 // Fast path: a fresh `Loaded` entry is returned as-is.
-                if let CacheEntryState::Loaded { room_name_id, room_avatar } = &occupied.get().state {
+                if let CacheEntryState::Loaded { preview, room_avatar } = &occupied.get().state {
                     if occupied.get().loaded_at.elapsed() < CACHE_ENTRY_LIFETIME {
                         return CachedRoomPreview::Loaded {
-                            room_name_id: room_name_id.clone(),
+                            preview: Rc::clone(preview),
                             room_avatar: room_avatar.clone(),
                         };
                     }
