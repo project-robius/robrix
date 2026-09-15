@@ -7,7 +7,7 @@ use matrix_sdk::{HttpError, QueueWedgeError, media::MediaError, ruma::{api::erro
 use matrix_sdk_base::crypto::{OlmError, SessionRecipientCollectionError};
 use matrix_sdk_ui::timeline::{EventSendState, EventTimelineItem};
 
-use crate::{LivePtr, shared::styles::{COLOR_FG_ACCEPT_GREEN, COLOR_FG_DANGER_RED}, sliding_sync::is_offline, utils::format_decimal_file_size, widget_ref_from_live_ptr};
+use crate::{LivePtr, shared::styles::COLOR_FG_DANGER_RED, sliding_sync::is_offline, utils::format_decimal_file_size, widget_ref_from_live_ptr};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -95,6 +95,17 @@ script_mod! {
             text: ""
         }
 
+        sent_label: Label {
+            padding: 0,
+            margin: 0,
+            flow: Flow.Right { wrap: false },
+            draw_text +: {
+                text_style: theme.font_regular { font_size: 9.5 },
+                color: (COLOR_FG_ACCEPT_GREEN),
+            }
+            text: "Sent"
+        }
+
         failed_label: Label {
             padding: 0,
             margin: 0,
@@ -150,6 +161,7 @@ enum SendStatusIcon {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum SendStatusLabel {
     Progress,
+    Sent,
     Queued,
     Blocked,
     Failed,
@@ -192,7 +204,7 @@ impl SendStatusInfo {
                 .then_some(SendStatusLabel::Progress),
             SendStatusIcon::Queued => Some(SendStatusLabel::Queued),
             SendStatusIcon::Retry | SendStatusIcon::Failed => Some(SendStatusLabel::Failed),
-            SendStatusIcon::Sent => None,
+            SendStatusIcon::Sent => Some(SendStatusLabel::Sent),
         }
     }
 }
@@ -217,6 +229,7 @@ pub struct SendStatusIndicator {
     #[live] sent_icon: Option<LivePtr>,
     #[live] failed_icon: Option<LivePtr>,
     #[live] progress_label: Option<LivePtr>,
+    #[live] sent_label: Option<LivePtr>,
     #[live] failed_label: Option<LivePtr>,
     #[live] queued_label: Option<LivePtr>,
     #[live] blocked_label: Option<LivePtr>,
@@ -230,7 +243,7 @@ pub struct SendStatusIndicator {
 }
 
 /// Send status icons are small, so we make their hit box a bit larger.
-pub const HIT_MARGIN: Inset = Inset { left: 8.0, top: 5.0, right: 5.0, bottom: 5.0 };
+const HIT_MARGIN: Inset = Inset { left: 8.0, top: 5.0, right: 5.0, bottom: 5.0 };
 
 /// The space occupied by a send icon and its spacing (for calculating label width).
 const ICON_WITH_SPACING: f64 = 18.0;
@@ -240,15 +253,13 @@ impl Widget for SendStatusIndicator {
         if self.info.is_none() { return }
         let uid = self.widget_uid();
         match event.hits_with_options(cx, self.area, HitOptions::new().with_margin(HIT_MARGIN)) {
-            Hit::FingerHoverIn(..) | Hit::FingerLongPress(_) => {
+            Hit::FingerHoverIn(..) | Hit::FingerLongPress(_) if !self.tooltip_text.is_empty() => {
                 let mut options = CalloutTooltipOptions {
                     position: TooltipPosition::Left,
                     ..Default::default()
                 };
-                match self.info.as_ref().map(|d| d.icon) {
-                    Some(SendStatusIcon::Sent) => options.bg_color = COLOR_FG_ACCEPT_GREEN,
-                    Some(SendStatusIcon::Retry | SendStatusIcon::Failed) => options.bg_color = COLOR_FG_DANGER_RED,
-                    _ => { }
+                if self.has_failed {
+                    options.bg_color = COLOR_FG_DANGER_RED;
                 }
                 cx.widget_action(
                     uid,
@@ -409,7 +420,7 @@ impl SendStatusIndicator {
                 "Couldn't send: {}",
                 e.unwrap_or(UNKNOWN_ERROR_TEXT),
             ),
-            (SendStatusIcon::Sent, ..) => "Sent".into(),
+            (SendStatusIcon::Sent, ..) => String::new(),
         };
 
         // now draw the appropriate label text next to the status icon 
@@ -419,6 +430,7 @@ impl SendStatusIndicator {
                 _ => {
                     let template = match kind {
                         SendStatusLabel::Progress => self.progress_label,
+                        SendStatusLabel::Sent => self.sent_label,
                         SendStatusLabel::Queued => self.queued_label,
                         SendStatusLabel::Blocked => self.blocked_label,
                         SendStatusLabel::Failed => self.failed_label,
@@ -439,7 +451,7 @@ impl SendStatusIndicator {
                     _ if info.error.as_deref().is_none_or(is_send_error_retryable) => "Send failed, tap to retry.",
                     _ => "Send failed, tap for options.",
                 }),
-                SendStatusLabel::Queued | SendStatusLabel::Blocked => { }
+                SendStatusLabel::Sent | SendStatusLabel::Queued | SendStatusLabel::Blocked => { }
             }
         }
         self.info = new_info;
@@ -459,6 +471,13 @@ impl SendStatusIndicatorRef {
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_from_event(cx, event_tl_item, is_newest_sent, is_blocked_by_failed_send, is_room_encrypted);
+    }
+
+    /// Whether `abs` is within this indicator's hit area and it has a tooltip to show there.
+    pub fn has_tooltip_at(&self, cx: &Cx, abs: DVec2) -> bool {
+        let Some(inner) = self.borrow() else { return false };
+        !inner.tooltip_text.is_empty()
+            && Inset::rect_contains_with_inset(abs, &inner.area.clipped_rect(cx), &Some(HIT_MARGIN))
     }
 }
 
