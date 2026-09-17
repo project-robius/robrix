@@ -19,30 +19,34 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.COLOR_HEADER_FG = #F;
+    // Calm section-group header (no longer the legacy purple pill). The label is
+    // a secondary-tone section title on a transparent background; the collapse
+    // arrow is a faint tertiary chevron.
+    mod.widgets.COLOR_HEADER_FG = #x5A6B86;
 
-    mod.widgets.COLOR_HEADER_BG = (mod.widgets.COLOR_ROBRIX_PURPLE); // the purple color from the Robrix logo
+    mod.widgets.COLOR_HEADER_BG = #xF7F9FC;
 
     mod.widgets.CollapsibleHeader = set_type_default() do #(CollapsibleHeader::register_widget(vm)) {
         ..mod.widgets.RoundedView
 
         width: Fill,
-        height: 35,
+        height: 34,
         align: Align{ x: 0.0, y: 0.5 },
-        margin: Inset{top: 3, bottom: 3, left: 0, right: 0},
-        padding: 5
+        margin: Inset{top: 6, bottom: 2, left: 0, right: 0},
+        padding: Inset{left: 4, right: 4, top: 0, bottom: 0}
         flow: Right,
 
         cursor: MouseCursor.Hand,
+        // Transparent group header — it sits directly on the page canvas.
+        show_bg: false,
         draw_bg +: {
-            border_radius: 4.0
-            color: mod.widgets.COLOR_HEADER_BG
+            border_radius: 0.0
         }
 
         collapse_icon := mod.widgets.ExpandArrow {
-            width: 20, height: 20,
-            margin: Inset{left: 5, right: 6, top: 0, bottom: 0},
-            draw_bg.color: mod.widgets.COLOR_HEADER_FG
+            width: 18, height: 18,
+            margin: Inset{left: 2, right: 6, top: 0, bottom: 0},
+            draw_bg.color: #x687283
         }
 
         label := Label {
@@ -54,13 +58,16 @@ script_mod! {
             text_overflow: TextOverflow.Ellipsis,
             max_lines: 1
             draw_text +: {
-                text_style: mod.widgets.REGULAR_TEXT {font_size: 11},
-                color: (mod.widgets.COLOR_HEADER_FG),
+                // Lighter weight than the bold section-title token — calmer group label.
+                text_style: REGULAR_TEXT { font_size: 12.5 },
+                color: #x5A6B86,
             }
         }
 
         unread_badge := UnreadBadge {
-            margin: Inset{right: 5.5},
+            // Bottom margin nudges the badge up so its center lines up with the
+            // group label's glyphs (the label's Fit box sits low due to descent).
+            margin: Inset{right: 5.5, bottom: 4},
         }
     }
 }
