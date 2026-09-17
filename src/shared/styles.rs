@@ -184,8 +184,8 @@ script_mod! {
 
     // Use an even value for this, not odd, such that it can be divided in half,
     // which is needed when calculating the value of other widgets that scale with this.
-    mod.widgets.NAVIGATION_TAB_BAR_SIZE = 54
-    mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE = 40
+    mod.widgets.NAVIGATION_TAB_BAR_SIZE = 76
+    mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE = (mod.widgets.NAVIGATION_TAB_BAR_SIZE * 0.65)
     mod.widgets.NAVIGATION_TAB_BAR_AVATAR_FONT_SIZE = (mod.widgets.NAVIGATION_TAB_BAR_AVATAR_SIZE * 0.4)
 
 
