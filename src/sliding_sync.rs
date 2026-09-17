@@ -268,9 +268,6 @@ async fn login(
             }
             Ok((client, None))
         }
-        LoginRequest::HomeserverLoginTypesQuery(_) => {
-            bail!("LoginRequest::HomeserverLoginTypesQuery not handled earlier");
-        }
     }
 }
 
@@ -843,8 +840,6 @@ pub enum LoginRequest{
     LoginByPassword(LoginByPassword),
     LoginBySSOSuccess(Client, ClientSessionPersisted),
     LoginByCli,
-    HomeserverLoginTypesQuery(String),
-
 }
 /// Information needed to log in to a Matrix homeserver.
 pub struct LoginByPassword {
