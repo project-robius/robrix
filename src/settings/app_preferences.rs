@@ -34,6 +34,12 @@ pub struct AppPreferences {
     /// Whether to show other users' read receipts beneath timeline events.
     #[serde(default = "default_true", deserialize_with = "deserialize_or_true")]
     pub show_read_receipts: bool,
+    /// Whether to show a notice in a room when other users are typing.
+    #[serde(default = "default_true", deserialize_with = "deserialize_or_true")]
+    pub show_typing_notices: bool,
+    /// Whether to let other users see when we're typing a message.
+    #[serde(default = "default_true", deserialize_with = "deserialize_or_true")]
+    pub send_typing_notices: bool,
 
     // Note: if you add a new preference here, be sure to add a new
     // function `on_<NEW_PREFERENCE>_changed` and update `broadcast_all()`.
@@ -49,6 +55,8 @@ impl Default for AppPreferences {
             read_receipts_privacy: ReadReceiptsPrivacy::default(),
             mark_as_read_behavior: MarkAsReadBehavior::default(),
             show_read_receipts: true,
+            show_typing_notices: true,
+            send_typing_notices: true,
         }
     }
 }
@@ -159,6 +167,18 @@ impl AppPreferences {
         cx.redraw_all();
     }
 
+    /// Applies the current `show_typing_notices` value.
+    pub fn on_show_typing_notices_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.show_typing_notices = self.show_typing_notices;
+        cx.action(AppPreferencesAction::ShowTypingNoticesChanged(self.show_typing_notices));
+    }
+
+    /// Applies the current `send_typing_notices` value.
+    pub fn on_send_typing_notices_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.send_typing_notices = self.send_typing_notices;
+        cx.action(AppPreferencesAction::SendTypingNoticesChanged(self.send_typing_notices));
+    }
+
     /// Broadcasts every preference to listening widgets.
     ///
     /// Used upon app-state restore so every listener picks up the loaded
@@ -173,6 +193,8 @@ impl AppPreferences {
         self.on_read_receipts_privacy_changed(cx);
         self.on_mark_as_read_behavior_changed(cx);
         self.on_show_read_receipts_changed(cx);
+        self.on_show_typing_notices_changed(cx);
+        self.on_send_typing_notices_changed(cx);
     }
 }
 
@@ -396,6 +418,8 @@ pub enum AppPreferencesAction {
     ViewModeChanged(ViewModeOverride),
     SendOnEnterChanged(bool),
     UiZoomChanged(UiZoom),
+    ShowTypingNoticesChanged(bool),
+    SendTypingNoticesChanged(bool),
 }
 
 /// A `Cx` global mirror of the current [`AppPreferences`].
