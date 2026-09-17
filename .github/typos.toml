@@ -1,3 +1,7 @@
+[default]
+# Skip hex colors, including shorthand and Makepad's #x prefix.
+extend-ignore-re = ['(?i)#x?[0-9a-f]{1,8}\b']
+
 # Skip the auto-generated third-party license artifacts when spell-checking:
 # they contain third-party crate names (e.g. `flate2`, `writeable`) and verbatim
 # upstream license text (e.g. the OpenSSL license's "aheared"/"rouines") that we

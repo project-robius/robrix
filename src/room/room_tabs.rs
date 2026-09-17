@@ -255,7 +255,7 @@ impl TabButtonInteraction {
     ///
     /// Call this before the dock and buttons handle the given event, so that
     /// we have the opportunity to cancel the button click if the mouse/finger moved too far,
-    /// or if a long press occured or the button press was otherwise interrupted.
+    /// or if a long press occurred or the button press was otherwise interrupted.
     ///
     /// If a proper button click occurred (and was released) over the button,
     /// this will give the pointer capture back to the button so it receives FingerUp
