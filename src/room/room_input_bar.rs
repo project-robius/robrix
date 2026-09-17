@@ -310,6 +310,16 @@ impl RoomInputBar {
                 text_input.set_submit_on_enter(*v);
                 continue;
             }
+            // If the user opts out of sending typing notices, immediately stop sending them.
+            if let Some(AppPreferencesAction::SendTypingNoticesChanged(false)) = action.downcast_ref()
+                && let Some(timeline_kind) = self.timeline_kind.as_ref()
+            {
+                submit_async_request(MatrixRequest::SendTypingNotice {
+                    room_id: timeline_kind.room_id().clone(),
+                    typing: false,
+                });
+                continue;
+            }
         }
 
         // Clear the replying-to preview pane if the "cancel reply" button was clicked
@@ -449,7 +459,7 @@ impl RoomInputBar {
         // send a typing notice to the room and update the send_message_button state.
         let is_text_input_empty = if let Some(new_text) = text_input.changed(actions) {
             let is_empty = new_text.is_empty();
-            if can_post {
+            if can_post && cx.global::<AppPreferencesGlobal>().0.send_typing_notices {
                 submit_async_request(MatrixRequest::SendTypingNotice {
                     room_id: timeline_kind.room_id().clone(),
                     typing: !is_empty,

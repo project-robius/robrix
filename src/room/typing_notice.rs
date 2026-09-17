@@ -82,18 +82,19 @@ impl Widget for TypingNotice {
 
 impl TypingNotice {
     /// Shows or hides the typing notice based on whether there are any typing users.
-    fn show_or_hide(&mut self, cx: &mut Cx, typing_users: &[String]) {
+    fn show_or_hide(&mut self, cx: &mut Cx, typing_users: &[String], animate: Animate) {
         let typing_notice_text = match typing_users {
             [] => {
                 // Animate out the typing notice view (sliding it out towards the bottom).
-                self.animator_play(cx, ids!(typing_notice_animator.hide));
+                self.animator_toggle(cx, false, animate, ids!(typing_notice_animator.show), ids!(typing_notice_animator.hide));
                 self.view.bouncing_dots(cx, ids!(bouncing_dots)).stop_animation(cx);
+                self.redraw(cx);
                 return;
             }
             [user] => format!("{user} is typing "),
             [user1, user2] => format!("{user1} and {user2} are typing "),
             [user1, user2, others @ ..] => {
-                if others.len() > 1 {
+                if others.len() == 1 {
                     format!("{user1}, {user2}, and {} are typing ", others[0])
                 } else {
                     format!(
@@ -107,7 +108,7 @@ impl TypingNotice {
         self.view.label(cx, ids!(typing_label)).set_text(cx, &typing_notice_text);
         self.view.set_visible(cx, true);
         // Animate in the typing notice view (sliding it up from the bottom).
-        self.animator_play(cx, ids!(typing_notice_animator.show));
+        self.animator_toggle(cx, true, animate, ids!(typing_notice_animator.show), ids!(typing_notice_animator.hide));
         // Start the typing notice text animation of bouncing dots.
         self.view.bouncing_dots(cx, ids!(bouncing_dots)).start_animation(cx);
     }
@@ -115,9 +116,9 @@ impl TypingNotice {
 
 impl TypingNoticeRef {
     /// Shows or hides the typing notice based on whether there are any typing users.
-    pub fn show_or_hide(&self, cx: &mut Cx, typing_users: &[String]) {
+    pub fn show_or_hide(&self, cx: &mut Cx, typing_users: &[String], animate: Animate) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_or_hide(cx, typing_users);
+            inner.show_or_hide(cx, typing_users, animate);
         }
     }
 }

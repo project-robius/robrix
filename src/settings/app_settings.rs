@@ -28,10 +28,19 @@ const READ_RECEIPTS_PRIVACY_DESC_EVERYONE: &str =
 const READ_RECEIPTS_PRIVACY_DESC_OWN_DEVICES: &str =
     "<ul><li>Currently: only your own devices can see how far you've read.</li></ul>";
 
-const SHOW_READ_RECEIPTS_DESC_SHOWN: &str =
-    "<ul><li>Currently: each message shows the avatars of people who have read it.</li></ul>";
-const SHOW_READ_RECEIPTS_DESC_HIDDEN: &str =
-    "<ul><li>Currently: messages don't show who has read them.</li></ul>";
+// The descriptions beneath each on/off toggle, as `(on, off)` pairs.
+const SHOW_READ_RECEIPTS_DESC: (&str, &str) = (
+    "<ul><li>Currently: each message shows the avatars of people who have read it.</li></ul>",
+    "<ul><li>Currently: messages don't show who has read them.</li></ul>",
+);
+const SHOW_TYPING_NOTICES_DESC: (&str, &str) = (
+    "<ul><li>Currently: a notice appears in a room when others are typing.</li></ul>",
+    "<ul><li>Currently: you won't see when others are typing.</li></ul>",
+);
+const SEND_TYPING_NOTICES_DESC: (&str, &str) = (
+    "<ul><li>Currently: others can see when you're typing a message.</li></ul>",
+    "<ul><li>Currently: others can't see when you're typing.</li></ul>",
+);
 
 const MARK_AS_READ_DESC_VIEWING: &str =
     "<ul><li>Currently: messages are marked as read after you scroll or interact with a timeline.</li></ul>";
@@ -229,6 +238,16 @@ script_mod! {
         }
     }
 
+    // An on/off toggle styled to match other Robrix settings controls.
+    mod.widgets.RobrixSettingsToggle = ToggleFlat {
+        margin: Inset{left: 0.5, top: 5, bottom: 10}
+        padding: Inset { left: 15}
+        draw_bg +: { size: 21 }
+        draw_text +: {
+            text_style: mod.widgets.SETTINGS_BOLD_TEXT_STYLE {},
+        }
+    }
+
 
     // The view containing Robrix app-wide preferences/settings.
     mod.widgets.AppSettings = #(AppSettings::register_widget(vm)) {
@@ -320,15 +339,10 @@ script_mod! {
             text: "Keyboard Shortcut to Send Message"
         }
 
-        send_on_cmd_enter_toggle := ToggleFlat {
+        send_on_cmd_enter_toggle := mod.widgets.RobrixSettingsToggle {
             margin: Inset{left: 6.5, top: 5, bottom: 10}
-            padding: Inset { left: 15}
             active: false,
-            draw_bg +: { size: 21 }
             text: "" // we set this text dynamically based on the toggle state and target platform
-            draw_text +: {
-                text_style: mod.widgets.SETTINGS_BOLD_TEXT_STYLE {},
-            }
         }
 
         send_shortcut_description := mod.widgets.SettingsSectionDescription {
@@ -402,18 +416,12 @@ script_mod! {
             flow: Down,
             margin: Inset{left: 6},
 
-            show_read_receipts_toggle := ToggleFlat {
-                margin: Inset{left: 0.5, top: 5, bottom: 10}
-                padding: Inset { left: 15}
+            show_read_receipts_toggle := mod.widgets.RobrixSettingsToggle {
                 active: true,
-                draw_bg +: { size: 21 }
                 text: "Show who has seen/read a message"
-                draw_text +: {
-                    text_style: mod.widgets.SETTINGS_BOLD_TEXT_STYLE {},
-                }
             }
             show_read_receipts_description := mod.widgets.SettingsSectionDescription {
-                body: "" // set dynamically, see `SHOW_READ_RECEIPTS_DESC_*`
+                body: "" // set dynamically, see `SHOW_READ_RECEIPTS_DESC`
             }
 
             View {
@@ -455,6 +463,32 @@ script_mod! {
             }
             mark_as_read_description := mod.widgets.SettingsSectionDescription {
                 body: "" // set dynamically, see `MARK_AS_READ_DESC_*`
+            }
+        }
+
+        SubsectionLabel {
+            text: "Typing Notifications"
+        }
+
+        View {
+            width: Fill, height: Fit
+            flow: Down,
+            margin: Inset{left: 6},
+
+            show_typing_notices_toggle := mod.widgets.RobrixSettingsToggle {
+                active: true,
+                text: "Show when others are typing"
+            }
+            show_typing_notices_description := mod.widgets.SettingsSectionDescription {
+                body: "" // set dynamically, see `SHOW_TYPING_NOTICES_DESC`
+            }
+
+            send_typing_notices_toggle := mod.widgets.RobrixSettingsToggle {
+                active: true,
+                text: "Let others see when you're typing"
+            }
+            send_typing_notices_description := mod.widgets.SettingsSectionDescription {
+                body: "" // set dynamically, see `SEND_TYPING_NOTICES_DESC`
             }
         }
     }
@@ -668,7 +702,7 @@ impl AppSettings {
         if let Some(show) = show_receipts_toggle.changed(actions) {
             if show != app_state.app_prefs.show_read_receipts {
                 app_state.app_prefs.show_read_receipts = show;
-                Self::update_show_read_receipts_description(cx, &self.view, show);
+                Self::update_toggle_description(cx, &self.view, ids!(show_read_receipts_description), show, SHOW_READ_RECEIPTS_DESC);
                 app_state.app_prefs.on_show_read_receipts_changed(cx);
                 enqueue_popup_notification(
                     "Updated read receipt visibility.",
@@ -676,6 +710,34 @@ impl AppSettings {
                     Some(3.0),
                 );
             }
+        }
+
+        let show_typing_toggle = self.view.check_box(cx, ids!(show_typing_notices_toggle));
+        if let Some(show) = show_typing_toggle.changed(actions)
+            && show != app_state.app_prefs.show_typing_notices
+        {
+            app_state.app_prefs.show_typing_notices = show;
+            Self::update_toggle_description(cx, &self.view, ids!(show_typing_notices_description), show, SHOW_TYPING_NOTICES_DESC);
+            app_state.app_prefs.on_show_typing_notices_changed(cx);
+            enqueue_popup_notification(
+                "Updated typing notification visibility.",
+                PopupKind::Success,
+                Some(3.0),
+            );
+        }
+
+        let send_typing_toggle = self.view.check_box(cx, ids!(send_typing_notices_toggle));
+        if let Some(send) = send_typing_toggle.changed(actions)
+            && send != app_state.app_prefs.send_typing_notices
+        {
+            app_state.app_prefs.send_typing_notices = send;
+            Self::update_toggle_description(cx, &self.view, ids!(send_typing_notices_description), send, SEND_TYPING_NOTICES_DESC);
+            app_state.app_prefs.on_send_typing_notices_changed(cx);
+            enqueue_popup_notification(
+                "Updated typing notification send setting.",
+                PopupKind::Success,
+                Some(3.0),
+            );
         }
 
         // Only process the custom thumbnail input when the user presses Enter
@@ -730,6 +792,10 @@ impl AppSettings {
 
         self.view.check_box(cx, ids!(show_read_receipts_toggle))
             .set_active(cx, prefs.show_read_receipts, Animate::No);
+        self.view.check_box(cx, ids!(show_typing_notices_toggle))
+            .set_active(cx, prefs.show_typing_notices, Animate::No);
+        self.view.check_box(cx, ids!(send_typing_notices_toggle))
+            .set_active(cx, prefs.send_typing_notices, Animate::No);
 
         let (small, medium, large, custom, custom_text) = match prefs.thumbnail_max_height {
             ThumbnailMaxHeight::Small => (true, false, false, false, String::new()),
@@ -764,7 +830,9 @@ impl AppSettings {
         view.drop_down(cx, ids!(mark_as_read_dropdown))
             .set_selected_item(cx, prefs.mark_as_read_behavior.to_index());
         Self::update_mark_as_read_description(cx, view, prefs.mark_as_read_behavior);
-        Self::update_show_read_receipts_description(cx, view, prefs.show_read_receipts);
+        Self::update_toggle_description(cx, view, ids!(show_read_receipts_description), prefs.show_read_receipts, SHOW_READ_RECEIPTS_DESC);
+        Self::update_toggle_description(cx, view, ids!(show_typing_notices_description), prefs.show_typing_notices, SHOW_TYPING_NOTICES_DESC);
+        Self::update_toggle_description(cx, view, ids!(send_typing_notices_description), prefs.send_typing_notices, SEND_TYPING_NOTICES_DESC);
 
         view.text_input(cx, ids!(ui_zoom_input))
             .set_text(cx, &prefs.ui_zoom.format_percent());
@@ -784,13 +852,8 @@ impl AppSettings {
         Self::set_thumb_custom_input_read_only(cx, view, custom_active);
     }
 
-    fn update_show_read_receipts_description(cx: &mut Cx, view: &View, show: bool) {
-        let text = if show {
-            SHOW_READ_RECEIPTS_DESC_SHOWN
-        } else {
-            SHOW_READ_RECEIPTS_DESC_HIDDEN
-        };
-        view.html(cx, ids!(show_read_receipts_description)).set_text(cx, text);
+    fn update_toggle_description(cx: &mut Cx, view: &View, description: &[LiveId], is_on: bool, (on_text, off_text): (&str, &str)) {
+        view.html(cx, description).set_text(cx, if is_on { on_text } else { off_text });
     }
 
     fn update_read_receipts_privacy_description(cx: &mut Cx, view: &View, privacy: ReadReceiptsPrivacy) {

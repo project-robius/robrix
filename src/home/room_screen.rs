@@ -43,7 +43,7 @@ use crate::room::room_action_bar::RoomActionBarWidgetExt;
 use crate::home::failed_send_banner::{BlockedSend, FailedSendBannerWidgetExt};
 use crate::home::send_status_indicator::{SendStatusIndicatorAction, SendStatusIndicatorRef, SendStatusIndicatorWidgetExt};
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
-use crate::settings::app_preferences::{AppPreferencesGlobal, MarkAsReadBehavior, preferred_receipt_type};
+use crate::settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal, MarkAsReadBehavior, preferred_receipt_type};
 
 use rangemap::RangeSet;
 
@@ -1222,6 +1222,24 @@ impl Widget for RoomScreen {
                     continue;
                 }
 
+                if let Some(AppPreferencesAction::ShowTypingNoticesChanged(show)) = action.downcast_ref() {
+                    if !*show {
+                        self.view.typing_notice(cx, ids!(typing_notice)).show_or_hide(cx, &[], Animate::No);
+                    }
+                    // Only change the typing subscription for a loaded main room that we're still in.
+                    if self.is_loaded
+                        && let Some(tl) = self.tl_state.as_ref()
+                        && matches!(tl.kind, TimelineKind::MainRoom { .. })
+                        && !timeline_state_store::is_invalidated(&tl.kind)
+                    {
+                        submit_async_request(MatrixRequest::SubscribeToTypingNotices {
+                            room_id: tl.kind.room_id().clone(),
+                            subscribe: *show,
+                        });
+                    }
+                    continue;
+                }
+
                 // Handle the highlight animation for a message.
                 let Some(tl) = self.tl_state.as_mut() else { continue };
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
@@ -2294,10 +2312,13 @@ impl RoomScreen {
         self.view.failed_send_banner(cx, ids!(failed_send_banner))
             .show_or_hide(cx, blocked_send);
 
-        if let Some(users) = typing_users {
+        // We unsubscribe once typing notices are hidden, but one might've already been in flight.
+        if let Some(users) = typing_users
+            && cx.global::<AppPreferencesGlobal>().0.show_typing_notices
+        {
             self.view
                 .typing_notice(cx, ids!(typing_notice))
-                .show_or_hide(cx, &users);
+                .show_or_hide(cx, &users, Animate::Yes);
         }
 
         if let Some((event_id, searching_for)) = jump_to_read_receipt {
@@ -3139,15 +3160,13 @@ impl RoomScreen {
             });
         }
 
-        // Hide the typing notice view initially.
-        self.view(cx, ids!(typing_notice)).set_visible(cx, false);
         // If the room is loaded, we need to get a few key states:
         // 1. Get the current user's power levels for this room so that we can
         //    show/hide UI elements based on the user's permissions.
         // 2. Get the list of members in this room (from the SDK's local cache).
         // 3. Subscribe to our own user's read receipts so that unread counts
         //    refresh when our read position advances (from any device).
-        // 4. Subscribe to typing notices again, now that the room is being shown.
+        // 4. Subscribe to typing notices again if they're enabled, now that the room is being shown.
         if self.is_loaded {
             submit_async_request(MatrixRequest::GetRoomPowerLevels {
                 timeline_kind: tl_state.kind.clone(),
@@ -3162,7 +3181,8 @@ impl RoomScreen {
             // Only main room timelines can subscribe to typing notices, pinned events,
             // and read receipt changes (the SDK has no per-thread unread counts).
             if matches!(tl_state.kind, TimelineKind::MainRoom { .. }) {
-                subscribe_to_room_updates(&tl_state.kind, true);
+                let show_typing_notices = cx.global::<AppPreferencesGlobal>().0.show_typing_notices;
+                subscribe_to_room_updates(&tl_state.kind, true, show_typing_notices);
                 // The matrix spec says that opening a room should clear the marked-as-unread flag.
                 if cx.global::<AppPreferencesGlobal>().0.mark_as_read_behavior != MarkAsReadBehavior::Manual {
                     submit_async_request(MatrixRequest::SetUnreadFlag {
@@ -3262,7 +3282,8 @@ impl RoomScreen {
         // while it's open. The previously-created async tasks for these things are either dead
         // or still running but with the old channel endpoints, so they're useless either way.
         if resubscribe {
-            subscribe_to_room_updates(&timeline_kind, true);
+            let show_typing_notices = cx.global::<AppPreferencesGlobal>().0.show_typing_notices;
+            subscribe_to_room_updates(&timeline_kind, true, show_typing_notices);
         }
         let loading_pane = self.loading_pane(cx, ids!(loading_pane));
         // Also update the loading pane's timeline request sender.
@@ -3311,7 +3332,7 @@ impl RoomScreen {
         //   when a given room isn't visible.
         // * Unsubscribe from updates to this room's pinned events, for the same reason.
         // * Unsubscribe from updates to our own user's read receipts, for the same reason.
-        subscribe_to_room_updates(&timeline_kind, false);
+        subscribe_to_room_updates(&timeline_kind, false, false);
     }
 
     /// Removes the current room's visual UI state from this widget
@@ -3416,6 +3437,8 @@ impl RoomScreen {
         // Reset the user profile sliding pane so a previous room's open profile
         // pane doesn't remain shown when this RoomScreen is reused for a new room.
         self.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane)).reset(cx);
+        // Hide any typing notice left over from the previous room.
+        self.view.typing_notice(cx, ids!(typing_notice)).show_or_hide(cx, &[], Animate::No);
 
         self.room_input_popup_menu(cx, ids!(room_input_popup_menu)).close(cx);
 
@@ -3616,7 +3639,7 @@ impl RoomScreenRef {
 /// while a main room's timeline is open and being shown.
 ///
 /// Does nothing for thread-specific timelines.
-fn subscribe_to_room_updates(timeline_kind: &TimelineKind, subscribe: bool) {
+fn subscribe_to_room_updates(timeline_kind: &TimelineKind, subscribe: bool, show_typing_notices: bool) {
     if !matches!(timeline_kind, TimelineKind::MainRoom { .. }) {
         return;
     }
@@ -3627,7 +3650,7 @@ fn subscribe_to_room_updates(timeline_kind: &TimelineKind, subscribe: bool) {
     });
     submit_async_request(MatrixRequest::SubscribeToTypingNotices {
         room_id: room_id.clone(),
-        subscribe,
+        subscribe: subscribe && show_typing_notices,
     });
     submit_async_request(MatrixRequest::SubscribeToPinnedEvents {
         room_id: room_id.clone(),
