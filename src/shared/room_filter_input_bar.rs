@@ -17,9 +17,11 @@ script_mod! {
 
         show_bg: true,
         draw_bg +: {
-            color: (COLOR_PRIMARY)
+            // Subtle inset surface so the field reads clearly on white headers /
+            // near-white modals as well as on the canvas.
+            color: #xF4F7FB
             border_radius: 4.0
-            border_color: (COLOR_SECONDARY)
+            border_color: #xE6EBF2
             border_size: 1.0
         }
 
@@ -31,7 +33,7 @@ script_mod! {
         Icon {
             draw_icon +: {
                 svg: (ICON_SEARCH),
-                color: (COLOR_TEXT_INPUT_IDLE),
+                color: #x687283,
             }
             icon_walk: Walk{width: 14, height: 14}
         }
@@ -47,9 +49,16 @@ script_mod! {
                 empty_text: "Filter rooms & spaces..."
                 autocapitalize: None,
 
-                draw_bg.border_size: 0.0
+                draw_bg +: {
+                    border_size: 0.0
+                    color: #xF4F7FB
+                    color_hover: #xF4F7FB
+                    color_focus: #xF4F7FB
+                    color_down: #xF4F7FB
+                    color_empty: #xF4F7FB
+                }
                 draw_text +: {
-                    text_style: theme.font_regular { font_size: 10 },
+                    text_style: REGULAR_TEXT { font_size: 10 },
                 }
             }
 

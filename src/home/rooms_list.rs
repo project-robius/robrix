@@ -107,7 +107,7 @@ script_mod! {
             width: 20,
             height: 20,
             draw_bg +: {
-                color: (COLOR_ACTIVE_PRIMARY)
+                color: #x0D7988
                 border_size: 3.0
             }
         }
@@ -118,7 +118,7 @@ script_mod! {
             flow: Flow.Right{wrap: true},
             align: Align{ x: 0.5, y: 0.5 }
             draw_text +: {
-                color: (MESSAGE_TEXT_COLOR),
+                color: #x5A6B86,
                 text_style: REGULAR_TEXT {}
             }
             text: "Loading rooms..."

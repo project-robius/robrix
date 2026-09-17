@@ -23,7 +23,7 @@ script_mod! {
             flow: Down, spacing: 5
             width: Fill, height: Fill
 
-            draw_bg.color: (COLOR_PRIMARY_DARKER)
+            draw_bg.color: #xFFFFFF
 
             CachedWidget {
                 rooms_list_header := RoomsListHeader {}
@@ -44,10 +44,10 @@ script_mod! {
 
                 show_bg: true
                 draw_bg +: {
-                    color: (COLOR_PRIMARY_DARKER)
+                    color: #xFFFFFF
                     border_radius: 4.0
                     border_size: 0.0
-                    shadow_color: #0005
+                    shadow_color: #x16233B26
                     shadow_radius: 12.0
                     shadow_offset: vec2(0.0, 0.0)
 
