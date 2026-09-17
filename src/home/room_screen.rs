@@ -39,6 +39,7 @@ use crate::{
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
+use crate::room::room_action_bar::RoomActionBarWidgetExt;
 use crate::home::failed_send_banner::{BlockedSend, FailedSendBannerWidgetExt};
 use crate::home::send_status_indicator::{SendStatusIndicatorAction, SendStatusIndicatorRef, SendStatusIndicatorWidgetExt};
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
@@ -698,6 +699,8 @@ script_mod! {
         cursor: MouseCursor.Default,
         flow: Down,
         spacing: 0.0
+
+        room_actions := mod.widgets.RoomActionBar {}
 
         room_screen_wrapper := SolidView {
             width: Fill, height: Fill,
@@ -1653,6 +1656,9 @@ impl Widget for RoomScreen {
                 });
             }
         }
+
+        let room_rect = self.view.area().rect(cx);
+        self.view.room_action_bar(cx, ids!(room_actions)).draw_shadow(cx, room_rect);
 
         // If this RoomScreen was just drawn for the first time after being opened for
         // a "Reply In Thread", then then focus on the text input in the RoomInputBar.

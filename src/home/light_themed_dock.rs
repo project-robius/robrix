@@ -99,13 +99,26 @@ script_mod! {
     }
 
     mod.widgets.RobrixTabCloseButton = TabCloseButton {
-        height: 10.0
-        width: 10.0
-        margin: Inset{ right: theme.space_2, left: -1 }
+        height: 30.0
+        width: 30.0
+        margin: Inset{left: -34, right: 4}
         draw_button +: {
             color: #0
-            color_hover: #FE8610
             color_active: COLOR_PRIMARY
+
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                sdf.box(1.0, 1.0, self.rect_size.x - 2.0, self.rect_size.y - 2.0, 4.0)
+                sdf.fill(mix(#0000001f, #ffffff33, self.active) * self.hover)
+
+                let mid = self.rect_size * 0.5
+                let radius = 4.0
+                sdf.move_to(mid.x - radius, mid.y - radius)
+                sdf.line_to(mid.x + radius, mid.y + radius)
+                sdf.move_to(mid.x - radius, mid.y + radius)
+                sdf.line_to(mid.x + radius, mid.y - radius)
+                return sdf.stroke(mix(self.color, self.color_active, self.active), 1.5)
+            }
         }
 
         animator: Animator{
@@ -130,20 +143,26 @@ script_mod! {
     }
 
     mod.widgets.RobrixTab = Tab {
-        width: Fit
+        width: Fit{max: FitBound.Abs(260)}
         height: Fill
 
         align: Align{x: 0.0, y: 0.5}
-        padding: 9
+        // This padding accounts for the close button on the left of the tab
+        // such that the room name label is centered.
+        padding: Inset{left: 38, right: 9}
         margin: 0
 
         close_button: mod.widgets.RobrixTabCloseButton {}
         draw_text +: {
             text_style: theme.font_regular {}
+            max_lines: 1
+            text_overflow: TextOverflow.Ellipsis
 
             color: #000
-            color_hover: #fe8610
             color_active: COLOR_PRIMARY
+            get_color: fn() {
+                return self.color.mix(self.color_active, self.active)
+            }
         }
 
         draw_bg +: {
@@ -208,7 +227,15 @@ script_mod! {
 
     mod.widgets.RobrixTabBar = TabBar {
         CloseableTab := mod.widgets.RobrixTab {closeable: true}
-        PermanentTab := mod.widgets.RobrixTab {closeable: false}
+
+        PermanentTab := mod.widgets.RobrixTab {closeable: false, width: Fit, padding: 9}
+
+        RoomTab := mod.widgets.RobrixTab {
+            closeable: true
+            // Keep the native Tab widget's label, close button, and drag handling,
+            // but reserve space within the tab for action buttons to be overlaid.
+            padding: Inset {left: 38, right: 37}
+        }
 
         draw_drag +: {
             draw_depth: 10
@@ -232,6 +259,31 @@ script_mod! {
                 use_vertical_finger_scroll: true
             }
         }
+    }
+
+    let RoomTabActionButton = mod.widgets.RoomActionButton {
+        width: 30
+        height: 30
+        padding: 7
+        icon_walk: Walk {width: 15, height: 15}
+    }
+    mod.widgets.RoomTabActions = View {
+        width: 30
+        height: Fill
+        flow: Right
+        align: Align {y: 0.5}
+        expand_room_actions_button := RoomTabActionButton {
+            draw_icon.svg: mod.widgets.ICON_CHEVRON_DOWN
+        }
+        collapse_room_actions_button := RoomTabActionButton {
+            visible: false
+            draw_icon.svg: mod.widgets.ICON_CHEVRON_UP
+        }
+    }
+
+    mod.widgets.RoomTabs = mod.widgets.RoomTabsBase {
+        room_tab_actions: mod.widgets.RoomTabActions {}
+        tab_title_measure: mod.widgets.RobrixTab.draw_text
     }
 
     mod.widgets.RobrixDock = Dock {

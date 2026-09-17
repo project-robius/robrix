@@ -5,6 +5,7 @@ use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, shared::speech_text_input::cancel_all_dictation, utils::RoomNameId};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::{AcceptedInviteKind, RoomsListAction}, spaces_bar::SpacesBarAction};
+use crate::room::{room_action_bar::RoomActionBarWidgetRefExt, room_tabs::RoomTabs};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -12,6 +13,10 @@ script_mod! {
 
 
     mod.widgets.MainDesktopUI = #(MainDesktopUI::register_widget(vm)) {
+        flow: Overlay
+
+        room_tabs: mod.widgets.RoomTabs {}
+
         dock := mod.widgets.RobrixDock {
             width: Fill,
             height: Fill,
@@ -21,7 +26,7 @@ script_mod! {
 
             tab_bar +: {
                 CloseableTab := mod.widgets.RobrixTab { closeable: true }
-                PermanentTab := mod.widgets.RobrixTab { closeable: false }
+                PermanentTab := mod.widgets.RobrixTab { closeable: false, width: Fit, padding: 9 }
             }
 
 
@@ -62,6 +67,10 @@ script_mod! {
             invite_screen := mod.widgets.InviteScreen {}
             space_lobby_screen := mod.widgets.SpaceLobbyScreen {}
         }
+
+        // this is a hover card that appears when the user hovers over a room tab in the dock,
+        // showing the full room name and avatar. (inspired by web browser tab hover cards)
+        room_tab_hover := mod.widgets.RoomTabHoverCard {}
     }
 }
 
@@ -69,6 +78,8 @@ script_mod! {
 pub struct MainDesktopUI {
     #[deref]
     view: View,
+
+    #[live] room_tabs: RoomTabs,
 
     /// The default layout that should be loaded into the dock
     /// when there is no previously-saved content to restore.
@@ -118,7 +129,7 @@ impl ScriptHook for MainDesktopUI {
 impl Widget for MainDesktopUI {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.widget_match_event(cx, event, scope); // invokes `WidgetMatchEvent` impl
-        self.view.handle_event(cx, event, scope);
+        self.room_tabs.handle_event(cx, event, scope, &mut self.view, &self.open_rooms);
 
         // For convenience, we support go-back gestures when viewing a thread's tab
         // to easily go back to the most recent room.
@@ -145,7 +156,7 @@ impl Widget for MainDesktopUI {
             cx.action(MainDesktopUiAction::LoadDockFromAppState);
             self.drawn_previously = true;
         }
-        self.view.draw_walk(cx, scope, walk)
+        self.room_tabs.draw_walk(cx, scope, walk, &mut self.view, &self.open_rooms)
     }
 }
 
@@ -225,7 +236,7 @@ impl MainDesktopUI {
             room_tab_id,
             kind,
             room.display_name(),
-            id!(CloseableTab),
+            RoomTabs::tab_template(&room),
             Some(insert_after),
         );
 
@@ -554,6 +565,18 @@ impl MainDesktopUI {
 impl WidgetMatchEvent for MainDesktopUI {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         let mut should_save_dock_action: bool = false;
+        if let Some(tab_id) = self.room_tabs.expansion_clicked(cx, actions, &self.open_rooms)
+            && let Some(room) = self.open_rooms.get(&tab_id).cloned()
+        {
+            self.cancel_dictation_unless_shown(&room);
+            self.select_room(cx, Some(room));
+            self.init_tab_if_needed(cx, tab_id);
+            let action_bar = self.view.dock(cx, ids!(dock)).item(tab_id)
+                .room_action_bar(cx, ids!(room_actions));
+            action_bar.set_expanded(cx, !action_bar.is_expanded());
+            self.redraw(cx);
+            should_save_dock_action = true;
+        }
         for action in actions {
             let widget_action = action.as_widget_action();
 
@@ -805,8 +828,14 @@ mod dock_state_repair {
         // If an open room is still known semantically but its DockItem::Tab was lost,
         // recreate that tab item so it can be rescued into the main tab bar.
         for (&tab_id, room) in saved.open_rooms.iter() {
-            match saved.dock_items.get(&tab_id) {
-                Some(DockItem::Tab { .. }) => {}
+            match saved.dock_items.get_mut(&tab_id) {
+                Some(DockItem::Tab { template, .. }) => {
+                    let expected = RoomTabs::tab_template(room);
+                    if *template != expected {
+                        *template = expected;
+                        repaired = true;
+                    }
+                }
                 None => {
                     saved.dock_items.insert(tab_id, dock_tab_for_selected_room(room));
                     repaired = true;
@@ -936,7 +965,7 @@ mod dock_state_repair {
     fn dock_tab_for_selected_room(room: &SelectedRoom) -> DockItem {
         DockItem::Tab {
             name: room.display_name(),
-            template: id!(CloseableTab),
+            template: RoomTabs::tab_template(room),
             kind: room.dock_kind(),
         }
     }

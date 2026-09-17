@@ -9,11 +9,17 @@ use crate::shared::avatar::AvatarImage;
 use crate::utils::RoomNameId;
 
 pub mod reply_preview;
+pub mod room_action_bar;
+pub mod room_tab_hover_card;
+pub mod room_tabs;
 pub mod room_input_bar;
 pub mod room_display_filter;
 pub mod typing_notice;
 
 pub fn script_mod(vm: &mut ScriptVm) {
+    room_action_bar::script_mod(vm);
+    room_tab_hover_card::script_mod(vm);
+    room_tabs::script_mod(vm);
     reply_preview::script_mod(vm);
     room_input_bar::script_mod(vm);
     typing_notice::script_mod(vm);

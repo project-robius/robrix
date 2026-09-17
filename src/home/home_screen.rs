@@ -10,6 +10,7 @@ use crate::{
         space_lobby::SpaceLobbyScreenWidgetRefExt,
         spaces_bar::SpacesBarAction,
     },
+    room::room_action_bar::{RoomActionBarAction, RoomActionBarWidgetRefExt},
     settings::{
         app_preferences::{AppPreferencesGlobal, AppPreferencesAction, ViewModeOverride},
         settings_screen::SettingsScreenWidgetRefExt,
@@ -44,84 +45,7 @@ script_mod! {
             clip_x: false,
             clip_y: false,
             show_bg: true,
-            draw_bg +: {
-                color: instance((COLOR_PRIMARY_DARKER))
-                color_dither: uniform(1.0)
-                gradient_border_horizontal: uniform(0.0)
-                gradient_fill_horizontal: uniform(0.0)
-                color_2: instance(vec4(-1))
-
-                border_radius: uniform(4.0)
-                border_size: uniform(0.0)
-                border_color: instance(#0000)
-                border_color_2: instance(vec4(-1))
-
-                shadow_color: instance(#0005)
-                shadow_radius: uniform(12.0)
-                shadow_offset: uniform(vec2(0.0, 0.0))
-
-                rect_size2: varying(vec2(0))
-                rect_size3: varying(vec2(0))
-                rect_pos2: varying(vec2(0))
-                rect_shift: varying(vec2(0))
-                sdf_rect_pos: varying(vec2(0))
-                sdf_rect_size: varying(vec2(0))
-
-                vertex: fn() {
-                    let min_offset = min(self.shadow_offset vec2(0))
-                    self.rect_size2 = self.rect_size + 2.0*vec2(self.shadow_radius)
-                    self.rect_size3 = self.rect_size2 + abs(self.shadow_offset)
-                    self.rect_pos2 = self.rect_pos - vec2(self.shadow_radius) + min_offset
-                    self.sdf_rect_size = self.rect_size2 - vec2(self.shadow_radius * 2.0 + self.border_size * 2.0)
-                    self.sdf_rect_pos = -min_offset + vec2(self.border_size + self.shadow_radius)
-                    self.rect_shift = -min_offset
-
-                    return self.clip_and_transform_vertex(self.rect_pos2 self.rect_size3)
-                }
-
-                pixel: fn() {
-                    let sdf = Sdf2d.viewport(self.pos * self.rect_size3)
-
-                    let mut fill_color = self.color
-                    if self.color_2.x > -0.5 {
-                        let dither = Math.random_2d(self.pos.xy) * 0.04 * self.color_dither
-                        let dir = if self.gradient_fill_horizontal > 0.5 self.pos.x else self.pos.y
-                        fill_color = mix(self.color self.color_2 dir + dither)
-                    }
-
-                    let mut stroke_color = self.border_color
-                    if self.border_color_2.x > -0.5 {
-                        let dither = Math.random_2d(self.pos.xy) * 0.04 * self.color_dither
-                        let dir = if self.gradient_border_horizontal > 0.5 self.pos.x else self.pos.y
-                        stroke_color = mix(self.border_color self.border_color_2 dir + dither)
-                    }
-
-                    sdf.box(
-                        self.sdf_rect_pos.x
-                        self.sdf_rect_pos.y
-                        self.sdf_rect_size.x
-                        self.sdf_rect_size.y
-                        max(1.0 self.border_radius)
-                    )
-                    if sdf.shape > -1.0 {
-                        let m = self.shadow_radius
-                        let o = self.shadow_offset + self.rect_shift
-                        let v = GaussShadow.rounded_box_shadow(vec2(m) + o self.rect_size2+o self.pos * (self.rect_size3+vec2(m)) self.shadow_radius*0.5 self.border_radius*2.0)
-                        // Only draw shadow on the bottom half of the view
-                        let pixel_y = self.pos.y * self.rect_size3.y
-                        let mid_y = self.sdf_rect_pos.y + self.sdf_rect_size.y * 0.5
-                        let bottom_mask = smoothstep(mid_y - m * 0.3 mid_y + m * 0.3 pixel_y)
-                        sdf.clear(self.shadow_color * v * bottom_mask)
-                    }
-
-                    sdf.fill_keep(fill_color)
-
-                    if self.border_size > 0.0 {
-                        sdf.stroke(stroke_color self.border_size)
-                    }
-                    return sdf.result
-                }
-            }
+            draw_bg: mod.widgets.RobrixHeaderBackground {}
 
             content +: {
                 height: (mod.widgets.STACK_VIEW_HEADER_HEIGHT)
@@ -133,19 +57,27 @@ script_mod! {
                 button_container +: {
                     padding: 0,
                     margin: 0
+                    height: (mod.widgets.STACK_VIEW_HEADER_HEIGHT)
+                    align: Align{y: 0.5}
                     left_button +: {
-                        width: Fit, height: Fit,
-                        padding: Inset{left: 20, right: 23, top: 10, bottom: 10}
-                        margin: Inset{left: 8, right: 0, top: 0, bottom: 0}
+                        width: 56, height: 40,
+                        padding: 8
+                        margin: Inset{left: 3}
+                        align: Align{x: 0.5, y: 0.5}
                         draw_icon +: { color: (ROOM_NAME_TEXT_COLOR) }
-                        icon_walk: Walk{width: 13, height: Fit}
+                        icon_walk: Walk{width: 12, height: 18}
                         spacing: 0
                         text: ""
                     }
                 }
                 title_container +: {
-                    // padding: Inset{top: 8}
+                    // Reserve matching space on both sides to keep the title centered.
+                    padding: Inset{left: 63, right: 63}
                     title +: {
+                        width: Fill
+                        align: Align{x: 0.5, y: 0.5}
+                        max_lines: 1
+                        text_overflow: TextOverflow.Ellipsis
                         draw_text +: {
                             color: (ROOM_NAME_TEXT_COLOR)
                         }
@@ -377,8 +309,19 @@ script_mod! {
 
                     stack_templates: {
                         RoomScreenStackNavigationView := mod.widgets.RobrixStackNavigationView {
+                            header +: {
+                                height: Fit
+                                content := mod.widgets.RoomActionBarHeader {
+                                    padding: Inset{
+                                        left: (mod.widgets.SAFE_INSET_PAD_LEFT),
+                                        right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
+                                    }
+                                }
+                            }
                             body +: {
-                                room_screen := mod.widgets.RoomScreen {}
+                                room_screen := mod.widgets.RoomScreen {
+                                    room_actions +: {visible: false}
+                                }
                             }
                         }
 
@@ -630,11 +573,24 @@ impl Widget for HomeScreen {
                     _ => {}
                 }
 
-                if let StackNavigationTransitionAction::ViewReleased(view_id) =
-                    action.as_widget_action().cast()
-                {
+                if let StackNavigationTransitionAction::ViewReleased(view_id) = action.as_widget_action().cast() {
                     let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
                     self.hide_screen_in_released_stack_view(cx, &stack_navigation, view_id);
+                }
+
+                if let RoomActionBarAction::LayoutChanged { new_height } = action.as_widget_action().cast() {
+                    let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
+                    // Both the root view and other stacked views can co-exist during an animation,
+                    // so we need to make sure we know which header is being shown
+                    // (the rooms list or a room screen) so we can adjust for its height.
+                    for view_id in stack_navigation.dynamic_stack_view_ids() {
+                        let stack_view = stack_navigation.view_by_id(cx, view_id);
+                        let header = stack_view.room_action_bar(cx, ids!(header.content));
+                        if action.as_widget_action().widget_uid_eq(header.widget_uid()).is_some() {
+                            Self::set_mobile_stack_header_height(cx, &stack_view, new_height);
+                            break;
+                        }
+                    }
                 }
 
                 // When a stack navigation pop is requested (back button pressed),
@@ -763,6 +719,14 @@ impl HomeScreen {
         }
     }
 
+    fn set_mobile_stack_header_height(cx: &mut Cx, stack_view: &WidgetRef, height: f64) {
+        let mut body = stack_view.widget(cx, ids!(body));
+        script_apply_eval!(cx, body, {
+            margin +: {top: #(height)}
+        });
+        stack_view.redraw(cx);
+    }
+
     /// Populates a `StackNavigationView` with the given room/screen's info.
     ///
     /// Returns the LiveId of the view that should be pushed onto or revealed by
@@ -783,6 +747,9 @@ impl HomeScreen {
                     return None;
                 };
                 Self::hide_displayed_stack_screen(cx, &stack_navigation_view);
+                stack_navigation_view.room_action_bar(cx, ids!(header.content))
+                    .set_expanded(cx, false);
+                Self::set_mobile_stack_header_height(cx, &stack_navigation_view, 45.0);
                 let thread_root = if let SelectedRoom::Thread { thread_root_event_id, .. } = selected_screen {
                     Some(thread_root_event_id.clone())
                 } else {
