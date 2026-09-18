@@ -10,6 +10,7 @@
 use makepad_widgets::*;
 
 use crate::home::rooms_list::RoomsListWidgetExt;
+use crate::home::rooms_list_header::RoomsListHeaderAction;
 use crate::settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction, ViewModeOverride};
 
 script_mod! {
@@ -170,6 +171,14 @@ impl Widget for RoomsSideBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
             for action in actions {
+                if let Some(RoomsListHeaderAction::FocusRoomFilter) = action.downcast_ref()
+                    && !crate::home::home_screen::effective_is_desktop(cx)
+                {
+                    let input = self.view.text_input(cx, ids!(room_filter_input_bar.input.text_input));
+                    if !input.is_empty() {
+                        input.set_key_focus(cx);
+                    }
+                }
                 if let Some(AppPreferencesAction::ViewModeChanged(new_mode)) = action.downcast_ref() {
                     if *new_mode != self.applied_view_mode {
                         self.apply_view_mode(*new_mode);
