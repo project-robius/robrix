@@ -12,9 +12,9 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 
 | Crates | License | SPDX |
 |-------:|---------|------|
-| 561 | MIT License | `MIT` |
+| 559 | MIT License | `MIT` |
 | 24 | Apache License 2.0 | `Apache-2.0` |
-| 20 | Unicode License v3 | `Unicode-3.0` |
+| 21 | Unicode License v3 | `Unicode-3.0` |
 | 12 | Mozilla Public License 2.0 | `MPL-2.0` |
 | 6 | BSD 3-Clause "New" or "Revised" License | `BSD-3-Clause` |
 | 6 | ISC License | `ISC` |
@@ -104,7 +104,6 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `cfg-if` | 1.0.4 | MIT OR Apache-2.0 |
 | `cfg-if` | 1.0.4 | MIT OR Apache-2.0 |
 | `cfg_aliases` | 0.2.1 | MIT |
-| `cfg_aliases` | 0.2.1 | MIT |
 | `chacha20` | 0.10.0 | MIT OR Apache-2.0 |
 | `chacha20poly1305` | 0.11.0 | Apache-2.0 OR MIT |
 | `chrono` | 0.4.45 | Apache-2.0 OR MIT |
@@ -139,7 +138,6 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `crypto-common` | 0.2.2 | MIT OR Apache-2.0 |
 | `ctor` | 0.2.9 | Apache-2.0 OR MIT |
 | `ctr` | 0.10.1 | MIT OR Apache-2.0 |
-| `ctrlc` | 3.5.2 | MIT OR Apache-2.0 |
 | `ctutils` | 0.4.2 | Apache-2.0 OR MIT |
 | `curve25519-dalek` | 5.0.0 | BSD-3-Clause |
 | `curve25519-dalek-derive` | 0.1.1 | MIT OR Apache-2.0 |
@@ -269,12 +267,12 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `litemap` | 0.8.0 | Unicode-3.0 |
 | `lock_api` | 0.4.13 | MIT OR Apache-2.0 |
 | `log` | 0.4.28 | MIT OR Apache-2.0 |
-| `log` | 0.4.29 | MIT OR Apache-2.0 |
 | `loom` | 0.7.2 | MIT |
 | `makepad-android-state` | 0.1.0 | MIT |
 | `makepad-apple-sys` | 1.0.0 | MIT OR Apache-2.0 |
 | `makepad-byteorder-lite` | 0.1.0 | Unlicense OR MIT |
 | `makepad-code-editor` | 2.0.0 | MIT OR Apache-2.0 |
+| `makepad-code-language` | 0.1.0 | MIT OR Apache-2.0 |
 | `makepad-derive-wasm-bridge` | 1.0.0 | MIT OR Apache-2.0 |
 | `makepad-derive-widget` | 2.0.0 | MIT OR Apache-2.0 |
 | `makepad-draw` | 2.0.0 | MIT OR Apache-2.0 |
@@ -284,6 +282,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `makepad-futures` | 1.0.0 | MIT OR Apache-2.0 |
 | `makepad-futures-legacy` | 1.0.0 | MIT OR Apache-2.0 |
 | `makepad-gif` | 0.1.0 | MIT OR Apache-2.0 |
+| `makepad-git` | 0.1.0 | Unknown |
 | `makepad-half` | 2.7.1 | MIT OR Apache-2.0 |
 | `makepad-html` | 1.0.0 | MIT OR Apache-2.0 |
 | `makepad-jni-sys` | 0.4.0 | MIT OR Apache-2.0 |
@@ -298,6 +297,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `makepad-network` | 1.0.0 | MIT OR Apache-2.0 |
 | `makepad-objc-sys` | 1.0.0 | MIT |
 | `makepad-platform` | 2.0.0 | MIT OR Apache-2.0 |
+| `makepad-platform-video` | 1.0.0 | MIT OR Apache-2.0 |
 | `makepad-regex` | 0.1.0 | MIT |
 | `makepad-script` | 1.0.0 | MIT OR Apache-2.0 |
 | `makepad-script-derive` | 1.0.0 | MIT OR Apache-2.0 |
@@ -307,7 +307,6 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `makepad-studio-protocol` | 0.1.0 | MIT OR Apache-2.0 |
 | `makepad-svg` | 1.0.0 | MIT OR Apache-2.0 |
 | `makepad-tsdf` | 0.1.0 | MIT OR Apache-2.0 |
-| `makepad-video` | 1.0.0 | MIT OR Apache-2.0 |
 | `makepad-wasm-bridge` | 1.0.0 | MIT OR Apache-2.0 |
 | `makepad-webp` | 0.2.4 | MIT OR Apache-2.0 |
 | `makepad-widgets` | 2.0.0 | MIT OR Apache-2.0 |
@@ -346,7 +345,6 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `napi-sys-ohos` | 0.0.1 | MIT |
 | `ndk-context` | 0.1.1 | MIT OR Apache-2.0 |
 | `new_debug_unreachable` | 1.0.6 | MIT |
-| `nix` | 0.31.3 | MIT |
 | `nom` | 7.1.3 | MIT |
 | `nu-ansi-term` | 0.50.1 | MIT |
 | `num-conv` | 0.2.2 | MIT OR Apache-2.0 |
@@ -547,6 +545,7 @@ crate are in [THIRD-PARTY-NOTICES.html](THIRD-PARTY-NOTICES.html).
 | `unicode-bidi-mirroring` | 0.3.0 | MIT OR Apache-2.0 |
 | `unicode-ccc` | 0.3.0 | MIT OR Apache-2.0 |
 | `unicode-ident` | 1.0.19 | (MIT OR Apache-2.0) AND Unicode-3.0 |
+| `unicode-ident` | 1.0.22 | (MIT OR Apache-2.0) AND Unicode-3.0 |
 | `unicode-linebreak` | 0.1.5 | Apache-2.0 |
 | `unicode-normalization` | 0.1.25 | MIT OR Apache-2.0 |
 | `unicode-properties` | 0.1.4 | MIT OR Apache-2.0 |
