@@ -15,6 +15,7 @@ pub mod jump_to_bottom_button;
 pub mod mention_popup;
 pub mod mentionable_text_input;
 pub mod navigation_bar_button;
+pub mod password_input;
 pub mod popup_list;
 pub mod progress_bar;
 pub mod room_filter_input_bar;
@@ -37,6 +38,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     styles::script_mod(vm);
     helpers::script_mod(vm);
     icon_button::script_mod(vm);
+    password_input::script_mod(vm);
     speech_text_input::script_mod(vm);
     context_menu::script_mod(vm);
     navigation_bar_button::script_mod(vm);

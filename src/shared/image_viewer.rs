@@ -902,10 +902,13 @@ impl ImageViewer {
         let (sender, receiver) = std::sync::mpsc::channel();
         self.receiver = Some((self.background_task_id, receiver));
         let image_bytes2 = Arc::clone(image_bytes);
-        cx.spawn_thread(move || {
+        let spawned = cx.spawn_worker(move || {
             let _ = sender.send(decode_image_from_data(&image_bytes2));
             SignalToUI::set_ui_signal();
         });
+        if let Err(e) = spawned {
+            error!("Failed to spawn the image decoding thread: {e:?}");
+        }
         self.show_overlay_ui(cx, true);
     }
 
