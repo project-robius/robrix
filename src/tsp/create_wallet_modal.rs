@@ -2,6 +2,7 @@
 
 use makepad_widgets::*;
 
+use crate::shared::password_input::PasswordTextInputWidgetExt;
 use crate::tsp::{self, TspWalletMetadata};
 
 
@@ -43,32 +44,26 @@ script_mod! {
                 empty_text: "Wallet Name",
             }
 
-            password_input := RobrixTextInput {
-                width: Fill,
-                height: Fit,
-                padding: 10,
-                draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: 12},
-                    color: #000
+            password_input := mod.widgets.PasswordTextInput {
+                text_input +: {
+                    empty_text: "Wallet Password",
+                    content_type: NewPassword,
+                    draw_text +: {
+                        text_style: REGULAR_TEXT {font_size: 12},
+                        color: #000
+                    }
                 }
-                empty_text: "Wallet Password",
-                autocapitalize: None,
-                autocorrect: Disabled,
-                content_type: NewPassword,
             }
 
-            confirm_password_input := RobrixTextInput {
-                width: Fill,
-                height: Fit,
-                padding: 10,
-                draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: 12},
-                    color: #000
+            confirm_password_input := mod.widgets.PasswordTextInput {
+                text_input +: {
+                    empty_text: "Confirm Wallet Password",
+                    content_type: NewPassword,
+                    draw_text +: {
+                        text_style: REGULAR_TEXT {font_size: 12},
+                        color: #000
+                    }
                 }
-                empty_text: "Confirm Wallet Password",
-                autocapitalize: None,
-                autocorrect: Disabled,
-                content_type: NewPassword,
             }
 
             View {
@@ -212,8 +207,8 @@ impl WidgetMatchEvent for CreateWalletModal {
 
         let wallet_name_input = self.view.text_input(cx, ids!(wallet_name_input));
         let wallet_file_name_input = self.view.text_input(cx, ids!(wallet_file_name_input));
-        let password_input = self.view.text_input(cx, ids!(password_input));
-        let confirm_password_input = self.view.text_input(cx, ids!(confirm_password_input));
+        let password_input = self.view.password_text_input(cx, ids!(password_input));
+        let confirm_password_input = self.view.password_text_input(cx, ids!(confirm_password_input));
         let mut status_label = self.view.label(cx, ids!(status_label));
 
         // Handle clicking the accept button.
@@ -400,8 +395,8 @@ impl CreateWalletModal {
         // TODO: return buttons to their default state/appearance
         self.view.text_input(cx, ids!(wallet_name_input)).set_is_read_only(cx, false);
         self.view.text_input(cx, ids!(wallet_file_name_input)).set_is_read_only(cx, false);
-        self.view.text_input(cx, ids!(password_input)).set_is_read_only(cx, false);
-        self.view.text_input(cx, ids!(confirm_password_input)).set_is_read_only(cx, false);
+        self.view.password_text_input(cx, ids!(password_input)).set_is_read_only(cx, false);
+        self.view.password_text_input(cx, ids!(confirm_password_input)).set_is_read_only(cx, false);
         self.view.label(cx, ids!(status_label)).set_text(cx, "");
         self.is_showing_error = false;
         self.view.redraw(cx);        

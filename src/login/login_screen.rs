@@ -6,7 +6,7 @@
 use std::{net::{Ipv4Addr, Ipv6Addr}, ops::Not};
 use makepad_widgets::*;
 use crate::{
-    shared::styles::*,
+    shared::{password_input::PasswordTextInputWidgetExt, styles::*},
     sliding_sync::{homeserver_of_user_id, submit_async_request, username_to_full_user_id, BrowserLoginKind, LoginByPassword, LoginMethods, LoginRequest, MatrixRequest},
     utils,
 };
@@ -21,8 +21,6 @@ script_mod! {
     mod.widgets.COLOR_LOGIN_BG_BOTTOM = #FFFFFF
 
     mod.widgets.IMG_APP_LOGO = crate_resource("self://resources/robrix_logo_alpha.png")
-    mod.widgets.ICON_EYE_OPEN   = crate_resource("self://resources/icons/eye_open.svg")
-    mod.widgets.ICON_EYE_CLOSED = crate_resource("self://resources/icons/eye_closed.svg")
 
     mod.widgets.LoginButton = mod.widgets.RobrixIconButton {
         width: Fill {max: 275}, height: Fit
@@ -218,61 +216,8 @@ script_mod! {
                             content_type: Username,
                         }
 
-                        View {
-                            width: Fill {max: 275}, height: Fit
-                            flow: Overlay
-                            align: Align{x: 1.0, y: 0.5}
-
-                            password_input := RobrixTextInput {
-                                width: Fill, height: Fit
-                                flow: Flow.Right { wrap: false },
-                                padding: Inset{top: 10, bottom: 10, left: 10, right: 38}
-                                empty_text: "Password"
-                                is_password: true,
-                                autocapitalize: None,
-                                autocorrect: Disabled,
-                                content_type: Password,
-                            }
-
-                            View {
-                                width: 38, height: Fill
-                                align: Align{x: 0.5, y: 0.5}
-
-                                show_password_button := RobrixNeutralIconButton {
-                                    width: Fit, height: Fit,
-                                    align: Align{x: 0.5, y: 0.5}
-                                    padding: 5
-                                    spacing: 0
-                                    margin: 0
-                                    draw_bg +: {
-                                        color: (COLOR_SECONDARY * 1.05)
-                                    }
-                                    draw_icon +: {
-                                        svg: (mod.widgets.ICON_EYE_CLOSED),
-                                        color: #8C8C8C,
-                                    }
-                                    icon_walk: Walk{width: 18, height: 18, margin: 0}
-                                    text: ""
-                                }
-
-                                hide_password_button := RobrixNeutralIconButton {
-                                    visible: false,
-                                    align: Align{x: 0.5, y: 0.5}
-                                    width: Fit, height: Fit,
-                                    padding: 5
-                                    spacing: 0
-                                    margin: 0
-                                    draw_bg +: {
-                                        color: (COLOR_SECONDARY * 1.05)
-                                    }
-                                    draw_icon +: {
-                                        svg: (mod.widgets.ICON_EYE_OPEN),
-                                        color: #8C8C8C,
-                                    }
-                                    icon_walk: Walk{width: 18, height: 18, margin: 0}
-                                    text: ""
-                                }
-                            }
+                        password_input := mod.widgets.PasswordTextInput {
+                            width: Fill {max: 275}
                         }
 
                         login_button := mod.widgets.LoginButton {
@@ -369,8 +314,6 @@ pub struct LoginScreen {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
 
-    /// Whether the password textinput is currently showing (`true`) or hiding (`false`) its entered text.
-    #[rust] is_password_visible: bool,
     /// While a browser-based login is in flight, the login buttons stay disabled.
     #[rust] is_login_pending: bool,
     /// The homeserver we last queried info for, or `None` if we haven't done any queries yet.
@@ -423,22 +366,10 @@ impl MatchEvent for LoginScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         let homeserver_input = self.view.text_input(cx, ids!(homeserver_input));
         let user_id_input = self.view.text_input(cx, ids!(user_id_input));
-        let password_input = self.view.text_input(cx, ids!(password_input));
+        let password_input = self.view.password_text_input(cx, ids!(password_input));
 
         let login_status_modal = self.view.modal(cx, ids!(login_status_modal));
         let login_status_modal_content = self.view.login_status_modal(cx, ids!(login_status_modal.content));
-
-        // Handle toggling password visibility
-        let show_pw_button = self.view.button(cx, ids!(show_password_button));
-        let hide_pw_button = self.view.button(cx, ids!(hide_password_button));
-        if show_pw_button.clicked(actions) || hide_pw_button.clicked(actions) {
-            self.is_password_visible = !self.is_password_visible;
-            password_input.toggle_is_password(cx);
-            show_pw_button.set_visible(cx, !self.is_password_visible);
-            hide_pw_button.set_visible(cx, self.is_password_visible);
-            password_input.set_key_focus(cx);
-            self.redraw(cx);
-        }
 
         if user_id_input.changed(actions).is_some() || password_input.changed(actions).is_some() {
             self.enable_login_button(cx);
@@ -619,7 +550,7 @@ impl LoginScreen {
     /// For password login, only enable the login button if both username and password are non-empty.
     fn enable_login_button(&mut self, cx: &mut Cx) {
         let is_ready = !self.view.text_input(cx, ids!(user_id_input)).text().trim().is_empty()
-            && !self.view.text_input(cx, ids!(password_input)).text().is_empty();
+            && !self.view.password_text_input(cx, ids!(password_input)).text().is_empty();
         let (fg_color, bg_color) = if is_ready {
             (COLOR_PRIMARY, COLOR_ACTIVE_PRIMARY)
         } else {
@@ -746,7 +677,7 @@ impl LoginScreen {
     }
 }
 
-/// Retruns `true` if the given text can be treated as a homeserver.
+/// Returns `true` if the given text can be treated as a homeserver.
 fn is_homeserver_address(text: &str) -> bool {
     let after_scheme = text.split_once("://").map_or(text, |(_, rest)| rest);
     let Some(host) = after_scheme.split(['/', '?', '#']).next().filter(|host| !host.is_empty()) else {
