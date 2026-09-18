@@ -5588,7 +5588,7 @@ async fn discover_login_methods(homeserver: String) {
             has_oauth: oauth_supports_create_account.is_some(),
             supports_create_account: oauth_supports_create_account.unwrap_or(false),
             has_password: flows.iter().any(|flow| matches!(flow, LoginType::Password(_))),
-            // On OAuth homeservers, legacy SSO poitns to the exact same sign-in page,
+            // On OAuth homeservers, legacy SSO points to the exact same sign-in page,
             // so we don't need to show both options in the login screen if they're all the same.
             has_sso: oauth_supports_create_account.is_none()
                 && flows.iter().any(|flow| matches!(flow, LoginType::Sso(_))),
@@ -5604,7 +5604,7 @@ async fn discover_login_methods(homeserver: String) {
     Cx::post_action(LoginAction::LoginMethods { homeserver, result });
 }
 
-/// Takes the prebuilt client if it was built for the given homeserver, otherweise builds a new one.
+/// Takes the prebuilt client if it was built for the given homeserver, otherwise builds a new one.
 async fn get_or_build_login_client(
     homeserver: &str,
 ) -> Result<(Client, ClientSessionPersisted), ClientBuildError> {
