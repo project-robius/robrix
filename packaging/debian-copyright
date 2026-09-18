@@ -67,22 +67,6 @@ License: CC-BY-3.0
 Comment: "Add Wallet" by Creative Stall from Noun Project.
  <https://thenounproject.com/browse/icons/term/add-wallet/>
 
-Files: usr/lib/robrix/robrix/resources/img/apple.png
-       usr/lib/robrix/robrix/resources/img/facebook.png
-       usr/lib/robrix/robrix/resources/img/github.png
-       usr/lib/robrix/robrix/resources/img/gitlab.png
-       usr/lib/robrix/robrix/resources/img/google.png
-Copyright: the respective trademark owners
-License: brand-logo-no-grant
-Comment: Third-party brand logos, shown only to identify the corresponding
- single-sign-on provider. No copyright licence is asserted over them.
-
-Files: usr/lib/robrix/robrix/resources/img/x.png
-Copyright: shobumiah
-License: Vecteezy-Free
-Comment: X logo obtained from Vecteezy, attribution as required by their free
- licence. <https://www.vecteezy.com/png/42148611-new-twitter-x-logo-twitter-icon-x-social-media-icon>
-
 Files: usr/bin/robrix
 Copyright: 2023-2026 Project Robius Developers
 License: MIT
@@ -299,13 +283,3 @@ License: SVG-Repo-terms
 License: CC-BY-3.0
  Licensed under the Creative Commons Attribution 3.0 Unported licence. The full
  text is available at <https://creativecommons.org/licenses/by/3.0/legalcode>.
-
-License: brand-logo-no-grant
- These files are third-party brand logos and are the trademarks of their
- respective owners. They are included solely to identify the corresponding
- single-sign-on provider within the user interface. No copyright licence is
- granted or implied by this package, and no endorsement is claimed.
-
-License: Vecteezy-Free
- Obtained from Vecteezy under their Free License, which permits use with
- attribution to the author. See <https://www.vecteezy.com/licensing-agreement>.

@@ -293,6 +293,3 @@ You can immediately double-click the `Robrix.app` bundle to run it, or you can d
 > Note that the `.dmg` is what should be distributed for installation on other machines, not the `.app`.
 
 If you'd like to modify the .dmg background, here is the [Google Drawings file used to generate the MacOS .dmg background image](https://docs.google.com/drawings/d/10ALUgNV7v-4bRTIE5Wb2vNyXpl2Gj3YJcl7Q2AGpvDw/edit?usp=sharing).
-
-## Credits
-* X logo: https://www.vecteezy.com/png/42148611-new-twitter-x-logo-twitter-icon-x-social-media-icon (shobumiah)
