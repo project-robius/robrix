@@ -9,18 +9,19 @@ use imbl::Vector;
 use makepad_widgets::{error, image_cache::image_size_by_data, log, warning, Cx, SignalToUI, WidgetUid};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    authentication::oauth::error::OAuthDiscoveryError, config::RequestConfig, encryption::{identities::Device, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, Receipts, RelationsOptions}, ruma::{
-        api::{Direction, client::{authenticated_media::get_media_preview, discovery::get_authorization_server_metadata::v1::{AccountManagementAction, AccountManagementActionData}, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType}, error::{ErrorKind, RetryAfter}}, events::{
+    authentication::oauth::{error::{OAuthDiscoveryError, OAuthError}, registration::{ApplicationType, ClientMetadata, Localized, OAuthGrantType}, OAuthAuthorizationData}, config::RequestConfig, encryption::{identities::Device, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, Receipts, RelationsOptions}, ruma::{
+        api::{Direction, client::{authenticated_media::get_media_preview, discovery::get_authorization_server_metadata::v1::{AccountManagementAction, AccountManagementActionData, Prompt}, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, error::{ErrorKind, RetryAfter}}, events::{
             receipt::{ReceiptThread, ReceiptType as ReceiptEventType},
             relation::RelationType,
             room::{
                 encrypted::Relation as EncryptedRelation, message::{MessageType, Relation, RoomMessageEventContent, TextMessageEventContent}, power_levels::RoomPowerLevels, redaction::SyncRoomRedactionEvent, MediaSource
             }, AnyMessageLikeEventContent, AnySyncMessageLikeEvent, AnySyncTimelineEvent, MessageLikeEventType, StateEventType
-        }, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedTransactionId, OwnedUserId, RoomOrAliasId, TransactionId, UserId, uint
+        }, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedTransactionId, OwnedUserId, RoomOrAliasId, TransactionId, UserId, serde::Raw, uint
     }, send_queue::{LocalEcho, LocalEchoContent, RoomSendQueueUpdate, SendQueueUpdate}, sliding_sync::VersionBuilder, Client, ClientBuildError, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
 };
-#[cfg(not(target_os = "ios"))]
 use matrix_sdk::Error;
+#[cfg(not(target_os = "ios"))]
+use matrix_sdk::utils::local_server::{LocalServerBuilder, LocalServerResponse};
 use matrix_sdk_ui::{
     RoomListService, Timeline, encryption_sync_service, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{AttachmentSource, EventSendState, LatestEventValue, RedactError, RoomExt, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineReadReceiptTracking, TimelineDetails}
 };
@@ -187,9 +188,13 @@ async fn build_client(
             .collect()
     };
 
+    // if no homeserver address was provided, we can get it from a full user ID
+    let user_id_homeserver = cli.homeserver.is_none()
+        .then(|| homeserver_of_user_id(&cli.user_id))
+        .flatten();
     let homeserver_url = cli.homeserver.as_deref()
+        .or(user_id_homeserver.as_deref())
         .unwrap_or("https://matrix-client.matrix.org/");
-        // .unwrap_or("https://matrix.org/");
 
     let mut builder = base_client_builder(&db_path, &passphrase)
         .server_name_or_homeserver_url(homeserver_url)
@@ -262,14 +267,11 @@ async fn login(
             }
         }
 
-        LoginRequest::LoginBySSOSuccess(client, client_session) => {
+        LoginRequest::BrowserLoginSuccess(client, client_session) => {
             if let Err(e) = persistence::save_session(&client, client_session).await {
                 error!("Failed to save session state to storage: {e:?}");
             }
             Ok((client, None))
-        }
-        LoginRequest::HomeserverLoginTypesQuery(_) => {
-            bail!("LoginRequest::HomeserverLoginTypesQuery not handled earlier");
         }
     }
 }
@@ -697,15 +699,19 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         typing: bool,
     },
-    /// Spawn an async task to login to the given Matrix homeserver using the given SSO identity provider ID.
+    /// Ask the homeserver which login methods it supports.
     ///
-    /// While an SSO request is in flight, the login screen will temporarily prevent the user
-    /// from submitting another redundant request, until this request has succeeded or failed.
-    SpawnSSOServer{
-        brand: String,
-        homeserver_url: String,
-        identity_provider_id: String,
+    /// A response is provided via [LoginAction::LoginMethods`].
+    QueryLoginMethods {
+        homeserver: String,
     },
+    /// Log in through the homeserver's own sign-in page, which opens in a browser.
+    LoginViaBrowser {
+        homeserver: String,
+        kind: BrowserLoginKind,
+    },
+    /// Cancel an in-flight `LoginViaBrowser` request.
+    CancelBrowserLogin,
     /// Subscribe to typing notices for the given room.
     ///
     /// This is only valid for the main room timeline, not for thread-focused timelines.
@@ -841,12 +847,37 @@ where
 /// Details of a login request that get submitted within [`MatrixRequest::Login`].
 pub enum LoginRequest{
     LoginByPassword(LoginByPassword),
-    LoginBySSOSuccess(Client, ClientSessionPersisted),
+    /// A browser-based login (OAuth 2.0 or legacy SSO) finished on this already-logged-in client.
+    BrowserLoginSuccess(Client, ClientSessionPersisted),
     LoginByCli,
-    HomeserverLoginTypesQuery(String),
-
 }
-/// Information needed to log in to a Matrix homeserver.
+
+/// Which kind of browser-based login to perform.
+#[derive(Clone, Copy, Debug)]
+pub enum BrowserLoginKind {
+    /// Login using the newer OAuth 2.0 API.
+    OAuth {
+        /// If true, this asks the server to open its sign-up page.
+        create_account: bool,
+    },
+    /// The legacy `m.login.sso` flow.
+    #[doc(alias("single sign-on"))]
+    LegacySso,
+}
+
+/// The various methods that a user can log in to a given homeserver.
+#[derive(Clone, Debug, Default)]
+pub struct LoginMethods {
+    /// Whether the homeserver offers an OAuth 2.0 API, so users can log in on its website.
+    pub has_oauth: bool,
+    /// Whether the OAuth 2.0 sign-in page can also create a new account.
+    pub supports_create_account: bool,
+    /// Whether the homeserver offers a password-based login flow.
+    pub has_password: bool,
+    /// The legacy `m.login.sso` flow, which is only used for homeservers without OAuth 2.0.
+    pub has_sso: bool,
+}
+/// Info needed to log in to a Matrix homeserver via username and password.
 pub struct LoginByPassword {
     pub user_id: String,
     pub password: String,
@@ -868,6 +899,8 @@ async fn matrix_worker_task(
     let mut subscribers_own_user_read_receipts: HashMap<OwnedRoomId, JoinHandle<()>> = HashMap::new();
     // The async tasks that are spawned to subscribe to changes in the pinned events for each room.
     let mut subscribers_pinned_events: HashMap<OwnedRoomId, JoinHandle<()>> = HashMap::new();
+    // Notifying this cancels the browser login currently in flight.
+    let mut browser_login_cancel: Option<Arc<Notify>> = None;
     // The async tasks spawned to handle media downloads, keyed by MxcUri.
     // Here we intentionally use a `std` Mutex, not async, since it's cheaper under no contention.
     let download_tasks: Arc<Mutex<HashMap<OwnedMxcUri, ActiveDownload>>> = Arc::new(Mutex::new(HashMap::new()));
@@ -2037,8 +2070,22 @@ async fn matrix_worker_task(
                 }
             }
 
-            MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {
-                spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender.clone()).await;
+            MatrixRequest::QueryLoginMethods { homeserver } => {
+                Handle::current().spawn(discover_login_methods(homeserver));
+            }
+
+            MatrixRequest::LoginViaBrowser { homeserver, kind } => {
+                let cancel = Arc::new(Notify::new());
+                browser_login_cancel = Some(cancel.clone());
+                Handle::current().spawn(
+                    browser_login_task(kind, homeserver, cancel, login_sender.clone())
+                );
+            }
+
+            MatrixRequest::CancelBrowserLogin => {
+                if let Some(cancel) = browser_login_cancel.take() {
+                    cancel.notify_one();
+                }
             }
 
             MatrixRequest::FetchAvatar { mxc_uri, on_fetched } => {
@@ -2692,31 +2739,17 @@ fn get_or_create_tokio_runtime() -> &'static tokio::runtime::Runtime {
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
 static REQUEST_SENDER: Mutex<Option<UnboundedSender<MatrixRequest>>> = Mutex::new(None);
 
-/// A client object that is proactively created during initialization
-/// in order to speed up the client-building process when the user logs in.
-static DEFAULT_SSO_CLIENT: Mutex<Option<(Client, ClientSessionPersisted)>> = Mutex::new(None);
-
-/// Used to notify the SSO login task that the async creation of the `DEFAULT_SSO_CLIENT` has finished.
-static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(|| Arc::new(Notify::new()));
-
-/// Handle to the in-flight `ASWebAuthenticationSession`. Set when the auth
-/// sheet is presented, cleared by the completion callback or by
-/// [`cancel_active_sso_auth_session`].
-#[cfg(target_os = "ios")]
-static ACTIVE_SSO_AUTH_SESSION: Mutex<Option<robius_web_auth_session::AuthSessionHandle>> =
-    Mutex::new(None);
-
-/// Dismiss the iOS auth sheet. The completion callback fires with
-/// `UserCancelled`, which surfaces as a `LoginFailure` and resets all
-/// SSO state so the next attempt works. No-op if nothing's running.
-#[cfg(target_os = "ios")]
-pub fn cancel_active_sso_auth_session() {
-    if let Ok(mut slot) = ACTIVE_SSO_AUTH_SESSION.lock() {
-        if let Some(handle) = slot.take() {
-            handle.cancel();
-        }
-    }
+/// A client built ahead of time for the homeserver typed into the login screen,
+/// so a browser login can start the moment the user clicks the login button.
+struct PrebuiltLoginClient {
+    /// The raw text of the homeserver textinput; empty means the default homeserver.
+    homeserver: String,
+    client: Client,
+    client_session: ClientSessionPersisted,
 }
+
+static PREBUILT_LOGIN_CLIENT: tokio::sync::Mutex<Option<PrebuiltLoginClient>> =
+    tokio::sync::Mutex::const_new(None);
 
 /// Blocks the current thread until the given future completes.
 ///
@@ -2747,11 +2780,8 @@ pub fn start_matrix_tokio() -> Result<tokio::runtime::Handle> {
     let rt_handle = get_or_create_tokio_runtime().handle().clone();
 
     let rt = rt_handle.clone();
-    // Spawn the main async task that drives the Matrix client SDK and
-    // monitors the related background tasks. (The `DEFAULT_SSO_CLIENT`
-    // pre-build is gated inside that task on whether the user actually
-    // needs to log in. Otherwise it leaves an orphaned sqlite db on disk
-    // every cold start.)
+    // Spawn the main async task that drives the Matrix client SDK
+    // and monitors the related background tasks.
     rt_handle.spawn(start_matrix_client_login_and_sync(rt));
 
     Ok(rt_handle)
@@ -3104,22 +3134,27 @@ pub fn take_timeline_endpoints(kind: &TimelineKind) -> Option<TimelineEndpoints>
 
 const DEFAULT_HOMESERVER: &str = "matrix.org";
 
-fn username_to_full_user_id(
+/// Returns the homeserver name of a full user ID, e.g., `example.org` for `@alice:example.org`.
+pub fn homeserver_of_user_id(user_id: &str) -> Option<String> {
+    UserId::parse(user_id).ok().map(|user_id| user_id.server_name().to_string())
+}
+
+/// Attempts to transform the user's typed user ID into a full proper user ID.
+///
+/// For example, username `alice` with homeserver `matrix.org` will return `@alice:matrix.org`.
+pub fn username_to_full_user_id(
     username: &str,
     homeserver: Option<&str>,
 ) -> Option<OwnedUserId> {
-    username
-        .try_into()
-        .ok()
-        .or_else(|| {
-            let homeserver_url = homeserver.unwrap_or(DEFAULT_HOMESERVER);
-            let user_id_str = if username.starts_with("@") {
-                format!("{}:{}", username, homeserver_url)
-            } else {
-                format!("@{}:{}", username, homeserver_url)
-            };
-            user_id_str.as_str().try_into().ok()
-        })
+    username.try_into().ok().or_else(|| {
+        let homeserver_url = homeserver.unwrap_or(DEFAULT_HOMESERVER);
+        let user_id_str = if username.starts_with("@") {
+            format!("{}:{}", username, homeserver_url)
+        } else {
+            format!("@{}:{}", username, homeserver_url)
+        };
+        user_id_str.as_str().try_into().ok()
+    })
 }
 
 
@@ -3315,31 +3350,13 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
     // which causes the loop to wait for the user to submit a new manual login request.
     let mut initial_client_opt = new_login_opt;
 
-    // Only pre-build `DEFAULT_SSO_CLIENT` if we'll actually show the login
-    // screen. Building it eagerly during session restore just leaves an
-    // orphaned sqlite db every cold start. If we skip the build, still
-    // notify so a later SSO attempt doesn't deadlock on the notifier.
-    // The SSO handler builds a fresh client itself if it's still `None`.
-    if initial_client_opt.is_none() {
-        rt.spawn(async move {
-            match build_client(&Cli::default(), app_data_dir()).await {
-                Ok(client_and_session) => {
-                    DEFAULT_SSO_CLIENT.lock().unwrap()
-                        .get_or_insert(client_and_session);
-                }
-                Err(e) => error!("Error: could not create DEFAULT_SSO_CLIENT object: {e}"),
-            };
-            DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
-            Cx::post_action(LoginAction::SsoPending(false));
-        });
-    } else {
-        DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
-    }
-
     'login_loop: loop {
         let (client, _sync_token) = match initial_client_opt.take() {
             Some(login) => login,
             None => {
+                // The login screen is about to show, so find out how
+                // the default homeserver logs in.
+                rt.spawn(discover_login_methods(String::new()));
                 loop {
                     log!("Waiting for login request...");
                     match login_receiver.recv().await {
@@ -3369,10 +3386,8 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             }
         };
 
-        // Deallocate the default SSO client after a successful login.
-        if let Ok(mut client_opt) = DEFAULT_SSO_CLIENT.lock() {
-            let _ = client_opt.take();
-        }
+        // The login screen is done, so we no longer need its prebuilt client.
+        PREBUILT_LOGIN_CLIENT.lock().await.take();
 
         let logged_in_user_id: OwnedUserId = client.user_id()
             .expect("BUG: Client::user_id() returned None after successful login!")
@@ -3392,16 +3407,14 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
 
         // Track all async tasks so we can nicely clean them up with abort+await.
         // Generally anything that holds a reference to `Client` should be here.
-        let mut subscriber_task_handles: Vec<JoinHandle<()>> = Vec::new();
-
-        // Listen for changes to our verification status and incoming verification requests.
-        subscriber_task_handles.push(add_verification_event_handlers_and_sync_client(client.clone()));
-
-        // Listen for updates to the blocked user list.
-        subscriber_task_handles.push(handle_blocked_user_list_subscriber(client.clone()));
-
-        // Listen for session changes, e.g., when the access token becomes invalid.
-        subscriber_task_handles.push(handle_session_changes(client.clone()));
+        let mut subscriber_task_handles: Vec<JoinHandle<()>> = vec![
+            // Listen for changes to our verification status and incoming verification requests.
+            add_verification_event_handlers_and_sync_client(client.clone()),
+            // Listen for updates to the blocked user list.
+            handle_blocked_user_list_subscriber(client.clone()),
+            // Listen for session changes, e.g., when the access token becomes invalid.
+            handle_session_changes(client.clone()),
+        ];
 
         Cx::post_action(LoginAction::Status {
             title: "Connecting".into(),
@@ -4377,6 +4390,10 @@ fn is_invalid_token_error(e: &sync_service::Error) -> bool {
 fn handle_session_changes(client: Client) -> JoinHandle<()> {
     let mut receiver = client.subscribe_to_session_changes();
     Handle::current().spawn(async move {
+        // Restoring a session may instantly refresh tokens before we even get to subscribe.
+        if let Err(e) = persistence::save_session_tokens(&client).await {
+            error!("Failed to save session tokens after login: {e}");
+        }
         loop {
             match receiver.recv().await {
                 Ok(SessionChange::UnknownToken(data)) => {
@@ -4394,9 +4411,12 @@ fn handle_session_changes(client: Client) -> JoinHandle<()> {
                     // for every rejected request, but one re-login prompt suffices.
                     break;
                 }
-                Ok(SessionChange::TokensRefreshed) => {}
-                Err(broadcast::error::RecvError::Lagged(n)) => {
-                    warning!("Session change receiver lagged, missed {n} messages.");
+                Ok(SessionChange::TokensRefreshed) | Err(broadcast::error::RecvError::Lagged(_)) => {
+                    // If an OAuth refresh caused tokens to rotate, try to save them such that
+                    // the user doesn't have to do a manual re-login on the next restart of robrix.
+                    if let Err(e) = persistence::save_session_tokens(&client).await {
+                        error!("Failed to save refreshed session tokens: {e}");
+                    }
                 }
                 Err(broadcast::error::RecvError::Closed) => {
                     break;
@@ -5530,168 +5550,129 @@ async fn room_avatar(room: &Room, room_name_id: &RoomNameId) -> FetchedRoomAvata
     utils::avatar_from_room_name(room_name_id.name_for_avatar())
 }
 
-/// Spawn an async task to login to the given Matrix homeserver using the given SSO identity provider ID.
+/// The redirect URI for iOS, where the OAuth callback is delivered to the app itself.
+/// Authorization servers only accept custom schemes that reverse the `client_uri` host.
+const CUSTOM_SCHEME_REDIRECT_URI: &str = "rs.robius.robrix:/login";
+#[cfg(target_os = "ios")]
+const CUSTOM_SCHEME_CALLBACK: &str = "rs.robius.robrix";
+
+/// Shown in the browser tab once the homeserver redirects back to Robrix.
+#[cfg(not(target_os = "ios"))]
+const LOGIN_REDIRECT_PAGE: &str = "<!doctype html><html><head><meta charset=\"utf-8\"><title>Robrix</title></head>\
+<body style=\"font-family: sans-serif; text-align: center; padding-top: 3em\">\
+<h2>Almost done!</h2><p>You can close this tab and return to Robrix.</p></body></html>";
+
+/// Queries the homeserver for login methods and posts the result to the login screen.
 ///
-/// This function will post a `LoginAction::SsoPending(true)` to the main thread, and another
-/// `LoginAction::SsoPending(false)` once the async task has either successfully logged in or
-/// failed to do so.
-///
-/// If the login attempt is successful, the resulting `Client` and `ClientSession` will be sent
-/// to the login screen using the `login_sender`.
-async fn spawn_sso_server(
-    brand: String,
-    homeserver_url: String,
-    identity_provider_id: String,
-    login_sender: Sender<LoginRequest>,
-) {
-    Cx::post_action(LoginAction::SsoPending(true));
-    // Post a status update to inform the user that we're waiting for the client to be built.
-    Cx::post_action(LoginAction::Status {
-        title: "Initializing client...".into(),
-        status: "Please wait while Matrix builds and configures the client object for login.".into(),
-    });
-
-    // Wait for the notification that the client has been built
-    DEFAULT_SSO_CLIENT_NOTIFIER.notified().await;
-
-    // Try to use the DEFAULT_SSO_CLIENT, if it was successfully built.
-    // We do not clone it because a Client cannot be re-used again
-    // once it has been used for a login attempt, so this forces us to create a new one
-    // if that occurs.
-    let client_and_session_opt = DEFAULT_SSO_CLIENT.lock().unwrap().take();
-
-    Handle::current().spawn(async move {
-        // Try to use the DEFAULT_SSO_CLIENT that we proactively created
-        // during initialization (to speed up opening the SSO browser window).
-        let mut client_and_session = client_and_session_opt;
-
-        // If the DEFAULT_SSO_CLIENT is none (meaning it failed to build),
-        // or if the homeserver_url is *not* empty and isn't the default,
-        // we cannot use the DEFAULT_SSO_CLIENT, so we must build a new one.
-        let mut build_client_error = None;
-        if client_and_session.is_none() || (
-            !homeserver_url.is_empty()
-                && homeserver_url != "matrix.org"
-                && Url::parse(&homeserver_url) != Url::parse("https://matrix-client.matrix.org/")
-                && Url::parse(&homeserver_url) != Url::parse("https://matrix.org/")
-        ) {
-            match build_client(
-                &Cli {
-                    homeserver: homeserver_url.is_empty().not().then_some(homeserver_url),
-                    ..Default::default()
-                },
-                app_data_dir(),
-            ).await {
-                Ok(success) => client_and_session = Some(success),
-                Err(e) => build_client_error = Some(e),
-            }
-        }
-
-        let Some((client, client_session)) = client_and_session else {
-            Cx::post_action(LoginAction::LoginFailure(
-                if let Some(err) = build_client_error {
-                    format!("Could not create client object. Please try to login again.\n\nError: {err}")
-                } else {
-                    String::from("Could not create client object. Please try to login again.")
-                }
-            ));
-            // This ensures that the called to `DEFAULT_SSO_CLIENT_NOTIFIER.notified()`
-            // at the top of this function will not block upon the next login attempt.
-            DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
-            Cx::post_action(LoginAction::SsoPending(false));
-            return;
-        };
-
-        // The proactively-built client may have a stale TCP connection by
-        // now. Retry once here so it surfaces before we open the browser.
-        if let Err(e) = warmup_homeserver_connection(&client).await {
-            error!("SSO warmup failed twice: {e:?}");
-            Cx::post_action(LoginAction::LoginFailure(format!(
-                "Could not reach homeserver: {e}"
-            )));
-            DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
-            Cx::post_action(LoginAction::SsoPending(false));
-            return;
-        }
-
-        let mut is_logged_in = false;
-
-        // Desktop's `login_sso` uses a local HTTP server for the OAuth
-        // redirect, which iOS suspends when Robrix backgrounds for Safari.
-        // iOS uses ASWebAuthenticationSession to keep the app foregrounded.
-        #[cfg(not(target_os = "ios"))]
-        let login_result = {
-            Cx::post_action(LoginAction::Status {
-                title: "Opening your browser...".into(),
-                status: "Please finish logging in using your browser, and then come back to Robrix.".into(),
-            });
-            client
-                .matrix_auth()
-                .login_sso(|sso_url: String| async move {
-                    let url = Url::parse(&sso_url)?;
-                    for (key, value) in url.query_pairs() {
-                        if key == "redirectUrl" {
-                            let redirect_url = Url::parse(&value)?;
-                            Cx::post_action(LoginAction::SsoSetRedirectUrl(redirect_url));
-                            break
-                        }
-                    }
-                    Uri::new(&sso_url).open().map_err(|err|
-                        Error::Io(io::Error::other(format!("Unable to open SSO login url. Error: {:?}", err)))
-                    )
-                })
-                .identity_provider_id(&identity_provider_id)
-                .initial_device_display_name(&format!("robrix-sso-{brand}"))
-                .await
-        };
-        #[cfg(target_os = "ios")]
-        let login_result = {
-            Cx::post_action(LoginAction::Status {
-                title: "Opening in-app authentication...".into(),
-                status: "Please complete login in the authentication sheet that appeared.".into(),
-            });
-            run_ios_sso_flow(&client, &identity_provider_id, &brand).await
-        };
-
-        match login_result.inspect(|_| {
-            if let Some(client) = get_client() {
-                if client.matrix_auth().logged_in() {
-                    is_logged_in = true;
-                    log!("Already logged in, ignore login with sso");
-                }
-            }
-        }) {
-            Ok(identity_provider_res) => {
-                if !is_logged_in {
-                    if let Err(e) = login_sender.send(LoginRequest::LoginBySSOSuccess(client, client_session)).await {
-                        error!("Error sending login request to login_sender: {e:?}");
-                        Cx::post_action(LoginAction::LoginFailure(String::from(
-                            "BUG: failed to send login request to matrix worker thread."
-                        )));
-                    }
-                    enqueue_rooms_list_update(RoomsListUpdate::Status {
-                        status: format!(
-                            "Logged in as {:?}.\n → Loading rooms...",
-                            identity_provider_res.user_id
-                        ),
-                    });
-                }
-            }
+/// This function builds a client but we keep it around so the upcoming login can reuse it.
+async fn discover_login_methods(homeserver: String) {
+    let result = async {
+        let (client, client_session) = get_or_build_login_client(&homeserver).await
+            .map_err(|e| format!("Could not connect to the homeserver.\n\n{e}"))?;
+        let oauth_supports_create_account = match client.oauth().server_metadata().await {
+            Ok(metadata) => Some(metadata.prompt_values_supported.contains(&Prompt::Create)),
             Err(e) => {
-                if !is_logged_in {
-                    error!("SSO Login failed: {e:?}");
-                    Cx::post_action(LoginAction::LoginFailure(format!("SSO login failed: {e}")));
+                if !e.is_not_supported() {
+                    warning!("OAuth discovery failed for homeserver {homeserver:?}, trying legacy login: {e}");
                 }
+                None
             }
-        }
-
-        // This ensures that the called to `DEFAULT_SSO_CLIENT_NOTIFIER.notified()`
-        // at the top of this function will not block upon the next login attempt.
-        DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
-        Cx::post_action(LoginAction::SsoPending(false));
-    });
+        };
+        // OAuth-only logins generally mean that it doesn't support password login
+        let flows = match client.matrix_auth().get_login_types().await {
+            Ok(response) => response.flows,
+            Err(_) if oauth_supports_create_account.is_some() => Vec::new(),
+            Err(e) => return Err(format!("Could not query the homeserver's login methods.\n\n{e}")),
+        };
+        let methods = LoginMethods {
+            has_oauth: oauth_supports_create_account.is_some(),
+            supports_create_account: oauth_supports_create_account.unwrap_or(false),
+            has_password: flows.iter().any(|flow| matches!(flow, LoginType::Password(_))),
+            // On OAuth homeservers, legacy SSO poitns to the exact same sign-in page,
+            // so we don't need to show both options in the login screen if they're all the same.
+            has_sso: oauth_supports_create_account.is_none()
+                && flows.iter().any(|flow| matches!(flow, LoginType::Sso(_))),
+        };
+        PREBUILT_LOGIN_CLIENT.lock().await.replace(PrebuiltLoginClient {
+            homeserver: homeserver.clone(),
+            client,
+            client_session,
+        });
+        Ok(methods)
+    }.await;
+    log!("Got login methods for homeserver {homeserver:?}: {result:?}");
+    Cx::post_action(LoginAction::LoginMethods { homeserver, result });
 }
 
+/// Takes the prebuilt client if it was built for the given homeserver, otherweise builds a new one.
+async fn get_or_build_login_client(
+    homeserver: &str,
+) -> Result<(Client, ClientSessionPersisted), ClientBuildError> {
+    let prebuilt = PREBUILT_LOGIN_CLIENT.lock().await.take_if(|p| p.homeserver == homeserver);
+    if let Some(PrebuiltLoginClient { client, client_session, .. }) = prebuilt {
+        return Ok((client, client_session));
+    }
+    let cli = Cli {
+        homeserver: homeserver.is_empty().not().then(|| homeserver.to_owned()),
+        ..Default::default()
+    };
+    build_client(&cli, app_data_dir()).await
+}
+
+/// Runs a browser-based login attempt and sends the result to the login screen.
+async fn browser_login_task(
+    kind: BrowserLoginKind,
+    homeserver: String,
+    cancel: Arc<Notify>,
+    login_sender: Sender<LoginRequest>,
+) {
+    Cx::post_action(LoginAction::BrowserLoginStarted);
+    Cx::post_action(LoginAction::Status {
+        title: "Preparing to log in...".into(),
+        status: "Connecting to the homeserver...".into(),
+    });
+    let login = async {
+        let (client, client_session) = get_or_build_login_client(&homeserver).await
+            .map_err(|e| format!("Could not create client object. Please try to login again.\n\nError: {e}"))?;
+        warmup_homeserver_connection(&client).await
+            .map_err(|e| format!("Could not reach homeserver: {e}"))?;
+        let finished = match kind {
+            // We don't really know for sure if this homeserver has OAuth, so fall back to SSO if it doesn't.
+            BrowserLoginKind::OAuth { create_account } => match oauth_login(&client, create_account).await {
+                Err(Error::OAuth(e)) if matches!(*e, OAuthError::Discovery(OAuthDiscoveryError::NotSupported)) => {
+                    legacy_sso_login(&client).await
+                }
+                result => result,
+            },
+            BrowserLoginKind::LegacySso => legacy_sso_login(&client).await,
+        }.map_err(|e| format!("Login failed: {e}"))?;
+        Ok::<_, String>(finished.then_some((client, client_session)))
+    };
+    let result = tokio::select! {
+        biased;
+        // Handle login cancelation first
+        _ = cancel.notified() => Ok(None),
+        result = login => result,
+    };
+    match result {
+        Ok(Some((client, client_session))) => {
+            if let Err(e) = login_sender.send(LoginRequest::BrowserLoginSuccess(client, client_session)).await {
+                error!("Error sending login request to login_sender: {e:?}");
+                Cx::post_action(LoginAction::LoginFailure(String::from(
+                    "BUG: failed to send login request to matrix worker thread."
+                )));
+            }
+        }
+        Ok(None) => {
+            log!("Browser login was cancelled.");
+            Cx::post_action(LoginAction::LoginCancelled);
+        }
+        Err(e) => {
+            error!("Browser login failed: {e}");
+            Cx::post_action(LoginAction::LoginFailure(e));
+        }
+    }
+}
 
 /// Pings the homeserver before SSO opens a browser or sheet, retrying once.
 /// Recovers from stale pooled connections so the first SSO click doesn't
@@ -5708,84 +5689,134 @@ async fn warmup_homeserver_connection(client: &Client) -> matrix_sdk::HttpResult
     }
 }
 
-/// Drives iOS SSO via `ASWebAuthenticationSession`. Gets the SSO URL with a
-/// `robrix://` redirect, opens it in the auth sheet, and feeds the callback
-/// URL through `login_with_sso_callback` to finish.
-#[cfg(target_os = "ios")]
-async fn run_ios_sso_flow(
-    client: &Client,
-    identity_provider_id: &str,
-    brand: &str,
-) -> std::result::Result<
-    matrix_sdk::ruma::api::client::session::login::v3::Response,
-    matrix_sdk::Error,
-> {
-    use tokio::sync::oneshot;
+async fn oauth_login(client: &Client, create_account: bool) -> Result<bool, Error> {
+    let parse = |url: &str| Url::parse(url).expect("hardcoded URL should parse");
 
-    // Session-scoped scheme, so no Info.plist registration needed. Synapse
-    // doesn't validate redirectUrl, so the URL shape is up to us.
-    const REDIRECT_URL: &str = "robrix://login";
-    const CALLBACK_SCHEME: &str = "robrix";
-
-    let auth = client.matrix_auth();
-    let sso_url = auth
-        .get_sso_login_url(REDIRECT_URL, Some(identity_provider_id))
+    #[cfg(not(target_os = "ios"))]
+    let (redirect_uri, redirect_handle) = LocalServerBuilder::new()
+        .response(LocalServerResponse::Html(LOGIN_REDIRECT_PAGE.to_owned()))
+        .spawn()
         .await?;
 
-    // Bridge the OS completion callback into a Rust oneshot. Mutex<Option>
-    // guards against the OS double-firing, and the same callback clears
-    // ACTIVE_SSO_AUTH_SESSION so cancel becomes a no-op once auth is done.
+    #[cfg(target_os = "ios")]
+    let redirect_uri = parse(CUSTOM_SCHEME_REDIRECT_URI);
+
+    let metadata = ClientMetadata {
+        client_name: Some(Localized::new("Robrix".to_owned(), None)),
+        ..ClientMetadata::new(
+            ApplicationType::Native,
+            vec![OAuthGrantType::AuthorizationCode {
+                // Loopback URIs are registered without a port, so any port works at login time.
+                redirect_uris: vec![
+                    parse("http://127.0.0.1/"),
+                    parse("http://[::1]/"),
+                    parse(CUSTOM_SCHEME_REDIRECT_URI),
+                ],
+            }],
+            Localized::new(parse("https://robius.rs/"), None),
+        )
+    };
+    let registration_data = Raw::new(&metadata).expect("ClientMetadata should serialize").into();
+
+    let oauth = client.oauth();
+    let mut login = oauth.login(redirect_uri, None, Some(registration_data), None);
+    if create_account {
+        login = login.prompt(vec![Prompt::Create]);
+    }
+    let OAuthAuthorizationData { url, .. } = login.build().await?;
+
+    #[cfg(not(target_os = "ios"))]
+    let callback = {
+        open_login_url(url.as_str())?;
+        redirect_handle.await
+            .ok_or_else(|| io::Error::other("The login redirect had no query string"))?
+            .into()
+    };
+
+    #[cfg(target_os = "ios")]
+    let callback = match run_ios_web_auth_session(url.as_str()).await? {
+        Some(callback_url) => callback_url.into(),
+        None => return Ok(false),
+    };
+
+    oauth.finish_login(callback).await?;
+    Ok(true)
+}
+
+async fn legacy_sso_login(client: &Client) -> Result<bool, Error> {
+    let auth = client.matrix_auth();
+
+    #[cfg(not(target_os = "ios"))]
+    auth.login_sso(|sso_url: String| async move { open_login_url(&format!("{sso_url}&action=login")) })
+        .initial_device_display_name("robrix-sso")
+        .await?;
+
+    #[cfg(target_os = "ios")] {
+        let sso_url = auth.get_sso_login_url(CUSTOM_SCHEME_REDIRECT_URI, None).await?;
+        let Some(callback_url) = run_ios_web_auth_session(&format!("{sso_url}&action=login")).await? else {
+            return Ok(false);
+        };
+        auth.login_with_sso_callback(callback_url.into())
+            .map_err(|e| Error::Io(io::Error::other(format!("Failed to parse SSO callback for loginToken: {e}"))))?
+            .initial_device_display_name("robrix-sso")
+            .await?;
+    }
+
+    Ok(true)
+}
+
+#[cfg(not(target_os = "ios"))]
+fn open_login_url(url: &str) -> Result<(), Error> {
+    Cx::post_action(LoginAction::Status {
+        title: "Opening your browser...".into(),
+        status: "Please finish logging in using your browser, and then come back to Robrix.".into(),
+    });
+    Uri::new(url).open().map_err(|e| {
+        Error::Io(io::Error::other(format!("Unable to open the login page in your browser. Error: {e:?}")))
+    })
+}
+
+/// Opens `url` in an `ASWebAuthenticationSession` sheet, which keeps Robrix in the foreground,
+/// and returns the callback URL it was redirected to.
+///
+/// Returns `Ok(None)` if the user cancelled/dismissed it.
+#[cfg(target_os = "ios")]
+async fn run_ios_web_auth_session(url: &str) -> Result<Option<Url>, Error> {
+    use tokio::sync::oneshot;
+
+    // Dismisses the login sheet if this future is dropped, e.g. when the user cancels.
+    struct DismissOnDrop(robius_web_auth_session::AuthSessionHandle);
+    impl Drop for DismissOnDrop {
+        fn drop(&mut self) {
+            self.0.cancel();
+        }
+    }
+
+    Cx::post_action(LoginAction::Status {
+        title: "Opening in-app authentication...".into(),
+        status: "Please login using the authentication window that will appear.".into(),
+    });
     let (tx, rx) = oneshot::channel::<robius_web_auth_session::Result<String>>();
     let tx = std::sync::Mutex::new(Some(tx));
-
-    let handle = robius_web_auth_session::AuthSession::new(&sso_url, CALLBACK_SCHEME)
+    let handle = robius_web_auth_session::AuthSession::new(url, CUSTOM_SCHEME_CALLBACK)
         .start(move |result| {
-            if let Ok(mut slot) = ACTIVE_SSO_AUTH_SESSION.lock() {
-                *slot = None;
-            }
             if let Some(tx) = tx.lock().unwrap().take() {
                 let _ = tx.send(result);
             }
         })
-        .map_err(|e| {
-            matrix_sdk::Error::Io(io::Error::other(format!(
-                "Failed to start ASWebAuthenticationSession: {e}"
-            )))
-        })?;
+        .map_err(|e| Error::Io(io::Error::other(format!("Failed to start ASWebAuthenticationSession: {e}"))))?;
+    let _dismiss_on_drop = DismissOnDrop(handle);
 
-    // Publish the cancel handle so the modal's Cancel button can reach it.
-    // Cleared by the completion callback above.
-    if let Ok(mut slot) = ACTIVE_SSO_AUTH_SESSION.lock() {
-        *slot = Some(handle);
+    let result = rx.await.map_err(|_| Error::Io(io::Error::other(
+        "ASWebAuthenticationSession completion handler dropped without firing"
+    )))?;
+    match result {
+        Ok(callback_url) => Url::parse(&callback_url).map(Some).map_err(|e| {
+            Error::Io(io::Error::other(format!("Invalid login callback URL ({callback_url:?}): {e}")))
+        }),
+        Err(robius_web_auth_session::Error::UserCancelled) => Ok(None),
+        Err(e) => Err(Error::Io(io::Error::other(format!("ASWebAuthenticationSession failed: {e}")))),
     }
-
-    let callback_url_str = rx
-        .await
-        .map_err(|_| {
-            matrix_sdk::Error::Io(io::Error::other(
-                "ASWebAuthenticationSession completion handler dropped without firing",
-            ))
-        })?
-        .map_err(|e| {
-            matrix_sdk::Error::Io(io::Error::other(format!(
-                "ASWebAuthenticationSession failed: {e}"
-            )))
-        })?;
-
-    let callback_url = Url::parse(&callback_url_str).map_err(|e| {
-        matrix_sdk::Error::Io(io::Error::other(format!(
-            "Invalid SSO callback URL ({callback_url_str:?}): {e}"
-        )))
-    })?;
-
-    auth.login_with_sso_callback(callback_url.into())
-        .map_err(|e| {
-            matrix_sdk::Error::Io(io::Error::other(format!(
-                "Failed to parse SSO callback for loginToken: {e}"
-            )))
-        })?
-        .initial_device_display_name(&format!("robrix-sso-{brand}"))
-        .await
 }
 
 

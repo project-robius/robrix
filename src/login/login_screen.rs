@@ -1,64 +1,99 @@
-use std::ops::Not;
+//! The `LoginScreen` queries and shows the homeserver's supported login methods.
+//!
+//! There are two main sections to it: the username/password form and the SSO/Oauth button.
+//! They're each shown based on what the homeserver supports.
 
+use std::{net::{Ipv4Addr, Ipv6Addr}, ops::Not};
 use makepad_widgets::*;
-use url::Url;
-
-use crate::sliding_sync::{submit_async_request, LoginByPassword, LoginRequest, MatrixRequest};
-
+use crate::{
+    shared::styles::*,
+    sliding_sync::{homeserver_of_user_id, submit_async_request, username_to_full_user_id, BrowserLoginKind, LoginByPassword, LoginMethods, LoginRequest, MatrixRequest},
+    utils,
+};
 use super::login_status_modal::{LoginStatusModalAction, LoginStatusModalWidgetExt};
 
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
+    // A lighter version of the main Robrix purple color
+    mod.widgets.COLOR_LOGIN_BG_TOP = #EEEAFA
+    mod.widgets.COLOR_LOGIN_BG_BOTTOM = #FFFFFF
+
     mod.widgets.IMG_APP_LOGO = crate_resource("self://resources/robrix_logo_alpha.png")
     mod.widgets.ICON_EYE_OPEN   = crate_resource("self://resources/icons/eye_open.svg")
     mod.widgets.ICON_EYE_CLOSED = crate_resource("self://resources/icons/eye_closed.svg")
 
-    mod.widgets.SsoButton = RoundedView {
-        width: Fit,
-        height: Fit,
-        cursor: MouseCursor.Hand,
-        visible: true,
-        padding: 10,
-        margin: Inset{ left: 16.6, right: 16.6, top: 10, bottom: 10}
-        draw_bg +: {
-            border_size: 0.5
-            border_color: #6c6c6c
-            color: (COLOR_PRIMARY)
+    mod.widgets.LoginButton = mod.widgets.RobrixIconButton {
+        width: Fill {max: 275}, height: Fit
+        padding: Inset{top: 12.5, bottom: 12.5, left: 10, right: 10}
+        flow: Flow.Right{wrap: true}
+        align: Align{x: 0.5, y: 0.5}
+        // Setting Fill for the label width lets it wrap on really narrow screens
+        label_walk: Walk{width: Fill, height: Fit}
+        label_align: Align{x: 0.5, y: 0.5}
+        draw_text +: {
+            text_style: REGULAR_TEXT {font_size: 10.5}
         }
     }
 
-    mod.widgets.SsoImage = Image {
-        width: 30, height: 30,
-        draw_bg +: {
-            mask: instance(0.0)
-            pixel: fn() {
-                let color = mix(self.get_color(), #3, self.async_load)
-                let gray = dot(color.rgb, vec3(0.299, 0.587, 0.114))
-                let grayed = mix(color, vec4(gray, gray, gray, color.a), self.mask)
-                return Pal.premul(vec4(grayed.xyz, grayed.w * self.opacity))
+    // A small label with two horizontal lines on either side of it;
+    // each use just sets `divider_label.text`.
+    mod.widgets.LoginDivider = View {
+        width: Fill {max: 275}, height: Fit
+        flow: Right
+        spacing: 0.0
+        padding: Inset{top: 3, left: 2, right: 2}
+        align: Align{x: 0.5, y: 0.5}
+
+        LineH { draw_bg.color: #C8C8C8 }
+        divider_label := Label {
+            width: Fit, height: Fit
+            padding: Inset{left: 4, right: 4, top: 0, bottom: 0}
+            draw_text +: {
+                color: #8C8C8C
+                text_style: REGULAR_TEXT {font_size: 9}
             }
         }
+        LineH { draw_bg.color: #C8C8C8 }
     }
 
+    mod.widgets.LoginHint = Label {
+        width: Fill {max: 275}, height: Fit
+        flow: Flow.Right{wrap: true}
+        align: Align{x: 0.5, y: 0.5}
+        padding: 0
+        draw_text +: {
+            color: #8C8C8C
+            text_style: REGULAR_TEXT {font_size: 9.5}
+        }
+    }
+
+    // used for both SSO and Oauth since there's no real difference to the user
+    mod.widgets.BrowserLoginButton = mod.widgets.LoginButton {
+        text: "Login with your browser…"
+    }
+
+    mod.widgets.BrowserLoginHint = mod.widgets.LoginHint {
+        text: "Robrix will open your homeserver's\nsingle sign-on (SSO) page."
+    }
 
     mod.widgets.LoginScreen = set_type_default() do #(LoginScreen::register_widget(vm)) {
-        ..mod.widgets.SolidView
+        ..mod.widgets.RectView
 
         width: Fill, height: Fill,
         align: Align{x: 0.5, y: 0.5}
         show_bg: true,
+        // we do a neat lil gradient from top (light purple) to bottom (white)
         draw_bg +: {
-            color: COLOR_SECONDARY
+            color: (mod.widgets.COLOR_LOGIN_BG_TOP)
+            color_2: (mod.widgets.COLOR_LOGIN_BG_BOTTOM)
         }
 
         ScrollYView {
             width: Fill, height: Fill,
             flow: Down, // Required for vertical scrolling to work.
             align: Align{x: 0.5, y: 0.5}
-            show_bg: true,
-            draw_bg.color: (COLOR_SECONDARY)
 
             // allow the view to be scrollable but hide the actual scroll bar
             scroll_bars: {
@@ -77,11 +112,6 @@ script_mod! {
                 align: Align{x: 0.5, y: 0.5}
                 flow: Overlay,
 
-                show_bg: true,
-                draw_bg +: {
-                    color: (COLOR_SECONDARY)
-                    border_radius: 6.0
-                }
 
                 View {
                     width: Fill
@@ -89,6 +119,7 @@ script_mod! {
                     flow: Down
                     align: Align{x: 0.5, y: 0.5}
                     spacing: 15.0
+                    padding: Inset{left: 10, right: 10}
 
                     logo_image := Image {
                         fit: ImageFit.Smallest,
@@ -97,7 +128,8 @@ script_mod! {
                     }
 
                     title := Label {
-                        width: Fit, height: Fit
+                        width: Fill {max: 275}, height: Fit
+                        align: Align{x: 0.5, y: 0.5}
                         margin: Inset{ bottom: 5 }
                         padding: 0,
                         draw_text +: {
@@ -107,206 +139,212 @@ script_mod! {
                         text: "Login to Robrix"
                     }
 
-                    user_id_input := RobrixTextInput {
-                        width: 275, height: Fit
-                        flow: Flow.Right { wrap: false },
-                        padding: 10,
-                        empty_text: "User ID"
-                        autocapitalize: None,
-                        autocorrect: Disabled,
-                        content_type: Username,
-                    }
-
                     View {
-                        width: 275, height: Fit
-                        flow: Overlay
-                        align: Align{x: 1.0, y: 0.5}
-
-                        password_input := RobrixTextInput {
-                            width: Fill, height: Fit
-                            flow: Flow.Right { wrap: false },
-                            padding: Inset{top: 10, bottom: 10, left: 10, right: 38}
-                            empty_text: "Password"
-                            is_password: true,
-                            autocapitalize: None,
-                            autocorrect: Disabled,
-                            content_type: Password,
-                        }
-
-                        View {
-                            width: 38, height: Fill
-                            align: Align{x: 0.5, y: 0.5}
-
-                            show_password_button := RobrixNeutralIconButton {
-                                width: Fit, height: Fit,
-                                align: Align{x: 0.5, y: 0.5}
-                                padding: 5
-                                spacing: 0
-                                margin: 0
-                                draw_bg +: {
-                                    color: (COLOR_SECONDARY * 1.05)
-                                }
-                                draw_icon +: {
-                                    svg: (mod.widgets.ICON_EYE_CLOSED),
-                                    color: #8C8C8C,
-                                }
-                                icon_walk: Walk{width: 18, height: 18, margin: 0}
-                                text: ""
-                            }
-
-                            hide_password_button := RobrixNeutralIconButton {
-                                visible: false,
-                                align: Align{x: 0.5, y: 0.5}
-                                width: Fit, height: Fit,
-                                padding: 5
-                                spacing: 0
-                                margin: 0
-                                draw_bg +: {
-                                    color: (COLOR_SECONDARY * 1.05)
-                                }
-                                draw_icon +: {
-                                    svg: (mod.widgets.ICON_EYE_OPEN),
-                                    color: #8C8C8C,
-                                }
-                                icon_walk: Walk{width: 18, height: 18, margin: 0}
-                                text: ""
-                            }
-                        }
-                    }
-
-                    View {
-                        width: 275, height: Fit,
+                        width: Fill {max: 275}, height: Fit,
                         flow: Down,
 
-                        homeserver_input := RobrixTextInput {
-                            width: 275, height: Fit,
+                        View {
+                            width: Fill {max: 275}, height: Fit
+                            flow: Right
+                            spacing: 5
+                            align: Align{y: 0.5}
+
+                            homeserver_input := RobrixTextInput {
+                                width: Fill, height: Fit,
+                                flow: Flow.Right { wrap: false },
+                                padding: Inset{top: 6.5, bottom: 6.5, left: 10, right: 10}
+                                empty_text: "matrix.org"
+                                autocapitalize: None,
+                                autocorrect: Disabled,
+                                content_type: Url,
+                                input_mode: Url,
+                                draw_text +: {
+                                    text_style: TITLE_TEXT {font_size: 10.0}
+                                }
+                            }
+
+                            query_homeserver_button := RobrixIconButton {
+                                width: 28, height: 28
+                                align: Align{x: 0.5, y: 0.5}
+                                padding: 0
+                                spacing: 0
+                                margin: 0
+                                draw_icon.svg: (ICON_SEARCH)
+                                icon_walk: Walk{width: 13, height: 13}
+                                text: ""
+                            }
+                        }
+
+                        mod.widgets.LoginDivider { divider_label.text: "Homeserver" }
+                    }
+
+                    // THis is shown while waiting for the homeserver to respond.
+                    // see `show_login_methods()` for how the widgets in this view get populated.
+                    View {
+                        width: Fill {max: 275}, height: Fit
+                        flow: Right
+                        spacing: 6
+                        align: Align{x: 0.5, y: 0.5}
+
+                        query_loading_spinner := LoadingSpinner {
+                            width: 13, height: 13
+                            draw_bg.color: #8C8C8C
+                        }
+
+                        query_status_label := mod.widgets.LoginHint {
+                            width: Fit
+                            text: "Querying homeserver login options..."
+                        }
+                    }
+
+                    retry_button := mod.widgets.LoginButton {
+                        visible: false
+                        text: "Try again"
+                    }
+
+                    password_view := View {
+                        width: Fill {max: 275}, height: Fit
+                        flow: Down
+                        spacing: 15.0
+                        align: Align{x: 0.5, y: 0.5}
+
+                        user_id_input := RobrixTextInput {
+                            width: Fill {max: 275}, height: Fit
                             flow: Flow.Right { wrap: false },
-                            padding: Inset{top: 5, bottom: 5, left: 10, right: 10}
-                            empty_text: "matrix.org"
+                            padding: 10,
+                            empty_text: "User ID"
                             autocapitalize: None,
                             autocorrect: Disabled,
-                            content_type: Url,
-                            input_mode: Url,
-                            draw_text +: {
-                                text_style: TITLE_TEXT {font_size: 10.0}
-                            }
+                            content_type: Username,
                         }
 
                         View {
-                            width: 275,
-                            height: Fit,
-                            flow: Right,
-                            padding: Inset{top: 3, left: 2, right: 2}
-                            spacing: 0.0,
-                            align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
+                            width: Fill {max: 275}, height: Fit
+                            flow: Overlay
+                            align: Align{x: 1.0, y: 0.5}
 
-                            LineH { draw_bg.color: #C8C8C8 }
-
-                            Label {
-                                width: Fit, height: Fit
-                                padding: 0
-                                draw_text +: {
-                                    color: #8C8C8C
-                                    text_style: REGULAR_TEXT {font_size: 9}
-                                }
-                                text: "Homeserver URL (optional)"
+                            password_input := RobrixTextInput {
+                                width: Fill, height: Fit
+                                flow: Flow.Right { wrap: false },
+                                padding: Inset{top: 10, bottom: 10, left: 10, right: 38}
+                                empty_text: "Password"
+                                is_password: true,
+                                autocapitalize: None,
+                                autocorrect: Disabled,
+                                content_type: Password,
                             }
 
-                            LineH { draw_bg.color: #C8C8C8 }
+                            View {
+                                width: 38, height: Fill
+                                align: Align{x: 0.5, y: 0.5}
+
+                                show_password_button := RobrixNeutralIconButton {
+                                    width: Fit, height: Fit,
+                                    align: Align{x: 0.5, y: 0.5}
+                                    padding: 5
+                                    spacing: 0
+                                    margin: 0
+                                    draw_bg +: {
+                                        color: (COLOR_SECONDARY * 1.05)
+                                    }
+                                    draw_icon +: {
+                                        svg: (mod.widgets.ICON_EYE_CLOSED),
+                                        color: #8C8C8C,
+                                    }
+                                    icon_walk: Walk{width: 18, height: 18, margin: 0}
+                                    text: ""
+                                }
+
+                                hide_password_button := RobrixNeutralIconButton {
+                                    visible: false,
+                                    align: Align{x: 0.5, y: 0.5}
+                                    width: Fit, height: Fit,
+                                    padding: 5
+                                    spacing: 0
+                                    margin: 0
+                                    draw_bg +: {
+                                        color: (COLOR_SECONDARY * 1.05)
+                                    }
+                                    draw_icon +: {
+                                        svg: (mod.widgets.ICON_EYE_OPEN),
+                                        color: #8C8C8C,
+                                    }
+                                    icon_walk: Walk{width: 18, height: 18, margin: 0}
+                                    text: ""
+                                }
+                            }
+                        }
+
+                        login_button := mod.widgets.LoginButton {
+                            text: "Login"
+                            enabled: false
+                            draw_bg +: {
+                                color: (COLOR_BG_DISABLED)
+                                border_color: (COLOR_FG_DISABLED)
+                            }
+                            draw_text +: {
+                                color: (COLOR_FG_DISABLED)
+                            }
                         }
                     }
-                    
 
-                    login_button := RobrixIconButton {
-                        width: 275,
-                        height: 40
-                        padding: 10
-                        margin: Inset{top: 5, bottom: 10}
+                    oauth_view := View {
+                        width: Fill {max: 275}, height: Fit
+                        flow: Down
+                        spacing: 15.0
                         align: Align{x: 0.5, y: 0.5}
-                        text: "Login"
-                    }
 
-                    LineH {
-                        width: 275
-                        margin: Inset{bottom: -5}
-                        draw_bg.color: #C8C8C8
-                    }
+                        oauth_divider := mod.widgets.LoginDivider { divider_label.text: "or" }
 
-                    Label {
-                        width: Fit, height: Fit
-                        padding: 0,
-                        draw_text +: {
-                            color: (COLOR_TEXT)
-                            text_style: TITLE_TEXT {font_size: 11.0}
+                        oauth_button := mod.widgets.BrowserLoginButton {}
+
+                        mod.widgets.BrowserLoginHint {}
+
+                        create_account_view := View {
+                            visible: false
+                            width: Fill, height: Fit
+                            flow: Down
+                            spacing: 15.0
+                            align: Align{x: 0.5, y: 0.5}
+
+                            mod.widgets.LoginDivider { divider_label.text: "Don't have an account?" }
+
+                            create_account_button := mod.widgets.LoginButton {
+                                text: "Create an account"
+                            }
                         }
-                        text: "Or, login with an SSO provider:"
                     }
 
                     sso_view := View {
-                        width: 275, height: Fit,
-                        margin: Inset{left: 30, right: 5} // make the inner view 240 pixels wide
-                        flow: Flow.Right{wrap: true},
-                        apple_button := mod.widgets.SsoButton {
-                            image := mod.widgets.SsoImage {
-                                src: crate_resource("self://resources/img/apple.png")
-                            }
-                        }
-                        facebook_button := mod.widgets.SsoButton {
-                            image := mod.widgets.SsoImage {
-                                src: crate_resource("self://resources/img/facebook.png")
-                            }
-                        }
-                        github_button := mod.widgets.SsoButton {
-                            image := mod.widgets.SsoImage {
-                                src: crate_resource("self://resources/img/github.png")
-                            }
-                        }
-                        gitlab_button := mod.widgets.SsoButton {
-                            image := mod.widgets.SsoImage {
-                                src: crate_resource("self://resources/img/gitlab.png")
-                            }
-                        }
-                        google_button := mod.widgets.SsoButton {
-                            image := mod.widgets.SsoImage {
-                                src: crate_resource("self://resources/img/google.png")
-                            }
-                        }
-                        twitter_button := mod.widgets.SsoButton {
-                            image := mod.widgets.SsoImage {
-                                src: crate_resource("self://resources/img/x.png")
-                            }
-                        }
-                    }
-
-                    View {
-                        width: 275,
-                        height: Fit,
-                        flow: Right,
-                        // padding: 3,
-                        spacing: 0.0,
-                        align: Align{x: 0.5, y: 0.5} // center horizontally and vertically
-
-                        LineH { draw_bg.color: #C8C8C8 }
-
-                        Label {
-                            width: Fit, height: Fit
-                            padding: Inset{left: 1, right: 1, top: 0, bottom: 0}
-                            draw_text +: {
-                                color: #x6c6c6c
-                                text_style: REGULAR_TEXT {}
-                            }
-                            text: "Don't have an account?"
-                        }
-
-                        LineH { draw_bg.color: #C8C8C8 }
-                    }
-                    
-                    signup_button := RobrixIconButton {
-                        width: Fit, height: Fit
-                        padding: Inset{left: 15, right: 15, top: 10, bottom: 10}
-                        margin: Inset{bottom: 5}
+                        visible: false
+                        width: Fill {max: 275}, height: Fit
+                        flow: Down
+                        spacing: 15.0
                         align: Align{x: 0.5, y: 0.5}
-                        text: "Sign up here"
+
+                        sso_divider := mod.widgets.LoginDivider { divider_label.text: "or" }
+
+                        sso_button := mod.widgets.BrowserLoginButton {}
+
+                        mod.widgets.BrowserLoginHint {}
+                    }
+
+                    signup_view := View {
+                        visible: false
+                        width: Fill {max: 275}, height: Fit
+                        flow: Down
+                        spacing: 15.0
+                        align: Align{x: 0.5, y: 0.5}
+
+                        mod.widgets.LoginDivider { divider_label.text: "Don't have an account?" }
+
+                        signup_button := RobrixIconButton {
+                            width: Fit, height: Fit
+                            padding: Inset{left: 15, right: 15, top: 10, bottom: 10}
+                            margin: Inset{bottom: 5}
+                            align: Align{x: 0.5, y: 0.5}
+                            text: "Sign up here"
+                        }
                     }
                 }
 
@@ -321,24 +359,58 @@ script_mod! {
     }
 }
 
+/// Delay after the last keystroke before we send off a homeserver query.
+const HOMESERVER_QUERY_DELAY: f64 = 0.5;
+
 static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-for-im/#creating-a-matrix-account";
 
 #[derive(Script, ScriptHook, Widget)]
 pub struct LoginScreen {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
-    /// Whether the password field is currently showing plaintext.
-    #[rust] password_visible: bool,
-    /// Boolean to indicate if the SSO login process is still in flight
-    #[rust] sso_pending: bool,
-    /// The URL to redirect to after logging in with SSO.
-    #[rust] sso_redirect_url: Option<String>,
+
+    /// Whether the password textinput is currently showing (`true`) or hiding (`false`) its entered text.
+    #[rust] is_password_visible: bool,
+    /// While a browser-based login is in flight, the login buttons stay disabled.
+    #[rust] is_login_pending: bool,
+    /// The homeserver we last queried info for, or `None` if we haven't done any queries yet.
+    #[rust] queried_homeserver: Option<String>,
+    /// The login methods that are currently shown.
+    ///
+    /// Note that by default, we show everything, so if a homeserver is broken and doesn't properly
+    /// answer our query or advertise its login methods, we still allow the user to log in with any method.
+    #[rust(EVERY_LOGIN_METHOD)] shown_methods: LoginMethods,
+    /// Whether we auto-populated the homeserver based on the entered user ID.
+    #[rust] is_homeserver_from_user_id: bool,
+    /// Whether the user ID is the field being typed in; only then do we put
+    /// the homeserver it points at into the homeserver field.
+    #[rust] fill_homeserver_from_user_id: bool,
+    #[rust] homeserver_query_timer: Timer,
+}
+
+const EVERY_LOGIN_METHOD: LoginMethods = LoginMethods {
+    has_oauth: true,
+    supports_create_account: false,
+    has_password: true,
+    has_sso: false,
+};
+
+/// What the login screen knows about the homeserver text currently entered in the text input.
+enum LoginMethodsState<'a> {
+    /// The homeserver text changed, so the user has to submit/re-submit the query.
+    NotQueried,
+    Querying,
+    Known(&'a Result<LoginMethods, String>),
 }
 
 
 impl Widget for LoginScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+        if self.homeserver_query_timer.is_event(event).is_some() {
+            self.homeserver_query_timer = Timer::empty();
+            self.query_login_methods(cx);
+        }
         self.match_event(cx, event);
     }
 
@@ -349,11 +421,9 @@ impl Widget for LoginScreen {
 
 impl MatchEvent for LoginScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        let login_button = self.view.button(cx, ids!(login_button));
-        let signup_button = self.view.button(cx, ids!(signup_button));
+        let homeserver_input = self.view.text_input(cx, ids!(homeserver_input));
         let user_id_input = self.view.text_input(cx, ids!(user_id_input));
         let password_input = self.view.text_input(cx, ids!(password_input));
-        let homeserver_input = self.view.text_input(cx, ids!(homeserver_input));
 
         let login_status_modal = self.view.modal(cx, ids!(login_status_modal));
         let login_status_modal_content = self.view.login_status_modal(cx, ids!(login_status_modal.content));
@@ -362,24 +432,76 @@ impl MatchEvent for LoginScreen {
         let show_pw_button = self.view.button(cx, ids!(show_password_button));
         let hide_pw_button = self.view.button(cx, ids!(hide_password_button));
         if show_pw_button.clicked(actions) || hide_pw_button.clicked(actions) {
-            self.password_visible = !self.password_visible;
+            self.is_password_visible = !self.is_password_visible;
             password_input.toggle_is_password(cx);
-            show_pw_button.set_visible(cx, !self.password_visible);
-            hide_pw_button.set_visible(cx, self.password_visible);
+            show_pw_button.set_visible(cx, !self.is_password_visible);
+            hide_pw_button.set_visible(cx, self.is_password_visible);
             password_input.set_key_focus(cx);
             self.redraw(cx);
         }
 
-        if signup_button.clicked(actions) {
-            log!("Opening URL \"{}\"", MATRIX_SIGN_UP_URL);
-            let _ = robius_open::Uri::new(MATRIX_SIGN_UP_URL).open();
+        if user_id_input.changed(actions).is_some() || password_input.changed(actions).is_some() {
+            self.enable_login_button(cx);
+        }
+        // Wait a moment after the user finishes typing before we query the homeserver.
+        if user_id_input.changed(actions).is_some() && self.homeserver_from_user_id(cx).is_some() {
+            self.fill_homeserver_from_user_id = true;
+            cx.stop_timer(self.homeserver_query_timer);
+            self.homeserver_query_timer = cx.start_timeout(HOMESERVER_QUERY_DELAY);
         }
 
-        if login_button.clicked(actions)
+        // Automatically query a homeserver address that looks valid.
+        // If it doesn't look valid, don't query it but also don't show an error message
+        // because we wanna wait til the user stops typing or actively submits the query.
+        if homeserver_input.changed(actions).is_some() {
+            self.is_homeserver_from_user_id = false;
+            self.fill_homeserver_from_user_id = false;
+            self.queried_homeserver = None;
+            self.show_login_methods(cx, LoginMethodsState::NotQueried);
+            cx.stop_timer(self.homeserver_query_timer);
+            let homeserver = self.homeserver_to_use(cx);
+            if homeserver.is_empty() || is_homeserver_address(&homeserver) {
+                self.homeserver_query_timer = cx.start_timeout(HOMESERVER_QUERY_DELAY);
+            }
+        }
+        if homeserver_input.returned(actions).is_some()
+            || self.view.button(cx, ids!(query_homeserver_button)).clicked(actions)
+            || self.view.button(cx, ids!(retry_button)).clicked(actions)
+        {
+            cx.stop_timer(self.homeserver_query_timer);
+            self.homeserver_query_timer = Timer::empty();
+            self.query_login_methods(cx);
+        }
+
+        if self.view.button(cx, ids!(signup_button)).clicked(actions) {
+            utils::open_url(MATRIX_SIGN_UP_URL);
+        }
+
+        let create_account = self.view.button(cx, ids!(create_account_button)).clicked(actions);
+        let browser_login_kind = if self.view.button(cx, ids!(sso_button)).clicked(actions) {
+            Some(BrowserLoginKind::LegacySso)
+        } else if create_account || self.view.button(cx, ids!(oauth_button)).clicked(actions) {
+            Some(BrowserLoginKind::OAuth { create_account })
+        } else {
+            None
+        };
+        if let Some(kind) = browser_login_kind && !self.is_login_pending {
+            login_status_modal_content.set_title(cx, "Logging in...");
+            login_status_modal_content.set_status(cx, "Connecting to the homeserver...");
+            login_status_modal_content.button_ref(cx).set_text(cx, "Cancel");
+            login_status_modal.open(cx);
+            submit_async_request(MatrixRequest::LoginViaBrowser {
+                homeserver: self.homeserver_to_use(cx),
+                kind,
+            });
+            self.redraw(cx);
+        }
+
+        if self.view.button(cx, ids!(login_button)).clicked(actions)
             || user_id_input.returned(actions).is_some()
             || password_input.returned(actions).is_some()
-            || homeserver_input.returned(actions).is_some()
         {
+            self.show_full_user_id(cx);
             let user_id = user_id_input.text();
             let password = password_input.text();
             let homeserver = homeserver_input.text();
@@ -404,19 +526,13 @@ impl MatchEvent for LoginScreen {
             login_status_modal.open(cx);
             self.redraw(cx);
         }
-        
-        let provider_brands = ["apple", "facebook", "github", "gitlab", "google", "twitter"];
-        let button_set: &[&[LiveId]] = ids_array!(
-            apple_button, 
-            facebook_button, 
-            github_button, 
-            gitlab_button, 
-            google_button, 
-            twitter_button
-        );
+
         for action in actions {
             if let LoginStatusModalAction::Close = action.as_widget_action().cast() {
                 login_status_modal.close(cx);
+                if self.is_login_pending {
+                    submit_async_request(MatrixRequest::CancelBrowserLogin);
+                }
             }
 
             // Handle login-related actions received from background async tasks.
@@ -425,6 +541,8 @@ impl MatchEvent for LoginScreen {
                     user_id_input.set_text(cx, user_id);
                     password_input.set_text(cx, "");
                     homeserver_input.set_text(cx, homeserver.as_deref().unwrap_or_default());
+                    self.enable_login_button(cx);
+                    self.query_login_methods(cx);
                     login_status_modal_content.set_title(cx, "Logging in via CLI...");
                     login_status_modal_content.set_status(
                         cx,
@@ -450,8 +568,14 @@ impl MatchEvent for LoginScreen {
                     user_id_input.set_text(cx, "");
                     password_input.set_text(cx, "");
                     homeserver_input.set_text(cx, "");
+                    self.enable_login_button(cx);
+                    self.is_homeserver_from_user_id = false;
+                    self.fill_homeserver_from_user_id = false;
+                    self.queried_homeserver = None;
+                    self.shown_methods = EVERY_LOGIN_METHOD;
+                    self.show_login_methods(cx, LoginMethodsState::Querying);
+                    self.set_login_pending(cx, false);
                     login_status_modal.close(cx);
-                    self.redraw(cx);
                 }
                 Some(LoginAction::LoginFailure(error)) => {
                     login_status_modal_content.set_title(cx, "Login Failed.");
@@ -460,67 +584,189 @@ impl MatchEvent for LoginScreen {
                     login_status_modal_button.set_text(cx, "Okay");
                     login_status_modal_button.set_enabled(cx, true);
                     login_status_modal.open(cx);
-                    self.redraw(cx);
+                    self.set_login_pending(cx, false);
                 }
-                Some(LoginAction::SsoPending(pending)) => {
-                    let mask = if *pending { 1.0 } else { 0.0 };
-                    let cursor = if *pending { MouseCursor::NotAllowed } else { MouseCursor::Hand };
-                    for view_ref in self.view_set(cx, button_set).iter() {
-                        let Some(mut view_mut) = view_ref.borrow_mut() else { continue };
-                        let mut image = view_mut.image(cx, ids!(image));
-                        script_apply_eval!(cx, image, {
-                            draw_bg.mask: #(mask)
-                        });
-                        view_mut.cursor = Some(cursor);
-                    }
-                    self.sso_pending = *pending;
-                    self.redraw(cx);
+                Some(LoginAction::BrowserLoginStarted) => {
+                    self.set_login_pending(cx, true);
                 }
-                Some(LoginAction::SsoSetRedirectUrl(url)) => {
-                    self.sso_redirect_url = Some(url.to_string());
+                Some(LoginAction::LoginCancelled) => {
+                    login_status_modal.close(cx);
+                    self.set_login_pending(cx, false);
+                }
+                // Ignore responses related to a homeserver that the user is no longer trying to query.
+                Some(LoginAction::LoginMethods { homeserver, result })
+                    if self.queried_homeserver.as_deref().unwrap_or_default() == homeserver =>
+                {
+                    self.show_login_methods(cx, LoginMethodsState::Known(result));
                 }
                 _ => { }
             }
         }
+    }
+}
 
-        // If the Login SSO screen's "cancel" button was clicked, send a http request to gracefully shutdown the SSO server
-        if let Some(sso_redirect_url) = &self.sso_redirect_url {
-            let login_status_modal_button = login_status_modal_content.button_ref(cx);
-            if login_status_modal_button.clicked(actions) {
-                let request_id = id!(SSO_CANCEL_BUTTON);
-                let request = HttpRequest::new(format!("{}/?login_token=",sso_redirect_url), HttpMethod::GET);
-                cx.http_request(request_id, request);
-                self.sso_redirect_url = None;
-            }
+impl LoginScreen {
+    /// Only one login can run at a time, so we disable the buttons until it succeeds, fails, or cancels.
+    fn set_login_pending(&mut self, cx: &mut Cx, is_pending: bool) {
+        self.is_login_pending = is_pending;
+        let buttons: &[&[LiveId]] = ids_array!(oauth_button, create_account_button, sso_button);
+        for button in self.view.button_set(cx, buttons).iter() {
+            button.set_enabled(cx, !is_pending);
         }
+        self.redraw(cx);
+    }
 
-        // On iOS there's no redirect server, so the cancel button dismisses
-        // the auth sheet instead. Its completion handler takes the normal
-        // SSO failure path, which resets state for the next attempt.
-        #[cfg(target_os = "ios")]
-        if self.sso_pending {
-            let login_status_modal_button = login_status_modal_content.button_ref(cx);
-            if login_status_modal_button.clicked(actions) {
-                crate::sliding_sync::cancel_active_sso_auth_session();
+    /// For password login, only enable the login button if both username and password are non-empty.
+    fn enable_login_button(&mut self, cx: &mut Cx) {
+        let is_ready = !self.view.text_input(cx, ids!(user_id_input)).text().trim().is_empty()
+            && !self.view.text_input(cx, ids!(password_input)).text().is_empty();
+        let (fg_color, bg_color) = if is_ready {
+            (COLOR_PRIMARY, COLOR_ACTIVE_PRIMARY)
+        } else {
+            (COLOR_FG_DISABLED, COLOR_BG_DISABLED)
+        };
+        let mut login_button = self.view.button(cx, ids!(login_button));
+        script_apply_eval!(cx, login_button, {
+            enabled: #(is_ready),
+            draw_bg +: {
+                color: #(bg_color),
+                border_color: #(fg_color),
             }
+            draw_text +: {
+                color: #(fg_color),
+            }
+        });
+    }
+
+    /// Returns the homeserver to use for login.
+    ///
+    /// This returns what the user typed into the homeserver input, or if it's blank,
+    /// the homeserver extracted from the user ID, or if that's empty, `None`.
+    fn homeserver_from_user_id(&self, cx: &mut Cx) -> Option<String> {
+        let shown = self.view.text_input(cx, ids!(homeserver_input)).text();
+        if !shown.is_empty() && !self.is_homeserver_from_user_id {
+            return None;
         }
+        let from_user_id = homeserver_of_user_id(&self.view.text_input(cx, ids!(user_id_input)).text())
+            .filter(|homeserver| is_homeserver_address(homeserver))
+            .unwrap_or_default();
+        (from_user_id != shown).then_some(from_user_id)
+    }
 
-        // Handle any of the SSO login buttons being clicked
-        for (view_ref, brand) in self.view_set(cx, button_set).iter().zip(&provider_brands) {
-            if view_ref.finger_up(actions).is_some() && !self.sso_pending {
-                submit_async_request(MatrixRequest::SpawnSSOServer{
-                    identity_provider_id: format!("oidc-{}",brand),
-                    brand: brand.to_string(),
-                    homeserver_url: homeserver_input.text()
-                });
-            }
+    fn homeserver_to_use(&self, cx: &mut Cx) -> String {
+        let homeserver = self.view.text_input(cx, ids!(homeserver_input)).text();
+        if !homeserver.is_empty() {
+            return homeserver;
+        }
+        homeserver_of_user_id(&self.view.text_input(cx, ids!(user_id_input)).text()).unwrap_or_default()
+    }
+
+    /// Rewrites a partial user ID into the full one we'd log in with.
+    ///
+    /// This ensures that the user knows what's going on.
+    /// If it can't parse the user ID input into a proper user ID format, this does nothing.
+    fn show_full_user_id(&mut self, cx: &mut Cx) {
+        let user_id_input = self.view.text_input(cx, ids!(user_id_input));
+        let user_id = user_id_input.text();
+        if user_id.trim().is_empty() {
+            return;
+        }
+        let homeserver = self.homeserver_to_use(cx);
+        if let Some(full_user_id) = username_to_full_user_id(
+            user_id.trim(),
+            (!homeserver.is_empty()).then_some(homeserver.as_str()),
+        ) && full_user_id.as_str() != user_id {
+            user_id_input.set_text(cx, full_user_id.as_str());
         }
     }
 
+    fn query_login_methods(&mut self, cx: &mut Cx) {
+        self.show_full_user_id(cx);
+        // Fill in the homeserver from the user ID, so it's obvious which homeserver we're querying.
+        if self.fill_homeserver_from_user_id && let Some(from_user_id) = self.homeserver_from_user_id(cx) {
+            self.view.text_input(cx, ids!(homeserver_input)).set_text(cx, &from_user_id);
+            self.is_homeserver_from_user_id = !from_user_id.is_empty();
+        }
+        let homeserver = self.homeserver_to_use(cx);
+        if !homeserver.is_empty() && !is_homeserver_address(&homeserver) {
+            let invalid = Err(String::from("That's not a valid homeserver address."));
+            self.queried_homeserver = None;
+            self.show_login_methods(cx, LoginMethodsState::Known(&invalid));
+            return;
+        }
+        self.queried_homeserver = Some(homeserver.clone());
+        self.show_login_methods(cx, LoginMethodsState::Querying);
+        submit_async_request(MatrixRequest::QueryLoginMethods { homeserver });
+    }
+
+    /// Updates the login screen to show the various sections that represent supported login methods.
+    fn show_login_methods(&mut self, cx: &mut Cx, state: LoginMethodsState) {
+        let status = match state {
+            LoginMethodsState::NotQueried => None,
+            LoginMethodsState::Querying => Some("Querying homeserver login options..."),
+            LoginMethodsState::Known(Ok(methods)) if methods.has_oauth || methods.has_password || methods.has_sso => {
+                self.shown_methods = methods.clone();
+                // Say so when the homeserver leaves the user no choice of how to log in.
+                match (methods.has_password, methods.has_oauth || methods.has_sso) {
+                    (true, false) => Some("This homeserver only supports username + password login."),
+                    (false, true) => Some("This homeserver only supports browser-based login."),
+                    _ => None,
+                }
+            }
+            LoginMethodsState::Known(Ok(_)) => {
+                self.shown_methods = LoginMethods::default();
+                Some("This homeserver doesn't offer any login methods that Robrix supports.")
+            }
+            LoginMethodsState::Known(Err(error)) => {
+                self.shown_methods = EVERY_LOGIN_METHOD;
+                Some(error.as_str())
+            }
+        };
+        let shown = self.shown_methods.clone();
+        self.view.view(cx, ids!(password_view)).set_visible(cx, shown.has_password);
+        self.view.view(cx, ids!(oauth_view)).set_visible(cx, shown.has_oauth);
+        self.view.view(cx, ids!(oauth_divider)).set_visible(cx, shown.has_password);
+        self.view.view(cx, ids!(create_account_view)).set_visible(cx, shown.supports_create_account);
+        self.view.view(cx, ids!(sso_view)).set_visible(cx, shown.has_sso);
+        self.view.view(cx, ids!(sso_divider)).set_visible(cx, shown.has_password && shown.has_sso);
+
+        // OAuth homeservers offer their own "Create an account" page, not a general sign-up link.
+        self.view.view(cx, ids!(signup_view)).set_visible(cx, !shown.has_oauth && (shown.has_password || shown.has_sso));
+        self.view.button(cx, ids!(retry_button)).set_visible(cx, matches!(state, LoginMethodsState::Known(Err(_))));
+        let is_querying = matches!(state, LoginMethodsState::Querying);
+        self.view.widget(cx, ids!(query_loading_spinner)).set_visible(cx, is_querying);
+        let status_label = self.view.label(cx, ids!(query_status_label));
+        status_label.set_visible(cx, status.is_some());
+        status_label.set_text(cx, status.unwrap_or_default());
+
+        if let Some(mut label) = status_label.borrow_mut() {
+            label.walk.width = if is_querying { Size::fit() } else { Size::fill() };
+        }
+        self.redraw(cx);
+    }
+}
+
+/// Retruns `true` if the given text can be treated as a homeserver.
+fn is_homeserver_address(text: &str) -> bool {
+    let after_scheme = text.split_once("://").map_or(text, |(_, rest)| rest);
+    let Some(host) = after_scheme.split(['/', '?', '#']).next().filter(|host| !host.is_empty()) else {
+        return false;
+    };
+    // An IPv6 address might be surrounded by square brackets (`http://[::1]:8008`).
+    if let Some(ipv6) = host.strip_prefix('[') {
+        return ipv6.split_once(']').is_some_and(|(ipv6, _)| ipv6.parse::<Ipv6Addr>().is_ok());
+    }
+    let host = host.split(':').next().unwrap_or_default();
+    host.parse::<Ipv4Addr>().is_ok()
+        || host == "localhost"
+        || (host.contains('.')
+            && !host.starts_with('.')
+            && !host.ends_with('.')
+            && host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-'))
 }
 
 /// Actions sent to or from the login screen.
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub enum LoginAction {
     /// A positive response from the backend Matrix task to the login screen.
     LoginSuccess,
@@ -537,19 +783,16 @@ pub enum LoginAction {
         user_id: String,
         homeserver: Option<String>,
     },
-    /// An acknowledgment that is sent from the backend Matrix task to the login screen
-    /// informing it that the SSO login process is either still in flight (`true`) or has finished (`false`).
+    /// A browser-based login is now in progress.
     ///
-    /// Note that an inner value of `false` does *not* imply that the login request has
-    /// successfully finished. 
-    /// The login screen can use this to prevent the user from submitting
-    /// additional SSO login requests while a previous request is in flight. 
-    SsoPending(bool),
-    /// Set the SSO redirect URL in the LoginScreen.
-    ///
-    /// When an SSO-based login is pendng, pressing the cancel button will send
-    /// an HTTP request to this SSO server URL to gracefully shut it down.
-    SsoSetRedirectUrl(Url),
-    #[default]
-    None,
+    /// This will end in either `LoginSuccess`, `LoginFailure`, or `LoginCancelled`.
+    BrowserLoginStarted,
+    /// The browser login was cancelled by the user.
+    LoginCancelled,
+    /// The response from the homeserver containing its supported login methods.
+    LoginMethods {
+        /// The homeserver text that was actually queried (so we can ignore old queries).
+        homeserver: String,
+        result: Result<LoginMethods, String>,
+    },
 }

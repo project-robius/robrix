@@ -45,7 +45,7 @@
 //!
 //! 1. **PreChecking**: Validate CLIENT, SYNC_SERVICE, and access_token existence
 //! 2. **StoppingSyncService**: Stop sync service to prevent new data
-//! 3. **LoggingOutFromServer**: Call `client.matrix_auth().logout()` (60s timeout)
+//! 3. **LoggingOutFromServer**: Call `client.logout()` (60s timeout)
 //! 4. **PointOfNoReturn**: Set global flags, delete saved user ID
 //! 5. **ClosingTabs**: Close desktop tabs via `MainDesktopUiAction::CloseAllTabs`
 //! 6. **CleaningAppState**: Drops globals and signals `LOGOUT_NOTIFY`. The
@@ -441,7 +441,7 @@ impl LogoutStateMachine {
         
         match tokio::time::timeout(
             self.config.server_logout_timeout,
-            client.matrix_auth().logout()
+            client.logout()
         ).await {
             Ok(Ok(_)) => Ok(()),
             Ok(Err(e)) => Err(LogoutError::Recoverable(RecoverableError::ServerLogoutFailed(e.to_string()))),

@@ -4,10 +4,10 @@ use std::path::PathBuf;
 use anyhow::{anyhow, bail};
 use makepad_widgets::{log, Cx};
 use matrix_sdk::{
-    authentication::matrix::MatrixSession,
+    authentication::{matrix::MatrixSession, oauth::{ClientId, OAuthSession, UserSession}},
     ruma::{OwnedUserId, UserId},
     sliding_sync,
-    Client,
+    AuthSession, Client,
 };
 use serde::{Deserialize, Serialize};
 
@@ -48,14 +48,18 @@ pub struct FullSessionPersisted {
     /// The data to re-build the client.
     pub client_session: ClientSessionPersisted,
 
-    /// The Matrix user session.
+    /// The user session. Note that for OAuth 2.0 logins,
+    /// the `oauth_client_id` field below is also set.
     pub user_session: MatrixSession,
+
+    /// The OAuth 2.0 client ID this session was obtained with, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth_client_id: Option<ClientId>,
 
     /// The latest sync token.
     ///
-    /// It is only needed to persist it when using `Client::sync_once()` and we
-    /// want to make our syncs faster by not receiving all the initial sync
-    /// again.
+    /// This is only persisted when using `Client::sync_once()`, to avoid
+    /// receiving the full initial sync again.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sync_token: Option<String>,
 
@@ -323,8 +327,13 @@ pub async fn restore_session(
 
     // The session was serialized as JSON in a file.
     let serialized_session = tokio::fs::read_to_string(session_file).await?;
-    let FullSessionPersisted { client_session, user_session, sync_token, sliding_sync_version } =
-        serde_json::from_str(&serialized_session)?;
+    let FullSessionPersisted {
+        client_session,
+        user_session,
+        oauth_client_id,
+        sync_token,
+        sliding_sync_version,
+    } = serde_json::from_str(&serialized_session)?;
 
     let status_str = format!(
         "Loaded session file for:\n{user_id}\n\nTrying to connect to homeserver...\n{}",
@@ -361,8 +370,14 @@ pub async fn restore_session(
         status: status_str,
     });
 
-    // Restore the Matrix user session.
-    client.restore_session(user_session).await?;
+    let auth_session = match oauth_client_id {
+        Some(client_id) => AuthSession::OAuth(Box::new(OAuthSession {
+            client_id,
+            user: UserSession { meta: user_session.meta, tokens: user_session.tokens },
+        })),
+        None => AuthSession::Matrix(user_session),
+    };
+    client.restore_session(auth_session).await?;
     save_latest_user_id(&user_id).await?;
 
     Ok((client, sync_token))
@@ -378,10 +393,14 @@ pub async fn save_session(
     client: &Client,
     client_session: ClientSessionPersisted,
 ) -> anyhow::Result<()> {
-    let user_session = client
-        .matrix_auth()
-        .session()
-        .ok_or_else(|| anyhow!("A logged-in client should have a session"))?;
+    let (user_session, oauth_client_id) = match client.session() {
+        Some(AuthSession::Matrix(session)) => (session, None),
+        Some(AuthSession::OAuth(session)) => (
+            MatrixSession { meta: session.user.meta, tokens: session.user.tokens },
+            Some(session.client_id),
+        ),
+        _ => bail!("A logged-in client should have a session"),
+    };
 
     save_latest_user_id(&user_session.meta.user_id).await?;
     let sliding_sync_version = client.sliding_sync_version().into();
@@ -390,6 +409,7 @@ pub async fn save_session(
     let serialized_session = serde_json::to_string(&FullSessionPersisted {
         client_session,
         user_session,
+        oauth_client_id,
         sync_token: None,
         sliding_sync_version
     })?;
@@ -399,6 +419,21 @@ pub async fn save_session(
     tokio::fs::write(&session_file, serialized_session).await?;
 
     log!("Session persisted to: {}", session_file.display());
+    Ok(())
+}
+
+/// Re-writes the client's current tokens to the persisted session.
+pub async fn save_session_tokens(client: &Client) -> anyhow::Result<()> {
+    let user_id = client.user_id()
+        .ok_or_else(|| anyhow!("A logged-in client should have a user ID"))?;
+    let tokens = client.session_tokens()
+        .ok_or_else(|| anyhow!("A logged-in client should have session tokens"))?;
+    let session_file = session_file_path(user_id);
+    let mut session: FullSessionPersisted = serde_json::from_str(
+        &tokio::fs::read_to_string(&session_file).await?
+    )?;
+    session.user_session.tokens = tokens;
+    tokio::fs::write(&session_file, serde_json::to_string(&session)?).await?;
     Ok(())
 }
 
