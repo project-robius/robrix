@@ -1,7 +1,7 @@
 
 use makepad_widgets::*;
 
-use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, profile::user_profile::UserProfile, settings::{PopulateMode, account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt, privacy_settings::PrivacySettingsWidgetExt}};
+use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, profile::user_profile::UserProfile, settings::{PopulateMode, account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt, encryption_settings::EncryptionSettingsWidgetExt, privacy_settings::PrivacySettingsWidgetExt}};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -53,6 +53,11 @@ script_mod! {
 
                 // The account settings section.
                 account_settings := AccountSettings {}
+
+                LineH { width: 425, padding: 10, margin: Inset{top: 20, bottom: 5} }
+
+                // The recovery and encryption identity section.
+                encryption_settings := EncryptionSettings {}
 
                 LineH { width: 425, padding: 10, margin: Inset{top: 20, bottom: 5} }
 
@@ -225,6 +230,7 @@ impl SettingsScreen {
         match mode {
             PopulateMode::Initial => {
                 self.view.account_settings(cx, ids!(account_settings)).populate(cx, profile);
+                self.view.encryption_settings(cx, ids!(encryption_settings)).populate(cx);
                 self.view.app_settings(cx, ids!(app_settings)).populate(cx, &app_state.app_prefs);
                 self.view.privacy_settings(cx, ids!(privacy_settings)).populate(cx);
             }

@@ -9,8 +9,8 @@ use imbl::Vector;
 use makepad_widgets::{error, image_cache::image_size_by_data, log, warning, Cx, SignalToUI, WidgetUid};
 use matrix_sdk_base::crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk::{
-    authentication::oauth::{error::{OAuthDiscoveryError, OAuthError}, registration::{ApplicationType, ClientMetadata, Localized, OAuthGrantType}, OAuthAuthorizationData}, config::RequestConfig, encryption::{identities::Device, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, Receipts, RelationsOptions}, ruma::{
-        api::{Direction, client::{authenticated_media::get_media_preview, discovery::get_authorization_server_metadata::v1::{AccountManagementAction, AccountManagementActionData, Prompt}, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, error::{ErrorKind, RetryAfter}}, events::{
+    authentication::oauth::{error::{OAuthDiscoveryError, OAuthError}, registration::{ApplicationType, ClientMetadata, Localized, OAuthGrantType}, OAuthAuthorizationData}, config::RequestConfig, encryption::{identities::Device, recovery::{IdentityResetHandle, RecoveryError, RecoveryState}, secret_storage::SecretStorageError, CrossSigningResetAuthType, EncryptionSettings}, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, reply::Reply, IncludeRelations, Receipts, RelationsOptions}, ruma::{
+        api::{Direction, client::{authenticated_media::get_media_preview, discovery::get_authorization_server_metadata::v1::{AccountManagementAction, AccountManagementActionData, Prompt}, profile::{AvatarUrl, DisplayName}, receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType, uiaa::{self, AuthData, AuthType, MatrixUserIdentifier, UserIdentifier}}, error::{ErrorKind, RetryAfter}}, events::{
             receipt::{ReceiptThread, ReceiptType as ReceiptEventType},
             relation::RelationType,
             room::{
@@ -362,6 +362,62 @@ pub enum AccountDataAction {
     AccountManagementUrlFetched(AccountManagementUrl),
 }
 
+/// Updates about recovery (secret storage + key backup) and the encryption identity.
+#[derive(Clone)]
+pub enum RecoveryAction {
+    StateChanged(RecoveryState),
+    /// Recovery was set up or its key changed; the key is shown once and never logged.
+    RecoveryKeyCreated(String),
+    /// Another device created the key backup and hasn't shared it with this one yet.
+    BackupHeldByOtherDevice,
+    /// This device imported its secrets from secret storage.
+    Recovered,
+    RecoveryFailed(String),
+    /// The homeserver wants the user to approve the identity reset first.
+    IdentityResetNeedsApproval(IdentityResetAuth),
+    IdentityResetDone,
+    /// `is_incomplete` means the reset already changed the account before it failed.
+    IdentityResetFailed {
+        error: String,
+        is_incomplete: bool,
+    },
+    IdentityResetAbandoned,
+}
+impl std::fmt::Debug for RecoveryAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::StateChanged(state) => write!(f, "StateChanged({state:?})"),
+            Self::RecoveryKeyCreated(_) => write!(f, "RecoveryKeyCreated(<redacted>)"),
+            Self::BackupHeldByOtherDevice => write!(f, "BackupHeldByOtherDevice"),
+            Self::Recovered => write!(f, "Recovered"),
+            Self::RecoveryFailed(e) => write!(f, "RecoveryFailed({e})"),
+            Self::IdentityResetNeedsApproval(auth) => write!(f, "IdentityResetNeedsApproval({auth:?})"),
+            Self::IdentityResetDone => write!(f, "IdentityResetDone"),
+            Self::IdentityResetFailed { error, is_incomplete } => write!(f, "IdentityResetFailed({error}, is_incomplete: {is_incomplete})"),
+            Self::IdentityResetAbandoned => write!(f, "IdentityResetAbandoned"),
+        }
+    }
+}
+
+/// How the user can approve an encryption identity reset.
+#[derive(Clone, Debug)]
+pub enum IdentityResetAuth {
+    /// Approve on this web page: an OAuth account page or a legacy SSO fallback page.
+    BrowserApproval(Url),
+    /// Enter the account password.
+    Password,
+}
+
+/// An identity reset waiting on the user's approval or password.
+struct IdentityReset {
+    handle: Arc<IdentityResetHandle>,
+    /// Notified to abandon the reset; the SDK's own cancel only stops its polling.
+    abandon: Arc<Notify>,
+    /// Ready-made auth for the browser-approval stages. The password stage builds its own.
+    browser_auth: Option<AuthData>,
+}
+type IdentityResetSlot = Arc<Mutex<Option<IdentityReset>>>;
+
 /// An action broadcast when the account's list of blocked users changes.
 ///
 /// Contains the new list, sorted by user ID.
@@ -712,6 +768,25 @@ pub enum MatrixRequest {
     },
     /// Cancel an in-flight `LoginViaBrowser` request.
     CancelBrowserLogin,
+    /// Replies with the current `RecoveryAction::StateChanged`.
+    GetRecoveryState,
+    /// Set up secret storage and key backup, replying with the new recovery key.
+    EnableRecovery,
+    /// Rotate the recovery key, replying with the new one.
+    ResetRecoveryKey,
+    /// Import this account's secrets from secret storage using the given recovery key.
+    RecoverWithKey {
+        recovery_key: String,
+    },
+    /// Start resetting the encryption identity (cross-signing keys, backup, and recovery).
+    ResetIdentity,
+    /// Finish an identity reset once the homeserver's approval stage can be satisfied.
+    /// The password stage needs `password`; the browser stages poll until approved.
+    ContinueIdentityReset {
+        password: Option<String>,
+    },
+    /// Give up on the in-flight identity reset, leaving it to be run again later if desired.
+    AbandonIdentityReset,
     /// Subscribe to typing notices for the given room.
     ///
     /// This is only valid for the main room timeline, not for thread-focused timelines.
@@ -892,6 +967,8 @@ pub struct LoginByPassword {
 async fn matrix_worker_task(
     mut request_receiver: UnboundedReceiver<MatrixRequest>,
     login_sender: Sender<LoginRequest>,
+    identity_reset: IdentityResetSlot,
+    e2ee_ready: watch::Receiver<bool>,
 ) -> Result<()> {
     log!("Started matrix_worker_task.");
 
@@ -1730,6 +1807,200 @@ async fn matrix_worker_task(
                     };
                     Cx::post_action(AccountDataAction::OwnDeviceFetched(device.map(Box::new)));
                 });
+            }
+
+            MatrixRequest::GetRecoveryState => {
+                let Some(client) = get_client() else { continue };
+                let mut e2ee_ready = e2ee_ready.clone();
+                Handle::current().spawn(async move {
+                    // Until the SDK finishes its post-login backup setup, the state can still flip.
+                    let _ = e2ee_ready.wait_for(|is_ready| *is_ready).await;
+                    Cx::post_action(RecoveryAction::StateChanged(client.encryption().recovery().state()));
+                });
+            }
+
+            MatrixRequest::EnableRecovery => {
+                let Some(client) = get_client() else { continue };
+                let mut e2ee_ready = e2ee_ready.clone();
+                Handle::current().spawn(async move {
+                    // Otherwise we'd race the SDK's own post-login backup creation.
+                    let _ = e2ee_ready.wait_for(|is_ready| *is_ready).await;
+                    Cx::post_action(match client.encryption().recovery().enable().await {
+                        Ok(key) => RecoveryAction::RecoveryKeyCreated(key),
+                        Err(RecoveryError::BackupExistsOnServer) => RecoveryAction::BackupHeldByOtherDevice,
+                        Err(e) => RecoveryAction::RecoveryFailed(format!("Could not set up key backup: {e}")),
+                    });
+                });
+            }
+
+            MatrixRequest::ResetRecoveryKey => {
+                let Some(client) = get_client() else { continue };
+                let mut e2ee_ready = e2ee_ready.clone();
+                Handle::current().spawn(async move {
+                    let _ = e2ee_ready.wait_for(|is_ready| *is_ready).await;
+                    let recovery = client.encryption().recovery();
+                    Cx::post_action(if recovery.state() != RecoveryState::Enabled {
+                        RecoveryAction::RecoveryFailed(String::from(
+                            "Key backup isn't fully set up on this device, so the recovery key can't be changed yet."
+                        ))
+                    } else {
+                        match recovery.reset_key().await {
+                            Ok(key) => RecoveryAction::RecoveryKeyCreated(key),
+                            Err(e) => RecoveryAction::RecoveryFailed(format!("Could not change the recovery key: {e}")),
+                        }
+                    });
+                });
+            }
+
+            MatrixRequest::RecoverWithKey { recovery_key } => {
+                let Some(client) = get_client() else { continue };
+                let mut e2ee_ready = e2ee_ready.clone();
+                Handle::current().spawn(async move {
+                    let _ = e2ee_ready.wait_for(|is_ready| *is_ready).await;
+                    Cx::post_action(match client.encryption().recovery().recover_and_fix_backup(&recovery_key).await {
+                        Ok(()) => RecoveryAction::Recovered,
+                        Err(RecoveryError::SecretStorage(SecretStorageError::SecretStorageKey(_))) => RecoveryAction::RecoveryFailed(
+                            String::from("That recovery key isn't correct. Check it and try again.")
+                        ),
+                        Err(e) => RecoveryAction::RecoveryFailed(format!("Could not restore from that recovery key: {e}")),
+                    });
+                });
+            }
+
+            MatrixRequest::ResetIdentity => {
+                let Some(client) = get_client() else { continue };
+                if identity_reset.lock().unwrap().is_some() {
+                    Cx::post_action(RecoveryAction::IdentityResetFailed {
+                        error: String::from("An encryption identity reset is already in progress."),
+                        is_incomplete: false,
+                    });
+                    continue;
+                }
+                let slot = identity_reset.clone();
+                let mut e2ee_ready = e2ee_ready.clone();
+                Handle::current().spawn(async move {
+                    let _ = e2ee_ready.wait_for(|is_ready| *is_ready).await;
+                    let recovery = client.encryption().recovery();
+                    let handle = match recovery.reset_identity().await {
+                        Ok(Some(handle)) => handle,
+                        Ok(None) => return Cx::post_action(RecoveryAction::IdentityResetDone),
+                        Err(e) => {
+                            Cx::post_action(RecoveryAction::IdentityResetFailed {
+                                error: format!("Could not reset your encryption identity: {e}"),
+                                is_incomplete: false,
+                            });
+                            return Cx::post_action(RecoveryAction::StateChanged(recovery.state()));
+                        }
+                    };
+                    // Browser stages also get the auth data we poll the homeserver with afterwards.
+                    let approval = match handle.auth_type() {
+                        CrossSigningResetAuthType::OAuth(info) => {
+                            let mut auth = uiaa::OAuth::new();
+                            auth.session = info.session.clone();
+                            Some((IdentityResetAuth::BrowserApproval(info.approval_url.clone()), Some(AuthData::OAuth(auth))))
+                        }
+                        CrossSigningResetAuthType::Uiaa(info) => {
+                            let has_single_stage = |stage: AuthType| info.flows.iter()
+                                .any(|flow| flow.stages.len() == 1 && flow.stages[0] == stage);
+                            if has_single_stage(AuthType::Password) {
+                                Some((IdentityResetAuth::Password, None))
+                            }
+                            // Legacy SSO accounts approve on the fallback web page, which we then acknowledge.
+                            else if let Some(session) = info.session.clone().filter(|_| has_single_stage(AuthType::Sso)) {
+                                // `pop_if_empty` keeps the path prefix of a homeserver served under one.
+                                let mut url = client.homeserver();
+                                let is_url_built = url.path_segments_mut()
+                                    .map(|mut segments| { segments.pop_if_empty().extend(["_matrix", "client", "v3", "auth", "m.login.sso", "fallback", "web"]); })
+                                    .is_ok();
+                                is_url_built.then(|| {
+                                    url.query_pairs_mut().append_pair("session", &session);
+                                    (IdentityResetAuth::BrowserApproval(url), Some(AuthData::fallback_acknowledgement(session)))
+                                })
+                            } else {
+                                None
+                            }
+                        }
+                    };
+                    let Some((auth, browser_auth)) = approval else {
+                        handle.cancel().await;
+                        return Cx::post_action(RecoveryAction::IdentityResetFailed {
+                            error: String::from("Your homeserver requires an authentication method that Robrix doesn't support for resetting your encryption identity."),
+                            is_incomplete: true,
+                        });
+                    };
+                    slot.lock().unwrap().replace(IdentityReset {
+                        handle: Arc::new(handle),
+                        abandon: Arc::new(Notify::new()),
+                        browser_auth,
+                    });
+                    Cx::post_action(RecoveryAction::IdentityResetNeedsApproval(auth));
+                });
+            }
+
+            MatrixRequest::ContinueIdentityReset { password } => {
+                let Some(client) = get_client() else { continue };
+                let reset = identity_reset.lock().unwrap().as_ref()
+                    .map(|r| (r.handle.clone(), r.abandon.clone(), r.browser_auth.clone()));
+                let Some((handle, abandon, browser_auth)) = reset else {
+                    Cx::post_action(RecoveryAction::IdentityResetFailed {
+                        error: String::from("No encryption identity reset is in progress."),
+                        is_incomplete: true,
+                    });
+                    continue;
+                };
+                let slot = identity_reset.clone();
+                Handle::current().spawn(async move {
+                    let auth = match (browser_auth, password) {
+                        (Some(auth), _) => auth,
+                        (None, Some(password)) => {
+                            let Some(user_id) = client.user_id() else { return };
+                            let mut auth = uiaa::Password::new(
+                                UserIdentifier::Matrix(MatrixUserIdentifier::new(user_id.to_string())),
+                                password,
+                            );
+                            auth.session = match handle.auth_type() {
+                                CrossSigningResetAuthType::Uiaa(info) => info.session.clone(),
+                                CrossSigningResetAuthType::OAuth(_) => None,
+                            };
+                            AuthData::Password(auth)
+                        }
+                        (None, None) => return Cx::post_action(RecoveryAction::IdentityResetFailed {
+                            error: String::from("Please enter your password."),
+                            is_incomplete: true,
+                        }),
+                    };
+                    let outcome = tokio::select! {
+                        biased;
+                        _ = abandon.notified() => None,
+                        result = handle.reset(Some(auth)) => Some(result),
+                    };
+                    match outcome {
+                        None => handle.cancel().await,
+                        Some(Ok(())) => {
+                            slot.lock().unwrap().take();
+                            Cx::post_action(RecoveryAction::IdentityResetDone);
+                        }
+                        Some(Err(e)) => {
+                            let error = if let RecoveryError::Sdk(Error::Timeout) = e {
+                                String::from("Timed out waiting for the reset to be approved.")
+                            } else if let RecoveryError::Sdk(sdk_error) = &e
+                                && let Some(auth_error) = sdk_error.as_uiaa_response().and_then(|info| info.auth_error.as_ref())
+                            {
+                                format!("Your homeserver rejected that: {}", auth_error.message)
+                            } else {
+                                format!("Could not reset your encryption identity: {e}")
+                            };
+                            Cx::post_action(RecoveryAction::IdentityResetFailed { error, is_incomplete: true });
+                        }
+                    }
+                });
+            }
+
+            MatrixRequest::AbandonIdentityReset => {
+                if let Some(reset) = identity_reset.lock().unwrap().take() {
+                    reset.abandon.notify_one();
+                    Cx::post_action(RecoveryAction::IdentityResetAbandoned);
+                }
             }
 
             MatrixRequest::GetAccountManagementUrl => {
@@ -3279,11 +3550,14 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
     REQUEST_SENDER.lock().unwrap().replace(sender);
 
     let (login_sender, mut login_receiver) = tokio::sync::mpsc::channel(1);
+    let identity_reset: IdentityResetSlot = Arc::new(Mutex::new(None));
+    // Set once the SDK finishes each session's post-login e2ee setup.
+    let (e2ee_ready_sender, e2ee_ready) = watch::channel(false);
 
     // Spawn the async worker task that handles matrix requests.
     // We must do this now such that the matrix worker task can listen for incoming login requests
     // from the UI, and forward them to this task (via the login_sender --> login_receiver).
-    let mut matrix_worker_task_handle = rt.spawn(matrix_worker_task(receiver, login_sender));
+    let mut matrix_worker_task_handle = rt.spawn(matrix_worker_task(receiver, login_sender, identity_reset.clone(), e2ee_ready));
 
     let most_recent_user_id = persistence::most_recent_user_id().await;
     log!("Most recent user ID: {most_recent_user_id:?}");
@@ -3407,9 +3681,11 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
 
         // Track all async tasks so we can nicely clean them up with abort+await.
         // Generally anything that holds a reference to `Client` should be here.
+        e2ee_ready_sender.send_replace(false);
         let mut subscriber_task_handles: Vec<JoinHandle<()>> = vec![
             // Listen for changes to our verification status and incoming verification requests.
             add_verification_event_handlers_and_sync_client(client.clone()),
+            handle_recovery_state_subscriber(client.clone(), e2ee_ready_sender.clone()),
             // Listen for updates to the blocked user list.
             handle_blocked_user_list_subscriber(client.clone()),
             // Listen for session changes, e.g., when the access token becomes invalid.
@@ -3589,6 +3865,10 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                 if !h.is_finished() {
                     let _ = h.await;
                 }
+            }
+            // An identity reset still waiting on approval belongs to the old session.
+            if let Some(reset) = identity_reset.lock().unwrap().take() {
+                reset.abandon.notify_one();
             }
             // No-ops if `clear_app_state` already cleared these.
             let _ = CLIENT.lock().unwrap().take();
@@ -4380,6 +4660,49 @@ fn is_invalid_token_error(e: &sync_service::Error) -> bool {
         sdk_error.client_api_error_kind(),
         Some(ErrorKind::UnknownToken { .. } | ErrorKind::MissingToken)
     )
+}
+
+/// Subscribes to changes in the device's recovery state, and sends updates to the UI.
+fn handle_recovery_state_subscriber(client: Client, e2ee_ready: watch::Sender<bool>) -> JoinHandle<()> {
+    use matrix_sdk::ruma::events::secret_storage::default_key::SecretStorageDefaultKeyEventContent;
+    Handle::current().spawn(async move {
+        // The SDK lets only one caller wait on its e2ee setup, so we tell everyone else when it's done.
+        client.encryption().wait_for_e2ee_initialization_tasks().await;
+        e2ee_ready.send_replace(true);
+        // The SDK always returns that it's disabled until we have a real sync update,
+        // so we need to ask the homeserver for the real recovery key status.
+        let is_recovery_really_unset = client
+            .account()
+            .fetch_account_data_static::<SecretStorageDefaultKeyEventContent>()
+            .await
+            .is_ok_and(|event| event.is_none());
+        let mut states = client.encryption().recovery().state_stream();
+        let mut should_remind = true;
+        while let Some(state) = states.next().await {
+            log!("Recovery state: {state:?}");
+            let is_confirmed = match state {
+                RecoveryState::Unknown => false,
+                RecoveryState::Disabled => is_recovery_really_unset,
+                RecoveryState::Enabled | RecoveryState::Incomplete => true,
+            };
+            if should_remind && is_confirmed {
+                should_remind = false;
+                let reminder = match state {
+                    RecoveryState::Disabled => Some(
+                        "A recovery key hasn't been set up. Go to Settings to set one up so you can restore your encrypted messages on a new device."
+                    ),
+                    RecoveryState::Incomplete => Some(
+                        "This device can't read your full encrypted history yet. Enter your recovery key in Encryption Settings."
+                    ),
+                    _ => None,
+                };
+                if let Some(reminder) = reminder {
+                    enqueue_popup_notification(reminder, PopupKind::Warning, Some(15.0));
+                }
+            }
+            Cx::post_action(RecoveryAction::StateChanged(state));
+        }
+    })
 }
 
 /// Subscribes to session change notifications from the Matrix client.
