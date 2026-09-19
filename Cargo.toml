@@ -277,11 +277,6 @@ out_dir = "./dist"
 resources = [
     # Makepad resources
     { src = "./dist/resources/makepad_widgets", target = "makepad_widgets" },
-    { src = "./dist/resources/makepad_fonts_chinese_bold", target = "makepad_fonts_chinese_bold" },
-    { src = "./dist/resources/makepad_fonts_chinese_bold_2", target = "makepad_fonts_chinese_bold_2" },
-    { src = "./dist/resources/makepad_fonts_chinese_regular", target = "makepad_fonts_chinese_regular" },
-    { src = "./dist/resources/makepad_fonts_chinese_regular_2", target = "makepad_fonts_chinese_regular_2" },
-    { src = "./dist/resources/makepad_fonts_emoji", target = "makepad_fonts_emoji" },
     # Robrix resources
     { src = "./dist/resources/robrix", target = "robrix" },
 ]
