@@ -310,6 +310,8 @@ script_mod! {
                 punctuator: #x24292e,          // Dark gray for punctuation
                 string: #x22863a,              // Green for strings
                 function: #x6f42c1,            // Purple for functions
+                macro_identifier: #x6f42c1,    // Purple: a macro reads as a call
+                attribute: #x6f42c1,           // Purple for #[derive(..)] and friends
                 typename: #xe36209,            // Orange for types
                 comment: #x6a737d,             // Gray for comments
             }
@@ -331,6 +333,8 @@ script_mod! {
                 other_keyword: #x24292e,
                 string: #x24292e,
                 function: #x24292e,
+                macro_identifier: #x24292e,
+                attribute: #x24292e,
                 typename: #x24292e,
                 comment: #x24292e,
             }
