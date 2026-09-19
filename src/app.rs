@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 use makepad_widgets::*;
-use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomId}};
+use matrix_sdk::{RoomState, encryption::recovery::RecoveryState, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomId}};
 use serde::{Deserialize, Serialize};
 use crate::{
     block_user_modal::{BlockUserModalAction, BlockUserModalWidgetRefExt},
@@ -17,7 +17,7 @@ use crate::{
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, settings::app_preferences::{AppPreferences, UiZoom}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, settings::{app_preferences::{AppPreferences, UiZoom}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -120,6 +120,12 @@ script_mod! {
                             content := TspVerificationModal {}
                         }
 
+                        // Modal to deal with recovery key and encryption identity mgmt.
+                        encryption_modal := Modal {
+                            can_dismiss: false,
+                            content := EncryptionModal {}
+                        }
+
                         // A generic modal to confirm any positive action.
                         positive_confirmation_modal := Modal {
                             content := PositiveConfirmationModal {}
@@ -166,6 +172,8 @@ pub struct App {
     /// This can be either a room we're waiting to join, or one we're waiting to be invited to.
     /// Also includes an optional room ID to be closed once the awaited room has been loaded.
     #[rust] waiting_to_navigate_to_room: Option<(BasicRoomDetails, Option<OwnedRoomId>)>,
+    /// The latest known recovery state, used to warn on logout if recovery isn't set up.
+    #[rust(RecoveryState::Unknown)] recovery_state: RecoveryState,
 }
 
 impl ScriptHook for App {
@@ -258,7 +266,14 @@ impl MatchEvent for App {
         for action in actions {
             match action.downcast_ref() {
                 Some(LogoutConfirmModalAction::Open) => {
-                    self.ui.logout_confirm_modal(cx, ids!(logout_confirm_modal.content)).reset_state(cx);
+                    let logout_confirm_modal = self.ui.logout_confirm_modal(cx, ids!(logout_confirm_modal.content));
+                    logout_confirm_modal.reset_state(cx);
+                    if self.recovery_state == RecoveryState::Disabled {
+                        logout_confirm_modal.set_message(cx, "Are you sure you want to logout?\n\n\
+                            Your encryption keys aren't backed up. If this is your only device, you'll \
+                            lose access to your encrypted messages for good.\n\n\
+                            Set up key backup in Settings before you log out.");
+                    }
                     self.ui.modal(cx, ids!(logout_confirm_modal)).open(cx);
                     continue;
                 },
@@ -285,6 +300,7 @@ impl MatchEvent for App {
                     clear_all_app_state(cx);
                     self.ui.modal(cx, ids!(verification_modal)).close(cx);
                     self.app_state = Default::default();
+                    self.recovery_state = RecoveryState::Unknown;
                     // We also need to broadcast those default values out,
                     // such that all other widgets can be reset to their default state.
                     self.app_state.app_prefs.broadcast_all(cx);
@@ -503,6 +519,22 @@ impl MatchEvent for App {
             }
             if let Some(VerificationModalAction::Close) = action.downcast_ref() {
                 self.ui.modal(cx, ids!(verification_modal)).close(cx);
+                continue;
+            }
+            match action.downcast_ref() {
+                Some(EncryptionModalAction::Show(mode)) => {
+                    self.ui.encryption_modal(cx, ids!(encryption_modal.content)).show(cx, mode.clone());
+                    self.ui.modal(cx, ids!(encryption_modal)).open(cx);
+                    continue;
+                }
+                Some(EncryptionModalAction::Close) => {
+                    self.ui.modal(cx, ids!(encryption_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
+            }
+            if let Some(RecoveryAction::StateChanged(state)) = action.downcast_ref() {
+                self.recovery_state = *state;
                 continue;
             }
             match action.downcast_ref() {
