@@ -17,7 +17,7 @@ use crate::{
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, settings::{app_preferences::{AppPreferences, UiZoom}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence::{self, WindowGeomTracker}, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, settings::{app_preferences::{AppPreferences, UiZoom}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -174,6 +174,8 @@ pub struct App {
     #[rust] waiting_to_navigate_to_room: Option<(BasicRoomDetails, Option<OwnedRoomId>)>,
     /// The latest known recovery state, used to warn on logout if recovery isn't set up.
     #[rust(RecoveryState::Unknown)] recovery_state: RecoveryState,
+    /// Latest known window geometry (size, fullscreen/maximized, etc).
+    #[rust] window_geom: WindowGeomTracker,
 }
 
 impl ScriptHook for App {
@@ -227,7 +229,8 @@ impl MatchEvent for App {
         let _app_data_dir = crate::app_data_dir();
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
 
-        if let Err(e) = persistence::load_window_state(self.ui.window(cx, ids!(main_window)), cx) {
+        let main_window = self.ui.window(cx, ids!(main_window));
+        if let Err(e) = self.window_geom.restore(cx, main_window) {
             error!("Failed to load window state: {}", e);
         }
 
@@ -777,8 +780,9 @@ impl AppMain for App {
         }
 
         // Sync up our UI zoom override with the OS's DPI factor when it changes.
-        if let Event::WindowGeomChange(_) = event {
+        if let Event::WindowGeomChange(e) = event {
             self.app_state.app_prefs.refresh_ui_zoom_override(cx);
+            self.window_geom.observe(&e.new_geom);
         }
 
         self.handle_ui_zoom_shortcuts(cx, event);
@@ -931,7 +935,7 @@ impl App {
 
     fn persist_runtime_state(&mut self, cx: &mut Cx, reason: &'static str) {
         let window_ref = self.ui.window(cx, ids!(main_window));
-        if let Err(e) = persistence::save_window_state(window_ref, cx) {
+        if let Err(e) = self.window_geom.save(cx, window_ref) {
             error!("Failed to save window state during {reason}. Error: {e}");
         }
 

@@ -12,12 +12,91 @@ const WINDOW_GEOM_STATE_FILE_NAME: &str = "window_geom_state.json";
 /// Persistable state of the window's size, position, and fullscreen status.
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WindowGeomState {
-    /// A tuple containing the window's width and height.
+    /// The window's size when it is *not* maximized or fullscreen. Every backend
+    /// treats this as the size to un-maximize back to, so persisting the maximized
+    /// size instead would leave the window screen-filling with no way back down.
     pub inner_size: (f64, f64),
     /// A tuple containing the x and y position of the window's top-left corner.
     pub position: (f64, f64),
-    /// Maximise fullscreen if true.
+    /// Whether the window was maximized or fullscreen. This is makepad's legacy
+    /// maximize-or-fullscreen flag; restoring it maximizes everywhere but macOS.
     pub is_fullscreen: bool,
+}
+
+/// Loads, tracks and saves [`WindowGeomState`].
+///
+/// The tracking exists because a window restored maximized never reports a floating
+/// size of its own until the user un-maximizes it, so there would be nothing but the
+/// maximized size left to save.
+#[derive(Default, Debug)]
+pub struct WindowGeomTracker {
+    floating_size: Option<Vec2d>,
+}
+
+impl WindowGeomTracker {
+    /// Restores the saved geometry onto the given `window_ref`.
+    ///
+    /// This should be used only after app startup.
+    pub fn restore(&mut self, cx: &mut Cx, window_ref: WindowRef) -> anyhow::Result<()> {
+        let path = app_data_dir().join(WINDOW_GEOM_STATE_FILE_NAME);
+        let file = match std::fs::File::open(path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e.into()),
+        };
+        let geom: WindowGeomState = serde_json::from_reader(file).map_err(|e| anyhow::anyhow!(e))?;
+        log!("Restoring window geometry: {geom:?}");
+        let inner_size = dvec2(geom.inner_size.0, geom.inner_size.1);
+        self.floating_size = Some(inner_size);
+        window_ref.configure_window(
+            cx,
+            inner_size,
+            dvec2(geom.position.0, geom.position.1),
+            geom.is_fullscreen,
+            "Robrix".to_string(),
+        );
+        Ok(())
+    }
+
+    /// Updates the latest known window geometry based on the given new geom.
+    pub fn observe(&mut self, geom: &WindowGeom) {
+        if !geom.is_fullscreen && geom.inner_size.x > 0.0 && geom.inner_size.y > 0.0 {
+            self.floating_size = Some(geom.inner_size);
+        }
+    }
+
+    /// Saves the window's geometry to persistent storage.
+    pub fn save(&self, cx: &Cx, window_ref: WindowRef) -> anyhow::Result<()> {
+        // Undo any UI-zoom override, since `configure_window` takes native points.
+        let layout_to_native = window_ref.window_id()
+            .map(|id| {
+                let window = &cx.windows[id];
+                window.effective_dpi_factor() / window.native_dpi_factor()
+            })
+            .unwrap_or(1.0);
+        let is_fullscreen = window_ref.is_fullscreen(cx);
+        // While maximized/fullscreen, the current size IS the maximized size,
+        // so we need to keep the previous floating (non-maximized) window size
+        // so that we'll have something to go back to upon de-maximizing the window.
+        let inner_size = match self.floating_size {
+            Some(size) if is_fullscreen => size,
+            _ => window_ref.get_inner_size(cx),
+        } * layout_to_native;
+        // `get_position` is already in the units `configure_window` expects (physical
+        // screen pixels on Windows/X11, points on macOS), so no DPI adjustment here.
+        let position = window_ref.get_position(cx);
+        let geom = WindowGeomState {
+            inner_size: (inner_size.x, inner_size.y),
+            position: (position.x, position.y),
+            is_fullscreen,
+        };
+        std::fs::write(
+            app_data_dir().join(WINDOW_GEOM_STATE_FILE_NAME),
+            serde_json::to_string(&geom)?,
+        )?;
+        log!("Successfully saved window geometry: {geom:?}");
+        Ok(())
+    }
 }
 
 /// Save the current app state to persistent storage.
@@ -43,31 +122,6 @@ pub fn save_app_state_bytes(app_state_json: &[u8], user_id: &UserId) -> anyhow::
     Ok(())
 }
 
-/// Save the current state of the given window's geometry to persistent storage.
-pub fn save_window_state(window_ref: WindowRef, cx: &Cx) -> anyhow::Result<()> {
-    // take the DPI factor override into account
-    let layout_to_native = window_ref.window_id()
-        .map(|id| {
-            let window = &cx.windows[id];
-            window.effective_dpi_factor() / window.native_dpi_factor()
-        })
-        .unwrap_or(1.0);
-    let inner_size = window_ref.get_inner_size(cx) * layout_to_native;
-    // `get_position` returns physical screen pixels, the same units expected by `configure_window`,
-    // so we don't need to adjust anything w.r.t. the DPI scale factor.
-    let position = window_ref.get_position(cx);
-    let window_geom = WindowGeomState {
-        inner_size: (inner_size.x, inner_size.y),
-        position: (position.x, position.y),
-        is_fullscreen: window_ref.is_fullscreen(cx),
-    };
-    std::fs::write(
-        app_data_dir().join(WINDOW_GEOM_STATE_FILE_NAME),
-        serde_json::to_string(&window_geom)?,
-    )?;
-    log!("Successfully saved window geometry: {window_geom:?}");
-    Ok(())
-}
 
 /// Loads the App state from persistent storage.
 ///
@@ -109,26 +163,3 @@ pub async fn load_app_state(user_id: &UserId) -> anyhow::Result<Option<AppState>
     }
 }
 
-/// Loads the window geometry's state from persistent storage.
-pub fn load_window_state(window_ref: WindowRef, cx: &mut Cx) -> anyhow::Result<()> {
-    let file = match std::fs::File::open(app_data_dir().join(WINDOW_GEOM_STATE_FILE_NAME)) {
-        Ok(file) => file,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(e.into()),
-    };
-    let window_geom = serde_json::from_reader(file).map_err(|e| anyhow::anyhow!(e))?;
-    log!("Restoring window geometry: {window_geom:?}");
-    let WindowGeomState {
-        inner_size,
-        position,
-        is_fullscreen,
-    } = window_geom;
-    window_ref.configure_window(
-        cx,
-        dvec2(inner_size.0, inner_size.1),
-        dvec2(position.0, position.1),
-        is_fullscreen,
-        "Robrix".to_string(),
-    );
-    Ok(())
-}
