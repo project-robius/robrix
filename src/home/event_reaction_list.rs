@@ -188,6 +188,11 @@ impl Widget for ReactionList {
                         });
                         self.do_hover_out(cx, scope, button_ref);
                     }
+                    // Touch never sends a hover-out, so clear the highlight the long press set.
+                    else if fue.has_long_press_occurred {
+                        let mut reaction_button = button_ref.clone();
+                        script_apply_eval!(cx, reaction_button, { draw_bg +: { hover: 0.0 } });
+                    }
                     break;
                 }
                 Hit::FingerScroll(_) => {
