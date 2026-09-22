@@ -3,11 +3,11 @@
 use std::sync::Arc;
 
 use makepad_widgets::*;
-use matrix_sdk::{HttpError, QueueWedgeError, media::MediaError, ruma::{api::error::ErrorKind, events::room::message::MessageType}};
+use matrix_sdk::{QueueWedgeError, media::MediaError, ruma::{api::error::ErrorKind, events::room::message::MessageType}};
 use matrix_sdk_base::crypto::{OlmError, SessionRecipientCollectionError};
 use matrix_sdk_ui::timeline::{EventSendState, EventTimelineItem};
 
-use crate::{LivePtr, shared::styles::COLOR_FG_DANGER_RED, sliding_sync::is_offline, utils::format_decimal_file_size, widget_ref_from_live_ptr};
+use crate::{LivePtr, shared::styles::COLOR_FG_DANGER_RED, sliding_sync::is_offline, utils::{SERVER_REJECTED_TEXT, UNKNOWN_ERROR_TEXT, format_decimal_file_size, stringify_matrix_error}, widget_ref_from_live_ptr};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -510,18 +510,11 @@ pub fn stringify_send_error(error: &matrix_sdk::Error) -> &'static str {
     if let Some(kind) = error.client_api_error_kind() {
         match kind {
             ErrorKind::Forbidden => "you don't have permission to post.",
-            ErrorKind::LimitExceeded { .. } => RATE_LIMITED_TEXT,
             ErrorKind::TooLarge => "it's too large to send.",
-            ErrorKind::UnknownToken { .. } | ErrorKind::MissingToken => "your session has expired.",
-            ErrorKind::UserDeactivated => "your account is deactivated.",
-            ErrorKind::UserLocked => "your account is locked.",
-            ErrorKind::UserSuspended => "your account is suspended.",
-            ErrorKind::ResourceLimitExceeded { .. } => "your homeserver has reached a limit.",
             ErrorKind::DuplicateAnnotation => "you already sent that reaction.",
             ErrorKind::Unrecognized => "your homeserver doesn't support this.",
             ErrorKind::NotFound => "the server couldn't find it.",
-            ErrorKind::Unknown => SERVER_PROBLEM_TEXT,
-            _ => SERVER_REJECTED_TEXT,
+            _ => stringify_matrix_error(error),
         }
     } else {
         match error {
@@ -542,22 +535,10 @@ pub fn stringify_send_error(error: &matrix_sdk::Error) -> &'static str {
                 QueueWedgeError::InvalidMimeType { .. } => "that file type isn't supported.",
                 QueueWedgeError::GenericApiError { .. } => SERVER_REJECTED_TEXT,
             },
-            matrix_sdk::Error::Http(http) => match &**http {
-                HttpError::Reqwest(e) if e.is_timeout() => SERVER_SLOW_TEXT,
-                HttpError::Reqwest(_) => "no connection to the server.",
-                // otherwise, just use the raw status send to us by the server.
-                other => match other.as_client_api_error().map(|e| e.status_code.as_u16()) {
-                    Some(429) => RATE_LIMITED_TEXT,
-                    Some(code) if code >= 500 => SERVER_PROBLEM_TEXT,
-                    Some(_) => SERVER_REJECTED_TEXT,
-                    None => "the server sent a bad response.",
-                },
-            },
             matrix_sdk::Error::Media(MediaError::MediaTooLargeToUpload { .. }) => "the file is too large to upload.",
             matrix_sdk::Error::Media(_) => "the file couldn't be uploaded.",
-            matrix_sdk::Error::AuthenticationRequired => "you've been logged out.",
             matrix_sdk::Error::WrongRoomState(_) => "you're no longer in this room.",
-            _ => UNKNOWN_ERROR_TEXT,
+            _ => stringify_matrix_error(error),
         }
     }
 }
@@ -565,9 +546,3 @@ pub fn stringify_send_error(error: &matrix_sdk::Error) -> &'static str {
 const UNVERIFIED_DEVICES_TEXT: &str = "some recipients have unverified devices.";
 const IDENTITY_CHANGED_TEXT: &str = "someone's verified identity has changed.";
 const OWN_VERIFICATION_TEXT: &str = "this device isn't verified yet.";
-const RATE_LIMITED_TEXT: &str = "you have been rate-limited by the server.";
-const SERVER_REJECTED_TEXT: &str = "the server rejected it.";
-const SERVER_PROBLEM_TEXT: &str = "the server encountered a problem.";
-const SERVER_SLOW_TEXT: &str = "the server took too long.";
-/// Shown when we can't tell what went wrong, and when there's no error to describe.
-pub const UNKNOWN_ERROR_TEXT: &str = "something went wrong.";
