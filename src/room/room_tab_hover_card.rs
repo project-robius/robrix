@@ -14,9 +14,6 @@ script_mod! {
         width: Fill, height: Fill
         flow: Overlay
         tooltip := Tooltip {
-            clip_x: false
-            clip_y: false
-
             content := RoundedShadowView {
                 width: 272,
                 // Note: this height value is set dynamically in `show_for_hovered_tab()`,
@@ -253,7 +250,7 @@ impl RoomTabHoverCard {
             self.drawn_content = Some((tab_id, name.clone(), avatar_data));
         }
 
-        // set up all the layout parameters, width, height, position (w/ padding/margin spacing).
+        // set up all the layout parameters, width and height (w/ padding/margin spacing).
         let bounds = cx.get_window_id_of(&self.view.area()).map_or_else(
             || self.view.area().rect(cx),
             |window_id| Rect{pos: Vec2d::default(), size: cx.windows[window_id].get_inner_size()},
@@ -269,24 +266,20 @@ impl RoomTabHoverCard {
                 cx, 0.0, 0.0, Some((text_width / scale) as f32), true, label.align, &name,
             ).size_in_lpxs.height as f64 * scale
         });
-        let available_height = (bounds.size.y - 2.0 * gap - 3.0).max(1.0);
+        let available_height = (bounds.size.y - 2.0 * gap).max(1.0);
         let height = (24.0 + text_height.ceil().max(44.0)).min(available_height);
         let content = tooltip.view(cx, ids!(content));
         if let Some(mut content) = content.borrow_mut() {
             content.walk.width = Size::Fixed(width);
             content.walk.height = Size::Fixed(height);
         }
-        let left = bounds.pos.x + gap;
-        let right = (bounds.pos.x + bounds.size.x - width - gap).max(left);
-        let top = bounds.pos.y + gap;
-        let bottom = (bounds.pos.y + bounds.size.y - height - gap - 3.0).max(top);
-        let pos = dvec2(
-            (tab_rect.pos.x + tab_rect.size.x * 0.5 - width * 0.5).clamp(left, right),
-            (tab_rect.pos.y + tab_rect.size.y + gap).clamp(top, bottom),
-        );
         tooltip.label(cx, ids!(tooltip_label)).set_text(cx, &name);
-        tooltip.set_pos(cx, pos);
-        tooltip.show(cx);
+        tooltip.show_anchored(cx, TooltipAnchor {
+            rect: tab_rect,
+            side: TooltipPosition::Bottom,
+            gap,
+            natural_width: None,
+        });
         self.is_open = true;
         self.anchor_rect = Some(tab_rect);
     }
