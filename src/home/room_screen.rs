@@ -1077,10 +1077,19 @@ impl Widget for RoomScreen {
                 // Handle a hover-out action on the reaction list or avatar row.
                 let avatar_row_ref = wr.avatar_row(cx, ids!(avatar_row));
                 if (reaction_list.hovered_out(actions) || avatar_row_ref.hover_out(actions))
-                    // Don't hover out if any current actions are about to hover in and show the tooltip.
-                    && !actions.iter().any(|a| matches!(
-                        a.as_widget_action().and_then(|wa| wa.action.downcast_ref::<TooltipAction>()),
-                        Some(TooltipAction::HoverIn { .. })
+                    // Don't hover out if any current actions are about to hover in and show any tooltip.
+                    // This prevents a brief flicker when hovering out of one tooltip to hovering into another one immediately.
+                    && !actions.iter().any(|a| a.as_widget_action().is_some_and(|wa|
+                        matches!(
+                            wa.action.downcast_ref::<TooltipAction>(),
+                            Some(TooltipAction::HoverIn { .. }),
+                        )
+                        || matches!(
+                            wa.action.downcast_ref::<RoomScreenTooltipActions>(),
+                            Some(RoomScreenTooltipActions::HoverInReactionButton { .. }
+                                | RoomScreenTooltipActions::HoverInReadReceipt { .. }
+                            ),
+                        )
                     ))
                 {
                     cx.widget_action(
@@ -1864,7 +1873,7 @@ impl RoomScreen {
                             log!("process_timeline_updates(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
                             portal_list.set_first_id_and_scroll(new_item_idx, new_item_scroll);
                             // Hide the tooltip when the timeline jumps, as a hover-out event won't occur.
-                            cx.widget_action(ui,  RoomScreenTooltipActions::HoverOut);
+                            cx.widget_action(ui, TooltipAction::HoverOut);
                         }
                     }
                     else if curr_first_id > new_items.len() {
