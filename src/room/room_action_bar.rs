@@ -1,6 +1,6 @@
 //! Room actions shared by the mobile stack header and desktop room tabs.
 
-use makepad_widgets::*;
+use makepad_widgets::{makepad_platform::event::finger::TouchState, *};
 
 use crate::shared::popup_list::{enqueue_popup_notification, PopupKind};
 
@@ -468,6 +468,13 @@ impl RoomActionTooltip {
                         && rect.size.x > 0.0 && rect.size.y > 0.0 && rect.contains(mouse.abs))
                         .then_some((button.widget_uid(), text, rect))
                 })
+            }
+            // A finger being lifted right after a long press shouldn't dismiss the tooltip
+            // that was just opened by that same long press. Only a NEW touch should dismiss it.
+            Event::TouchUpdate(touch)
+                if !touch.touches.iter().any(|t| matches!(t.state, TouchState::Start)) =>
+            {
+                return self.hovered.is_some();
             }
             Event::MouseMove(_) | Event::MouseLeave(_) | Event::MouseDown(_) | Event::MouseUp(_)
             | Event::Scroll(_) | Event::TouchUpdate(_) | Event::KeyDown(_) | Event::BackPressed { .. }

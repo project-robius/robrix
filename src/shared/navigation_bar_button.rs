@@ -230,11 +230,6 @@ impl Widget for NavigationBarButton {
                     self.animator_play(cx, ids!(hover.on));
                 } else {
                     self.animator_play(cx, ids!(hover.off));
-                    // No FingerHoverOut on touch, so manually dismiss any
-                    // long-press tooltip. (HoverIn is emitted above.)
-                    if !fe.device.has_hovers() {
-                        emit_hover_out(self, cx);
-                    }
                 }
             }
             _ => {}
