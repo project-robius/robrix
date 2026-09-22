@@ -16,7 +16,7 @@
 //! so you can use it from other widgets or functions on the main UI thread
 //! that need to query basic info about a particular room or space.
 
-use std::{cell::RefCell, collections::{HashMap, HashSet, VecDeque, hash_map::Entry}, rc::Rc, sync::Arc};
+use std::{borrow::Cow, cell::RefCell, collections::{HashMap, HashSet, VecDeque, hash_map::Entry}, rc::Rc, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk_ui::spaces::room_list::SpaceRoomListPaginationState;
@@ -41,7 +41,7 @@ use crate::{
         room_filter_input_bar::MainFilterAction,
     },
     sliding_sync::{MatrixLinkAction, MatrixRequest, PaginationDirection, RoomDiagnosticsReady, TimelineKind, submit_async_request},
-    space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction}, utils::{RoomNameId, VecDiff},
+    space_service_sync::{ParentChain, SpaceRequest, SpaceRoomListAction, stringify_space_pagination_error}, utils::{RoomNameId, VecDiff},
 };
 
 /// Whether to pre-paginate visible rooms at least once in order to
@@ -99,29 +99,31 @@ script_mod! {
     mod.widgets.RoomsListStatusLabel = View {
         width: Fill, height: Fit,
         flow: Right,
-        align: Align{ x: 0.5, y: 0.5 }
+        align: Align{ x: 0.5, y: 0 }
         padding: 15.0,
 
         loading_spinner := LoadingSpinner {
             visible: false,
-            width: 20,
-            height: 20,
+            width: 13,
+            height: 13,
+            margin: Inset{right: 8, top: 2}
             draw_bg +: {
                 color: (COLOR_ACTIVE_PRIMARY)
-                border_size: 3.0
+                stroke_width: 2.25
             }
         }
 
         label := Label {
             padding: 0
-            width: Fill,
+            width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}},
+            text_overflow: Ellipsis,
             flow: Flow.Right{wrap: true},
-            align: Align{ x: 0.5, y: 0.5 }
+            align: Align{ x: 0, y: 0 }
             draw_text +: {
                 color: (MESSAGE_TEXT_COLOR),
                 text_style: REGULAR_TEXT {}
             }
-            text: "Loading rooms..."
+            text: "Loading rooms…"
         }
     }
 
@@ -437,19 +439,34 @@ pub enum InviteState {
     RoomLeft,
 }
 
+/// How far we've made it when fetching a single space's direct children.
+///
+/// This has nothing to do with any subspaces within those children.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum SpacePaginationState {
+    #[default]
+    InProgress,
+    Complete,
+    /// We currently don't retry anything, so this is currently treated
+    /// as a "final" state too.
+    Failed,
+}
+
+/// The direct children of a space: its child rooms, and its nested subspaces.
+struct SpaceChildren {
+    rooms: Arc<HashSet<OwnedRoomId>>,
+    subspaces: Arc<HashSet<OwnedRoomId>>,
+}
+
+
 /// The value in the RoomsList's `space_map` that contains info about a space.
 #[derive(Default)]
 struct SpaceMapValue {
-    /// Whether this space is fully paginated, meaning that our client has obtained
-    /// the full list of direct children within this space.
+    pagination: SpacePaginationState,
+    /// The direct child rooms and subspaces in this space (no nested descendants).
     ///
-    /// Note that it *does not* mean that all nested/subspaces within this space
-    /// have been fully paginated themselves.
-    is_fully_paginated: bool,
-    /// The set of rooms that are direct children of this space, excluding subspaces.
-    direct_child_rooms: Arc<HashSet<OwnedRoomId>>,
-    /// The nested subspaces (only spaces) that are direct children of this space.
-    direct_subspaces: Arc<HashSet<OwnedRoomId>>,
+    /// `None` means we haven't received any info from the homeserver (not that there are no children).
+    direct_children: Option<SpaceChildren>,
     /// The chain of parents that this space has, ordered from highest to lowest level.
     ///
     /// That is, the first element is this space's top-level ancestor space,
@@ -544,7 +561,14 @@ pub struct RoomsList {
     #[rust] displayed_joined_room_ids: HashSet<OwnedRoomId>,
 
     /// The latest status message that should be displayed in the bottom status label.
-    #[rust] status: String,
+    #[rust] status: Cow<'static, str>,
+
+    /// Drives the spinner next to the bottom status label.
+    #[rust] is_selected_space_loading: bool,
+
+    /// The child-room set of the selected space and of each of its subspaces,
+    /// basically just a cache for perf reasons.
+    #[rust] rooms_in_selected_space: Vec<Arc<HashSet<OwnedRoomId>>>,
 
     /// The currently-selected room.
     #[rust] current_active_room: Option<SelectedRoom>,
@@ -577,8 +601,8 @@ macro_rules! should_display_room {
     ($self:expr, $room_id:expr, $room:expr) => {
         !$self.hidden_rooms.contains($room_id)
             && ($self.display_filter)($room)
-            && $self.selected_space.as_ref()
-                .is_none_or(|space| $self.is_room_indirectly_in_space(space.room_id(), $room_id))
+            && ($self.selected_space.is_none()
+                || $self.rooms_in_selected_space.iter().any(|rooms| rooms.contains($room_id)))
     };
 }
 
@@ -1057,7 +1081,7 @@ impl RoomsList {
                     self.update_status();
                 }
                 RoomsListUpdate::NotLoaded => {
-                    self.status = "Loading rooms (waiting for homeserver)...".to_string();
+                    self.status = "Loading rooms (waiting for homeserver)…".into();
                 }
                 RoomsListUpdate::LoadedRooms { max_rooms } => {
                     self.max_known_rooms = max_rooms;
@@ -1091,7 +1115,9 @@ impl RoomsList {
                     }
                 }
                 RoomsListUpdate::Status { status } => {
-                    self.status = status;
+                    self.status = status.into();
+                    // This text is about the room list service, not a space.
+                    self.is_selected_space_loading = false;
                 }
                 RoomsListUpdate::TombstonedRoom { room_id } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
@@ -1223,12 +1249,17 @@ impl RoomsList {
         }
     }
 
-    /// Updates the status message to show how many rooms have been loaded
-    /// or how many rooms match the current room filter keywords.
+    /// Updates the status message to show how many rooms have been loaded, how many
+    /// match the current filter keywords, or that a space is still being fetched.
     ///
     /// Note: this *does not* actually redraw the status message or rooms list;
     ///       that must be done separately.
     fn update_status(&mut self) {
+        if self.is_selected_space_loading {
+            self.status = "Loading rooms in this space and its subspaces…".into();
+            return;
+        }
+
         let num_rooms = self.displayed_invited_rooms.len()
             + self.displayed_direct_rooms.len()
             + self.displayed_regular_rooms.len();
@@ -1245,7 +1276,7 @@ impl RoomsList {
             true => text.push_str(" in this space."),
             false => text.push('.'),
         };
-        self.status = text;
+        self.status = text.into();
     }
 
     /// Updates the display filter and sort function based on the
@@ -1271,6 +1302,7 @@ impl RoomsList {
     /// If `false`, the scroll position is preserved, unless it exceeds the new list length,
     /// in which case the logic in `draw_walk()` will limit it to the max valid index.
     fn update_displayed_rooms(&mut self, cx: &mut Cx, reset_scroll: bool) {
+        self.rescan_selected_space();
         let generated = self.generate_displayed_rooms();
         self.displayed_invited_rooms = generated.invited;
         self.displayed_regular_rooms = generated.regular;
@@ -1444,44 +1476,51 @@ impl RoomsList {
                     Entry::Occupied(mut occ) => {
                         let occ_mut = occ.get_mut();
                         occ_mut.parent_chain = parent_chain.clone();
-                        occ_mut.direct_child_rooms = Arc::clone(direct_child_rooms);
-                        occ_mut.direct_subspaces   = Arc::clone(direct_subspaces);
+                        occ_mut.direct_children = Some(SpaceChildren {
+                            rooms: Arc::clone(direct_child_rooms),
+                            subspaces: Arc::clone(direct_subspaces),
+                        });
                     }
                     Entry::Vacant(vac) => {
                         vac.insert_entry(SpaceMapValue {
-                            is_fully_paginated: false,
                             parent_chain: parent_chain.clone(),
-                            direct_child_rooms: Arc::clone(direct_child_rooms),
-                            direct_subspaces:   Arc::clone(direct_subspaces),
+                            direct_children: Some(SpaceChildren {
+                                rooms: Arc::clone(direct_child_rooms),
+                                subspaces: Arc::clone(direct_subspaces),
+                            }),
+                            ..Default::default()
                         });
                     }
                 }
-                if self.selected_space.as_ref().is_some_and(|sel_space|
-                    sel_space.room_id() == space_id
-                    || parent_chain.contains(sel_space.room_id())
-                ) {
-                    self.update_displayed_rooms(cx, false);
-                }
+                // `parent_chain` is just the path we happened to discover this space through,
+                // so it can't tell us whether the space is also inside the selected one.
+                self.refresh_selected_space(cx);
             }
             SpaceRoomListAction::PaginationState { space_id, parent_chain, state } => {
-                let is_fully_paginated = matches!(state, SpaceRoomListPaginationState::Idle { end_reached: true });
-                // Only re-fetch the list of rooms in this space if it was not already fully paginated.
+                let pagination = match state {
+                    SpaceRoomListPaginationState::Idle { end_reached: true } => SpacePaginationState::Complete,
+                    _ => SpacePaginationState::InProgress,
+                };
+                // Only re-fetch the list of rooms in this space if it was not already complete.
                 let should_fetch_rooms: bool;
                 match self.space_map.entry(space_id.clone()) {
                     Entry::Occupied(mut occ) => {
                         let value_mut = occ.get_mut();
-                        should_fetch_rooms = !value_mut.is_fully_paginated;
-                        value_mut.is_fully_paginated = is_fully_paginated;
+                        should_fetch_rooms = value_mut.pagination != SpacePaginationState::Complete;
+                        value_mut.pagination = pagination;
                     }
                     Entry::Vacant(vac) => {
                         vac.insert_entry(SpaceMapValue {
-                            is_fully_paginated,
+                            pagination,
                             parent_chain: parent_chain.clone(),
                             ..Default::default()
                         });
                         should_fetch_rooms = true;
                     }
                 }
+
+                self.refresh_selected_space(cx);
+
                 let Some(sender) = self.space_request_sender.as_ref() else {
                     error!("BUG: RoomsList: no space request sender was available after pagination state update.");
                     return;
@@ -1500,7 +1539,7 @@ impl RoomsList {
                 // Thus, we must continue paginating this space until we fully fetch
                 // all of its children, such that we can see if any of them are subspaces,
                 // and then we'll paginate those as well.
-                if !is_fully_paginated {
+                if pagination != SpacePaginationState::Complete {
                     if sender.send(SpaceRequest::PaginateSpaceRoomList {
                         space_id: space_id.clone(),
                         parent_chain: parent_chain.clone(),
@@ -1509,13 +1548,21 @@ impl RoomsList {
                     }
                 }
             }
-            SpaceRoomListAction::PaginationError { space_id, error } => {
-                error!("RoomsList: failed to paginate rooms in space {space_id}: {error:?}");
+            SpaceRoomListAction::PaginationError { space_name_id, error } => {
+                error!("RoomsList: failed to paginate rooms in space {space_name_id}: {error:?}");
+                let reason = stringify_space_pagination_error(error);
+                // We want to show the space's name, otherwise nothing.
                 enqueue_popup_notification(
-                    "Failed to fetch more rooms in this space. Try again later.",
+                    if space_name_id.is_empty() {
+                        format!("Couldn't list the rooms in this space: {reason}")
+                    } else {
+                        format!("Couldn't list the rooms in space \"{space_name_id}\": {reason}")
+                    },
                     PopupKind::Error,
                     None,
                 );
+                self.space_map.entry(space_name_id.room_id().clone()).or_default().pagination = SpacePaginationState::Failed;
+                self.refresh_selected_space(cx);
             }
             SpaceRoomListAction::LeaveSpaceResult { space_name_id, result } => match result {
                 Ok(()) => {
@@ -1554,21 +1601,53 @@ impl RoomsList {
         }
     }
 
-    /// Returns whether the given target room or space is indirectly within the given parent space.
-    ///
-    /// This will recursively search all nested spaces within the given `parent_space`.
-    fn is_room_indirectly_in_space(&self, parent_space: &OwnedRoomId, target: &OwnedRoomId) -> bool {
-        if let Some(smv) = self.space_map.get(parent_space) {
-            if smv.direct_child_rooms.contains(target) {
-                return true;
-            }
-            for subspace in smv.direct_subspaces.iter() {
-                if self.is_room_indirectly_in_space(subspace, target) {
-                    return true;
-                }
+    /// Updates only what actually changed: the room list, or just the status label.
+    fn refresh_selected_space(&mut self, cx: &mut Cx) {
+        if self.selected_space.is_none() { return }
+        let was_loading = self.is_selected_space_loading;
+        if self.rescan_selected_space() {
+            self.update_displayed_rooms(cx, false);
+        } else if was_loading != self.is_selected_space_loading {
+            self.update_status();
+            self.redraw(cx);
+        }
+    }
+
+    /// The space graph can have cycles due to arbitrary nesting, so this avoids those
+    /// and caches the result, updating our `rooms_in_selected_space` set in an optimized way.
+    fn rescan_selected_space(&mut self) -> bool {
+        let Some(selected) = self.selected_space.as_ref() else {
+            let had_rooms = !self.rooms_in_selected_space.is_empty();
+            self.rooms_in_selected_space = Vec::new();
+            self.is_selected_space_loading = false;
+            return had_rooms;
+        };
+        let mut rooms = Vec::new();
+        let mut is_loading = false;
+        let mut visited = HashSet::new();
+        let mut to_visit = vec![selected.room_id()];
+        while let Some(space_id) = to_visit.pop() {
+            if !visited.insert(space_id) { continue }
+            let Some(smv) = self.space_map.get(space_id) else {
+                is_loading = true;
+                continue;
+            };
+            is_loading |= match smv.pagination {
+                SpacePaginationState::InProgress => true,
+                SpacePaginationState::Complete => smv.direct_children.is_none(),
+                SpacePaginationState::Failed => false,
+            };
+            if let Some(children) = smv.direct_children.as_ref() {
+                rooms.push(Arc::clone(&children.rooms));
+                to_visit.extend(children.subspaces.iter());
             }
         }
-        false
+        // Return whether any rooms actually changed, to avoid unnecessary work.
+        let is_unchanged = rooms.len() == self.rooms_in_selected_space.len()
+            && rooms.iter().zip(&self.rooms_in_selected_space).all(|(new, old)| Arc::ptr_eq(new, old));
+        self.rooms_in_selected_space = rooms;
+        self.is_selected_space_loading = is_loading;
+        !is_unchanged
     }
 }
 
@@ -1727,7 +1806,8 @@ impl Widget for RoomsList {
                     self.displayed_joined_room_ids.clear();
                     self.current_active_room = None;
                     self.max_known_rooms = None;
-                    self.status = String::new();
+                    self.status = Cow::Borrowed("");
+                    self.rescan_selected_space();
                     self.update_status();
                     self.redraw(cx);
                     continue;
@@ -1762,18 +1842,19 @@ impl Widget for RoomsList {
                             self.view.space_lobby_entry(cx, ids!(space_lobby_entry)).set_visible(cx, true);
 
                             // If we don't have the full list of children in this newly-selected space, then fetch it.
-                            let (is_fully_paginated, parent_chain) = self.space_map
+                            let (pagination, parent_chain) = self.space_map
                                 .get(space_name_id.room_id())
-                                .map(|smv| (smv.is_fully_paginated, smv.parent_chain.clone()))
+                                .map(|smv| (smv.pagination, smv.parent_chain.clone()))
                                 .unwrap_or_default();
-                            if !is_fully_paginated {
-                                let Some(sender) = self.space_request_sender.as_ref() else {
-                                    error!("BUG: RoomsList: no space request sender was available.");
-                                    continue;
-                                };
-
+                            // These requests are a fresh new attempt, so clear any previous failures to load a space's children.
+                            if let Some(smv) = self.space_map.get_mut(space_name_id.room_id()) {
+                                smv.pagination = SpacePaginationState::InProgress;
+                            }
+                            if pagination != SpacePaginationState::Complete
+                                && let Some(sender) = self.space_request_sender.as_ref()
+                            {
                                 if sender.send(SpaceRequest::SubscribeToSpaceRoomList {
-                                    space_id: space_name_id.room_id().clone(),
+                                    space_name_id: space_name_id.clone(),
                                     parent_chain: parent_chain.clone(),
                                 }).is_err() {
                                     error!("BUG: RoomsList: failed to send SubscribeToSpaceRoomList request for space {space_name_id}.");
@@ -2007,7 +2088,25 @@ impl Widget for RoomsList {
                 // Draw the status label as the bottom entry.
                 else if portal_list_index == status_label_id {
                     let item = list.item(cx, portal_list_index, id!(status_label));
-                    item.label(cx, ids!(label)).set_text(cx, &self.status);
+                    let label = item.label(cx, ids!(label));
+                    if let Some(mut inner) = label.borrow_mut() {
+                        // If the loading spinner is shown, we use left-aligned text to make it look clean,
+                        // and then center the two of those as a group.
+                        // If not, the text is centered as normal.
+                        if self.is_selected_space_loading {
+                            inner.walk.width = Size::Fit {
+                                min: None,
+                                max: Some(FitBound::Rel { base: Base::Line, factor: 1.0 }),
+                            };
+                            inner.align.x = 0.0;
+                        } else {
+                            inner.walk.width = Size::fill();
+                            inner.align.x = 0.5;
+                        }
+                    }
+                    label.set_text(cx, &self.status);
+                    item.child_by_path(ids!(loading_spinner))
+                        .set_visible(cx, self.is_selected_space_loading);
                     item.draw_all(cx, &mut scope);
                 }
                 // Draw a filler entry to take up space at the bottom of the portal list.

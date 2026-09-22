@@ -3705,7 +3705,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             Err(e) => {
                 error!("Failed to create SyncService: {e:?}");
                 let err_msg = if is_invalid_token_error(&e) {
-                    "Your login token is no longer valid.\n\nPlease log in again.".to_string()
+                    INVALID_TOKEN_TEXT.to_string()
                 } else {
                     format!("Please restart Robrix.\n\nFailed to create Matrix sync service: {e}.")
                 };
@@ -4644,6 +4644,9 @@ fn handle_load_app_state(user_id: OwnedUserId) {
     });
 }
 
+/// Shown whenever the homeserver tells us our login token is no good.
+const INVALID_TOKEN_TEXT: &str = "Your login token is no longer valid.\n\nPlease log in again.";
+
 /// Returns `true` if the given sync service error is due to an invalid/expired access token.
 fn is_invalid_token_error(e: &sync_service::Error) -> bool {
     use matrix_sdk::ruma::api::error::ErrorKind;
@@ -4724,7 +4727,7 @@ fn handle_session_changes(client: Client) -> JoinHandle<()> {
                     let msg = if soft_logout {
                         "Your login session has expired.\n\nPlease log in again."
                     } else {
-                        "Your login token is no longer valid.\n\nPlease log in again."
+                        INVALID_TOKEN_TEXT
                     };
                     error!("Session token is no longer valid (soft_logout: {soft_logout}). Prompting re-login.");
                     TOKEN_EXPIRED.store(true, Ordering::Release);

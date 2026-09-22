@@ -1147,7 +1147,7 @@ impl Widget for SpaceLobbyScreen {
                     {
                         if let Some(sender) = &self.space_request_sender {
                             let _ = sender.send(SpaceRequest::GetDetailedChildren {
-                                space_id: space_id.clone(),
+                                space_name_id: self.known_space_name_id(space_id),
                                 parent_chain: parent_chain.clone(),
                             });
                         }
@@ -1504,7 +1504,7 @@ impl SpaceLobbyScreen {
                         .get_space_parent_chain(space_id)
                         .unwrap_or_default();
                     let _ = sender.send(SpaceRequest::GetDetailedChildren {
-                        space_id: space_id.clone(),
+                        space_name_id: self.known_space_name_id(space_id),
                         parent_chain,
                     });
                 }
@@ -1843,6 +1843,21 @@ impl SpaceLobbyScreen {
         true
     }
 
+    /// Returns the name of the given space, using the parent's name for this space as a fallback
+    /// if its name is not already immediately known.
+    fn known_space_name_id(&self, space_id: &OwnedRoomId) -> RoomNameId {
+        if let Some(sni) = self.space_name_id.as_ref().filter(|sni| sni.room_id() == space_id) {
+            return sni.clone();
+        }
+        self.children_cache.values()
+            .flatten()
+            .find(|sr| &sr.room_id == space_id)
+            .map_or_else(
+                || RoomNameId::empty(space_id.clone()),
+                |sr| RoomNameId::new(RoomDisplayName::Named(sr.display_name.clone()), space_id.clone()),
+            )
+    }
+
     /// Requests details about the given space.
     fn send_initial_space_requests(&mut self, cx: &mut Cx, space_name_id: &RoomNameId) {
         let rooms_list_ref = cx.get_global::<RoomsListRef>();
@@ -1851,7 +1866,7 @@ impl SpaceLobbyScreen {
         // which also starts the backend space service subscriber so we get notified of any future changes.
         let parent_chain_opt = rooms_list_ref.get_space_parent_chain(space_name_id.room_id());
         let _ = sender.send(SpaceRequest::GetDetailedChildren {
-            space_id: space_name_id.room_id().clone(),
+            space_name_id: space_name_id.clone(),
             parent_chain: parent_chain_opt.unwrap_or_default(),
         });
         let _ = sender.send(SpaceRequest::GetSpaceDetails {

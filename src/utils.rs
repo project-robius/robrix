@@ -554,6 +554,59 @@ pub fn stringify_join_leave_error(
     ))
 }
 
+/// Describes a failed Matrix request as the latter half of an error message,
+/// i.e., the part after "Couldn't do this action: {}".
+///
+/// This only covers account- and server-wide errors that mean the same thing everywhere.
+pub fn stringify_matrix_error(error: &matrix_sdk::Error) -> &'static str {
+    use matrix_sdk::{HttpError, ruma::api::error::ErrorKind};
+
+    // Only set when the server answered with a real Matrix error code.
+    if let Some(kind) = error.client_api_error_kind() {
+        return match kind {
+            ErrorKind::LimitExceeded { .. } => RATE_LIMITED_TEXT,
+            ErrorKind::UnknownToken { .. } | ErrorKind::MissingToken => "your session has expired.",
+            ErrorKind::UserDeactivated => "your account is deactivated.",
+            ErrorKind::UserLocked => "your account is locked.",
+            ErrorKind::UserSuspended => "your account is suspended.",
+            ErrorKind::ResourceLimitExceeded { .. } => "your homeserver has reached a limit.",
+            ErrorKind::Unknown => SERVER_PROBLEM_TEXT,
+            _ => SERVER_REJECTED_TEXT,
+        };
+    }
+    match error {
+        matrix_sdk::Error::AuthenticationRequired => "you've been logged out.",
+        matrix_sdk::Error::Timeout => SERVER_SLOW_TEXT,
+        matrix_sdk::Error::Http(http) => {
+            // An error that we encounter while offline will be wrapped, sometimes more than once.
+            let mut http = &**http;
+            while let HttpError::Cached(cached) = http {
+                http = cached;
+            }
+            match http {
+                HttpError::RefreshToken(_) => "your session has expired.",
+                HttpError::Reqwest(e) if e.is_timeout() => SERVER_SLOW_TEXT,
+                HttpError::Reqwest(_) => "no connection to the server.",
+                other => match other.as_client_api_error().map(|e| e.status_code.as_u16()) {
+                    Some(429) => RATE_LIMITED_TEXT,
+                    Some(code) if code >= 500 => SERVER_PROBLEM_TEXT,
+                    Some(_) => SERVER_REJECTED_TEXT,
+                    None => "the server sent a bad response.",
+                },
+            }
+        }
+        _ => UNKNOWN_ERROR_TEXT,
+    }
+}
+
+pub const RATE_LIMITED_TEXT: &str = "you have been rate-limited by the server.";
+pub const SERVER_REJECTED_TEXT: &str = "the server rejected it.";
+pub const SERVER_PROBLEM_TEXT: &str = "the server encountered a problem.";
+pub const SERVER_SLOW_TEXT: &str = "the server took too long.";
+/// Shown when we can't tell what went wrong, or when there's no error to describe.
+pub const UNKNOWN_ERROR_TEXT: &str = "something went wrong.";
+
+
 /// Returns a string error message for pagination errors,
 /// handling special cases related to common pagination errors, e.g., timeouts.
 pub fn stringify_pagination_error(
@@ -563,18 +616,14 @@ pub fn stringify_pagination_error(
     use matrix_sdk::{paginators::PaginatorError, event_cache::EventCacheError};
     use matrix_sdk_ui::timeline::Error as TimelineError;
 
-    #[allow(clippy::single_match)]
+    // Transport and server failures have special full-sentence descriptions.
     let match_sdk_error = |sdk_error: &matrix_sdk::Error| {
-        match sdk_error {
-            matrix_sdk::Error::Http(http_error) => match http_error.deref() {
-                matrix_sdk::HttpError::Reqwest(reqwest_error) if reqwest_error.is_timeout() => {
-                    return Some(format!("Failed to load earlier messages in \"{room_name}\": request timed out."));
-                }
-                _ => {}
-            }
-            _ => {}
-        }
-        None
+        matches!(sdk_error, matrix_sdk::Error::Http(_) | matrix_sdk::Error::Timeout).then(
+            || format!(
+                "Failed to load earlier messages in \"{room_name}\": {}",
+                stringify_matrix_error(sdk_error),
+            )
+        )
     };
 
     match error {

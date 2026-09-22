@@ -6,11 +6,11 @@ use eyeball_im::VectorDiff;
 use futures_util::StreamExt;
 use imbl::Vector;
 use makepad_widgets::*;
-use matrix_sdk::{Client, RoomState, media::MediaRequestParameters};
+use matrix_sdk::{Client, RoomState, media::MediaRequestParameters, ruma::api::error::ErrorKind};
 use matrix_sdk_ui::spaces::{SpaceRoom, SpaceRoomList, SpaceService, room_list::SpaceRoomListPaginationState};
 use ruma::{OwnedMxcUri, OwnedRoomId, events::room::MediaSource, room::RoomType};
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}, task::JoinHandle};
-use crate::{app::AppStateAction, home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}}, room::FetchedRoomAvatar, utils::{self, RoomNameId}};
+use crate::{app::AppStateAction, home::{rooms_list::{RoomsListUpdate, enqueue_rooms_list_update}, spaces_bar::{JoinedSpaceInfo, SpacesListUpdate, enqueue_spaces_list_update}}, room::FetchedRoomAvatar, utils::{self, RoomNameId, stringify_matrix_error}};
 
 /// Whether to enable verbose logging of all spaces service diff updates.
 const LOG_SPACE_SERVICE_DIFFS: bool = cfg!(feature = "log_space_service_diffs");
@@ -27,7 +27,7 @@ pub enum SpaceRequest {
     /// Start obtaining the list of rooms in the given space from the homeserver,
     /// and listen for ongoing updates to that list.
     SubscribeToSpaceRoomList {
-        space_id: OwnedRoomId,
+        space_name_id: RoomNameId,
         parent_chain: ParentChain,
     },
     /// Stop listening to updates for the list of rooms in the given space.
@@ -64,7 +64,7 @@ pub enum SpaceRequest {
     /// This is intended for cases when you need all info about subspaces and child rooms.
     /// This will result in a [`SpaceRoomListAction::DetailedChildren`] action being emitted.
     GetDetailedChildren {
-        space_id: OwnedRoomId,
+        space_name_id: RoomNameId,
         parent_chain: ParentChain,
     },
     /// Get full details about any joined space.
@@ -155,9 +155,10 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
     // A closure to make it easier to use/spawn a `space_room_list_loop` task.
     let get_or_spawn_space_room_list = async |
         space_room_list_tasks: &mut HashMap<OwnedRoomId, SpaceRoomListTask>,
-        space_id: &OwnedRoomId,
+        space_name_id: &RoomNameId,
         parent_chain: &ParentChain,
     | -> UnboundedSender<SpaceRoomListRequest> {
+        let space_id = space_name_id.room_id();
         // If a space's room list task died, drop it and respawn a new one.
         if space_room_list_tasks.get(space_id).is_some_and(|t| t.join_handle.is_finished()) {
             warning!("The space room list task for {space_id} had died; restarting it now.");
@@ -171,7 +172,7 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
         let space_room_list = space_service.space_room_list(space_id.clone()).await;
         let join_handle = Handle::current().spawn(
             space_room_list_loop(
-                space_id.clone(),
+                space_name_id.clone(),
                 parent_chain.clone(),
                 receiver,
                 space_room_list,
@@ -208,16 +209,16 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
             let Some(request) = request_opt else { break };
             match request {
                 SpaceRequest::GetChildren { space_id, parent_chain } => {
-                    let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_id, &parent_chain).await;
+                    let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &RoomNameId::empty(space_id.clone()), &parent_chain).await;
                     if sender.send(SpaceRoomListRequest::GetChildren).is_err() {
                         error!("BUG: failed to send GetRooms request to space room list loop for space {space_id}");
                     }
                 }
-                SpaceRequest::SubscribeToSpaceRoomList { space_id, parent_chain } => {
-                    let _sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_id, &parent_chain).await;
+                SpaceRequest::SubscribeToSpaceRoomList { space_name_id, parent_chain } => {
+                    let _sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_name_id, &parent_chain).await;
                 }
                 SpaceRequest::PaginateSpaceRoomList { space_id, parent_chain } => {
-                    let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_id, &parent_chain).await;
+                    let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &RoomNameId::empty(space_id.clone()), &parent_chain).await;
                     if sender.send(SpaceRoomListRequest::Paginate).is_err() {
                         error!("BUG: failed to send paginate request to space room list loop for space {space_id}");
                     }
@@ -263,10 +264,10 @@ pub async fn space_service_loop(client: Client) -> anyhow::Result<()> {
                         }
                     }
                 }
-                SpaceRequest::GetDetailedChildren { space_id, parent_chain } => {
-                    let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_id, &parent_chain).await;
+                SpaceRequest::GetDetailedChildren { space_name_id, parent_chain } => {
+                    let sender = get_or_spawn_space_room_list(&mut space_room_list_tasks, &space_name_id, &parent_chain).await;
                     if sender.send(SpaceRoomListRequest::GetDetailedChildren).is_err() {
-                        error!("BUG: failed to send GetDetailedChildren request to space room list loop for space {space_id}");
+                        error!("BUG: failed to send GetDetailedChildren request to space room list loop for space {space_name_id}");
                     }
                 }
                 SpaceRequest::GetSpaceDetails { space_id } => {
@@ -758,12 +759,13 @@ impl SpaceRoomExt for SpaceRoom {
 
 /// A loop that listens for changes to the set of rooms in a given space.
 async fn space_room_list_loop(
-    space_id: OwnedRoomId,
+    space_name_id: RoomNameId,
     parent_chain: ParentChain,
     mut receiver: UnboundedReceiver<SpaceRoomListRequest>,
     space_room_list: SpaceRoomList,
     request_sender: UnboundedSender<SpaceRequest>,
 ) {
+    let space_id = space_name_id.room_id().clone();
     // Define a closure that calls `paginate()` and broadcasts the result.
     let paginate_once = async || match space_room_list.paginate().await {
         Ok(()) => Cx::post_action(SpaceRoomListAction::PaginationState {
@@ -772,7 +774,7 @@ async fn space_room_list_loop(
             state: space_room_list.pagination_state(),
         }),
         Err(error) => Cx::post_action(SpaceRoomListAction::PaginationError {
-            space_id: space_id.clone(),
+            space_name_id: space_name_id.clone(),
             error,
         }),
     };
@@ -914,7 +916,10 @@ fn handle_subspaces<'a>(
             npc
         };
         if request_sender.send(SpaceRequest::SubscribeToSpaceRoomList {
-            space_id: sr.room_id.clone(),
+            space_name_id: RoomNameId::new(
+                matrix_sdk::RoomDisplayName::Named(sr.display_name.clone()),
+                sr.room_id.clone(),
+            ),
             parent_chain: new_parent_chain,
         }).is_err() {
             error!("BUG: failed to send subscribe request to nested/subspace {}.", sr.room_id);
@@ -938,6 +943,17 @@ fn space_children_to_hash_sets(
         }
     }
     (Arc::new(direct_child_rooms), Arc::new(direct_subspaces))
+}
+
+/// The latter half of an error message explaining why we couldn't list a space's rooms.
+pub fn stringify_space_pagination_error(error: &matrix_sdk::Error) -> &'static str {
+    match error.client_api_error_kind() {
+        Some(ErrorKind::Forbidden) => "you're not a member of it, and its server doesn't allow non-members to preview it.",
+        Some(ErrorKind::NotFound) => "the homeserver doesn't know about this space.",
+        Some(ErrorKind::InvalidParam) => "our place in this space's room list expired.",
+        Some(ErrorKind::Unrecognized) => "your homeserver doesn't support listing the rooms in a space.",
+        _ => stringify_matrix_error(error),
+    }
 }
 
 /// Actions emitted from the SpaceRoomList for a given space.
@@ -964,7 +980,7 @@ pub enum SpaceRoomListAction {
     /// There was an error in the background pagination process that was fetching
     /// the list of rooms in the given space.
     PaginationError {
-        space_id: OwnedRoomId,
+        space_name_id: RoomNameId,
         error: matrix_sdk::Error,
     },
     /// Detailed information about all direct children in the given space.
@@ -1012,9 +1028,9 @@ impl std::fmt::Debug for SpaceRoomListAction {
                     .field("state", state)
                     .finish()
             }
-            SpaceRoomListAction::PaginationError { space_id, error } => {
+            SpaceRoomListAction::PaginationError { space_name_id, error } => {
                 f.debug_struct("SpaceRoomListAction::PaginationError")
-                    .field("space_id", space_id)
+                    .field("space_name_id", space_name_id)
                     .field("error", error)
                     .finish()
             }
