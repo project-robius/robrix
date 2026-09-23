@@ -38,6 +38,8 @@ script_mod! {
         width: Fill, height: #(ROW_HEIGHT), flow: Right, spacing: 9, align: Align{y: 0.5}
         padding: Inset{left: 10, right: 10}
         show_bg: true, cursor: MouseCursor.Hand
+        // Tapping a row shouldn't take key focus away from a text input.
+        grab_key_focus: false
         draw_bg +: { color: #00000000, border_radius: 5.0 }
         avatar := Avatar { width: 30, height: 30 }
         info := View {
@@ -96,6 +98,8 @@ script_mod! {
                 width: Fill, height: Fill
                 flow: Down
                 show_bg: true
+                cursor: MouseCursor.Default
+                grab_key_focus: false
                 draw_bg +: {
                     color: (COLOR_PRIMARY)
                     border_radius: 5.0
