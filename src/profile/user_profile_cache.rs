@@ -362,6 +362,7 @@ pub fn clear_user_profile_cache(_cx: &mut Cx) {
 #[cfg(test)]
 mod tests_room_member_entry {
     use super::*;
+    use crate::shared::avatar::AvatarState;
     use matrix_sdk::ruma::{room_id, user_id};
 
     fn loaded_entry(rooms: BTreeMap<OwnedRoomId, RoomMemberEntry>) -> UserProfileCacheEntry {

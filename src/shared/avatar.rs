@@ -408,7 +408,7 @@ impl Avatar {
     /// Returns `false` if the image is still being fetched, in which case call this again later.
     pub fn show_user(&mut self, cx: &mut Cx, avatar_url: Option<&OwnedMxcUri>, name: &str) -> bool {
         // A reused avatar may have had another background color, e.g., for a room.
-        let fully_drawn = match avatar_url.map(|mxc| (mxc, avatar_cache::get_or_fetch_avatar(cx, mxc))) {
+        match avatar_url.map(|mxc| (mxc, avatar_cache::get_or_fetch_avatar(cx, mxc))) {
             Some((mxc, AvatarCacheEntry::Loaded(data))) => {
                 let image = AvatarImage::from((mxc.clone(), data));
                 if self.show_image(cx, None, |cx, img| utils::load_avatar_image(&img, cx, &image)).is_ok() {
@@ -431,8 +431,7 @@ impl Avatar {
                 self.show_text(cx, Some(COLOR_AVATAR_BG), None, name);
                 true
             }
-        };
-        fully_drawn
+        }
     }
 }
 
