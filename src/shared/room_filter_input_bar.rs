@@ -171,9 +171,14 @@ impl RoomFilterInputBarRef {
 
     /// Clears the filter text (ending any dictation into it) without emitting a `Changed` action.
     pub fn clear(&self, cx: &mut Cx) {
+        self.set_text(cx, "");
+    }
+
+    /// Sets the filter text (ending any dictation into it) without emitting a `Changed` action.
+    pub fn set_text(&self, cx: &mut Cx, text: &str) {
         let Some(inner) = self.borrow() else { return };
-        inner.speech_text_input(cx, ids!(input)).set_text(cx, "");
-        inner.button(cx, ids!(clear_button)).set_visible(cx, false);
+        inner.speech_text_input(cx, ids!(input)).set_text(cx, text);
+        inner.button(cx, ids!(clear_button)).set_visible(cx, !text.is_empty());
     }
 }
 

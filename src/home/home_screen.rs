@@ -5,12 +5,13 @@ use crate::{
     home::{
         invite_screen::InviteScreenWidgetRefExt,
         navigation_tab_bar::{NavigationBarAction, SelectedTab},
+        room_pane_screen::{RoomPaneScreenAction, RoomPaneScreenWidgetRefExt},
         room_screen::RoomScreenWidgetRefExt,
         rooms_list::{AcceptedInviteKind, RoomsListAction},
         space_lobby::SpaceLobbyScreenWidgetRefExt,
         spaces_bar::SpacesBarAction,
     },
-    room::room_action_bar::{RoomActionBarAction, RoomActionBarWidgetRefExt},
+    room::{room_action_bar::{RoomActionBarAction, RoomActionBarWidgetRefExt}, room_pane::{self, RoomPaneKind}},
     settings::{
         app_preferences::{AppPreferencesGlobal, AppPreferencesAction, ViewModeOverride},
         settings_screen::SettingsScreenWidgetRefExt,
@@ -336,6 +337,12 @@ script_mod! {
                                 space_lobby_screen := mod.widgets.SpaceLobbyScreen {}
                             }
                         }
+
+                        RoomPaneStackNavigationView := mod.widgets.RobrixStackNavigationView {
+                            body +: {
+                                room_pane_screen := mod.widgets.RoomPaneScreen {}
+                            }
+                        }
                     }
                 }
             }
@@ -559,7 +566,13 @@ impl Widget for HomeScreen {
                 // while mobile owns StackNavigation screen pushes here.
                 match action.as_widget_action().cast() {
                     RoomsListAction::Selected(selected_room) if !effective_is_desktop(cx) => {
-                        self.push_selected_screen_view(cx, app_state, selected_room);
+                        self.push_selected_screen_view(cx, app_state, selected_room.clone());
+                        // A pane that couldn't be popped out (e.g., mid-transition) is returned its timeline.
+                        if let SelectedRoom::RoomPane { room_name_id, kind } = &selected_room
+                            && app_state.selected_room.as_ref() != Some(&selected_room)
+                        {
+                            room_pane::dock_when_shown(cx, room_pane::popped_out_from(room_name_id.room_id(), *kind), *kind);
+                        }
                     }
                     // On desktop, `MainDesktopUI` handles this, so we only need to update this in mobile view mode.
                     RoomsListAction::InviteAccepted { room_name_id, kind } if !effective_is_desktop(cx) => {
@@ -576,6 +589,27 @@ impl Widget for HomeScreen {
                 if let StackNavigationTransitionAction::ViewReleased(view_id) = action.as_widget_action().cast() {
                     let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
                     self.hide_screen_in_released_stack_view(cx, &stack_navigation, view_id);
+                }
+
+                // In mobile view mode, the room action bar is in the stack nav header (outside the RoomScreen),
+                // so we have to forward a pane button click to its RoomScreen in the same stack view.
+                if let RoomActionBarAction::TogglePane(kind) = action.as_widget_action().cast() {
+                    let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
+                    for view_id in stack_navigation.dynamic_stack_view_ids() {
+                        let stack_view = stack_navigation.view_by_id(cx, view_id);
+                        let header = stack_view.room_action_bar(cx, ids!(header.content));
+                        if action.as_widget_action().widget_uid_eq(header.widget_uid()).is_some() {
+                            stack_view.room_screen(cx, ids!(room_screen)).toggle_room_pane(cx, kind);
+                            break;
+                        }
+                    }
+                }
+
+                // Handle a popped-out room pane being returned to its room: we must show that room.
+                if let RoomPaneScreenAction::ReturnToRoom { room_name_id, kind } = action.as_widget_action().cast()
+                    && !effective_is_desktop(cx)
+                {
+                    self.return_to_room_from_pane(cx, app_state, room_name_id, kind);
                 }
 
                 if let RoomActionBarAction::LayoutChanged { new_height } = action.as_widget_action().cast() {
@@ -748,7 +782,7 @@ impl HomeScreen {
                 };
                 Self::hide_displayed_stack_screen(cx, &stack_navigation_view);
                 stack_navigation_view.room_action_bar(cx, ids!(header.content))
-                    .set_expanded(cx, false);
+                    .set_expanded(cx, false, false);
                 Self::set_mobile_stack_header_height(cx, &stack_navigation_view, 45.0);
                 let thread_root = if let SelectedRoom::Thread { thread_root_event_id, .. } = selected_screen {
                     Some(thread_root_event_id.clone())
@@ -784,6 +818,19 @@ impl HomeScreen {
                 stack_navigation_view
                     .space_lobby_screen(cx, ids!(space_lobby_screen))
                     .set_displayed_space(cx, space_name_id);
+                view_id
+            }
+            SelectedRoom::RoomPane { room_name_id, kind } => {
+                let Some((view_id, stack_navigation_view)) =
+                    stack_navigation.create_view_from_template(cx, id!(RoomPaneStackNavigationView))
+                else {
+                    error!("BUG: failed to create mobile RoomPaneScreen StackNavigationView");
+                    return None;
+                };
+                Self::hide_displayed_stack_screen(cx, &stack_navigation_view);
+                stack_navigation_view
+                    .room_pane_screen(cx, ids!(room_pane_screen))
+                    .set_displayed(cx, room_name_id, *kind);
                 view_id
             }
         };
@@ -834,6 +881,9 @@ impl HomeScreen {
         stack_navigation_view
             .space_lobby_screen(cx, ids!(space_lobby_screen))
             .hide_displayed_space(cx);
+        stack_navigation_view
+            .room_pane_screen(cx, ids!(room_pane_screen))
+            .hide_displayed(cx);
     }
 
     /// Pushes the given screen onto the mobile screen history and animates it in.
@@ -917,6 +967,34 @@ impl HomeScreen {
         }
         for room in &mut self.mobile_screen_history {
             room.upgrade_invite_to_joined(room_id, is_space);
+        }
+    }
+
+    /// Returns the current popped-out room pane screen to its parent room's screen,
+    /// and docks that pane in that room screen.
+    fn return_to_room_from_pane(&mut self, cx: &mut Cx, app_state: &mut AppState, room_name_id: RoomNameId, kind: RoomPaneKind) {
+        let Some(pane_screen @ SelectedRoom::RoomPane { .. }) = app_state.selected_room.clone() else { return };
+        // We can't navigate during a transition, so the user can just try again.
+        if self.view.stack_navigation(cx, ids!(view_stack)).is_transitioning() {
+            return;
+        }
+        let timeline_kind = room_pane::popped_out_from(room_name_id.room_id(), kind);
+        let screen = room_pane::timeline_screen(&room_name_id, &timeline_kind);
+        room_pane::dock_when_shown(cx, timeline_kind, kind);
+        // The pane was usually popped out of the room (or thread) right beneath it.
+        let is_screen_beneath = self.mobile_screen_history.last().is_some_and(|prev|
+            prev == &screen && std::mem::discriminant(prev) == std::mem::discriminant(&screen)
+        );
+        if is_screen_beneath {
+            self.pop_selected_screen_view(cx, app_state);
+            return;
+        }
+        self.push_selected_screen_view(cx, app_state, screen);
+        // Don't return to the replaced pane screen when going back.
+        if app_state.selected_room.as_ref() != Some(&pane_screen)
+            && self.mobile_screen_history.last() == Some(&pane_screen)
+        {
+            self.mobile_screen_history.pop();
         }
     }
 

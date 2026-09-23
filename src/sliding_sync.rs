@@ -14,7 +14,7 @@ use matrix_sdk::{
             receipt::{ReceiptThread, ReceiptType as ReceiptEventType},
             relation::RelationType,
             room::{
-                encrypted::Relation as EncryptedRelation, message::{MessageType, Relation, RoomMessageEventContent, TextMessageEventContent}, power_levels::RoomPowerLevels, redaction::SyncRoomRedactionEvent, MediaSource
+                encrypted::Relation as EncryptedRelation, message::{MessageType, Relation, RoomMessageEventContent, TextMessageEventContent}, power_levels::{RoomPowerLevels, SyncRoomPowerLevelsEvent}, redaction::SyncRoomRedactionEvent, MediaSource
             }, AnyMessageLikeEventContent, AnySyncMessageLikeEvent, AnySyncTimelineEvent, MessageLikeEventType, StateEventType
         }, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedTransactionId, OwnedUserId, RoomOrAliasId, TransactionId, UserId, serde::Raw, uint
     }, send_queue::{LocalEcho, LocalEchoContent, RoomSendQueueUpdate, SendQueueUpdate}, sliding_sync::VersionBuilder, Client, ClientBuildError, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
@@ -42,7 +42,7 @@ use crate::{
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
-    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, settings::account_settings::AccountManagementUrl, shared::{
+    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction, room_members_list::{RoomMembersChanged, RoomMembersFetchAction}}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, settings::account_settings::AccountManagementUrl, shared::{
         attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, FileUploadMetadata}, jump_to_bottom_button::UnreadMessageCount, mention_popup::{MentionItem, RoomMentionCandidate}, mentionable_text_input::MentionMatches, popup_list::{PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
@@ -585,8 +585,18 @@ pub enum MatrixRequest {
     GetRoomMembers {
         timeline_kind: TimelineKind,
         memberships: RoomMemberships,
-        /// * If `true` (not recommended), only the local cache will be accessed.
-        /// * If `false` (recommended), details will be fetched from the server.
+        /// * If `true`, only the local cache will be accessed.
+        /// * If `false`, the local members are sent first, and then if some might've been missing,
+        ///   all members are fetched from the server and sent again.
+        local_only: bool,
+    },
+    /// Request to get a room's joined and invited members for a popped-out room members pane,
+    /// which has no timeline to get them via [`MatrixRequest::GetRoomMembers`].
+    ///
+    /// The result is posted as a [`RoomMembersFetchAction`].
+    GetRoomMembersList {
+        room_id: OwnedRoomId,
+        /// See [`MatrixRequest::GetRoomMembers::local_only`].
         local_only: bool,
     },
     /// Request to fetch the preview (basic info) for the given room,
@@ -1406,30 +1416,49 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::GetRoomMembers { timeline_kind, memberships, local_only } => {
+                // This can race with the room being left, so it's not a bug.
                 let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
-                    log!("BUG: {timeline_kind} not found for get room members request");
+                    log!("Ignoring get room members request for {timeline_kind}, which no longer exists");
                     continue;
                 };
 
                 let _get_members_task = Handle::current().spawn(async move {
-                    let send_update = |members: Vec<matrix_sdk::room::RoomMember>, source: &str| {
-                        log!("{} {} members for {timeline_kind}", source, members.len());
-                        if sender.send(TimelineUpdate::RoomMembersListFetched { members }).is_err() {
+                    fetch_room_members(timeline.room(), memberships, local_only, |result| {
+                        let update = match result {
+                            Ok(members) => {
+                                log!("Got {} members for {timeline_kind}", members.len());
+                                TimelineUpdate::RoomMembersListFetched { members }
+                            }
+                            Err(error) => {
+                                error!("Failed to get members for {timeline_kind}: {error}");
+                                TimelineUpdate::RoomMembersListFetchFailed { error }
+                            }
+                        };
+                        if sender.send(update).is_err() {
                             error!("Failed to send fetched room members to UI for {timeline_kind}");
                         }
                         SignalToUI::set_ui_signal();
-                    };
+                    }).await;
+                });
+            }
 
-                    let room = timeline.room();
-                    if local_only {
-                        if let Ok(members) = room.members_no_sync(memberships).await {
-                            send_update(members, "Got");
-                        }
-                    } else {
-                        if let Ok(members) = room.members(memberships).await {
-                            send_update(members, "Successfully fetched");
-                        }
-                    }
+            MatrixRequest::GetRoomMembersList { room_id, local_only } => {
+                let Some(client) = get_client() else { continue };
+                let _get_members_task = Handle::current().spawn(async move {
+                    let Some(room) = client.get_room(&room_id) else {
+                        Cx::post_action(RoomMembersFetchAction::Failed {
+                            room_id,
+                            error: String::from("room not found"),
+                        });
+                        return;
+                    };
+                    fetch_room_members(&room, RoomMemberships::ACTIVE, local_only, |result| {
+                        let room_id = room_id.clone();
+                        Cx::post_action(match result {
+                            Ok(members) => RoomMembersFetchAction::Fetched { room_id, members: Arc::new(members) },
+                            Err(error) => RoomMembersFetchAction::Failed { room_id, error },
+                        });
+                    }).await;
                 });
             }
 
@@ -1526,11 +1555,7 @@ async fn matrix_worker_task(
                             };
                             if let Ok(Some(room_member)) = member {
                                 update = Some(UserProfileUpdate::Full {
-                                    new_profile: UserProfile {
-                                        username: room_member.display_name().map(|u| u.to_owned()),
-                                        user_id: user_id.clone(),
-                                        avatar_state: AvatarState::Known(room_member.avatar_url().map(|u| u.to_owned())),
-                                    },
+                                    new_profile: UserProfile::from(&room_member),
                                     room_id: room_id.to_owned(),
                                     room_member,
                                 });
@@ -3457,6 +3482,10 @@ struct RoomListServiceRoomInfo {
     alt_aliases: Vec<OwnedRoomAliasId>,
     /// Only ever set for invited rooms.
     inviter_info: Option<InviterInfo>,
+    num_joined_members: u64,
+    num_invited_members: u64,
+    /// Whether all of this room's members are fully available in the local store.
+    members_synced: bool,
     room: matrix_sdk::Room,
 }
 impl RoomListServiceRoomInfo {
@@ -3510,6 +3539,9 @@ impl RoomListServiceRoomInfo {
             canonical_alias: room.canonical_alias(),
             alt_aliases: room.alt_aliases(),
             inviter_info,
+            num_joined_members: room.joined_members_count(),
+            num_invited_members: room.invited_members_count(),
+            members_synced: room.are_members_synced(),
             room,
         }
     }
@@ -3691,6 +3723,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             // Listen for session changes, e.g., when the access token becomes invalid.
             handle_session_changes(client.clone()),
         ];
+        add_room_member_event_handlers(&client);
 
         Cx::post_action(LoginAction::Status {
             title: "Connecting".into(),
@@ -4198,6 +4231,39 @@ async fn optimize_remove_then_add_into_update(
 
 
 /// Invoked when the room list service has received an update that changes an existing room.
+async fn fetch_room_members(
+    room: &Room,
+    memberships: RoomMemberships,
+    local_only: bool,
+    send: impl Fn(Result<Vec<matrix_sdk::room::RoomMember>, String>),
+) {
+    send(room.members_no_sync(memberships).await.map_err(|e| e.to_string()));
+    if !local_only && !room.are_members_synced() {
+        match room.sync_members().await {
+            Ok(()) => send(room.members_no_sync(memberships).await.map_err(|e| e.to_string())),
+            Err(e) => send(Err(e.to_string())),
+        }
+    }
+}
+
+/// Refreshes any shown list of a room's members when one of them or their power level changes,
+/// including a list shown without an open timeline for that room.
+fn add_room_member_event_handlers(client: &Client) {
+    // Only member events in the timeline are changes: lazy-loaded members (e.g., of a message's sender)
+    // arrive in the state section, which this handler doesn't see.
+    client.add_event_handler(|ev: Raw<AnySyncTimelineEvent>, room: Room| async move {
+        if let Ok(Some(event_type)) = ev.get_field::<String>("type")
+            && event_type == "m.room.member"
+        {
+            Cx::post_action(RoomMembersChanged { room_id: room.room_id().to_owned() });
+        }
+    });
+    // Power levels can change in either section, e.g., in the state section after a gap in the sync.
+    client.add_event_handler(|_ev: SyncRoomPowerLevelsEvent, room: Room| async move {
+        Cx::post_action(RoomMembersChanged { room_id: room.room_id().to_owned() });
+    });
+}
+
 async fn update_room(
     old_room: &RoomListServiceRoomInfo,
     new_room: &RoomListServiceRoomInfo,
@@ -4262,6 +4328,18 @@ async fn update_room(
             enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
                 new_room_name: (new_room.display_name.clone(), new_room_id.clone()).into(),
             });
+        }
+
+        // Refresh any shown list of this room's members, including one without an open timeline,
+        // when its counts change, or when a gap in the sync may have left members missing.
+        // (A shown list re-syncs them, so this isn't repeated until the next such update.)
+        let may_miss_members = !new_room.members_synced && (old_room.members_synced
+            || old_room.latest_event_timestamp != new_room.latest_event_timestamp);
+        if may_miss_members
+            || old_room.num_joined_members != new_room.num_joined_members
+            || old_room.num_invited_members != new_room.num_invited_members
+        {
+            Cx::post_action(RoomMembersChanged { room_id: new_room_id.clone() });
         }
 
         // An invited room will often arrive before we get its room creation event,

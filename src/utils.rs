@@ -4,7 +4,7 @@ use url::Url;
 
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
-use makepad_widgets::{error, log, Cx, Event, ImageRef, image_cache::{looks_like_svg, ImageError}};
+use makepad_widgets::{error, log, Align, Cx, DrawText, Event, ImageRef, image_cache::{looks_like_svg, ImageError}};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, RoomId}, RoomDisplayName};
 use matrix_sdk_ui::timeline::{EventTimelineItem, PaginationError, TimelineDetails};
 
@@ -142,6 +142,19 @@ pub fn is_supported_avatar_mimetype(mimetype: &str) -> bool {
             | "image/avif"
     )
 }
+
+/// Returns the width of the given text laid out by the given `DrawText` on one unwrapped line.
+pub fn unwrapped_text_width(cx: &mut Cx, draw_text: &DrawText, text: &str) -> f64 {
+    draw_text.layout(cx, 0.0, 0.0, None, false, Align::default(), text).size_in_lpxs.width as f64
+        * draw_text.font_scale as f64
+}
+
+/// Returns the height of one line of text laid out by the given `DrawText`.
+pub fn text_line_height(cx: &mut Cx, draw_text: &DrawText) -> f64 {
+    draw_text.layout(cx, 0.0, 0.0, None, false, Align::default(), "M").size_in_lpxs.height as f64
+        * draw_text.font_scale as f64
+}
+
 
 /// Loads the given fetched avatar into the given `ImageRef`.
 pub fn load_avatar_image(

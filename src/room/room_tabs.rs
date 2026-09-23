@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use makepad_widgets::*;
 use makepad_widgets::makepad_platform::event::{ScrollPhase, finger::TAP_COUNT_DISTANCE};
-use crate::app::SelectedRoom;
+use crate::{app::SelectedRoom, utils};
 use super::{room_action_bar::RoomActionBarWidgetRefExt, room_tab_hover_card::RoomTabHoverCardWidgetExt};
 
 script_mod! {
@@ -107,7 +107,7 @@ impl RoomTabs {
 
     /// Recalculates and updates each tab's width and padding.
     ///
-    /// Each tab is resized to fit its room name and buttons, up to a max of 260px wide,
+    /// Each tab is resized to fit its room name and buttons, up to a max of 275px wide,
     /// and requests a redraw for any tabs that actually changed.
     ///
     /// Returns `true` if any tab's width or padding changed, or `false` otherwise.
@@ -122,10 +122,8 @@ impl RoomTabs {
                 } else {
                     9.0
                 };
-                let title_width = self.tab_title_measure.layout(
-                    cx, 0.0, 0.0, None, false, Align::default(), &room.display_name(),
-                ).size_in_lpxs.width as f64 * self.tab_title_measure.font_scale as f64;
-                let width = (38.0 + title_width.ceil() + right).min(260.0);
+                let title_width = utils::unwrapped_text_width(cx, &self.tab_title_measure, &room.display_name());
+                let width = (38.0 + title_width.ceil() + right).min(275.0);
                 if !matches!(tab.walk.width, Size::Fixed(value) if value == width)
                     || tab.layout.padding.left != 38.0
                     || tab.layout.padding.right != right

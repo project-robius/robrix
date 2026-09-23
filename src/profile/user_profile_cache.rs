@@ -7,7 +7,7 @@ use makepad_widgets::{warning, Cx, SignalToUI};
 use matrix_sdk::{room::RoomMember, ruma::{OwnedRoomId, OwnedUserId, UserId}};
 use std::{cell::RefCell, collections::{btree_map::Entry, BTreeMap}};
 
-use crate::{shared::avatar::AvatarState, sliding_sync::{submit_async_request, MatrixRequest}};
+use crate::sliding_sync::{submit_async_request, MatrixRequest};
 
 use super::user_profile::UserProfile;
 
@@ -45,6 +45,36 @@ impl RoomMemberEntry {
         match self {
             RoomMemberEntry::Loaded(member) => Some(member),
             RoomMemberEntry::Requested | RoomMemberEntry::Failed => None,
+        }
+    }
+}
+
+/// Inserts already-known room member info for the given room into the cache.
+///
+/// If the user's profile isn't yet cached, it's derived from that room member info.
+pub fn insert_room_member(_cx: &mut Cx, room_id: OwnedRoomId, room_member: RoomMember) {
+    USER_PROFILE_CACHE.with_borrow_mut(|cache| insert_loaded_member(cache, room_id, room_member, |m| UserProfile::from(m)));
+}
+
+/// Inserts the given room member into its user's cache entry, first creating that entry
+/// with the profile from `new_profile` if it isn't loaded yet.
+fn insert_loaded_member(
+    cache: &mut BTreeMap<OwnedUserId, UserProfileCacheEntry>,
+    room_id: OwnedRoomId,
+    room_member: RoomMember,
+    new_profile: impl FnOnce(&RoomMember) -> UserProfile,
+) {
+    let entry = cache.entry(room_member.user_id().to_owned())
+        .or_insert(UserProfileCacheEntry::Requested);
+    match entry {
+        UserProfileCacheEntry::Loaded { rooms, .. } => {
+            rooms.insert(room_id, RoomMemberEntry::Loaded(room_member));
+        }
+        UserProfileCacheEntry::Requested => {
+            *entry = UserProfileCacheEntry::Loaded {
+                user_profile: new_profile(&room_member),
+                rooms: BTreeMap::from([(room_id, RoomMemberEntry::Loaded(room_member))]),
+            };
         }
     }
 }
@@ -143,45 +173,11 @@ impl UserProfileUpdate {
                 }
             }
             UserProfileUpdate::RoomMemberOnly { room_id, room_member } => {
-                match cache.entry(room_member.user_id().to_owned()) {
-                    Entry::Occupied(mut entry) => match entry.get_mut() {
-                        e @ UserProfileCacheEntry::Requested => {
-                            // This shouldn't happen, but we can still technically handle it correctly.
-                            warning!("BUG: User profile cache entry was `Requested` for user {} when handling RoomMemberOnly update", room_member.user_id());
-                            *e = UserProfileCacheEntry::Loaded {
-                                user_profile: UserProfile {
-                                    user_id: room_member.user_id().to_owned(),
-                                    username: None,
-                                    avatar_state: AvatarState::Known(room_member.avatar_url().map(|url| url.to_owned())),
-                                },
-                                rooms: {
-                                    let mut room_members_map = BTreeMap::new();
-                                    room_members_map.insert(room_id, RoomMemberEntry::Loaded(room_member));
-                                    room_members_map
-                                },
-                            };
-                        }
-                        UserProfileCacheEntry::Loaded { rooms, .. } => {
-                            rooms.insert(room_id, RoomMemberEntry::Loaded(room_member));
-                        }
-                    }
-                    Entry::Vacant(entry) => {
-                        // This shouldn't happen, but we can still technically handle it correctly.
-                        warning!("BUG: User profile cache entry not found for user {} when handling RoomMemberOnly update", room_member.user_id());
-                        entry.insert(UserProfileCacheEntry::Loaded {
-                            user_profile: UserProfile {
-                                user_id: room_member.user_id().to_owned(),
-                                username: None,
-                                avatar_state: AvatarState::Known(room_member.avatar_url().map(|url| url.to_owned())),
-                            },
-                            rooms: {
-                                let mut room_members_map = BTreeMap::new();
-                                room_members_map.insert(room_id, RoomMemberEntry::Loaded(room_member));
-                                room_members_map
-                            },
-                        });
-                    }
-                }
+                insert_loaded_member(cache, room_id, room_member, |member| {
+                    // This shouldn't happen, but we can still technically handle it correctly.
+                    warning!("BUG: User profile cache entry was missing or `Requested` for user {} when handling RoomMemberOnly update", member.user_id());
+                    UserProfile { username: None, ..UserProfile::from(member) }
+                });
             }
             UserProfileUpdate::UserProfileOnly(new_profile) => {
                 match cache.entry(new_profile.user_id.clone()) {
@@ -366,6 +362,7 @@ pub fn clear_user_profile_cache(_cx: &mut Cx) {
 #[cfg(test)]
 mod tests_room_member_entry {
     use super::*;
+    use crate::shared::avatar::AvatarState;
     use matrix_sdk::ruma::{room_id, user_id};
 
     fn loaded_entry(rooms: BTreeMap<OwnedRoomId, RoomMemberEntry>) -> UserProfileCacheEntry {

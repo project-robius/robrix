@@ -16,6 +16,7 @@ use ruma::OwnedMxcUri;
 use crate::{
     avatar_cache::{self, AvatarCacheEntry},
     profile::{user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, user_profile_cache},
+    shared::styles::COLOR_AVATAR_BG,
     sliding_sync::{submit_async_request, MatrixRequest, TimelineKind},
     utils,
 };
@@ -204,17 +205,22 @@ impl Avatar {
             self.view.cursor = Some(MouseCursor::Hand);
         } else {
             self.info = None;
-            self.view.cursor = Some(MouseCursor::Default);
+            // Without a cursor, this avatar leaves clicks and hovers to its parent, e.g., a list row.
+            self.view.cursor = None;
         }
         self.set_text(cx, username.as_ref());
 
         // Apply background color if provided
         if let Some(bgc) = bg_color {
-            let mut text_view = self.view(cx, ids!(text_view));
-            script_apply_eval!(cx, text_view, {
-                draw_bg.color: #(bgc)
-            });
+            self.set_text_bg_color(cx, bgc);
         }
+    }
+
+    fn set_text_bg_color(&mut self, cx: &mut Cx, color: Vec4) {
+        let mut text_view = self.view(cx, ids!(text_view));
+        script_apply_eval!(cx, text_view, {
+            draw_bg.color: #(color)
+        });
     }
 
     /// Sets the image content of this avatar, making the image visible
@@ -261,7 +267,8 @@ impl Avatar {
                 self.view.cursor = Some(MouseCursor::Hand);
             } else {
                 self.info = None;
-                self.view.cursor = Some(MouseCursor::Default);
+                // Without a cursor, this avatar leaves clicks and hovers to its parent, e.g., a list row.
+                self.view.cursor = None;
             }
         }
         res
@@ -394,9 +401,46 @@ impl Avatar {
         });
         (username, profile_drawn)
     }
+
+    /// Shows the given user's avatar image once it's fetched, and otherwise the first letter of their name.
+    ///
+    /// This avatar isn't clickable, so clicks on it go to its parent, e.g., a list row.
+    /// Returns `false` if the image is still being fetched, in which case call this again later.
+    pub fn show_user(&mut self, cx: &mut Cx, avatar_url: Option<&OwnedMxcUri>, name: &str) -> bool {
+        // A reused avatar may have had another background color, e.g., for a room.
+        match avatar_url.map(|mxc| (mxc, avatar_cache::get_or_fetch_avatar(cx, mxc))) {
+            Some((mxc, AvatarCacheEntry::Loaded(data))) => {
+                let image = AvatarImage::from((mxc.clone(), data));
+                if self.show_image(cx, None, |cx, img| utils::load_avatar_image(&img, cx, &image)).is_ok() {
+                    // While the image is being decoded, show the text avatar as the placeholder.
+                    // (Toggling visibility on every call would redraw the whole window.)
+                    if self.display_state == AvatarDisplayState::ImageLoading {
+                        self.set_text_label(cx, name);
+                        self.set_text_bg_color(cx, COLOR_AVATAR_BG);
+                    }
+                } else {
+                    self.show_text(cx, Some(COLOR_AVATAR_BG), None, name);
+                }
+                true
+            }
+            Some((_, AvatarCacheEntry::Requested)) => {
+                self.show_text(cx, Some(COLOR_AVATAR_BG), None, name);
+                false
+            }
+            Some((_, AvatarCacheEntry::Failed)) | None => {
+                self.show_text(cx, Some(COLOR_AVATAR_BG), None, name);
+                true
+            }
+        }
+    }
 }
 
 impl AvatarRef {
+    /// See [`Avatar::show_user()`].
+    pub fn show_user(&self, cx: &mut Cx, avatar_url: Option<&OwnedMxcUri>, name: &str) -> bool {
+        self.borrow_mut().is_none_or(|mut inner| inner.show_user(cx, avatar_url, name))
+    }
+
     /// See [`Avatar::show_text()`].
     pub fn show_text<T: AsRef<str>>(
         &self,

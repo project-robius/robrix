@@ -17,7 +17,7 @@ use crate::{
         event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
     }, join_leave_room_modal::{
         JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
-    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence::{self, WindowGeomTracker}, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, settings::{app_preferences::{AppPreferences, UiZoom}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence::{self, WindowGeomTracker}, profile::user_profile_cache::clear_user_profile_cache, room::{BasicRoomDetails, room_pane::{self, PaneLayout, RoomPaneKind}}, settings::{app_preferences::{AppPreferences, UiZoom}, encryption_settings::{EncryptionModalAction, EncryptionModalWidgetRefExt}}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, menu_position_margin}, image_viewer::{ImageViewerAction, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}, speech_text_input::cancel_all_dictation}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, RecoveryAction, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
         VerificationModalAction,
         VerificationModalWidgetRefExt,
     }
@@ -450,6 +450,7 @@ impl MatchEvent for App {
                     let logged_in_actual = self.app_state.logged_in;
                     self.app_state = app_state.clone();
                     self.app_state.logged_in = logged_in_actual;
+                    room_pane::restore_saved_layout(self.app_state.room_pane_layout);
                     // Broadcast the restored preferences first so listeners
                     // (e.g. the Dock's captured `room_screen` template) are
                     // refreshed before `LoadDockFromAppState` instantiates
@@ -685,6 +686,7 @@ impl MatchEvent for App {
 /// Clears all thread-local UI caches (user profiles, invited rooms, and timeline states).
 /// The `cx` parameter ensures that these thread-local caches are cleared on the main UI thread, 
 fn clear_all_app_state(cx: &mut Cx) {
+    room_pane::clear_all();
     clear_user_profile_cache(cx);
     clear_all_invited_rooms(cx);
     clear_timeline_states(cx);
@@ -944,6 +946,7 @@ impl App {
             return;
         };
 
+        self.app_state.room_pane_layout = room_pane::saved_layout();
         let app_state_json = match persistence::serialize_app_state(&self.app_state) {
             Ok(bytes) => bytes,
             Err(e) => {
@@ -1115,6 +1118,9 @@ pub struct AppState {
     /// App-wide user preferences/settings.
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub app_prefs: AppPreferences,
+    /// The layout that the user last chose for docked room panes.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    pub room_pane_layout: Option<PaneLayout>,
 }
 
 /// A snapshot of the main dock: all state needed to restore the dock tabs/layout.
@@ -1135,11 +1141,13 @@ pub struct SavedDockState {
 /// Represents a room currently or previously selected by the user.
 ///
 /// ## PartialEq/Eq equality comparison behavior
-/// Room/Space names are ignored for the purpose of equality comparison.
-/// Two `SelectedRoom`s are considered equal if their `room_id`s are equal,
-/// unless they are `Thread`s,` in which case their `thread_root_event_id`s
-/// are also compared for equality.
-/// A `Thread` is never considered equal to a non-`Thread`, even if their `room_id`s are equal.
+/// * Room/Space names are ignored for the purpose of equality comparison.
+/// * Two `SelectedRoom`s are considered equal if their `room_id`s are equal,
+///   for `JoinedRoom`s, `InvitedRoom`s, and `Space`s.
+/// * For `Thread`s, their `thread_root_event_id`s are also compared for equality.
+/// * For `RoomPane`s, their pane `kind`s are also compared for equality.
+/// * A `Thread` is never considered equal to a non-`Thread`, and the same for a `RoomPane`,
+///   even if their `room_id`s are equal.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SelectedRoom {
     JoinedRoom {
@@ -1157,6 +1165,12 @@ pub enum SelectedRoom {
     Space {
         space_name_id: RoomNameId,
     },
+    /// An in-room pane (like its member list) that was popped out of the room screen
+    /// and is now being shown in its own dock tab or mobile stack view.
+    RoomPane {
+        room_name_id: RoomNameId,
+        kind: RoomPaneKind,
+    },
 }
 
 impl SelectedRoom {
@@ -1166,6 +1180,7 @@ impl SelectedRoom {
             SelectedRoom::InvitedRoom { room_name_id } => room_name_id.room_id(),
             SelectedRoom::Space { space_name_id } => space_name_id.room_id(),
             SelectedRoom::Thread { room_name_id, .. } => room_name_id.room_id(),
+            SelectedRoom::RoomPane { room_name_id, .. } => room_name_id.room_id(),
         }
     }
 
@@ -1175,6 +1190,7 @@ impl SelectedRoom {
             SelectedRoom::InvitedRoom { room_name_id } => room_name_id,
             SelectedRoom::Space { space_name_id } => space_name_id,
             SelectedRoom::Thread { room_name_id, .. } => room_name_id,
+            SelectedRoom::RoomPane { room_name_id, .. } => room_name_id,
         }
     }
 
@@ -1205,7 +1221,8 @@ impl SelectedRoom {
         let (SelectedRoom::JoinedRoom { room_name_id }
             | SelectedRoom::Thread { room_name_id, .. }
             | SelectedRoom::InvitedRoom { room_name_id }
-            | SelectedRoom::Space { space_name_id: room_name_id }) = self;
+            | SelectedRoom::Space { space_name_id: room_name_id }
+            | SelectedRoom::RoomPane { room_name_id, .. }) = self;
         if room_name_id.room_id() != new_room_name.room_id()
             || room_name_id.display_name() == new_room_name.display_name()
         {
@@ -1222,6 +1239,9 @@ impl SelectedRoom {
                 LiveId::from_str(
                     &format!("{}##{}", room_name_id.room_id(), thread_root_event_id)
                 )
+            }
+            SelectedRoom::RoomPane { room_name_id, kind } => {
+                LiveId::from_str(&format!("{}##pane:{}", room_name_id.room_id(), kind.as_str()))
             }
             other => LiveId::from_str(other.room_id().as_str()),
         }
@@ -1257,6 +1277,7 @@ impl SelectedRoom {
             SelectedRoom::InvitedRoom { room_name_id } => room_name_id.to_string(),
             SelectedRoom::Space { space_name_id } => format!("[Space] {space_name_id}"),
             SelectedRoom::Thread { room_name_id, .. } => format!("[Thread] {room_name_id}"),
+            SelectedRoom::RoomPane { room_name_id, kind } => format!("[{}] {room_name_id}", kind.title()),
         }
     }
 
@@ -1266,6 +1287,7 @@ impl SelectedRoom {
             SelectedRoom::JoinedRoom { .. } | SelectedRoom::Thread { .. } => id!(room_screen),
             SelectedRoom::InvitedRoom { .. } => id!(invite_screen),
             SelectedRoom::Space { .. } => id!(space_lobby_screen),
+            SelectedRoom::RoomPane { .. } => id!(room_pane_screen),
         }
     }
 }
@@ -1287,6 +1309,13 @@ impl PartialEq for SelectedRoom {
                     && lhs_thread_root_event_id == rhs_thread_root_event_id
             }
             (SelectedRoom::Thread { .. }, _) | (_, SelectedRoom::Thread { .. }) => false,
+            (
+                SelectedRoom::RoomPane { room_name_id: lhs_room_name_id, kind: lhs_kind },
+                SelectedRoom::RoomPane { room_name_id: rhs_room_name_id, kind: rhs_kind },
+            ) => {
+                lhs_room_name_id.room_id() == rhs_room_name_id.room_id() && lhs_kind == rhs_kind
+            }
+            (SelectedRoom::RoomPane { .. }, _) | (_, SelectedRoom::RoomPane { .. }) => false,
             _ => self.room_id() == other.room_id(),
         }
     }

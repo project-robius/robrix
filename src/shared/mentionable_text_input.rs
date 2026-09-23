@@ -12,12 +12,13 @@ use makepad_widgets::makepad_platform::event::finger::TouchState;
 use matrix_sdk::{
     room::RoomMember,
     ruma::{
-        events::Mentions,
+        events::{Mentions, room::member::MembershipState},
         OwnedRoomId, OwnedUserId,
     },
 };
 use crate::{
     home::rooms_list::RoomsListRef,
+    profile::user_profile::member_display_name,
     shared::{mention_popup::{MentionItem, MentionablePopupRef}, slash_commands::{self, SlashCommandOutcome}, speech_text_input::{SpeechTextInputRef, SpeechTextInputWidgetRefExt}},
     sliding_sync::{submit_async_request, MatrixRequest},
     utils::{self, MatchQuality},
@@ -594,10 +595,6 @@ fn contains_room_mention(text: &str) -> bool {
     })
 }
 
-fn member_display_name(member: &RoomMember) -> &str {
-    member.display_name().unwrap_or_else(|| member.user_id().as_str())
-}
-
 /// Ranks and builds all matching members.
 ///
 /// Note: run this on a bg thread, as it can be computationally expensive.
@@ -613,6 +610,8 @@ fn rank_members(
         .iter()
         .enumerate()
         .filter(|(_, m)| current_user.as_deref() != Some(m.user_id()))
+        // Invited users can't see the room's messages yet, so exclude them from being mentioned.
+        .filter(|(_, m)| matches!(m.membership(), MembershipState::Join))
         .filter_map(|(i, m)| {
             let display_lower = member_display_name(m).to_lowercase();
             let localpart_lower = m.user_id().localpart().to_lowercase();

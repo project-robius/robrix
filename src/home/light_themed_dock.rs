@@ -143,7 +143,7 @@ script_mod! {
     }
 
     mod.widgets.RobrixTab = Tab {
-        width: Fit{max: FitBound.Abs(260)}
+        width: Fit{max: FitBound.Abs(275)}
         height: Fill
 
         align: Align{x: 0.0, y: 0.5}
@@ -154,7 +154,7 @@ script_mod! {
 
         close_button: mod.widgets.RobrixTabCloseButton {}
         draw_text +: {
-            text_style: theme.font_regular {}
+            text_style: theme.font_regular {font_size: 11}
             max_lines: 1
             text_overflow: TextOverflow.Ellipsis
 
