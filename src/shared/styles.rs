@@ -48,6 +48,10 @@ script_mod! {
     mod.widgets.ICON_TRASH            = crate_resource("self://resources/icons/trash.svg")
     mod.widgets.ICON_TRIANGLE_DOWN    = crate_resource("self://resources/icons/triangle_down_fill.svg")
     mod.widgets.ICON_TRIANGLE_UP      = crate_resource("self://resources/icons/triangle_up_fill.svg")
+    mod.widgets.ICON_CARET_LEFT       = crate_resource("self://resources/icons/caret_left.svg")
+    mod.widgets.ICON_CARET_RIGHT      = crate_resource("self://resources/icons/caret_right.svg")
+    mod.widgets.ICON_CARET_UP         = crate_resource("self://resources/icons/caret_up.svg")
+    mod.widgets.ICON_CARET_DOWN       = crate_resource("self://resources/icons/caret_down.svg")
     mod.widgets.ICON_UPLOAD           = crate_resource("self://resources/icons/upload.svg")
     mod.widgets.ICON_VIEW_SOURCE      = crate_resource("self://resources/icons/view_source.svg")
     mod.widgets.ICON_WARNING          = crate_resource("self://resources/icons/warning.svg")
@@ -375,6 +379,8 @@ pub const COLOR_UNREAD_BADGE_MARKED:   Vec4 = COLOR_ROBRIX_CYAN;
 pub const COLOR_UNREAD_BADGE_MESSAGES: Vec4 = vec4(0.667, 0.667, 0.667, 1.0);
 /// #FF6e00
 pub const COLOR_UNKNOWN_ROOM_AVATAR:   Vec4 = vec4(1.0, 0.431, 0.0, 1.0);
+/// The same as `COLOR_AVATAR_BG` in the DSL above: #52B2AC
+pub const COLOR_AVATAR_BG:             Vec4 = vec4(0.322, 0.698, 0.675, 1.0);
 /// #888888
 pub const COLOR_MESSAGE_NOTICE_TEXT:   Vec4 = vec4(0.5, 0.5, 0.5, 1.0);
 /// #953800

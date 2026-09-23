@@ -8,8 +8,11 @@ use ruma::{OwnedRoomAliasId, OwnedRoomId, room::{JoinRuleSummary, RoomType}};
 use crate::shared::avatar::AvatarImage;
 use crate::utils::RoomNameId;
 
+pub mod pane_dock;
 pub mod reply_preview;
 pub mod room_action_bar;
+pub mod room_members_list;
+pub mod room_pane;
 pub mod room_tab_hover_card;
 pub mod room_tabs;
 pub mod room_input_bar;
@@ -23,6 +26,8 @@ pub fn script_mod(vm: &mut ScriptVm) {
     reply_preview::script_mod(vm);
     room_input_bar::script_mod(vm);
     typing_notice::script_mod(vm);
+    room_members_list::script_mod(vm);
+    pane_dock::script_mod(vm);
 }
 
 /// Info about a room, either partially or completely known.

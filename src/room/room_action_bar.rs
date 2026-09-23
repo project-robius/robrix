@@ -2,7 +2,8 @@
 
 use makepad_widgets::{makepad_platform::event::finger::TouchState, *};
 
-use crate::shared::popup_list::{enqueue_popup_notification, PopupKind};
+use crate::{shared::popup_list::{enqueue_popup_notification, PopupKind}, utils};
+use super::room_pane::RoomPaneKind;
 
 // currently there's a fixed number of action buttons,
 // but later we'll do that dynamically once we have more features implemented.
@@ -127,7 +128,6 @@ script_mod! {
     let RoomActionTextButton = mod.widgets.RoomActionButton {
         width: Fit
         spacing: 8
-        margin: Inset{bottom: 4}
         draw_bg +: {
             color: #xEDE8FD
             color_hover: #xE8E1FA
@@ -157,16 +157,42 @@ script_mod! {
             draw_icon.svg: ICON_CHEVRON_UP
             icon_walk: Walk{width: 17, height: 17}
         }
-        expanded_room_actions := View {
+        // Clips the expanded buttons as they slide down into view and back up out of it.
+        expanded_clip := View {
             width: Fill, height: Fit
-            flow: Flow.Right{wrap: true}
-            spacing: 4
-            padding: Inset{left: 8, right: 8, top: 8, bottom: 4}
-            room_info_button := RoomActionTextButton {draw_icon.svg: ICON_INFO}
-            room_settings_button := RoomActionTextButton {draw_icon.svg: ICON_SETTINGS}
-            room_threads_button := RoomActionTextButton {draw_icon.svg: ICON_REPLY_IN_THREAD}
-            room_members_button := RoomActionTextButton {draw_icon.svg: ICON_MEMBERS}
-            room_pinned_messages_button := RoomActionTextButton {draw_icon.svg: ICON_PIN}
+            visible: false
+            expanded_room_actions := View {
+                width: Fill, height: Fit
+                flow: Flow.Right{wrap: true}
+                // Keep the space between buttons (and rows of them) as even as the padding around them.
+                spacing: 8
+                wrap_spacing: 8
+                padding: 8
+                room_info_button := RoomActionTextButton {draw_icon.svg: ICON_INFO}
+                room_settings_button := RoomActionTextButton {draw_icon.svg: ICON_SETTINGS}
+                room_threads_button := RoomActionTextButton {draw_icon.svg: ICON_REPLY_IN_THREAD}
+                room_members_button := RoomActionTextButton {draw_icon.svg: ICON_MEMBERS}
+                room_pinned_messages_button := RoomActionTextButton {draw_icon.svg: ICON_PIN}
+            }
+        }
+
+        expand: 0.0
+        animator: Animator {
+            expand: {
+                default: @off
+                off: AnimatorState{
+                    redraw: true
+                    from: {all: Forward {duration: 0.25}}
+                    ease: Ease.ExpDecay {d1: 0.80, d2: 0.97}
+                    apply: { expand: 0.0 }
+                }
+                on: AnimatorState{
+                    redraw: true
+                    from: {all: Forward {duration: 0.25}}
+                    ease: Ease.ExpDecay {d1: 0.80, d2: 0.97}
+                    apply: { expand: 1.0 }
+                }
+            }
         }
     }
 
@@ -234,21 +260,31 @@ pub enum RoomActionBarAction {
         /// The action bar's height in logical pixels, including any expanded rows.
         new_height: f64,
     },
+    /// The user clicked the button that shows or hides the given kind of room pane.
+    TogglePane(RoomPaneKind),
     #[default]
     None,
 }
 
-#[derive(Script, Widget)]
+#[derive(Script, Widget, Animator)]
 pub struct RoomActionBar {
+    #[source] source: ScriptObjectRef,
     #[deref] view: View,
+    #[apply_default] animator: Animator,
     #[live] draw_shadow: DrawQuad,
     /// Whether we're in desktop view mode (`true`) or mobile view mode (`false`).
     #[live(true)] is_desktop_mode: bool,
-    /// Whether the full list of buttons is expanded.
+    /// Whether the full list of buttons is expanded (or is sliding into view).
     #[rust] is_expanded: bool,
+    /// How far the expanded buttons have slid into view: 0 when hidden, 1 when fully shown.
+    #[live] expand: f32,
+    /// The full height of the expanded buttons, as of when they were last drawn.
+    #[rust] expanded_height: f64,
+    /// Whether the animator must be cut to our current state, e.g., after a reapply.
+    #[rust] needs_animator_resync: bool,
     /// The layout we last drew, so we know when it needs to be redrawn.
     ///
-    /// This is: `(width, is_desktop_mode, is_expanded, num buttons in header)`.
+    /// This is: `(width, is_desktop_mode, whether expanded buttons are shown, num buttons in header)`.
     #[rust] latest_layout: Option<(f64, bool, bool, usize)>,
     /// The header height we last broadcast.
     #[rust] latest_header_height: Option<f64>,
@@ -257,8 +293,17 @@ pub struct RoomActionBar {
 }
 
 impl ScriptHook for RoomActionBar {
-    fn on_after_apply(&mut self, _vm: &mut ScriptVm, _apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
+    fn on_after_apply(&mut self, _vm: &mut ScriptVm, apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
+        // Our animator applies every frame of a slide, which doesn't change our layout.
+        if apply.is_animate() || apply.as_default().is_some() {
+            return;
+        }
         self.latest_layout = None;
+        // A reapply resets `expand` to its DSL default, and the animator can't be changed during an apply.
+        if apply.is_reload() {
+            self.expand = if self.is_expanded { 1.0 } else { 0.0 };
+            self.needs_animator_resync = true;
+        }
     }
 }
 
@@ -266,6 +311,17 @@ impl Widget for RoomActionBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if self.redraw_next_frame.is_event(event).is_some() {
             self.redraw(cx);
+        }
+        if std::mem::take(&mut self.needs_animator_resync) {
+            self.cut_to_expanded(cx);
+        }
+        if self.animator_handle_event(cx, event).must_redraw() {
+            self.redraw(cx);
+            // Report our height for this frame before we're drawn,
+            // so that the content beneath us moves along with us in the same frame.
+            if !self.is_desktop_mode && self.expanded_height > 0.0 {
+                self.emit_height_change(cx, HEADER_HEIGHT + self.expanded_height * self.expand as f64);
+            }
         }
         if !self.is_desktop_mode {
             let mut buttons: Vec<_> = ACTIONS.iter().map(|(id, label)| {
@@ -279,13 +335,17 @@ impl Widget for RoomActionBar {
             if !self.is_desktop_mode && (self.view.button(cx, ids!(expand_room_actions_button)).clicked(actions)
                 || self.view.button(cx, ids!(collapse_room_actions_button)).clicked(actions))
             {
-                self.set_expanded(cx, !self.is_expanded);
+                self.set_expanded(cx, !self.is_expanded, true);
             }
             for (id, label) in ACTIONS {
                 if self.view.button(cx, &[id]).clicked(actions)
                     || self.view.button(cx, &[id!(expanded_room_actions), id]).clicked(actions)
                 {
-                    show_room_action_placeholder(label);
+                    if id == id!(room_members_button) {
+                        cx.widget_action(self.widget_uid(), RoomActionBarAction::TogglePane(RoomPaneKind::Members));
+                    } else {
+                        show_room_action_placeholder(label);
+                    }
                 }
             }
         }
@@ -296,30 +356,35 @@ impl Widget for RoomActionBar {
         let inline = if !self.is_desktop_mode {
             let title = self.view.label(cx, ids!(title_container.title));
             let title_width = title.borrow().map(|title| {
-                title.draw_text.layout(cx, 0.0, 0.0, None, false, Align::default(), &title.text())
-                    .size_in_lpxs.width as f64 * title.draw_text.font_scale as f64
-                    + title.walk.margin.width()
+                utils::unwrapped_text_width(cx, &title.draw_text, &title.text()) + title.walk.margin.width()
             }).unwrap_or(width);
             inline_count(width, title_width)
         } else {
             // in desktop view mode, the dock tabs only show the expand/collapse button.
             0
         };
-        let state = (width, self.is_desktop_mode, self.is_expanded, inline);
+        let show_expanded = self.shows_expanded();
+        let state = (width, self.is_desktop_mode, show_expanded, inline);
         if self.latest_layout != Some(state) {
-            self.update_layout(cx, width, inline);
+            self.update_layout(cx, width, inline, show_expanded);
             self.latest_layout = Some(state);
+        }
+        if show_expanded {
+            self.apply_expand(cx);
         }
         walk.height = self.view.walk.height;
         let step = self.view.draw_walk(cx, scope, walk);
         if step.is_done() {
-            let rect = self.view.area().rect(cx);
-            if !self.is_desktop_mode && self.latest_header_height != Some(rect.size.y) {
-                self.latest_header_height = Some(rect.size.y);
-                cx.widget_action(
-                    self.widget_uid(),
-                    RoomActionBarAction::LayoutChanged { new_height: rect.size.y },
-                );
+            if show_expanded {
+                let height = self.view.view(cx, ids!(expanded_room_actions)).area().rect(cx).size.y;
+                // Buttons drawn before their height was known were hidden, so show them now.
+                if height > 0.0 && self.expanded_height <= 0.0 {
+                    self.redraw_next_frame = cx.new_next_frame();
+                }
+                self.expanded_height = height;
+            }
+            let height = self.view.area().rect(cx).size.y;
+            if !self.is_desktop_mode && self.emit_height_change(cx, height) {
                 // Issue another redraw for the whole stack nav widget so the room content
                 // (in the stack nav body) is properly drawn below the header.
                 self.redraw_next_frame = cx.new_next_frame();
@@ -330,29 +395,74 @@ impl Widget for RoomActionBar {
 }
 
 impl RoomActionBar {
-    fn set_expanded(&mut self, cx: &mut Cx, expanded: bool) {
+    /// Expands or collapses the full list of buttons, optionally sliding them in or out.
+    fn set_expanded(&mut self, cx: &mut Cx, expanded: bool, animate: bool) {
         self.is_expanded = expanded;
+        match (animate, expanded) {
+            (true, true) => self.animator_play(cx, ids!(expand.on)),
+            (true, false) => self.animator_play(cx, ids!(expand.off)),
+            (false, _) => self.cut_to_expanded(cx),
+        }
         self.latest_layout = None;
         self.redraw_next_frame = cx.new_next_frame();
         self.redraw(cx);
     }
 
-    fn update_layout(&mut self, cx: &mut Cx, width: f64, inline: usize) {
+    /// Emits a `LayoutChanged` action if our height changed, which the mobile `HomeScreen`
+    /// handles by moving the content beneath this header (e.g., the room screen) to below it.
+    ///
+    /// Returns whether it was emitted.
+    fn emit_height_change(&mut self, cx: &mut Cx, height: f64) -> bool {
+        if self.latest_header_height.is_some_and(|h| (h - height).abs() <= 0.5) {
+            return false;
+        }
+        self.latest_header_height = Some(height);
+        cx.widget_action(self.widget_uid(), RoomActionBarAction::LayoutChanged { new_height: height });
+        true
+    }
+
+    fn cut_to_expanded(&mut self, cx: &mut Cx) {
+        if self.is_expanded {
+            self.animator_cut(cx, ids!(expand.on));
+        } else {
+            self.animator_cut(cx, ids!(expand.off));
+        }
+    }
+
+    /// Whether the expanded buttons are shown, including while they slide out of view.
+    fn shows_expanded(&self) -> bool {
+        self.is_expanded || self.expand > 0.001
+    }
+
+    /// Slides the expanded buttons down from under the top of their clip, which grows to fit them.
+    fn apply_expand(&mut self, cx: &mut Cx) {
+        let is_sliding = self.expand < 1.0;
+        // Until we know how tall the buttons are, hide them rather than show them all at once.
+        let visible = if is_sliding { self.expanded_height * self.expand as f64 } else { 0.0 };
+        if let Some(mut clip) = self.view.view(cx, ids!(expanded_clip)).borrow_mut() {
+            clip.walk.height = if is_sliding { Size::Fixed(visible) } else { Size::fit() };
+        }
+        if let Some(mut buttons) = self.view.view(cx, ids!(expanded_room_actions)).borrow_mut() {
+            buttons.walk.margin.top = if is_sliding { visible - self.expanded_height } else { 0.0 };
+        }
+    }
+
+    fn update_layout(&mut self, cx: &mut Cx, width: f64, inline: usize, show_overflow: bool) {
         self.icon_tooltip.hide(cx);
-        let show_overflow = self.is_expanded;
         self.view.show_bg = self.is_desktop_mode && show_overflow;
         self.view.walk.height = if show_overflow {
             Size::Fit { min: None, max: None }
         } else {
             Size::Fixed(if self.is_desktop_mode { 0.0 } else { HEADER_HEIGHT })
         };
-        let mut expanded_room_actions = self.view.view(cx, ids!(expanded_room_actions));
-        expanded_room_actions.set_visible(cx, show_overflow);
+        let mut expanded_clip = self.view.view(cx, ids!(expanded_clip));
+        expanded_clip.set_visible(cx, show_overflow);
         let overflow_y = if self.is_desktop_mode { 0.0 } else { HEADER_HEIGHT };
-        script_apply_eval!(cx, expanded_room_actions, {
+        script_apply_eval!(cx, expanded_clip, {
             width: #(width)
             margin: mod.prelude.widgets.Inset{top: #(overflow_y)}
         });
+        let expanded_room_actions = self.view.view(cx, ids!(expanded_room_actions));
         self.view.view(cx, ids!(button_container)).set_visible(cx, !self.is_desktop_mode);
         self.view.view(cx, ids!(title_container)).set_visible(cx, !self.is_desktop_mode);
         self.view.button(cx, ids!(expand_room_actions_button)).set_visible(cx, !self.is_desktop_mode && !self.is_expanded);
@@ -407,17 +517,21 @@ fn place(cx: &mut Cx, widget: &WidgetRef, x: f64, y: f64, width: f64, height: f6
 impl RoomActionBarRef {
     pub fn draw_shadow(&self, cx: &mut Cx2d, room_rect: Rect) {
         if let Some(mut inner) = self.borrow_mut()
-            && inner.view.visible && inner.is_desktop_mode && inner.is_expanded
+            && inner.view.visible && inner.is_desktop_mode && inner.shows_expanded()
         {
             let rect = inner.view.area().rect(cx);
+            // Fade the shadow in and out along with the slide.
+            let alpha = (0x55 as f32 / 255.0) * inner.expand.clamp(0.0, 1.0);
+            inner.draw_shadow.set_dyn_instance(cx, id!(shadow_color), &[0.0, 0.0, 0.0, alpha]);
             cx.push_clip_rect(room_rect);
             inner.draw_shadow.draw_abs(cx, rect);
             cx.pop_clip_rect();
         }
     }
 
-    pub fn set_expanded(&self, cx: &mut Cx, expanded: bool) {
-        if let Some(mut inner) = self.borrow_mut() { inner.set_expanded(cx, expanded); }
+    /// See [`RoomActionBar::set_expanded()`].
+    pub fn set_expanded(&self, cx: &mut Cx, expanded: bool, animate: bool) {
+        if let Some(mut inner) = self.borrow_mut() { inner.set_expanded(cx, expanded, animate); }
     }
 
     pub fn is_expanded(&self) -> bool {

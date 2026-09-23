@@ -3,7 +3,7 @@
 //! See MentionableTextInput for more info for how it works with that.
 //! The main widget is an overlay so it can display anywhere within the app window.
 //!
-//! Currently it can show 3 kinds of content in the popup, each rendered by a `MentionRow`:
+//! Currently it can show 3 kinds of content in the popup, each rendered by an `AvatarListRow`:
 //! 1. Users to mention within a given room.
 //! 2. Rooms or spaces to insert a link to.
 //! 3. Slash commands.
@@ -15,7 +15,7 @@ use crate::{
     avatar_cache::{get_or_fetch_avatar, process_avatar_updates, AvatarCacheEntry},
     home::rooms_list::RoomsListRef,
     room::FetchedRoomAvatar,
-    shared::{avatar::{AvatarImage, AvatarWidgetRefExt}, slash_commands::SlashCommand, styles::*},
+    shared::{avatar::{AvatarImage, AvatarWidgetRefExt}, list_rows::{LIST_ROW_HEIGHT, handle_row_actions, status_row}, slash_commands::SlashCommand, styles::*},
     utils::{self, RoomNameId},
 };
 use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId};
@@ -24,7 +24,6 @@ use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId};
 //       so they're defined here up front for clarity.
 const POPUP_MAX_WIDTH: f64 = 600.0;
 const HEADER_HEIGHT: f64 = 48.0;
-const ROW_HEIGHT: f64 = 52.0;
 const MAX_VISIBLE_ROWS: f64 = 7.0;
 /// Padding around the list of suggestions to make it look a bit nicer within the popup.
 const LIST_PADDING: f64 = 6.0;
@@ -33,52 +32,6 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    // The row shown for each match within the popup, e.g., a user, room/space, or command.
-    mod.widgets.MentionRow = RoundedView {
-        width: Fill, height: #(ROW_HEIGHT), flow: Right, spacing: 9, align: Align{y: 0.5}
-        padding: Inset{left: 10, right: 10}
-        show_bg: true, cursor: MouseCursor.Hand
-        // Tapping a row shouldn't take key focus away from a text input.
-        grab_key_focus: false
-        draw_bg +: { color: #00000000, border_radius: 5.0 }
-        avatar := Avatar { width: 30, height: 30 }
-        info := View {
-            width: Fill, height: Fit, flow: Down, spacing: 1
-            title := Label {
-                width: Fill, height: Fit, max_lines: 1, text_overflow: Ellipsis, padding: 0
-                draw_text +: { color: (COLOR_TEXT), text_style: theme.font_bold {font_size: 11, line_spacing: 1.0} }
-            }
-            subtitle := Label {
-                width: Fill, height: Fit, max_lines: 1, text_overflow: Ellipsis, padding: 0
-                draw_text +: { color: #555, text_style: theme.font_regular {font_size: 9.5, line_spacing: 1.0} }
-            }
-        }
-    }
-
-    // The row shown while matches are still loading.
-    mod.widgets.MentionLoadingRow = View {
-        width: Fill, height: #(ROW_HEIGHT), flow: Right, spacing: 10, align: Align{x: 0.5, y: 0.5}
-        loading_spinner := LoadingSpinner {
-            width: 20, height: 20
-            draw_bg +: { color: (COLOR_ACTIVE_PRIMARY), border_size: 2.5 }
-        }
-        loading_label := Label {
-            height: Fit
-            draw_text +: { color: #555, text_style: theme.font_regular {font_size: 10.5} }
-        }
-    }
-
-    // The row shown when there are no matches.
-    mod.widgets.MentionEmptyRow = View {
-        width: Fill, height: #(ROW_HEIGHT), align: Align{x: 0.5, y: 0.5}
-        padding: Inset{left: 12, right: 12}
-        empty_label := Label {
-            width: Fill, height: Fit, max_lines: 2, text_overflow: Ellipsis
-            align: Align{x: 0.5}
-            draw_text +: { color: #555, text_style: theme.font_regular {font_size: 10.5} }
-        }
-    }
-
     mod.widgets.MentionablePopup = #(MentionablePopup::register_widget(vm)) {
         width: Fill
         height: Fill
@@ -86,7 +39,7 @@ script_mod! {
         align: Align{x: 0.0, y: 0.0}
 
         color_focus: #xB6D3F2
-        color_hover: #xEAEFF5
+        color_hover: (COLOR_LIST_ROW_HOVER)
 
         // So the way this works is that we move the popup_frame wrapper view,
         // which allows the `main_content` to just behave like a regular Fill/Fill view.
@@ -135,12 +88,12 @@ script_mod! {
                     list := PortalList {
                         width: Fill, height: Fill
                         flow: Down
-                        row := mod.widgets.MentionRow {}
-                        command_row := mod.widgets.MentionRow {
+                        row := mod.widgets.AvatarListRow {}
+                        command_row := mod.widgets.AvatarListRow {
                             avatar := View { width: 0, height: 0 }
                         }
-                        loading_row := mod.widgets.MentionLoadingRow {}
-                        empty_row := mod.widgets.MentionEmptyRow {}
+                        loading_row := mod.widgets.ListLoadingRow {}
+                        empty_row := mod.widgets.ListEmptyRow {}
                     }
                 }
             }
@@ -248,27 +201,10 @@ impl Widget for MentionablePopup {
                 self.redraw(cx);
             }
 
-            let mut clicked_item_idx = None;
-            let mut should_redraw = false;
-            for (index, widget) in list.items_with_actions(actions) {
-                let item = widget.as_view();
-                // Don't treat a touch that drags (a scroll motion) as a regular tap/click.
-                if !list.was_scrolling() {
-                    if let Some(fe) = item.finger_up(actions) {
-                        if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
-                            clicked_item_idx = Some(index);
-                        }
-                    }
-                }
-                if item.finger_hover_in(actions).is_some() {
-                    self.pointer_hover_index = Some(index);
-                    self.keyboard_focus_index = Some(index);
-                    should_redraw = true;
-                }
-                if item.finger_hover_out(actions).is_some() && self.pointer_hover_index == Some(index) {
-                    self.pointer_hover_index = None;
-                    should_redraw = true;
-                }
+            let (clicked_item_idx, should_redraw) = handle_row_actions(&list, actions, &mut self.pointer_hover_index);
+            // Hovering over an item also focuses it for keyboard navigation.
+            if should_redraw && let Some(index) = self.pointer_hover_index {
+                self.keyboard_focus_index = Some(index);
             }
             if let Some(index) = clicked_item_idx {
                 if index < self.items.len() {
@@ -315,16 +251,8 @@ impl Widget for MentionablePopup {
                         script_apply_eval!(cx, row_widget, { draw_bg.color: #(color) });
                         row_widget
                     }
-                    None if self.is_loading => {
-                        let loading_row = list.item(cx, index, id!(loading_row));
-                        loading_row.label(cx, ids!(loading_label)).set_text(cx, &self.loading_message);
-                        loading_row
-                    }
-                    None => {
-                        let empty_row = list.item(cx, index, id!(empty_row));
-                        empty_row.label(cx, ids!(empty_label)).set_text(cx, &self.empty_message);
-                        empty_row
-                    }
+                    None if self.is_loading => status_row(cx, &mut list, index, true, &self.loading_message),
+                    None => status_row(cx, &mut list, index, false, &self.empty_message),
                 };
                 row.draw_all(cx, scope);
             }
@@ -383,10 +311,10 @@ impl MentionablePopup {
         let available_space = if is_above_text_input { space_above } else { space_below };
         // Shrink the list so header + list fits the space we have, capped to
         // MAX_VISIBLE_ROWS. Anything past that scrolls.
-        let list_cap = (MAX_VISIBLE_ROWS * ROW_HEIGHT + 2.0 * LIST_PADDING)
+        let list_cap = (MAX_VISIBLE_ROWS * LIST_ROW_HEIGHT + 2.0 * LIST_PADDING)
             .min((available_space - header_h).max(0.0));
         let row_count = self.items.len().max(1) as f64;
-        let list_height = (row_count * ROW_HEIGHT + 2.0 * LIST_PADDING).min(list_cap).max(0.0);
+        let list_height = (row_count * LIST_ROW_HEIGHT + 2.0 * LIST_PADDING).min(list_cap).max(0.0);
         self.list_viewport_height = (list_height - 2.0 * LIST_PADDING).max(0.0);
         let box_height = header_h + list_height;
 
@@ -567,7 +495,7 @@ impl MentionablePopupRef {
         let list = self.portal_list(cx, ids!(main_content.list_container.list));
         // Number of fully-visible rows from the actual drawn viewport.
         let viewport_height = list.area().rect(cx).size.y.max(viewport);
-        let visible_rows = ((viewport_height / ROW_HEIGHT).floor() as usize).max(1);
+        let visible_rows = ((viewport_height / LIST_ROW_HEIGHT).floor() as usize).max(1);
         let first = list.first_id();
         let new_first = if new_index < first {
             new_index
@@ -615,7 +543,7 @@ fn build_row(cx: &mut Cx, list: &mut PortalList, index: usize, item: &MentionIte
             let new_widget = list.item(cx, index, id!(row));
             new_widget.label(cx, ids!(info.title)).set_text(cx, display_name);
             new_widget.label(cx, ids!(info.subtitle)).set_text(cx, user_id.as_str());
-            *fully_drawn &= set_user_avatar(cx, &new_widget, avatar_url.as_ref(), display_name);
+            *fully_drawn &= new_widget.avatar(cx, ids!(avatar)).show_user(cx, avatar_url.as_ref(), display_name);
             new_widget
         }
         MentionItem::NotifyRoom { room_name } => {
@@ -644,32 +572,6 @@ fn build_row(cx: &mut Cx, list: &mut PortalList, index: usize, item: &MentionIte
             new_widget.label(cx, ids!(info.title)).set_text(cx, cmd.usage);
             new_widget.label(cx, ids!(info.subtitle)).set_text(cx, cmd.description);
             new_widget
-        }
-    }
-}
-
-/// Returns `true` once the avatar is fully drawn, `false` if it's still being fetched.
-fn set_user_avatar(cx: &mut Cx, row: &WidgetRef, avatar_url: Option<&OwnedMxcUri>, display: &str) -> bool {
-    let avatar = row.avatar(cx, ids!(avatar));
-    match avatar_url {
-        Some(mxc) => match get_or_fetch_avatar(cx, mxc) {
-            AvatarCacheEntry::Loaded(data) => {
-                let image = AvatarImage::from((mxc.clone(), data));
-                let _ = avatar.show_image(cx, None, |cx, img| utils::load_avatar_image(&img, cx, &image));
-                true
-            }
-            AvatarCacheEntry::Requested => {
-                avatar.show_text(cx, None, None, display);
-                false
-            }
-            AvatarCacheEntry::Failed => {
-                avatar.show_text(cx, None, None, display);
-                true
-            }
-        },
-        None => {
-            avatar.show_text(cx, None, None, display);
-            true
         }
     }
 }

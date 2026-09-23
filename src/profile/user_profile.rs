@@ -345,14 +345,34 @@ impl UserProfilePaneInfo {
     fn role_in_room(&self) -> Cow<'_, str> {
         self.room_member.as_ref().map_or(
             "Role: Unknown".into(),
-            |member| match member.suggested_role_for_power_level() {
-                RoomMemberRole::Creator => "Role: Creator".into(),
-                RoomMemberRole::Administrator => "Role: Admin".into(),
-                RoomMemberRole::Moderator => "Role: Moderator".into(),
-                RoomMemberRole::User => "Role: Standard User".into(),
-            }
+            |member| format!("Role: {}", role_name(member.suggested_role_for_power_level())).into(),
         )
     }
+}
+
+impl From<&RoomMember> for UserProfile {
+    fn from(member: &RoomMember) -> Self {
+        UserProfile {
+            user_id: member.user_id().to_owned(),
+            username: member.display_name().map(|n| n.to_owned()),
+            avatar_state: AvatarState::Known(member.avatar_url().map(|u| u.to_owned())),
+        }
+    }
+}
+
+/// Returns the displayable name of the given role of a room member.
+pub fn role_name(role: RoomMemberRole) -> &'static str {
+    match role {
+        RoomMemberRole::Creator => "Creator",
+        RoomMemberRole::Administrator => "Admin",
+        RoomMemberRole::Moderator => "Moderator",
+        RoomMemberRole::User => "Regular Member",
+    }
+}
+
+/// Returns the given room member's display name, or their user ID if they have none.
+pub fn member_display_name(member: &RoomMember) -> &str {
+    member.display_name().unwrap_or_else(|| member.user_id().as_str())
 }
 
 #[derive(Script, ScriptHook, Widget, Animator)]
