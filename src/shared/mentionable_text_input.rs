@@ -63,6 +63,8 @@ pub struct MentionableTextInput {
     /// Mentions may have been deleted after adding them, so we have to check for them
     /// before sending the message in the textinput.
     #[rust] possible_mentions: Mentions,
+    /// Whether the current mouse press started on the mention popup.
+    #[rust] was_mouse_down_on_popup: bool,
 }
 
 impl Widget for MentionableTextInput {
@@ -139,7 +141,26 @@ impl Widget for MentionableTextInput {
             }
         }
 
-        self.view.handle_event(cx, event, scope);
+        // Don't send presses on the popup to the text input, otherwise it will lose key focus
+        // and hide the soft keyboard / IME, which is super annoying on mobile.
+        // The only exception is when the text input is being dragged.
+        let is_on_popup = |cx: &mut Cx, loc: DVec2| {
+            popup_ref.is_open_for(uid) && popup_ref.content_rect(cx).contains(loc)
+        };
+        let is_popup_press = match event {
+            Event::MouseDown(e) => {
+                self.was_mouse_down_on_popup = is_on_popup(cx, e.abs);
+                self.was_mouse_down_on_popup
+            }
+            // Any mouse up event outside the text input will unfocus it, so don't let that happen.
+            Event::MouseUp(_) => std::mem::take(&mut self.was_mouse_down_on_popup),
+            // Withholding a touch's start is enough, as the text input ignores touches it didn't see start.
+            Event::TouchUpdate(e) => e.touches.iter().any(|t| t.state == TouchState::Start && is_on_popup(cx, t.abs)),
+            _ => false,
+        };
+        if !is_popup_press || cx.fingers.is_area_captured(self.text_input_ref().area()) {
+            self.view.handle_event(cx, event, scope);
+        }
 
         if let Event::Actions(actions) = event {
             for action in actions {
@@ -328,7 +349,7 @@ impl MentionableTextInput {
             Cursor { index: start + text_to_insert.len(), prefer_next_row: false },
             false,
         );
-
+        cx.hide_clipboard_actions();
         self.close_popup(cx);
         // give key focus back to the text input so the user can keep typing
         text_input.set_key_focus(cx);
