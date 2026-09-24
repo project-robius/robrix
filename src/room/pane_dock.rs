@@ -263,7 +263,7 @@ type TimelineMembers = Option<Result<Arc<Vec<RoomMember>>, String>>;
 /// Shows the given room's info in the content of the given pane.
 fn populate_content(
     cx: &mut Cx,
-    kind: RoomPaneKind,
+    kind: &RoomPaneKind,
     frame: &WidgetRef,
     room_name_id: &RoomNameId,
     room_members: &TimelineMembers,
@@ -293,7 +293,7 @@ enum SavedPaneContent {
     Members(SavedRoomMembersList),
 }
 
-fn save_content(kind: RoomPaneKind, frame: &WidgetRef) -> SavedPaneContent {
+fn save_content(kind: &RoomPaneKind, frame: &WidgetRef) -> SavedPaneContent {
     match kind {
         RoomPaneKind::Members => SavedPaneContent::Members(
             frame.child_by_path(ids!(content.room_members)).as_room_members_list().save_state()
@@ -486,12 +486,12 @@ impl Widget for RoomPaneDock {
             } else {
                 return None;
             };
-            Some((pane.kind, button))
+            Some((pane.kind.clone(), button))
         }).collect();
         for (kind, button) in pressed {
             self.tooltip.hide(cx);
             match button {
-                PaneButton::Close => self.remove_pane(cx, kind, true),
+                PaneButton::Close => self.remove_pane(cx, &kind, true),
                 PaneButton::MoveToNextEdge => {
                     if let Some(pane) = self.panes.iter_mut().find(|pane| pane.kind == kind) {
                         pane.layout.side = pane.layout.side.next();
@@ -500,7 +500,7 @@ impl Widget for RoomPaneDock {
                     self.place_panes(cx, true);
                 }
                 PaneButton::PopOut => {
-                    self.remove_pane(cx, kind, true);
+                    self.remove_pane(cx, &kind, true);
                     if let Some(timeline_kind) = self.timeline_kind.clone() {
                         room_pane::pop_out(cx, self.widget_uid(), &room_name_id, kind, timeline_kind);
                     }
@@ -549,13 +549,17 @@ impl RoomPaneDock {
         self.view.room_pane_edge(cx, id)
     }
 
+    fn has_pane(&self, kind: &RoomPaneKind) -> bool {
+        self.panes.iter().any(|pane| &pane.kind == kind)
+    }
+
     /// Updates the room name used by each pane's content, e.g., when showing a member's profile.
     fn set_room_name(&mut self, cx: &mut Cx, room_name_id: &RoomNameId) {
         if self.room_name_id.as_ref().is_none_or(|r| r.room_id() != room_name_id.room_id()) {
             return;
         }
         for pane in &self.panes {
-            populate_content(cx, pane.kind, &pane.frame, room_name_id, &self.room_members);
+            populate_content(cx, &pane.kind, &pane.frame, room_name_id, &self.room_members);
         }
         self.room_name_id = Some(room_name_id.clone());
     }
@@ -565,15 +569,15 @@ impl RoomPaneDock {
         self.room_members = room_members;
         let Some(room_name_id) = self.room_name_id.as_ref() else { return };
         for pane in self.panes.iter().filter(|pane| pane.kind == RoomPaneKind::Members) {
-            populate_content(cx, pane.kind, &pane.frame, room_name_id, &self.room_members);
+            populate_content(cx, &pane.kind, &pane.frame, room_name_id, &self.room_members);
         }
     }
 
     /// Removes all panes right away, e.g., before this dock shows another timeline.
     fn clear(&mut self, cx: &mut Cx) {
-        let kinds: Vec<_> = self.panes.iter().map(|pane| pane.kind).collect();
+        let kinds: Vec<_> = self.panes.iter().map(|pane| pane.kind.clone()).collect();
         for kind in kinds {
-            self.remove_pane(cx, kind, false);
+            self.remove_pane(cx, &kind, false);
         }
         // Also drop any closed pane that's still sliding out.
         for side in ALL_SIDES {
@@ -608,7 +612,7 @@ impl RoomPaneDock {
     fn dock_pending(&mut self, cx: &mut Cx) {
         let Some(timeline_kind) = self.timeline_kind.as_ref() else { return };
         for kind in room_pane::take_pending(timeline_kind) {
-            if !self.panes.iter().any(|pane| pane.kind == kind) {
+            if !self.has_pane(&kind) {
                 self.create_pane(cx, kind, room_pane::last_layout(), None);
             }
         }
@@ -617,8 +621,8 @@ impl RoomPaneDock {
 
     /// Opens the given kind of pane at the last-chosen layout, or closes it if it's open.
     fn toggle(&mut self, cx: &mut Cx, kind: RoomPaneKind) {
-        if self.panes.iter().any(|pane| pane.kind == kind) {
-            self.remove_pane(cx, kind, true);
+        if self.has_pane(&kind) {
+            self.remove_pane(cx, &kind, true);
         } else if self.room_name_id.is_some() {
             self.create_pane(cx, kind, room_pane::last_layout(), None);
             self.place_panes(cx, true);
@@ -629,9 +633,9 @@ impl RoomPaneDock {
     fn save_state(&self) -> Vec<SavedRoomPane> {
         self.panes.iter()
             .map(|pane| SavedRoomPane {
-                kind: pane.kind,
+                kind: pane.kind.clone(),
                 layout: pane.layout,
-                content: save_content(pane.kind, &pane.frame),
+                content: save_content(&pane.kind, &pane.frame),
             })
             .collect()
     }
@@ -641,7 +645,7 @@ impl RoomPaneDock {
     fn place_panes(&mut self, cx: &mut Cx, animate: bool) {
         for index in 0..self.panes.len() {
             let pane = &self.panes[index];
-            let (kind, frame, layout, placed) = (pane.kind, pane.frame.clone(), pane.layout, pane.placed);
+            let (kind, frame, layout, placed) = (pane.kind.clone(), pane.frame.clone(), pane.layout, pane.placed);
             match placed {
                 Some(side) if side == layout.side => {
                     self.edge(cx, side).set_size(layout.edge_size);
@@ -649,7 +653,7 @@ impl RoomPaneDock {
                 }
                 // A moving pane vanishes from its old edge, then slides into its new one.
                 Some(old_side) => {
-                    self.edge(cx, old_side).remove_pane(cx, kind, false);
+                    self.edge(cx, old_side).remove_pane(cx, &kind, false);
                     self.panes[index].placed = None;
                 }
                 None => {}
@@ -658,7 +662,7 @@ impl RoomPaneDock {
             // A pane that was closed and then reopened may still be sliding out of an edge:
             // it reverses course if that's its new edge, and otherwise vanishes from the old one.
             for side in ALL_SIDES.into_iter().filter(|side| *side != layout.side) {
-                self.edge(cx, side).remove_pane(cx, kind, false);
+                self.edge(cx, side).remove_pane(cx, &kind, false);
             }
             let edge = self.edge(cx, layout.side);
             edge.set_size(layout.edge_size);
@@ -669,7 +673,7 @@ impl RoomPaneDock {
     }
 
     /// Returns the DSL template of the given kind of pane.
-    fn frame_template(&self, kind: RoomPaneKind) -> Option<LivePtr> {
+    fn frame_template(&self, kind: &RoomPaneKind) -> Option<LivePtr> {
         match kind {
             RoomPaneKind::Members => self.members_pane,
         }
@@ -678,7 +682,7 @@ impl RoomPaneDock {
     /// Creates a new pane, which is placed on an edge by `place_panes()`.
     fn create_pane(&mut self, cx: &mut Cx, kind: RoomPaneKind, layout: PaneLayout, content: Option<SavedPaneContent>) {
         let Some(room_name_id) = self.room_name_id.clone() else { return };
-        let frame = widget_ref_from_live_ptr(cx, self.frame_template(kind));
+        let frame = widget_ref_from_live_ptr(cx, self.frame_template(&kind));
         if frame.is_empty() {
             error!("BUG: missing the room pane template for {kind:?}");
             return;
@@ -689,10 +693,10 @@ impl RoomPaneDock {
             LiveId::from_str(&format!("room_pane_{}", kind.as_str())),
             frame.clone(),
         );
-        set_pane_title(cx, &frame, kind.title());
+        set_pane_title(cx, &frame, &kind.title());
         match content {
             Some(content) => restore_content(cx, &frame, &room_name_id, content, &self.room_members),
-            None => populate_content(cx, kind, &frame, &room_name_id, &self.room_members),
+            None => populate_content(cx, &kind, &frame, &room_name_id, &self.room_members),
         }
         // Our timeline only keeps its members up to date while a members pane is open,
         // so refresh them when one is opened (and fetch any that are missing).
@@ -709,8 +713,8 @@ impl RoomPaneDock {
         self.panes.push(DockedPane { kind, frame, layout, placed: None, button_cols: 0, title_width });
     }
 
-    fn remove_pane(&mut self, cx: &mut Cx, kind: RoomPaneKind, animate: bool) {
-        let Some(index) = self.panes.iter().position(|pane| pane.kind == kind) else { return };
+    fn remove_pane(&mut self, cx: &mut Cx, kind: &RoomPaneKind, animate: bool) {
+        let Some(index) = self.panes.iter().position(|pane| &pane.kind == kind) else { return };
         let pane = self.panes.remove(index);
         if let Some(side) = pane.placed {
             // The edge keeps drawing the pane until it has slid out.
@@ -830,8 +834,8 @@ impl RoomPaneDockRef {
     }
 
     /// Returns whether the given kind of pane is docked here.
-    pub fn has_pane(&self, kind: RoomPaneKind) -> bool {
-        self.borrow().is_some_and(|inner| inner.panes.iter().any(|pane| pane.kind == kind))
+    pub fn has_pane(&self, kind: &RoomPaneKind) -> bool {
+        self.borrow().is_some_and(|inner| inner.has_pane(kind))
     }
 
     /// See [`RoomPaneDock::save_state()`].
@@ -1229,9 +1233,9 @@ impl RoomPaneEdgeRef {
     }
 
     /// Removes the given pane, sliding it out first if it's this edge's last pane.
-    fn remove_pane(&self, cx: &mut Cx, kind: RoomPaneKind, animate: bool) {
+    fn remove_pane(&self, cx: &mut Cx, kind: &RoomPaneKind, animate: bool) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        if !inner.panes.iter().any(|(k, _)| *k == kind) {
+        if !inner.panes.iter().any(|(k, _)| k == kind) {
             return;
         }
         if animate && inner.panes.len() == 1 {
@@ -1241,7 +1245,7 @@ impl RoomPaneEdgeRef {
                 inner.animator_play(cx, ids!(panel.hide));
             }
         } else {
-            inner.panes.retain(|(k, _)| *k != kind);
+            inner.panes.retain(|(k, _)| k != kind);
             if inner.panes.is_empty() {
                 inner.is_sliding_out = false;
                 inner.animator_cut(cx, ids!(panel.hide));

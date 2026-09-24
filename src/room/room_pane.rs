@@ -4,7 +4,7 @@
 //! or popped out into its own dock tab (desktop) or stack view (mobile).
 //! Docked panes are saved and restored along with their timeline's UI state.
 
-use std::{cell::RefCell, collections::HashMap};
+use std::{borrow::Cow, cell::RefCell, collections::HashMap};
 
 use makepad_widgets::*;
 use serde::{Deserialize, Serialize};
@@ -14,7 +14,9 @@ use ruma::{OwnedRoomId, RoomId};
 use crate::{app::SelectedRoom, home::rooms_list::RoomsListAction, sliding_sync::TimelineKind, utils::RoomNameId};
 
 /// The kinds of panes that can be shown for a room.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+///
+/// This isn't `Copy`, so that a kind of pane can carry data, e.g., which content it shows.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RoomPaneKind {
     /// The list of the room's members.
     Members,
@@ -22,16 +24,16 @@ pub enum RoomPaneKind {
 
 impl RoomPaneKind {
     /// The title shown in the pane's header.
-    pub fn title(self) -> &'static str {
+    pub fn title(&self) -> Cow<'static, str> {
         match self {
-            RoomPaneKind::Members => "Members",
+            RoomPaneKind::Members => Cow::Borrowed("Members"),
         }
     }
 
     /// A unique string for this kind, used to build its popped-out tab's ID.
-    pub fn as_str(self) -> &'static str {
+    pub fn as_str(&self) -> Cow<'static, str> {
         match self {
-            RoomPaneKind::Members => "members",
+            RoomPaneKind::Members => Cow::Borrowed("members"),
         }
     }
 }
@@ -143,7 +145,7 @@ pub fn pop_out(
     kind: RoomPaneKind,
     timeline_kind: TimelineKind,
 ) {
-    with_room_panes(|rp| rp.popped_out_from.insert((room_name_id.room_id().clone(), kind), timeline_kind));
+    with_room_panes(|rp| rp.popped_out_from.insert((room_name_id.room_id().clone(), kind.clone()), timeline_kind));
     cx.widget_action(
         widget_uid,
         RoomsListAction::Selected(SelectedRoom::RoomPane {
@@ -154,8 +156,8 @@ pub fn pop_out(
 }
 
 /// Returns the timeline that the given popped-out pane came from, or else its room's main timeline.
-pub fn popped_out_from(room_id: &RoomId, kind: RoomPaneKind) -> TimelineKind {
-    with_room_panes(|rp| rp.popped_out_from.get(&(room_id.to_owned(), kind)).cloned())
+pub fn popped_out_from(room_id: &RoomId, kind: &RoomPaneKind) -> TimelineKind {
+    with_room_panes(|rp| rp.popped_out_from.get(&(room_id.to_owned(), kind.clone())).cloned())
         .unwrap_or_else(|| TimelineKind::MainRoom { room_id: room_id.to_owned() })
 }
 
