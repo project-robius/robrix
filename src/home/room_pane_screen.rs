@@ -171,12 +171,12 @@ impl RoomPaneScreen {
             self.view.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane)).reset(cx);
             members.reset(cx);
         }
-        set_pane_title(cx, &self.view.widget(cx, ids!(title_row)), kind.title());
+        set_pane_title(cx, &self.view.widget(cx, ids!(title_row)), &kind.title());
         self.view.label(cx, ids!(pane_room)).set_text(cx, &room_name_id.to_string());
         let members_widget = self.view.child_by_path(ids!(content.room_members));
         members_widget.set_visible(cx, kind == RoomPaneKind::Members);
-        self.displayed = Some((room_name_id.clone(), kind));
-        match kind {
+        self.displayed = Some((room_name_id.clone(), kind.clone()));
+        match &kind {
             // Also re-fetch upon re-showing, in case we missed changes while hidden.
             RoomPaneKind::Members => {
                 members.set_members(cx, room_name_id, None);
