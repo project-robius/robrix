@@ -484,8 +484,36 @@ pub fn text_preview_of_other_state(
                 custom => format!("set custom join rules for this room: {}", custom.as_str()),
             }
         }
-        AnyOtherStateEventContentChange::RoomPinnedEvents(StateEventContentChange::Original { content, .. }) => {
-            format!("pinned {} events in this room.", content.pinned.len())
+        AnyOtherStateEventContentChange::RoomPinnedEvents(StateEventContentChange::Original { content, prev_content }) => {
+            let messages = |n: usize| if n == 1 { "message" } else { "messages" };
+            let now_pinned = || -> Cow<'static, str> {
+                match content.pinned.len() {
+                    1 => "1 is now pinned".into(),
+                    n => format!("{n} are now pinned").into(),
+                }
+            };
+            match prev_content.as_ref().map(|prev| prev.pinned.as_deref()) {
+                // We can't tell what changed if the previously pinned messages are unknown.
+                Some(None) if content.pinned.is_empty() => String::from("unpinned all messages."),
+                Some(None) => format!("changed the pinned messages, {}.", now_pinned()),
+                // Without any previously pinned messages, all of them were just pinned.
+                prev => {
+                    let prev = prev.flatten().unwrap_or_default();
+                    let pinned = content.pinned.iter().filter(|id| !prev.contains(id)).count();
+                    let unpinned = prev.iter().filter(|id| !content.pinned.contains(id)).count();
+                    match (pinned, unpinned) {
+                        (0, 0) if prev == content.pinned.as_slice() => String::from("made no changes to the pinned messages."),
+                        (0, 0) => String::from("reordered the pinned messages."),
+                        (0, 1) if content.pinned.is_empty() => String::from("unpinned the last pinned message."),
+                        (0, u) if content.pinned.is_empty() => format!("unpinned all {u} messages."),
+                        // When nothing was pinned before, the new total would just repeat `p`.
+                        (p, 0) if prev.is_empty() => format!("pinned {p} {}.", messages(p)),
+                        (p, 0) => format!("pinned {p} {}, {}.", messages(p), now_pinned()),
+                        (0, u) => format!("unpinned {u} {}, {}.", messages(u), now_pinned()),
+                        (p, u) => format!("pinned {p} {} and unpinned {u} {}, {}.", messages(p), messages(u), now_pinned()),
+                    }
+                }
+            }
         }
         AnyOtherStateEventContentChange::RoomName(StateEventContentChange::Original { content, .. }) => {
             let name = if format_as_html {
