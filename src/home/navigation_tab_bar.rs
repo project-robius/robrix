@@ -59,13 +59,65 @@ script_mod! {
 
 
     // The base style definition for icon buttons in the NavigationTabBar.
+    // Selected buttons use a left accent bar and a lighter background.
     mod.widgets.NavigationTabButton = mod.widgets.NavigationBarButton {
         width: Fill,
-        height: (NAVIGATION_TAB_BAR_SIZE - 4),
-        padding: 5,
-        margin: 2,
+        height: (NAVIGATION_TAB_BAR_SIZE - 12),
+        padding: 4,
+        margin: Inset{top: 2, bottom: 2, left: 4, right: 4},
         align: Align{x: 0.5, y: 0.5}
         flow: Down,
+
+        draw_bg +: {
+            color_hover: #x222D43
+            color_active: #x2A3650
+            accent_color: instance(#x0D7988)
+            border_radius: 6.0
+
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                sdf.box(
+                    self.border_inset.x + self.border_size,
+                    self.border_inset.y + self.border_size,
+                    self.rect_size.x - (self.border_inset.x + self.border_inset.z + self.border_size * 2.0),
+                    self.rect_size.y - (self.border_inset.y + self.border_inset.w + self.border_size * 2.0),
+                    max(1.0, self.border_radius)
+                )
+                // `fill_keep` leaves the pill in the sdf shape, and `box` unions with it,
+                // so the accent bar below would flood the whole pill. `fill`/`stroke` reset it.
+                if self.border_size > 0.0 {
+                    sdf.fill_keep(self.get_color())
+                    sdf.stroke(self.border_color, self.border_size)
+                } else {
+                    sdf.fill(self.get_color())
+                }
+                // Teal selection bar on the left edge, shown only when active.
+                let bar_inset = 12.0
+                sdf.box(
+                    0.0,
+                    bar_inset,
+                    3.0,
+                    self.rect_size.y - bar_inset * 2.0,
+                    1.5
+                )
+                sdf.fill(vec4(0.0).mix(self.accent_color, self.active))
+                return sdf.result;
+            }
+        }
+
+        icon := Icon {
+            margin: 0,
+            icon_walk: Walk {
+                margin: 0,
+                width: 24.0,
+                height: 24.0
+            }
+            draw_icon +: {
+                color: #xAEBAD0
+            }
+        }
+
+
     }
 
     mod.widgets.ProfileIcon = #(ProfileIcon::register_widget(vm)) {
@@ -77,14 +129,20 @@ script_mod! {
 
         // Use the same size/shape bounds as other buttons in the NavigationTabBar
         width: Fill,
-        height: (NAVIGATION_TAB_BAR_SIZE - 4)
+        height: (NAVIGATION_TAB_BAR_SIZE - 8)
         padding: 0,
-        margin: 2,
+        margin: Inset{top: 2, bottom: 2, left: 4, right: 4},
         align: Align{ x: 0.5, y: 0.5 }
 
+        draw_bg +: {
+            color_hover: #x222D43
+            color_active: #x2A3650
+            border_radius: 6.0
+        }
+
         avatar_with_badge := View {
-            width: (NAVIGATION_TAB_BAR_SIZE - 4)
-            height: (NAVIGATION_TAB_BAR_SIZE - 4)
+            width: (NAVIGATION_TAB_BAR_SIZE - 12)
+            height: (NAVIGATION_TAB_BAR_SIZE - 12)
             flow: Overlay
             align: Align { x: 0.5, y: 0.5 }
 
@@ -107,8 +165,6 @@ script_mod! {
             // to the top-right corner of the wrapper. Since the wrapper is
             // larger than the avatar, the badge ends up sitting near the
             // avatar's outer top-right corner, half-overlapping the avatar.
-            // The right/top margin nudges the badge a few pixels south-west
-            // so it sits visually centered on the avatar's corner.
             View {
                 width: Fill,
                 height: Fill,
@@ -121,33 +177,15 @@ script_mod! {
 
     mod.widgets.HomeButton = mod.widgets.NavigationTabButton {
         tooltip_text: "All Rooms"
-        Icon {
-            margin: 0,
-            icon_walk: Walk {
-                margin: 0,
-                width: 30,
-                height: 30
-            }
-            draw_icon +: {
-                color: (COLOR_NAVIGATION_TAB_FG)
-                svg: (ICON_HOME)
-            }
+        icon +: {
+            draw_icon +: { svg: (ICON_HOME) }
         }
     }
 
     mod.widgets.AddRoomButton = mod.widgets.NavigationTabButton {
         tooltip_text: "Add/Join Room"
-        Icon {
-            margin: 0,
-            icon_walk: Walk {
-                margin: 0,
-                width: 27,
-                height: 27
-            }
-            draw_icon +: {
-                color: (COLOR_NAVIGATION_TAB_FG)
-                svg: (ICON_ADD)
-            }
+        icon +: {
+            draw_icon +: { svg: (ICON_ADD) }
         }
     }
 
@@ -156,39 +194,32 @@ script_mod! {
     // so the parent never calls `set_selected` on it.
     mod.widgets.ToggleSpacesBarButton = mod.widgets.NavigationTabButton {
         tooltip_text: "Toggle Spaces"
-        Icon {
-            margin: 0,
-            icon_walk: Walk {
-                margin: 0,
-                width: 30,
-                height: 30
-            }
-            draw_icon +: {
-                color: (COLOR_NAVIGATION_TAB_FG)
-                svg: (ICON_SQUARES)
-            }
+        icon +: {
+            draw_icon +: { svg: (ICON_SQUARES) }
         }
     }
 
-    mod.widgets.Separator = LineH { margin: 8 }
+    mod.widgets.Separator = LineH {
+        margin: Inset{top: 8, bottom: 8, left: 12, right: 12}
+        draw_bg.color: #x2C384F
+    }
 
     mod.widgets.NavigationTabBar = #(NavigationTabBar::register_widget(vm)) {
-        Desktop := RoundedView {
+        // Fill the rail to the window edge.
+        Desktop := SolidView {
             new_batch: true,
             flow: Down,
             align: Align{x: 0.5}
             padding: Inset{
-                top: 8.,
-                bottom: (8.0 + mod.widgets.SAFE_INSET_PAD_BOTTOM),
+                top: 8,
+                bottom: (8 + mod.widgets.SAFE_INSET_PAD_BOTTOM),
                 left: (mod.widgets.SAFE_INSET_PAD_LEFT),
             }
             width: (mod.widgets.NAVIGATION_TAB_BAR_SIZE + mod.widgets.SAFE_INSET_PAD_LEFT),
             height: Fill
 
-            draw_bg +: {
-                color: (COLOR_SECONDARY)
-                border_radius: 4.0
-            }
+            show_bg: true
+            draw_bg.color: #x1A2336
 
             CachedWidget {
                 profile_icon := mod.widgets.ProfileIcon {}
@@ -207,7 +238,10 @@ script_mod! {
             }
         }
 
-        Mobile := RoundedView {
+        // The mobile bottom bar shares the desktop rail's navy palette so the
+        // same nav-button templates (transparent idle, navy pill, white icon
+        // when selected) read correctly on both.
+        Mobile := SolidView {
             new_batch: true,
             flow: Right
             align: Align{x: 0.5, y: 0.5}
@@ -222,10 +256,8 @@ script_mod! {
                 right: (mod.widgets.SAFE_INSET_PAD_RIGHT),
             }
 
-            draw_bg +: {
-                color: (COLOR_SECONDARY)
-                border_radius: 4.0
-            }
+            show_bg: true
+            draw_bg.color: #x1A2336
 
             CachedWidget {
                 home_button := mod.widgets.HomeButton {}
@@ -430,7 +462,7 @@ impl Widget for ProfileIcon {
         if !drew_avatar {
             our_own_avatar.show_text(
                 cx,
-                Some(COLOR_ROBRIX_PURPLE),
+                Some(vec4(13.0 / 255.0, 121.0 / 255.0, 136.0 / 255.0, 1.0)),
                 None, // don't make this avatar clickable; we handle clicks on this ProfileIcon widget directly.
                 own_profile.displayable_name(),
             );
