@@ -40,7 +40,8 @@ use crate::{
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use crate::room::{
-    pane_dock::{RoomPaneDockWidgetExt, RoomPaneDockWidgetRefExt, SavedRoomPane},
+    pane_dock::{RoomPaneDockAction, RoomPaneDockWidgetExt, RoomPaneDockWidgetRefExt, SavedRoomPane},
+    pinned_messages_list::{PinnedMessagesListAction, confirm_unpin_message},
     room_action_bar::{RoomActionBarAction, RoomActionBarWidgetExt},
     room_members_list::{RoomMembersChanged, RoomMembersListAction, show_member_profile},
     room_pane::RoomPaneKind,
@@ -925,6 +926,8 @@ pub struct RoomScreen {
     #[rust] pending_read_receipt_jump: Option<OwnedUserId>,
     /// Fires when a background search for a jumped-to event has gone quiet.
     #[rust] jump_search_timer: Timer,
+    /// A jump that's waiting for the timeline to be drawn with its latest items.
+    #[rust] deferred_jump: Option<DeferredJump>,
 }
 
 /// Cached references to RoomScreen child widgets used in every event handler.
@@ -1034,6 +1037,30 @@ impl Widget for RoomScreen {
             {
                 warning!("Couldn't find event {target_event_id} in room {:?}", self.room_id());
                 loading_pane.search_failed(cx);
+            }
+        }
+
+        // Perform a jump that was waiting for the timeline to be drawn.
+        if let Some(jump) = self.deferred_jump.as_ref() && jump.frame.is_event(event).is_some() {
+            if self.tl_state.as_ref().is_some_and(|tl| tl.items.len() != jump.num_items) {
+                // If the timeline changed after it was drawn, wait for it to be drawn again.
+                self.redraw(cx);
+            }
+            else if let Some(jump) = self.deferred_jump.take() {
+                match jump.kind {
+                    DeferredJumpKind::Search { event_id, description } if !loading_pane.is_searching_for(&event_id) => {
+                        loading_pane.hide(cx);
+                        self.jump_to_event(cx, &event_id, None, description, &portal_list, &loading_pane);
+                    }
+                    DeferredJumpKind::ScrollTo { event_id } => {
+                        if let Some(tl) = self.tl_state.as_mut()
+                            && let Some(index) = index_of_event(&tl.items, &event_id, tl.items.len(), usize::MAX)
+                        {
+                            scroll_to_and_highlight(cx, &portal_list, tl, index);
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
 
@@ -1175,7 +1202,20 @@ impl Widget for RoomScreen {
                 self.refresh_members_pane(cx);
             }
 
+            let room_pane_dock_uid = self.view.room_pane_dock(cx, ids!(room_pane_dock)).widget_uid();
             for action in actions {
+                // Highlight the buttons in the room action bar for any panes that are currently shown.
+                if let RoomPaneDockAction::ShownPanesChanged(kinds) = action.as_widget_action().widget_uid_eq(room_pane_dock_uid).cast() {
+                    self.view.room_action_bar(cx, ids!(room_actions)).set_shown_panes(cx, kinds);
+                    continue;
+                }
+
+                // Our timeline may show users whose profiles were just fetched, e.g., for an item whose sender wasn't known.
+                if action.downcast_ref::<user_profile_cache::UserProfilesUpdated>().is_some() {
+                    self.redraw(cx);
+                    continue;
+                }
+
                 // If the backend sync task rebuilt this room's timeline, our timeline update receiver is dead,
                 // so we need to get a new one.
                 if let Some(TimelineEndpointsRecreated { room_id }) = action.downcast_ref()
@@ -1405,6 +1445,21 @@ impl Widget for RoomScreen {
             if let RoomMembersListAction::MemberClicked { room_name_id, member } = action.as_widget_action().cast() {
                 show_member_profile(cx, &user_profile_sliding_pane, &room_name_id, member);
                 self.redraw(cx);
+                return false;
+            }
+
+            // Handle a message being clicked in the pinned messages pane.
+            if let PinnedMessagesListAction::MessageClicked { timeline_kind, event_id, description, .. } = action.as_widget_action().cast() {
+                // A thread's timeline also includes its root message.
+                let is_in_this_timeline = self.tl_state.as_ref().is_some_and(|tl|
+                    tl.kind == timeline_kind || tl.kind.thread_root_event_id() == Some(&event_id)
+                );
+                if !is_in_this_timeline {
+                    // Our parent will show the timeline that contains this message,
+                    // so jump to it in that room screen's timeline instead of here.
+                    return true;
+                }
+                self.jump_to_event_after_draw(cx, event_id, description);
                 return false;
             }
 
@@ -1726,6 +1781,15 @@ impl Widget for RoomScreen {
             self.view.room_input_bar(cx, ids!(room_input_bar)).set_key_focus(cx);
         }
 
+        // Now that the timeline has been drawn with its items, a deferred jump can happen.
+        if let Some(jump) = self.deferred_jump.as_mut()
+            && let Some(tl) = self.tl_state.as_ref()
+            && !tl.items.is_empty()
+        {
+            jump.num_items = tl.items.len();
+            jump.frame = cx.new_next_frame();
+        }
+
         // After a reply preview is collapsed, the timeline portallist will have empty space at the top.
         // We need to keep drawing it until it's filled.
         if self.relayout_redraws_left > 0 {
@@ -2019,15 +2083,8 @@ impl RoomScreen {
                         // We successfully found the target event, so we can close the loading pane,
                         // reset the loading panestate to `None`, and stop issuing backwards pagination requests.
                         loading_pane.hide(cx);
-
-                        // NOTE: this code was copied from the `MessageAction::JumpToRelated` handler;
-                        //       we should deduplicate them at some point.
-                        let speed = 50.0;
-                        portal_list.smooth_scroll_to(cx, index, speed, None, 10.0);
-                        // start highlight animation.
-                        tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
-                            item_id: index
-                        };
+                        // It may have just been paginated in, so we can't scroll to it until it's been drawn.
+                        self.deferred_jump = Some(DeferredJump::new(DeferredJumpKind::ScrollTo { event_id: target_event_id }));
                     }
                     else {
                         // Here, the target event was not found in the current timeline,
@@ -2178,26 +2235,6 @@ impl RoomScreen {
                     self.view.room_input_bar(cx, ids!(room_input_bar))
                         .handle_edit_result(cx, timeline_event_id, result);
                 }
-                TimelineUpdate::PinResult { result, pin, .. } => {
-                    let (message, auto_dismissal_duration, kind) = match &result {
-                        Ok(true) => (
-                            format!("Successfully {} event.", if pin { "pinned" } else { "unpinned" }),
-                            Some(4.0),
-                            PopupKind::Success
-                        ),
-                        Ok(false) => (
-                            format!("Message was already {}.", if pin { "pinned" } else { "unpinned" }),
-                            Some(4.0),
-                            PopupKind::Info
-                        ),
-                        Err(e) => (
-                            format!("Failed to {} event. Error: {e}", if pin { "pin" } else { "unpin" }),
-                            None,
-                            PopupKind::Error
-                        ),
-                    };
-                    enqueue_popup_notification(message, kind, auto_dismissal_duration);
-                }
                 TimelineUpdate::TypingUsers { users } => {
                     // This update loop should be kept tight & fast, so all we do here is
                     // save the list of typing users for future use after the loop exits.
@@ -2206,7 +2243,7 @@ impl RoomScreen {
                     // if the list of typing users gets updated many times in a row.
                     typing_users = Some(users);
                 }
-                TimelineUpdate::PinnedEvents(pinned_events) => {
+                TimelineUpdate::PinnedEventIds(pinned_events) => {
                     self.pinned_events = pinned_events;
                     // We need to redraw any events that might have been pinned or unpinned
                     // in order to have all events properly reflect their pinned state.
@@ -2729,7 +2766,7 @@ impl RoomScreen {
                     let Some(tl) = self.tl_state.as_ref() else { return };
                     if let Some(event_id) = details.event_id() {
                         submit_async_request(MatrixRequest::PinEvent {
-                            timeline_kind: tl.kind.clone(),
+                            room_id: tl.kind.room_id().clone(),
                             event_id: event_id.clone(),
                             pin: true,
                         });
@@ -2744,11 +2781,7 @@ impl RoomScreen {
                 MessageAction::Unpin(details) => {
                     let Some(tl) = self.tl_state.as_ref() else { return };
                     if let Some(event_id) = details.event_id() {
-                        submit_async_request(MatrixRequest::PinEvent {
-                            timeline_kind: tl.kind.clone(),
-                            event_id: event_id.clone(),
-                            pin: false,
-                        });
+                        confirm_unpin_message(cx, tl.kind.room_id().clone(), event_id.clone(), false);
                     } else {
                         enqueue_popup_notification(
                             "This event cannot be unpinned.",
@@ -3013,6 +3046,8 @@ impl RoomScreen {
     ) {
         // Jumping to an event isn't really a user scroll action, so don't send read receipts based on jumps.
         self.read_receipt_state.cancel_timer(cx);
+        // This jump replaces any jump that was waiting to happen until he timeline is drawn.
+        self.deferred_jump = None;
         let Some(tl) = self.tl_state.as_mut() else { return };
         let max_tl_idx = max_tl_idx.unwrap_or_else(|| tl.items.len());
 
@@ -3023,12 +3058,7 @@ impl RoomScreen {
 
         if let Some(index) = related_msg_tl_index {
             // log!("The related message {replied_to_event} was immediately found in room {}, scrolling to from index {reply_message_item_id} --> {index} (first ID {}).", tl.kind.room_id(), portal_list.first_id());
-            let speed = 50.0;
-            portal_list.smooth_scroll_to(cx, index, speed, None, 10.0);
-            // start highlight animation.
-            tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
-                item_id: index
-            };
+            scroll_to_and_highlight(cx, portal_list, tl, index);
         } else {
             log!("The related event {target_event_id} wasn't immediately available in room {}, searching for it in the background...", tl.kind.room_id());
             cx.stop_timer(self.jump_search_timer);
@@ -3368,6 +3398,7 @@ impl RoomScreen {
         self.read_receipt_state.clear();
         // Closing/hiding the room should cancel any pending jump/search.
         self.pending_read_receipt_jump = None;
+        self.deferred_jump = None;
         self.jump_search_timer = Timer::empty();
 
         // Tell the background subscriber that this timeline is now closed.
@@ -3486,6 +3517,12 @@ impl RoomScreen {
         self.view.room_pane_dock(cx, ids!(room_pane_dock)).toggle(cx, kind);
     }
 
+    /// Jumps to the given event in this RoomScreen's timeline once it has been drawn.
+    fn jump_to_event_after_draw(&mut self, cx: &mut Cx, event_id: OwnedEventId, description: String) {
+        self.deferred_jump = Some(DeferredJump::new(DeferredJumpKind::Search { event_id, description }));
+        self.redraw(cx);
+    }
+
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
     pub fn set_displayed_room(
         &mut self,
@@ -3504,11 +3541,14 @@ impl RoomScreen {
             }
         };
 
-        // If we opened this timelien to reply in thread, give the text input key focus.
+        // If we opened this timeline to reply in thread, give the text input key focus.
         if input_bar_focus::take_if_matches(cx, &timeline_kind) {
             self.focus_input_bar_on_show = true;
         }
 
+        if self.timeline_kind.as_ref() != Some(&timeline_kind) {
+            self.deferred_jump = None;
+        }
 
         // If this timeline is already displayed, we don't need to do anything major,
         // but we do need update the `room_name_id` in case it has changed/cleared.
@@ -3555,6 +3595,7 @@ impl RoomScreen {
 
         self.room_name_id = None;
         self.timeline_kind = None;
+        self.deferred_jump = None;
         self.pinned_events.clear();
         self.is_loaded = false;
         self.all_rooms_loaded = false;
@@ -3728,6 +3769,25 @@ impl RoomScreenRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.toggle_room_pane(cx, kind);
     }
+
+    /// Jumps to the given event once this RoomScreen has drawn the given timeline,
+    /// e.g., right after navigating to that timeline, which could still be loading.
+    ///
+    /// Does nothing if this RoomScreen isn't showing the given timeline.
+    pub fn jump_to_event_when_shown(
+        &self,
+        cx: &mut Cx,
+        timeline_kind: &TimelineKind,
+        event_id: OwnedEventId,
+        description: String,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        if inner.timeline_kind.as_ref() != Some(timeline_kind) {
+            error!("BUG: can't jump to event {event_id}: this RoomScreen isn't showing {timeline_kind}.");
+            return;
+        }
+        inner.jump_to_event_after_draw(cx, event_id, description);
+    }
 }
 
 
@@ -3748,7 +3808,7 @@ fn subscribe_to_room_updates(timeline_kind: &TimelineKind, subscribe: bool, show
         room_id: room_id.clone(),
         subscribe: subscribe && show_typing_notices,
     });
-    submit_async_request(MatrixRequest::SubscribeToPinnedEvents {
+    submit_async_request(MatrixRequest::SubscribeToPinnedEventIds {
         room_id: room_id.clone(),
         subscribe,
     });
@@ -3872,14 +3932,8 @@ pub enum TimelineUpdate {
         /// The list of users (their displayable name) who are currently typing in this room.
         users: Vec<String>,
     },
-    /// The result of a pin/unpin request ([`MatrixRequest::PinEvent`]).
-    PinResult {
-        event_id: OwnedEventId,
-        result: Result<bool, matrix_sdk::Error>,
-        pin: bool,
-    },
     /// An update containing the set of pinned events in this room.
-    PinnedEvents(Vec<OwnedEventId>),
+    PinnedEventIds(Vec<OwnedEventId>),
     /// An update containing the currently logged-in user's power levels for this room.
     UserPowerLevels(UserPowerLevels),
     /// A notice that this room has been changed to use encryption.
@@ -4247,6 +4301,41 @@ enum MessageHighlightAnimationState {
     Pending { item_id: usize },
     #[default]
     Off,
+}
+
+/// A jump that must wait until the timeline has been drawn with its latest items,
+/// since the timeline's PortalList can only scroll to an item that has actually been drawn.
+struct DeferredJump {
+    kind: DeferredJumpKind,
+    /// This next frame gets triggered after the timeline was drawn,
+    /// which is how the jump action actually gets started.
+    frame: NextFrame,
+    /// How many items the timeline had when it was drawn.
+    num_items: usize,
+}
+
+impl DeferredJump {
+    fn new(kind: DeferredJumpKind) -> Self {
+        Self { kind, frame: NextFrame::default(), num_items: 0 }
+    }
+}
+
+enum DeferredJumpKind {
+    /// Jump to the given event, searching for it if needed (see `RoomScreen::jump_to_event()`).
+    Search {
+        event_id: OwnedEventId,
+        description: String,
+    },
+    /// Scroll to the given event, which has already been found in the timeline.
+    ScrollTo {
+        event_id: OwnedEventId,
+    },
+}
+
+/// Smoothly scrolls the timeline to the item at the given index, and then highlights that item.
+fn scroll_to_and_highlight(cx: &mut Cx, portal_list: &PortalListRef, tl: &mut TimelineUiState, index: usize) {
+    portal_list.smooth_scroll_to(cx, index, 50.0, None, 10.0);
+    tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending { item_id: index };
 }
 
 /// States that are necessary to save in order to maintain a consistent UI display for a timeline.

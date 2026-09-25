@@ -5,7 +5,7 @@ use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, shared::speech_text_input::cancel_all_dictation, utils::RoomNameId};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_pane_screen::{RoomPaneScreenAction, RoomPaneScreenWidgetRefExt}, room_screen::RoomScreenWidgetRefExt, rooms_list::{AcceptedInviteKind, RoomsListAction}, spaces_bar::SpacesBarAction};
-use crate::room::{room_action_bar::RoomActionBarWidgetRefExt, room_pane, room_tabs::RoomTabs};
+use crate::room::{pinned_messages_list::PinnedMessagesListAction, room_action_bar::RoomActionBarWidgetRefExt, room_pane, room_tabs::RoomTabs};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -728,6 +728,20 @@ impl WidgetMatchEvent for MainDesktopUI {
                 self.close_tab(cx, pane_tab_id);
                 self.redraw(cx);
                 should_save_dock_action = true;
+                continue;
+            }
+
+            // A pinned message was clicked in a popped-out pane,
+            // or in a pane that's docked in another timeline,
+            // so show the timeline that contains it and then jump to that message there.
+            if let PinnedMessagesListAction::MessageClicked { room_name_id, timeline_kind, event_id, description } = widget_action.cast() {
+                let screen = room_pane::timeline_screen(&room_name_id, &timeline_kind);
+                // Use the room's existing tab, which has the room's current name.
+                let screen = self.open_rooms.get(&screen.tab_id()).cloned().unwrap_or(screen);
+                let tab_id = screen.tab_id();
+                self.focus_or_create_tab(cx, screen);
+                self.view.dock(cx, ids!(dock)).item(tab_id).as_room_screen()
+                    .jump_to_event_when_shown(cx, &timeline_kind, event_id, description);
                 continue;
             }
 

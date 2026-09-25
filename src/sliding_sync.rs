@@ -14,7 +14,7 @@ use matrix_sdk::{
             receipt::{ReceiptThread, ReceiptType as ReceiptEventType},
             relation::RelationType,
             room::{
-                encrypted::Relation as EncryptedRelation, message::{MessageType, Relation, RoomMessageEventContent, TextMessageEventContent}, power_levels::{RoomPowerLevels, SyncRoomPowerLevelsEvent}, redaction::SyncRoomRedactionEvent, MediaSource
+                encrypted::Relation as EncryptedRelation, message::{MessageType, Relation, RoomMessageEventContent, TextMessageEventContent}, pinned_events::RoomPinnedEventsEventContent, power_levels::{RoomPowerLevels, SyncRoomPowerLevelsEvent}, redaction::SyncRoomRedactionEvent, MediaSource
             }, AnyMessageLikeEventContent, AnySyncMessageLikeEvent, AnySyncTimelineEvent, MessageLikeEventType, StateEventType
         }, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedTransactionId, OwnedUserId, RoomOrAliasId, TransactionId, UserId, serde::Raw, uint
     }, send_queue::{LocalEcho, LocalEchoContent, RoomSendQueueUpdate, SendQueueUpdate}, sliding_sync::VersionBuilder, Client, ClientBuildError, OwnedServerName, Room, RoomDisplayName, RoomMemberships, RoomState, SessionChange, SuccessorRoom
@@ -42,7 +42,7 @@ use crate::{
     }, login::login_screen::LoginAction, logout::{logout_confirm_modal::LogoutAction, logout_state_machine::{LogoutConfig, is_logout_in_progress, logout_with_state_machine}}, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistence::{self, ClientSessionPersisted, load_app_state}, profile::{
         user_profile::UserProfile,
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
-    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction, room_members_list::{RoomMembersChanged, RoomMembersFetchAction}}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, settings::account_settings::AccountManagementUrl, shared::{
+    }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction, pinned_messages_list::PinnedMessagesAction, room_members_list::{RoomMembersChanged, RoomMembersFetchAction}}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, settings::account_settings::AccountManagementUrl, shared::{
         attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, FileUploadMetadata}, jump_to_bottom_button::UnreadMessageCount, mention_popup::{MentionItem, RoomMentionCandidate}, mentionable_text_input::MentionMatches, popup_list::{PopupKind, enqueue_popup_notification}
     }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
@@ -817,11 +817,22 @@ pub enum MatrixRequest {
         /// Whether to subscribe or unsubscribe.
         subscribe: bool,
     },
-    /// Subscribe to changes in the set of pinned events for the given room.
+    /// Subscribe to changes in the set of pinned events (their IDs only) for the given room.
     ///
     /// This is only valid for the main room timeline, not for thread-focused timelines.
-    SubscribeToPinnedEvents {
+    SubscribeToPinnedEventIds {
         room_id: OwnedRoomId,
+        /// Whether to subscribe or unsubscribe.
+        subscribe: bool,
+    },
+    /// Subscribe to the given room's pinned messages.
+    ///
+    /// A [`PinnedMessagesAction`] is emitted immediately upon subscribing
+    /// and also whenever the pinned messages change or the user's can-pin power level changes.
+    SubscribeToPinnedMessages {
+        room_id: OwnedRoomId,
+        /// The widget that shows these pinned messages.
+        subscriber: WidgetUid,
         /// Whether to subscribe or unsubscribe.
         subscribe: bool,
     },
@@ -867,11 +878,19 @@ pub enum MatrixRequest {
         timeline_event_id: TimelineEventItemId,
     },
     /// Pin or unpin the given event in the given room.
+    ///
+    /// The result is shown to the user as a popup notification.
     #[doc(alias("unpin"))]
     PinEvent {
-        timeline_kind: TimelineKind,
+        room_id: OwnedRoomId,
         event_id: OwnedEventId,
         pin: bool,
+    },
+    /// Unpin all of the pinned events in the given room.
+    ///
+    /// The result is shown to the user as a popup notification.
+    UnpinAllEvents {
+        room_id: OwnedRoomId,
     },
     /// Request to fetch URL preview from the Matrix homeserver.
     GetUrlPreview {
@@ -2123,9 +2142,9 @@ async fn matrix_worker_task(
                                     matches!(details.main_timeline.timeline_subscriber, TimelineSubscriber::Running(_)),
                                     details.main_timeline.timeline_singleton_endpoints.is_none(),
                                 );
-                                let _ = writeln!(text, "typing notices subscribed: {}, pinned events subscribed: {}",
+                                let _ = writeln!(text, "typing notices subscribed: {}, pinned messages subscribers: {}",
                                     details.typing_notice_subscriber.is_some(),
-                                    details.pinned_events_subscriber.is_some(),
+                                    details.pinned_messages_subscriber.as_ref().map_or(0, |p| p.subscribers.len()),
                                 );
                                 let _ = writeln!(text, "thread timelines: {:?}, pending: {:?}",
                                     details.thread_timelines.keys().collect::<Vec<_>>(),
@@ -2333,7 +2352,7 @@ async fn matrix_worker_task(
                 }
             }
 
-            MatrixRequest::SubscribeToPinnedEvents { room_id, subscribe } => {
+            MatrixRequest::SubscribeToPinnedEventIds { room_id, subscribe } => {
                 if !subscribe {
                     if let Some(task_handler) = subscribers_pinned_events.remove(&room_id) {
                         task_handler.abort();
@@ -2346,16 +2365,22 @@ async fn matrix_worker_task(
                     continue;
                 };
                 let subscribe_pinned_events_task = Handle::current().spawn(async move {
-                    // Send an initial update, as the stream may not update immediately.
-                    let pinned_events = main_timeline.room().pinned_event_ids().unwrap_or_default();
-                    match sender.send(TimelineUpdate::PinnedEvents(pinned_events)) {
+                    // Send an initial update, as a subscriber almost always wants an update
+                    // when first subscribing; plus, the stream may not receive an update immediately.
+                    let mut pinned_events = main_timeline.room().pinned_event_ids().unwrap_or_default();
+                    match sender.send(TimelineUpdate::PinnedEventIds(pinned_events.clone())) {
                         Ok(()) => SignalToUI::set_ui_signal(),
                         Err(_) => log!("Failed to send initial pinned events update to UI."),
                     }
                     let update_receiver = main_timeline.room().pinned_event_ids_stream();
                     pin_mut!(update_receiver);
-                    while let Some(pinned_events) = update_receiver.next().await {
-                        match sender.send(TimelineUpdate::PinnedEvents(pinned_events)) {
+                    while let Some(new_pinned_events) = update_receiver.next().await {
+                        // This stream receives updates to ANY change to the room's info, not just its pinned events.
+                        if new_pinned_events == pinned_events {
+                            continue;
+                        }
+                        pinned_events = new_pinned_events;
+                        match sender.send(TimelineUpdate::PinnedEventIds(pinned_events.clone())) {
                             Ok(()) => SignalToUI::set_ui_signal(),
                             Err(e) => log!("Failed to send pinned events update: {e:?}"),
                         }
@@ -2363,6 +2388,42 @@ async fn matrix_worker_task(
                 });
                 if let Some(old) = subscribers_pinned_events.insert(room_id, subscribe_pinned_events_task) {
                     old.abort();
+                }
+            }
+
+            MatrixRequest::SubscribeToPinnedMessages { room_id, subscriber, subscribe } => {
+                let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                // A room that isn't loaded yet posts `TimelineEndpointsRecreated` once it is,
+                // upon which its subscribers will subscribe again.
+                let Some(room_info) = all_joined_rooms.get_mut(&room_id) else { continue };
+                let subscriber_opt = &mut room_info.pinned_messages_subscriber;
+                if !subscribe {
+                    if let Some(p) = subscriber_opt.as_mut()
+                        && p.subscribers.remove(&subscriber)
+                        && p.subscribers.is_empty()
+                    {
+                        *subscriber_opt = None;
+                    }
+                    continue;
+                }
+                match subscriber_opt.as_mut() {
+                    Some(p) if !p.task.is_finished() => {
+                        p.subscribers.insert(subscriber);
+                        p.resend_pinned_messages_list.notify_one();
+                    }
+                    // Start watching this room's pinned messages.
+                    _ => {
+                        let mut subscribers = subscriber_opt.take()
+                            .map(|mut p| std::mem::take(&mut p.subscribers))
+                            .unwrap_or_default();
+                        subscribers.insert(subscriber);
+                        let resend = Arc::new(Notify::new());
+                        let task = Handle::current().spawn(pinned_messages_subscriber_handler(
+                            room_info.main_timeline.timeline.room().clone(),
+                            resend.clone(),
+                        ));
+                        *subscriber_opt = Some(PinnedMessagesSubscriber { subscribers, resend_pinned_messages_list: resend, task });
+                    }
                 }
             }
 
@@ -2912,22 +2973,53 @@ async fn matrix_worker_task(
                 });
             },
 
-            MatrixRequest::PinEvent { timeline_kind, event_id, pin } => {
-                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
-                    log!("BUG: {timeline_kind} not found for pin event request");
-                    continue;
-                };
-
+            MatrixRequest::PinEvent { room_id, event_id, pin } => {
+                let Some(client) = get_client() else { continue };
                 let _pin_task = Handle::current().spawn(async move {
-                    let room = timeline.room();
+                    let Some(room) = client.get_room(&room_id) else {
+                        error!("Room {room_id} not found for pin event request");
+                        return;
+                    };
                     let result = if pin {
                         room.pin_event(&event_id).await
                     } else {
                         room.unpin_event(&event_id).await
                     };
-                    match sender.send(TimelineUpdate::PinResult { event_id, pin, result }) {
-                        Ok(_) => SignalToUI::set_ui_signal(),
-                        Err(_) => log!("Failed to send UI update for pin event."),
+                    let (message, kind, auto_dismissal_duration) = match result {
+                        Ok(true) => (
+                            format!("Successfully {} message.", if pin { "pinned" } else { "unpinned" }),
+                            PopupKind::Success,
+                            Some(4.0),
+                        ),
+                        Ok(false) => (
+                            format!("Message was already {}.", if pin { "pinned" } else { "unpinned" }),
+                            PopupKind::Info,
+                            Some(4.0),
+                        ),
+                        Err(e) => (
+                            format!("Failed to {} message. Error: {e}", if pin { "pin" } else { "unpin" }),
+                            PopupKind::Error,
+                            None,
+                        ),
+                    };
+                    enqueue_popup_notification(message, kind, auto_dismissal_duration);
+                });
+            }
+
+            MatrixRequest::UnpinAllEvents { room_id } => {
+                let Some(client) = get_client() else { continue };
+                let _unpin_all_task = Handle::current().spawn(async move {
+                    let Some(room) = client.get_room(&room_id) else {
+                        error!("Room {room_id} not found for unpin all events request");
+                        return;
+                    };
+                    match room.send_state_event(RoomPinnedEventsEventContent::new(Vec::new())).await {
+                        Ok(_) => enqueue_popup_notification("Unpinned all messages.", PopupKind::Success, Some(4.0)),
+                        Err(e) => enqueue_popup_notification(
+                            format!("Failed to unpin all messages. Error: {e}"),
+                            PopupKind::Error,
+                            None,
+                        ),
                     }
                 });
             }
@@ -3173,6 +3265,21 @@ impl Drop for PerTimelineDetails {
     }
 }
 
+/// A task that watches a room's pinned messages, see [`MatrixRequest::SubscribeToPinnedMessages`].
+struct PinnedMessagesSubscriber {
+    /// The widgets that are currently showing this room's pinned messages.
+    subscribers: HashSet<WidgetUid>,
+    /// Asks the task to post its pinned messages again, e.g., for a new subscriber.
+    resend_pinned_messages_list: Arc<Notify>,
+    /// The async subscriber task.
+    task: JoinHandle<()>,
+}
+impl Drop for PinnedMessagesSubscriber {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
 struct JoinedRoomDetails {
     /// The room ID of this joined room.
     room_id: OwnedRoomId,
@@ -3184,8 +3291,8 @@ struct JoinedRoomDetails {
     pending_thread_timelines: HashSet<OwnedEventId>,
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
-    /// A drop guard for the event handler that represents a subscription to pinned events for this room.
-    pinned_events_subscriber: Option<EventHandlerDropGuard>,
+    /// The task that watches this room's pinned messages while any widget shows them.
+    pinned_messages_subscriber: Option<PinnedMessagesSubscriber>,
 }
 impl Drop for JoinedRoomDetails {
     fn drop(&mut self) {
@@ -3193,7 +3300,7 @@ impl Drop for JoinedRoomDetails {
         // main_timeline and each thread_timelines entry abort their own task via
         // PerTimelineDetails::Drop, so just tear down the room-level subscriptions here.
         drop(self.typing_notice_subscriber.take());
-        drop(self.pinned_events_subscriber.take());
+        drop(self.pinned_messages_subscriber.take());
     }
 }
 impl JoinedRoomDetails {
@@ -4459,6 +4566,11 @@ async fn update_room(
                         let _ = sender.send(TimelineUpdate::UserPowerLevels(nupl));
                     }
                     SignalToUI::set_ui_signal();
+                    if let Some(pinned) = ALL_JOINED_ROOMS.lock().unwrap().get(&new_room_id)
+                        .and_then(|room_info| room_info.pinned_messages_subscriber.as_ref())
+                    {
+                        pinned.resend_pinned_messages_list.notify_one();
+                    }
                 } else {
                     error!("BUG: could not find JoinedRoomDetails for room {new_room_id} where power levels changed.");
                 }
@@ -4608,7 +4720,7 @@ async fn add_new_room(
             thread_timelines: HashMap::new(),
             pending_thread_timelines: HashSet::new(),
             typing_notice_subscriber: None,
-            pinned_events_subscriber: None,
+            pinned_messages_subscriber: None,
         },
     );
     // A visible RoomScreen might still have this room's previous channel endpoints,
@@ -5524,6 +5636,95 @@ pub struct BackwardsPaginateUntilEventRequest {
     /// which is used to detect if the timeline has changed since the request was made,
     /// meaning that the `starting_index` can no longer be relied upon.
     pub current_tl_len: usize,
+}
+
+/// Watches the given room's pinned messages by creating a new timeline instance
+/// that is focused on its pinned events.
+///
+/// Emits a [`PinnedMessagesAction::Updated`] action initially upon a new subscriber,
+/// and also whenever the pinned messages list changes, or whenever the given
+/// `resend_pinned_messages_list` is notified (which gets notified by UI widgets).
+async fn pinned_messages_subscriber_handler(
+    room: Room,
+    resend_pinned_messages_list: Arc<Notify>,
+) {
+    let room_id = room.room_id().to_owned();
+    let timeline = match room.timeline_builder()
+        .with_focus(TimelineFocus::PinnedEvents)
+        .track_read_marker_and_receipts(TimelineReadReceiptTracking::Disabled)
+        .build()
+        .await
+    {
+        Ok(timeline) => timeline,
+        Err(error) => {
+            error!("Failed to create the pinned events timeline for room {room_id}: {error}");
+            Cx::post_action(PinnedMessagesAction::Failed { room_id, error: error.to_string() });
+            return;
+        }
+    };
+
+    // The timeline has the pinned events it could load in chronological order,
+    // but we show them in the order they were pinned, most recent first.
+    let in_pin_order = |pinned_event_ids: &[OwnedEventId], items: &Vector<Arc<TimelineItem>>| -> Arc<Vec<Arc<TimelineItem>>> {
+        Arc::new(pinned_event_ids.iter()
+            .rev()
+            .filter_map(|event_id| items.iter().find(|item|
+                item.as_event().and_then(|ev| ev.event_id()) == Some(&**event_id)
+            ))
+            .cloned()
+            .collect()
+        )
+    };
+
+    let (mut items, timeline_stream) = timeline.subscribe().await;
+    let pinned_event_ids_stream = room.pinned_event_ids_stream();
+    pin_mut!(timeline_stream, pinned_event_ids_stream);
+    let mut pinned_event_ids = room.pinned_event_ids().unwrap_or_default();
+    let mut messages = in_pin_order(&pinned_event_ids, &items);
+    let mut should_post = true; // always send an initial update
+
+    loop {
+        if should_post {
+            let can_unpin = UserPowerLevels::from_room(&room, room.own_user_id()).await
+                .is_some_and(|power_levels| power_levels.can_pin());
+            Cx::post_action(PinnedMessagesAction::Updated {
+                room_id: room_id.clone(),
+                messages: messages.clone(),
+                num_pinned: pinned_event_ids.len(),
+                can_unpin,
+            });
+        }
+
+        should_post = tokio::select! {
+            biased;
+
+            batch = timeline_stream.next() => {
+                let Some(batch) = batch else { break };
+                for diff in batch {
+                    diff.apply(&mut items);
+                }
+                messages = in_pin_order(&pinned_event_ids, &items);
+                true
+            }
+
+            new_pinned_event_ids = pinned_event_ids_stream.next() => {
+                let Some(new_pinned_event_ids) = new_pinned_event_ids else { break };
+                // This stream receive updates on ANY room info change,
+                // not just its pinned events, so double check the pinned event IDs.
+                let is_changed = new_pinned_event_ids != pinned_event_ids;
+                if is_changed {
+                    pinned_event_ids = new_pinned_event_ids;
+                    messages = in_pin_order(&pinned_event_ids, &items);
+                }
+                is_changed
+            }
+
+            // If we were notified, that means the UI requested a fresh update of the
+            // pinned messages list for this room, so we need to emit the list again.
+            // This also happens when our power levels change, which could affect `can_unpin`.
+            _ = resend_pinned_messages_list.notified() => true,
+        };
+    }
 }
 
 /// Whether to enable verbose logging of all timeline diff updates.

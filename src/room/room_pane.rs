@@ -20,6 +20,8 @@ use crate::{app::SelectedRoom, home::rooms_list::RoomsListAction, sliding_sync::
 pub enum RoomPaneKind {
     /// The list of the room's members.
     Members,
+    /// The list of the room's pinned messages.
+    PinnedMessages,
 }
 
 impl RoomPaneKind {
@@ -27,6 +29,7 @@ impl RoomPaneKind {
     pub fn title(&self) -> Cow<'static, str> {
         match self {
             RoomPaneKind::Members => Cow::Borrowed("Members"),
+            RoomPaneKind::PinnedMessages => Cow::Borrowed("Pinned messages"),
         }
     }
 
@@ -34,6 +37,7 @@ impl RoomPaneKind {
     pub fn as_str(&self) -> Cow<'static, str> {
         match self {
             RoomPaneKind::Members => Cow::Borrowed("members"),
+            RoomPaneKind::PinnedMessages => Cow::Borrowed("pinned_messages"),
         }
     }
 }
@@ -62,6 +66,16 @@ impl PaneSide {
     /// Whether a pane on this side spans the dock's full height.
     pub fn is_vertical(self) -> bool {
         matches!(self, PaneSide::Left | PaneSide::Right)
+    }
+
+    /// The tooltip for a pane's edge button, which moves the pane to this side.
+    pub fn move_tooltip(self) -> &'static str {
+        match self {
+            PaneSide::Top => "Move to the top",
+            PaneSide::Bottom => "Move to the bottom",
+            PaneSide::Left => "Move to the left",
+            PaneSide::Right => "Move to the right",
+        }
     }
 }
 

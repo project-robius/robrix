@@ -1,13 +1,13 @@
 //! A dock around a room's timeline that shows that room's panes, e.g., its member list.
 //!
 //! Each pane is docked to one of the four edges around the timeline,
-//! can be resized along its edge's one meaningful axis via a grab handle on its inner border,
+//! can be resized via the grab handles on its inner border and between it and its edge's other panes,
 //! moved to the next edge, popped out into its own tab or view, or closed.
 //! A dock's panes belong to its current timeline, and are saved and restored along with it.
 
 use std::sync::Arc;
 
-use makepad_widgets::*;
+use makepad_widgets::{*, makepad_platform::event::DigitId};
 use matrix_sdk::room::RoomMember;
 
 use crate::{
@@ -19,6 +19,7 @@ use crate::{
 };
 use super::{
     room_action_bar::RoomActionTooltip,
+    pinned_messages_list::{PinnedMessagesListWidgetRefExt, SavedPinnedMessagesList},
     room_members_list::{RoomMembersListRef, RoomMembersListWidgetRefExt, SavedRoomMembersList},
     room_pane::{self, PaneLayout, PaneSide, RoomPaneKind, RoomPanesPending},
 };
@@ -57,14 +58,14 @@ script_mod! {
         titles := View {
             width: Fill, height: Fit
             flow: Down
-            // Its top padding is set by `set_pane_title()`, so that the title's first line
+            // Its top padding is set by `set_pane_header()`, so that the title's first line
             // stays centered on the top row of buttons even when it wraps.
             title_line := View {
                 width: Fill, height: Fit{min: FitBound.Abs(#(HEADER_BUTTON_SIZE))}
                 pane_title := Label {
                     width: Fill, height: Fit
                     flow: Flow.Right{wrap: true}
-                    max_lines: 2, text_overflow: Ellipsis
+                    max_lines: 3, text_overflow: Ellipsis
                     padding: 0, margin: 0
                     draw_text +: {
                         text_style: theme.font_bold {font_size: 11},
@@ -86,19 +87,20 @@ script_mod! {
     }
 
     // The frame around a pane's content: a header bar with the pane's title and buttons.
-    // Its edge draws the divider on its inner side, and its content spaces itself vertically.
+    // Its edge draws the dividers around it, and its content spaces itself vertically.
     mod.widgets.RoomPaneFrame = SolidView {
         width: Fill, height: Fill
         flow: Down
-        padding: Inset{top: 0, right: #(FRAME_PADDING), bottom: 0, left: #(FRAME_PADDING)}
         show_bg: true
         draw_bg +: { color: (COLOR_PRIMARY) }
 
-        header := View {
+        header := SolidView {
             width: Fill, height: Fit
             flow: Right
             spacing: #(HEADER_SPACING)
-            margin: Inset{top: 3, bottom: 4}
+            padding: Inset{top: #(HEADER_PADDING), right: #(FRAME_PADDING), bottom: #(HEADER_PADDING), left: #(FRAME_PADDING)}
+            show_bg: true
+            draw_bg +: { color: (COLOR_BG_LAVENDER) }
 
             // This stays at the top when the buttons are stacked beside it.
             // A docked pane is shown within its room, so it doesn't show the room's name.
@@ -130,7 +132,7 @@ script_mod! {
         content := View {
             width: Fill, height: Fill
             flow: Down
-            padding: Inset{top: 2}
+            padding: Inset{top: #(CONTENT_TOP_PADDING), right: #(FRAME_PADDING), bottom: #(FRAME_PADDING), left: #(FRAME_PADDING)}
         }
     }
 
@@ -184,8 +186,9 @@ script_mod! {
 
         // Panes slide in and out from this edge's side of the dock.
         slide: 1.0
-        // Like a dock splitter, the divider and grab handle turn purple when hovered or dragged.
+        // Like a dock splitter, the dividers and grab handles turn purple when hovered or dragged.
         hover: 0.0
+        split_hover: 0.0
         animator: Animator {
             hover: {
                 default: @off
@@ -198,6 +201,19 @@ script_mod! {
                     redraw: true
                     from: {all: Snap}
                     apply: { hover: 1.0 }
+                }
+            }
+            split_hover: {
+                default: @off
+                off: AnimatorState{
+                    redraw: true
+                    from: {all: Forward {duration: 0.1}}
+                    apply: { split_hover: 0.0 }
+                }
+                on: AnimatorState{
+                    redraw: true
+                    from: {all: Snap}
+                    apply: { split_hover: 1.0 }
                 }
             }
             panel: {
@@ -240,20 +256,38 @@ script_mod! {
 
         // The templates for each kind of pane.
         members_pane: mod.widgets.RoomPaneFrame {
-            header +: { title_row +: { pane_icon +: { draw_icon +: { svg: (ICON_MEMBERS) } } } }
             content +: { room_members := mod.widgets.RoomMembersList {} }
+        }
+        pinned_messages_pane: mod.widgets.RoomPaneFrame {
+            content +: { pinned_messages := mod.widgets.PinnedMessagesList {} }
         }
     }
 }
 
-/// The spacing between the header's icon, titles, and buttons.
-/// The horizontal padding of a pane's frame.
+/// The padding on either side of a pane's frame, and beneath its content.
 const FRAME_PADDING: f64 = 10.0;
+/// The space above a pane's content, which is a bit more for a tall pane on the left or right side.
+const CONTENT_TOP_PADDING: f64 = 6.0;
+const VERTICAL_CONTENT_TOP_PADDING: f64 = 12.0;
+/// The spacing between the header's icon, titles, and buttons.
 const HEADER_SPACING: f64 = 4.0;
+/// The space above and below the header's contents.
+const HEADER_PADDING: f64 = 7.0;
 const HEADER_BUTTON_SIZE: f64 = 25.0;
 const HEADER_BUTTON_SPACING: f64 = 2.0;
 /// The distance between the starts of adjacent header buttons.
 const HEADER_BUTTON_STEP: f64 = HEADER_BUTTON_SIZE + HEADER_BUTTON_SPACING;
+/// The header's buttons, starting from the close button in its top-right corner.
+const HEADER_BUTTONS: [&[LiveId]; 3] = [
+    ids!(pane_close_button),
+    ids!(pane_pop_out_button),
+    ids!(pane_edge_button),
+];
+/// The width of the header's icon, including its margins.
+const HEADER_ICON_WIDTH: f64 = 20.0;
+/// The narrowest a top or bottom pane can be while its header still fits its icon and one row of buttons.
+const MIN_HEADER_WIDTH: f64 = FRAME_PADDING * 2.0 + HEADER_ICON_WIDTH + HEADER_SPACING * 2.0
+    + HEADER_BUTTON_STEP * HEADER_BUTTONS.len() as f64 - HEADER_BUTTON_SPACING;
 /// The dock always leaves at least this much space for the timeline in the center.
 const MIN_CENTER_SIZE: f64 = 150.0;
 
@@ -273,6 +307,9 @@ fn populate_content(
             let list = frame.child_by_path(ids!(content.room_members)).as_room_members_list();
             show_members(cx, &list, room_name_id, room_members);
         }
+        RoomPaneKind::PinnedMessages => {
+            frame.child_by_path(ids!(content.pinned_messages)).as_pinned_messages_list().set_room(cx, room_name_id);
+        }
     }
 }
 
@@ -291,12 +328,16 @@ fn show_members(cx: &mut Cx, list: &RoomMembersListRef, room_name_id: &RoomNameI
 #[derive(Clone)]
 enum SavedPaneContent {
     Members(SavedRoomMembersList),
+    PinnedMessages(SavedPinnedMessagesList),
 }
 
 fn save_content(kind: &RoomPaneKind, frame: &WidgetRef) -> SavedPaneContent {
     match kind {
         RoomPaneKind::Members => SavedPaneContent::Members(
             frame.child_by_path(ids!(content.room_members)).as_room_members_list().save_state()
+        ),
+        RoomPaneKind::PinnedMessages => SavedPaneContent::PinnedMessages(
+            frame.child_by_path(ids!(content.pinned_messages)).as_pinned_messages_list().save_state()
         ),
     }
 }
@@ -314,6 +355,10 @@ fn restore_content(
             list.restore_state(cx, room_name_id, saved);
             show_members(cx, &list, room_name_id, room_members);
         }
+        SavedPaneContent::PinnedMessages(saved) => {
+            frame.child_by_path(ids!(content.pinned_messages)).as_pinned_messages_list()
+                .restore_state(cx, room_name_id, saved);
+        }
     }
 }
 
@@ -322,14 +367,21 @@ fn restore_content(
 pub struct SavedRoomPane {
     kind: RoomPaneKind,
     layout: PaneLayout,
+    weight: Option<f64>,
     content: SavedPaneContent,
 }
 
-/// Sets the title of the given pane (or popped-out pane), with its first line centered
-/// on the top row of the header buttons.
-pub fn set_pane_title(cx: &mut Cx, pane: &WidgetRef, title: &str) {
+/// Sets the icon and title of the given pane (or popped-out pane) based on the given `kind`.
+///
+/// The title's first line is aligned with the top row of header buttons.
+pub fn set_pane_header(cx: &mut Cx, pane: &WidgetRef, kind: &RoomPaneKind) {
+    let mut icon = pane.widget(cx, ids!(pane_icon));
+    match kind {
+        RoomPaneKind::Members => script_apply_eval!(cx, icon, { draw_icon +: { svg: (mod.widgets.ICON_MEMBERS) } }),
+        RoomPaneKind::PinnedMessages => script_apply_eval!(cx, icon, { draw_icon +: { svg: (mod.widgets.ICON_PIN) } }),
+    }
     let label = pane.label(cx, ids!(pane_title));
-    label.set_text(cx, title);
+    label.set_text(cx, &kind.title());
     let line_height = label.borrow()
         .map_or(0.0, |label| utils::text_line_height(cx, &label.draw_text));
     let top = ((HEADER_BUTTON_SIZE - line_height) * 0.5).max(0.0);
@@ -339,27 +391,27 @@ pub fn set_pane_title(cx: &mut Cx, pane: &WidgetRef, title: &str) {
     });
 }
 
-/// Returns the width of the given pane's title laid out on one line.
-fn measure_title_width(cx: &mut Cx, frame: &WidgetRef) -> f64 {
+/// Returns the width of the given pane's title laid out on one line,
+/// and the narrowest it can be when it wraps onto two lines between its words.
+fn measure_title_widths(cx: &mut Cx, frame: &WidgetRef) -> (f64, f64) {
     let title = frame.label(cx, ids!(pane_title));
     let text = title.text();
-    title.borrow().map_or(0.0, |label| utils::unwrapped_text_width(cx, &label.draw_text, &text))
-}
-
-/// Returns the tooltip for a pane's edge button, which moves it to the given side.
-fn move_tooltip(side: PaneSide) -> &'static str {
-    match side {
-        PaneSide::Top => "Move to the top",
-        PaneSide::Bottom => "Move to the bottom",
-        PaneSide::Left => "Move to the left",
-        PaneSide::Right => "Move to the right",
-    }
+    let Some(label) = title.borrow() else { return (0.0, 0.0) };
+    let mut width = |text: &str| utils::unwrapped_text_width(cx, &label.draw_text, text);
+    let one_line = width(&text);
+    let two_lines = text.match_indices(' ')
+        .map(|(i, _)| width(text[..i].trim_end()).max(width(text[i..].trim_start())))
+        .fold(one_line, f64::min);
+    (one_line, two_lines)
 }
 
 struct DockedPane {
     kind: RoomPaneKind,
     frame: WidgetRef,
     layout: PaneLayout,
+    /// This pane's weight, which sets its length along its edge relative to the other panes there,
+    /// or `None` for the average weight until the user resizes the panes on that edge.
+    weight: Option<f64>,
     /// The edge this pane is on, or `None` while it waits to slide out of its previous edge.
     placed: Option<PaneSide>,
     /// How many columns the header's buttons were last placed in, or 0 if not yet placed,
@@ -367,12 +419,15 @@ struct DockedPane {
     button_cols: usize,
     /// The width of the title on one line, which the buttons must leave room for.
     title_width: f64,
+    /// Likewise when the title wraps onto two lines, which it can beside two or more rows of buttons.
+    title_two_line_width: f64,
 }
 
 #[derive(Script, Widget)]
 pub struct RoomPaneDock {
     #[deref] view: View,
     #[live] members_pane: Option<LivePtr>,
+    #[live] pinned_messages_pane: Option<LivePtr>,
     #[rust] room_name_id: Option<RoomNameId>,
     /// The timeline that this dock's panes belong to.
     #[rust] timeline_kind: Option<TimelineKind>,
@@ -402,11 +457,15 @@ impl Widget for RoomPaneDock {
                 self.edge(cx, side).set_side(side);
             }
         }
-        let buttons: Vec<(WidgetRef, &'static str)> = self.panes.iter().flat_map(|pane| [
-            (pane.frame.widget(cx, ids!(pane_edge_button)), move_tooltip(pane.layout.side.next())),
-            (pane.frame.widget(cx, ids!(pane_pop_out_button)), "Pop out"),
-            (pane.frame.widget(cx, ids!(pane_close_button)), "Close"),
-        ]).collect();
+        // This is lazy, as the tooltip only looks at the buttons for the few events that can show it.
+        let buttons = self.panes.iter().flat_map(|pane| {
+            let header_buttons = pane.frame.child(id!(header)).child(id!(header_buttons));
+            [
+                (header_buttons.child(id!(pane_edge_button)), pane.layout.side.next().move_tooltip()),
+                (header_buttons.child(id!(pane_pop_out_button)), "Pop out"),
+                (header_buttons.child(id!(pane_close_button)), "Close"),
+            ]
+        });
         self.tooltip.handle_event(cx, event, buttons, TooltipPosition::Bottom);
 
         // Makepad resolves overlapping hits by dispatch order, not draw order:
@@ -455,7 +514,7 @@ impl Widget for RoomPaneDock {
             }
             if let Some(widget_action) = action.as_widget_action() {
                 match widget_action.cast() {
-                    // The user let go of an edge's grab handle, so all panes on that edge keep the new size.
+                    // The user let go of the grab handle on an edge's border, so all panes on that edge keep the new size.
                     RoomPaneEdgeAction::Resized { side, size }
                         if widget_action.widget_uid == self.edge(cx, side).widget_uid() =>
                     {
@@ -464,6 +523,16 @@ impl Widget for RoomPaneDock {
                             room_pane::set_last_layout(pane.layout);
                         }
                         self.place_panes(cx, true);
+                    }
+                    // The user let go of a grab handle between an edge's panes, so they keep their new weights.
+                    RoomPaneEdgeAction::SplitMoved { side, weights }
+                        if widget_action.widget_uid == self.edge(cx, side).widget_uid() =>
+                    {
+                        for (kind, weight) in weights {
+                            if let Some(pane) = self.panes.iter_mut().find(|pane| pane.kind == kind) {
+                                pane.weight = Some(weight);
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -493,9 +562,14 @@ impl Widget for RoomPaneDock {
             match button {
                 PaneButton::Close => self.remove_pane(cx, &kind, true),
                 PaneButton::MoveToNextEdge => {
-                    if let Some(pane) = self.panes.iter_mut().find(|pane| pane.kind == kind) {
+                    // The pane goes last on its new edge with the average weight there, and last in our list too,
+                    // so that restoring our panes keeps each edge's order.
+                    if let Some(index) = self.panes.iter().position(|pane| pane.kind == kind) {
+                        let mut pane = self.panes.remove(index);
                         pane.layout.side = pane.layout.side.next();
+                        pane.weight = None;
                         room_pane::set_last_layout(pane.layout);
+                        self.panes.push(pane);
                     }
                     self.place_panes(cx, true);
                 }
@@ -515,7 +589,7 @@ impl Widget for RoomPaneDock {
             self.is_drawing = true;
             let rect = cx.peek_walk_turtle(walk);
             self.clamp_edges(cx, rect.size);
-            self.layout_headers(cx, rect.size);
+            self.layout_headers(cx);
         }
         // This yields the timeline's PortalList to our parent RoomScreen.
         let step = self.view.draw_walk(cx, scope, walk);
@@ -523,7 +597,7 @@ impl Widget for RoomPaneDock {
             self.is_drawing = false;
             // The grab handles straddle the panes' borders, so they're drawn over the timeline.
             for side in ALL_SIDES {
-                self.edge(cx, side).draw_divider(cx);
+                self.edge(cx, side).draw_dividers(cx);
             }
         }
         step
@@ -602,7 +676,7 @@ impl RoomPaneDock {
         self.timeline_kind = Some(timeline_kind);
         self.room_members = room_members.map(Ok);
         for saved in saved_panes {
-            self.create_pane(cx, saved.kind, saved.layout, Some(saved.content));
+            self.create_pane(cx, saved.kind, saved.layout, saved.weight, Some(saved.content));
         }
         self.place_panes(cx, false);
         self.dock_pending(cx);
@@ -613,7 +687,7 @@ impl RoomPaneDock {
         let Some(timeline_kind) = self.timeline_kind.as_ref() else { return };
         for kind in room_pane::take_pending(timeline_kind) {
             if !self.has_pane(&kind) {
-                self.create_pane(cx, kind, room_pane::last_layout(), None);
+                self.create_pane(cx, kind, room_pane::last_layout(), None, None);
             }
         }
         self.place_panes(cx, true);
@@ -624,7 +698,7 @@ impl RoomPaneDock {
         if self.has_pane(&kind) {
             self.remove_pane(cx, &kind, true);
         } else if self.room_name_id.is_some() {
-            self.create_pane(cx, kind, room_pane::last_layout(), None);
+            self.create_pane(cx, kind, room_pane::last_layout(), None, None);
             self.place_panes(cx, true);
         }
     }
@@ -635,6 +709,7 @@ impl RoomPaneDock {
             .map(|pane| SavedRoomPane {
                 kind: pane.kind.clone(),
                 layout: pane.layout,
+                weight: pane.weight,
                 content: save_content(&pane.kind, &pane.frame),
             })
             .collect()
@@ -645,7 +720,7 @@ impl RoomPaneDock {
     fn place_panes(&mut self, cx: &mut Cx, animate: bool) {
         for index in 0..self.panes.len() {
             let pane = &self.panes[index];
-            let (kind, frame, layout, placed) = (pane.kind.clone(), pane.frame.clone(), pane.layout, pane.placed);
+            let (kind, frame, layout, weight, placed) = (pane.kind.clone(), pane.frame.clone(), pane.layout, pane.weight, pane.placed);
             match placed {
                 Some(side) if side == layout.side => {
                     self.edge(cx, side).set_size(layout.edge_size);
@@ -658,15 +733,20 @@ impl RoomPaneDock {
                 }
                 None => {}
             }
-            self.apply_edge_icon(cx, index);
+            self.apply_side(cx, index);
             // A pane that was closed and then reopened may still be sliding out of an edge:
             // it reverses course if that's its new edge, and otherwise vanishes from the old one.
             for side in ALL_SIDES.into_iter().filter(|side| *side != layout.side) {
                 self.edge(cx, side).remove_pane(cx, &kind, false);
             }
+            // A pane joining other panes on an edge takes on that edge's size.
+            let edge_size = self.panes.iter()
+                .find(|pane| pane.placed == Some(layout.side))
+                .map_or(layout.edge_size, |pane| pane.layout.edge_size);
+            self.panes[index].layout.edge_size = edge_size;
             let edge = self.edge(cx, layout.side);
-            edge.set_size(layout.edge_size);
-            edge.add_pane(cx, kind, frame, animate);
+            edge.set_size(edge_size);
+            edge.add_pane(cx, kind, frame, weight, animate);
             self.panes[index].placed = Some(layout.side);
         }
         self.view.redraw(cx);
@@ -676,11 +756,19 @@ impl RoomPaneDock {
     fn frame_template(&self, kind: &RoomPaneKind) -> Option<LivePtr> {
         match kind {
             RoomPaneKind::Members => self.members_pane,
+            RoomPaneKind::PinnedMessages => self.pinned_messages_pane,
         }
     }
 
     /// Creates a new pane, which is placed on an edge by `place_panes()`.
-    fn create_pane(&mut self, cx: &mut Cx, kind: RoomPaneKind, layout: PaneLayout, content: Option<SavedPaneContent>) {
+    fn create_pane(
+        &mut self,
+        cx: &mut Cx,
+        kind: RoomPaneKind,
+        layout: PaneLayout,
+        weight: Option<f64>,
+        content: Option<SavedPaneContent>,
+    ) {
         let Some(room_name_id) = self.room_name_id.clone() else { return };
         let frame = widget_ref_from_live_ptr(cx, self.frame_template(&kind));
         if frame.is_empty() {
@@ -693,7 +781,7 @@ impl RoomPaneDock {
             LiveId::from_str(&format!("room_pane_{}", kind.as_str())),
             frame.clone(),
         );
-        set_pane_title(cx, &frame, &kind.title());
+        set_pane_header(cx, &frame, &kind);
         match content {
             Some(content) => restore_content(cx, &frame, &room_name_id, content, &self.room_members),
             None => populate_content(cx, &kind, &frame, &room_name_id, &self.room_members),
@@ -709,13 +797,31 @@ impl RoomPaneDock {
                 local_only: false,
             });
         }
-        let title_width = measure_title_width(cx, &frame);
-        self.panes.push(DockedPane { kind, frame, layout, placed: None, button_cols: 0, title_width });
+        let (title_width, title_two_line_width) = measure_title_widths(cx, &frame);
+        self.panes.push(DockedPane {
+            kind,
+            frame,
+            layout,
+            weight,
+            placed: None,
+            button_cols: 0,
+            title_width,
+            title_two_line_width,
+        });
+        self.notify_shown_panes(cx);
+    }
+
+    fn notify_shown_panes(&self, cx: &mut Cx) {
+        cx.widget_action(
+            self.widget_uid(),
+            RoomPaneDockAction::ShownPanesChanged(self.panes.iter().map(|pane| pane.kind.clone()).collect()),
+        );
     }
 
     fn remove_pane(&mut self, cx: &mut Cx, kind: &RoomPaneKind, animate: bool) {
         let Some(index) = self.panes.iter().position(|pane| &pane.kind == kind) else { return };
         let pane = self.panes.remove(index);
+        self.notify_shown_panes(cx);
         if let Some(side) = pane.placed {
             // The edge keeps drawing the pane until it has slid out.
             self.edge(cx, side).remove_pane(cx, kind, animate);
@@ -724,8 +830,9 @@ impl RoomPaneDock {
         self.view.redraw(cx);
     }
 
-    /// Points the edge button at wherever the next click would move the pane.
-    fn apply_edge_icon(&self, cx: &mut Cx, index: usize) {
+    /// Points the edge button at wherever the next click would move the pane,
+    /// and gives a tall pane on the left or right side a bit more room above its content.
+    fn apply_side(&self, cx: &mut Cx, index: usize) {
         let Some(pane) = self.panes.get(index) else { return };
         let mut button = pane.frame.button(cx, ids!(pane_edge_button));
         match pane.layout.side.next() {
@@ -734,6 +841,11 @@ impl RoomPaneDock {
             PaneSide::Left => script_apply_eval!(cx, button, { draw_icon +: { svg: (mod.widgets.ICON_CARET_LEFT) } }),
             PaneSide::Right => script_apply_eval!(cx, button, { draw_icon +: { svg: (mod.widgets.ICON_CARET_RIGHT) } }),
         }
+        let top = if pane.layout.side.is_vertical() { VERTICAL_CONTENT_TOP_PADDING } else { CONTENT_TOP_PADDING };
+        let mut content = pane.frame.widget(cx, ids!(content));
+        script_apply_eval!(cx, content, {
+            padding: mod.prelude.widgets.Inset{top: #(top), right: #(FRAME_PADDING), bottom: #(FRAME_PADDING), left: #(FRAME_PADDING)}
+        });
     }
 
     /// Limits each pair of opposite edges such that the center keeps at least `MIN_CENTER_SIZE`.
@@ -756,43 +868,47 @@ impl RoomPaneDock {
     }
 
     /// Lays out each pane's header buttons in a single column, taking more columns
-    /// (leftwards) only while the pane's title still fits unwrapped beside them.
+    /// (leftwards) only while the pane's title still fits beside them.
     /// Places each pane's header buttons for the width its edge gives it, before it's drawn.
-    fn layout_headers(&mut self, cx: &mut Cx, dock_size: Vec2d) {
+    fn layout_headers(&mut self, cx: &mut Cx) {
         // From the top-right corner: the close button never moves, and the others
         // go to its left while the title still fits beside them, otherwise below it.
-        const BUTTONS: [&[LiveId]; 3] = [
-            ids!(pane_close_button),
-            ids!(pane_pop_out_button),
-            ids!(pane_edge_button),
-        ];
         for index in 0..self.panes.len() {
             let side = self.panes[index].layout.side;
-            let pane_width = if side.is_vertical() {
-                self.edge(cx, side).pane_size()
-            } else {
-                let count = self.panes.iter().filter(|pane| pane.layout.side == side).count();
-                dock_size.x / count.max(1) as f64
-            };
+            let edge = self.edge(cx, side);
             let pane = &mut self.panes[index];
-            // The icon hasn't been measured before its first draw.
-            let icon_width = pane.frame.widget(cx, ids!(pane_icon)).area().rect(cx).size.x;
-            let icon_width = if icon_width > 0.0 { icon_width } else { 20.0 };
-            let title_area = |cols: usize| pane_width - FRAME_PADDING * 2.0 - icon_width - HEADER_SPACING * 2.0
-                - (HEADER_BUTTON_STEP * cols as f64 - HEADER_BUTTON_SPACING);
             let cols = if side.is_vertical() {
-                (1..=BUTTONS.len()).rev()
-                    .find(|cols| title_area(*cols) >= pane.title_width)
+                let pane_width = edge.pane_size();
+                // The icon hasn't been measured before its first draw.
+                let icon_width = pane.frame.widget(cx, ids!(pane_icon)).area().rect(cx).size.x;
+                let icon_width = if icon_width > 0.0 { icon_width } else { HEADER_ICON_WIDTH };
+                let title_area = |cols: usize| pane_width - FRAME_PADDING * 2.0 - icon_width - HEADER_SPACING * 2.0
+                    - (HEADER_BUTTON_STEP * cols as f64 - HEADER_BUTTON_SPACING);
+                // Beside two or more rows of buttons, the title can wrap onto a second line.
+                (1..=HEADER_BUTTONS.len()).rev()
+                    .find(|&cols| title_area(cols) >= if HEADER_BUTTONS.len().div_ceil(cols) > 1 {
+                        pane.title_two_line_width
+                    } else {
+                        pane.title_width
+                    })
                     .unwrap_or(1)
             } else {
                 // Top and bottom panes are short, so their buttons stay in one row.
-                BUTTONS.len()
+                HEADER_BUTTONS.len()
             };
+            // The panes on an edge can't be split so finely that a header's buttons don't fit.
+            let min_length = if side.is_vertical() {
+                let rows = HEADER_BUTTONS.len().div_ceil(cols);
+                EDGE_MIN_SIZE.max(HEADER_PADDING * 2.0 + HEADER_BUTTON_STEP * rows as f64 - HEADER_BUTTON_SPACING)
+            } else {
+                MIN_HEADER_WIDTH
+            };
+            edge.set_min_length(&pane.kind, min_length);
             if cols == pane.button_cols {
                 continue;
             }
             pane.button_cols = cols;
-            for (i, id) in BUTTONS.iter().enumerate() {
+            for (i, id) in HEADER_BUTTONS.iter().enumerate() {
                 let x = (cols - 1 - i % cols) as f64 * HEADER_BUTTON_STEP;
                 let y = (i / cols) as f64 * HEADER_BUTTON_STEP;
                 let mut button = pane.frame.widget(cx, id);
@@ -866,27 +982,127 @@ impl RoomPaneDockRef {
 }
 
 
-/// The visible grab handle: a small pill centered on the pane's inner border.
+/// The visible grab handle: a small grip rectangle centered on a divider.
 const GRAB_LEN: f64 = 38.0;
-const GRAB_THICK: f64 = 8.0;
-/// A small floor, so that the grab handle stays usable.
+const GRAB_THICKNESS: f64 = 8.0;
+/// How far beside a grab strip the cursor still grabs it, which is further for a blunt finger.
+const GRAB_SLOP: f64 = 3.0;
+const GRAB_TOUCH_SLOP: f64 = 8.0;
+/// A small floor for a pane's size in either direction, so that its grab handles stay usable.
 const EDGE_MIN_SIZE: f64 = 60.0;
-/// The thickness of the divider on a pane's inner side.
+/// The thickness of the dividers beside and between panes.
 const DIVIDER_THICKNESS: f64 = 2.0;
-/// The dark gray of a dock splitter (#4D4D4D), which the divider and grab handle share.
+/// The dark gray of a dock splitter (#4D4D4D), which the dividers and grab handles share.
 const DIVIDER_COLOR: Vec4 = Vec4 { x: 0.302, y: 0.302, z: 0.302, w: 1.0 };
 
-/// Widget actions emitted by a [`RoomPaneEdge`].
+/// Widget actions emitted by a [`RoomPaneDock`].
 #[derive(Clone, Debug, Default)]
-pub enum RoomPaneEdgeAction {
-    /// The user finished dragging the edge's grab handle.
-    Resized { side: PaneSide, size: f64 },
+pub enum RoomPaneDockAction {
+    /// The panes shown in this dock have changed.
+    ///
+    /// This is used to inform the room action bar to highlight the buttons
+    /// corresponding to the panes that are currently shown.
+    ShownPanesChanged(Vec<RoomPaneKind>),
     #[default]
     None,
 }
 
+/// Widget actions emitted by a [`RoomPaneEdge`].
+#[derive(Clone, Debug, Default)]
+pub enum RoomPaneEdgeAction {
+    /// The user finished dragging the grab handle on the edge's inner border.
+    Resized {
+        side: PaneSide,
+        /// The size of the pane (either its width or height), from its docked edge to its draggable edge.
+        size: f64,
+    },
+    /// The user finished dragging a grab handle between two of the edge's panes,
+    /// after which its panes have the given weights.
+    SplitMoved {
+        side: PaneSide,
+        /// An edge holds at most one pane of each kind, and there are only two kinds.
+        weights: SmallVec<[(RoomPaneKind, f64); 2]>,
+    },
+    #[default]
+    None,
+}
+
+/// A pane drawn by a [`RoomPaneEdge`].
+struct EdgePane {
+    kind: RoomPaneKind,
+    frame: WidgetRef,
+    /// This pane's weight, which sets its length relative to other panes' lengths
+    /// that are also docked to the same side/edge.
+    weight: f64,
+    min_length: f64,
+}
+
+/// Returns the length of each of the given panes along their edge's given length, divided up by their weights,
+/// except that a pane whose weight would make it shorter than its minimum length gets that minimum instead.
+fn pane_lengths(panes: &[EdgePane], length: f64) -> impl Iterator<Item = f64> + '_ {
+    let total_min: f64 = panes.iter().map(|pane| pane.min_length).sum();
+    // When the edge can't fit every pane's minimum, those minimums all shrink to fit.
+    let min_scale = if total_min > length { length / total_min } else { 1.0 };
+    let total_weight: f64 = panes.iter().map(|pane| pane.weight).sum();
+    let is_short = move |pane: &EdgePane| length * pane.weight / total_weight < pane.min_length * min_scale;
+    let (short_length, long_weight) = panes.iter().fold((0.0, 0.0), |(len, weight), pane| {
+        if is_short(pane) { (len + pane.min_length * min_scale, weight) } else { (len, weight + pane.weight) }
+    });
+    panes.iter().map(move |pane| if is_short(pane) {
+        pane.min_length * min_scale
+    } else {
+        (length - short_length) * pane.weight / long_weight
+    })
+}
+
+/// Returns the grab strip of each split between the given panes, which runs across their edge's `rect`.
+fn split_strips(panes: &[EdgePane], side: PaneSide, rect: Rect) -> impl Iterator<Item = Rect> + '_ {
+    let vertical = side.is_vertical();
+    let mut end = if vertical { rect.pos.y } else { rect.pos.x };
+    pane_lengths(panes, if vertical { rect.size.y } else { rect.size.x })
+        .take(panes.len().saturating_sub(1))
+        .map(move |len| {
+            end += len;
+            if vertical {
+                Rect { pos: dvec2(rect.pos.x, end - GRAB_THICKNESS * 0.5), size: dvec2(rect.size.x, GRAB_THICKNESS) }
+            } else {
+                Rect { pos: dvec2(end - GRAB_THICKNESS * 0.5, rect.pos.y), size: dvec2(GRAB_THICKNESS, rect.size.y) }
+            }
+        })
+}
+
+/// One of the dividers drawn by a [`RoomPaneEdge`].
+#[derive(Clone, Copy)]
+enum Divider {
+    /// The one along the edge's inner border, which resizes the whole edge.
+    Border,
+    /// The one after the pane at this index, which resizes that pane and the next one.
+    Split(usize),
+}
+
+/// A drag of one of a [`RoomPaneEdge`]'s dividers, which started at `start` along the axis it resizes.
+#[derive(Clone, Copy)]
+enum Drag {
+    /// The edge was `start_size` when the drag started.
+    Border {
+        start: f64,
+        start_size: f64,
+    },
+    /// The pane at `index` was `start_len` long when the drag started and can span `min_len..=max_len`,
+    /// while it and the next pane together are `pair_len` long and weigh `pair_weight`.
+    Split {
+        index: usize,
+        start: f64,
+        start_len: f64,
+        min_len: f64,
+        max_len: f64,
+        pair_len: f64,
+        pair_weight: f64,
+    },
+}
+
 /// One edge of a [`RoomPaneDock`], which draws its panes side by side
-/// plus a grab handle on its inner border for resizing it.
+/// plus grab handles on its inner border and between its panes for resizing them.
 #[derive(Script, Widget, Animator)]
 pub struct RoomPaneEdge {
     #[source] source: ScriptObjectRef,
@@ -894,22 +1110,28 @@ pub struct RoomPaneEdge {
     #[apply_default] animator: Animator,
     /// How far this edge's panes have slid out of view: 0 when fully shown, 1 when hidden.
     #[live] slide: f32,
-    /// How hovered (or dragged) the divider is, from 0 to 1.
+    /// How hovered (or dragged) the divider on our inner border is, from 0 to 1.
     #[live] hover: f32,
+    /// Likewise for the split after the pane at `hovered_split`.
+    #[live] split_hover: f32,
     #[live] draw_handle: DrawColor,
-    /// The (invisible) hit zone for the full strip; the pill is just the visual.
+    /// The (invisible) hit zone along our whole inner border; its pills are just the visuals.
     #[live] draw_grab: DrawColor,
-    /// The line between this edge's panes and the timeline.
+    /// The lines along our inner border and between our panes.
     #[live] draw_divider: DrawColor,
     #[rust] side: PaneSide,
-    #[rust] panes: Vec<(RoomPaneKind, WidgetRef)>,
+    #[rust] panes: Vec<EdgePane>,
     #[rust(300.0)] size: f64,
     /// The most that this edge may extend, if limited.
     #[rust] max_extent: Option<f64>,
-    /// The drag start position and the size at that time.
-    #[rust] drag: Option<(f64, f64)>,
-    #[rust] handle_area: Area,
-    /// Our rect as of our last draw, if we drew any panes, which our dock then draws our divider along.
+    /// The finger dragging one of our dividers, and that drag.
+    #[rust] drag: Option<(DigitId, Drag)>,
+    #[rust] border_area: Area,
+    /// Our panes' header buttons as of our last draw, which our grab strips mustn't take presses on.
+    #[rust] button_rects: Vec<Rect>,
+    #[rust] hovered_split: usize,
+    /// Our rect as of our last draw, if we drew any panes, which our dock then draws our dividers along.
+    /// It's also the hit area of our splits' grab strips.
     #[rust] area: Area,
     #[rust] has_panes_drawn: bool,
     /// Whether this edge's last pane is sliding out, after which it's removed.
@@ -931,9 +1153,13 @@ impl ScriptHook for RoomPaneEdge {
 }
 
 impl RoomPaneEdge {
-    /// The dark gray of a dock splitter, turning purple as the divider is hovered or dragged.
-    fn divider_color(&self) -> Vec4 {
-        let t = self.hover.clamp(0.0, 1.0);
+    /// The dark gray of a dock splitter, which turns purple when hovered or dragged.
+    fn divider_color(&self, divider: Divider) -> Vec4 {
+        let t = match divider {
+            Divider::Border => self.hover,
+            Divider::Split(index) if index == self.hovered_split => self.split_hover,
+            Divider::Split(_) => 0.0,
+        }.clamp(0.0, 1.0);
         Vec4 {
             x: DIVIDER_COLOR.x + (COLOR_ROBRIX_PURPLE.x - DIVIDER_COLOR.x) * t,
             y: DIVIDER_COLOR.y + (COLOR_ROBRIX_PURPLE.y - DIVIDER_COLOR.y) * t,
@@ -942,52 +1168,122 @@ impl RoomPaneEdge {
         }
     }
 
-    /// Handles resizing via the grab handle, which our dock calls before any other widget handles the event.
+    /// Handles resizing via the grab handles, which our dock calls before any other widget handles the event.
     ///
-    /// Returns whether the grab handle was pressed, in which case no other widget should handle the event.
+    /// Returns whether a grab handle was pressed, in which case no other widget should handle the event.
     fn handle_grab_handle_event(&mut self, cx: &mut Cx, event: &Event) -> bool {
-        if self.panes.is_empty() || self.is_sliding_out {
+        if self.panes.is_empty()
+            || self.is_sliding_out
+            || !matches!(event, Event::MouseDown(_) | Event::MouseMove(_) | Event::MouseUp(_) | Event::MouseLeave(_) | Event::TouchUpdate(_))
+        {
             return false;
         }
 
-        // The strip reaches a little into our panes, but must not take presses on their header buttons.
-        let buttons: Vec<Rect> = self.panes.iter()
-            .map(|(_, frame)| frame.view(cx, ids!(header_buttons)).area().rect(cx))
-            .collect();
-        // Fingers are blunter than a cursor, so the strip gets a wider margin on touch.
+        // Fingers are larger than a mouse cursor, so the divider gets a wider slop/margin on touch.
         let hit = event.hits_with_options_and_test(
             cx,
-            self.handle_area,
+            self.border_area,
             HitOptions::new()
-                .with_margin(self.grab_inset(3.0))
-                .with_touch_margin(self.grab_inset(8.0)),
-            |abs, rect, margin| Inset::rect_contains_with_inset(abs, rect, margin)
-                && !buttons.iter().any(|button| button.contains(abs)),
+                .with_margin(self.grab_inset(GRAB_SLOP))
+                .with_touch_margin(self.grab_inset(GRAB_TOUCH_SLOP)),
+            |abs, rect, margin| Inset::rect_contains_with_inset(abs, rect, margin) && !self.is_on_header_button(abs),
         );
+        if self.handle_divider_hit(cx, Divider::Border, hit) {
+            return true;
+        }
+
+        let rect = self.area.rect(cx);
+        let hit = event.hits_with_options_and_test(
+            cx,
+            self.area,
+            HitOptions::new()
+                .with_margin(self.split_inset(GRAB_SLOP))
+                .with_touch_margin(self.split_inset(GRAB_TOUCH_SLOP)),
+            |abs, _, margin| !self.is_on_header_button(abs)
+                && split_strips(&self.panes, self.side, rect).any(|strip| Inset::rect_contains_with_inset(abs, &strip, margin)),
+        );
+        let abs = match &hit {
+            Hit::FingerHoverIn(he) => Some(he.abs),
+            Hit::FingerDown(fe) => Some(fe.abs),
+            _ => None,
+        };
+        let margin = Some(self.split_inset(GRAB_TOUCH_SLOP));
+        let index = abs.and_then(|abs| split_strips(&self.panes, self.side, rect)
+            .position(|strip| Inset::rect_contains_with_inset(abs, &strip, &margin))
+        );
+        self.handle_divider_hit(cx, Divider::Split(index.unwrap_or(self.hovered_split)), hit)
+    }
+
+    /// Whether the given point is on one of our panes' header buttons, as the grab strips reach a little into our panes.
+    fn is_on_header_button(&self, abs: Vec2d) -> bool {
+        self.button_rects.iter().any(|button| button.contains(abs))
+    }
+
+    /// Hovers, drags, or releases the given divider.
+    ///
+    /// Returns whether its grab handle was pressed, in which case no other widget should handle the event.
+    fn handle_divider_hit(&mut self, cx: &mut Cx, divider: Divider, hit: Hit) -> bool {
+        let track = match divider {
+            Divider::Border => id!(hover),
+            Divider::Split(_) => id!(split_hover),
+        };
+        let vertical = self.side.is_vertical();
         match hit {
             Hit::FingerHoverIn(_) => {
-                cx.set_cursor(self.resize_cursor());
-                self.animator_play(cx, ids!(hover.on));
+                if let Divider::Split(index) = divider {
+                    self.hovered_split = index;
+                }
+                cx.set_cursor(self.resize_cursor(divider));
+                self.animator_play(cx, &[track, id!(on)]);
                 // Snapping to the hover state doesn't animate, so it doesn't request a redraw.
                 self.needs_dock_redraw = true;
             }
             Hit::FingerHoverOut(_) => {
                 if self.drag.is_none() {
-                    self.animator_play(cx, ids!(hover.off));
+                    self.animator_play(cx, &[track, id!(off)]);
                 }
             }
-            Hit::FingerDown(fe) if fe.is_primary_hit() => {
-                cx.set_cursor(self.resize_cursor());
-                let start = if self.side.is_vertical() { fe.abs.x } else { fe.abs.y };
-                self.drag = Some((start, self.effective_size()));
-                self.animator_play(cx, ids!(hover.on));
+            // A drag belongs to the finger that started it, so another finger can't restart or move it.
+            Hit::FingerDown(fe) if self.drag.is_none() && fe.is_primary_hit() => {
+                let drag = match divider {
+                    Divider::Border => Drag::Border {
+                        start: if vertical { fe.abs.x } else { fe.abs.y },
+                        start_size: self.effective_size(),
+                    },
+                    Divider::Split(index) => {
+                        let rect = self.area.rect(cx);
+                        let mut lengths = pane_lengths(&self.panes, if vertical { rect.size.y } else { rect.size.x })
+                            .skip(index);
+                        let (Some(start_len), Some(next_len)) = (lengths.next(), lengths.next()) else { return false };
+                        let pair_len = start_len + next_len;
+                        if pair_len <= 0.0 {
+                            return false;
+                        }
+                        let (pane, next) = (&self.panes[index], &self.panes[index + 1]);
+                        // If both panes' minimums don't fit, they shrink to fit.
+                        let min_scale = (pair_len / (pane.min_length + next.min_length)).min(1.0);
+                        self.hovered_split = index;
+                        Drag::Split {
+                            index,
+                            start: if vertical { fe.abs.y } else { fe.abs.x },
+                            start_len,
+                            min_len: pane.min_length * min_scale,
+                            max_len: pair_len - next.min_length * min_scale,
+                            pair_len,
+                            pair_weight: pane.weight + next.weight,
+                        }
+                    }
+                };
+                self.drag = Some((fe.digit_id, drag));
+                cx.set_cursor(self.resize_cursor(divider));
+                self.animator_play(cx, &[track, id!(on)]);
                 self.needs_dock_redraw = true;
                 return true;
             }
-            Hit::FingerMove(fe) => {
-                if let Some((start, start_size)) = self.drag {
-                    cx.set_cursor(self.resize_cursor());
-                    let now = if self.side.is_vertical() { fe.abs.x } else { fe.abs.y };
+            Hit::FingerMove(fe) => match self.drag {
+                Some((digit, Drag::Border { start, start_size })) if digit == fe.digit_id => {
+                    cx.set_cursor(self.resize_cursor(Divider::Border));
+                    let now = if vertical { fe.abs.x } else { fe.abs.y };
                     let delta = match self.side {
                         // Dragging the inner handle away from its edge grows it.
                         PaneSide::Left | PaneSide::Top => now - start,
@@ -999,13 +1295,36 @@ impl RoomPaneEdge {
                     // Only the parent's layout reads our walk; redrawing just ourselves would keep the old rect.
                     cx.redraw_all();
                 }
-            }
-            Hit::FingerUp(fe) => {
-                if self.drag.take().is_some() {
-                    cx.widget_action(self.widget_uid(), RoomPaneEdgeAction::Resized { side: self.side, size: self.size });
+                Some((digit, Drag::Split { index, start, start_len, min_len, max_len, pair_len, pair_weight }))
+                    if digit == fe.digit_id =>
+                {
+                    cx.set_cursor(self.resize_cursor(Divider::Split(index)));
+                    let now = if vertical { fe.abs.y } else { fe.abs.x };
+                    let len = (start_len + now - start).max(min_len).min(max_len);
+                    if let Some([pane, next]) = self.panes.get_mut(index..index + 2) {
+                        pane.weight = pair_weight * len / pair_len;
+                        next.weight = pair_weight - pane.weight;
+                    }
+                    self.needs_dock_redraw = true;
                 }
+                _ => {}
+            },
+            Hit::FingerUp(fe) => {
+                let Some((_, drag)) = self.drag.filter(|(digit, _)| *digit == fe.digit_id) else { return false };
+                self.drag = None;
+                let track = match drag {
+                    Drag::Border { .. } => {
+                        cx.widget_action(self.widget_uid(), RoomPaneEdgeAction::Resized { side: self.side, size: self.size });
+                        id!(hover)
+                    }
+                    Drag::Split { .. } => {
+                        let weights = self.panes.iter().map(|pane| (pane.kind.clone(), pane.weight)).collect();
+                        cx.widget_action(self.widget_uid(), RoomPaneEdgeAction::SplitMoved { side: self.side, weights });
+                        id!(split_hover)
+                    }
+                };
                 if !(fe.is_over && fe.device.has_hovers()) {
-                    self.animator_play(cx, ids!(hover.off));
+                    self.animator_play(cx, &[track, id!(off)]);
                 }
             }
             _ => {}
@@ -1013,52 +1332,85 @@ impl RoomPaneEdge {
         false
     }
 
-    /// Draws the divider along our panes' inner side, and the grab handle and its hit strip straddling it,
+    /// Draws the dividers along our inner border and between our panes (plus their grab handles),
     /// all from our final rect, so they always line up with each other and with our panes.
-    fn draw_divider(&mut self, cx: &mut Cx2d) {
+    fn draw_dividers(&mut self, cx: &mut Cx2d) {
         if !self.has_panes_drawn {
             return;
         }
-        // Our layout may have moved us after we drew our panes (e.g., once the timeline
-        // before us got its final size), so use where we actually ended up.
         let rect = self.area.rect(cx);
         let t = DIVIDER_THICKNESS;
-        let divider = match self.side {
+        let vertical = self.side.is_vertical();
+        let border = match self.side {
             PaneSide::Left => Rect { pos: dvec2(rect.pos.x + rect.size.x - t, rect.pos.y), size: dvec2(t, rect.size.y) },
             PaneSide::Right => Rect { pos: rect.pos, size: dvec2(t, rect.size.y) },
             PaneSide::Top => Rect { pos: dvec2(rect.pos.x, rect.pos.y + rect.size.y - t), size: dvec2(rect.size.x, t) },
             PaneSide::Bottom => Rect { pos: rect.pos, size: dvec2(rect.size.x, t) },
         };
-        // The hit strip runs along the whole divider, only as thick as the grab handle, so over the timeline
+        // Each split runs from the dock's edge to our border, which is drawn over its end.
+        for (index, strip) in split_strips(&self.panes, self.side, rect).enumerate() {
+            let line = if vertical {
+                Rect { pos: dvec2(strip.pos.x, strip.pos.y + (GRAB_THICKNESS - t) * 0.5), size: dvec2(strip.size.x, t) }
+            } else {
+                Rect { pos: dvec2(strip.pos.x + (GRAB_THICKNESS - t) * 0.5, strip.pos.y), size: dvec2(t, strip.size.y) }
+            };
+            self.draw_divider.color = self.divider_color(Divider::Split(index));
+            self.draw_divider.draw_abs(cx, line);
+        }
+        self.draw_divider.color = self.divider_color(Divider::Border);
+        self.draw_divider.draw_abs(cx, border);
+
+        // The border's hit strip runs along the whole border, only as thick as a grab handle, so over the timeline
         // it doesn't reach its scroll bar; any slop is added on our panes' side (see `grab_inset()`).
-        let center = divider.pos + divider.size * 0.5;
-        let (grab_rect, hit_rect) = if self.side.is_vertical() {
-            let len = GRAB_LEN.min(divider.size.y * 0.5);
-            (
-                Rect { pos: dvec2(center.x - GRAB_THICK * 0.5, center.y - len * 0.5), size: dvec2(GRAB_THICK, len) },
-                Rect { pos: dvec2(center.x - GRAB_THICK * 0.5, divider.pos.y), size: dvec2(GRAB_THICK, divider.size.y) },
-            )
+        let center = border.pos + border.size * 0.5;
+        let hit_rect = if vertical {
+            Rect { pos: dvec2(center.x - GRAB_THICKNESS * 0.5, border.pos.y), size: dvec2(GRAB_THICKNESS, border.size.y) }
         } else {
-            let len = GRAB_LEN.min(divider.size.x * 0.5);
-            (
-                Rect { pos: dvec2(center.x - len * 0.5, center.y - GRAB_THICK * 0.5), size: dvec2(len, GRAB_THICK) },
-                Rect { pos: dvec2(divider.pos.x, center.y - GRAB_THICK * 0.5), size: dvec2(divider.size.x, GRAB_THICK) },
-            )
+            Rect { pos: dvec2(border.pos.x, center.y - GRAB_THICKNESS * 0.5), size: dvec2(border.size.x, GRAB_THICKNESS) }
         };
-        let color = self.divider_color();
-        self.draw_divider.color = color;
-        self.draw_handle.color = color;
-        self.draw_divider.draw_abs(cx, divider);
         self.draw_grab.draw_abs(cx, hit_rect);
-        self.draw_handle.draw_abs(cx, grab_rect);
-        self.handle_area = self.draw_grab.area();
+        self.border_area = self.draw_grab.area();
+        self.button_rects.clear();
+        self.button_rects.extend(self.panes.iter().map(|pane| pane.frame.view(cx, ids!(header_buttons)).area().rect(cx)));
+
+        // Each pane gets its own grab handle on the border, so none of them sits where a split meets it.
+        self.draw_handle.color = self.divider_color(Divider::Border);
+        let mut start = if vertical { border.pos.y } else { border.pos.x };
+        for len in pane_lengths(&self.panes, if vertical { border.size.y } else { border.size.x }) {
+            let grab_len = GRAB_LEN.min(len * 0.5);
+            let mid = start + len * 0.5;
+            let grab = if vertical {
+                Rect { pos: dvec2(center.x - GRAB_THICKNESS * 0.5, mid - grab_len * 0.5), size: dvec2(GRAB_THICKNESS, grab_len) }
+            } else {
+                Rect { pos: dvec2(mid - grab_len * 0.5, center.y - GRAB_THICKNESS * 0.5), size: dvec2(grab_len, GRAB_THICKNESS) }
+            };
+            self.draw_handle.draw_abs(cx, grab);
+            start += len;
+        }
+        for (index, strip) in split_strips(&self.panes, self.side, rect).enumerate() {
+            let mid = strip.pos + strip.size * 0.5;
+            let grab = if vertical {
+                let grab_len = GRAB_LEN.min(strip.size.x * 0.5);
+                Rect { pos: dvec2(mid.x - grab_len * 0.5, strip.pos.y), size: dvec2(grab_len, GRAB_THICKNESS) }
+            } else {
+                let grab_len = GRAB_LEN.min(strip.size.y * 0.5);
+                Rect { pos: dvec2(strip.pos.x, mid.y - grab_len * 0.5), size: dvec2(GRAB_THICKNESS, grab_len) }
+            };
+            self.draw_handle.color = self.divider_color(Divider::Split(index));
+            self.draw_handle.draw_abs(cx, grab);
+        }
     }
 
-    fn resize_cursor(&self) -> MouseCursor {
-        if self.side.is_vertical() { MouseCursor::ColResize } else { MouseCursor::RowResize }
+    /// The cursor for dragging the given divider, which runs along our edge or across it.
+    fn resize_cursor(&self, divider: Divider) -> MouseCursor {
+        if self.side.is_vertical() == matches!(divider, Divider::Border) {
+            MouseCursor::ColResize
+        } else {
+            MouseCursor::RowResize
+        }
     }
 
-    /// Slop beside the strip, only on our panes' side of it, as the timeline's scroll bar is on the other side.
+    /// Slop beside the border's strip, only on our panes' side of it, as the timeline's scroll bar is on the other side.
     fn grab_inset(&self, slop: f64) -> Inset {
         let mut inset = Inset::default();
         match self.side {
@@ -1068,6 +1420,15 @@ impl RoomPaneEdge {
             PaneSide::Bottom => inset.bottom = slop,
         }
         inset
+    }
+
+    /// Slop on both sides of a split's strip, which has a pane on each side.
+    fn split_inset(&self, slop: f64) -> Inset {
+        if self.side.is_vertical() {
+            Inset::default().with_top(slop).with_bottom(slop)
+        } else {
+            Inset::default().with_left(slop).with_right(slop)
+        }
     }
 
     /// The size of this edge's panes as drawn, which may be less than the size the user chose.
@@ -1134,29 +1495,28 @@ impl Widget for RoomPaneEdge {
         // While sliding, the panes' outer part is clipped at the edge.
         cx.push_clip_rect(rect);
 
-        // Panes split the edge evenly along its long axis.
-        let n = self.panes.len() as f64;
-        for (i, (_, pane)) in self.panes.iter().enumerate() {
-            let i = i as f64;
-            let sub = if self.side.is_vertical() {
-                let h = pane_rect.size.y / n;
-                Rect { pos: dvec2(pane_rect.pos.x, pane_rect.pos.y + i * h), size: dvec2(pane_rect.size.x, h) }
+        // The edge's length is divided among its panes by their weights.
+        let vertical = self.side.is_vertical();
+        let mut start = 0.0;
+        for (pane, len) in self.panes.iter().zip(pane_lengths(&self.panes, if vertical { pane_rect.size.y } else { pane_rect.size.x })) {
+            let sub = if vertical {
+                Rect { pos: dvec2(pane_rect.pos.x, pane_rect.pos.y + start), size: dvec2(pane_rect.size.x, len) }
             } else {
-                let w = pane_rect.size.x / n;
-                Rect { pos: dvec2(pane_rect.pos.x + i * w, pane_rect.pos.y), size: dvec2(w, pane_rect.size.y) }
+                Rect { pos: dvec2(pane_rect.pos.x + start, pane_rect.pos.y), size: dvec2(len, pane_rect.size.y) }
             };
+            start += len;
             let pane_walk = Walk {
                 abs_pos: Some(sub.pos),
                 width: Size::Fixed(sub.size.x),
                 height: Size::Fixed(sub.size.y),
                 ..Walk::default()
             };
-            pane.draw_walk_all(cx, &mut Scope::empty(), pane_walk);
+            pane.frame.draw_walk_all(cx, &mut Scope::empty(), pane_walk);
         }
 
         cx.pop_clip_rect();
         cx.end_turtle_with_area(&mut self.area);
-        // The divider's grab handle sticks out over the timeline, so our dock draws it after the timeline.
+        // The dividers' grab handles stick out over the timeline, so our dock draws them after the timeline.
         self.has_panes_drawn = true;
         DrawStep::done()
     }
@@ -1173,10 +1533,18 @@ impl RoomPaneEdgeRef {
         self.borrow().map_or(0.0, |inner| inner.effective_size())
     }
 
-    /// See [`RoomPaneEdge::draw_divider()`].
-    fn draw_divider(&self, cx: &mut Cx2d) {
+    /// Sets the shortest that the given pane can be along this edge.
+    fn set_min_length(&self, kind: &RoomPaneKind, min_length: f64) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        if let Some(pane) = inner.panes.iter_mut().find(|pane| &pane.kind == kind) {
+            pane.min_length = min_length;
+        }
+    }
+
+    /// See [`RoomPaneEdge::draw_dividers()`].
+    fn draw_dividers(&self, cx: &mut Cx2d) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.draw_divider(cx);
+            inner.draw_dividers(cx);
         }
     }
 
@@ -1199,7 +1567,8 @@ impl RoomPaneEdgeRef {
     }
 
     /// Adds the given pane, sliding it in if this edge had no other panes.
-    fn add_pane(&self, cx: &mut Cx, kind: RoomPaneKind, pane: WidgetRef, animate: bool) {
+    /// Without a weight of its own, it gets the average weight of this edge's other panes.
+    fn add_pane(&self, cx: &mut Cx, kind: RoomPaneKind, frame: WidgetRef, weight: Option<f64>, animate: bool) {
         let Some(mut inner) = self.borrow_mut() else { return };
         let was_empty = inner.panes.is_empty();
         // A sliding-out pane is replaced, and the slide reverses from where it is.
@@ -1207,8 +1576,12 @@ impl RoomPaneEdgeRef {
         if was_sliding_out {
             inner.panes.clear();
         }
-        inner.panes.retain(|(k, _)| *k != kind);
-        inner.panes.push((kind, pane));
+        inner.panes.retain(|pane| pane.kind != kind);
+        let weight = weight.unwrap_or_else(|| match inner.panes.len() {
+            0 => 1.0,
+            count => inner.panes.iter().map(|pane| pane.weight).sum::<f64>() / count as f64,
+        });
+        inner.panes.push(EdgePane { kind, frame, weight, min_length: EDGE_MIN_SIZE });
         if was_empty || was_sliding_out {
             if animate {
                 if was_empty {
@@ -1235,7 +1608,7 @@ impl RoomPaneEdgeRef {
     /// Removes the given pane, sliding it out first if it's this edge's last pane.
     fn remove_pane(&self, cx: &mut Cx, kind: &RoomPaneKind, animate: bool) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        if !inner.panes.iter().any(|(k, _)| k == kind) {
+        if !inner.panes.iter().any(|pane| &pane.kind == kind) {
             return;
         }
         if animate && inner.panes.len() == 1 {
@@ -1245,7 +1618,7 @@ impl RoomPaneEdgeRef {
                 inner.animator_play(cx, ids!(panel.hide));
             }
         } else {
-            inner.panes.retain(|(k, _)| k != kind);
+            inner.panes.retain(|pane| &pane.kind != kind);
             if inner.panes.is_empty() {
                 inner.is_sliding_out = false;
                 inner.animator_cut(cx, ids!(panel.hide));
@@ -1264,5 +1637,34 @@ impl RoomPaneEdgeRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.size = size.max(EDGE_MIN_SIZE);
         inner.apply_walk();
+    }
+}
+
+#[cfg(test)]
+mod tests_pane_lengths {
+    use super::*;
+
+    fn lengths(weights_and_mins: &[(f64, f64)], length: f64) -> Vec<f64> {
+        let panes: Vec<EdgePane> = weights_and_mins.iter()
+            .map(|&(weight, min_length)| EdgePane { kind: RoomPaneKind::Members, frame: WidgetRef::default(), weight, min_length })
+            .collect();
+        pane_lengths(&panes, length).collect()
+    }
+
+    #[test]
+    fn panes_divide_their_edge_by_weight() {
+        assert_eq!(lengths(&[(1.0, 60.0), (1.0, 60.0)], 400.0), [200.0, 200.0]);
+        assert_eq!(lengths(&[(3.0, 60.0), (1.0, 60.0)], 400.0), [300.0, 100.0]);
+    }
+
+    #[test]
+    fn a_pane_never_gets_less_than_its_minimum() {
+        // Its weight alone would make the first pane 40 long.
+        assert_eq!(lengths(&[(1.0, 127.0), (9.0, 127.0)], 400.0), [127.0, 273.0]);
+    }
+
+    #[test]
+    fn minimums_shrink_to_fit_a_short_edge() {
+        assert_eq!(lengths(&[(1.0, 100.0), (9.0, 300.0)], 200.0), [50.0, 150.0]);
     }
 }

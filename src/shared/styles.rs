@@ -35,6 +35,7 @@ script_mod! {
     mod.widgets.ICON_MEMBERS          = crate_resource("self://resources/icons/members.svg")
     mod.widgets.ICON_LINK             = crate_resource("self://resources/icons/link.svg")
     mod.widgets.ICON_PIN              = crate_resource("self://resources/icons/pin.svg")
+    mod.widgets.ICON_UNPIN            = crate_resource("self://resources/icons/unpin.svg")
     mod.widgets.ICON_REPLY            = crate_resource("self://resources/icons/reply.svg")
     mod.widgets.ICON_REPLY_IN_THREAD  = crate_resource("self://resources/icons/double_chat.svg")
     mod.widgets.ICON_SEARCH           = crate_resource("self://resources/icons/search.svg")
@@ -161,6 +162,11 @@ script_mod! {
     mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER = #106fcc
 
     mod.widgets.COLOR_BG_PREVIEW = #F0F5FF
+
+    // The light lavender of the room action buttons and room pane headers.
+    mod.widgets.COLOR_BG_LAVENDER = #xEDE8FD
+    mod.widgets.COLOR_BG_LAVENDER_HOVER = #xE8E1FA
+    mod.widgets.COLOR_BG_LAVENDER_DOWN = #xE1D7F7
 
     mod.widgets.COLOR_BG_PREVIEW_HOVER = #CDEDDF
 

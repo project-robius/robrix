@@ -10,7 +10,8 @@ use crate::{
     profile::user_profile::UserProfileSlidingPaneWidgetExt,
     room::{
         room_members_list::{RoomMembersChanged, RoomMembersFetchAction, RoomMembersListAction, RoomMembersListWidgetRefExt, show_member_profile},
-        pane_dock::set_pane_title,
+        pane_dock::set_pane_header,
+        pinned_messages_list::PinnedMessagesListWidgetRefExt,
         room_pane::RoomPaneKind,
     },
     sliding_sync::{MatrixRequest, submit_async_request},
@@ -31,31 +32,32 @@ script_mod! {
         pane_screen_content := View {
             width: Fill, height: Fill
             flow: Down
-            padding: Inset{top: 8, right: 10, bottom: 8, left: 10}
 
-            header := View {
+            header := SolidView {
                 width: Fill, height: Fit
                 flow: Right
                 spacing: 6
-                margin: Inset{bottom: 8}
+                padding: Inset{top: 8, right: 10, bottom: 8, left: 10}
+                show_bg: true
+                draw_bg +: { color: (COLOR_BG_LAVENDER) }
 
-                title_row := mod.widgets.RoomPaneTitle {
-                    pane_icon +: { draw_icon +: { svg: (ICON_MEMBERS) } }
-                }
+                title_row := mod.widgets.RoomPaneTitle {}
 
-                return_button := RobrixNeutralIconButton {
+                return_button := RobrixIconButton {
                     padding: Inset{top: 6, bottom: 6, left: 10, right: 12}
                     spacing: 6
                     draw_icon.svg: (ICON_JUMP)
                     icon_walk: Walk{width: 12, height: 12}
-                    text: "Return to room"
+                    text: "Back to room"
                 }
             }
 
             content := View {
                 width: Fill, height: Fill
                 flow: Down
+                padding: Inset{top: 8, right: 10, bottom: 8, left: 10}
                 room_members := mod.widgets.RoomMembersList { visible: false }
+                pinned_messages := mod.widgets.PinnedMessagesList { visible: false }
             }
         }
 
@@ -86,6 +88,13 @@ pub struct RoomPaneScreen {
 
 impl Widget for RoomPaneScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // A reapply resets the title's padding that we set, so we set it again.
+        if let Event::ScriptReapply = event
+            && let Some((_, kind)) = self.displayed.as_ref()
+        {
+            set_pane_header(cx, &self.view.widget(cx, ids!(title_row)), kind);
+        }
+
         if let Event::Actions(actions) = event {
             let mut members_changed = false;
             for action in actions {
@@ -100,7 +109,7 @@ impl Widget for RoomPaneScreen {
                 }
 
                 // Without a timeline, we fetch this room's members ourselves.
-                let Some((room_name_id, _)) = self.displayed.as_ref() else { continue };
+                let Some((room_name_id, RoomPaneKind::Members)) = self.displayed.as_ref() else { continue };
                 let members_list = self.view.child_by_path(ids!(content.room_members)).as_room_members_list();
                 match action.downcast_ref() {
                     Some(RoomMembersFetchAction::Fetched { room_id, members }) if room_id == room_name_id.room_id() => {
@@ -167,14 +176,16 @@ impl RoomPaneScreen {
         let is_same = self.displayed.as_ref()
             .is_some_and(|(r, k)| r.room_id() == room_name_id.room_id() && *k == kind);
         let members = self.view.child_by_path(ids!(content.room_members)).as_room_members_list();
+        let pinned_messages = self.view.child_by_path(ids!(content.pinned_messages)).as_pinned_messages_list();
         if !is_same {
             self.view.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane)).reset(cx);
             members.reset(cx);
+            pinned_messages.reset(cx);
         }
-        set_pane_title(cx, &self.view.widget(cx, ids!(title_row)), &kind.title());
+        set_pane_header(cx, &self.view.widget(cx, ids!(title_row)), &kind);
         self.view.label(cx, ids!(pane_room)).set_text(cx, &room_name_id.to_string());
-        let members_widget = self.view.child_by_path(ids!(content.room_members));
-        members_widget.set_visible(cx, kind == RoomPaneKind::Members);
+        self.view.child_by_path(ids!(content.room_members)).set_visible(cx, kind == RoomPaneKind::Members);
+        self.view.child_by_path(ids!(content.pinned_messages)).set_visible(cx, kind == RoomPaneKind::PinnedMessages);
         self.displayed = Some((room_name_id.clone(), kind.clone()));
         match &kind {
             // Also re-fetch upon re-showing, in case we missed changes while hidden.
@@ -182,6 +193,7 @@ impl RoomPaneScreen {
                 members.set_members(cx, room_name_id, None);
                 self.fetch_members(false);
             }
+            RoomPaneKind::PinnedMessages => pinned_messages.set_room(cx, room_name_id),
         }
         self.redraw(cx);
     }
@@ -200,6 +212,7 @@ impl RoomPaneScreen {
     pub fn hide_displayed(&mut self, cx: &mut Cx) {
         self.view.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane)).reset(cx);
         self.view.child_by_path(ids!(content.room_members)).as_room_members_list().reset(cx);
+        self.view.child_by_path(ids!(content.pinned_messages)).as_pinned_messages_list().reset(cx);
         self.displayed = None;
     }
 }
