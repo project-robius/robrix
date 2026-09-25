@@ -571,7 +571,7 @@ impl Widget for HomeScreen {
                         if let SelectedRoom::RoomPane { room_name_id, kind } = &selected_room
                             && app_state.selected_room.as_ref() != Some(&selected_room)
                         {
-                            room_pane::dock_when_shown(cx, room_pane::popped_out_from(room_name_id.room_id(), *kind), *kind);
+                            room_pane::dock_when_shown(cx, room_pane::popped_out_from(room_name_id.room_id(), kind), kind.clone());
                         }
                     }
                     // On desktop, `MainDesktopUI` handles this, so we only need to update this in mobile view mode.
@@ -859,7 +859,7 @@ impl HomeScreen {
                 Self::hide_displayed_stack_screen(cx, &stack_navigation_view);
                 stack_navigation_view
                     .room_pane_screen(cx, ids!(room_pane_screen))
-                    .set_displayed(cx, room_name_id, *kind);
+                    .set_displayed(cx, room_name_id, kind.clone());
                 view_id
             }
         };
@@ -1005,7 +1005,7 @@ impl HomeScreen {
         if !matches!(app_state.selected_room, Some(SelectedRoom::RoomPane { .. })) {
             return;
         }
-        let timeline_kind = room_pane::popped_out_from(room_name_id.room_id(), kind);
+        let timeline_kind = room_pane::popped_out_from(room_name_id.room_id(), &kind);
         if self.navigate_to_screen(cx, app_state, room_pane::timeline_screen(&room_name_id, &timeline_kind)) {
             room_pane::dock_when_shown(cx, timeline_kind, kind);
         }

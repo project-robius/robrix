@@ -3502,7 +3502,7 @@ impl RoomScreen {
         if self.is_loaded
             && let Some(tl) = self.tl_state.as_ref()
             && !timeline_state_store::is_invalidated(&tl.kind)
-            && self.view.room_pane_dock(cx, ids!(room_pane_dock)).has_pane(RoomPaneKind::Members)
+            && self.view.room_pane_dock(cx, ids!(room_pane_dock)).has_pane(&RoomPaneKind::Members)
         {
             submit_async_request(MatrixRequest::GetRoomMembers {
                 timeline_kind: tl.kind.clone(),

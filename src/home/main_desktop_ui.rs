@@ -271,7 +271,7 @@ impl MainDesktopUI {
                     );
                 }
                 SelectedRoom::RoomPane { room_name_id, kind } => {
-                    new_widget.as_room_pane_screen().set_displayed(cx, room_name_id, *kind);
+                    new_widget.as_room_pane_screen().set_displayed(cx, room_name_id, kind.clone());
                 }
             }
             cx.action(MainDesktopUiAction::SaveDockIntoAppState);
@@ -530,7 +530,7 @@ impl MainDesktopUI {
                 );
             }
             Some(SelectedRoom::RoomPane { room_name_id, kind }) => {
-                widget.as_room_pane_screen().set_displayed(cx, room_name_id, *kind);
+                widget.as_room_pane_screen().set_displayed(cx, room_name_id, kind.clone());
             }
             None => { }
         }
@@ -718,8 +718,8 @@ impl WidgetMatchEvent for MainDesktopUI {
             // A popped-out room pane wants to be returned to its room screen,
             // show that room screen and dock the pane in it, then close the pane's dedicated tab.
             if let RoomPaneScreenAction::ReturnToRoom { room_name_id, kind } = widget_action.cast() {
-                let timeline_kind = room_pane::popped_out_from(room_name_id.room_id(), kind);
-                let pane_tab_id = SelectedRoom::RoomPane { room_name_id: room_name_id.clone(), kind }.tab_id();
+                let timeline_kind = room_pane::popped_out_from(room_name_id.room_id(), &kind);
+                let pane_tab_id = SelectedRoom::RoomPane { room_name_id: room_name_id.clone(), kind: kind.clone() }.tab_id();
                 let screen = room_pane::timeline_screen(&room_name_id, &timeline_kind);
                 room_pane::dock_when_shown(cx, timeline_kind, kind);
                 // Use the room's existing tab, which has the room's current name.

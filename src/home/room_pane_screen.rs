@@ -92,7 +92,7 @@ impl Widget for RoomPaneScreen {
         if let Event::ScriptReapply = event
             && let Some((_, kind)) = self.displayed.as_ref()
         {
-            set_pane_header(cx, &self.view.widget(cx, ids!(title_row)), *kind);
+            set_pane_header(cx, &self.view.widget(cx, ids!(title_row)), kind);
         }
 
         if let Event::Actions(actions) = event {
@@ -182,12 +182,12 @@ impl RoomPaneScreen {
             members.reset(cx);
             pinned_messages.reset(cx);
         }
-        set_pane_header(cx, &self.view.widget(cx, ids!(title_row)), kind);
+        set_pane_header(cx, &self.view.widget(cx, ids!(title_row)), &kind);
         self.view.label(cx, ids!(pane_room)).set_text(cx, &room_name_id.to_string());
         self.view.child_by_path(ids!(content.room_members)).set_visible(cx, kind == RoomPaneKind::Members);
         self.view.child_by_path(ids!(content.pinned_messages)).set_visible(cx, kind == RoomPaneKind::PinnedMessages);
-        self.displayed = Some((room_name_id.clone(), kind));
-        match kind {
+        self.displayed = Some((room_name_id.clone(), kind.clone()));
+        match &kind {
             // Also re-fetch upon re-showing, in case we missed changes while hidden.
             RoomPaneKind::Members => {
                 members.set_members(cx, room_name_id, None);
