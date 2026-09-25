@@ -14,11 +14,8 @@ version = "1.0.0-beta.1"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
-# makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
-
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "radio_button_focus_on_click", features = ["serde"] }
-makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "radio_button_focus_on_click" }
+makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
 
 
 robius-directories = { git = "https://github.com/project-robius/robius" }

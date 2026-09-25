@@ -9,6 +9,7 @@ use crate::shared::avatar::AvatarImage;
 use crate::utils::RoomNameId;
 
 pub mod pane_dock;
+pub mod pinned_messages_list;
 pub mod reply_preview;
 pub mod room_action_bar;
 pub mod room_members_list;
@@ -27,6 +28,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     room_input_bar::script_mod(vm);
     typing_notice::script_mod(vm);
     room_members_list::script_mod(vm);
+    pinned_messages_list::script_mod(vm);
     pane_dock::script_mod(vm);
 }
 

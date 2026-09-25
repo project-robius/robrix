@@ -46,7 +46,7 @@ script_mod! {
             auto_tail: false
             keep_invisible: false
 
-            member_row := mod.widgets.AvatarListRow {}
+            member_row := mod.widgets.AvatarListRow { padding: Inset{left: 6, right: 6} }
             loading_row := mod.widgets.ListLoadingRow {}
             empty_row := mod.widgets.ListEmptyRow {}
         }

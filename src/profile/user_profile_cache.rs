@@ -213,18 +213,31 @@ impl UserProfileUpdate {
     }
 }
 
-/// Processes all pending user profile updates in the queue.
+/// Emitted after user profile updates were applied to the cache, so that every widget
+/// showing those users can redraw, not just the one that happened to process them.
+///
+/// This is NOT a widget action.
+#[derive(Debug)]
+pub struct UserProfilesUpdated;
+
+/// Processes all pending user profile updates in the queue,
+/// emitting [`UserProfilesUpdated`] if there were any.
 ///
 /// This function requires passing in a reference to `Cx`,
-/// which isn't used, but acts as a guarantee that this function
+/// which acts as a guarantee that this function
 /// must only be called by the main UI thread.
-pub fn process_user_profile_updates(_cx: &mut Cx) {
+pub fn process_user_profile_updates(cx: &mut Cx) {
+    let mut any_updated = false;
     USER_PROFILE_CACHE.with_borrow_mut(|cache| {
         while let Some(update) = PENDING_USER_PROFILE_UPDATES.pop() {
             // Insert the updated info into the cache
             update.apply_to_cache(cache);
+            any_updated = true;
         }
     });
+    if any_updated {
+        cx.action(UserProfilesUpdated);
+    }
 }
 
 /// Invokes the given closure with cached user profile info for the given user ID

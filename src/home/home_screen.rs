@@ -11,7 +11,7 @@ use crate::{
         space_lobby::SpaceLobbyScreenWidgetRefExt,
         spaces_bar::SpacesBarAction,
     },
-    room::{room_action_bar::{RoomActionBarAction, RoomActionBarWidgetRefExt}, room_pane::{self, RoomPaneKind}},
+    room::{pane_dock::RoomPaneDockAction, pinned_messages_list::PinnedMessagesListAction, room_action_bar::{RoomActionBarAction, RoomActionBarWidgetRefExt}, room_pane::{self, RoomPaneKind}},
     settings::{
         app_preferences::{AppPreferencesGlobal, AppPreferencesAction, ViewModeOverride},
         settings_screen::SettingsScreenWidgetRefExt,
@@ -605,11 +605,40 @@ impl Widget for HomeScreen {
                     }
                 }
 
+                // Likewise, we highlight the buttons in that action bar of the panes shown in its RoomScreen.
+                if let RoomPaneDockAction::ShownPanesChanged(kinds) = action.as_widget_action().cast() {
+                    let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
+                    for view_id in stack_navigation.dynamic_stack_view_ids() {
+                        let stack_view = stack_navigation.view_by_id(cx, view_id);
+                        let dock_uid = stack_view.widget(cx, ids!(room_pane_dock)).widget_uid();
+                        if action.as_widget_action().widget_uid_eq(dock_uid).is_some() {
+                            stack_view.room_action_bar(cx, ids!(header.content)).set_shown_panes(cx, kinds);
+                            break;
+                        }
+                    }
+                }
+
                 // Handle a popped-out room pane being returned to its room: we must show that room.
                 if let RoomPaneScreenAction::ReturnToRoom { room_name_id, kind } = action.as_widget_action().cast()
                     && !effective_is_desktop(cx)
                 {
                     self.return_to_room_from_pane(cx, app_state, room_name_id, kind);
+                }
+
+                // A pinned message was clicked in a popped-out pane, or in a pane docked in another timeline,
+                // so show the timeline that contains it, and then jump to it there.
+                if !effective_is_desktop(cx)
+                    && let PinnedMessagesListAction::MessageClicked { room_name_id, timeline_kind, event_id, description } = action.as_widget_action().cast()
+                    && self.navigate_to_screen(cx, app_state, room_pane::timeline_screen(&room_name_id, &timeline_kind))
+                {
+                    // Navigating away hid the pinned messages pane, so we show it again here.
+                    room_pane::dock_when_shown(cx, timeline_kind.clone(), RoomPaneKind::PinnedMessages);
+                    let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
+                    if let Some(view_id) = stack_navigation.destination_view() {
+                        stack_navigation.view_by_id(cx, view_id)
+                            .room_screen(cx, ids!(room_screen))
+                            .jump_to_event_when_shown(cx, &timeline_kind, event_id, description);
+                    }
                 }
 
                 if let RoomActionBarAction::LayoutChanged { new_height } = action.as_widget_action().cast() {
@@ -973,29 +1002,48 @@ impl HomeScreen {
     /// Returns the current popped-out room pane screen to its parent room's screen,
     /// and docks that pane in that room screen.
     fn return_to_room_from_pane(&mut self, cx: &mut Cx, app_state: &mut AppState, room_name_id: RoomNameId, kind: RoomPaneKind) {
-        let Some(pane_screen @ SelectedRoom::RoomPane { .. }) = app_state.selected_room.clone() else { return };
-        // We can't navigate during a transition, so the user can just try again.
-        if self.view.stack_navigation(cx, ids!(view_stack)).is_transitioning() {
+        if !matches!(app_state.selected_room, Some(SelectedRoom::RoomPane { .. })) {
             return;
         }
         let timeline_kind = room_pane::popped_out_from(room_name_id.room_id(), kind);
-        let screen = room_pane::timeline_screen(&room_name_id, &timeline_kind);
-        room_pane::dock_when_shown(cx, timeline_kind, kind);
-        // The pane was usually popped out of the room (or thread) right beneath it.
-        let is_screen_beneath = self.mobile_screen_history.last().is_some_and(|prev|
-            prev == &screen && std::mem::discriminant(prev) == std::mem::discriminant(&screen)
-        );
-        if is_screen_beneath {
+        if self.navigate_to_screen(cx, app_state, room_pane::timeline_screen(&room_name_id, &timeline_kind)) {
+            room_pane::dock_when_shown(cx, timeline_kind, kind);
+        }
+    }
+
+    /// Shows the screen for the given selected room.
+    ///
+    /// Based on where it is, this either goes back to it if it's right beneath
+    /// the current screen (e.g., the room that a pane was popped out of),
+    /// or otherwise pushes it on the top or else by pushing it.
+    ///
+    /// A popped-out room pane that it replaces won't be shown again upon going back.
+    ///
+    /// Returns whether the given screen is now shown (or being transitioned to).
+    fn navigate_to_screen(&mut self, cx: &mut Cx, app_state: &mut AppState, screen: SelectedRoom) -> bool {
+        // We can't navigate during a transition, so just don't do anything,
+        // and let the user just try again.
+        if self.view.stack_navigation(cx, ids!(view_stack)).is_transitioning() {
+            return false;
+        }
+
+        let is_screen = |sr: &SelectedRoom| {
+            sr == &screen
+            && std::mem::discriminant(sr) == std::mem::discriminant(&screen)
+        };
+        let prev_screen = app_state.selected_room.clone();
+        if self.mobile_screen_history.last().is_some_and(is_screen) {
             self.pop_selected_screen_view(cx, app_state);
-            return;
+        } else {
+            self.push_selected_screen_view(cx, app_state, screen.clone());
+            if let Some(pane_screen @ SelectedRoom::RoomPane { .. }) = prev_screen
+                && app_state.selected_room.as_ref() != Some(&pane_screen)
+                && self.mobile_screen_history.last() == Some(&pane_screen)
+            {
+                self.mobile_screen_history.pop();
+            }
         }
-        self.push_selected_screen_view(cx, app_state, screen);
-        // Don't return to the replaced pane screen when going back.
-        if app_state.selected_room.as_ref() != Some(&pane_screen)
-            && self.mobile_screen_history.last() == Some(&pane_screen)
-        {
-            self.mobile_screen_history.pop();
-        }
+        app_state.selected_room.as_ref().is_some_and(is_screen)
     }
 
     /// Pops the current mobile screen, revealing the previous screen or the room list root.

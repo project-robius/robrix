@@ -58,6 +58,15 @@ impl TextPreview {
             ),
         }
     }
+
+    /// Like [`Self::format_with()`], but without the "username: " before a message,
+    /// e.g., for a preview shown right beneath its sender's name.
+    pub fn format_under_username(self, username: &str, as_html: bool) -> String {
+        match self.before_text {
+            BeforeText::UsernameWithColon => self.text,
+            _ => self.format_with(username, as_html),
+        }
+    }
 }
 
 /// Returns a text preview of the given timeline event as an Html-formatted string.
