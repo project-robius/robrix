@@ -31,6 +31,7 @@ script_mod! {
         height: Fit,
         padding: Inset{bottom: 4}
         flow: Right,
+        align: Align{y: 0.5}
         spacing: 3,
 
         header_title := Label {
@@ -47,6 +48,14 @@ script_mod! {
                 text_style: TITLE_TEXT {}
             }
         },
+
+        search_button := RobrixNeutralIconButton {
+            width: 32, height: 32,
+            padding: 7,
+            spacing: 0,
+            draw_icon.svg: (ICON_SEARCH)
+            icon_walk: Walk{width: 18, height: 18}
+        }
 
         View {
             width: Fit, height: Fit,
@@ -103,6 +112,10 @@ pub struct RoomsListHeader {
 impl Widget for RoomsListHeader {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
+            if self.view.button(cx, ids!(search_button)).clicked(actions) {
+                cx.action(RoomsListHeaderAction::FocusRoomFilter);
+            }
+
             for action in actions {
                 match action.downcast_ref() {
                     Some(RoomsListHeaderAction::SetSyncStatus(is_syncing)) => {
@@ -226,6 +239,8 @@ impl Widget for RoomsListHeader {
 /// Actions that can be handled by the `RoomsListHeader`.
 #[derive(Debug)]
 pub enum RoomsListHeaderAction {
+    /// Focus the room filter in the current desktop or mobile layout.
+    FocusRoomFilter,
     /// An action received by the RoomsListHeader that will show or hide
     /// its sync status indicator (and loading spinner) based on the given boolean.
     SetSyncStatus(bool),

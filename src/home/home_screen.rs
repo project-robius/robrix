@@ -3,6 +3,7 @@ use makepad_widgets::*;
 use crate::{
     app::{AppState, AppStateAction, SelectedRoom},
     home::{
+        rooms_list_header::RoomsListHeaderAction,
         invite_screen::InviteScreenWidgetRefExt,
         navigation_tab_bar::{NavigationBarAction, SelectedTab},
         room_pane_screen::{RoomPaneScreenAction, RoomPaneScreenWidgetRefExt},
@@ -482,6 +483,14 @@ impl ScriptHook for HomeScreen {
 impl Widget for HomeScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
+            // Focus the desktop filter when the rooms header search icon is clicked.
+            if effective_is_desktop(cx) && actions.iter().any(|a| matches!(a.downcast_ref(), Some(RoomsListHeaderAction::FocusRoomFilter))) {
+                let input = self.view.text_input(cx, ids!(room_filter_input_bar.input.text_input));
+                if !input.is_empty() {
+                    input.set_key_focus(cx);
+                }
+            }
+
             let app_state = scope.data.get_mut::<AppState>().unwrap();
             for action in actions {
                 match action.downcast_ref() {
