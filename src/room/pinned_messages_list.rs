@@ -13,10 +13,9 @@ use matrix_sdk_ui::sync_service::State as SyncServiceState;
 
 use crate::{
     app::ConfirmDeleteAction,
-    avatar_cache,
     event_preview::text_preview_of_timeline_item,
     home::rooms_list_header::RoomsListHeaderAction,
-    profile::user_profile_cache,
+    profile::user_profile_cache::UserProfilesUpdated,
     shared::{avatar::AvatarWidgetRefExt, confirmation_modal::ConfirmationModalContent, hover_highlight::handle_hover_hit_with_test, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, list_rows::status_row},
     sliding_sync::{MatrixRequest, TimelineEndpointsRecreated, TimelineKind, submit_async_request},
     utils::{self, RoomNameId},
@@ -322,17 +321,15 @@ impl Widget for PinnedMessagesList {
 
         self.view.handle_event(cx, event, scope);
 
-        if !self.is_fully_drawn && matches!(event, Event::Signal) {
-            user_profile_cache::process_user_profile_updates(cx);
-            avatar_cache::process_avatar_updates(cx);
-            self.redraw(cx);
-        }
-
         if self.timestamp_refresh_timer.is_event(event).is_some() {
             self.refresh_timestamps(cx);
         }
 
         let Event::Actions(actions) = event else { return };
+        // A sender whose profile was still being fetched may be known now.
+        if !self.is_fully_drawn && actions.iter().any(|a| a.downcast_ref::<UserProfilesUpdated>().is_some()) {
+            self.redraw(cx);
+        }
         for action in actions {
             match action.downcast_ref() {
                 Some(PinnedMessagesAction::Updated { room_id, messages, num_pinned, can_unpin }) if self.is_room(room_id) => {

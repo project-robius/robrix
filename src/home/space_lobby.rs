@@ -1096,13 +1096,6 @@ impl Widget for SpaceLobbyScreen {
         });
         cx.extend_actions(inner_actions);
 
-        // Handle Signal events for avatar cache updates
-        if let Event::Signal = event {
-            // Process any pending avatar updates
-            avatar_cache::process_avatar_updates(cx);
-            self.redraw(cx);
-        }
-
         if let Event::Actions(actions) = event {
             for action in actions {
                 // Just like the rooms list header, handle updates to a space's name.

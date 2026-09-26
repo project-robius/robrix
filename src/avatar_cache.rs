@@ -30,8 +30,7 @@ pub struct AvatarUpdate {
 /// The queue of avatar updates waiting to be processed by the UI thread's event handler.
 static PENDING_AVATAR_UPDATES: SegQueue<AvatarUpdate> = SegQueue::new();
 
-/// Enqueues a new avatar update and signals the UI
-/// such that the new update will be handled by the avatar sliding pane widget.
+/// Enqueues a new avatar update and signals the UI to refresh any avatars that need it.
 fn enqueue_avatar_update(update: AvatarUpdate) {
     PENDING_AVATAR_UPDATES.push(update);
     SignalToUI::set_ui_signal();
@@ -40,6 +39,8 @@ fn enqueue_avatar_update(update: AvatarUpdate) {
 /// Processes all pending avatar updates in the queue.
 ///
 /// Triggers a redraw if any updates arrived.
+///
+/// The App calls this upon every Signal, before any widget handles that Signal.
 pub fn process_avatar_updates(cx: &mut Cx) {
     let mut should_redraw = false;
     AVATAR_NEW_CACHE.with_borrow_mut(|cache| {

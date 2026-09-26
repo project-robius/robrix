@@ -275,31 +275,21 @@ impl Widget for ProfileIcon {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if self.own_profile.is_none() {
             self.own_profile = get_own_profile(cx);
-        }
-
-        // A UI Signal indicates that a user profile or avatar may have been updated.
-        if let Event::Signal = event {
-            let mut needs_redraw = false;
-            // Refetch our profile if we don't have it yet.
-            if self.own_profile.is_none() {
-                user_profile_cache::process_user_profile_updates(cx);
-                self.own_profile = get_own_profile(cx);
-                needs_redraw = true;
-            }
-            // If we're waiting for an avatar image, process avatar updates.
-            if let Some(p) = self.own_profile.as_mut() && p.avatar_state.uri().is_some() {
-                avatar_cache::process_avatar_updates(cx);
-                let new_data = p.avatar_state.update_from_cache(cx);
-                needs_redraw |= new_data.is_some();
-                if new_data.is_some() {
-                    user_profile_cache::enqueue_user_profile_update(
-                        UserProfileUpdate::UserProfileOnly(p.clone())
-                    );
-                }
-            }
-            if needs_redraw {
+            if self.own_profile.is_some() {
                 self.inner.redraw(cx);
             }
+        }
+
+        // A UI Signal may mean that the avatar image we're waiting for has been fetched.
+        if let Event::Signal = event
+            && let Some(p) = self.own_profile.as_mut()
+            && p.avatar_state.uri().is_some()
+            && p.avatar_state.update_from_cache(cx).is_some()
+        {
+            user_profile_cache::enqueue_user_profile_update(
+                UserProfileUpdate::UserProfileOnly(p.clone())
+            );
+            self.inner.redraw(cx);
         }
 
         // Handle actions related to the currently-logged-in user account,

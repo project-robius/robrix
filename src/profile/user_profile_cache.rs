@@ -5,7 +5,7 @@
 use crossbeam_queue::SegQueue;
 use makepad_widgets::{warning, Cx, SignalToUI};
 use matrix_sdk::{room::RoomMember, ruma::{OwnedRoomId, OwnedUserId, UserId}};
-use std::{cell::RefCell, collections::{btree_map::Entry, BTreeMap}};
+use std::{cell::RefCell, collections::{btree_map::Entry, BTreeMap, BTreeSet}};
 
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
 
@@ -49,11 +49,14 @@ impl RoomMemberEntry {
     }
 }
 
-/// Inserts already-known room member info for the given room into the cache.
+/// Inserts already-known room member info for the given room into the cache,
+/// emitting [`UserProfilesUpdated`] for that user.
 ///
 /// If the user's profile isn't yet cached, it's derived from that room member info.
-pub fn insert_room_member(_cx: &mut Cx, room_id: OwnedRoomId, room_member: RoomMember) {
+pub fn insert_room_member(cx: &mut Cx, room_id: OwnedRoomId, room_member: RoomMember) {
+    let user_id = room_member.user_id().to_owned();
     USER_PROFILE_CACHE.with_borrow_mut(|cache| insert_loaded_member(cache, room_id, room_member, |m| UserProfile::from(m)));
+    cx.action(UserProfilesUpdated { user_ids: BTreeSet::from([user_id]) });
 }
 
 /// Inserts the given room member into its user's cache entry, first creating that entry
@@ -129,7 +132,6 @@ pub enum UserProfileUpdate {
 }
 impl UserProfileUpdate {
     /// Returns the user ID associated with this update.
-    #[allow(unused)]
     pub fn user_id(&self) -> &UserId {
         match self {
             UserProfileUpdate::Full { new_profile, .. } => &new_profile.user_id,
@@ -213,30 +215,34 @@ impl UserProfileUpdate {
     }
 }
 
-/// Emitted after user profile updates were applied to the cache, so that every widget
-/// showing those users can redraw, not just the one that happened to process them.
+/// Emitted after user profile updates were applied to the cache,
+/// so that every widget showing those users can refresh or redraw them.
 ///
 /// This is NOT a widget action.
 #[derive(Debug)]
-pub struct UserProfilesUpdated;
+pub struct UserProfilesUpdated {
+    pub user_ids: BTreeSet<OwnedUserId>,
+}
 
 /// Processes all pending user profile updates in the queue,
 /// emitting [`UserProfilesUpdated`] if there were any.
+///
+/// The App calls this upon every Signal, before any widget handles that Signal.
 ///
 /// This function requires passing in a reference to `Cx`,
 /// which acts as a guarantee that this function
 /// must only be called by the main UI thread.
 pub fn process_user_profile_updates(cx: &mut Cx) {
-    let mut any_updated = false;
+    let mut user_ids = BTreeSet::new();
     USER_PROFILE_CACHE.with_borrow_mut(|cache| {
         while let Some(update) = PENDING_USER_PROFILE_UPDATES.pop() {
+            user_ids.insert(update.user_id().to_owned());
             // Insert the updated info into the cache
             update.apply_to_cache(cache);
-            any_updated = true;
         }
     });
-    if any_updated {
-        cx.action(UserProfilesUpdated);
+    if !user_ids.is_empty() {
+        cx.action(UserProfilesUpdated { user_ids });
     }
 }
 
