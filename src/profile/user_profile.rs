@@ -4,9 +4,9 @@ use std::{borrow::Cow, ops::{Deref, DerefMut}};
 use makepad_widgets::*;
 use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId}};
 use crate::{
-    avatar_cache, block_user_modal::{BlockUserModalAction, BlockUserRequest}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, current_user_id, is_user_blocked, submit_async_request}, utils
+    block_user_modal::{BlockUserModalAction, BlockUserRequest}, shared::{avatar::{AvatarState, AvatarWidgetExt}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, current_user_id, is_user_blocked, submit_async_request}, utils
 };
-use super::user_profile_cache;
+use super::user_profile_cache::{self, UserProfilesUpdated};
 
 
 /// Information retrieved about a user: their displayable name, ID, and known avatar state.
@@ -465,49 +465,39 @@ impl Widget for UserProfileSlidingPane {
             return;
         }
 
-        // A UI Signal indicates that this user profile's info may have been updated by a background task.
-        if let Event::Signal = event {
-            user_profile_cache::process_user_profile_updates(cx);
-            avatar_cache::process_avatar_updates(cx);
-
-            // Re-fetch the currently-displayed user profile info from the cache in case it was updated.
-            let mut redraw_this_pane = false;
-            if let Some(our_info) = self.info.as_mut() {
-                if let Some((new_profile, room_member)) = user_profile_cache::with_user_profile(
-                    cx,
-                    our_info.user_id.clone(),
-                    Some(&our_info.room_id),
-                    false,
-                    |profile, rooms| (profile.clone(), rooms.get(&our_info.room_id).and_then(|entry| entry.loaded()).cloned())
-                ) {
-                    let prev_avatar_state = our_info.avatar_state.clone();
-                    our_info.user_profile = new_profile;
-                    our_info.room_member = room_member;
-                    // Use the avatar URI from the `room_member`, as it will be the most up-to-date
-                    // and specific to the room that this user profile sliding pane is currently being shown for.
-                    if let Some(avatar_uri) = our_info.room_member.as_ref()
-                        .and_then(|rm| rm.avatar_url().map(|u| u.to_owned()))
-                    {
-                        our_info.avatar_state = AvatarState::Known(Some(avatar_uri));
-                    }
-                    // If we know the avatar URI, try to get/fetch the actual avatar image data.
-                    our_info.avatar_state.update_from_cache(cx);
-
-                    // If the new avatar state is fully `Loaded`, keep it as is.
-                    // If the new avatar state is *not* fully `Loaded`, but the previous one was, keep the previous one.
-                    match (prev_avatar_state, &mut our_info.avatar_state) {
-                        (_,                             AvatarState::Loaded(_)) => { }
-                        (prev @ AvatarState::Loaded(_), existing_avatar_state ) => {
-                            *existing_avatar_state = prev;
-                        }
-                        _ => { }
-                    }
-                    redraw_this_pane = true;
-                }
+        // Re-fetch the currently-displayed user profile info from the cache when it was updated.
+        if let Event::Actions(actions) = event
+            && let Some(our_info) = self.info.as_mut()
+            && actions.iter().any(|a| a.downcast_ref::<UserProfilesUpdated>().is_some_and(|u| u.user_ids.contains(&our_info.user_id)))
+            && let Some((new_profile, room_member)) = user_profile_cache::with_user_profile(
+                cx,
+                our_info.user_id.clone(),
+                Some(&our_info.room_id),
+                false,
+                |profile, rooms| (profile.clone(), rooms.get(&our_info.room_id).and_then(|entry| entry.loaded()).cloned())
+            )
+        {
+            our_info.user_profile = new_profile;
+            our_info.room_member = room_member;
+            // Use the avatar URI from the `room_member`, as it will be the most up-to-date
+            // and specific to the room that this user profile sliding pane is currently being shown for.
+            if let Some(avatar_uri) = our_info.room_member.as_ref()
+                .and_then(|rm| rm.avatar_url().map(|u| u.to_owned()))
+            {
+                our_info.avatar_state = AvatarState::Known(Some(avatar_uri));
             }
-            if redraw_this_pane {
-                self.redraw(cx);
-            }
+            // If we know the avatar URI, try to get/fetch the actual avatar image data.
+            our_info.avatar_state.update_from_cache(cx);
+            self.redraw(cx);
+        }
+
+        // A Signal may mean that the avatar image we're waiting for has been fetched.
+        if let Event::Signal = event
+            && let Some(our_info) = self.info.as_mut()
+            && our_info.avatar_state.uri().is_some()
+            && our_info.avatar_state.update_from_cache(cx).is_some()
+        {
+            self.redraw(cx);
         }
 
         let Some(info) = self.info.as_ref() else { return };
@@ -649,33 +639,45 @@ impl UserProfileSlidingPane {
     /// if it's not found in the cache.
     pub fn set_info(&mut self, cx: &mut Cx, mut info: UserProfilePaneInfo) {
         if info.room_member.is_none() {
-            if let Some((new_profile, Some(room_member))) = user_profile_cache::with_user_profile(
+            match user_profile_cache::with_user_profile(
                 cx,
                 info.user_id.clone(),
                 Some(&info.room_id),
                 true,
                 |profile, rooms| (profile.clone(), rooms.get(&info.room_id).and_then(|entry| entry.loaded()).cloned())
             ) {
-                log!("Found user {} room member info in cache", info.user_id);
-                // Update avatar state, preferring that of the room member info.
-                if let Some(uri) = room_member.avatar_url() {
-                    info.avatar_state = AvatarState::Known(Some(uri.to_owned()));
-                }
-                else {
-                    match new_profile.avatar_state {
-                        s @ AvatarState::Known(Some(_)) | s @ AvatarState::Loaded(_) => {
-                            info.avatar_state = s.clone();
+                Some((new_profile, Some(room_member))) => {
+                    log!("Found user {} room member info in cache", info.user_id);
+                    // Update avatar state, preferring that of the room member info.
+                    if let Some(uri) = room_member.avatar_url() {
+                        info.avatar_state = AvatarState::Known(Some(uri.to_owned()));
+                    }
+                    else {
+                        match new_profile.avatar_state {
+                            s @ AvatarState::Known(Some(_)) | s @ AvatarState::Loaded(_) => {
+                                info.avatar_state = s.clone();
+                            }
+                            _ => {}
                         }
-                        _ => {}
+                    }
+                    // Update displayable username.
+                    if info.username.is_none() {
+                        info.username = room_member.display_name()
+                            .map(|dn| dn.to_owned())
+                            .or_else(|| new_profile.username.clone());
+                    }
+                    info.room_member = Some(room_member);
+                }
+                // We don't have their room member info, so fill in what we can from their profile.
+                Some((new_profile, None)) => {
+                    if info.username.is_none() {
+                        info.username = new_profile.username;
+                    }
+                    if !info.avatar_state.has_avatar() {
+                        info.avatar_state = new_profile.avatar_state;
                     }
                 }
-                // Update displayable username.
-                if info.username.is_none() {
-                    info.username = room_member.display_name()
-                        .map(|dn| dn.to_owned())
-                        .or_else(|| new_profile.username.clone());
-                }
-                info.room_member = Some(room_member);
+                None => {}
             }
         }
         info.avatar_state.update_from_cache(cx);

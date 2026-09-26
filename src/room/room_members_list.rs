@@ -10,7 +10,6 @@ use makepad_widgets::*;
 use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{OwnedRoomId, events::room::{member::MembershipState, power_levels::UserPowerLevel}}};
 
 use crate::{
-    avatar_cache,
     profile::{
         user_profile::{UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, member_display_name, role_name},
         user_profile_cache,
@@ -168,8 +167,6 @@ pub struct RoomMembersList {
     #[rust] hover_colored: HashSet<usize>,
     /// The indices of the rows whose content is up to date, which needn't be set again when drawn.
     #[rust] populated_rows: HashSet<usize>,
-    /// Whether all avatars were fully drawn, i.e., none are still being fetched.
-    #[rust(true)] is_fully_drawn: bool,
 }
 
 impl Widget for RoomMembersList {
@@ -177,11 +174,6 @@ impl Widget for RoomMembersList {
         // A list that hasn't been given a room yet has nothing to do.
         if self.room_name_id.is_none() { return }
         self.view.handle_event(cx, event, scope);
-
-        if !self.is_fully_drawn && matches!(event, Event::Signal) {
-            avatar_cache::process_avatar_updates(cx);
-            self.redraw(cx);
-        }
 
         let Event::Actions(actions) = event else { return };
 
@@ -215,7 +207,6 @@ impl Widget for RoomMembersList {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let status = self.status();
-        let mut fully_drawn = true;
         while let Some(item) = self.view.draw_walk(cx, scope, walk).step() {
             let list_ref = item.as_portal_list();
             let Some(mut list) = list_ref.borrow_mut() else { continue };
@@ -239,8 +230,6 @@ impl Widget for RoomMembersList {
                         let avatar_url = entry.member.avatar_url().map(|u| u.to_owned());
                         if row.avatar(cx, ids!(avatar)).show_user(cx, avatar_url.as_ref(), &entry.name) {
                             self.populated_rows.insert(index);
-                        } else {
-                            fully_drawn = false;
                         }
                     }
                     // Applying a color redraws the row, so only do so when its hover state changes.
@@ -255,7 +244,6 @@ impl Widget for RoomMembersList {
                 row.draw_all(cx, scope);
             }
         }
-        self.is_fully_drawn = fully_drawn;
         DrawStep::done()
     }
 }

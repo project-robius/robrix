@@ -12,7 +12,7 @@
 use std::sync::Arc;
 use makepad_widgets::*;
 use crate::{
-    avatar_cache::{get_or_fetch_avatar, process_avatar_updates, AvatarCacheEntry},
+    avatar_cache::{get_or_fetch_avatar, AvatarCacheEntry},
     home::rooms_list::RoomsListRef,
     room::FetchedRoomAvatar,
     shared::{avatar::{AvatarImage, AvatarWidgetRefExt}, list_rows::{LIST_ROW_HEIGHT, handle_row_actions, status_row}, slash_commands::SlashCommand, styles::*},
@@ -166,9 +166,6 @@ pub struct MentionablePopup {
     /// The last-drawn height of the list itself; used to help align the item selected
     /// via keyboard nav to the bottom of the viewport.
     #[rust] list_viewport_height: f64,
-    /// Whether all of the avatars in the currently-visible rows have been fully drawn.
-    /// If `false`, we'll try to update the avatar cache and re-draw avatars upon a UI Signal.
-    #[rust] is_fully_drawn: bool,
 }
 
 impl Widget for MentionablePopup {
@@ -188,11 +185,6 @@ impl Widget for MentionablePopup {
         }
 
         self.view.handle_event(cx, event, scope);
-
-        if !self.is_fully_drawn && matches!(event, Event::Signal) {
-            process_avatar_updates(cx);
-            self.redraw(cx);
-        }
 
         if let Event::Actions(actions) = event {
             let list = self.portal_list(cx, ids!(main_content.list_container.list));
@@ -224,10 +216,6 @@ impl Widget for MentionablePopup {
 
         self.position_content(cx);
 
-        // We treat the whole widget as fully drawn initially. If any avatars aren't available yet,
-        // then we set it to false so that future avatar updates can be grabbed and redrawn.
-        let mut fully_drawn = true;
-
         while let Some(widget) = self.view.draw_walk(cx, scope, walk).step() {
             let portal_list = widget.as_portal_list();
             let Some(mut list) = portal_list.borrow_mut() else { continue };
@@ -240,7 +228,7 @@ impl Widget for MentionablePopup {
                 }
                 let row = match self.items.get(index) {
                     Some(mention) => {
-                        let mut row_widget = build_row(cx, &mut list, index, mention, &mut fully_drawn);
+                        let mut row_widget = build_row(cx, &mut list, index, mention);
                         let color = if self.keyboard_focus_index == Some(index) {
                             self.color_focus
                         } else if self.pointer_hover_index == Some(index) {
@@ -257,8 +245,6 @@ impl Widget for MentionablePopup {
                 row.draw_all(cx, scope);
             }
         }
-        self.is_fully_drawn = fully_drawn;
-
         // Block scrolling everywhere except inside the box.
         let content_area = self.view.view(cx, ids!(main_content)).area();
         cx.block_scrolling_except_within(content_area);
@@ -537,13 +523,13 @@ pub fn set_global_mention_popup(cx: &mut Cx, parent_ref: &WidgetRef) {
     Cx::set_global(cx, parent_ref.mentionable_popup(cx, ids!(mention_popup)));
 }
 
-fn build_row(cx: &mut Cx, list: &mut PortalList, index: usize, item: &MentionItem, fully_drawn: &mut bool) -> WidgetRef {
+fn build_row(cx: &mut Cx, list: &mut PortalList, index: usize, item: &MentionItem) -> WidgetRef {
     match item {
         MentionItem::User { user_id, display_name, avatar_url } => {
             let new_widget = list.item(cx, index, id!(row));
             new_widget.label(cx, ids!(info.title)).set_text(cx, display_name);
             new_widget.label(cx, ids!(info.subtitle)).set_text(cx, user_id.as_str());
-            *fully_drawn &= new_widget.avatar(cx, ids!(avatar)).show_user(cx, avatar_url.as_ref(), display_name);
+            new_widget.avatar(cx, ids!(avatar)).show_user(cx, avatar_url.as_ref(), display_name);
             new_widget
         }
         MentionItem::NotifyRoom { room_name } => {
@@ -564,7 +550,7 @@ fn build_row(cx: &mut Cx, list: &mut PortalList, index: usize, item: &MentionIte
             new_widget.label(cx, ids!(info.title)).set_text(cx, &name);
             let alias = candidate.alias.as_ref().map(|a| a.as_str()).unwrap_or("");
             new_widget.label(cx, ids!(info.subtitle)).set_text(cx, alias);
-            *fully_drawn &= set_room_avatar(cx, &new_widget, candidate.room_name_id.room_id(), candidate.avatar_url.as_ref(), candidate.room_name_id.name_for_avatar());
+            set_room_avatar(cx, &new_widget, candidate.room_name_id.room_id(), candidate.avatar_url.as_ref(), candidate.room_name_id.name_for_avatar());
             new_widget
         }
         MentionItem::Command(cmd) => {
@@ -577,28 +563,22 @@ fn build_row(cx: &mut Cx, list: &mut PortalList, index: usize, item: &MentionIte
 }
 
 /// Resolves a room's avatar using the rooms list's metadata or the avatar cache.
-fn set_room_avatar(cx: &mut Cx, row: &WidgetRef, room_id: &OwnedRoomId, avatar_url: Option<&OwnedMxcUri>, name_for_avatar: Option<&str>) -> bool {
+fn set_room_avatar(cx: &mut Cx, row: &WidgetRef, room_id: &OwnedRoomId, avatar_url: Option<&OwnedMxcUri>, name_for_avatar: Option<&str>) {
     let avatar = row.avatar(cx, ids!(avatar));
     if cx.has_global::<RoomsListRef>() {
         if let Some(FetchedRoomAvatar::Image(image)) = cx.get_global::<RoomsListRef>().get_room_avatar(room_id) {
             let _ = avatar.show_image(cx, None, |cx, img| utils::load_avatar_image(&img, cx, &image));
-            return true;
+            return;
         }
     }
-    let mut fully_drawn = true;
-    if let Some(mxc) = avatar_url {
-        match get_or_fetch_avatar(cx, mxc) {
-            AvatarCacheEntry::Loaded(data) => {
-                let image = AvatarImage::from((mxc.clone(), data));
-                let _ = avatar.show_image(cx, None, |cx, img| utils::load_avatar_image(&img, cx, &image));
-                return true;
-            }
-            AvatarCacheEntry::Requested => fully_drawn = false,
-            AvatarCacheEntry::Failed => {}
-        }
+    if let Some(mxc) = avatar_url
+        && let AvatarCacheEntry::Loaded(data) = get_or_fetch_avatar(cx, mxc)
+    {
+        let image = AvatarImage::from((mxc.clone(), data));
+        let _ = avatar.show_image(cx, None, |cx, img| utils::load_avatar_image(&img, cx, &image));
+        return;
     }
     if let FetchedRoomAvatar::Text(fallback) = utils::avatar_from_room_name(name_for_avatar) {
         avatar.show_text(cx, Some(COLOR_UNKNOWN_ROOM_AVATAR), None, &fallback);
     }
-    fully_drawn
 }

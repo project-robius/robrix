@@ -147,6 +147,8 @@ impl Widget for RoomsListHeader {
                             user_profile_cache::clear_all_pending_requests();
                             avatar_cache::clear_all_pending_and_failed_requests();
                             room_preview_cache::clear_all_pending_requests();
+                            // Redraw everything so that widgets re-fetch any info they were still waiting on.
+                            cx.redraw_all();
                             // Now that we're no longer offline, we also need to tell the
                             // ProfileIcon to refresh itself and fetch our own user's profile again.
                             SignalToUI::set_ui_signal();

@@ -323,9 +323,7 @@ pub struct InviteScreen {
 impl Widget for InviteScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Signal = event {
-            // We use the avatar cache to populate the inviter's avatar.
-            avatar_cache::process_avatar_updates(cx);
-            // and we use the room preview cache to fetch and display other info about the invited room/space
+            // We use the room preview cache to fetch and display info about the invited room/space.
             room_preview_cache::process_room_preview_updates(cx);
             self.update_room_preview(cx);
 

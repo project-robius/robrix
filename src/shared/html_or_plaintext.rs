@@ -418,9 +418,18 @@ impl Widget for MatrixLinkPill {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
         if matches!(event, Event::Signal) {
             room_preview_cache::process_room_preview_updates(cx);
-            if self.matrix_id.is_some() && self.is_waiting_for_data {
+            if self.is_waiting_for_data && !matches!(self.matrix_id, None | Some(MatrixId::User(_))) {
                 self.redraw(cx);
             }
+        }
+
+        // If this user's profile is now in the cache, redraw so we can pick up that new info.
+        if let Event::Actions(actions) = event
+            && self.is_waiting_for_data
+            && let Some(MatrixId::User(user_id)) = self.matrix_id.as_ref()
+            && actions.iter().any(|a| a.downcast_ref::<user_profile_cache::UserProfilesUpdated>().is_some_and(|u| u.user_ids.contains(user_id)))
+        {
+            self.redraw(cx);
         }
 
         // Handle hover (to set the cursor) and click in a single hit-test,

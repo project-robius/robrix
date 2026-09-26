@@ -4,7 +4,7 @@ use makepad_widgets::{text::selection::Cursor, *};
 use matrix_sdk::encryption::{identities::Device, VerificationState};
 use url::Url;
 
-use crate::{app::ConfirmDeleteAction, avatar_cache::{self}, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, settings::PopulateMode, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::{FileUploadMetadata, PendingUpload, handle_picked_file, handle_picker_launch_errors}, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{get_client, submit_async_request, AccountDataAction, MatrixRequest}, utils, verification::VerificationStateAction};
+use crate::{app::ConfirmDeleteAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction}, profile::user_profile::UserProfile, settings::PopulateMode, shared::{avatar::{AvatarState, AvatarWidgetExt}, confirmation_modal::ConfirmationModalContent, file_upload_modal::{FileUploadMetadata, PendingUpload, handle_picked_file, handle_picker_launch_errors}, popup_list::{PopupKind, enqueue_popup_notification}, styles::*}, sliding_sync::{get_client, submit_async_request, AccountDataAction, MatrixRequest}, utils, verification::VerificationStateAction};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -399,11 +399,6 @@ impl Widget for AccountSettings {
 
 impl MatchEvent for AccountSettings {
     fn handle_signal(&mut self, cx: &mut Cx) {
-        if self.own_profile.is_none() {
-            return;
-        }
-        avatar_cache::process_avatar_updates(cx);
-
         let avatar_arrived = self.own_profile.as_mut().is_some_and(|p|
             // the avatar URI is only set while we're still waiting on the image to arrive.
             p.avatar_state.uri().is_some() && p.avatar_state.update_from_cache(cx).is_some()
