@@ -91,6 +91,9 @@ pub fn set_invite_state(_cx: &mut Cx, room_id: &OwnedRoomId, new_state: InviteSt
 }
 
 
+/// How far the rooms list's content sits in from each side of the sidebar.
+pub(crate) const SIDE_PADDING: f64 = 10.0;
+
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
@@ -132,8 +135,11 @@ script_mod! {
         flow: Down
         cursor: MouseCursor.Default,
 
-        space_lobby_entry := SpaceLobbyEntry {}
+        space_lobby_entry := SpaceLobbyEntry {
+            margin +: {right: #(SIDE_PADDING)}
+        }
 
+        // The list has the right padding instead of the sidebar, so its scroll bar sits at the sidebar's edge.
         list := PortalList {
             keep_invisible: false,
             // Nothing here listens for scroll position changes.
@@ -141,8 +147,9 @@ script_mod! {
             auto_tail: false,
             width: Fill, height: Fill
             flow: Down,
-            padding: Inset{top: 5}
+            padding: Inset{top: 5, right: #(SIDE_PADDING)}
             spacing: 0.0
+            scroll_bar: ListScrollBar {}
 
             collapsible_header := CollapsibleHeader {}
             rooms_list_entry := RoomsListEntry {}

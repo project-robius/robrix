@@ -21,7 +21,7 @@ script_mod! {
         text_padding: 10
         mic_gutter: 40
         mic_clearance: 36
-        scroll_bar_inset: Inset{top: 3, right: 4, bottom: 3}
+        scroll_bar_inset: (TEXT_INPUT_SCROLL_BAR_INSET)
         mic_tooltip: "Dictate"
 
         text_input := RobrixTextInput {}

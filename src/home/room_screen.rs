@@ -668,6 +668,7 @@ script_mod! {
             height: Fill,
             width: Fill
             flow: Down
+            scroll_bar: ListScrollBar {}
 
             auto_tail: true, // set to `true` to lock the view to the last item.
             // only bounce at the end, not the start because that triggers back pagination.

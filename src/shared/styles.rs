@@ -157,6 +157,11 @@ script_mod! {
     // What a rooms list entry or timeline message darkens to on hover or press.
     mod.widgets.COLOR_LIST_ITEM_BG_HOVER = #f4f4f4
 
+    // Every scroll bar uses this styling.
+    mod.widgets.ScrollBar.draw_bg.color = #00000040
+    mod.widgets.ScrollBar.draw_bg.color_hover = #00000060
+    mod.widgets.ScrollBar.draw_bg.color_drag = #00000080
+
     mod.widgets.COLOR_ACTIVE_PRIMARY = #0f88fe
 
     mod.widgets.COLOR_ACTIVE_PRIMARY_DARKER = #106fcc
@@ -225,6 +230,12 @@ script_mod! {
     }
 
 
+    // The scroll bar used by all lists (like portallists).
+    mod.widgets.ListScrollBar = ScrollBar { bar_size: 9 }
+
+    // Set the position for scroll bars in the multiline text input
+    mod.widgets.TEXT_INPUT_SCROLL_BAR_INSET = Inset{top: 3, right: 3, bottom: 3}
+
     // A text input widget styled for Robrix.
     mod.widgets.RobrixTextInput = TextInput {
         width: Fill, height: Fit
@@ -232,15 +243,7 @@ script_mod! {
         align: Align{y: 0.5}
         margin: 0,
         padding: 10,
-
-        // For multiline text inputs, we want to show a light-colored scroll bar.
-        scroll_bar +: {
-            draw_bg +: {
-                color: #00000040
-                color_hover: #00000060
-                color_drag: #00000080
-            }
-        }
+        scroll_bar_inset: (mod.widgets.TEXT_INPUT_SCROLL_BAR_INSET)
 
         draw_bg +: {
             border_radius: 4.0 // was previously 2.0

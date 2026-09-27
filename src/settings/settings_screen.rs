@@ -3,6 +3,9 @@ use makepad_widgets::*;
 
 use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, get_own_profile}, profile::user_profile::UserProfile, settings::{PopulateMode, account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt, encryption_settings::EncryptionSettingsWidgetExt, privacy_settings::PrivacySettingsWidgetExt}};
 
+/// The space between the settings content and the screen's left and right edges.
+const SIDE_PADDING: f64 = 15.0;
+
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
@@ -13,14 +16,14 @@ script_mod! {
         flow: Overlay
 
         View {
-            padding: Inset{top: 5, left: 15, right: 15, bottom: 0},
+            padding: Inset{top: 5, left: #(SIDE_PADDING), right: 0, bottom: 0},
             flow: Down
 
             // The settings header shows a title, with a close button to the right.
             settings_header := View {
                 flow: Right,
                 width: Fill, height: Fit
-                margin: Inset{top: 5, left: 5, right: 5}
+                margin: Inset{top: 5, left: 5, right: #(5.0 + SIDE_PADDING)}
                 spacing: 10,
 
                 settings_header_title := TitleLabel {
@@ -45,11 +48,12 @@ script_mod! {
             }
 
             // Make sure the dividing line is aligned with the close_button
-            LineH { padding: 10, margin: Inset{top: 10, right: 2} }
+            LineH { padding: 10, margin: Inset{top: 10, right: #(2.0 + SIDE_PADDING)} }
 
             ScrollYView {
                 width: Fill, height: Fill
                 flow: Down
+                padding: Inset{right: #(SIDE_PADDING)}
 
                 // The account settings section.
                 account_settings := AccountSettings {}
