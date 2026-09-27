@@ -27,7 +27,8 @@ script_mod! {
         height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
         flow: Down,
         align: Align{x: 0.5}
-        padding: 20,
+        padding: Inset{top: 20, left: 20, bottom: 20, right: 16},
+        margin: Inset{right: 4} // ensure the scroll bar stays on screen
         spacing: 8
 
         // make this a ScrollYView

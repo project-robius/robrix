@@ -9,7 +9,7 @@
 
 use makepad_widgets::*;
 
-use crate::home::rooms_list::RoomsListWidgetExt;
+use crate::home::rooms_list::{SIDE_PADDING, RoomsListWidgetExt};
 use crate::settings::app_preferences::{AppPreferencesGlobal, AppPreferencesAction, ViewModeOverride};
 
 script_mod! {
@@ -19,14 +19,19 @@ script_mod! {
 
     mod.widgets.RoomsSideBar = #(RoomsSideBar::register_widget(vm)) {
         Desktop := SolidView {
-            padding: Inset{top: 20, left: 10, right: 10}
+            padding: Inset{top: 20, left: #(SIDE_PADDING)}
             flow: Down, spacing: 5
             width: Fill, height: Fill
 
             draw_bg.color: (COLOR_PRIMARY_DARKER)
 
-            CachedWidget {
-                rooms_list_header := RoomsListHeader {}
+            // Matches the right padding that the rooms list has itself.
+            View {
+                width: Fill, height: Fit
+                padding: Inset{right: #(SIDE_PADDING)}
+                CachedWidget {
+                    rooms_list_header := RoomsListHeader {}
+                }
             }
             CachedWidget {
                 rooms_list := RoomsList {}
@@ -39,7 +44,7 @@ script_mod! {
             
             RoundedShadowView {
                 width: Fill, height: Fit
-                padding: Inset{top: 15, left: 15, right: 15, bottom: 10}
+                padding: Inset{top: 15, left: #(SIDE_PADDING), right: #(SIDE_PADDING), bottom: 10}
                 flow: Down,
 
                 show_bg: true
@@ -117,7 +122,7 @@ script_mod! {
             }
 
             View {
-                padding: Inset{left: 15, right: 15}
+                padding: Inset{left: #(SIDE_PADDING)}
 
                 CachedWidget {
                     rooms_list := RoomsList {}

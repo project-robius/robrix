@@ -55,7 +55,7 @@ script_mod! {
             content := View {
                 width: Fill, height: Fill
                 flow: Down
-                padding: Inset{top: 8, right: 10, bottom: 8, left: 10}
+                padding: Inset{top: 8, right: 0, bottom: 8, left: 10}
                 room_members := mod.widgets.RoomMembersList { visible: false }
                 pinned_messages := mod.widgets.PinnedMessagesList { visible: false }
             }

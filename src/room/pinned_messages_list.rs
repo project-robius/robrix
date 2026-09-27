@@ -16,6 +16,7 @@ use crate::{
     event_preview::text_preview_of_timeline_item,
     home::rooms_list_header::RoomsListHeaderAction,
     profile::user_profile_cache::UserProfilesUpdated,
+    room::pane_dock::FRAME_PADDING,
     shared::{avatar::AvatarWidgetRefExt, confirmation_modal::ConfirmationModalContent, hover_highlight::handle_hover_hit_with_test, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, list_rows::status_row},
     sliding_sync::{MatrixRequest, TimelineEndpointsRecreated, TimelineKind, submit_async_request},
     utils::{self, RoomNameId},
@@ -108,6 +109,7 @@ script_mod! {
 
         pinned_count_label := Label {
             width: Fill, height: Fit
+            margin: Inset{right: #(FRAME_PADDING)}
             padding: Inset{left: 4, right: 4}
             max_lines: 1, text_overflow: Ellipsis
             draw_text +: { color: #737373, text_style: REGULAR_TEXT {font_size: 8.5} }
@@ -117,6 +119,9 @@ script_mod! {
         pinned_list := PortalList {
             width: Fill, height: Fill
             flow: Down
+            // The list has the right padding instead of the pane, so its scroll bar sits at the pane's edge.
+            padding: Inset{right: #(FRAME_PADDING)}
+            scroll_bar: ListScrollBar {}
             auto_tail: false
             keep_invisible: false
 
@@ -127,6 +132,7 @@ script_mod! {
 
         unpin_all_button := RobrixNegativeIconButton {
             visible: false
+            margin +: {right: #(FRAME_PADDING)}
             padding: Inset{top: 10, right: 12, bottom: 10, left: 12}
             spacing: 6
             icon_walk: Walk{width: 14, height: 14}

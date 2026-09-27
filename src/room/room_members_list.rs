@@ -14,6 +14,7 @@ use crate::{
         user_profile::{UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, member_display_name, role_name},
         user_profile_cache,
     },
+    room::pane_dock::FRAME_PADDING,
     shared::{avatar::AvatarWidgetRefExt, list_rows::{handle_row_actions, status_row}, room_filter_input_bar::RoomFilterInputBarWidgetRefExt},
     utils::RoomNameId,
 };
@@ -28,11 +29,13 @@ script_mod! {
         color_hover: (COLOR_LIST_ROW_HOVER)
 
         member_filter_bar := mod.widgets.RoomFilterInputBar {
+            margin: Inset{right: #(FRAME_PADDING)}
             input +: { text_input +: { empty_text: "Filter members..." } }
         }
 
         member_count_label := Label {
             width: Fill, height: Fit
+            margin: Inset{right: #(FRAME_PADDING)}
             padding: Inset{left: 4, right: 4}
             max_lines: 1, text_overflow: Ellipsis
             draw_text +: { color: #737373, text_style: REGULAR_TEXT {font_size: 8.5} }
@@ -42,6 +45,9 @@ script_mod! {
         members_list := PortalList {
             width: Fill, height: Fill
             flow: Down
+            // The list has the right padding instead of the pane, so its scroll bar sits at the pane's edge.
+            padding: Inset{right: #(FRAME_PADDING)}
+            scroll_bar: ListScrollBar {}
             auto_tail: false
             keep_invisible: false
 

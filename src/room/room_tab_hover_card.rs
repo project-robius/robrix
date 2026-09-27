@@ -20,7 +20,7 @@ script_mod! {
                 // so this actually is NOT one of thoe "Fill" within a "Fit" makepad bugs.
                 height: Fit
                 flow: Down
-                padding: 12
+                padding: Inset{top: 12, left: 12, bottom: 12}
                 align: Align{y: 0.5}
                 draw_bg +: {
                     color: #fff
@@ -37,7 +37,7 @@ script_mod! {
                     width: Fill, height: Fill
                     flow: Down
                     align: Align{y: 0.5}
-                    padding: Inset{right: 10}
+                    padding: Inset{right: 22}
 
                     name_content := View {
                         width: Fill, height: Fit
@@ -260,7 +260,7 @@ impl RoomTabHoverCard {
         let gap = 4.0;
         let width = (bounds.size.x - 2.0 * gap).clamp(1.0, 272.0);
         let text_height = tooltip.label(cx, ids!(tooltip_label)).borrow().map_or(44.0, |label| {
-            let text_width = (width - 24.0 - 44.0 - 12.0 - 10.0).max(1.0);
+            let text_width = (width - 12.0 - 44.0 - 12.0 - 22.0).max(1.0);
             let scale = (label.draw_text.font_scale as f64).max(0.0001);
             label.draw_text.layout(
                 cx, 0.0, 0.0, Some((text_width / scale) as f32), true, label.align, &name,

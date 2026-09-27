@@ -182,7 +182,8 @@ script_mod! {
             // The code editor content (drawn first, behind the overlay).
             code_view := mod.widgets.LightCodeView {
                 editor +: {
-                    margin: 12,
+                    margin: Inset{top: 12, left: 12, bottom: 12},
+                    pad_right: 12,
                     width: Fill,
                     height: Fit { max: FitBound.Abs(1500.0) }
                     word_wrap: true

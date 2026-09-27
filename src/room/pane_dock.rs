@@ -132,7 +132,7 @@ script_mod! {
         content := View {
             width: Fill, height: Fill
             flow: Down
-            padding: Inset{top: #(CONTENT_TOP_PADDING), right: #(FRAME_PADDING), bottom: #(FRAME_PADDING), left: #(FRAME_PADDING)}
+            padding: Inset{top: #(CONTENT_TOP_PADDING), right: 0, bottom: #(FRAME_PADDING), left: #(FRAME_PADDING)}
         }
     }
 
@@ -265,7 +265,7 @@ script_mod! {
 }
 
 /// The padding on either side of a pane's frame, and beneath its content.
-const FRAME_PADDING: f64 = 10.0;
+pub(crate) const FRAME_PADDING: f64 = 10.0;
 /// The space above a pane's content, which is a bit more for a tall pane on the left or right side.
 const CONTENT_TOP_PADDING: f64 = 6.0;
 const VERTICAL_CONTENT_TOP_PADDING: f64 = 12.0;
@@ -842,9 +842,15 @@ impl RoomPaneDock {
             PaneSide::Right => script_apply_eval!(cx, button, { draw_icon +: { svg: (mod.widgets.ICON_CARET_RIGHT) } }),
         }
         let top = if pane.layout.side.is_vertical() { VERTICAL_CONTENT_TOP_PADDING } else { CONTENT_TOP_PADDING };
+        // Add enough right padding for the content to not interfere with the scroll bar.
+        let right = match pane.layout.side {
+            PaneSide::Left => DIVIDER_THICKNESS,
+            PaneSide::Top | PaneSide::Bottom => DIVIDER_THICKNESS * 0.5,
+            PaneSide::Right => 0.0,
+        };
         let mut content = pane.frame.widget(cx, ids!(content));
         script_apply_eval!(cx, content, {
-            padding: mod.prelude.widgets.Inset{top: #(top), right: #(FRAME_PADDING), bottom: #(FRAME_PADDING), left: #(FRAME_PADDING)}
+            padding: mod.prelude.widgets.Inset{top: #(top), right: #(right), bottom: #(FRAME_PADDING), left: #(FRAME_PADDING)}
         });
     }
 
@@ -1360,8 +1366,7 @@ impl RoomPaneEdge {
         self.draw_divider.color = self.divider_color(Divider::Border);
         self.draw_divider.draw_abs(cx, border);
 
-        // The border's hit strip runs along the whole border, only as thick as a grab handle, so over the timeline
-        // it doesn't reach its scroll bar; any slop is added on our panes' side (see `grab_inset()`).
+        // The border can be grabbed anywhere along it, within a grab handle's thickness (plus `grab_inset()`).
         let center = border.pos + border.size * 0.5;
         let hit_rect = if vertical {
             Rect { pos: dvec2(center.x - GRAB_THICKNESS * 0.5, border.pos.y), size: dvec2(GRAB_THICKNESS, border.size.y) }
@@ -1410,24 +1415,23 @@ impl RoomPaneEdge {
         }
     }
 
-    /// Slop beside the border's strip, only on our panes' side of it, as the timeline's scroll bar is on the other side.
+    /// Extra grab room beside the border, on whichever side has no scroll bar next to it.
     fn grab_inset(&self, slop: f64) -> Inset {
         let mut inset = Inset::default();
         match self.side {
-            PaneSide::Left => inset.left = slop,
-            PaneSide::Right => inset.right = slop,
+            PaneSide::Left | PaneSide::Right => inset.right = slop,
             PaneSide::Top => inset.top = slop,
             PaneSide::Bottom => inset.bottom = slop,
         }
         inset
     }
 
-    /// Slop on both sides of a split's strip, which has a pane on each side.
+    /// Extra grab room beside a split, but not on the left of a vertical split, where the pane's scroll bar is.
     fn split_inset(&self, slop: f64) -> Inset {
         if self.side.is_vertical() {
             Inset::default().with_top(slop).with_bottom(slop)
         } else {
-            Inset::default().with_left(slop).with_right(slop)
+            Inset::default().with_right(slop)
         }
     }
 

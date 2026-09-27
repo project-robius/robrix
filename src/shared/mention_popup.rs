@@ -27,6 +27,8 @@ const HEADER_HEIGHT: f64 = 48.0;
 const MAX_VISIBLE_ROWS: f64 = 7.0;
 /// Padding around the list of suggestions to make it look a bit nicer within the popup.
 const LIST_PADDING: f64 = 6.0;
+/// The space on each side of the list's rows; the right side also holds the scroll bar.
+const LIST_SIDE_PADDING: f64 = 10.0;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -84,10 +86,11 @@ script_mod! {
 
                 list_container := View {
                     width: Fill, height: Fill
-                    padding: #(LIST_PADDING)
+                    padding: Inset{top: #(LIST_PADDING), bottom: #(LIST_PADDING), left: #(LIST_SIDE_PADDING)}
                     list := PortalList {
                         width: Fill, height: Fill
                         flow: Down
+                        padding: Inset{right: #(LIST_SIDE_PADDING)} // room for scroll bar
                         row := mod.widgets.AvatarListRow {}
                         command_row := mod.widgets.AvatarListRow {
                             avatar := View { width: 0, height: 0 }

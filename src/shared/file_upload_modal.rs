@@ -36,7 +36,7 @@ script_mod! {
         width: Fill, height: Fit,
         padding: 0
         flow: Flow.Right { wrap: true }
-        margin: Inset{top: 8}
+        margin: Inset{top: 8, right: 10}
         draw_text +: {
             text_style: REGULAR_TEXT { font_size: 10 },
             color: (SMALL_STATE_TEXT_COLOR)
@@ -163,12 +163,13 @@ script_mod! {
 
             preview_flip := PageFlip {
                 width: Fill, height: Fill,
-                padding: 10
+                padding: Inset{top: 10, left: 10, bottom: 10}
                 active_page: @loading_page
 
                 // Spinner shown while the preview loads.
                 loading_page := View {
                     width: Fill, height: Fill,
+                    padding: Inset{right: 10},
                     flow: Right,
                     align: Align{x: 0.5, y: 0.5},
                     spacing: 12
@@ -191,6 +192,7 @@ script_mod! {
                 // Image preview, shown for displayable image files.
                 image_page := View {
                     width: Fill, height: Fill,
+                    padding: Inset{right: 10},
                     flow: Down,
                     align: Align{x: 0.5, y: 0.5},
                     image_preview := Image {
@@ -208,6 +210,7 @@ script_mod! {
                     code_preview := mod.widgets.LightCodeView {
                         editor +: {
                             width: Fill, height: Fill,
+                            pad_right: 10,
                             draw_text +: { text_style +: { font_size: 11 } }
                         }
                         text: ""
@@ -223,6 +226,7 @@ script_mod! {
                     plain_preview := mod.widgets.PlainCodeView {
                         editor +: {
                             width: Fill, height: Fill,
+                            pad_right: 10,
                             draw_text +: { text_style +: { font_size: 11 } }
                         }
                         text: ""
@@ -235,6 +239,7 @@ script_mod! {
                 // Fallback shown when no preview can be generated.
                 no_preview_page := View {
                     width: Fill, height: Fill,
+                    padding: Inset{right: 10},
                     flow: Down,
                     align: Align{x: 0.5, y: 0.5},
                     spacing: 12
