@@ -25,7 +25,7 @@ script_mod! {
 
         main_content := RoundedView {
             flow: Down
-            width: 400
+            width: Fill {max: 400}
             height: Fit
             padding: Inset{top: 25, right: 30 bottom: 30 left: 45}
             spacing: 10

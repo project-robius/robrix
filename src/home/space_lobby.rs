@@ -447,6 +447,7 @@ script_mod! {
         loading_spinner := LoadingSpinner {
             width: 18,
             height: 18,
+            margin: Inset{right: 10}
             draw_bg +: {
                 color: (COLOR_ACTIVE_PRIMARY)
                 border_size: 2.5
@@ -454,10 +455,11 @@ script_mod! {
         }
 
         label := Label {
-            padding: Inset{left: 10}
-            width: Fit,
+            padding: 0
+            width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}},
+            text_overflow: Ellipsis,
             flow: Flow.Right{wrap: true},
-            align: Align{ x: 0.5, y: 0.5 }
+            align: Align{ x: 0, y: 0 }
             draw_text +: {
                 color: #737373,
                 text_style: REGULAR_TEXT {font_size: 10}

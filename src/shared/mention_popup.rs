@@ -166,12 +166,18 @@ pub struct MentionablePopup {
     /// The last-drawn height of the list itself; used to help align the item selected
     /// via keyboard nav to the bottom of the viewport.
     #[rust] list_viewport_height: f64,
+    /// The last-drawn height of the loading or empty row.
+    #[rust(LIST_ROW_HEIGHT)] status_row_height: f64,
+    #[rust] redraw_next_frame: NextFrame,
 }
 
 impl Widget for MentionablePopup {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if !self.is_open {
             return;
+        }
+        if self.redraw_next_frame.is_event(event).is_some() {
+            self.redraw(cx);
         }
 
         if self.cancel_scope.as_ref().is_some_and(|s| cx.owns_cancel(s))
@@ -243,6 +249,15 @@ impl Widget for MentionablePopup {
                     None => status_row(cx, &mut list, index, false, &self.empty_message),
                 };
                 row.draw_all(cx, scope);
+                // The popup was sized before this row was drawn,
+                // so resize it next frame if the row's height changed.
+                if self.items.is_empty() {
+                    let height = row.area().rect(cx).size.y;
+                    if height > 0.0 && height != self.status_row_height {
+                        self.status_row_height = height;
+                        self.redraw_next_frame = cx.new_next_frame();
+                    }
+                }
             }
         }
         // Block scrolling everywhere except inside the box.
@@ -299,8 +314,12 @@ impl MentionablePopup {
         // MAX_VISIBLE_ROWS. Anything past that scrolls.
         let list_cap = (MAX_VISIBLE_ROWS * LIST_ROW_HEIGHT + 2.0 * LIST_PADDING)
             .min((available_space - header_h).max(0.0));
-        let row_count = self.items.len().max(1) as f64;
-        let list_height = (row_count * LIST_ROW_HEIGHT + 2.0 * LIST_PADDING).min(list_cap).max(0.0);
+        let rows_height = if self.items.is_empty() {
+            self.status_row_height
+        } else {
+            self.items.len() as f64 * LIST_ROW_HEIGHT
+        };
+        let list_height = (rows_height + 2.0 * LIST_PADDING).min(list_cap).max(0.0);
         self.list_viewport_height = (list_height - 2.0 * LIST_PADDING).max(0.0);
         let box_height = header_h + list_height;
 

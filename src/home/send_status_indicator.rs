@@ -110,7 +110,6 @@ script_mod! {
             padding: 0,
             margin: 0,
             flow: Flow.Right { wrap: true },
-            max_lines: 2,
             text_overflow: Ellipsis,
             draw_text +: {
                 text_style: theme.font_regular { font_size: 9.5 },
@@ -123,7 +122,6 @@ script_mod! {
             padding: 0,
             margin: 0,
             flow: Flow.Right { wrap: true },
-            max_lines: 2,
             text_overflow: Ellipsis,
             draw_text +: {
                 text_style: theme.font_regular { font_size: 9.5 },
@@ -136,7 +134,6 @@ script_mod! {
             padding: 0,
             margin: 0,
             flow: Flow.Right { wrap: true },
-            max_lines: 2,
             text_overflow: Ellipsis,
             draw_text +: {
                 text_style: theme.font_regular { font_size: 9.5 },

@@ -40,7 +40,6 @@ script_mod! {
             height: Fit,
             padding: Inset{ top: 1, left: 1, right: 1, bottom: 0 }
             flow: Flow.Right { wrap: true },
-            max_lines: 2,
             draw_text +: {
                 color: (COLOR_FG_DANGER_RED),
                 text_style: REGULAR_TEXT {font_size: 10}

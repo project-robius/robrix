@@ -144,10 +144,10 @@ script_mod! {
             }
 
             footer := View {
-                width: Fill, height: 50,
+                width: Fill, height: Fit,
                 flow: Right
                 padding: 10
-                align: Align{x: 0.5, y: 0.8}
+                align: Align{x: 0.5, y: 0.5}
                 spacing: 10
 
                 image_viewer_loading_spinner_view := View {
@@ -175,7 +175,8 @@ script_mod! {
                 }
 
                 image_viewer_status_label := Label {
-                    width: Fit, height: 30,
+                    width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}}, height: Fit,
+                    text_overflow: Ellipsis,
                     text: "Loading image...",
                     draw_text +: {
                         text_style: REGULAR_TEXT {font_size: 14},

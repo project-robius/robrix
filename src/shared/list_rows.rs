@@ -2,7 +2,7 @@
 
 use makepad_widgets::*;
 
-/// The height of each of the rows below.
+/// The height of each of the rows below, though a status row grows if its text wraps.
 pub const LIST_ROW_HEIGHT: f64 = 52.0;
 
 script_mod! {
@@ -37,23 +37,24 @@ script_mod! {
 
     // A row shown while a list's items are still loading.
     mod.widgets.ListLoadingRow = View {
-        width: Fill, height: #(LIST_ROW_HEIGHT), flow: Right, spacing: 10, align: Align{x: 0.5, y: 0.5}
+        width: Fill, height: Fit, flow: Right, spacing: 10, align: Align{x: 0.5, y: 0.5}
+        padding: Inset{left: 12, right: 12, top: 13, bottom: 13}
         loading_spinner := LoadingSpinner {
             width: 20, height: 20
             draw_bg +: { color: (COLOR_ACTIVE_PRIMARY), border_size: 2.5 }
         }
         loading_label := Label {
-            height: Fit
+            width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}}, height: Fit, text_overflow: Ellipsis
             draw_text +: { color: #555, text_style: theme.font_regular {font_size: 10.5} }
         }
     }
 
     // A row shown instead of a list's items, e.g., when there are none.
     mod.widgets.ListEmptyRow = View {
-        width: Fill, height: #(LIST_ROW_HEIGHT), align: Align{x: 0.5, y: 0.5}
-        padding: Inset{left: 12, right: 12}
+        width: Fill, height: Fit
+        padding: Inset{left: 12, right: 12, top: 13, bottom: 13}
         empty_label := Label {
-            width: Fill, height: Fit, max_lines: 2, text_overflow: Ellipsis
+            width: Fill, height: Fit
             align: Align{x: 0.5}
             draw_text +: { color: #555, text_style: theme.font_regular {font_size: 10.5} }
         }

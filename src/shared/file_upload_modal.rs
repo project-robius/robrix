@@ -178,7 +178,8 @@ script_mod! {
                         draw_bg +: { color: (SMALL_STATE_TEXT_COLOR) }
                     }
                     Label {
-                        width: Fit, height: Fit,
+                        width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}}, height: Fit,
+                        text_overflow: Ellipsis,
                         draw_text +: {
                             text_style: REGULAR_TEXT { font_size: 13 },
                             color: (SMALL_STATE_TEXT_COLOR)
