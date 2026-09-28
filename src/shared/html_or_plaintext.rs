@@ -2,7 +2,6 @@
 
 
 use makepad_widgets::*;
-use makepad_widgets::makepad_draw::{text::layouter::LaidoutText, turtle::RowAlign};
 use matrix_sdk::{ruma::{matrix_uri::MatrixId, MatrixToUri, MatrixUri, RoomOrAliasId}, OwnedServerName};
 
 use crate::{avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, room_preview_cache::{self, CachedRoomPreview}, sliding_sync::current_user_id, utils};
@@ -42,6 +41,7 @@ script_mod! {
 
             avatar := Avatar {
                 height: (MESSAGE_FONT_SIZE + 5), width: (MESSAGE_FONT_SIZE + 5),
+                baseline: Baseline.None,
                 // White bg so transparent avatar images are visible on the
                 // pill's black background.
                 img_view +: {
@@ -104,11 +104,8 @@ script_mod! {
     mod.widgets.MessageHtml = Html {
         padding: 0.0,
         width: Fill, height: Fit, // see comment in `HtmlOrPlaintext`
-        // `RowAlign.Center` vertically centers each walk on its row. With the
-        // per-row FinishedWalk support in draw_walk_resumable_with, each visual
-        // row of wrapped text gets its own walk entry, so centering applies
-        // correctly even when a pill and multi-row text share the first line.
-        flow: Flow.Right{wrap: true, row_align: RowAlign.Center},
+        // Baseline rows put every walk's text baseline on one line per visual row, pills included.
+        flow: Flow.Right{wrap: true, row_align: RowAlign.Baseline},
         align: Align{ y: 0.5 }
         font_size: (MESSAGE_FONT_SIZE),
         font_color: (MESSAGE_TEXT_COLOR),
@@ -141,17 +138,17 @@ script_mod! {
             quote_fg_color: (MESSAGE_TEXT_COLOR)
         }
 
-        quote_layout: Layout{ flow: Flow.Right{wrap: true, row_align: RowAlign.Center}, spacing: 0, padding: Inset{left: 15, top: 10.0, bottom: 10.0}, }
+        quote_layout: Layout{ flow: Flow.Right{wrap: true, row_align: RowAlign.Baseline}, spacing: 0, padding: Inset{left: 15, top: 10.0, bottom: 10.0}, }
         quote_walk: Walk{ margin: Inset{ top: 5, bottom: 5, left: 0 } }
 
         sep_walk: Walk{ margin: Inset{ top: 10, bottom: 10 } }
 
-        list_item_layout: Layout{ flow: Flow.Right{wrap: true, row_align: RowAlign.Center}, padding: Inset{left: 5.0, top: 1.0, bottom: 1.0}, }
+        list_item_layout: Layout{ flow: Flow.Right{wrap: true, row_align: RowAlign.Baseline}, padding: Inset{left: 5.0, top: 1.0, bottom: 1.0}, }
         list_item_marker_pad: 8.0
         list_item_walk: Walk{ margin: Inset{ left: 0, right: 0, top: 1, bottom: 3 } }
         table_row_layout: Layout{ flow: Flow.Right{row_align: RowAlign.Center} }
-        table_cell_layout: Layout{ flow: Flow.Right{wrap: true, row_align: RowAlign.Center}, padding: Inset{left: 6, right: 6, top: 4, bottom: 4} }
-        code_layout: Layout{ flow: Flow.Right{wrap: true, row_align: RowAlign.Center}, padding: Inset{top: 15.0, bottom: 15.0, left: 15, right: 5 } }
+        table_cell_layout: Layout{ flow: Flow.Right{wrap: true, row_align: RowAlign.Baseline}, padding: Inset{left: 6, right: 6, top: 4, bottom: 4} }
+        code_layout: Layout{ flow: Flow.Right{wrap: true, row_align: RowAlign.Baseline}, padding: Inset{top: 15.0, bottom: 15.0, left: 15, right: 5 } }
         code_walk: Walk{ margin: Inset{ top: 10, bottom: 10, left: 0, right: 0 } }
 
         heading_margin: Inset{ top: 1.0, bottom: 0.1 }
@@ -330,13 +327,11 @@ impl Widget for RobrixHtmlLink {
 
 impl RobrixHtmlLink {
     /// Draws the Matrix link pill as an atomic inline block in its parent TextFlow.
-    ///
-    /// Sets the top margin to ensure the pill's text baseline aligns with the surrounding text.
     fn draw_matrix_pill(
         &mut self,
         cx: &mut Cx2d,
         scope: &mut Scope,
-        mut walk: Walk,
+        walk: Walk,
     ) -> DrawStep {
         let line_pt = scope.data.get_mut::<TextFlow>().map(|tf| tf.line_font_size());
         if let Some(matrix_id) = self.matrix_id.as_ref() {
@@ -345,33 +340,6 @@ impl RobrixHtmlLink {
                 if let Some(line_pt) = line_pt {
                     pill.scale_to_line(cx, line_pt);
                 }
-            }
-        }
-
-        // Centering puts the pill's middle on the text line's middle, but each baseline sits a
-        // font- and size-dependent distance below its middle, so we offset the pill by the difference.
-        if matches!(cx.turtle().flow(), Flow::Right { row_align: RowAlign::Center, .. })
-            && let Some(tf) = scope.data.get_mut::<TextFlow>()
-            && let Some(title) = self.label(cx, ids!(matrix_link_view.matrix_link.pill_bg.title)).borrow()
-        {
-            // How far below the middle of its line box a probe puts its baseline. The title's
-            // Label also ink-centers its glyphs, which the flow's own text never does.
-            let baseline_below_middle = |probe: &LaidoutText, ink: f32, font_scale: f32| {
-                probe.rows.first().map_or(0.0, |row| {
-                    ((0.5 * (row.ascender_in_lpxs + row.descender_in_lpxs) + ink) * font_scale) as f64
-                })
-            };
-            let line = tf.line_probe(cx);
-            let title_probe = title.draw_text.layout(cx, 0.0, 0.0, None, false, Align::default(), "Ag");
-            let title_ink = if title.draw_text.ink_centered { title_probe.ink_center_offset_in_lpxs() } else { 0.0 };
-
-            let shift = baseline_below_middle(&line, 0.0, tf.draw_text.font_scale)
-                - baseline_below_middle(&title_probe, title_ink, title.draw_text.font_scale);
-            // Centering splits a one-sided margin evenly, so the pill only moves by half of it.
-            if shift > 0.0 {
-                walk.margin.top += 2.0 * shift;
-            } else {
-                walk.margin.bottom -= 2.0 * shift;
             }
         }
 
