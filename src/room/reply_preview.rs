@@ -81,21 +81,6 @@ script_mod! {
                             matrix_link +: {
                                 pill_bg +: {
                                     draw_bg +: { border_radius: 5.0 }
-                                    avatar +: {
-                                        width: 13.53, height: 13.53,
-                                        text_view +: {
-                                            text +: {
-                                                draw_text +: {
-                                                    text_style +: { font_size: 7.61 }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    title +: {
-                                        draw_text +: {
-                                            text_style +: { font_size: 9.3 }
-                                        }
-                                    }
                                 }
                             }
                         }

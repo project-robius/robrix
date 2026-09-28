@@ -2,6 +2,7 @@
 
 
 use makepad_widgets::*;
+use makepad_widgets::makepad_draw::{text::layouter::LaidoutText, turtle::RowAlign};
 use matrix_sdk::{ruma::{matrix_uri::MatrixId, MatrixToUri, MatrixUri, RoomOrAliasId}, OwnedServerName};
 
 use crate::{avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, room_preview_cache::{self, CachedRoomPreview}, sliding_sync::current_user_id, utils};
@@ -148,7 +149,9 @@ script_mod! {
         list_item_layout: Layout{ flow: Flow.Right{wrap: true, row_align: RowAlign.Center}, padding: Inset{left: 5.0, top: 1.0, bottom: 1.0}, }
         list_item_marker_pad: 8.0
         list_item_walk: Walk{ margin: Inset{ left: 0, right: 0, top: 1, bottom: 3 } }
-        code_layout: Layout{ padding: Inset{top: 15.0, bottom: 15.0, left: 15, right: 5 } }
+        table_row_layout: Layout{ flow: Flow.Right{row_align: RowAlign.Center} }
+        table_cell_layout: Layout{ flow: Flow.Right{wrap: true, row_align: RowAlign.Center}, padding: Inset{left: 6, right: 6, top: 4, bottom: 4} }
+        code_layout: Layout{ flow: Flow.Right{wrap: true, row_align: RowAlign.Center}, padding: Inset{top: 15.0, bottom: 15.0, left: 15, right: 5 } }
         code_walk: Walk{ margin: Inset{ top: 10, bottom: 10, left: 0, right: 0 } }
 
         heading_margin: Inset{ top: 1.0, bottom: 0.1 }
@@ -214,29 +217,14 @@ script_mod! {
                     text_style_bold +: { font_size: 9.3, line_spacing: 1.32 }
                     text_style_bold_italic +: { font_size: 9.3, line_spacing: 1.32 }
                     text_style_fixed +: { font_size: 9.3, line_spacing: 1.32 }
-                    // Scale down the pill (title font, avatar size, avatar text) to fit.
+                    // Shrink the pill shape a bit for smaller text previews
                     a +: {
                         matrix_link_view +: {
                             matrix_link +: {
                                 pill_bg +: {
-                                    margin: Inset{top: 1}
-                                    padding: Inset{ left: 4.5, right: 3.0, bottom: -3.5, top: -3.5 }
+                                    margin: 0
+                                    padding: Inset{ left: 4.5, right: 3.0, bottom: -4.0, top: -4.0 }
                                     draw_bg +: { border_radius: 4.5 }
-                                    avatar +: {
-                                        width: 13.0, height: 13.0,
-                                        text_view +: {
-                                            text +: {
-                                                draw_text +: {
-                                                    text_style +: { font_size: 6 }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    title +: {
-                                        draw_text +: {
-                                            text_style +: { font_size: 8.5 }
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -341,25 +329,52 @@ impl Widget for RobrixHtmlLink {
 }
 
 impl RobrixHtmlLink {
-    /// Draws the Matrix link pill as an atomic inline block.
+    /// Draws the Matrix link pill as an atomic inline block in its parent TextFlow.
     ///
-    /// The pill is drawn via `matrix_link_view.draw_walk` directly (not
-    /// `self.view.draw_walk`). Its turtle allocates the pill's natural height
-    /// in the parent TextFlow. `RowAlign::Center` on the parent `MessageHtml`
-    /// handles vertical centering: at each visual-row boundary, `finish_row`
-    /// shifts shorter items (text) down so their vertical centers align with
-    /// the tallest item (the pill) on that row.
+    /// Sets the top margin to ensure the pill's text baseline aligns with the surrounding text.
     fn draw_matrix_pill(
         &mut self,
         cx: &mut Cx2d,
         scope: &mut Scope,
-        walk: Walk,
+        mut walk: Walk,
     ) -> DrawStep {
+        let line_pt = scope.data.get_mut::<TextFlow>().map(|tf| tf.line_font_size());
         if let Some(matrix_id) = self.matrix_id.as_ref() {
             if let Some(mut pill) = self.matrix_link_pill(cx, ids!(matrix_link)).borrow_mut() {
                 pill.populate_pill(cx, self.url.clone(), matrix_id, &self.via, self.text.as_ref());
+                if let Some(line_pt) = line_pt {
+                    pill.scale_to_line(cx, line_pt);
+                }
             }
         }
+
+        // Centering puts the pill's middle on the text line's middle, but each baseline sits a
+        // font- and size-dependent distance below its middle, so we offset the pill by the difference.
+        if matches!(cx.turtle().flow(), Flow::Right { row_align: RowAlign::Center, .. })
+            && let Some(tf) = scope.data.get_mut::<TextFlow>()
+            && let Some(title) = self.label(cx, ids!(matrix_link_view.matrix_link.pill_bg.title)).borrow()
+        {
+            // How far below the middle of its line box a probe puts its baseline. The title's
+            // Label also ink-centers its glyphs, which the flow's own text never does.
+            let baseline_below_middle = |probe: &LaidoutText, ink: f32, font_scale: f32| {
+                probe.rows.first().map_or(0.0, |row| {
+                    ((0.5 * (row.ascender_in_lpxs + row.descender_in_lpxs) + ink) * font_scale) as f64
+                })
+            };
+            let line = tf.line_probe(cx);
+            let title_probe = title.draw_text.layout(cx, 0.0, 0.0, None, false, Align::default(), "Ag");
+            let title_ink = if title.draw_text.ink_centered { title_probe.ink_center_offset_in_lpxs() } else { 0.0 };
+
+            let shift = baseline_below_middle(&line, 0.0, tf.draw_text.font_scale)
+                - baseline_below_middle(&title_probe, title_ink, title.draw_text.font_scale);
+            // Centering splits a one-sided margin evenly, so the pill only moves by half of it.
+            if shift > 0.0 {
+                walk.margin.top += 2.0 * shift;
+            } else {
+                walk.margin.bottom -= 2.0 * shift;
+            }
+        }
+
         let matrix_link_view_ref = self.view(cx, ids!(matrix_link_view));
         matrix_link_view_ref.set_visible(cx, true);
         let Some(mut matrix_link_view) = matrix_link_view_ref.borrow_mut() else {
@@ -412,6 +427,17 @@ struct MatrixLinkPill {
     #[rust] url: String,
     /// Whether this pill is still waiting for its name or avatar to arrive.
     #[rust] is_waiting_for_data: bool,
+    /// The DSL's sizes, which are the pill's shape for the base message font size.
+    #[rust] base: Option<PillBase>,
+    /// The line size the pill was last scaled to (0 until scaled, or after a reapply).
+    #[rust] scaled_to: f32,
+}
+
+#[derive(Clone, Copy)]
+struct PillBase {
+    title_pt: f32,
+    avatar: Option<f64>,
+    avatar_text_pt: f32,
 }
 
 impl Widget for MatrixLinkPill {
@@ -421,6 +447,13 @@ impl Widget for MatrixLinkPill {
             if self.is_waiting_for_data && !matches!(self.matrix_id, None | Some(MatrixId::User(_))) {
                 self.redraw(cx);
             }
+        }
+
+        // A reapply or reload puts the DSL sizes back (a reload may even change them),
+        // so the next draw has to capture and scale them again.
+        if matches!(event, Event::ScriptReapply | Event::LiveEdit) {
+            self.base = None;
+            self.scaled_to = 0.0;
         }
 
         // If this user's profile is now in the cache, redraw so we can pick up that new info.
@@ -467,6 +500,38 @@ impl Widget for MatrixLinkPill {
 }
 
 impl MatrixLinkPill {
+    /// Sizes the title, avatar and avatar initial for a text line of `line_pt` points,
+    /// scaling the DSL's sizes (declared for the base message font size) proportionally.
+    fn scale_to_line(&mut self, cx: &mut Cx, line_pt: f32) {
+        if self.scaled_to == line_pt {
+            return;
+        }
+        let title_ref = self.label(cx, ids!(title));
+        let avatar_ref = self.avatar(cx, ids!(avatar));
+        let avatar_text_ref = avatar_ref.label(cx, ids!(text_view.text));
+        let Some(mut title) = title_ref.borrow_mut() else { return };
+        let base = *self.base.get_or_insert_with(|| PillBase {
+            title_pt: title.draw_text.text_style.font_size,
+            avatar: avatar_ref.borrow().and_then(|a| match a.walk.height {
+                Size::Fixed(h) => Some(h),
+                _ => None,
+            }),
+            avatar_text_pt: avatar_text_ref.borrow().map_or(0.0, |t| t.draw_text.text_style.font_size),
+        });
+        self.scaled_to = line_pt;
+        let scale = line_pt / base.title_pt;
+        title.draw_text.text_style.font_size = line_pt;
+        if let Some(avatar_size) = base.avatar
+            && let Some(mut avatar) = avatar_ref.borrow_mut()
+        {
+            avatar.walk.width = Size::Fixed(avatar_size * scale as f64);
+            avatar.walk.height = avatar.walk.width;
+        }
+        if let Some(mut avatar_text) = avatar_text_ref.borrow_mut() {
+            avatar_text.draw_text.text_style.font_size = base.avatar_text_pt * scale;
+        }
+    }
+
     /// Populates this pill's info based on the given Matrix ID and via servers.
     fn populate_pill(&mut self, cx: &mut Cx, url: String, matrix_id: &MatrixId, via: &[OwnedServerName], link_text: &str) {
         self.url = url;
