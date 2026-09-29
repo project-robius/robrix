@@ -189,10 +189,10 @@ The following table shows which host systems can currently be used to build Robr
      </details>
 
 3. Obtain the Robrix source code, e.g., by cloning this repo:
-  ```sh
-  git clone https://github.com/project-robius/robrix.git
-  cd robrix
-  ```
+   ```sh
+   git clone https://github.com/project-robius/robrix.git
+   cd robrix
+   ```
 
 4. Finally, build and run Robrix.
    ```sh
