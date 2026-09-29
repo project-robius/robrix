@@ -57,11 +57,17 @@ pub async fn threads_list_subscriber_handler(
     let mut next_page_token = None;
     let mut next_page_future: Fuse<BoxFuture<'static, Result<ThreadsPage, Error>>> = Fuse::terminated();
 
-    // The threads we're fetching from the server, whether newly active ones or loaded ones to refresh.
+    // The threads we're in the midst of fetching from the server.
     let mut fetch_states: HashMap<OwnedEventId, FetchState> = HashMap::new();
     let mut root_fetches: FuturesUnordered<BoxFuture<'static, FetchedThread>> = FuturesUnordered::new();
-    // The replies we've counted beyond the server's summary of each thread, and the root of each one's thread.
+
+    // The number of replies we've counted ourselves for a given thread root.
+    // The key is the event ID of a reply we counted ourselves,
+    // and the value is that reply's thread root event ID.
+    // This is here to ensure we don't double-count a reply,
+    // and so we know which thread root to refetch if a counted reply gets redacted.
     let mut counted_replies: HashMap<OwnedEventId, OwnedEventId> = HashMap::new();
+
     let redaction_rules = room.clone_info().room_version_rules_or_default().redaction;
     load_more_notifier.notify_one();
 
@@ -99,8 +105,7 @@ pub async fn threads_list_subscriber_handler(
 
             Some(fetched) = root_fetches.next(), if !root_fetches.is_empty() => {
                 let index = threads.iter().position(|t| t.root_event.event_id == fetched.root_id);
-                // If the thread changed since we asked, we ask again and drop this fetch,
-                // unless the thread isn't loaded yet, as then it has no changes to lose.
+                // If the thread changed since we loaded it, request to fetch it again.
                 let is_outdated = fetch_states.remove(&fetched.root_id) == Some(FetchState::Outdated);
                 if is_outdated {
                     request_thread_fetch(&room, fetched.root_id.clone(), &mut fetch_states, &mut root_fetches);
@@ -112,7 +117,7 @@ pub async fn threads_list_subscriber_handler(
                         list.sort_by_key(|t| Reverse(get_latest_activity(t)));
                         true
                     }
-                    // The root is no longer a thread, e.g., once its only reply was redacted.
+                    // The root is no longer a thread, e.g., its only reply was redacted.
                     Ok(None) if !is_outdated => index.is_some_and(|index| {
                         Arc::make_mut(&mut threads).remove(index);
                         true
