@@ -67,7 +67,7 @@ The following table shows which host systems can currently be used to build Robr
    * **Linux** or **WSL** on Windows: install the build tools and development libraries for OpenSSL, SQLite, X11/Wayland, and ALSA/PulseAudio using your distro's instructions below.
 
      <details open>
-     <summary>Debian / Ubuntu / Linux Mint (`apt`)</summary>
+     <summary>Debian / Ubuntu / Linux Mint (<code>apt</code>)</summary>
 
      ```sh
      sudo apt-get update
@@ -79,7 +79,7 @@ The following table shows which host systems can currently be used to build Robr
      </details>
 
      <details>
-     <summary>Arch Linux / Manjaro / EndeavourOS (`pacman`)</summary>
+     <summary>Arch Linux / Manjaro / EndeavourOS (<code>pacman</code>)</summary>
 
      ```sh
      sudo pacman -Syu --needed base-devel git openssl cmake llvm clang sqlite pkgconf \
@@ -89,7 +89,7 @@ The following table shows which host systems can currently be used to build Robr
      </details>
 
      <details>
-     <summary>Omarchy (Arch Linux / pacman)</summary>
+     <summary>Omarchy (Arch Linux: <code>pacman</code>)</summary>
 
      ```sh
      omarchy update
@@ -100,7 +100,7 @@ The following table shows which host systems can currently be used to build Robr
      </details>
 
      <details>
-     <summary>Fedora / RHEL / Rocky Linux / AlmaLinux (`dnf`)</summary>
+     <summary>Fedora / RHEL / Rocky Linux / AlmaLinux (<code>dnf</code>)</summary>
 
      ```sh
      sudo dnf install --refresh gcc gcc-c++ make git openssl-devel cmake llvm clang \
@@ -114,7 +114,7 @@ The following table shows which host systems can currently be used to build Robr
      </details>
 
      <details>
-     <summary>openSUSE / SUSE (`zypper`)</summary>
+     <summary>openSUSE / SUSE (<code>zypper</code>)</summary>
 
      On openSUSE, run:
 
@@ -131,7 +131,7 @@ The following table shows which host systems can currently be used to build Robr
      </details>
 
      <details>
-     <summary>Void Linux (`xbps`)</summary>
+     <summary>Void Linux (<code>xbps</code>)</summary>
 
      ```sh
      sudo xbps-install -Su
@@ -146,7 +146,7 @@ The following table shows which host systems can currently be used to build Robr
      </details>
 
      <details>
-     <summary>Gentoo (Portage)</summary>
+     <summary>Gentoo (Portage: <code>emerge</code>)</summary>
 
      ```sh
      sudo emerge --sync
