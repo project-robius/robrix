@@ -149,7 +149,7 @@ impl Widget for ThreadsList {
         let Event::Actions(actions) = event else { return };
         for action in actions {
             match action.downcast_ref() {
-                Some(ThreadsListAction::Updated { room_id, threads, end_reached }) if self.state.is_room(room_id) => {
+                Some(ThreadsListAction::Updated { room_id, threads, end_reached }) if self.state.is_showing_room(room_id) => {
                     self.is_paginating = false;
                     if self.threads.as_ref().is_some_and(|t| Arc::ptr_eq(t, threads))
                         && self.end_reached == *end_reached
@@ -160,10 +160,10 @@ impl Widget for ThreadsList {
                     self.end_reached = *end_reached;
                     self.error = None;
                     self.update_threads_count(cx);
-                    self.state.messages_changed(cx, &list_ref, old_threads.as_deref(), threads, *end_reached);
+                    self.state.handle_new_messages(cx, &list_ref, old_threads.as_deref(), threads, *end_reached);
                     self.redraw(cx);
                 }
-                Some(ThreadsListAction::Failed { room_id, error }) if self.state.is_room(room_id) => {
+                Some(ThreadsListAction::Failed { room_id, error }) if self.state.is_showing_room(room_id) => {
                     error!("Failed to load the threads of room {room_id}: {error}");
                     self.is_paginating = false;
                     self.error = Some(error.clone());
@@ -200,7 +200,7 @@ impl Widget for ThreadsList {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let status = self.status();
+        let status = self.get_status();
         let num_threads = self.threads.as_ref().map_or(0, |t| t.len());
         // While there are more threads to load, a row at the end of the list shows that they're loading.
         let has_end_row = status.is_none() && !self.end_reached;
@@ -208,7 +208,7 @@ impl Widget for ThreadsList {
             let list_ref = item.as_portal_list();
             let Some(mut list) = list_ref.borrow_mut() else { continue };
             let count = if status.is_some() { 1 } else { num_threads + usize::from(has_end_row) };
-            self.state.begin_draw(cx, &mut list, count);
+            self.state.prepare_list_for_draw(cx, &mut list, count);
             while let Some(index) = list.next_visible_item(cx) {
                 if index >= count { continue; }
                 let row = if let Some((text, is_loading)) = &status {
@@ -234,7 +234,7 @@ impl Widget for ThreadsList {
                         timestamp: root.timestamp,
                         content: root.content.as_ref(),
                     };
-                    let (row, is_new_content) = self.state.message_row(cx, &mut list, index, id!(thread_row), message);
+                    let (row, is_new_content) = self.state.populate_message_row(cx, &mut list, index, id!(thread_row), message);
                     if is_new_content {
                         row.child_by_path(ids!(reply_count)).set_text(cx, &format!("({})", thread.num_replies));
                         let latest_reply = row.child_by_path(ids!(latest_reply));
@@ -248,7 +248,7 @@ impl Widget for ThreadsList {
                                 _ => user_profile_cache::get_user_display_name_for_room(cx, latest.sender.clone(), Some(&room_id), true),
                             };
                             if !cached_name.was_found() {
-                                self.state.row_awaits_profile(index);
+                                self.state.mark_row_as_waiting_on_profile(index);
                             }
                             let sender_name = cached_name.as_deref().unwrap_or(latest.sender.as_str());
                             latest_reply.child_by_path(ids!(latest_message)).as_html_or_plaintext().show_html(
@@ -283,7 +283,7 @@ impl ThreadsList {
     ///
     /// Call this again with the same room whenever its name changes.
     fn set_room(&mut self, cx: &mut Cx, room_name_id: &RoomNameId) {
-        if !self.state.is_room(room_name_id.room_id()) {
+        if !self.state.is_showing_room(room_name_id.room_id()) {
             self.reset(cx);
         }
         self.state.set_room(room_name_id);
@@ -302,7 +302,7 @@ impl ThreadsList {
     }
 
     /// Returns the status text to show instead of thread rows, and whether it's a loading status.
-    fn status(&self) -> Option<(Cow<'static, str>, bool)> {
+    fn get_status(&self) -> Option<(Cow<'static, str>, bool)> {
         if self.threads.as_ref().is_some_and(|t| !t.is_empty()) {
             None
         } else if let Some(error) = self.error.as_ref() {
@@ -344,13 +344,13 @@ impl ThreadsListRef {
 
     /// Returns this list's state, e.g., to be restored when its room's timeline is shown again.
     pub fn save_state(&self) -> SavedMessageList {
-        self.borrow().map(|inner| inner.state.save(&inner.threads_list())).unwrap_or_default()
+        self.borrow().map(|inner| inner.state.save_state(&inner.threads_list())).unwrap_or_default()
     }
 
     /// Shows the given room's threads, restoring the given saved state once they arrive.
     pub fn restore_state(&self, cx: &mut Cx, room_name_id: &RoomNameId, saved: SavedMessageList) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_room(cx, room_name_id);
-        inner.state.restore(saved);
+        inner.state.restore_state(saved);
     }
 }

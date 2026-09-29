@@ -16,11 +16,12 @@ use matrix_sdk_ui::timeline::{Profile, TimelineDetails, TimelineItemContent};
 use tokio::sync::{broadcast, Notify};
 use crate::room::threads_list::ThreadsListAction;
 
-/// A page (chunk) of a room's threads, and the token to load the next page with (or `None` if it was the last page).
+/// A page (chunk) of a room's threads, and the token to load the next page.
 struct ThreadsPage {
+    threads_chunk: Vec<ThreadListItem>,
     /// The token the page was loaded from, which is `None` for the first page.
     from: Option<String>,
-    threads_chunk: Vec<ThreadListItem>,
+    /// The token to load the next page; `None` if this is the final page.
     token_next_page: Option<String>,
 }
 
@@ -81,7 +82,7 @@ pub async fn threads_list_subscriber_handler(
                     for thread in threads_chunk {
                         merge_thread(list, thread, false);
                     }
-                    list.sort_by_key(|t| Reverse(latest_activity(t)));
+                    list.sort_by_key(|t| Reverse(get_latest_activity(t)));
                     // A first page reloaded after a sync gap doesn't move us on to the next page.
                     if !was_end_reached && from == next_page_token {
                         was_end_reached = token_next_page.is_none();
@@ -102,13 +103,13 @@ pub async fn threads_list_subscriber_handler(
                 // unless the thread isn't loaded yet, as then it has no changes to lose.
                 let is_outdated = fetch_states.remove(&fetched.root_id) == Some(FetchState::Outdated);
                 if is_outdated {
-                    fetch_thread(&room, fetched.root_id.clone(), &mut fetch_states, &mut root_fetches);
+                    request_thread_fetch(&room, fetched.root_id.clone(), &mut fetch_states, &mut root_fetches);
                 }
                 match fetched.thread {
                     Ok(Some(thread)) if !is_outdated || index.is_none() => {
                         let list = Arc::make_mut(&mut threads);
                         merge_thread(list, thread, true);
-                        list.sort_by_key(|t| Reverse(latest_activity(t)));
+                        list.sort_by_key(|t| Reverse(get_latest_activity(t)));
                         true
                     }
                     // The root is no longer a thread, e.g., once its only reply was redacted.
@@ -156,7 +157,7 @@ pub async fn threads_list_subscriber_handler(
                                 }
                                 continue;
                             };
-                            let Some(shown) = threads[index].shown_event(is_root) else { continue };
+                            let Some(shown) = threads[index].get_root_or_latest_reply(is_root) else { continue };
                             // A root is also set whenever its thread summary changes, which we don't show,
                             // and the cache may still hold an undecrypted copy of an event we could decrypt.
                             if shown.original.raw().json().get() == value.raw().json().get()
@@ -167,11 +168,11 @@ pub async fn threads_list_subscriber_handler(
                             // We track the event's edits ourselves, except those we couldn't read while it was undecrypted.
                             let edit = match shown.edit.clone() {
                                 Some(edit) => Some(edit),
-                                None if is_undecrypted(&shown.original) => bundled_edit(&room, &value).await,
+                                None if is_undecrypted(&shown.original) => extract_bundled_edit(&room, &value).await,
                                 None => None,
                             };
-                            let Some(updated) = thread_list_item_event(&room, value, edit, Some(&shown.sender_profile)).await else { continue };
-                            thread_mut(&mut threads, index, &mut fetch_states).set_shown_event(is_root, updated);
+                            let Some(updated) = build_thread_list_item_event(&room, value, edit, Some(&shown.sender_profile)).await else { continue };
+                            modify_thread(&mut threads, index, &mut fetch_states, |thread| thread.set_root_or_latest_reply(is_root, updated));
                             is_changed = true;
                         }
                         // Only a sync appends new events, as others are older ones, e.g., from back-pagination.
@@ -185,11 +186,11 @@ pub async fn threads_list_subscriber_handler(
                         if let Some((index, is_root)) = find_thread_event(&threads, |shown| shown.event_id == target_id) {
                             // We only hear about the redaction of an event the event cache holds in memory,
                             // so we redact the event ourselves.
-                            let is_redacted = if let Some(shown) = threads[index].shown_event(is_root)
+                            let is_redacted = if let Some(shown) = threads[index].get_root_or_latest_reply(is_root)
                                 && let Some(redacted) = apply_redaction(shown.original.raw(), event.raw().cast_ref_unchecked(), &redaction_rules)
-                                && let Some(updated) = thread_list_item_event(&room, TimelineEvent::from_plaintext(redacted), None, Some(&shown.sender_profile)).await
+                                && let Some(updated) = build_thread_list_item_event(&room, TimelineEvent::from_plaintext(redacted), None, Some(&shown.sender_profile)).await
                             {
-                                thread_mut(&mut threads, index, &mut fetch_states).set_shown_event(is_root, updated);
+                                modify_thread(&mut threads, index, &mut fetch_states, |thread| thread.set_root_or_latest_reply(is_root, updated));
                                 is_changed = true;
                                 true
                             } else {
@@ -202,10 +203,10 @@ pub async fn threads_list_subscriber_handler(
                         } else if let Some((index, is_root)) = find_thread_event(&threads, |shown| shown.edit.as_ref().is_some_and(|edit| edit.event_id == target_id)) {
                             // A redacted edit no longer applies, so we show its event as it was sent
                             // until the server tells us about any earlier edit.
-                            if let Some(shown) = threads[index].shown_event(is_root)
-                                && let Some(updated) = thread_list_item_event(&room, shown.original.clone(), None, Some(&shown.sender_profile)).await
+                            if let Some(shown) = threads[index].get_root_or_latest_reply(is_root)
+                                && let Some(updated) = build_thread_list_item_event(&room, shown.original.clone(), None, Some(&shown.sender_profile)).await
                             {
-                                thread_mut(&mut threads, index, &mut fetch_states).set_shown_event(is_root, updated);
+                                modify_thread(&mut threads, index, &mut fetch_states, |thread| thread.set_root_or_latest_reply(is_root, updated));
                                 is_changed = true;
                             }
                             roots_to_fetch.insert(threads[index].root_event.event_id.clone());
@@ -217,15 +218,15 @@ pub async fn threads_list_subscriber_handler(
                     let Some((relation_type, related_id)) = extract_relation(event.raw()) else { continue };
                     if matches!(relation_type, RelationType::Replacement) {
                         let Some((index, is_root)) = find_thread_event(&threads, |shown| shown.event_id == related_id) else { continue };
-                        let Some(shown) = threads[index].shown_event(is_root) else { continue };
+                        let Some(shown) = threads[index].get_root_or_latest_reply(is_root) else { continue };
                         let Some(edit) = Edit::new(event.raw().clone(), event.encryption_info().cloned()) else { continue };
                         // Decrypting an edit late can reveal it after a newer edit was applied.
                         if is_late_edit && shown.edit.as_ref().is_some_and(|applied| applied.timestamp > edit.timestamp) { continue }
                         // An edit that isn't valid for its event (e.g., from another sender) is ignored.
-                        let Some(updated) = thread_list_item_event(&room, shown.original.clone(), Some(edit), Some(&shown.sender_profile)).await
+                        let Some(updated) = build_thread_list_item_event(&room, shown.original.clone(), Some(edit), Some(&shown.sender_profile)).await
                             .filter(|updated| updated.edit.is_some())
                         else { continue };
-                        thread_mut(&mut threads, index, &mut fetch_states).set_shown_event(is_root, updated);
+                        modify_thread(&mut threads, index, &mut fetch_states, |thread| thread.set_root_or_latest_reply(is_root, updated));
                         is_changed = true;
                         continue;
                     }
@@ -243,37 +244,38 @@ pub async fn threads_list_subscriber_handler(
                             if is_latest && latest.is_some_and(|latest| latest.original.raw().json().get() == event.raw().json().get()) { continue }
                             // The server's summary already counts the replies up to its latest one.
                             let is_new = !is_latest && timestamp > thread.summary_timestamp && !counted_replies.contains_key(event_id);
-                            let is_newer = is_latest || timestamp > latest_activity(thread);
+                            let is_newer = is_latest || timestamp > get_latest_activity(thread);
                             if !is_new && !is_newer { continue }
-                            let edit = bundled_edit(&room, &event).await;
-                            let Some(reply) = thread_list_item_event(&room, event, edit, None).await else { continue };
-                            let thread = thread_mut(&mut threads, index, &mut fetch_states);
-                            if is_new {
-                                counted_replies.insert(reply.event_id.clone(), root_id);
-                                thread.num_replies += 1;
-                            }
-                            if is_newer {
-                                thread.latest_event = Some(reply);
-                            }
+                            let edit = extract_bundled_edit(&room, &event).await;
+                            let Some(reply) = build_thread_list_item_event(&room, event, edit, None).await else { continue };
+                            modify_thread(&mut threads, index, &mut fetch_states, |thread| {
+                                if is_new {
+                                    counted_replies.insert(reply.event_id.clone(), root_id);
+                                    thread.num_replies += 1;
+                                }
+                                if is_newer {
+                                    thread.latest_event = Some(reply);
+                                }
+                            });
                             is_changed = true;
                         }
                         // A reply newer than every loaded thread's latest activity (or before any thread loads) is in
                         // a thread that just became active, as any thread on a page we haven't loaded yet is older.
-                        None if was_end_reached || threads.last().is_none_or(|oldest| timestamp > latest_activity(oldest)) => {
+                        None if was_end_reached || threads.last().is_none_or(|oldest| timestamp > get_latest_activity(oldest)) => {
                             roots_to_fetch.insert(root_id);
                         }
                         None => {}
                     }
                 }
                 for root_id in roots_to_fetch {
-                    fetch_thread(&room, root_id, &mut fetch_states, &mut root_fetches);
+                    request_thread_fetch(&room, root_id, &mut fetch_states, &mut root_fetches);
                 }
                 // The threads active during a gap are back on the first page, with fresh summaries.
                 if is_gap && next_page_future.is_terminated() {
                     next_page_future = load_threads_page(&room, None);
                 }
                 if is_changed {
-                    Arc::make_mut(&mut threads).sort_by_key(|t| Reverse(latest_activity(t)));
+                    Arc::make_mut(&mut threads).sort_by_key(|t| Reverse(get_latest_activity(t)));
                 }
                 is_changed
             }
@@ -304,11 +306,11 @@ pub struct ThreadListItem {
 
 impl ThreadListItem {
     /// Returns the thread's root (if `is_root`) or its latest reply.
-    fn shown_event(&self, is_root: bool) -> Option<&ThreadListItemEvent> {
+    fn get_root_or_latest_reply(&self, is_root: bool) -> Option<&ThreadListItemEvent> {
         if is_root { Some(&self.root_event) } else { self.latest_event.as_ref() }
     }
 
-    fn set_shown_event(&mut self, is_root: bool, event: ThreadListItemEvent) {
+    fn set_root_or_latest_reply(&mut self, is_root: bool, event: ThreadListItemEvent) {
         if is_root { self.root_event = event } else { self.latest_event = Some(event) }
     }
 }
@@ -345,8 +347,8 @@ impl Edit {
     }
 }
 
-/// Returns the edit the server bundled with the given event, if any.
-async fn bundled_edit(room: &Room, event: &TimelineEvent) -> Option<Edit> {
+/// Extracts the edit the server bundled with the given event, if any.
+async fn extract_bundled_edit(room: &Room, event: &TimelineEvent) -> Option<Edit> {
     let unsigned = event.raw().get_field::<Raw<serde_json::Value>>("unsigned").ok()??;
     let relations = unsigned.get_field::<Raw<serde_json::Value>>("m.relations").ok()??;
     let raw = relations.get_field::<Raw<AnySyncTimelineEvent>>("m.replace").ok()??;
@@ -382,8 +384,8 @@ enum FetchState {
     Outdated,
 }
 
-/// Fetches the given thread from the server, or marks its fetch as out of date if one is already underway.
-fn fetch_thread(
+/// Starts fetching the given thread from the server, or marks its fetch as out of date if one is already underway.
+fn request_thread_fetch(
     room: &Room,
     root_id: OwnedEventId,
     fetch_states: &mut HashMap<OwnedEventId, FetchState>,
@@ -395,7 +397,7 @@ fn fetch_thread(
             let (room, root_id) = (room.clone(), entry.key().clone());
             root_fetches.push(async move {
                 let thread = match room.event(&root_id, None).await {
-                    Ok(root) => Ok(thread_list_item(&room, root, &HashMap::new()).await),
+                    Ok(root) => Ok(build_thread_list_item(&room, root, &HashMap::new()).await),
                     Err(error) => Err(error),
                 };
                 FetchedThread { root_id, thread }
@@ -405,18 +407,19 @@ fn fetch_thread(
     }
 }
 
-/// Returns the loaded thread at the given index to change, marking any fetch of it as out of date
-/// since that might not include the change.
-fn thread_mut<'t>(
-    threads: &'t mut Arc<Vec<Arc<ThreadListItem>>>,
+/// Applies the given change to the loaded thread at the given index, and marks any fetch of that thread
+/// as out of date, since the fetch might not include the change.
+fn modify_thread(
+    threads: &mut Arc<Vec<Arc<ThreadListItem>>>,
     index: usize,
     fetch_states: &mut HashMap<OwnedEventId, FetchState>,
-) -> &'t mut ThreadListItem {
+    change: impl FnOnce(&mut ThreadListItem),
+) {
     let thread = Arc::make_mut(&mut Arc::make_mut(threads)[index]);
     if let Some(state) = fetch_states.get_mut(&thread.root_event.event_id) {
         *state = FetchState::Outdated;
     }
-    thread
+    change(thread);
 }
 
 /// Returns the index of the loaded thread whose root or latest reply matches the given predicate,
@@ -435,7 +438,7 @@ fn find_thread_event(
 }
 
 /// Returns when the given thread was last active, i.e., when its latest reply (or its root) was sent.
-fn latest_activity(thread: &ThreadListItem) -> MilliSecondsSinceUnixEpoch {
+fn get_latest_activity(thread: &ThreadListItem) -> MilliSecondsSinceUnixEpoch {
     thread.latest_event.as_ref().unwrap_or(&thread.root_event).timestamp
 }
 
@@ -464,7 +467,7 @@ fn load_threads_page(room: &Room, from: Option<String>) -> Fuse<BoxFuture<'stati
             let profile = TimelineDetails::from_initial_value(Profile::load(room, &sender).await);
             (sender, profile)
         })).await.into_iter().collect();
-        let threads = join_all(thread_roots.chunk.into_iter().map(|root| thread_list_item(room, root, &profiles))).await;
+        let threads = join_all(thread_roots.chunk.into_iter().map(|root| build_thread_list_item(room, root, &profiles))).await;
         Ok(ThreadsPage {
             from,
             threads_chunk: threads.into_iter().flatten().collect(),
@@ -473,9 +476,9 @@ fn load_threads_page(room: &Room, from: Option<String>) -> Fuse<BoxFuture<'stati
     }.boxed().fuse()
 }
 
-/// Returns the given thread root event as an item in a list of threads, along with its bundled summary,
-/// or `None` if it isn't a thread or couldn't be parsed. Senders' profiles are loaded unless given in `profiles`.
-async fn thread_list_item(
+/// Builds a list item from the given thread root event and its bundled summary, or returns `None` if it isn't
+/// a thread or couldn't be parsed. Senders' profiles are loaded unless given in `profiles`.
+async fn build_thread_list_item(
     room: &Room,
     mut root: TimelineEvent,
     profiles: &HashMap<OwnedUserId, TimelineDetails<Profile>>,
@@ -489,22 +492,22 @@ async fn thread_list_item(
             {
                 *latest = decrypted;
             }
-            let edit = bundled_edit(room, &latest).await;
+            let edit = extract_bundled_edit(room, &latest).await;
             let profile = latest.sender().and_then(|sender| profiles.get(&sender));
-            thread_list_item_event(room, *latest, edit, profile).await
+            build_thread_list_item_event(room, *latest, edit, profile).await
         }
         None => None,
     };
-    let edit = bundled_edit(room, &root).await;
+    let edit = extract_bundled_edit(room, &root).await;
     let profile = root.sender().and_then(|sender| profiles.get(&sender));
-    let root_event = thread_list_item_event(room, root, edit, profile).await?;
+    let root_event = build_thread_list_item_event(room, root, edit, profile).await?;
     let summary_timestamp = latest_event.as_ref().unwrap_or(&root_event).timestamp;
     Some(ThreadListItem { root_event, latest_event, num_replies, summary_timestamp })
 }
 
-/// Returns the given event (a thread's root or one of its replies) as it's shown in a list of threads,
+/// Builds the given event (a thread's root or one of its replies) as it's shown in a list of threads,
 /// with the given edit applied if it's valid for the event, and its sender's profile loaded unless given.
-async fn thread_list_item_event(
+async fn build_thread_list_item_event(
     room: &Room,
     event: TimelineEvent,
     edit: Option<Edit>,

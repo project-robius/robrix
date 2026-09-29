@@ -2408,7 +2408,7 @@ async fn matrix_worker_task(
                 let room = room_info.main_timeline.timeline.room().clone();
                 match kind {
                     RoomDataKind::PinnedMessages => {
-                        update_room_data_subscribers(
+                        add_or_remove_room_data_subscriber(
                             &mut room_info.pinned_messages_subscriber,
                             subscriber,
                             subscribe,
@@ -2418,7 +2418,7 @@ async fn matrix_worker_task(
                         );
                     }
                     RoomDataKind::Threads => {
-                        update_room_data_subscribers(
+                        add_or_remove_room_data_subscriber(
                             &mut room_info.threads_list_subscriber,
                             subscriber,
                             subscribe,
@@ -5763,9 +5763,11 @@ impl<L> Drop for RoomDataSubscriber<L> {
 
 
 /// Adds or removes the given widget as a subscriber to the room data in `room_data_subscriber`.
-/// The first subscriber starts the task via `start`, which gets the resend notifier widgets use
-/// to ask for the data to be posted again; the last one to unsubscribe stops the task.
-fn update_room_data_subscribers<L>(
+///
+/// The first subscriber starts the task via `start`, which gets the resend notifier
+/// that widgets should use to ask for the data to be posted again.
+/// The last widget to unsubscribe stops the task.
+fn add_or_remove_room_data_subscriber<L>(
     room_data_subscriber: &mut Option<RoomDataSubscriber<L>>,
     widget_subscriber: WidgetUid,
     subscribe: bool,

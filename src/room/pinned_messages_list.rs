@@ -144,7 +144,7 @@ impl Widget for PinnedMessagesList {
         let Event::Actions(actions) = event else { return };
         for action in actions {
             match action.downcast_ref() {
-                Some(PinnedMessagesAction::Updated { room_id, messages, num_pinned, can_unpin }) if self.state.is_room(room_id) => {
+                Some(PinnedMessagesAction::Updated { room_id, messages, num_pinned, can_unpin }) if self.state.is_showing_room(room_id) => {
                     if self.messages.as_ref().is_some_and(|m| Arc::ptr_eq(m, messages))
                         && self.can_unpin == *can_unpin
                     {
@@ -158,10 +158,10 @@ impl Widget for PinnedMessagesList {
                     self.tooltip.hide(cx);
                     self.update_pinned_count(cx);
                     // Every row shows whether the message can be unpinned, so a change to that changes them all.
-                    self.state.messages_changed(cx, &list_ref, old_messages.as_deref().filter(|_| !is_can_unpin_changed), messages, true);
+                    self.state.handle_new_messages(cx, &list_ref, old_messages.as_deref().filter(|_| !is_can_unpin_changed), messages, true);
                     self.redraw(cx);
                 }
-                Some(PinnedMessagesAction::Failed { room_id, error }) if self.state.is_room(room_id) => {
+                Some(PinnedMessagesAction::Failed { room_id, error }) if self.state.is_showing_room(room_id) => {
                     error!("Failed to load the pinned messages of room {room_id}: {error}");
                     self.error = Some(error.clone());
                     self.redraw(cx);
@@ -232,12 +232,12 @@ impl Widget for PinnedMessagesList {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let status = self.status();
+        let status = self.get_status();
         while let Some(item) = self.view.draw_walk(cx, scope, walk).step() {
             let list_ref = item.as_portal_list();
             let Some(mut list) = list_ref.borrow_mut() else { continue };
             let count = if status.is_some() { 1 } else { self.messages.as_ref().map_or(0, |m| m.len()) };
-            self.state.begin_draw(cx, &mut list, count);
+            self.state.prepare_list_for_draw(cx, &mut list, count);
             while let Some(index) = list.next_visible_item(cx) {
                 if index >= count { continue; }
                 let row = if let Some((text, is_loading)) = &status {
@@ -253,7 +253,7 @@ impl Widget for PinnedMessagesList {
                         timestamp: event.timestamp(),
                         content: Some(event.content()),
                     };
-                    let (row, is_new_content) = self.state.message_row(cx, &mut list, index, id!(pinned_row), message);
+                    let (row, is_new_content) = self.state.populate_message_row(cx, &mut list, index, id!(pinned_row), message);
                     if is_new_content {
                         row.child(id!(message)).child(id!(button_view)).set_visible(cx, self.can_unpin);
                     }
@@ -275,7 +275,7 @@ impl PinnedMessagesList {
     ///
     /// Call this again with the same room whenever its name changes.
     fn set_room(&mut self, cx: &mut Cx, room_name_id: &RoomNameId) {
-        if !self.state.is_room(room_name_id.room_id()) {
+        if !self.state.is_showing_room(room_name_id.room_id()) {
             self.reset(cx);
         }
         self.state.set_room(room_name_id);
@@ -295,7 +295,7 @@ impl PinnedMessagesList {
     }
 
     /// Returns the status text to show instead of message rows, and whether it's a loading status.
-    fn status(&self) -> Option<(Cow<'static, str>, bool)> {
+    fn get_status(&self) -> Option<(Cow<'static, str>, bool)> {
         if self.messages.as_ref().is_some_and(|m| !m.is_empty()) {
             None
         } else if let Some(error) = self.error.as_ref() {
@@ -360,13 +360,13 @@ impl PinnedMessagesListRef {
 
     /// Returns this list's state, e.g., to be restored when its room's timeline is shown again.
     pub fn save_state(&self) -> SavedMessageList {
-        self.borrow().map(|inner| inner.state.save(&inner.pinned_list())).unwrap_or_default()
+        self.borrow().map(|inner| inner.state.save_state(&inner.pinned_list())).unwrap_or_default()
     }
 
     /// Shows the given room's pinned messages, restoring the given saved state once they arrive.
     pub fn restore_state(&self, cx: &mut Cx, room_name_id: &RoomNameId, saved: SavedMessageList) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_room(cx, room_name_id);
-        inner.state.restore(saved);
+        inner.state.restore_state(saved);
     }
 }

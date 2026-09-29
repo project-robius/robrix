@@ -190,8 +190,13 @@ impl Widget for MessageListRow {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // The timestamp goes beneath the preview when the sender's name wouldn't fit in full beside it.
-        let button_width = if self.view.child(id!(message)).child(id!(button_view)).visible() { ROW_BUTTON_SIZE + ROW_SPACING } else { 0.0 };
+        // We move the timestamp to beneath the message preview if it wouldn't fit
+        // on one line after the sender's full name.
+        let button_width = if self.view.child(id!(message)).child(id!(button_view)).visible() {
+            ROW_BUTTON_SIZE + ROW_SPACING
+        } else {
+            0.0
+        };
         let title_width = cx.peek_walk_turtle(walk).size.x - ROW_PADDING * 2.0 - AVATAR_SIZE - ROW_SPACING - button_width;
         let is_timestamp_below = self.sender_width + TITLE_SPACING + self.timestamp_width > title_width;
         if is_timestamp_below != self.is_timestamp_below {
@@ -204,7 +209,7 @@ impl Widget for MessageListRow {
 }
 
 impl MessageListRow {
-    /// Shows how long ago the message was sent, either beside its sender's name or beneath its preview.
+    /// Updates the timestamp showing how long ago the message was sent.
     fn refresh_timestamp(&mut self, cx: &mut Cx) {
         let text = self.timestamp.and_then(utils::relative_format);
         let text = text.as_deref().unwrap_or("");
@@ -235,7 +240,7 @@ pub struct SavedMessageList {
 ///
 /// The list subscribes to its room's messages itself, so it can be docked within a RoomScreen or popped out.
 pub struct MessageListState {
-    /// Which of a room's messages this list shows, which it subscribes to via the worker.
+    /// The kind of room data that this message list is showing and subscribing to.
     kind: RoomDataKind,
     /// The widget that shows this list, i.e., the subscriber.
     widget_uid: WidgetUid,
@@ -244,14 +249,18 @@ pub struct MessageListState {
     main_timeline_kind: Option<TimelineKind>,
     /// The scroll position to restore once enough messages have arrived to reach it.
     pending_scroll: Option<(usize, f64)>,
-    /// Whether that position was applied, which parks the list at its end while more messages load.
-    is_restore_applied: bool,
+    /// Whether we've scrolled the list to the `pending_scroll` yet.
+    ///
+    /// If we can't reach it until we load more messages, the list will wait
+    /// at its last row until we get more messages loaded.
+    has_scrolled_to_pending: bool,
     /// The indices of the rows whose message is set.
     rows_with_content: HashSet<usize>,
     /// The indices of the rows that are completely populated, including their sender's profile.
     populated_rows: HashSet<usize>,
     /// Whether all rows were fully drawn, i.e., no senders' profiles or avatars are still being fetched.
     is_fully_drawn: bool,
+    /// Triggers every [`TIMESTAMP_REFRESH_INTERVAL`] to keep relative timestamps correct.
     timestamp_refresh_timer: Timer,
 }
 
@@ -269,7 +278,7 @@ impl MessageListState {
             room_name_id: None,
             main_timeline_kind: None,
             pending_scroll: None,
-            is_restore_applied: false,
+            has_scrolled_to_pending: false,
             rows_with_content: HashSet::new(),
             populated_rows: HashSet::new(),
             is_fully_drawn: true,
@@ -286,7 +295,7 @@ impl MessageListState {
         self.room_name_id.as_ref()
     }
 
-    pub fn is_room(&self, room_id: &RoomId) -> bool {
+    pub fn is_showing_room(&self, room_id: &RoomId) -> bool {
         self.room_name_id.as_ref().is_some_and(|r| r.room_id() == room_id)
     }
 
@@ -309,11 +318,11 @@ impl MessageListState {
     pub fn set_room(&mut self, room_name_id: &RoomNameId) {
         self.main_timeline_kind = Some(TimelineKind::MainRoom { room_id: room_name_id.room_id().clone() });
         self.room_name_id = Some(room_name_id.clone());
-        // Also re-subscribe to the same room, in case the worker rebuilt its state while we didn't see it.
+        // Also re-subscribe so we get the latest datat feed.
         self.set_subscribed(true);
     }
 
-    /// Unsubscribes from the room and forgets it and its rows, and scrolls the given list back to the top.
+    /// Unsubscribes from the room and resets the widget to its clean default state.
     pub fn reset(&mut self, cx: &mut Cx, list: &PortalListRef) {
         cx.stop_timer(self.timestamp_refresh_timer);
         let (kind, widget_uid) = (self.kind, self.widget_uid);
@@ -325,7 +334,7 @@ impl MessageListState {
     /// Refreshes the rows' relative timestamps once a minute, e.g., from "Just now" to "1 min ago",
     /// and subscribes again when the worker rebuilds the room's state, e.g., after a sync gap.
     ///
-    /// Returns whether the list must be redrawn, as a sender whose profile was being fetched may be known now.
+    /// Returns whether the list must be redrawn.
     pub fn handle_event(&mut self, cx: &mut Cx, event: &Event, list: &PortalListRef) -> bool {
         if self.timestamp_refresh_timer.is_event(event).is_some() {
             // Only the rows drawn last time need this, as they don't set their timestamps again when redrawn.
@@ -342,7 +351,7 @@ impl MessageListState {
         let mut must_redraw = false;
         for action in actions {
             if let Some(TimelineEndpointsRecreated { room_id }) = action.downcast_ref()
-                && self.is_room(room_id)
+                && self.is_showing_room(room_id)
             {
                 self.set_subscribed(true);
             } else if !self.is_fully_drawn && action.downcast_ref::<UserProfilesUpdated>().is_some() {
@@ -352,12 +361,12 @@ impl MessageListState {
         must_redraw
     }
 
-    /// Forgets the content of the rows whose message changed, now that the list shows `new` instead of `old`
-    /// (or every row's, if `old` is `None`).
+    /// Call this whenever the worker posts a new list of messages, so the rows whose message changed
+    /// (or all rows, if `old` is `None`) get populated again when they're next drawn.
     ///
-    /// This also scrolls the given list to any restored position, once the messages reach it
-    /// (or all of them are loaded, if `is_complete`).
-    pub fn messages_changed<T>(
+    /// This also scrolls the list to any pending restored position once enough messages have loaded
+    /// to reach it (or all of them have, if `is_complete`).
+    pub fn handle_new_messages<T>(
         &mut self,
         cx: &mut Cx,
         list: &PortalListRef,
@@ -379,19 +388,19 @@ impl MessageListState {
         let Some((first_id, scroll)) = self.pending_scroll else { return };
         // While the restored position is beyond the loaded messages, the list sits at its last row,
         // so the user scrolling up from there means they don't want the position anymore.
-        if self.is_restore_applied && !list.is_at_end() {
+        if self.has_scrolled_to_pending && !list.is_at_end() {
             self.pending_scroll = None;
             return;
         }
         list.set_first_id_and_scroll(first_id, scroll);
-        self.is_restore_applied = true;
+        self.has_scrolled_to_pending = true;
         if first_id < new.len() || is_complete {
             self.pending_scroll = None;
         }
     }
 
-    /// Sets how many rows the given list has, before its rows are drawn.
-    pub fn begin_draw(&mut self, cx: &mut Cx, list: &mut PortalList, count: usize) {
+    /// Sets how many rows the given list has, right before we draw them.
+    pub fn prepare_list_for_draw(&mut self, cx: &mut Cx, list: &mut PortalList, count: usize) {
         self.is_fully_drawn = true;
         list.set_item_range(cx, 0, count);
         // The list can shrink past its top row, e.g., when a restored position is beyond the messages loaded so far.
@@ -401,16 +410,15 @@ impl MessageListState {
         }
     }
 
-    /// Marks the given row as not fully populated, as part of it awaits a sender's profile.
-    pub fn row_awaits_profile(&mut self, index: usize) {
+    /// Marks the given row as waiting on a sender's profile, so we populate it again once that profile arrives.
+    pub fn mark_row_as_waiting_on_profile(&mut self, index: usize) {
         self.populated_rows.remove(&index);
         self.is_fully_drawn = false;
     }
 
-    /// Returns the row at `index` of the given list, showing the given message in it if the row is new or has changed.
-    ///
-    /// Also returns whether the row's message was just set, in which case the caller should set the rest of the row.
-    pub fn message_row(
+    /// Gets or creates the row at `index` of the given list, and shows the given message in it if the row is new
+    /// or its message changed. Also returns whether the message was just set, so the caller can set the rest of the row.
+    pub fn populate_message_row(
         &mut self,
         cx: &mut Cx,
         list: &mut PortalList,
@@ -460,15 +468,15 @@ impl MessageListState {
         (row, true)
     }
 
-    pub fn save(&self, list: &PortalListRef) -> SavedMessageList {
+    pub fn save_state(&self, list: &PortalListRef) -> SavedMessageList {
         SavedMessageList {
             // Messages may not have arrived to apply the last restored position to.
             first_id_and_scroll: self.pending_scroll.unwrap_or((list.first_id(), list.scroll_position())),
         }
     }
 
-    pub fn restore(&mut self, saved: SavedMessageList) {
+    pub fn restore_state(&mut self, saved: SavedMessageList) {
         self.pending_scroll = Some(saved.first_id_and_scroll);
-        self.is_restore_applied = false;
+        self.has_scrolled_to_pending = false;
     }
 }
