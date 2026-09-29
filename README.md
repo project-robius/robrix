@@ -61,21 +61,140 @@ The following table shows which host systems can currently be used to build Robr
 ## Building & Running Robrix on Desktop
 1. First, [install Rust](https://www.rust-lang.org/tools/install).
 
-2. Install `cmake`, which is required for some Matrix SDK dependencies.
-   * macOS: `brew install cmake`
-   * Windows: `choco install cmake` (or install `cmake` using Visual Studio)
-   * Linux: see step 3 below.
+2. Install required dependencies based on your dev system:
+   * **macOS**: [install Homebrew](https://brew.sh/), then run `brew install cmake`
+   * **Windows**: [install Chocolatey](https://chocolatey.org/install), then run `choco install cmake` (or just install `cmake` using Visual Studio)
+   * **Linux** or **WSL** on Windows: install the build tools and development libraries for OpenSSL, SQLite, X11/Wayland, and ALSA/PulseAudio using your distro's instructions below.
 
-3. If you're building on **Linux** or **WSL** on Windows, install the required dependencies. Otherwise, proceed to step 4.
-   * `openssl`, `clang`/`libclang`, `cmake`, `binfmt`, `Xcursor`/`X11`, `asound`/`pulse`.
+     <details open>
+     <summary>Debian / Ubuntu / Linux Mint (`apt`)</summary>
 
-   On a Debian-like Linux distro (e.g., Ubuntu), run the following:
-   ```sh
-   sudo apt-get update
-   sudo apt-get install libssl-dev cmake llvm clang libclang-dev libsqlite3-dev pkg-config binfmt-support libxcursor-dev libx11-dev libasound2-dev libpulse-dev libwayland-dev libxkbcommon-dev
-   ```
+     ```sh
+     sudo apt-get update
+     sudo apt-get install build-essential git libssl-dev cmake llvm clang libclang-dev \
+       libsqlite3-dev pkg-config binfmt-support libxcursor-dev libx11-dev \
+       libasound2-dev libpulse-dev libwayland-dev libxkbcommon-dev
+     ```
 
-4. Then, build and run Robrix.
+     </details>
+
+     <details>
+     <summary>Arch Linux / Manjaro / EndeavourOS (`pacman`)</summary>
+
+     ```sh
+     sudo pacman -Syu --needed base-devel git openssl cmake llvm clang sqlite pkgconf \
+       libxcursor libx11 alsa-lib libpulse wayland libxkbcommon
+     ```
+
+     </details>
+
+     <details>
+     <summary>Omarchy (Arch Linux / pacman)</summary>
+
+     ```sh
+     omarchy update
+     sudo pacman -S --needed base-devel git openssl cmake llvm clang sqlite pkgconf \
+       libxcursor libx11 alsa-lib libpulse wayland libxkbcommon
+     ```
+
+     </details>
+
+     <details>
+     <summary>Fedora / RHEL / Rocky Linux / AlmaLinux (`dnf`)</summary>
+
+     ```sh
+     sudo dnf install --refresh gcc gcc-c++ make git openssl-devel cmake llvm clang \
+       clang-devel sqlite-devel pkgconf-pkg-config libXcursor-devel libX11-devel \
+       alsa-lib-devel pulseaudio-libs-devel wayland-devel libxkbcommon-devel
+     ```
+
+     RHEL may require the CodeReady Linux Builder repository; Rocky Linux and AlmaLinux may require CRB (PowerTools on version 8) for development packages.
+     Enable the appropriate repository for your distro and release if a package is unavailable.
+
+     </details>
+
+     <details>
+     <summary>openSUSE / SUSE (`zypper`)</summary>
+
+     On openSUSE, run:
+
+     ```sh
+     sudo zypper refresh
+     sudo zypper install gcc gcc-c++ make git libopenssl-devel cmake llvm clang \
+       clang-devel sqlite3-devel pkgconf-pkg-config libXcursor-devel libX11-devel \
+       alsa-devel libpulse-devel wayland-devel libxkbcommon-devel
+     ```
+
+     SUSE Linux Enterprise has different repository requirements: SLE 15 offers a Development Tools module, while SLE 16 requires a community repository for Clang/libclang.
+     See [SUSE's toolchain documentation](https://documentation.suse.com/sles-sap/16.0/html/SLE-packages-lifecycle/#packages-lifecycle-toolchain-llvm) for details on SLE 16.
+
+     </details>
+
+     <details>
+     <summary>Void Linux (`xbps`)</summary>
+
+     ```sh
+     sudo xbps-install -Su
+     sudo xbps-install base-devel git openssl-devel cmake llvm clang libclang \
+       sqlite-devel pkg-config libXcursor-devel libX11-devel alsa-lib-devel \
+       pulseaudio-devel wayland-devel libxkbcommon-devel
+     ```
+
+     If the first command updates XBPS itself, run it again before installing the dependencies.
+     On Void's musl variant, also follow the musl build note under Alpine below.
+
+     </details>
+
+     <details>
+     <summary>Gentoo (Portage)</summary>
+
+     ```sh
+     sudo emerge --sync
+     sudo emerge --ask dev-vcs/git dev-libs/openssl dev-build/cmake llvm-core/llvm \
+       llvm-core/clang dev-db/sqlite virtual/pkgconfig x11-libs/libXcursor \
+       x11-libs/libX11 media-libs/alsa-lib media-libs/libpulse dev-libs/wayland \
+       x11-libs/libxkbcommon
+     ```
+
+     </details>
+
+     <details>
+     <summary>NixOS / Nix (development shell)</summary>
+
+     With a recent `nixpkgs` channel configured, enter this development shell and perform steps 3 and 4 inside it.
+     The shell supplies Rust, the build tools, and the library paths needed by bindgen and Makepad.
+
+     ```sh
+     nix-shell --expr '
+       let
+         pkgs = import <nixpkgs> {};
+         libraries = with pkgs; [
+           openssl sqlite libx11 libxcursor alsa-lib libpulseaudio
+           wayland libxkbcommon libglvnd dbus
+         ];
+       in pkgs.mkShell {
+         nativeBuildInputs = with pkgs; [
+           cargo rustc git cmake pkg-config llvmPackages.llvm
+           llvmPackages.clang rustPlatform.bindgenHook
+         ];
+         buildInputs = libraries;
+         LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath libraries
+           + ":/run/opengl-driver/lib";
+       }
+     '
+     ```
+
+     When using Nix on another Linux distro, you may also need [nixGL](https://github.com/nix-community/nixGL) to use the host's graphics drivers.
+
+     </details>
+
+3. Obtain the Robrix source code, e.g., by cloning this repo:
+  ```sh
+  git clone https://github.com/project-robius/robrix.git
+  cd robrix
+  ```
+
+4. Finally, build and run Robrix.
    ```sh
    cargo run --release
    ```   
