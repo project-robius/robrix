@@ -3,10 +3,10 @@
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
-use crate::{home::invite_modal::InviteModalAction, settings::app_preferences::preferred_receipt_type, shared::{context_menu::{ContextMenuClosed, expected_menu_size}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
+use crate::{home::invite_modal::InviteModalAction, settings::app_preferences::preferred_receipt_type, shared::context_menu::{ContextMenuClosed, expected_menu_size}, sliding_sync::{MatrixRequest, submit_async_request}, utils::RoomNameId};
 
 /// Nothing here is conditionally shown, so keep these matching the DSL below.
-const NUM_BUTTONS: usize = 9;
+const NUM_BUTTONS: usize = 7;
 const NUM_DIVIDERS: usize = 3;
 
 script_mod! {
@@ -51,16 +51,16 @@ script_mod! {
 
             divider1 := mod.widgets.ContextMenuDivider { }
 
-            room_settings_button := mod.widgets.ContextMenuButton {
-                draw_icon +: { svg: (ICON_SETTINGS) }
-                text: "Settings"
-            }
+            // room_settings_button := mod.widgets.ContextMenuButton {
+            //     draw_icon +: { svg: (ICON_SETTINGS) }
+            //     text: "Settings"
+            // }
 
-            notifications_button := mod.widgets.ContextMenuButton {
-                // TODO: use a proper bell icon
-                draw_icon +: { svg: (ICON_INFO) }
-                text: "Notifications"
-            }
+            // notifications_button := mod.widgets.ContextMenuButton {
+            //     // TODO: use a proper bell icon
+            //     draw_icon +: { svg: (ICON_INFO) }
+            //     text: "Notifications"
+            // }
 
             invite_button := mod.widgets.ContextMenuButton {
                 draw_icon +: { svg: (ICON_ADD_USER) }
@@ -200,24 +200,24 @@ impl WidgetMatchEvent for RoomContextMenu {
             });
             close_menu = true;
         }
-         else if self.button(cx, ids!(room_settings_button)).clicked(actions) {
-            // TODO: handle/implement this
-            enqueue_popup_notification(
-                "The room settings page is not yet implemented.",
-                PopupKind::Warning,
-                Some(5.0),
-            );
-            close_menu = true;
-        }
-        else if self.button(cx, ids!(notifications_button)).clicked(actions) {
-            // TODO: handle/implement this
-            enqueue_popup_notification(
-                "The room notifications page is not yet implemented.",
-                PopupKind::Warning,
-                Some(5.0),
-            );
-            close_menu = true;
-        }
+        // else if self.button(cx, ids!(room_settings_button)).clicked(actions) {
+        //     // TODO: handle/implement this
+        //     enqueue_popup_notification(
+        //         "The room settings page is not yet implemented.",
+        //         PopupKind::Warning,
+        //         Some(5.0),
+        //     );
+        //     close_menu = true;
+        // }
+        // else if self.button(cx, ids!(notifications_button)).clicked(actions) {
+        //     // TODO: handle/implement this
+        //     enqueue_popup_notification(
+        //         "The room notifications page is not yet implemented.",
+        //         PopupKind::Warning,
+        //         Some(5.0),
+        //     );
+        //     close_menu = true;
+        // }
         else if self.button(cx, ids!(invite_button)).clicked(actions) {
             cx.action(InviteModalAction::Open(details.room_name_id.clone()));
             close_menu = true;
@@ -286,8 +286,8 @@ impl RoomContextMenu {
         favorite_button.reset_hover(cx);
         priority_button.reset_hover(cx);
         self.button(cx, ids!(copy_link_button)).reset_hover(cx);
-        self.button(cx, ids!(room_settings_button)).reset_hover(cx);
-        self.button(cx, ids!(notifications_button)).reset_hover(cx);
+        // self.button(cx, ids!(room_settings_button)).reset_hover(cx);
+        // self.button(cx, ids!(notifications_button)).reset_hover(cx);
         self.button(cx, ids!(invite_button)).reset_hover(cx);
         self.button(cx, ids!(diagnostics_button)).reset_hover(cx);
         self.button(cx, ids!(leave_button)).reset_hover(cx);

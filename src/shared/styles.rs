@@ -173,6 +173,12 @@ script_mod! {
     mod.widgets.COLOR_BG_LAVENDER_HOVER = #xE8E1FA
     mod.widgets.COLOR_BG_LAVENDER_DOWN = #xE1D7F7
 
+    // The darker lavender of an "active"/selected room action button,
+    // a button whose corresponding room pane is currently shown.
+    mod.widgets.COLOR_BG_LAVENDER_SELECTED = #x7C5BD7
+    mod.widgets.COLOR_BG_LAVENDER_SELECTED_HOVER = #x7451D5
+    mod.widgets.COLOR_BG_LAVENDER_SELECTED_DOWN = #x6B46D2
+
     mod.widgets.COLOR_BG_PREVIEW_HOVER = #CDEDDF
 
     // A thread's summary beneath its root message, whose reply count color the threads list uses too.
