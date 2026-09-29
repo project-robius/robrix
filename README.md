@@ -212,18 +212,20 @@ The following table shows which host systems can currently be used to build Robr
 
 ## Building & Running Robrix on Mobile: Android, iOS, iPadOS
 
-1. Install the `cargo-makepad` build tool:
+1. Follow all steps in the previous section about desktop builds.
+
+2. Install the `cargo-makepad` build tool:
    ```sh
    cargo install --force --git https://github.com/makepad/makepad.git --branch dev cargo-makepad
    ```
 
 ### Android
-2. Use `cargo-makepad` to install the Android toolchain with the full NDK included:
+3. Use `cargo-makepad` to install the Android toolchain with the full NDK included:
    ```sh
    cargo makepad android install-toolchain --full-ndk
    ```
 
-3. Build and run Robrix using `cargo-makepad`:
+4. Build and run Robrix using `cargo-makepad`:
    ```sh
    cargo makepad android run -p robrix --release
    ```
@@ -232,13 +234,13 @@ The following table shows which host systems can currently be used to build Robr
 
 
 ### iOS / iPadOS
-2. Use `cargo-makepad` to install the iOS toolchain:
+3. Use `cargo-makepad` to install the iOS toolchain:
    ```sh
    rustup toolchain install nightly
    cargo makepad apple ios install-toolchain
    ```
 
-3. Perform the following one-time setup steps:
+4. Perform the following one-time setup steps:
    1. If running on a real iOS device, [enable Developer Mode on your device](https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device):
       Settings → Privacy & Security → Developer Mode → turn on Developer Mode and reboot.
    2. Ensure your Apple Developer account is properly set up on your Mac.
@@ -251,7 +253,7 @@ The following table shows which host systems can currently be used to build Robr
    5. Once the simulator or device has the empty "dummy" app installed and running properly, then you're ready to build the actual Robrix application below.
 
 #### Running on an iOS simulator
-4. If you're using an iOS simulator, do the following:
+5. If you're using an iOS simulator, do the following:
    ```sh
    cargo makepad apple ios \
      --org=rs.robius \
@@ -266,14 +268,14 @@ The following table shows which host systems can currently be used to build Robr
 
 
 #### Running on a real iOS device
-4. Run the following command to show all provisioning profiles, signing identities, and device identifiers on your Mac.
+5. Run the following command to show all provisioning profiles, signing identities, and device identifiers on your Mac.
    ```sh
    cargo makepad apple list
    ```
     * You must select which values you need to use for each of the 3 above items.
     * If you get an error from the above command, then please ensure you performed the full iOS setup instructions above, and that you have a valid Apple Developer account with certificates installed on your Mac.
 
-2. Run the following command, filling in the **unique starting characters** chosen above.
+6. Run the following command, filling in the **unique starting characters** chosen above.
    ```sh
    cargo makepad apple ios \
      --profile=<unique-starting-hex-string> \
