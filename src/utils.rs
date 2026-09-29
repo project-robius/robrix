@@ -391,7 +391,7 @@ pub fn unix_time_millis_to_datetime(millis: MilliSecondsSinceUnixEpoch) -> Optio
 
 /// Replaces all line breaks, tabs, paragraphs and other separators with a single space `' '`.
 ///
-/// If `is_html` is true, it also removes line-breaking tags, e.g., `<br>`.
+/// If `is_html` is true, it also removes line-breaking tags, e.g., `<br>`, and block tags, e.g., `<h1>` or `<li>`.
 pub fn replace_linebreaks_separators<'a>(s: &'a str, is_html: bool) -> Cow<'a, str> {
     #[inline]
     fn is_separator(byte: u8) -> bool {
@@ -400,10 +400,11 @@ pub fn replace_linebreaks_separators<'a>(s: &'a str, is_html: bool) -> Cow<'a, s
 
     #[inline]
     fn is_html_break_tag(tag_name: &[u8]) -> bool {
-        tag_name.eq_ignore_ascii_case(b"br")
-            || tag_name.eq_ignore_ascii_case(b"p")
-            || tag_name.eq_ignore_ascii_case(b"hr")
-            || tag_name.eq_ignore_ascii_case(b"div")
+        const BREAK_TAGS: [&[u8]; 20] = [
+            b"br", b"p", b"hr", b"div", b"h1", b"h2", b"h3", b"h4", b"h5", b"h6",
+            b"pre", b"blockquote", b"ul", b"ol", b"li", b"table", b"tr", b"td", b"th", b"details",
+        ];
+        BREAK_TAGS.iter().any(|tag| tag_name.eq_ignore_ascii_case(tag))
     }
 
     #[inline]

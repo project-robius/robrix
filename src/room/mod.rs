@@ -8,6 +8,7 @@ use ruma::{OwnedRoomAliasId, OwnedRoomId, room::{JoinRuleSummary, RoomType}};
 use crate::shared::avatar::AvatarImage;
 use crate::utils::RoomNameId;
 
+pub mod message_list;
 pub mod pane_dock;
 pub mod pinned_messages_list;
 pub mod reply_preview;
@@ -18,6 +19,7 @@ pub mod room_tab_hover_card;
 pub mod room_tabs;
 pub mod room_input_bar;
 pub mod room_display_filter;
+pub mod threads_list;
 pub mod typing_notice;
 
 pub fn script_mod(vm: &mut ScriptVm) {
@@ -28,7 +30,9 @@ pub fn script_mod(vm: &mut ScriptVm) {
     room_input_bar::script_mod(vm);
     typing_notice::script_mod(vm);
     room_members_list::script_mod(vm);
+    message_list::script_mod(vm);
     pinned_messages_list::script_mod(vm);
+    threads_list::script_mod(vm);
     pane_dock::script_mod(vm);
 }
 

@@ -44,7 +44,7 @@ use crate::{
         user_profile_cache::{UserProfileUpdate, enqueue_user_profile_update},
     }, room::{FetchedRoomAvatar, FetchedRoomPreview, RoomPreviewAction, pinned_messages_list::PinnedMessagesAction, room_members_list::{RoomMembersChanged, RoomMembersFetchAction}}, room_preview_cache::{RoomPreviewUpdate, enqueue_room_preview_update}, settings::account_settings::AccountManagementUrl, shared::{
         attachment_download::{MediaDownloadResult, media_source_mxc}, avatar::AvatarState, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, FileUploadMetadata}, jump_to_bottom_button::UnreadMessageCount, mention_popup::{MentionItem, RoomMentionCandidate}, mentionable_text_input::MentionMatches, popup_list::{PopupKind, enqueue_popup_notification}
-    }, space_service_sync::space_service_loop, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
+    }, space_service_sync::space_service_loop, threads_list_sync::threads_list_subscriber_handler, utils::{self, AVATAR_THUMBNAIL_FORMAT, MatchQuality, RoomNameId, VecDiff, alias_localpart, avatar_from_room_name}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Default)]
@@ -825,16 +825,24 @@ pub enum MatrixRequest {
         /// Whether to subscribe or unsubscribe.
         subscribe: bool,
     },
-    /// Subscribe to the given room's pinned messages.
+    /// Subscribe to the given `kind` of data feed from the given room, e.g., pinned messages, threads.
     ///
-    /// A [`PinnedMessagesAction`] is emitted immediately upon subscribing
-    /// and also whenever the pinned messages change or the user's can-pin power level changes.
-    SubscribeToPinnedMessages {
+    /// The data is posted upon several conditions:
+    /// * immediately (if available), or once its first page loads,
+    /// * whenever the data changes,
+    /// * upon every new subscriber.
+    SubscribeToRoomData {
         room_id: OwnedRoomId,
-        /// The widget that shows these pinned messages.
+        kind: RoomDataKind,
+        /// The widget that wants to show and be informed of changes to this data.
         subscriber: WidgetUid,
         /// Whether to subscribe or unsubscribe.
         subscribe: bool,
+    },
+    /// Loads the next page of the given room's threads, which are then posted
+    /// to the widgets subscribed to them via [`RoomDataKind::Threads`].
+    PaginateThreadsList {
+        room_id: OwnedRoomId,
     },
     /// Sends a read receipt for the given event to the given room or thread timeline.
     ReadReceipt {
@@ -2142,9 +2150,10 @@ async fn matrix_worker_task(
                                     matches!(details.main_timeline.timeline_subscriber, TimelineSubscriber::Running(_)),
                                     details.main_timeline.timeline_singleton_endpoints.is_none(),
                                 );
-                                let _ = writeln!(text, "typing notices subscribed: {}, pinned messages subscribers: {}",
+                                let _ = writeln!(text, "typing notices subscribed: {}, pinned messages subscribers: {}, threads list subscribers: {}",
                                     details.typing_notice_subscriber.is_some(),
                                     details.pinned_messages_subscriber.as_ref().map_or(0, |p| p.subscribers.len()),
+                                    details.threads_list_subscriber.as_ref().map_or(0, |t| t.subscribers.len()),
                                 );
                                 let _ = writeln!(text, "thread timelines: {:?}, pending: {:?}",
                                     details.thread_timelines.keys().collect::<Vec<_>>(),
@@ -2391,39 +2400,46 @@ async fn matrix_worker_task(
                 }
             }
 
-            MatrixRequest::SubscribeToPinnedMessages { room_id, subscriber, subscribe } => {
+            MatrixRequest::SubscribeToRoomData { room_id, kind, subscriber, subscribe } => {
                 let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                // A room that isn't loaded yet posts `TimelineEndpointsRecreated` once it is,
-                // upon which its subscribers will subscribe again.
+                // A room that isn't loaded yet posts a `TimelineEndpointsRecreated` action once it is,
+                // upon which its subscribers subscribe again.
                 let Some(room_info) = all_joined_rooms.get_mut(&room_id) else { continue };
-                let subscriber_opt = &mut room_info.pinned_messages_subscriber;
-                if !subscribe {
-                    if let Some(p) = subscriber_opt.as_mut()
-                        && p.subscribers.remove(&subscriber)
-                        && p.subscribers.is_empty()
-                    {
-                        *subscriber_opt = None;
+                let room = room_info.main_timeline.timeline.room().clone();
+                match kind {
+                    RoomDataKind::PinnedMessages => {
+                        update_room_data_subscribers(
+                            &mut room_info.pinned_messages_subscriber,
+                            subscriber,
+                            subscribe,
+                            |resend_notifier| {
+                                ((), Handle::current().spawn(pinned_messages_subscriber_handler(room, resend_notifier)))
+                            },
+                        );
                     }
-                    continue;
+                    RoomDataKind::Threads => {
+                        update_room_data_subscribers(
+                            &mut room_info.threads_list_subscriber,
+                            subscriber,
+                            subscribe,
+                            |resend_notifier| {
+                                let load_more = Arc::new(Notify::new());
+                                let task = Handle::current().spawn(
+                                    threads_list_subscriber_handler(room, resend_notifier, load_more.clone())
+                                );
+                                (load_more, task)
+                            },
+                        );
+                    }
                 }
-                match subscriber_opt.as_mut() {
-                    Some(p) if !p.task.is_finished() => {
-                        p.subscribers.insert(subscriber);
-                        p.resend_pinned_messages_list.notify_one();
-                    }
-                    // Start watching this room's pinned messages.
-                    _ => {
-                        let mut subscribers = subscriber_opt.take()
-                            .map(|mut p| std::mem::take(&mut p.subscribers))
-                            .unwrap_or_default();
-                        subscribers.insert(subscriber);
-                        let resend = Arc::new(Notify::new());
-                        let task = Handle::current().spawn(pinned_messages_subscriber_handler(
-                            room_info.main_timeline.timeline.room().clone(),
-                            resend.clone(),
-                        ));
-                        *subscriber_opt = Some(PinnedMessagesSubscriber { subscribers, resend_pinned_messages_list: resend, task });
-                    }
+            }
+
+            MatrixRequest::PaginateThreadsList { room_id } => {
+                if let Some(threads) = ALL_JOINED_ROOMS.lock().unwrap()
+                    .get(&room_id)
+                    .and_then(|room_info| room_info.threads_list_subscriber.as_ref())
+                {
+                    threads.load_more.notify_one();
                 }
             }
 
@@ -3265,21 +3281,6 @@ impl Drop for PerTimelineDetails {
     }
 }
 
-/// A task that watches a room's pinned messages, see [`MatrixRequest::SubscribeToPinnedMessages`].
-struct PinnedMessagesSubscriber {
-    /// The widgets that are currently showing this room's pinned messages.
-    subscribers: HashSet<WidgetUid>,
-    /// Asks the task to post its pinned messages again, e.g., for a new subscriber.
-    resend_pinned_messages_list: Arc<Notify>,
-    /// The async subscriber task.
-    task: JoinHandle<()>,
-}
-impl Drop for PinnedMessagesSubscriber {
-    fn drop(&mut self) {
-        self.task.abort();
-    }
-}
-
 struct JoinedRoomDetails {
     /// The room ID of this joined room.
     room_id: OwnedRoomId,
@@ -3291,8 +3292,10 @@ struct JoinedRoomDetails {
     pending_thread_timelines: HashSet<OwnedEventId>,
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
-    /// The task that watches this room's pinned messages while any widget shows them.
-    pinned_messages_subscriber: Option<PinnedMessagesSubscriber>,
+    /// The task that watches this room's pinned messages while any widget is showing them.
+    pinned_messages_subscriber: Option<RoomDataSubscriber>,
+    /// The task that watches this room's threads while any widget shows them.
+    threads_list_subscriber: Option<RoomDataSubscriber<Arc<Notify>>>,
 }
 impl Drop for JoinedRoomDetails {
     fn drop(&mut self) {
@@ -3301,6 +3304,7 @@ impl Drop for JoinedRoomDetails {
         // PerTimelineDetails::Drop, so just tear down the room-level subscriptions here.
         drop(self.typing_notice_subscriber.take());
         drop(self.pinned_messages_subscriber.take());
+        drop(self.threads_list_subscriber.take());
     }
 }
 impl JoinedRoomDetails {
@@ -4569,7 +4573,7 @@ async fn update_room(
                     if let Some(pinned) = ALL_JOINED_ROOMS.lock().unwrap().get(&new_room_id)
                         .and_then(|room_info| room_info.pinned_messages_subscriber.as_ref())
                     {
-                        pinned.resend_pinned_messages_list.notify_one();
+                        pinned.resend_notifier.notify_one();
                     }
                 } else {
                     error!("BUG: could not find JoinedRoomDetails for room {new_room_id} where power levels changed.");
@@ -4721,6 +4725,7 @@ async fn add_new_room(
             pending_thread_timelines: HashSet::new(),
             typing_notice_subscriber: None,
             pinned_messages_subscriber: None,
+            threads_list_subscriber: None,
         },
     );
     // A visible RoomScreen might still have this room's previous channel endpoints,
@@ -5643,10 +5648,10 @@ pub struct BackwardsPaginateUntilEventRequest {
 ///
 /// Emits a [`PinnedMessagesAction::Updated`] action initially upon a new subscriber,
 /// and also whenever the pinned messages list changes, or whenever the given
-/// `resend_pinned_messages_list` is notified (which gets notified by UI widgets).
+/// `resend_notifier` is notified (which gets notified by UI widgets).
 async fn pinned_messages_subscriber_handler(
     room: Room,
-    resend_pinned_messages_list: Arc<Notify>,
+    resend_notifier: Arc<Notify>,
 ) {
     let room_id = room.room_id().to_owned();
     let timeline = match room.timeline_builder()
@@ -5722,10 +5727,77 @@ async fn pinned_messages_subscriber_handler(
             // If we were notified, that means the UI requested a fresh update of the
             // pinned messages list for this room, so we need to emit the list again.
             // This also happens when our power levels change, which could affect `can_unpin`.
-            _ = resend_pinned_messages_list.notified() => true,
+            _ = resend_notifier.notified() => true,
         };
     }
 }
+
+
+/// The kinds of room data that widgets can subscribe to; see [`MatrixRequest::SubscribeToRoomData`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RoomDataKind {
+    /// Posts a [`PinnedMessagesAction`] right away, and whenever the pinned messages change
+    /// or the user's can-pin power level changes.
+    PinnedMessages,
+    /// Posts a [`ThreadsListAction`](crate::room::threads_list::ThreadsListAction)
+    /// once the first page of threads loads, and whenever the threads change.
+    Threads,
+}
+
+/// A task that watches some of a room's data while any widgets show it, e.g., its pinned messages.
+struct RoomDataSubscriber<L = ()> {
+    /// The widgets that are currently showing this data.
+    subscribers: HashSet<WidgetUid>,
+    /// Asks the task to post its data again, e.g., for a new subscriber.
+    resend_notifier: Arc<Notify>,
+    /// Asks the task to load more of its data, if it's paginated.
+    load_more: L,
+    /// The async subscriber task.
+    task: JoinHandle<()>,
+}
+impl<L> Drop for RoomDataSubscriber<L> {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+
+/// Adds or removes the given widget as a subscriber to the room data in `room_data_subscriber`.
+/// The first subscriber starts the task via `start`, which gets the resend notifier widgets use
+/// to ask for the data to be posted again; the last one to unsubscribe stops the task.
+fn update_room_data_subscribers<L>(
+    room_data_subscriber: &mut Option<RoomDataSubscriber<L>>,
+    widget_subscriber: WidgetUid,
+    subscribe: bool,
+    start: impl FnOnce(Arc<Notify>) -> (L, JoinHandle<()>),
+) {
+    if !subscribe {
+        if let Some(s) = room_data_subscriber.as_mut()
+            && s.subscribers.remove(&widget_subscriber)
+            && s.subscribers.is_empty()
+        {
+            *room_data_subscriber = None;
+        }
+        return;
+    }
+    match room_data_subscriber.as_mut() {
+        Some(s) if !s.task.is_finished() => {
+            s.subscribers.insert(widget_subscriber);
+            s.resend_notifier.notify_one();
+        }
+        _ => {
+            // Start watching this room's data, e.g., once again after it failed to load.
+            let mut subscribers = room_data_subscriber.take()
+                .map(|mut s| std::mem::take(&mut s.subscribers))
+                .unwrap_or_default();
+            subscribers.insert(widget_subscriber);
+            let resend_notifier = Arc::new(Notify::new());
+            let (load_more, task) = start(resend_notifier.clone());
+            *room_data_subscriber = Some(RoomDataSubscriber { subscribers, resend_notifier, load_more, task });
+        }
+    }
+}
+
 
 /// Whether to enable verbose logging of all timeline diff updates.
 const LOG_TIMELINE_DIFFS: bool = cfg!(feature = "log_timeline_diffs");

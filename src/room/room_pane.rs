@@ -22,6 +22,8 @@ pub enum RoomPaneKind {
     Members,
     /// The list of the room's pinned messages.
     PinnedMessages,
+    /// The list of the room's threads.
+    Threads,
 }
 
 impl RoomPaneKind {
@@ -30,6 +32,7 @@ impl RoomPaneKind {
         match self {
             RoomPaneKind::Members => Cow::Borrowed("Members"),
             RoomPaneKind::PinnedMessages => Cow::Borrowed("Pinned messages"),
+            RoomPaneKind::Threads => Cow::Borrowed("Threads"),
         }
     }
 
@@ -38,6 +41,7 @@ impl RoomPaneKind {
         match self {
             RoomPaneKind::Members => Cow::Borrowed("members"),
             RoomPaneKind::PinnedMessages => Cow::Borrowed("pinned_messages"),
+            RoomPaneKind::Threads => Cow::Borrowed("threads"),
         }
     }
 }
