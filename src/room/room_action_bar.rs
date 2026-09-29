@@ -240,7 +240,7 @@ script_mod! {
 const ACTIONS: [(LiveId, &str, Option<RoomPaneKind>); ACTION_COUNT] = [
     (id!(room_info_button), "Room info", None),
     (id!(room_settings_button), "Room settings", None),
-    (id!(room_threads_button), "Threads", None),
+    (id!(room_threads_button), "Threads", Some(RoomPaneKind::Threads)),
     (id!(room_members_button), "Members", Some(RoomPaneKind::Members)),
     (id!(room_pinned_messages_button), "Pinned messages", Some(RoomPaneKind::PinnedMessages)),
 ];

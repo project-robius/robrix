@@ -175,6 +175,12 @@ script_mod! {
 
     mod.widgets.COLOR_BG_PREVIEW_HOVER = #CDEDDF
 
+    // A thread's summary beneath its root message, whose reply count color the threads list uses too.
+    mod.widgets.COLOR_THREAD_SUMMARY_BG = #FFF4E5
+    mod.widgets.COLOR_THREAD_SUMMARY_BG_HOVER = #FFEACC
+    mod.widgets.COLOR_THREAD_SUMMARY_BORDER = #E8C99A
+    mod.widgets.COLOR_THREAD_SUMMARY_REPLY_COUNT = #A35A00
+
     mod.widgets.COLOR_AVATAR_BG = #52b2ac
 
     mod.widgets.COLOR_AVATAR_BG_IDLE = #d8d8d8

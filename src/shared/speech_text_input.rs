@@ -467,7 +467,7 @@ impl SpeechTextInput {
                         None => self.mic_tooltip.clone(),
                     },
                     widget_rect: area.rect(cx),
-                    options: CalloutTooltipOptions { position: TooltipPosition::Top, ..Default::default() },
+                    options: CalloutTooltipOptions { position: TooltipPosition::Left, ..Default::default() },
                 });
             }
             Hit::FingerHoverOut(_) => cx.widget_action(button.widget_uid(), TooltipAction::HoverOut),

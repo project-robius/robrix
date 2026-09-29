@@ -69,6 +69,27 @@ impl TextPreview {
     }
 }
 
+/// The preview of a message whose content couldn't be parsed.
+pub const UNSUPPORTED_MESSAGE_PREVIEW: &str = "[Unsupported message]";
+
+/// Returns an HTML preview of a reply in a thread, beginning with the given name of its sender.
+///
+/// The `content` is `None` if the reply couldn't be parsed.
+pub fn text_preview_of_thread_reply(
+    sender: &UserId,
+    sender_name: &str,
+    content: Option<&TimelineItemContent>,
+) -> String {
+    let preview = content.map_or_else(
+        || TextPreview::from((String::from(UNSUPPORTED_MESSAGE_PREVIEW), BeforeText::UsernameWithColon)),
+        |content| text_preview_of_timeline_item(content, sender, sender_name),
+    ).format_with(sender_name, true);
+    match utils::replace_linebreaks_separators(&preview, true) {
+        Cow::Borrowed(_) => preview,
+        Cow::Owned(replaced) => replaced,
+    }
+}
+
 /// Returns a text preview of the given timeline event as an Html-formatted string.
 pub fn text_preview_of_timeline_item(
     content: &TimelineItemContent,

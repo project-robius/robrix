@@ -13,6 +13,7 @@ use crate::{
         pane_dock::set_pane_header,
         pinned_messages_list::PinnedMessagesListWidgetRefExt,
         room_pane::RoomPaneKind,
+        threads_list::ThreadsListWidgetRefExt,
     },
     sliding_sync::{MatrixRequest, submit_async_request},
     utils::RoomNameId,
@@ -58,6 +59,7 @@ script_mod! {
                 padding: Inset{top: 8, right: 0, bottom: 8, left: 10}
                 room_members := mod.widgets.RoomMembersList { visible: false }
                 pinned_messages := mod.widgets.PinnedMessagesList { visible: false }
+                threads := mod.widgets.ThreadsList { visible: false }
             }
         }
 
@@ -177,15 +179,18 @@ impl RoomPaneScreen {
             .is_some_and(|(r, k)| r.room_id() == room_name_id.room_id() && *k == kind);
         let members = self.view.child_by_path(ids!(content.room_members)).as_room_members_list();
         let pinned_messages = self.view.child_by_path(ids!(content.pinned_messages)).as_pinned_messages_list();
+        let threads = self.view.child_by_path(ids!(content.threads)).as_threads_list();
         if !is_same {
             self.view.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane)).reset(cx);
             members.reset(cx);
             pinned_messages.reset(cx);
+            threads.reset(cx);
         }
         set_pane_header(cx, &self.view.widget(cx, ids!(title_row)), &kind);
         self.view.label(cx, ids!(pane_room)).set_text(cx, &room_name_id.to_string());
         self.view.child_by_path(ids!(content.room_members)).set_visible(cx, kind == RoomPaneKind::Members);
         self.view.child_by_path(ids!(content.pinned_messages)).set_visible(cx, kind == RoomPaneKind::PinnedMessages);
+        self.view.child_by_path(ids!(content.threads)).set_visible(cx, kind == RoomPaneKind::Threads);
         self.displayed = Some((room_name_id.clone(), kind.clone()));
         match &kind {
             // Also re-fetch upon re-showing, in case we missed changes while hidden.
@@ -194,6 +199,7 @@ impl RoomPaneScreen {
                 self.fetch_members(false);
             }
             RoomPaneKind::PinnedMessages => pinned_messages.set_room(cx, room_name_id),
+            RoomPaneKind::Threads => threads.set_room(cx, room_name_id),
         }
         self.redraw(cx);
     }
@@ -213,6 +219,7 @@ impl RoomPaneScreen {
         self.view.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane)).reset(cx);
         self.view.child_by_path(ids!(content.room_members)).as_room_members_list().reset(cx);
         self.view.child_by_path(ids!(content.pinned_messages)).as_pinned_messages_list().reset(cx);
+        self.view.child_by_path(ids!(content.threads)).as_threads_list().reset(cx);
         self.displayed = None;
     }
 }

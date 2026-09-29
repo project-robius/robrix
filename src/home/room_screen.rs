@@ -27,7 +27,7 @@ use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, e
 
 use matrix_sdk_ui::sync_service::State;
 use crate::{
-    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::LoadingPaneWidgetExt, room_image_viewer::{fetch_full_image_for_viewer, get_image_name_and_filesize}, rooms_list::{RoomsListAction, RoomsListRef}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_thread_reply, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::LoadingPaneWidgetExt, room_image_viewer::{fetch_full_image_for_viewer, get_image_name_and_filesize}, rooms_list::{RoomsListAction, RoomsListRef}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneAction, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
@@ -104,11 +104,6 @@ script_mod! {
     mod.widgets.COLOR_READ_MARKER = #xeb2733
 
     mod.widgets.REACTION_TEXT_COLOR = #4c00b0
-
-    mod.widgets.COLOR_THREAD_SUMMARY_BG = #FFF4E5
-    mod.widgets.COLOR_THREAD_SUMMARY_BG_HOVER = #FFEACC
-    mod.widgets.COLOR_THREAD_SUMMARY_BORDER = #E8C99A
-    mod.widgets.COLOR_THREAD_SUMMARY_REPLY_COUNT = #A35A00
 
     // An empty view that takes up no space in the portal list.
     mod.widgets.Empty = View { }
@@ -5825,22 +5820,11 @@ fn populate_thread_root_summary(
     let latest_preview: Cow<str> = match &thread_summary.latest_event {
         TimelineDetails::Ready(embedded_event) => {
             fully_drawn = true;
-            let sender_username = match &embedded_event.sender_profile {
-                TimelineDetails::Ready(profile) => profile
-                    .display_name
-                    .as_deref()
-                    .unwrap_or(embedded_event.sender.as_str()),
+            let sender_name = match &embedded_event.sender_profile {
+                TimelineDetails::Ready(profile) => profile.display_name.as_deref().unwrap_or(embedded_event.sender.as_str()),
                 _ => embedded_event.sender.as_str(),
             };
-            let preview = text_preview_of_timeline_item(
-                &embedded_event.content,
-                &embedded_event.sender,
-                sender_username,
-            ).format_with(sender_username, true);
-            match utils::replace_linebreaks_separators(&preview, true) {
-                Cow::Borrowed(_) => Cow::Owned(preview),
-                Cow::Owned(replaced) => Cow::Owned(replaced),
-            }
+            text_preview_of_thread_reply(&embedded_event.sender, sender_name, Some(&embedded_event.content)).into()
         }
         td @ TimelineDetails::Pending | td @ TimelineDetails::Unavailable => {
             fully_drawn = true;

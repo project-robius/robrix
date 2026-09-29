@@ -19,9 +19,11 @@ use crate::{
 };
 use super::{
     room_action_bar::RoomActionTooltip,
-    pinned_messages_list::{PinnedMessagesListWidgetRefExt, SavedPinnedMessagesList},
+    message_list::SavedMessageList,
+    pinned_messages_list::PinnedMessagesListWidgetRefExt,
     room_members_list::{RoomMembersListRef, RoomMembersListWidgetRefExt, SavedRoomMembersList},
     room_pane::{self, PaneLayout, PaneSide, RoomPaneKind, RoomPanesPending},
+    threads_list::ThreadsListWidgetRefExt,
 };
 
 script_mod! {
@@ -261,6 +263,9 @@ script_mod! {
         pinned_messages_pane: mod.widgets.RoomPaneFrame {
             content +: { pinned_messages := mod.widgets.PinnedMessagesList {} }
         }
+        threads_pane: mod.widgets.RoomPaneFrame {
+            content +: { threads := mod.widgets.ThreadsList {} }
+        }
     }
 }
 
@@ -310,6 +315,9 @@ fn populate_content(
         RoomPaneKind::PinnedMessages => {
             frame.child_by_path(ids!(content.pinned_messages)).as_pinned_messages_list().set_room(cx, room_name_id);
         }
+        RoomPaneKind::Threads => {
+            frame.child_by_path(ids!(content.threads)).as_threads_list().set_room(cx, room_name_id);
+        }
     }
 }
 
@@ -328,7 +336,8 @@ fn show_members(cx: &mut Cx, list: &RoomMembersListRef, room_name_id: &RoomNameI
 #[derive(Clone)]
 enum SavedPaneContent {
     Members(SavedRoomMembersList),
-    PinnedMessages(SavedPinnedMessagesList),
+    PinnedMessages(SavedMessageList),
+    Threads(SavedMessageList),
 }
 
 fn save_content(kind: &RoomPaneKind, frame: &WidgetRef) -> SavedPaneContent {
@@ -338,6 +347,9 @@ fn save_content(kind: &RoomPaneKind, frame: &WidgetRef) -> SavedPaneContent {
         ),
         RoomPaneKind::PinnedMessages => SavedPaneContent::PinnedMessages(
             frame.child_by_path(ids!(content.pinned_messages)).as_pinned_messages_list().save_state()
+        ),
+        RoomPaneKind::Threads => SavedPaneContent::Threads(
+            frame.child_by_path(ids!(content.threads)).as_threads_list().save_state()
         ),
     }
 }
@@ -357,6 +369,10 @@ fn restore_content(
         }
         SavedPaneContent::PinnedMessages(saved) => {
             frame.child_by_path(ids!(content.pinned_messages)).as_pinned_messages_list()
+                .restore_state(cx, room_name_id, saved);
+        }
+        SavedPaneContent::Threads(saved) => {
+            frame.child_by_path(ids!(content.threads)).as_threads_list()
                 .restore_state(cx, room_name_id, saved);
         }
     }
@@ -379,6 +395,7 @@ pub fn set_pane_header(cx: &mut Cx, pane: &WidgetRef, kind: &RoomPaneKind) {
     match kind {
         RoomPaneKind::Members => script_apply_eval!(cx, icon, { draw_icon +: { svg: (mod.widgets.ICON_MEMBERS) } }),
         RoomPaneKind::PinnedMessages => script_apply_eval!(cx, icon, { draw_icon +: { svg: (mod.widgets.ICON_PIN) } }),
+        RoomPaneKind::Threads => script_apply_eval!(cx, icon, { draw_icon +: { svg: (mod.widgets.ICON_REPLY_IN_THREAD) } }),
     }
     let label = pane.label(cx, ids!(pane_title));
     label.set_text(cx, &kind.title());
@@ -428,6 +445,7 @@ pub struct RoomPaneDock {
     #[deref] view: View,
     #[live] members_pane: Option<LivePtr>,
     #[live] pinned_messages_pane: Option<LivePtr>,
+    #[live] threads_pane: Option<LivePtr>,
     #[rust] room_name_id: Option<RoomNameId>,
     /// The timeline that this dock's panes belong to.
     #[rust] timeline_kind: Option<TimelineKind>,
@@ -757,6 +775,7 @@ impl RoomPaneDock {
         match kind {
             RoomPaneKind::Members => self.members_pane,
             RoomPaneKind::PinnedMessages => self.pinned_messages_pane,
+            RoomPaneKind::Threads => self.threads_pane,
         }
     }
 
@@ -1026,7 +1045,7 @@ pub enum RoomPaneEdgeAction {
     /// after which its panes have the given weights.
     SplitMoved {
         side: PaneSide,
-        /// An edge holds at most one pane of each kind, and there are only two kinds.
+        /// An edge holds at most one pane of each kind, and it's unusual to show more than two per edge.
         weights: SmallVec<[(RoomPaneKind, f64); 2]>,
     },
     #[default]
