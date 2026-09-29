@@ -148,7 +148,8 @@ script_mod! {
         room_threads_button         := mod.widgets.RoomActionButton {draw_icon.svg: ICON_REPLY_IN_THREAD}
         room_pinned_messages_button := mod.widgets.RoomActionButton {draw_icon.svg: ICON_PIN}
         room_members_button         := mod.widgets.RoomActionButton {draw_icon.svg: ICON_MEMBERS}
-        room_settings_button        := mod.widgets.RoomActionButton {draw_icon.svg: ICON_SETTINGS}
+        // room_settings_button        := mod.widgets.RoomActionButton {draw_icon.svg: ICON_SETTINGS}
+        room_invite_button          := mod.widgets.RoomActionButton {draw_icon.svg: ICON_ADD_USER}
         expand_room_actions_button  := mod.widgets.RoomActionButton {
             draw_icon.svg: ICON_CHEVRON_DOWN
             icon_walk: Walk{width: 17, height: 17}
@@ -169,10 +170,25 @@ script_mod! {
                 wrap_spacing: 8
                 padding: 8
                 room_info_button := RoomActionTextButton {draw_icon.svg: ICON_INFO}
-                room_settings_button := RoomActionTextButton {draw_icon.svg: ICON_SETTINGS}
+                // room_settings_button := RoomActionTextButton {draw_icon.svg: ICON_SETTINGS}
                 room_threads_button := RoomActionTextButton {draw_icon.svg: ICON_REPLY_IN_THREAD}
                 room_members_button := RoomActionTextButton {draw_icon.svg: ICON_MEMBERS}
                 room_pinned_messages_button := RoomActionTextButton {draw_icon.svg: ICON_PIN}
+                // Invite isn't a toggle, so it's always green like our other invite buttons.
+                room_invite_button := RoomActionTextButton {
+                    draw_icon.svg: ICON_ADD_USER
+                    draw_icon.color: (COLOR_FG_ACCEPT_GREEN)
+                    draw_bg +: {
+                        color: (COLOR_BG_ACCEPT_GREEN)
+                        color_hover: #D4EED4
+                        color_down: #B8E0B8
+                    }
+                    draw_text +: {
+                        color: (COLOR_FG_ACCEPT_GREEN)
+                        color_hover: (COLOR_FG_ACCEPT_GREEN)
+                        color_down: (COLOR_FG_ACCEPT_GREEN)
+                    }
+                }
             }
         }
 
@@ -233,16 +249,17 @@ script_mod! {
     }
 }
 
-/// Each button's ID, label, and the kind of room pane it shows (if any).
+/// Each button's ID, label, and the action it emits when clicked (if any).
 ///
 /// This also defines the ordering of the buttons, from right to left
 /// so that buttons don't move around when the bar's width changes.
-const ACTIONS: [(LiveId, &str, Option<RoomPaneKind>); ACTION_COUNT] = [
-    (id!(room_info_button), "Room info", None),
-    (id!(room_settings_button), "Room settings", None),
-    (id!(room_threads_button), "Threads", Some(RoomPaneKind::Threads)),
-    (id!(room_members_button), "Members", Some(RoomPaneKind::Members)),
-    (id!(room_pinned_messages_button), "Pinned messages", Some(RoomPaneKind::PinnedMessages)),
+const ACTIONS: [(LiveId, &str, RoomActionBarAction); ACTION_COUNT] = [
+    (id!(room_info_button), "Room info", RoomActionBarAction::None),
+    // (id!(room_settings_button), "Room settings", RoomActionBarAction::None),
+    (id!(room_threads_button), "Threads", RoomActionBarAction::TogglePane(RoomPaneKind::Threads)),
+    (id!(room_members_button), "Members", RoomActionBarAction::TogglePane(RoomPaneKind::Members)),
+    (id!(room_pinned_messages_button), "Pinned messages", RoomActionBarAction::TogglePane(RoomPaneKind::PinnedMessages)),
+    (id!(room_invite_button), "Invite", RoomActionBarAction::Invite),
 ];
 
 pub fn show_room_action_placeholder(label: &'static str) {
@@ -264,6 +281,8 @@ pub enum RoomActionBarAction {
     },
     /// The user clicked the button that shows or hides the given kind of room pane.
     TogglePane(RoomPaneKind),
+    /// The user clicked the Invite button.
+    Invite,
     #[default]
     None,
 }
@@ -344,13 +363,13 @@ impl Widget for RoomActionBar {
             {
                 self.set_expanded(cx, !self.is_expanded, true);
             }
-            for (id, label, pane_kind) in ACTIONS {
+            for (id, label, action) in ACTIONS {
                 if self.view.button(cx, &[id]).clicked(actions)
                     || self.view.button(cx, &[id!(expanded_room_actions), id]).clicked(actions)
                 {
-                    match pane_kind {
-                        Some(kind) => cx.widget_action(self.widget_uid(), RoomActionBarAction::TogglePane(kind)),
-                        None => show_room_action_placeholder(label),
+                    match action {
+                        RoomActionBarAction::None => show_room_action_placeholder(label),
+                        action => cx.widget_action(self.widget_uid(), action),
                     }
                 }
             }
@@ -408,29 +427,44 @@ impl RoomActionBar {
     ///
     /// Any button whose room pane is shown will be colored-in/highlighted.
     fn highlight_shown_panes(&mut self, cx: &mut Cx) {
-        for (id, _, kind) in ACTIONS {
-            let Some(kind) = kind else { continue };
+        for (id, _, action) in ACTIONS {
+            let RoomActionBarAction::TogglePane(kind) = action else { continue };
             let mut button = self.view.widget(cx, &[id]);
             let mut expanded_button = self.view.widget(cx, &[id!(expanded_room_actions), id]);
             if self.shown_panes.contains(&kind) {
-                script_apply_eval!(cx, button, { draw_bg +: {
-                    color: (mod.widgets.COLOR_BG_LAVENDER)
-                    color_hover: (mod.widgets.COLOR_BG_LAVENDER_HOVER)
-                    color_down: (mod.widgets.COLOR_BG_LAVENDER_DOWN)
-                } });
-                // The expanded buttons are always lavender, so a shown pane's button is darker.
-                script_apply_eval!(cx, expanded_button, { draw_bg +: {
-                    color: (mod.widgets.COLOR_BG_LAVENDER_DOWN)
-                    color_hover: (mod.widgets.COLOR_BG_LAVENDER_HOVER)
-                    color_down: (mod.widgets.COLOR_BG_LAVENDER_DOWN)
-                } });
+                for mut button in [button, expanded_button] {
+                    script_apply_eval!(cx, button, {
+                        draw_bg +: {
+                            color: (mod.widgets.COLOR_BG_LAVENDER_SELECTED)
+                            color_hover: (mod.widgets.COLOR_BG_LAVENDER_SELECTED_HOVER)
+                            color_down: (mod.widgets.COLOR_BG_LAVENDER_SELECTED_DOWN)
+                        }
+                        draw_icon +: { color: (mod.widgets.COLOR_PRIMARY) }
+                        draw_text +: {
+                            color: (mod.widgets.COLOR_PRIMARY)
+                            color_hover: (mod.widgets.COLOR_PRIMARY)
+                            color_down: (mod.widgets.COLOR_PRIMARY)
+                        }
+                    });
+                }
             } else {
-                script_apply_eval!(cx, button, { draw_bg +: { color: #0000, color_hover: #0001, color_down: #0002 } });
-                script_apply_eval!(cx, expanded_button, { draw_bg +: {
-                    color: (mod.widgets.COLOR_BG_LAVENDER)
-                    color_hover: (mod.widgets.COLOR_BG_LAVENDER_HOVER)
-                    color_down: (mod.widgets.COLOR_BG_LAVENDER_DOWN)
-                } });
+                script_apply_eval!(cx, button, {
+                    draw_bg +: { color: #0000, color_hover: #0001, color_down: #0002 }
+                    draw_icon +: { color: (mod.widgets.ROOM_NAME_TEXT_COLOR) }
+                });
+                script_apply_eval!(cx, expanded_button, {
+                    draw_bg +: {
+                        color: (mod.widgets.COLOR_BG_LAVENDER)
+                        color_hover: (mod.widgets.COLOR_BG_LAVENDER_HOVER)
+                        color_down: (mod.widgets.COLOR_BG_LAVENDER_DOWN)
+                    }
+                    draw_icon +: { color: (mod.widgets.ROOM_NAME_TEXT_COLOR) }
+                    draw_text +: {
+                        color: (mod.widgets.ROOM_NAME_TEXT_COLOR)
+                        color_hover: (mod.widgets.ROOM_NAME_TEXT_COLOR)
+                        color_down: (mod.widgets.ROOM_NAME_TEXT_COLOR)
+                    }
+                });
             }
         }
         self.highlighted_panes = Some(self.shown_panes.clone());

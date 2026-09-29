@@ -592,15 +592,18 @@ impl Widget for HomeScreen {
                 }
 
                 // In mobile view mode, the room action bar is in the stack nav header (outside the RoomScreen),
-                // so we have to forward a pane button click to its RoomScreen in the same stack view.
-                if let RoomActionBarAction::TogglePane(kind) = action.as_widget_action().cast() {
-                    let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
-                    for view_id in stack_navigation.dynamic_stack_view_ids() {
-                        let stack_view = stack_navigation.view_by_id(cx, view_id);
-                        let header = stack_view.room_action_bar(cx, ids!(header.content));
-                        if action.as_widget_action().widget_uid_eq(header.widget_uid()).is_some() {
-                            stack_view.room_screen(cx, ids!(room_screen)).toggle_room_pane(cx, kind);
-                            break;
+                // so we have to forward a button click to its RoomScreen in the same stack view.
+                match action.as_widget_action().cast() {
+                    RoomActionBarAction::LayoutChanged { .. } | RoomActionBarAction::None => {}
+                    bar_action => {
+                        let stack_navigation = self.view.stack_navigation(cx, ids!(view_stack));
+                        for view_id in stack_navigation.dynamic_stack_view_ids() {
+                            let stack_view = stack_navigation.view_by_id(cx, view_id);
+                            let header = stack_view.room_action_bar(cx, ids!(header.content));
+                            if action.as_widget_action().widget_uid_eq(header.widget_uid()).is_some() {
+                                stack_view.room_screen(cx, ids!(room_screen)).handle_room_action_bar_action(cx, bar_action);
+                                break;
+                            }
                         }
                     }
                 }

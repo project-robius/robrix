@@ -27,7 +27,7 @@ use ruma::{OwnedUserId, api::client::receipt::create_receipt::v3::ReceiptType, e
 
 use matrix_sdk_ui::sync_service::State;
 use crate::{
-    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_thread_reply, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::LoadingPaneWidgetExt, room_image_viewer::{fetch_full_image_for_viewer, get_image_name_and_filesize}, rooms_list::{RoomsListAction, RoomsListRef}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{AppStateAction, ConfirmDeleteAction, SelectedRoom}, event_preview::{plaintext_body_of_timeline_item, text_preview_of_encrypted_message, text_preview_of_member_profile_change, text_preview_of_other_message_like, text_preview_of_other_state, text_preview_of_room_membership_change, text_preview_of_thread_reply, text_preview_of_timeline_item}, home::{edited_indicator::EditedIndicatorWidgetRefExt, invite_modal::InviteModalAction, link_preview::{LinkPreviewCache, LinkPreviewRef, LinkPreviewWidgetRefExt}, loading_pane::LoadingPaneWidgetExt, room_image_viewer::{fetch_full_image_for_viewer, get_image_name_and_filesize}, rooms_list::{RoomsListAction, RoomsListRef}, rooms_list_header::RoomsListHeaderAction, tombstone_footer::SuccessorRoomDetails}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneAction, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     },
@@ -1424,10 +1424,13 @@ impl Widget for RoomScreen {
                 );
             }
 
-            // Handle a room pane button being clicked in this room's action bar.
-            if let RoomActionBarAction::TogglePane(kind) = action.as_widget_action().cast() {
-                self.toggle_room_pane(cx, kind);
-                return false;
+            // Handle a button being clicked in this room's action bar.
+            match action.as_widget_action().cast() {
+                RoomActionBarAction::LayoutChanged { .. } | RoomActionBarAction::None => {}
+                bar_action => {
+                    self.handle_room_action_bar_action(cx, bar_action);
+                    return false;
+                }
             }
 
             // Handle a member being clicked in the room member pane.
@@ -3501,9 +3504,17 @@ impl RoomScreen {
         }
     }
 
-    /// Shows or hides the given room pane kind within this RoomScreen.
-    pub fn toggle_room_pane(&mut self, cx: &mut Cx, kind: RoomPaneKind) {
-        self.view.room_pane_dock(cx, ids!(room_pane_dock)).toggle(cx, kind);
+    fn handle_room_action_bar_action(&mut self, cx: &mut Cx, action: RoomActionBarAction) {
+        match action {
+            RoomActionBarAction::TogglePane(kind) => {
+                self.view.room_pane_dock(cx, ids!(room_pane_dock)).toggle(cx, kind);
+            }
+            RoomActionBarAction::Invite => {
+                let Some(room_name_id) = self.room_name_id.clone() else { return };
+                cx.action(InviteModalAction::Open(room_name_id));
+            }
+            RoomActionBarAction::LayoutChanged { .. } | RoomActionBarAction::None => {}
+        }
     }
 
     /// Jumps to the given event in this RoomScreen's timeline once it has been drawn.
@@ -3753,10 +3764,9 @@ impl RoomScreenRef {
         inner.hide_displayed_room(cx);
     }
 
-    /// See [`RoomScreen::toggle_room_pane()`].
-    pub fn toggle_room_pane(&self, cx: &mut Cx, kind: RoomPaneKind) {
+    pub fn handle_room_action_bar_action(&self, cx: &mut Cx, action: RoomActionBarAction) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.toggle_room_pane(cx, kind);
+        inner.handle_room_action_bar_action(cx, action);
     }
 
     /// Jumps to the given event once this RoomScreen has drawn the given timeline,
