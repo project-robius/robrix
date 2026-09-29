@@ -342,7 +342,9 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Knock on room (request to join)
 - [x] Leave joined and invited rooms
 - [ ] Room settings/info screen
-- [ ] Room members pane
+- [x] List of members within a room (https://github.com/project-robius/robrix/pull/1094)
+- [x] List of pinned messages within a room (https://github.com/project-robius/robrix/pull/1096)
+- [x] List of threads within a room (https://github.com/project-robius/robrix/pull/1101)
 - [ ] Administrative abilities: ban, kick, etc
 - [x] Offline mode with persistent event cache: https://github.com/project-robius/robrix/pull/445
 
