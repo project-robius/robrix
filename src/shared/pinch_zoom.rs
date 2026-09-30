@@ -6,8 +6,8 @@
 //! 
 //! * Pinching zooms about the point between the fingers and follows them around.
 //! * Dragging a finger pans the content, and letting go of it while moving flings it.
-//! * The content's edges never come away from the viewport's edges,
-//!   and content that is smaller than the viewport stays centered.
+//! * The content can be moved around and partly off screen,
+//!   but some of it always stays on screen.
 //! * A double tap zooms in on the tapped spot, or back out to fit.
 //! * A double tap that is held and then dragged zooms with only that finger.
 //! * Unlike on either platform, the content can be zoomed out to a tenth of its
@@ -47,6 +47,9 @@ const DOUBLE_TAP_ZOOM: f64 = 2.0;
 /// Zooming out beyond the minimum resists like a rubber band does,
 /// and never gets this many percent beyond it.
 const MAX_UNDERZOOM_PERCENT: f64 = 40.0;
+/// How close an edge of the content can be moved to the opposite edge of the viewport,
+/// as a fraction of the viewport's width or height.
+const PAN_PADDING_FRACTION: f64 = 0.25;
 
 /// A drag only flings the content if it let go while moving at least this fast
 /// along either axis, in points per second.
@@ -213,7 +216,7 @@ impl PinchZoom {
     /// Sets the content's own size, before it gets fitted or zoomed.
     pub fn set_content_size(&mut self, content_size: DVec2) {
         self.content_size = content_size;
-        // An animation is already headed for somewhere within the edges, and keeps to them.
+        // An animation is already headed for somewhere within the pan limits, and keeps to them.
         if !self.is_animating() {
             self.offset = self.clamp_offset(self.offset, self.zoom);
         }
@@ -344,9 +347,9 @@ impl PinchZoom {
         self.animate_zoom_to(to_zoom, self.viewport.center(), ZOOM_SPRING_SPEED);
     }
 
-    /// Smoothly zooms back to the content being fitted to the viewport.
+    /// Smoothly zooms back to the content being fitted to the viewport, in the middle of it.
     pub fn animate_zoom_to_fit(&mut self) {
-        self.animate_zoom_to(FIT_ZOOM, self.viewport.center(), ZOOM_SPRING_SPEED);
+        self.animate_to(FIT_ZOOM, DVec2::default(), ZOOM_SPRING_SPEED);
     }
 
     /// Moves any animation that's in progress along to the given `time` of a `NextFrame`.
@@ -359,7 +362,7 @@ impl PinchZoom {
                     distance.y * get_fling_progress(elapsed / duration.y),
                 );
                 let offset = self.clamp_offset(from_offset + travel, self.zoom);
-                // An edge stops the content dead, and the fling too once nothing can move.
+                // A pan limit stops the content dead, and the fling too once nothing can move.
                 self.animation = if offset != self.offset && elapsed < duration.x.max(duration.y) {
                     Animation::Fling { clock, from_offset, distance, duration }
                 } else {
@@ -378,7 +381,7 @@ impl PinchZoom {
                     return;
                 }
                 self.zoom = to_zoom + (from_zoom - to_zoom) * remaining;
-                // The content's edges stay put along the way too, not only at both ends.
+                // The pan limits apply along the way too, not only at both ends.
                 let offset = DVec2::from_lerp(to_offset, from_offset, remaining);
                 self.offset = self.clamp_offset(offset, self.zoom);
                 self.animation = Animation::Spring { clock, speed, from_zoom, to_zoom, from_offset, to_offset };
@@ -520,15 +523,14 @@ impl PinchZoom {
                 {
                     if is_second_tap {
                         // Zoomed in or out, a double tap goes back to fit. From fit, it zooms in.
-                        let to_zoom = if self.get_zoom_headed_for() == FIT_ZOOM {
+                        if self.get_zoom_headed_for() == FIT_ZOOM {
                             let fitted_size = self.content_size * self.get_fit_scale();
                             let fill_zoom = (self.viewport.size.x / fitted_size.x)
                                 .max(self.viewport.size.y / fitted_size.y);
-                            DOUBLE_TAP_ZOOM.max(fill_zoom)
+                            self.animate_zoom_to(DOUBLE_TAP_ZOOM.max(fill_zoom), down_abs, ZOOM_SPRING_SPEED);
                         } else {
-                            FIT_ZOOM
-                        };
-                        self.animate_zoom_to(to_zoom, down_abs, ZOOM_SPRING_SPEED);
+                            self.animate_zoom_to_fit();
+                        }
                         released_press = ReleasedPress::DoubleTap;
                     } else {
                         self.last_tap = Some(Tap { down_abs, down_time, up_time: time });
@@ -601,9 +603,14 @@ impl PinchZoom {
     }
 
     /// Starts a spring animation to the given zoom level, such that the content
-    /// under `anchor_abs` stays there for as long as the content's edges allow.
+    /// under `anchor_abs` stays there for as long as the pan limits allow.
     fn animate_zoom_to(&mut self, to_zoom: f64, anchor_abs: DVec2, speed: f64) {
         let to_offset = self.get_anchored_offset(anchor_abs, anchor_abs, to_zoom);
+        self.animate_to(to_zoom, to_offset, speed);
+    }
+
+    /// Starts a spring animation to the given zoom level and offset.
+    fn animate_to(&mut self, to_zoom: f64, to_offset: DVec2, speed: f64) {
         if !to_zoom.is_finite() || (to_zoom == self.zoom && to_offset == self.offset) {
             return;
         }
@@ -618,18 +625,19 @@ impl PinchZoom {
     }
 
     /// Returns the offset that, at the given zoom level, puts the content that is now
-    /// under `from_abs` under `to_abs`, as closely as the content's edges allow.
+    /// under `from_abs` under `to_abs`, as closely as the pan limits allow.
     fn get_anchored_offset(&self, from_abs: DVec2, to_abs: DVec2, zoom: f64) -> DVec2 {
         let center = self.viewport.center();
         let offset = to_abs - center - (from_abs - center - self.offset) * (zoom / self.zoom);
         self.clamp_offset(offset, zoom)
     }
 
-    /// Keeps the content's edges from coming away from the viewport's edges, and
-    /// centers the content along each axis that it is smaller than the viewport.
+    /// Applies the pan limits: no edge of the content can get closer to the opposite
+    /// edge of the viewport than `PAN_PADDING_FRACTION` of the viewport's width or height.
     fn clamp_offset(&self, offset: DVec2, zoom: f64) -> DVec2 {
         let content_size = self.content_size * (self.get_fit_scale() * zoom);
-        let max_offset = (content_size - self.viewport.size) * 0.5;
+        let padding = self.viewport.size * PAN_PADDING_FRACTION;
+        let max_offset = (self.viewport.size + content_size) * 0.5 - padding;
         dvec2(
             offset.x.clamp(-max_offset.x.max(0.0), max_offset.x.max(0.0)),
             offset.y.clamp(-max_offset.y.max(0.0), max_offset.y.max(0.0)),
